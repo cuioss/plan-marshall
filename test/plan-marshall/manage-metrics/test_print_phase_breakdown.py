@@ -13,13 +13,18 @@ Covers:
 # ruff: noqa: I001
 import importlib.util
 import io
-from argparse import Namespace
 from contextlib import redirect_stdout
 
 import pytest
 
 from conftest import get_script_path, run_script
 from toon_parser import parse_toon
+from _manage_metrics_fixtures import (
+    ns_end_phase,
+    ns_generate,
+    ns_print_phase_breakdown,
+    ns_start_phase,
+)
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
 
@@ -97,43 +102,13 @@ def _register_unseeded(plan_id: str) -> str:
     return plan_id
 
 
-def _ns_print_breakdown(plan_id: str, output_file: str | None = None) -> Namespace:
-    return Namespace(
-        plan_id=plan_id,
-        output_file=output_file,
-        command='print-phase-breakdown',
-        func=cmd_print_phase_breakdown,
-    )
-
-
-def _ns_start_phase(plan_id: str, phase: str) -> Namespace:
-    return Namespace(plan_id=plan_id, phase=phase, command='start-phase', func=cmd_start_phase)
-
-
-def _ns_end_phase(plan_id: str, phase: str, total_tokens: int | None = None) -> Namespace:
-    return Namespace(
-        plan_id=plan_id,
-        phase=phase,
-        total_tokens=total_tokens,
-        duration_ms=None,
-        tool_uses=None,
-        retrospective_tokens=None,
-        command='end-phase',
-        func=cmd_end_phase,
-    )
-
-
-def _ns_generate(plan_id: str) -> Namespace:
-    return Namespace(plan_id=plan_id, command='generate', func=cmd_generate)
-
-
 def _seed_metrics_md(plan_id: str) -> None:
     """Seed metrics.md by recording a couple of phases and calling generate."""
-    cmd_start_phase(_ns_start_phase(plan_id, '1-init'))
-    cmd_end_phase(_ns_end_phase(plan_id, '1-init', total_tokens=25_000))
-    cmd_start_phase(_ns_start_phase(plan_id, '2-refine'))
-    cmd_end_phase(_ns_end_phase(plan_id, '2-refine', total_tokens=10_000))
-    result = cmd_generate(_ns_generate(plan_id))
+    cmd_start_phase(ns_start_phase(plan_id, '1-init'))
+    cmd_end_phase(ns_end_phase(plan_id, '1-init', total_tokens=25_000))
+    cmd_start_phase(ns_start_phase(plan_id, '2-refine'))
+    cmd_end_phase(ns_end_phase(plan_id, '2-refine', total_tokens=10_000))
+    result = cmd_generate(ns_generate(plan_id))
     assert result['status'] == 'success'
 
 
@@ -151,7 +126,7 @@ class TestExtractedSectionCarriesBillingColumn:
         data['phases']['1-init']['billing_weighted_total'] = 41003
         data['phases']['2-refine']['billing_weighted_total'] = 78000
         write_metrics('metrics-billing-column', data)
-        cmd_generate(_ns_generate('metrics-billing-column'))
+        cmd_generate(ns_generate('metrics-billing-column'))
 
         content = (
             plan_context.plan_dir_for('metrics-billing-column') / 'metrics.md'
@@ -247,7 +222,7 @@ class TestCmdPrintPhaseBreakdown:
         plan_dir = plan_context.plan_dir_for('metrics-print-01')
         buf = io.StringIO()
         with redirect_stdout(buf):
-            result = cmd_print_phase_breakdown(_ns_print_breakdown('metrics-print-01'))
+            result = cmd_print_phase_breakdown(ns_print_phase_breakdown('metrics-print-01'))
         assert result['status'] == 'success'
         assert result['file'] == 'work/phase-breakdown-output.txt'
         assert result['bytes_written'] > 0
@@ -268,7 +243,7 @@ class TestCmdPrintPhaseBreakdown:
         _seed_metrics_md('metrics-print-explicit')
         plan_dir = plan_context.plan_dir_for('metrics-print-explicit')
         result = cmd_print_phase_breakdown(
-            _ns_print_breakdown('metrics-print-explicit', output_file='work/nested/breakdown.txt')
+            ns_print_phase_breakdown('metrics-print-explicit', output_file='work/nested/breakdown.txt')
         )
         assert result['status'] == 'success'
         assert result['file'] == 'work/nested/breakdown.txt'
@@ -284,7 +259,7 @@ class TestCmdPrintPhaseBreakdown:
         buf = io.StringIO()
         with redirect_stdout(buf):
             result = cmd_print_phase_breakdown(
-                _ns_print_breakdown('metrics-print-stdout', output_file='-')
+                ns_print_phase_breakdown('metrics-print-stdout', output_file='-')
             )
         assert result['status'] == 'success'
         assert result['_print_only'] is True
@@ -300,7 +275,7 @@ class TestCmdPrintPhaseBreakdown:
         """Absolute --output-file paths are rejected with output_file_must_be_relative."""
         _seed_metrics_md('metrics-print-abs')
         result = cmd_print_phase_breakdown(
-            _ns_print_breakdown('metrics-print-abs', output_file='/tmp/breakdown.txt')
+            ns_print_phase_breakdown('metrics-print-abs', output_file='/tmp/breakdown.txt')
         )
         assert result['status'] == 'error'
         assert result['error'] == 'output_file_must_be_relative'
@@ -310,7 +285,7 @@ class TestCmdPrintPhaseBreakdown:
         """Path traversal sequences are rejected with output_file_must_be_relative."""
         _seed_metrics_md('metrics-print-trav')
         result = cmd_print_phase_breakdown(
-            _ns_print_breakdown('metrics-print-trav', output_file='../../etc/passwd')
+            ns_print_phase_breakdown('metrics-print-trav', output_file='../../etc/passwd')
         )
         assert result['status'] == 'error'
         assert result['error'] == 'output_file_must_be_relative'
@@ -318,7 +293,7 @@ class TestCmdPrintPhaseBreakdown:
 
     def test_error_when_metrics_md_missing(self, plan_context):
         # No generate call → no metrics.md.
-        result = cmd_print_phase_breakdown(_ns_print_breakdown('metrics-print-02'))
+        result = cmd_print_phase_breakdown(ns_print_phase_breakdown('metrics-print-02'))
         assert result['status'] == 'error'
         assert result['error'] == 'metrics_md_not_found'
         assert '_print_only' not in result
@@ -326,7 +301,7 @@ class TestCmdPrintPhaseBreakdown:
     def test_error_when_section_missing(self, plan_context):
         md_path = plan_context.plan_dir_for('metrics-print-03') / 'metrics.md'
         md_path.write_text('# Metrics\n\nNo phase breakdown section here.\n', encoding='utf-8')
-        result = cmd_print_phase_breakdown(_ns_print_breakdown('metrics-print-03'))
+        result = cmd_print_phase_breakdown(ns_print_phase_breakdown('metrics-print-03'))
         assert result['status'] == 'error'
         assert result['error'] == 'phase_breakdown_section_not_found'
 
@@ -405,7 +380,7 @@ def _render_breakdown(plan_id: str) -> list[str]:
     Returns the list of lines starting with the header row and ending with the
     Total row (whitespace stripped).
     """
-    result = cmd_generate(_ns_generate(plan_id))
+    result = cmd_generate(ns_generate(plan_id))
     assert result['status'] == 'success', result
     from file_ops import get_plan_dir
 
@@ -573,10 +548,10 @@ class TestEndToEndPhaseBreakdownRendering:
             },
         )
 
-        gen_result = cmd_generate(_ns_generate('metrics-e2e-01'))
+        gen_result = cmd_generate(ns_generate('metrics-e2e-01'))
         assert gen_result['status'] == 'success'
 
-        print_result = cmd_print_phase_breakdown(_ns_print_breakdown('metrics-e2e-01'))
+        print_result = cmd_print_phase_breakdown(ns_print_phase_breakdown('metrics-e2e-01'))
         assert print_result['status'] == 'success'
         assert print_result['file'] == 'work/phase-breakdown-output.txt'
         from file_ops import get_plan_dir
@@ -633,8 +608,8 @@ class TestEndToEndPhaseBreakdownRendering:
             },
         )
 
-        assert cmd_generate(_ns_generate('metrics-e2e-02'))['status'] == 'success'
-        print_result = cmd_print_phase_breakdown(_ns_print_breakdown('metrics-e2e-02'))
+        assert cmd_generate(ns_generate('metrics-e2e-02'))['status'] == 'success'
+        print_result = cmd_print_phase_breakdown(ns_print_phase_breakdown('metrics-e2e-02'))
         assert print_result['status'] == 'success'
         from file_ops import get_plan_dir
         section = (get_plan_dir('metrics-e2e-02') / print_result['file']).read_text(encoding='utf-8')
@@ -671,8 +646,8 @@ class TestEndToEndPhaseBreakdownRendering:
             },
         )
 
-        assert cmd_generate(_ns_generate('metrics-e2e-03'))['status'] == 'success'
-        print_result = cmd_print_phase_breakdown(_ns_print_breakdown('metrics-e2e-03'))
+        assert cmd_generate(ns_generate('metrics-e2e-03'))['status'] == 'success'
+        print_result = cmd_print_phase_breakdown(ns_print_phase_breakdown('metrics-e2e-03'))
         assert print_result['status'] == 'success'
         from file_ops import get_plan_dir
         section = (get_plan_dir('metrics-e2e-03') / print_result['file']).read_text(encoding='utf-8')

@@ -106,8 +106,7 @@ def test_mark_step_skipped_happy_path(plan_context):
 def test_mark_step_failed_happy_path(plan_context):
     """Outcome 'failed' persists as dict with null display_detail.
 
-    Regression guard for PR #338 review (gemini-code-assist findings 0d1782 and
-    f9c054): the phase-6-finalize dispatcher's graceful timeout degradation
+    The phase-6-finalize dispatcher's graceful timeout degradation
     path uses ``--outcome failed`` (see SKILL.md and automatic-review.md
     Timeout Contract), so ``failed`` MUST be a valid persisted outcome.
     """
@@ -297,10 +296,10 @@ def test_mark_step_force_overwrites(plan_context):
 def test_mark_step_force_migrates_legacy_bare_string_preserving_prior_outcome(plan_context):
     """A forced migration retains the bare string as the FIRST prior firing.
 
-    PR #1129 review finding 0d4b5c. The bare string IS a readable firing — the
-    unforced rejection below reports that very value back as ``existing_outcome``
-    — so dropping it on the forced path made the migrated record
-    indistinguishable from a genuine first firing.
+    The bare string IS a readable firing — the unforced rejection below reports
+    that very value back as ``existing_outcome`` — so dropping it on the forced
+    path makes the migrated record indistinguishable from a genuine first
+    firing, destroying the one fact the firing trail exists to preserve.
 
     ``test_mark_step_rejects_legacy_bare_string_entry`` is the matching negative
     control: the SAME seeded entry without ``--force`` still errors and writes
@@ -657,7 +656,7 @@ def test_mark_step_omits_head_at_completion_key_when_flag_absent(plan_context):
 
 
 # =============================================================================
-# Step-key canonicalization (lesson 2026-06-21-00-002)
+# Step-key canonicalization
 #
 # The canonicalizer's own unit coverage (default strip, project/bundle preserve,
 # idempotence) lives in test_step_key_canonical.py — the shared resolver's home.
@@ -669,9 +668,10 @@ def test_mark_step_omits_head_at_completion_key_when_flag_absent(plan_context):
 def test_mark_step_default_prefixed_records_under_bare_key(plan_context):
     """A ``default:``-prefixed --step is recorded under the bare manifest key.
 
-    Regression guard for lesson 2026-06-21-00-002: recording under the caller's
-    ``default:``-prefixed spelling orphaned the record from the bare-keyed
-    dispatcher reader. The canonicalized key MUST be the bare name.
+    Recording under the caller's ``default:``-prefixed spelling must not orphan
+    the record from the bare-keyed dispatcher reader, which would leave the step
+    done on disk and invisible to the reader that checks whether it is done. The
+    canonicalized key MUST be the bare name.
     """
     plan_id = 'mark-step-canon-prefixed'
     _make_plan(plan_id)
@@ -749,7 +749,7 @@ def test_mark_step_project_prefixed_records_under_verbatim_key(plan_context):
 
 
 # =============================================================================
-# Stale legacy-key duplicate migration (PR #961 shadowing defect)
+# Stale legacy-key duplicate migration
 #
 # A pre-migration run may have persisted a ``default:``-prefixed key directly.
 # A later canonical write must locate that stale key via the canonicalized
@@ -761,11 +761,13 @@ def test_mark_step_project_prefixed_records_under_verbatim_key(plan_context):
 def test_mark_step_migrates_stale_legacy_key_on_detail_refresh(plan_context):
     """A detail-refresh write over a stale ``default:push`` key pops the legacy key.
 
-    Regression for PR #961: before the fix, ``get('push')`` missed the
-    pre-migration ``default:push`` key, so the write added a NEW ``push`` key
-    alongside the OLD ``default:push``, leaving a duplicate. The canonicalized
-    fallback scan now finds the stale key and the write pops it — exactly one
-    canonical entry survives.
+    ``get('push')`` must not miss the pre-migration ``default:push`` key; if it
+    does, the write adds a NEW ``push`` key alongside the OLD ``default:push``.
+    The duplicate is what breaks: the dispatcher reads the bare key and sees a
+    fresh first firing, while the conflict check reads the stale one, so the two
+    disagree about whether the step ever ran. The canonicalized fallback scan
+    finds the stale key and the write pops it — exactly one canonical entry
+    survives.
     """
     plan_id = 'mark-step-legacy-migrate'
     _make_plan(plan_id)

@@ -1,20 +1,18 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""End-to-end regression tests for the dispatch-loop correctness fixes.
+"""End-to-end tests for two dispatch-loop correctness properties.
 
-Lesson ``2026-05-10-15-001`` shipped two structural fixes for the
-phase-5-execute dispatch loop:
+Property 1: the loop drives on ``pending_count > 0`` rather than on a
+single ``task_complete`` return. ``manage-tasks loop-exit-guard`` is the
+script-level enforcement of the "pending > 0 → must continue" invariant;
+without it a loop exits on the first task that reports complete, stranding
+every task behind it.
 
-D1 (Defect 1): The loop must drive on ``pending_count > 0`` rather than
-on a single ``task_complete`` return — TASK-001 added
-``manage-tasks loop-exit-guard`` as the script-level enforcement of the
-"pending > 0 → must continue" invariant.
-
-D2 (Defect 2): ``manage-metrics record-dispatch-boundary`` no longer
-overloads ``unknown`` as the fallback ``termination_cause``. The
-canonical clean-exit value is ``clean_exit_queue_empty``, and the
-retrospective rule emits a warning if the legacy ``unknown`` token ever
-appears in a recorded boundary file (which only happens on
-pre-migration plans).
+Property 2: ``manage-metrics record-dispatch-boundary`` does not overload
+``unknown`` as the fallback ``termination_cause``. The canonical clean-exit
+value is ``clean_exit_queue_empty``, and the retrospective rule warns when
+the ``unknown`` token appears in a recorded boundary file — a reader must
+still parse such rows, which pre-migration plans carry, even though the
+writer no longer emits them.
 
 These tests replay recorded multi-task fixtures end-to-end against the
 production scripts:
@@ -219,9 +217,7 @@ class TestDispatchTerminationCauseCleanExitReplay:
         assert result.success, result.stderr
         data = result.toon()
 
-        # `dispatch_boundaries` is now a top-level per-phase-keyed dict
-        # (lesson 2026-05-20-12-002 generalised the prior phase-5-only
-        # nested fragment).
+        # `dispatch_boundaries` is a top-level per-phase-keyed dict.
         boundaries = data['dispatch_boundaries']['5-execute']
 
         # Precondition for the LLM rule — the artifact exists.
@@ -297,9 +293,7 @@ class TestDispatchTerminationCauseLegacyUnknownWarning:
         assert result.success, result.stderr
         data = result.toon()
 
-        # `dispatch_boundaries` is now a top-level per-phase-keyed dict
-        # (lesson 2026-05-20-12-002 generalised the prior phase-5-only
-        # nested fragment).
+        # `dispatch_boundaries` is a top-level per-phase-keyed dict.
         boundaries = data['dispatch_boundaries']['5-execute']
 
         # Precondition for the LLM warning branch — the artifact exists.

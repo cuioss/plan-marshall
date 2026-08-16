@@ -375,7 +375,7 @@ class TestAddAspectKeyValidation:
         # routing-decisions ships with a producer (check-routing-decisions.py)
         # AND a SECTION_SPEC render row. The row makes it a member of
         # valid_aspect_keys(), so cmd_add MUST accept it — without the row the
-        # aspect ships dead, rejected at add time (lesson 2026-06-20-17-003).
+        # aspect ships dead, rejected at add time.
         plan_id, plan_dir = setup_live_plan(tmp_path, monkeypatch)
         _init_bundle(plan_id)
         fragment_path = _write_fragment(tmp_path, 'frag.toon', _valid_fragment_body('routing-decisions'))

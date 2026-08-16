@@ -7,7 +7,7 @@ granted against, and the gap class it was granted over. The cases below pin the
 properties the pre-merge barrier relies on:
 
 - (a) an authorization LAPSES when HEAD advances past the tree it was granted
-  over — the plan-marshall#1067 shape;
+  over;
 - (b) a re-grant at the new HEAD re-authorizes, so the escape hatch is BOUND
   rather than removed;
 - (c) a ruling granted over a DIFFERENT gap at the SAME HEAD is ``valid`` but NOT
@@ -172,10 +172,9 @@ def test_regrant_at_new_head_overwrites_the_record(plan_context):
 
 
 def test_check_lapses_when_head_advances(plan_context):
-    """D5(a): an authorization granted at HEAD A does not authorize HEAD B.
+    """The lapse rule: an authorization granted at HEAD A does not authorize HEAD B.
 
-    This is the plan-marshall#1067 shape: a ruling made over one tree must not
-    be recalled to merge a different one.
+    A ruling made over one tree must not be recalled to merge a different one.
     """
     plan_id = 'merge-auth-lapse'
     _make_plan(plan_id)
@@ -191,7 +190,7 @@ def test_check_lapses_when_head_advances(plan_context):
 
 
 def test_regrant_at_new_head_reauthorizes(plan_context):
-    """D5(b): the re-seek at the advanced HEAD restores authorization.
+    """The re-grant rule: a re-seek at the advanced HEAD restores authorization.
 
     The escape hatch is BOUND, not removed — proving the lapse rule does not
     simply delete the operator's ability to proceed.
@@ -212,9 +211,9 @@ def test_regrant_at_new_head_reauthorizes(plan_context):
 def test_check_at_the_granting_head_is_valid(plan_context):
     """An authorization checked at the HEAD it was granted against is valid.
 
-    The negative control for the lapse rule: without this, a check that returned
-    ``lapsed`` unconditionally would satisfy the lapse test while re-prompting
-    the operator on every ordinary merge.
+    The matched positive control for the lapse rule: without this, a check that
+    returned ``lapsed`` unconditionally would satisfy the lapse test while
+    re-prompting the operator on every ordinary merge.
     """
     plan_id = 'merge-auth-same-head'
     _make_plan(plan_id)

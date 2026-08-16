@@ -9,7 +9,7 @@ step removal with renumbering, and the last-step-cannot-be-removed guard.
 
 import pytest
 
-from _helpers import (
+from _manage_tasks_fixtures import (
     _add_step_ns,
     _read_ns,
     _remove_step_ns,

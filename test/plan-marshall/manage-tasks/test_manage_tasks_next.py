@@ -8,7 +8,7 @@ satisfaction, in_progress prioritization, blocked-task surfacing, and the
 --ignore-deps escape.
 """
 
-from _helpers import (
+from _manage_tasks_fixtures import (
     _add_ns,
     _finalize_step_ns,
     _next_ns,

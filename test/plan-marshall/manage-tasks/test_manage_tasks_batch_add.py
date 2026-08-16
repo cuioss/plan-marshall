@@ -396,7 +396,7 @@ def test_batch_add_tasks_file_missing_returns_file_not_found(plan_context):
 # Tests: parse_stdin_task accepts both bracketed and bare-block list forms
 # =============================================================================
 #
-# Pins the breaking-refactor contract from deliverable D2: ``parse_stdin_task``
+# Pins the stdin-parsing contract: ``parse_stdin_task``
 # accepts BOTH the bare-block form (``steps:`` + indented ``- `` items) AND the
 # bracketed length-declared form (``steps[N]:`` + same indented ``- `` items).
 # Both shapes normalise to the same internal step list — no per-shape divergence.

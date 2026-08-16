@@ -18,7 +18,7 @@ optional flags on the ``update`` subcommand — ``--cost-size`` /
   ``cost_size``, and a non-positive ``envelope_id`` each yield a status: error
   result without mutating the record.
 
-Tier 2 (direct import via ``_helpers``) tests exercise the ``cmd_update`` /
+Tier 2 (direct import via ``_manage_tasks_fixtures``) tests exercise the ``cmd_update`` /
 ``cmd_next`` round-trip with the ``plan_context`` PLAN_BASE_DIR sandbox; Tier 3
 subprocess tests exercise the CLI plumbing (flag acceptance, the status: error
 TOON on validation rejection, and the argparse type rejection on a
@@ -30,7 +30,7 @@ import pytest
 
 from conftest import get_script_path, run_script
 
-from _helpers import (
+from _manage_tasks_fixtures import (
     _next_ns,
     _update_ns,
     add_basic_task,
