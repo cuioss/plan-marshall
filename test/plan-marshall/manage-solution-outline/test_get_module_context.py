@@ -22,7 +22,6 @@ Covers three branches:
   from.
 """
 
-import importlib.util
 import sys
 from argparse import Namespace
 from pathlib import Path
@@ -31,41 +30,30 @@ import file_ops
 import pytest
 from toon_parser import parse_toon
 
-from conftest import get_script_path
+from conftest import load_script_module
 
 # =============================================================================
 # Module Loading
 # =============================================================================
 
-# manage-solution-outline.py has hyphens, so importlib is required.
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-solution-outline', 'manage-solution-outline.py')
-_spec = importlib.util.spec_from_file_location('manage_solution_outline', str(SCRIPT_PATH))
-assert _spec is not None and _spec.loader is not None
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
+_mod = load_script_module(
+    'plan-marshall',
+    'manage-solution-outline',
+    'manage-solution-outline.py',
+    module_name='manage_solution_outline',
+)
 
 cmd_get_module_context = _mod.cmd_get_module_context
 
 # _architecture_core helpers — used to seed the per-module layout under the
 # fixture's project_dir without round-tripping through the discover/init
-# commands. The conftest PYTHONPATH bootstrap puts the scripts/ directories on
-# sys.path so a normal import resolves the module.
-_ARCH_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-architecture'
-    / 'scripts'
+# commands.
+_arch_core = load_script_module(
+    'plan-marshall',
+    'manage-architecture',
+    '_architecture_core.py',
+    module_name='_architecture_core_test_module',
 )
-_arch_spec = importlib.util.spec_from_file_location(
-    '_architecture_core_test_module', str(_ARCH_SCRIPTS_DIR / '_architecture_core.py')
-)
-assert _arch_spec is not None and _arch_spec.loader is not None
-_arch_core = importlib.util.module_from_spec(_arch_spec)
-sys.modules.setdefault('_architecture_core_test_module', _arch_core)
-_arch_spec.loader.exec_module(_arch_core)
 
 save_project_meta = _arch_core.save_project_meta
 save_module_derived = _arch_core.save_module_derived

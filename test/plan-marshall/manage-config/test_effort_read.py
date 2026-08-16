@@ -13,49 +13,20 @@ asserted by hashing marshal.json before and after each call.
 """
 
 import hashlib
-import importlib.util
 import json
-import sys
 from argparse import Namespace
-from pathlib import Path
 
 import pytest
 from _manage_config_fixtures import create_marshal_json
-
-_MANAGE_CONFIG_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
-)
-_PLAN_MARSHALL_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'plan-marshall'
-    / 'scripts'
-)
+from conftest import add_skill_scripts_to_path, load_script_module
 
 # `_cmd_effort` imports `effort_presets` at module level. Ensure the
 # plan-marshall scripts directory is importable BEFORE loading _cmd_effort.
-if str(_PLAN_MARSHALL_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_PLAN_MARSHALL_SCRIPTS_DIR))
+add_skill_scripts_to_path('plan-marshall', 'plan-marshall')
 
-
-def _load_module(name, filename, scripts_dir=_MANAGE_CONFIG_SCRIPTS_DIR):
-    spec = importlib.util.spec_from_file_location(name, scripts_dir / filename)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_cmd_models_mod = _load_module('_cmd_effort', '_cmd_effort.py')
+_cmd_models_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_effort.py', module_name='_cmd_effort'
+)
 cmd_effort = _cmd_models_mod.cmd_effort
 cmd_effort_resolve_target = _cmd_models_mod.cmd_effort_resolve_target
 

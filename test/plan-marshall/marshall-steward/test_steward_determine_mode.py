@@ -20,32 +20,23 @@ This suite pins that contract:
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import subprocess
 import sys
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT
+from conftest import add_skill_scripts_to_path, get_script_path, load_script_module
 
-_SCRIPTS_DIR = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'marshall-steward' / 'scripts'
+_DETERMINE_MODE = get_script_path('plan-marshall', 'marshall-steward', 'determine_mode.py')
+
+add_skill_scripts_to_path('plan-marshall', 'marshall-steward')
+
+_dm = load_script_module(
+    'plan-marshall',
+    'marshall-steward',
+    'determine_mode.py',
+    module_name='_marshall_steward_determine_mode_guard',
 )
-_DETERMINE_MODE = _SCRIPTS_DIR / 'determine_mode.py'
-
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
-
-
-def _load_module(name: str, path: Path):
-    spec = importlib.util.spec_from_file_location(name, path)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_dm = _load_module('_marshall_steward_determine_mode_guard', _DETERMINE_MODE)
 check_worktree_plan_local = _dm.check_worktree_plan_local
 is_worktree_repo_root = _dm.is_worktree_repo_root
 discover_shipped_project_finalize_steps = _dm.discover_shipped_project_finalize_steps

@@ -18,7 +18,7 @@ from unittest.mock import patch
 import pytest
 from _manage_config_fixtures import SCRIPT_PATH, create_marshal_json, create_nested_marshal_json
 
-from conftest import load_script_module, run_script
+from conftest import PROJECT_ROOT, load_script_module, run_script
 
 _cmd_skill_domains = load_script_module(
     'plan-marshall', 'manage-config', '_cmd_skill_domains.py', module_name='_cmd_skill_domains'
@@ -581,7 +581,7 @@ def test_get_available_domain_only_extensions_use_applies_to_module():
 
     # Run against real plan-marshall repo — build extensions discover modules,
     # domain extensions should be checked via applies_to_module()
-    result = discover_available(project_root=Path(__file__).parent.parent.parent.parent)
+    result = discover_available(project_root=PROJECT_ROOT)
     domains = result.get('domains', [])
 
     # plan-marshall-plugin-dev should be applicable (build extension with discover_modules)

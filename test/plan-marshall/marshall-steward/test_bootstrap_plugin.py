@@ -5,23 +5,21 @@
 Tier 2 (direct import) tests with 3 subprocess tests for CLI plumbing.
 """
 
-import importlib.util
 import os
 import subprocess
 import sys
 from pathlib import Path
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 # Get script path — use base directory for all steward scripts
 _SCRIPTS_DIR = Path(get_script_path('plan-marshall', 'marshall-steward', 'bootstrap_plugin.py')).parent
 SCRIPT_PATH = _SCRIPTS_DIR / 'bootstrap_plugin.py'
 
-# Tier 2 direct import via importlib
-_spec = importlib.util.spec_from_file_location('bootstrap_plugin', SCRIPT_PATH)
-assert _spec is not None and _spec.loader is not None
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
+# Tier 2 direct import — resolution by (bundle, skill, script).
+_mod = load_script_module(
+    'plan-marshall', 'marshall-steward', 'bootstrap_plugin.py', module_name='bootstrap_plugin'
+)
 
 read_state = _mod.read_state
 write_state = _mod.write_state
