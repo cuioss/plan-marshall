@@ -87,7 +87,7 @@ Version-controlled rather than machine-local is deliberate, and is the same argu
 
 == Two constraints the decision carries forward
 
-*Extension collision.* `extensionToLanguage` binds by file extension, and the documented behaviour when several enabled servers claim one extension is that the first registered wins and the others never start. A `.md` registration could therefore shadow a user's own Markdown server. This is the concrete reason opt-in must be default-off rather than a flag consulted after the extension is already claimed — and, as the next section records, it is what decided that the declaration is not shipped at all.
+*Extension collision.* `extensionToLanguage` binds by file extension, and the documented behaviour when several enabled servers claim one extension is that the first registered wins and the others never start. A `.md` registration could therefore shadow a user's own Markdown server. This is the concrete reason opt-in must be default-off rather than a flag consulted after the extension is already claimed — and, as "The declaration is documented, not shipped" below records, it is what decided that the declaration is not shipped at all.
 
 *Diagnostics stay withheld.* No diagnostic capability is advertised. The validator's unresolved set is presently about 97% false positives — documentation placeholders, foreign namespaces such as build-command and Maven coordinates, and notations whose third segment is a subcommand rather than a script. Advertising a diagnostic provider before that precision work lands would ship confidently wrong warnings at the substrate's most visible surface.
 
