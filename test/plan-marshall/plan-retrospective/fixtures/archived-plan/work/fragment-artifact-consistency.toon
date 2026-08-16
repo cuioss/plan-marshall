@@ -19,3 +19,5 @@ details:
     found: 3
     missing[0]:
     recall_pct: 100.0
+    footprint_resolved: true
+    read_intent_excluded: 0

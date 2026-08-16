@@ -7,7 +7,9 @@ Derived from source by sweeping every call to the three derivation primitives �
 a read of `references.realized_footprint` / `references.modified_files`, and the shared
 `_footprint_resolver.resolve_footprint` — then classifying each caller as provider, grading reader, or
 deciding composer. It is not the set of sites the plan named: the plan named three surfaces, and the
-sweep found **eleven** grading/deciding sites across **six** bundles' skills.
+sweep found **eleven** grading/deciding sites across **seven** skills — `plan-retrospective`,
+`phase-5-execute`, `manage-execution-manifest`, `script-shared`, `manage-config`, `build-pyproject`,
+and `manage-tasks` — all within the single `plan-marshall` bundle.
 
 ## Counts
 
@@ -73,13 +75,22 @@ merge gate at order **70** and declares `destroys: [worktree]`; the retrospectiv
 `post_run_review` step in the **900–999** band (existing members cluster at 990–999). The worktree is
 therefore destroyed roughly 900 order-units before the step that reads it.
 
-The plan's ⚠ asks whether that order is the DEFAULT or per-plan, because a per-plan order would
-narrow the "fires on every plan" claim and shrink D5. It is the **DEFAULT**, and structurally so: the
-bands are a fixed contract in `extension-api/standards/finalize-step-order-bands.md`, the merge gate's
-slot is "Shared bundle (fixed)" and "not a member of any insertable band", and the band contract
-states the rule this violates in its own words — *"a step that `reads: [worktree]` is mis-ordered if
-it runs after the gate."* So the claim holds unnarrowed, and D5's scope was not reduced on this
-ground.
+The plan's ⚠ asks whether that **order** is the DEFAULT or per-plan, because a per-plan order would
+narrow the claim and shrink D5. The order is the **DEFAULT**, and structurally so: the bands are a
+fixed contract in `extension-api/standards/finalize-step-order-bands.md`, and the merge gate's slot is
+"Shared bundle (fixed)", "not a member of any insertable band". The band contract even names this
+shape as a defect — *"a step that `reads: [worktree]` is mis-ordered if it runs after the gate"* —
+though note that rule keys on a **declaration** the retrospective does not make: it reads the worktree
+via `resolve_live_worktree` while declaring no `reads: [worktree]`, so the checkable-fact machinery
+would not currently catch this ordering. The substance holds; the enforcement does not reach it.
+
+**But the "fires on every plan" claim IS narrowed, on a different axis than the plan anticipated.**
+The ordering is universal; the *step* is not. `plan-retrospective` declares `default_on: false`,
+`presets: [full]`, and `lane.class: prunable`, so it runs only where the preset or lane selects it.
+D5's affected population is therefore bounded by the plans that actually ran the retrospective, not by
+all archived plans — a bound this run cannot quantify, because the corpus is unreachable (D5). Recorded
+here rather than left implicit: the plan's polarity note assumed the defect "fires identically on
+every plan", and that is true of the *ordering*, not of the *step*.
 
 What discharges cause 1 is not a re-ordering but two remedies already landed on `main` by sibling
 plans, which this run verified rather than rebuilt:
@@ -101,10 +112,20 @@ scored *"Recall 40% below 70% threshold"* — unpassable by construction, on a p
 
 **Why the trap was real.** Cause 1 was already fixed when this run began. A run that read the plan as
 an ordering fix would have found the ordering remedies in place, reported success, and shipped
-nothing — while cause 2 stayed live on **every** plan declaring a read-intent file. That population is
-not marginal: `manage-solution-outline` *requires* an intent marker on every declared path
-(`manage-solution-outline.py` Check 3b), so every validated outline carries intents. The green from
-cause 1 is exactly what would have destroyed the evidence for cause 2.
+nothing — while cause 2 stayed live. The green from cause 1 is exactly what would have destroyed the
+evidence for cause 2.
+
+**What is and is not established about cause 2's population.** `manage-solution-outline` Check 3b
+(`manage-solution-outline.py`) *requires* a valid intent marker on every declared path, so every
+**validated** outline carries markers. That establishes the mechanism is reachable — it does **not**
+establish how many plans are affected, because the affected set is outlines declaring at least one
+`(read)`, which this run did not measure and cannot measure here (the corpus is D5-blocked). Two
+further caveats cut against assuming the population is large: the graded corpus is not confined to
+validated outlines (this tree's own archived fixture,
+`test/plan-marshall/plan-retrospective/fixtures/archived-plan/solution_outline.md`, carries no intent
+markers at all), and the retrospective is opt-in (above). **No count is claimed.** The defect is
+established by construction — a read-intent declaration cannot appear in a diff — not by a frequency
+argument.
 
 ## The one line, repeated
 

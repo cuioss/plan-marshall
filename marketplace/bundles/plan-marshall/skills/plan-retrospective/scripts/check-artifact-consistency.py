@@ -61,6 +61,7 @@ from _plan_parsing import (
     parse_document_sections,
     split_deliverable_blocks,
 )
+from constants import STEP_INTENT_READ, VALID_STEP_INTENTS
 from extension_discovery import find_implementors
 from file_ops import base_path, output_toon, safe_main
 from input_validation import (
@@ -106,47 +107,61 @@ _RECALL_THRESHOLD = 0.70
 # previously-parsing forms — ``- src/a.py (New file)``, ``- src/mod(1).py``, and
 # ``- src/a.py (read) - trailing prose`` — into hard errors. Intent extraction
 # therefore happens in :func:`_split_intent_suffix`, never by constraining what
-# the path may contain.
+# the path may contain; that function also guarantees a non-empty path, so a
+# bullet cannot be dropped by reducing to nothing either.
 _AFFECTED_FILE_BULLET_RE = re.compile(
     r'^[ \t]*-[ \t]+(?:`(?P<quoted>[^`\n]+)`(?P<qtail>[^\n]*)|(?P<bare>[^`\n]+?))[ \t]*$',
     re.MULTILINE,
 )
 
-#: A trailing ``(intent)`` marker on a bare bullet body. Only an all-lowercase
-#: parenthesised token at the very END of the body is an annotation; anything
-#: else — ``(New file)``, ``mod(1).py``, a parenthetical mid-line — stays part of
-#: the path and yields no intent, exactly as before intents were read.
-_BARE_INTENT_SUFFIX_RE = re.compile(r'^(?P<head>.*?)[ \t]*\((?P<intent>[a-z-]+)\)$')
+#: A trailing marker on a BARE bullet body, e.g. ``src/a.py (read)``. ``head`` is
+#: ``.+?`` — non-empty by construction — so a body that is ENTIRELY a
+#: parenthetical (``- (none)``) keeps its whole text as the path instead of
+#: reducing to an empty one, which the caller would drop as if the bullet had
+#: never matched.
+_BARE_INTENT_SUFFIX_RE = re.compile(r'^(?P<head>.+?)[ \t]*\((?P<intent>[a-z-]+)\)$')
 
-#: A leading ``(intent)`` marker in the text following a backticked path.
+#: A leading marker in the text following a BACKTICKED path, e.g.
+#: ``` `src/a.py` (read) ```. The backticks already delimit the path, so this
+#: anchors at the start of the tail and tolerates any trailing prose after the
+#: marker.
 _QUOTED_INTENT_PREFIX_RE = re.compile(r'^[ \t]*\((?P<intent>[a-z-]+)\)')
 
 
 def _split_intent_suffix(quoted: str | None, qtail: str | None, bare: str | None) -> tuple[str, str | None]:
     """Return ``(path, intent)`` for one matched bullet.
 
-    Intent is read WITHOUT narrowing what a path may contain, so no bullet that
-    parsed before an intent was looked for stops parsing now. A parenthetical
-    that is not an all-lowercase token is left in the path untouched.
+    A parenthetical is a marker ONLY when its token is in the closed
+    :data:`VALID_STEP_INTENTS` vocabulary. Accepting any lowercase token instead
+    would truncate ordinary paths — ``reports/summary(final)`` to
+    ``reports/summary``, ``doc/notes (draft)`` to ``doc/notes`` — silently
+    changing which declared path is compared against the footprint. Anything that
+    is not a declared intent stays part of the path, exactly as before markers
+    were read.
+
+    The two bullet forms locate the marker differently, and that is a property of
+    the forms rather than an inconsistency to paper over: a backticked path is
+    already delimited, so its marker is read from the START of the tail and any
+    trailing prose is ignored; a bare path has no delimiter, so its marker must
+    END the body or it cannot be told from the path.
     """
     if quoted is not None:
         marker = _QUOTED_INTENT_PREFIX_RE.match(qtail or '')
-        return quoted.strip(), (marker.group('intent') if marker else None)
+        intent = marker.group('intent') if marker else None
+        return quoted.strip(), (intent if intent in VALID_STEP_INTENTS else None)
 
     body = (bare or '').strip()
     marker = _BARE_INTENT_SUFFIX_RE.match(body)
-    if marker:
+    if marker and marker.group('intent') in VALID_STEP_INTENTS:
         return marker.group('head').strip(), marker.group('intent')
     return body, None
+
 
 #: The one declared intent that names a NON-modification. A path declared with
 #: this intent is expected to be read, never written, so it can never appear in
 #: the realized footprint and must not enter a recall denominator or an
-#: exact-match comparison. Mirrors ``STEP_INTENT_READ`` in the ``tools-file-ops``
-#: constants module, which is the vocabulary's single source of truth; it is
-#: restated (not imported) because this retrospective script parses outline prose
-#: rather than validated task records.
-_READ_INTENT = 'read'
+#: exact-match comparison.
+_READ_INTENT = STEP_INTENT_READ
 
 
 def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | None) -> Path:
@@ -384,10 +399,16 @@ def check_affected_files_recall(
             'fail',
             f'Affected files heading present but no bullet parsed for deliverable(s): {named}',
             {
-                # This verdict is derived from the UNFILTERED bullets, so it
-                # reports the unfiltered count. Publishing the filtered one here
-                # would describe a population the verdict never consulted.
-                'declared': len(all_declared),
+                # ``declared`` means the SAME thing on every branch — the
+                # modification-intent count — so the identity
+                # ``declared + read_intent_excluded == total bullets`` holds
+                # everywhere and a consumer can reconstruct the unfiltered
+                # population without knowing which branch produced the verdict.
+                # This verdict is nonetheless derived from the UNFILTERED
+                # bullets, so that population is published under its own name
+                # rather than by overloading ``declared``.
+                'declared': len(declared),
+                'declared_unfiltered': len(all_declared),
                 'deliverables': len(deliverables),
                 'unparseable_deliverables': [state['number'] for state in unparseable],
                 'read_intent_excluded': read_intent_excluded,

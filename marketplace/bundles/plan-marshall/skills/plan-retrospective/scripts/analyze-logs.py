@@ -218,12 +218,21 @@ def resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> list[str] |
     3. **Merge-commit** — ``references.merge_commit_sha`` resolved via
        :func:`_footprint_resolver.resolve_merge_commit_footprint` (``git diff
        {sha}^1 {sha}``). A post-merge-only fallback below the deterministic capture.
-    4. **Legacy key** — fall back to ``references.modified_files`` when present
-       (archived plans created before the ledger was removed still carry it).
-    5. **Unresolvable** — when nothing resolves, return ``None``. The regression
-       check then reports the gap instead of grading it: it neither fires (which
-       would be a finding derived from an input nobody measured) nor passes
-       silently (which would present an un-run check as a clean one).
+    4. **Legacy key** — ``references.modified_files`` via
+       :func:`_footprint_resolver.read_legacy_footprint`, which owns both the
+       ``SHIM(B)`` declaration for the key and the absent-vs-present-but-empty
+       distinction (archived plans created before the ledger was removed still
+       carry it).
+    5. **Unresolvable** — when nothing resolves, return
+       :data:`_footprint_resolver.FOOTPRINT_UNRESOLVED`. The regression check
+       then reports the gap instead of grading it: it neither fires (which would
+       be a finding derived from an input nobody measured) nor passes silently
+       (which would present an un-run check as a clean one).
+
+    Every resolved tier returns a **sorted, de-duplicated** list. Tier 4 shares
+    that shape now that it comes from the shared helper (it previously preserved
+    the key's raw order and any duplicates), so ``len(footprint)`` counts
+    distinct paths on every tier rather than only on tiers 1-3.
 
     Archived mode passes ``plan_id=None`` and therefore skips tier 1 entirely:
     an archived plan's recorded worktree names a directory finalize has already
@@ -276,7 +285,7 @@ def resolve_footprint(plan_dir: Path, plan_id: str | None = None) -> list[str] |
     if legacy is not None:
         return sorted(legacy)
 
-    return None
+    return FOOTPRINT_UNRESOLVED
 
 
 def read_log(path: Path) -> list[str]:

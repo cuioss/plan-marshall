@@ -203,6 +203,36 @@ class TestIntentCaptureNeverBreaksParsing:
         assert _cac.extract_affected_files_per_deliverable(outline) == ['src/a.py']
         assert _cac.extract_modification_intent_files(outline) == ['src/a.py']
 
+    def test_a_bullet_that_is_entirely_a_parenthetical_still_parses(self):
+        """``- (none)`` must not reduce to an empty path and vanish.
+
+        An entry whose path reduces to '' is dropped by the caller, which is
+        observationally identical to the bullet never matching — the same hard
+        `fail` at severity error, reached by a different route.
+        """
+        content = (
+            '# Solution\n\n## Summary\n\ns\n\n## Overview\n\no\n\n## Deliverables\n\n'
+            '### 1. One\n\n**Affected files:**\n- (none)\n- (read)\n'
+        )
+        assert _cac.extract_affected_files_per_deliverable(content) == ['(none)', '(read)']
+
+    def test_only_a_declared_intent_token_is_treated_as_a_marker(self):
+        """A lowercase parenthetical that is not in the vocabulary is part of the path.
+
+        Accepting any ``[a-z-]+`` token silently truncated ordinary paths, which
+        changes which declared path is compared against the footprint.
+        """
+        content = (
+            '# Solution\n\n## Summary\n\ns\n\n## Overview\n\no\n\n## Deliverables\n\n'
+            '### 1. One\n\n**Affected files:**\n'
+            '- reports/summary(final)\n- doc/notes (draft)\n- src/a.py (delete)\n'
+        )
+        assert _cac.extract_affected_files_per_deliverable(content) == [
+            'reports/summary(final)',
+            'doc/notes (draft)',
+            'src/a.py',
+        ]
+
     def test_backticked_path_keeps_trailing_prose_tolerance(self):
         content = (
             '# Solution\n\n## Summary\n\ns\n\n## Overview\n\no\n\n## Deliverables\n\n'
@@ -284,8 +314,13 @@ class TestReadIntentExcludedIsPublishedOnEveryBranch:
         assert status == 'inconclusive'
         assert details['read_intent_excluded'] == 1
 
-    def test_published_on_the_unparseable_fail_branch_with_the_unfiltered_count(self, tmp_path):
-        """That verdict reads the UNFILTERED bullets, so it reports the unfiltered count."""
+    def test_published_on_the_unparseable_fail_branch(self, tmp_path):
+        """That verdict reads the UNFILTERED bullets, published under its own name.
+
+        ``declared`` keeps one meaning on every branch so the reconstruction
+        identity holds; the unfiltered population it actually consulted is
+        reported as ``declared_unfiltered`` rather than by overloading it.
+        """
         outline = (
             '# Solution\n\n## Summary\n\ns\n\n## Overview\n\no\n\n## Deliverables\n\n'
             '### 1. One\n\n**Affected files:**\n\n### 2. Two\n\n'
@@ -298,7 +333,23 @@ class TestReadIntentExcludedIsPublishedOnEveryBranch:
         )
 
         assert status == 'fail'
-        assert details['declared'] == 1, 'the unfiltered count, matching the verdict'
+        assert details['declared'] == 0
+        assert details['declared_unfiltered'] == 1
+        assert details['read_intent_excluded'] == 1
+
+    def test_published_on_the_unreadable_references_fail_branch(self, tmp_path):
+        """The branch round 1 added the key to but never asserted."""
+        outline = _outline([('src/w.py', 'write-new'), ('src/r.py', 'read')])
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        (plan_dir / 'references.json').write_text('{not json', encoding='utf-8')
+
+        status, message, details = _cac.check_affected_files_recall(
+            outline, plan_dir, _ONE_DELIVERABLE
+        )
+
+        assert status == 'fail'
+        assert 'references.json unreadable' in message
         assert details['read_intent_excluded'] == 1
 
     def test_published_on_the_no_declaration_skip_branch(self, tmp_path):
@@ -308,11 +359,27 @@ class TestReadIntentExcludedIsPublishedOnEveryBranch:
         )
         plan_dir = _plan_dir(tmp_path, ['src/a.py'])
 
+        status, _message, details = _cac.check_affected_files_recall(
+            outline, plan_dir, _ONE_DELIVERABLE
+        )
+
+        assert status == 'skip'
+        assert details['read_intent_excluded'] == 0
+
+    def test_the_reconstruction_identity_holds_on_every_branch(self, tmp_path):
+        """``declared + read_intent_excluded`` recovers the unfiltered total.
+
+        The identity is what makes the key useful; a branch where ``declared``
+        silently means something else double-counts.
+        """
+        outline = _outline([('src/w.py', 'write-new'), ('src/r.py', 'read')])
+        plan_dir = _plan_dir(tmp_path, ['src/w.py'])
+
         _status, _message, details = _cac.check_affected_files_recall(
             outline, plan_dir, _ONE_DELIVERABLE
         )
 
-        assert details['read_intent_excluded'] == 0
+        assert details['declared'] + details['read_intent_excluded'] == 2
 
 
 class TestExactMatchSharesTheFilteredDenominator:

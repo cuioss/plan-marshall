@@ -15,7 +15,7 @@ This standard codifies the decision matrix used by `manage-execution-manifest co
 | `affected_files_count` | `references.json::affected_files` length | int (≥0) |
 | `commit_and_push` | `manage-config plan phase-5-execute get --field commit_and_push` | bool (default: `true`) |
 | `build_map_globs` | derived from `marshal.json::build.map` — the union of every entry's `glob` across all domains | list[string] (default: empty when build_map absent) |
-| `live_footprint` | derived on demand from the worktree (`{base}...HEAD` ∪ porcelain via `compute_plan_branch_diff`); empty before the worktree is materialized | list[string] (default: empty) |
+| `live_footprint` | derived on demand from the worktree (`{base}...HEAD` ∪ porcelain via `compute_plan_branch_diff`); **`None` — unresolvable — before the worktree is materialized, never empty** | list[string] \| None |
 | `phase_5_candidates` | `marshal.json::plan.phase-5-execute.verification_steps` (phase-aware list-field — see [Phase-aware step source](#phase-aware-step-source)) | list[string] |
 | `phase_6_candidates` | `marshal.json::plan.phase-6-finalize.steps` | list[string] |
 | `live_footprint` (canonical-verify gate) | derived on demand from the worktree via `_resolve_footprint` (**`None` — unresolvable — before the worktree is materialized, never empty**; see the three-state contract below) | list[string] \| None |
