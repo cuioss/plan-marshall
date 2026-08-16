@@ -569,6 +569,37 @@ Then:
   dismissed finding is still evidence.
 - Every finding, accepted or rejected, goes in the run report (§ Report).
 
+### When the loop stops
+
+"Re-dispatch until a round finds nothing" is not a terminating rule, and a run that adopts it will
+not stop. An observed run ran **twelve** rounds; **eleven** of them found a defect in the previous
+round's fix, and the count was still not falling. That is not a pathology of that run — a
+verification round can always probe one more mutation, one more boundary, one more restatement, so
+the space it draws from is effectively unbounded and "nothing found" is not a state it reaches.
+
+So the rule is about the **class of what survives**, not the absence of findings:
+
+> The loop MAY stop when every finding still open is either (a) **proved equivalent** — it cannot
+> change the deliverable's behaviour, with the proof stated — or (b) **individually characterised as
+> unable to affect the deliverable's decision output**, each named in the report with its witness and
+> its error direction. Anything that can still change that output earns another round.
+
+Two constraints on applying it:
+
+- **A survivor is disclosed per instance, never in bulk.** "Some low-severity mutants remain" is not
+  a characterisation; the report names each one, what it would do, and in which direction it errs.
+  A survivor nobody can point to has not been assessed, it has been skipped.
+- ⛔ **The stop verdict is the VERIFIER's to state, not the author's.** Dispatch the round with an
+  explicit instruction to classify its findings — behavioural versus records-and-prose — and to say
+  plainly that finding nothing is a legitimate and expected outcome, so the classification is not
+  biased toward manufacturing work. Then honour the answer. The author is the party motivated to
+  stop, and in the run above **three** of the tests written to close previously-found gaps were
+  themselves vacuous: they passed against the fixed code *and* against the defect they named. An
+  author polling their own work for permission to stop will get it.
+
+Record in the report which round stopped the loop and on which of (a)/(b) each remaining survivor
+rests.
+
 **A fix is a change, so it gets the same beyond-diff sweep the original change got.** The sweep above
 is written against the diff under review; by the second round the diff under review is largely the
 *previous round's fixes*, and the sweep that matters is over what those fixes made false elsewhere. So
@@ -1082,7 +1113,7 @@ that its artifact exists on disk:
 | 4 Per-commit gate | Every commit touching `*.py` was preceded by a clean quality gate — a `total_issues: 0` / empty `errors[]` executor log, or the direct `./pw` tools each reporting clean (`ruff`/`mypy`/SPDX passed) |
 | 4 Pushed | No unpushed commit remains (`git status -sb` reports no `ahead`) |
 | 5 Build gate | Report states the git-derived Python-change verdict and the build outcome |
-| 6 Verification sub-agent | Findings and dispositions in the report |
+| 6 Verification sub-agent | Findings and dispositions in the report, plus the round that stopped the loop and the basis each remaining survivor rests on (§ Step 6, "When the loop stops") |
 | 7 PR cycle | PR exists; every comment dispositioned in the report; the participation table carries a verdict **and** a `Reopens?` value per reviewer, and every `silent` verdict records what its recovery check found |
 | 8 Merge gate | Conditions 1–3 met and auto-merge armed. Either `state: MERGED` was confirmed after arming, **or** the session could not self-wake to watch the queue (§ Cloud session affordances) and delegated the landing to the orchestrator's collect — both are completed, neither is partial (§ Step 8). The merge commit is recorded to the operator, not in the pre-merge report |
 | 8 Bridge | No **status or bookkeeping** write landed under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan's directory was touched; a **declared-deliverable** edit to a shared lane doc (e.g. `cloud-bridge.md`, `README.md`, the plan template) is permitted — and the report carries the PR number and per-deliverable outcome the orchestrator will collect from |
@@ -1170,6 +1201,11 @@ The `git diff --name-only origin/main...HEAD -- '*.py'` verdict, and the build r
 Every finding from the verification sub-agent, from CI, and from PR review — each with source,
 description, and disposition (fixed / rejected-with-reason / deferred). An empty section states
 what was checked to reach it.
+
+State which round stopped the verification loop, and for each survivor still open at that point,
+whether it rests on (a) proved-equivalent or (b) characterised-as-unable-to-affect-the-decision-output
+— with its witness and error direction (§ Step 6, "When the loop stops"). A survivor named in bulk is
+not disclosed.
 
 ## Reviewer participation
 The expected reviewer population **derived from configuration** — the `author_login` of each
