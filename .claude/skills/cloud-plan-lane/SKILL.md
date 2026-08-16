@@ -571,7 +571,9 @@ Then:
   and separately-justified case (§ "When the loop stops", at the end of this step).
 - **Findings you reject** → record the finding *and the reason for rejecting it* in the report. A
   dismissed finding is still evidence.
-- Every finding — fixed, rejected, or left open as a survivor — goes in the run report (§ Report).
+- Every finding — fixed, rejected-with-reason, deferred to a named follow-up, or left open as a
+  **survivor** — goes in the run report (§ Report). A *deferred* finding is real and unfixed here;
+  a *survivor* is one the run argues needs no fixing at all (§ "When the loop stops").
 
 **A fix is a change, so it gets the same beyond-diff sweep the original change got.** The sweep above
 is written against the diff under review; by the second round the diff under review is largely the
@@ -686,40 +688,46 @@ report's own findings table.
 
 ### When the loop stops
 
-"Re-dispatch until a round finds nothing" is not a terminating rule. A verification round can always
-probe one more mutation, one more boundary, one more restatement, so the space it draws from is
-effectively unbounded. An observed run ran **twelve** rounds and **eleven** of them found a defect in
-the previous round's fix; its own conclusion was that *"no findings" is not a state this process
-reaches*.
+"Re-dispatch until a round finds nothing" is not a terminating rule: a round can always probe one
+more mutation, one more boundary, one more restatement. An observed run reached **twelve** rounds,
+eleven of which found a defect in the previous round's fix, and concluded that *"no findings" is not
+a state this process reaches*.
 
-So the loop stops on the **character of what is left open**, and the bar is deliberately high:
+Three conditions end it, in order.
 
-> The loop MAY stop when every finding the run has NOT fixed is either
-> **(a) proved equivalent** — it cannot change the deliverable's behaviour at all, with the proof
-> stated — or **(b) bounded** — it can only reach behaviour the deliverable does not promise, with
-> the bound stated and the promise it stays outside of named.
-> Anything else is fixed before the loop stops.
+**1 — Nothing false is left.** A finding that some STATEMENT is false — a comment, a docstring, a
+bundle doc, a test's own description, a report figure, the PR description — is **never** a survivor,
+wherever it lives and whether or not it executes. Those are fixed. This step's beyond-diff sweep and
+its ⛔ on invented rationales exist to produce exactly these findings, and a stop rule that let them
+ship would cancel both.
 
-"What the deliverable promises" is whatever the plan said it would do, in the plan's own terms — a
-verdict a caller routes on, an output contract, an invariant the deliverable publishes. Naming it is
-part of the record, because a bound is meaningless without the thing it is a bound on.
+**2 — Everything left open is characterised.** For a finding about BEHAVIOUR under some input — a
+mutant, an edge case, a shape no test covers — the loop may leave it open only as a **survivor**, and
+only when the run can state either
 
-⛔ **A defect in the run's own records is never a survivor.** A stale figure, a disposition the
-artifacts contradict, a false claim in the report or the PR description — these are cheap to fix and
-this step already requires them true (§ "The run report is part of that surface"). They are fixed, not
-characterised. A run that stops with a known-false record has not met this rule; it has exempted
-itself from a different one.
+> **(a)** a proof that it cannot change what the deliverable does, or
+> **(b)** the bound on what it *can* reach, and the promise it stays outside of — that promise named
+> in the plan's own terms.
 
-**Survivors are disclosed per instance.** "Some low-severity mutants remain" is not a
-characterisation. A survivor nobody can point to has been skipped, not assessed.
+Survivors are listed individually; a bulk mention is not a disclosure. And **every survivor still
+open is re-put to the verifier each round**, not only the ones that round happened to re-find: the
+survivor nobody re-reads is the one whose characterisation goes stale, which is how one run's
+accepted survivors turned out to be mis-described three rounds later.
 
-⛔ **The stop verdict is the VERIFIER's, not the author's.** The dispatch checklist above asks the
-round the stop question directly; a **no** permits the stop and a **yes** earns another round. Ask it
-of the verifier and honour the answer either way. The author is the party motivated to stop, and in
-the run above **three** of the tests written to close previously-found gaps were themselves vacuous —
-they passed against the fixed code *and* against the defect they named. An author polling their own
-work for permission to stop will get it.
+**3 — The verifier says so.** ⛔ **The stop verdict is the VERIFIER's, not the author's.** The
+dispatch checklist above puts the stop question to the round directly; a **no** permits the stop, a
+**yes** earns another. Honour the answer either way. The author is the party motivated to stop, and
+in the run above **three** of the tests written to close previously-found gaps were themselves
+vacuous — they passed against the fixed code *and* against the defect they named. An author polling
+their own work for permission to stop will get it.
 
+**When the loop does not converge.** Conditions 1–3 can fail round after round; on the run above they
+still had not been met at round twelve. A loop that is not converging is not a reason to keep
+spending silently, and not a licence to stop silently either. **Escalate.** A run with a reachable
+operator asks (§ "Rules that outrank convenience"); a **headless** run stops, discloses every
+still-open finding per instance together with what closing it would take, and records
+non-convergence as the reason it stopped. Either way the decision is on the record and is not the
+author's alone.
 
 ## GitHub access
 
@@ -1217,8 +1225,9 @@ Then the stop record (§ Step 6, "When the loop stops"):
 - which round stopped the loop, and **the verifier's own answer to the stop question** — the run does
   not assert the stop on its own authority;
 - one row per **survivor**, each either (a) proved equivalent, with the proof, or (b) bounded, with
-  the bound and the promise it stays outside of. Survivors are listed individually; a bulk mention is
-  not a disclosure.
+  the bound and the promise it stays outside of;
+- when the loop stopped without meeting those conditions, that it stopped on **non-convergence**, and
+  what closing each still-open finding would take.
 
 A run that fixed everything says so, and has no survivor rows.
 
