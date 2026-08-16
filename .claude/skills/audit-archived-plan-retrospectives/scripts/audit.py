@@ -130,7 +130,9 @@ suite of deterministic checks:
   merge-mutex + FIFO admission-queue window by bucketing the global
   `[LOCK] (merge:*)` lifecycle lines by `lock_id` (= plan_id); reports per-plan
   acquire/release/blocked/reclaim counts + max FIFO `waiting_count` and flags
-  `merge_contention` when a plan waited behind the queue front.
+  `merge_contention` when a plan waited behind the queue front. Reports
+  `unmeasured` — never a zero contention count — when no lock timeline existed to
+  read.
 - `lane-lever-effectiveness` (cross-plan) — the CHECKPOINT MEASUREMENT ARM of the
   token-optimization roadmap. Measures whether the cost-reducing lane levers
   (recipe auto-routing, the light planning lane, the minimal execution posture,
@@ -7489,25 +7491,74 @@ _LOCK_MERGE_RE = re.compile(
 )
 _LOCK_WAITING_RE = re.compile(r"^\s*waiting_count:\s*(?P<n>\d+)")
 
+#: The `[LOCK]` lifecycle log's filename shape — `_locks_core.log_lock_event`
+#: writes `lock-{date}.log`.
+_LOCK_LOG_GLOB = "lock-*.log"
+
+#: The global-log roots the `[LOCK]` lifecycle log can land in, in scan order.
+#:
+#: These are two DIFFERENT directories, and the distinction is the reason this
+#: check reported a permanent zero. `manage-locks/_locks_core._resolve_lock_log_path`
+#: resolves the main-anchored `.plan/local` base and then steps to its PARENT
+#: before appending `logs/`, so the lock timeline is written to `.plan/logs/`.
+#: Every other global log — and this check's original scan — uses
+#: `file_ops.get_base_dir() / logs`, which is `.plan/local/logs/`. The emitter was
+#: never absent; the scan was looking one directory up from it, so no corpus could
+#: ever produce a merge event and the check's zero was structural.
+#:
+#: Both roots are scanned rather than one being declared correct. Reconciling the
+#: two paths is the lock skill's surface, not this check's: an auditor that reads
+#: only where it believes the producer *should* write is the same defect in the
+#: other direction. This scan follows the data.
+_LOCK_LOG_ROOTS = ((".plan", "logs"), (".plan", "local", "logs"))
+
+
+def _merge_window_log_files(repo_root: Path) -> tuple[list[Path], bool]:
+    """Return `(files_to_scan, substrate_present)` for the merge-window scan.
+
+    `files_to_scan` is every `*.log` under either global-log root — the
+    lifecycle lines are matched by content, so a lock timeline appended to a
+    general log is still found.
+
+    `substrate_present` answers a DIFFERENT question, and the two must not be
+    conflated: did any `lock-*.log` exist to be read at all? It is the
+    discriminator between a measured zero (a lock timeline was read and recorded
+    no merge events — genuinely no contention) and an unmeasured one (no lock
+    timeline exists, so the corpus is silent about contention rather than
+    reporting none). Emitting `0` for the second is the defect this check carried.
+    """
+    files: list[Path] = []
+    substrate_present = False
+    for parts in _LOCK_LOG_ROOTS:
+        root = repo_root.joinpath(*parts).resolve()
+        try:
+            files.extend(sorted(root.glob("*.log")))
+            substrate_present = substrate_present or any(root.glob(_LOCK_LOG_GLOB))
+        except OSError:
+            continue
+    return files, substrate_present
+
 
 def cross_merge_window_accounting(
     all_inputs: list[PlanInputs], repo_root: Path
 ) -> dict[str, Any]:
     """Cross-plan merge-mutex admission-queue accounting from the global logs.
 
-    Scans the `[LOCK] (merge:*)` lifecycle lines across `.plan/local/logs/` and
-    buckets them by `lock_id` (= plan_id). Emits one row per plan in the scanned
-    corpus that recorded any merge-lock event, plus corpus totals. Best-effort: an
-    absent logs dir yields no rows.
+    Scans the `[LOCK] (merge:*)` lifecycle lines across both global-log roots
+    (see `_LOCK_LOG_ROOTS`) and buckets them by `lock_id` (= plan_id). Emits one
+    row per plan in the scanned corpus that recorded any merge-lock event, plus
+    corpus totals.
+
+    Carries `measured`: False when no `lock-*.log` substrate existed to read. The
+    caller reports that state as `unmeasured` rather than as a zero contention
+    count — "no lock timeline was recorded" and "a lock timeline was read and
+    showed no contention" are different claims, and only the second is a finding
+    about the corpus. Best-effort throughout: an absent logs dir yields no rows.
     """
     corpus_plan_ids = {i.plan_id for i in all_inputs}
     # per plan_id → {event_counts, max_waiting}
     acc: dict[str, dict[str, Any]] = {}
-    logs_dir = (repo_root / ".plan" / "local" / "logs").resolve()
-    try:
-        log_files = sorted(logs_dir.glob("*.log"))
-    except OSError:
-        log_files = []
+    log_files, substrate_present = _merge_window_log_files(repo_root)
     for log_file in log_files:
         try:
             lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -7560,7 +7611,11 @@ def cross_merge_window_accounting(
         "total_blocked": sum(int(r["blocked"]) for r in rows),
         "max_waiting_observed": max((int(r["max_waiting"]) for r in rows), default=0),
     }
-    return {"rows": rows, "corpus": corpus}
+    # A lock timeline that WAS read and named events is measured even if the
+    # `lock-*.log` probe missed the file the lines came from — evidence of the
+    # substrate beats the filename convention that usually carries it.
+    measured = substrate_present or bool(rows)
+    return {"rows": rows, "corpus": corpus, "measured": measured}
 
 
 def _merge_window_genuine(row: dict[str, Any]) -> bool:
@@ -7569,9 +7624,30 @@ def _merge_window_genuine(row: dict[str, Any]) -> bool:
 
 
 def emit_merge_window_accounting_block(result: dict[str, Any]) -> str:
-    """Emit the merge-window-accounting block with the D1 severity column."""
+    """Emit the merge-window-accounting block with the D1 severity column.
+
+    On an UNMEASURED run — no `[LOCK]` lifecycle substrate existed to read — the
+    block emits `status: unmeasured` with its reason and NO counts at all. The
+    counts are withheld rather than zeroed on purpose: a `contended_plans: 0` is
+    read as "the corpus had no merge contention", which is a claim this run cannot
+    make. Withholding them also keeps the block free of a `genuine_signal_count`,
+    so the retire-on-quiet streak reader (which advances only on a recorded zero)
+    treats the run as no evidence rather than as a quiet run — an unmeasured check
+    must never accumulate toward its own retirement.
+    """
     rows = result["rows"]
     corpus = result["corpus"]
+    if not result.get("measured", True):
+        return "\n".join(
+            [
+                "check: merge-window-accounting",
+                "status: unmeasured",
+                "unmeasured_reason: no [LOCK] lifecycle log found under any global-log "
+                "root — merge contention is unrecorded for this corpus, which is NOT "
+                "the same as no contention having occurred",
+                f"scanned_roots: {_cell(';'.join('/'.join(p) for p in _LOCK_LOG_ROOTS))}",
+            ]
+        ) + "\n"
     rows, genuine_signal_count = _severity_summary(rows, _merge_window_genuine)
     out = [
         "check: merge-window-accounting",
@@ -8549,9 +8625,14 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
         all_results["merge-window-accounting"] = mwa_result
         if "merge-window-accounting" in selected:
             blocks.append(emit_merge_window_accounting_block(mwa_result))
-            summary_metrics["merge-window-accounting_contended"] = mwa_result["corpus"][
-                "contended_plans"
-            ]
+            # Publish the contention count ONLY when it was measured. Persisting a
+            # 0 from an unmeasured run would seed the cross-run summary-metric
+            # history with a figure no data supports, and the report-diff reader
+            # cannot tell such a 0 from a real one after the fact.
+            if mwa_result.get("measured", True):
+                summary_metrics["merge-window-accounting_contended"] = mwa_result["corpus"][
+                    "contended_plans"
+                ]
 
     if "lane-lever-effectiveness" in selected or synth_needed:
         lle_result = cross_lane_lever_effectiveness(

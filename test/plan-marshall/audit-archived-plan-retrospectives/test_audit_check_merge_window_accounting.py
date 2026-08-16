@@ -2,11 +2,25 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """``merge-window-accounting`` — a blocked plan flags contention, an uncontended
 one is clean, a high waiting count flags, an out-of-corpus lock is still
-attributed, a reclaimed event is counted, and no logs yields no rows.
+attributed, a reclaimed event is counted, and an absent substrate is reported
+``unmeasured`` rather than as a zero contention count.
+
+The end-to-end cases drive the PRODUCTION emitter (``_locks_core.log_lock_event``)
+rather than synthesising ``[LOCK]`` text, because a suite that writes its own
+marker cannot detect the check reading a directory the emitter never writes to —
+which is exactly the state this check was in. ``log_lock_event`` resolves its path
+from the main-anchored base's PARENT (``.plan/logs/``) while the scan looked under
+``.plan/local/logs/``, so no real emission was ever in scan range and the check's
+zero was structural.
+
+Raw-text staging is kept only for the parser cases below, where a hand-built line
+is the point (queue-depth placement, an out-of-corpus lock id).
 """
 
+import importlib
 from pathlib import Path
 
+import _locks_core
 from _audit_fixtures import audit
 
 
@@ -15,6 +29,26 @@ def _write_merge_log(repo_root: Path, name: str, lines: str) -> None:
     logs_dir = repo_root / ".plan" / "local" / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     (logs_dir / name).write_text(lines, encoding="utf-8")
+
+
+def _emit_via_production(repo_root: Path, monkeypatch, events: list[tuple]) -> Path:
+    """Emit `[LOCK]` merge events through the production emitter.
+
+    Points ``PLAN_BASE_DIR`` at ``repo_root/.plan/local`` so
+    ``_locks_core._resolve_lock_log_path`` resolves exactly as it does in
+    production — the main-anchored base's parent plus ``logs/`` — and returns the
+    path it actually wrote. The return value is asserted on rather than assumed,
+    so a future change to where the emitter writes surfaces here instead of
+    silently taking the check back out of scan range.
+
+    Each event is ``(event, lock_id, fields)``.
+    """
+    base = repo_root / ".plan" / "local"
+    base.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("PLAN_BASE_DIR", str(base))
+    for event, lock_id, fields in events:
+        _locks_core.log_lock_event("merge", event, lock_id, **fields)
+    return _locks_core._resolve_lock_log_path()
 
 
 def _lock_inputs(repo_root: Path, *plan_ids: str) -> list:
@@ -112,12 +146,113 @@ def test_merge_window_attributes_out_of_corpus_lock(tmp_path):
     assert result["rows"][0]["in_corpus"] == "false"
 
 
-def test_merge_window_no_logs_yields_no_rows(tmp_path):
-    # Best-effort: an absent logs dir yields no rows and zeroed corpus totals.
+def test_merge_window_no_logs_is_unmeasured_not_zero(tmp_path):
+    # Best-effort: an absent logs dir yields no rows. The load-bearing assertion is
+    # `measured is False` — with no lock timeline to read, the corpus is SILENT
+    # about contention, which is not the same claim as "no contention occurred".
     result = audit.cross_merge_window_accounting(_lock_inputs(tmp_path, "planA"), tmp_path)
     assert result["rows"] == []
-    assert result["corpus"]["plans_with_merge_events"] == 0
-    assert result["corpus"]["max_waiting_observed"] == 0
+    assert result["measured"] is False
+
+
+def test_unmeasured_block_withholds_counts_and_says_why(tmp_path):
+    """The `unmeasured` state must be textually distinguishable from a zero."""
+    result = audit.cross_merge_window_accounting(_lock_inputs(tmp_path, "planA"), tmp_path)
+
+    block = audit.emit_merge_window_accounting_block(result)
+
+    assert "status: unmeasured" in block
+    assert "status: success" not in block
+    assert "unmeasured_reason:" in block
+    # The counts a reader would take as a health verdict are ABSENT, not zeroed.
+    assert "contended_plans:" not in block
+    assert "total_blocked:" not in block
+    # No genuine_signal_count means the retire-on-quiet streak reader records no
+    # quiet run for this check — an unmeasured run must not advance a detector
+    # toward its own retirement.
+    assert "genuine_signal_count:" not in block
+
+
+def test_lock_log_present_with_no_merge_events_is_a_measured_zero(tmp_path, monkeypatch):
+    """The other side of the discriminator: read substrate, genuinely no events.
+
+    Distinguishing this from the case above IS the deliverable — a zero that
+    cannot be told apart from "no data" is the defect.
+    """
+    log_path = _emit_via_production(tmp_path, monkeypatch, [("acquired", "planA", {})])
+    # Blank the timeline in place: the file (the substrate) exists and was read,
+    # and it names no merge event.
+    log_path.write_text("", encoding="utf-8")
+
+    result = audit.cross_merge_window_accounting(_lock_inputs(tmp_path, "planA"), tmp_path)
+
+    assert result["measured"] is True
+    assert result["rows"] == []
+    assert result["corpus"]["contended_plans"] == 0
+    block = audit.emit_merge_window_accounting_block(result)
+    assert "status: success" in block
+    assert "contended_plans: 0" in block
+
+
+def test_production_emitter_output_is_in_scan_range(tmp_path, monkeypatch):
+    """The end-to-end contract: what the lock primitive writes, the check reads.
+
+    Fails against a scan rooted only at `.plan/local/logs/`, which is where this
+    check looked while `log_lock_event` wrote to `.plan/logs/`.
+    """
+    log_path = _emit_via_production(
+        tmp_path,
+        monkeypatch,
+        [
+            ("blocked", "planA", {"waiting_count": 2}),
+            ("acquired", "planA", {"waiting_count": 0}),
+            ("released", "planA", {"waiting_count": 0}),
+        ],
+    )
+    # Pin WHERE production wrote, so a move out of scan range fails here.
+    assert log_path.parent == tmp_path / ".plan" / "logs"
+    assert log_path.parent in [
+        tmp_path.joinpath(*parts) for parts in audit._LOCK_LOG_ROOTS
+    ]
+
+    result = audit.cross_merge_window_accounting(_lock_inputs(tmp_path, "planA"), tmp_path)
+
+    assert result["measured"] is True
+    assert len(result["rows"]) == 1
+    row = result["rows"][0]
+    assert row["plan_id"] == "planA"
+    assert row["blocked"] == 1
+    assert row["acquired"] == 1
+    assert row["released"] == 1
+    assert row["max_waiting"] == 2
+    assert row["flags"] == "merge_contention"
+
+
+def test_production_emitter_line_shape_is_what_the_parser_matches(tmp_path, monkeypatch):
+    """Guard the marker text itself, not just the directory.
+
+    The regex is matched against a line the emitter produced, so a change to the
+    `[LOCK] ({lock}:{event}) {lock_id}` rendering breaks this rather than
+    silently returning the check to a permanent zero.
+    """
+    log_path = _emit_via_production(
+        tmp_path, monkeypatch, [("acquired", "plan-x", {"waiting_count": 4})]
+    )
+    line = next(
+        ln for ln in log_path.read_text(encoding="utf-8").splitlines() if "[LOCK]" in ln
+    )
+
+    match = audit._LOCK_MERGE_RE.search(line)
+
+    assert match is not None
+    assert match.group("event") == "acquired"
+    assert match.group("lock_id") == "plan-x"
+
+
+def test_locks_core_module_is_the_production_one():
+    """The emitter under test is production, not a test double."""
+    assert importlib.import_module("_locks_core") is _locks_core
+    assert _locks_core.__file__.endswith("manage-locks/scripts/_locks_core.py")
 
 
 def test_merge_window_reclaimed_event_counted(tmp_path):

@@ -5,6 +5,7 @@ stamp sourced from the single ``CHECK_ERA`` table, and the stamp is inserted
 after ``status`` without disturbing meta blocks.
 """
 
+import re
 
 from _audit_fixtures import audit, minimal_corpus
 
@@ -152,6 +153,19 @@ def test_full_run_stamps_every_check_block(tmp_path):
     output = audit.run_checks(inputs, list(audit.CHECK_NAMES), tmp_path)
 
     # Assert: every check block carries its fixed_since stamp right after status.
+    #
+    # The status VALUE is deliberately unconstrained here. `_stamp_era` inserts the
+    # stamp after whatever `status:` line the block carries, and a check whose
+    # substrate this corpus does not stage reports `unmeasured` rather than
+    # `success` — it must still be stamped. Pinning `success` would make this test
+    # fail for the honest state and pass only while every check pretends to have
+    # measured something, which is the reading the `unmeasured` state exists to
+    # end.
     for check in audit.CHECK_NAMES:
-        expected = f"check: {check}\nstatus: success\nfixed_since: {audit.CHECK_ERA[check]}"
-        assert expected in output, f"{check} missing its fixed_since stamp"
+        stamped = re.compile(
+            rf"^check: {re.escape(check)}\n"
+            rf"status: \S+\n"
+            rf"fixed_since: {re.escape(audit.CHECK_ERA[check])}$",
+            re.MULTILINE,
+        )
+        assert stamped.search(output), f"{check} missing its fixed_since stamp"
