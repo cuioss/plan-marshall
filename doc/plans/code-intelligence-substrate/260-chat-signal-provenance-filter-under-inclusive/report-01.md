@@ -1,6 +1,6 @@
 # Run report — 260-chat-signal-provenance-filter-under-inclusive (run 01)
 
-**Date (UTC):** 2026-08-16    **Branch:** `claude/chat-signal-provenance-filter-agmptk` (harness-assigned, kept as-is)    **PR:** _see Residue_    **Outcome:** completed
+**Date (UTC):** 2026-08-16    **Branch:** `claude/chat-signal-provenance-filter-agmptk` (harness-assigned, kept as-is)    **PR:** see **Merge gate** below    **Outcome:** completed
 
 ## Skills loaded
 
@@ -111,7 +111,7 @@ raw turns, so they are extra transcript entries counted by `gate_decision_count`
 
 ### D4 — tests
 
-**Done.** 95 tests across three modules (26 + 16 + 53 collected), carrying 209 assertions.
+**Done.** 111 tests across four modules (26 + 16 + 16 + 53 collected), carrying 226 assertions.
 
 | Plan requirement | Test |
 |---|---|
@@ -162,10 +162,10 @@ Per-commit gate: every commit touching `*.py` was preceded by a clean `./pw qual
 
 ## Findings
 
-Five verification rounds plus two defects caught by the run itself — 36 findings, 34 fixed and 2 rejected with reason. Each round targeted the
-**previous round's fixes** as a first-class surface, which is what caught most of these — three of the
-five rounds found that the prior round's fix had introduced or exposed a new defect. Recorded per
-instance.
+Six verification rounds plus two defects caught by the run itself — 53 findings, 51 fixed and 2 rejected with reason. Each round targeted the
+**previous round's fixes** as a first-class surface, which is what caught most of these — **four** of the
+six rounds found that the prior round's fix had introduced or exposed a new defect (rounds 2, 3, 4 and
+5). Recorded per instance.
 
 ### Self-caught during implementation (2 findings — both fixed)
 
@@ -190,7 +190,7 @@ Recorded because a finding is a finding regardless of who found it.
 | F7 | `reduced_turn_count` silently changed meaning, breaking `reduced + dropped == raw` for existing callers | **Fixed** |
 | F8 | A stray top-level unmatched tag suppressed envelope stripping for the rest of a turn — a fail-toward-**operator** path, the direction that manufactures the false clean verdict | **Fixed** — outermost-matched-pair rule |
 | F9 | Run report referenced a symbol the tokenizer commit had deleted | **Fixed** in this rewrite |
-| F10 | `parse_turn` has no production callers | **Rejected** — a documented public parsing-seam helper whose twelve boundary tests assert real behaviour; removing it is undeclared collateral the plan did not request. Recorded so the next reviewer does not re-open it blind |
+| F10 | `parse_turn` has no production callers | **Rejected** — a documented public parsing-seam helper whose ten boundary tests assert real behaviour; removing it is undeclared collateral the plan did not request. Recorded so the next reviewer does not re-open it blind |
 
 ### Round 2 (8 findings — all fixed)
 
@@ -229,6 +229,25 @@ Recorded because a finding is a finding regardless of who found it.
 | R4-5 | The coupling registry claimed `AskUserQuestion` lives only in the `_chat_*` modules; it is also in the reducer's `DECISION_MARKERS`, and that registry cites coupling by path | **Fixed** |
 | R4-6 | `test_extract_chat_signal_provenance.py` no longer tested provenance, which had moved to `test_chat_provenance.py` | **Fixed** — renamed to `test_extract_chat_signal_verdict.py` |
 
+### Round 6 (11 findings — all fixed)
+
+Scoped to the previous commit and asked to classify its own findings as behavioural vs. records-only.
+It classified **(a) behavioural**, so the loop continued rather than terminating here.
+
+| # | Finding | Disposition |
+|---|---|---|
+| R6-1 | `head = text.lstrip()` in `extract_gate_decisions` was unpinned and **not** an equivalent mutant. `flatten_tool_result` joins multi-block payloads with `\n`, so a leading empty block shifts a refusal notice off position zero; without the tolerance the decision is lost — under-counting operator signal, driving the verdict toward a false `no_signal: true`. The identical `lstrip()` on the provenance side *was* pinned; this run pinned one half of a pair | **Fixed** — mutant verified killed |
+| R6-2 | `if not text.strip():` in the same function was likewise unpinned and non-equivalent: a whitespace-only `AskUserQuestion` payload would count as a gate decision — the same defect class R5-2 had just closed on the provenance side | **Fixed** — mutant verified killed |
+| R6-3 | `flatten_tool_result`'s block-list branch had **zero** coverage (module at 76%); no test referenced the function, and the only fixture passed a bare string. That gap is what made R6-1 and R6-2 reachable rather than exotic | **Fixed** — new `test_chat_gate_decisions.py`, 16 tests |
+| R6-4 | The newly pinned non-whitespace rule was stated nowhere normative: the contract still said recovered text settles the question, unqualified. **The same defect as R4-2, reintroduced by the commit that fixed its neighbour** | **Fixed** — contract and docstring both qualified |
+| R6-5 | The report's aggregate finding count contradicted its own section sub-totals | **Fixed** |
+| R6-6 | `test_extract_chat_signal.py` line figure invalidated by the same commit that wrote it (566/+11 → 567/+12) | **Fixed** |
+| R6-7 | "twelve boundary tests" for `parse_turn`; there are ten, and there always were | **Fixed** |
+| R6-8 | The "what have we learned" evidence list attributed the quadratic hang and the self-poisoning counter to "the previous round's fix", though one was self-caught and the other was round 1. The same section then cited two round-5 rows as "rounds 4 and 5", and contradicted itself about round 4 across consecutive paragraphs | **Fixed** |
+| R6-9 | "three of the five rounds" understated — at least four rounds found a defect in the prior round's fix | **Fixed** |
+| R6-10 | `**PR:** _see Residue_` and the merge-gate contract row pointed at a Residue section containing neither | **Fixed** |
+| R6-11 | The build-gate record named a gate that pre-dated HEAD | **Fixed** — re-gated at HEAD |
+
 ### Round 5 (6 findings — 5 fixed, 1 rejected)
 
 | # | Finding | Disposition |
@@ -256,7 +275,7 @@ instead of leaving it to inference.
 
 | Item | Reason |
 |---|---|
-| `test_extract_chat_signal.py` is 566 lines, over the 400-line `test-module-line-budget` | **Pre-existing** (555 at merge-base). This run added 11 lines to it while splitting the *new* tests into modules that are within budget. The rule is warning-severity and does not gate the build, and 316 test modules in this tree already exceed it. Splitting a pre-existing over-budget module is unrelated maintenance the plan did not request — carried to Residue |
+| `test_extract_chat_signal.py` is 567 lines, over the 400-line `test-module-line-budget` | **Pre-existing** (555 at merge-base). This run added 12 lines to it while splitting the *new* tests into modules that are within budget. The rule is warning-severity and does not gate the build, and 316 test modules in this tree already exceed it. Splitting a pre-existing over-budget module is unrelated maintenance the plan did not request — carried to Residue |
 
 ## Reviewer participation
 
@@ -289,7 +308,7 @@ _Verdicts recorded below once the PR review cycle has run._
 | 5 Build gate | **Done** | Git-derived verdict (seven `*.py`) and full `./pw verify`, read in full rather than by exit code |
 | 6 Verification sub-agent | **Done** | Five rounds, each targeting the prior round's fixes; all findings and dispositions recorded above |
 | 7 PR cycle | See Reviewer participation |
-| 8 Merge gate | See Residue |
+| 8 Merge gate | See **Merge gate** below |
 | 8 Bridge | **Done** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory |
 | 9 This check | **Done** | This table |
 | 9 What have we learned | **Done** | Below |
@@ -310,14 +329,18 @@ not less.
 
 **One contract change is proposed, on evidence this run produced.**
 
-**The evidence.** Three of five verification rounds found that the *previous round's fix* had
-introduced or exposed a new defect — a quadratic hang, a self-poisoning counter, a vacuous test, an
-`__all__` that disowned its module's API, and a spec left behind by the code. The contract's § Step 6
-already says to sweep the previous round's fixes, and that instruction is what caught them. But the
-contract offers no way to tell when the loop should **stop**. This run ran five rounds; rounds 4 and 5
-returned progressively smaller findings (a dangling docstring reference, a denominator off by four),
-and nothing in the contract distinguishes "keep going, the surface is still hot" from "this is now
-costing more than it returns".
+**The evidence.** Four of six verification rounds found that the *previous round's fix* had introduced
+or exposed a new defect: a vacuous test masking a live fail-toward-operator path (R4-1), an `__all__`
+that disowned its module's API (N1), a notice check that vetoed an instruction the operator typed
+(N3), a spec left behind by its own code — twice, R4-2 and again R6-4 in the very commit that fixed
+R4-2's neighbour. The contract's § Step 6 already says to sweep the previous round's fixes, and that
+instruction is what caught every one of them.
+
+But the contract offers no way to tell when the loop should **stop**. This run ran six rounds. Round 6
+was dispatched with an explicit instruction to classify its findings as behavioural or records-only,
+and it returned **behavioural** — three unpinned non-equivalent mutants in a module sitting at 76%
+coverage — so the loop continued. That classification was improvised for this run; nothing in the
+contract asks for it.
 
 **The proposed change.** Add to § Step 6 a stated stopping rule — for example: *the loop may stop when
 a round's findings are confined to the run's own records and prose (report figures, docstrings,
@@ -326,10 +349,12 @@ explicitly in the report.* A round that finds a behavioural defect, however smal
 another.
 
 **Why it is worth adding.** Without it, each run improvises the termination decision, and the two
-failure modes are opposite and both bad: stopping while behavioural defects are still surfacing (round
-4 found a vacuous test masking a live fail-toward-operator path — stopping at round 3 would have
-shipped it), or looping indefinitely on prose. A stated rule makes the decision reviewable instead of
-a matter of the run's judgement.
+failure modes are opposite and both bad. Stopping too early ships defects: round 4 found a vacuous
+test masking a live fail-toward-operator path, so stopping at round 3 would have shipped it, and round
+6 found three unpinned non-equivalent mutants, so stopping at round 5 would have shipped those.
+Looping too long burns budget re-checking prose. A stated rule makes the decision reviewable instead
+of a matter of the run's judgement — and this run's own experience is that the rule has to be applied
+by the *verifier*, not the author, since the author is the party motivated to stop.
 
 **Not self-approved.** Per § Step 9 this is presented to the operator and NOT applied here; it would
 ship as its own `chore/` branch touching only the skill, without `skip-bot-review`. It is deliberately
@@ -338,12 +363,12 @@ properly.
 
 ## Residue
 
-- **`test_extract_chat_signal.py` is 566 lines**, over the warning-level 400-line
-  `test-module-line-budget` (555 at merge-base; this branch added 11). Pre-existing and unrelated to
+- **`test_extract_chat_signal.py` is 567 lines**, over the warning-level 400-line
+  `test-module-line-budget` (555 at merge-base; this branch added 12). Pre-existing and unrelated to
   the plan's brief — a follow-up should split it by behaviour cluster, as this run did for the modules
   it created.
 - **`parse_turn` has no production caller** (round-1 F10, rejected). Retained as a documented parsing
-  seam with twelve boundary tests. A future run may decide to fold it into `parse_message` +
+  seam with ten boundary tests. A future run may decide to fold it into `parse_message` +
   `extract_text`; recorded so the question is not re-opened from scratch.
 - **The envelope-less notice class remains an enumeration.** `HARNESS_NOTICE_PREFIXES` is a sample by
   construction, and a new tagless harness notice is a false *operator* until it is added — the
