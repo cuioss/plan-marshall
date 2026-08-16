@@ -28,7 +28,7 @@ from _manage_tasks_fixtures import (
 
 
 def test_add_first_task(plan_context):
-    """Add first task creates TASK-001."""
+    """Add first task creates ``TASK-001``."""
     toon = build_task_toon(
         title='First task',
         deliverable=1,

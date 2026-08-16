@@ -197,9 +197,18 @@ Flag a docstring or comment under the test tree citing a lesson id, a PR referen
 1. Parse every `*.py` under `--test-root` with `ast.parse`.
 2. Collect the prose segments — module, class, and function **docstrings** (via `ast.get_docstring`), plus every `#` **comment** (via `tokenize`).
 3. Match each segment against the citation patterns. The lesson-id and `plan-marshall#NNNN` matchers are **imported from** `_analyze_lesson_id_in_skill_prose` and `_analyze_incident_reference_in_docs` rather than restated — one textual shape, one matcher. Two shapes those analyzers do not carry are defined locally: `PR #NNN` / `pull request #NNN`, and plan/deliverable ids (`TASK-NNN`, `deliverable D<n>`, ``plan `slug` ``).
-4. Emit at most one finding per segment; `details.kind` names which citation shape fired.
+4. Skip any match that sits inside an **inline literal** — a `` `…` `` / ` ``…`` ` code span, or a single- or double-quoted string — because prose in that position is naming a value, not citing a record.
+5. Emit at most one finding per segment; `details.kind` names which citation shape fired.
 
-**The prose-vs-data restriction is the rule's structural discriminator, not an optimisation.** The scan deliberately never reaches string literals used as data. The same textual shapes appear far more often as test *data* — a lesson id fed to the validator under test is the corpus the test exists to check — and flagging those would make the rule unusable. Measured over this tree with the shipped matchers: 285 pattern hits in docstrings and comments, against 876 occurrences of the same shapes as string-literal data that the AST scoping correctly leaves alone. Both figures are re-derivable from the shipped patterns.
+**Two discriminators, and the rule is unusable without both.**
+
+The first is **prose-vs-data**, and it is structural rather than an optimisation. The scan deliberately never reaches string literals used as data. The same textual shapes appear far more often as test *data* — a lesson id fed to the validator under test is the corpus the test exists to check — and flagging those would make the rule unusable. Measured over this tree with the shipped matchers: 285 pattern hits in docstrings and comments, against 876 occurrences of the same shapes as string-literal data that the AST scoping correctly leaves alone. Both figures are re-derivable from the shipped patterns.
+
+The second runs **inside prose**, because scoping to prose is not enough: prose has to name values as well as cite records. A docstring stating that a generator returns a particular id, or a comment naming the task file a command creates, states the contract under test — it cites nothing. Shape cannot separate the two, but **formatting can**: an identifier named as a value is written in an inline literal, while a citation appears bare in the narrative. Hence the convention this rule teaches — **backtick the value you name** — and the exemption at detection step 4.
+
+The exemption is **per occurrence, not per segment**: a docstring that names a value and cites a record still reports the citation, so backticking one identifier cannot launder the rest of the sentence.
+
+Applied to one measured slice, this is the difference between a usable rule and an ignored one: over the ten `plan-marshall` plan-state directories, every one of the 24 findings that survived a full citation strip was an id-shaped *value* — an expected return, a seeded fixture filename, an ordering key, a created task file — i.e. a 24/24 false-positive rate on the residue.
 
 **Violation message format**:
 

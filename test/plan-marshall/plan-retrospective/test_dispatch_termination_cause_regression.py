@@ -18,8 +18,8 @@ These tests replay recorded multi-task fixtures end-to-end against the
 production scripts:
 
 * ``test_loop_exit_guard_blocks_premature_transition`` — exercises the
-  D1 loop-exit guard against a three-task fixture with TASK-001 done
-  and TASK-002/TASK-003 pending, then against an all-done fixture.
+  loop-exit guard against a three-task fixture with ``TASK-001`` done
+  and ``TASK-002``/``TASK-003`` pending, then against an all-done fixture.
 
 * ``test_dispatch_termination_cause_clean_exit_replay`` — replays a
   three-row boundary file written in the new format
@@ -54,7 +54,7 @@ ANALYZE_LOGS = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospecti
 MANAGE_TASKS = get_script_path('plan-marshall', 'manage-tasks', 'manage-tasks.py')
 
 # Canonical fixture directory for this regression. Two sub-trees:
-#   - ``plan/`` — three-task plan with TASK-001 done, TASK-002/TASK-003
+#   - ``plan/`` — three-task plan with ``TASK-001`` done, ``TASK-002``/``TASK-003``
 #     pending and a new-format boundary file (three
 #     ``clean_exit_queue_empty`` rows). Drives both (a) the pending
 #     loop-exit-guard branch and (b) the new-format dispatch-cause
@@ -127,12 +127,12 @@ class TestLoopExitGuardBlocksPrematureTransition:
     """
 
     def test_pending_queue_returns_continue_with_ids(self, tmp_path, monkeypatch):
-        """Three-task fixture, TASK-001 done, TASK-002/TASK-003 pending.
+        """Three-task fixture, ``TASK-001`` done, ``TASK-002``/``TASK-003`` pending.
 
         The guard MUST emit ``status: continue`` with ``pending_count: 2``
         and ``pending_ids: [2, 3]`` — never ``status: success`` while
         pending tasks remain. This is the script-level enforcement of
-        the D1 invariant; the test fails if any future refactor drops
+        the property-1 invariant; the test fails if any future refactor drops
         the ``continue`` branch or mis-orders the ID list.
         """
         plan_id = 'loop-exit-guard-pending'
@@ -144,7 +144,7 @@ class TestLoopExitGuardBlocksPrematureTransition:
 
         assert data['status'] == 'continue', (
             f'Pending queue must trigger status=continue (the script-level '
-            f'enforcement of the D1 "pending > 0 → must continue" invariant); '
+            f'enforcement of the "pending > 0 → must continue" invariant); '
             f'got status={data.get("status")!r}'
         )
         assert int(data['pending_count']) == 2

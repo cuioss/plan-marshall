@@ -317,7 +317,7 @@ class TestPhase5LoggingGapExtractors:
             '[2026-05-08T14:00:01Z] [INFO] [def] [OUTCOME] (plan-marshall:phase-5-execute) '
             'Completed TASK-001: Title (3 steps)',
             '[2026-05-08T14:01:00Z] [INFO] [ghi] [MANAGE-TASKS] Completed TASK-002',
-            # TASK-002 closes with no [OUTCOME] line — the gap under test.
+            # ``TASK-002`` closes with no [OUTCOME] line — the gap under test.
         ]
         result = _analyze_logs.pair_outcome_emissions(lines)
         assert result['paired'] == 1
@@ -484,6 +484,12 @@ class TestPhase5LoggingGapExtractors:
     def test_detect_outcome_for_diffed_tasks_regression(self, tmp_path):
         """A ``done`` task with no [OUTCOME] line is flagged; a pending one is not.
 
+        The selector is ``status: done``, not a git diff, even though the
+        function and its ``tasks_with_diff_no_outcome`` key both say *diff*: the
+        per-task SHA range is not persisted anywhere stable, so the extractor
+        uses ``done`` as a deliberately over-inclusive proxy and the LLM rule
+        applies the diff guard downstream.
+
         The status filter is the load-bearing half. A task that was never closed
         has no outcome to emit, so flagging it would report a logging gap for
         work that simply has not finished — noise that makes the real gaps
@@ -508,7 +514,7 @@ class TestPhase5LoggingGapExtractors:
         lines = [
             '[2026-05-08T14:00:01Z] [INFO] [abc] [OUTCOME] (plan-marshall:phase-5-execute) '
             'Completed TASK-001: A (1 steps)',
-            # No [OUTCOME] for TASK-002 → flagged.
+            # No [OUTCOME] for ``TASK-002`` → flagged.
         ]
         result = _analyze_logs.detect_outcome_for_diffed_tasks(lines, plan_dir)
         assert result['tasks_with_diff_no_outcome'] == ['TASK-002']

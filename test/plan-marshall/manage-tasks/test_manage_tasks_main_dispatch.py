@@ -126,7 +126,7 @@ def test_main_derive_cost_size_returns_size_band(plan_context, monkeypatch, caps
 
 
 def test_main_prepare_then_commit_creates_task(plan_context, monkeypatch, capsys):
-    """prepare-add returns a scratch path; commit-add reads it and creates TASK-001."""
+    """prepare-add returns a scratch path; commit-add reads it and creates ``TASK-001``."""
     # Arrange / Act: prepare-add
     code, out, _ = _run(monkeypatch, capsys, ['prepare-add', '--plan-id', 'mt-disp-add'])
     assert code == 0
@@ -150,7 +150,7 @@ def test_main_prepare_then_commit_creates_task(plan_context, monkeypatch, capsys
     # Act: commit-add
     code, out, _ = _run(monkeypatch, capsys, ['commit-add', '--plan-id', 'mt-disp-add'])
 
-    # Assert: TASK-001 created and the scratch consumed
+    # Assert: ``TASK-001`` created and the scratch consumed
     assert code == 0
     commit = _parse(out)
     assert commit['status'] == 'success'
