@@ -27,11 +27,10 @@ driven for real against ``file_ops._query_worktree_path`` in
 sanctioned ``resolve_main_anchored_path`` resolver, driven REAL through
 ``PLAN_BASE_DIR``) cwd-independently. The
 :class:`TestIntegrateCwdIndependent` regression suite invokes the script from the
-**worktree** cwd (the misuse that produced the historical false ``noop``) WITHOUT
-mocking the DESTINATION resolver, exercising the real path resolution
-(related lesson 2026-06-03-13-001).
+**worktree** cwd — the misuse that yields a false ``noop`` — WITHOUT mocking
+the DESTINATION resolver, exercising the real path resolution.
 
-Isolation (test-isolation lessons 2026-06-02-12-001/002/003): every test runs
+Isolation: every test runs
 against an isolated tree staged under ``tmp_path`` with cwd pinned to a stable
 location; the ``merge_lock`` delegation is stubbed so no real lock file is
 contended — the suite never contends for the real ``.plan/`` under ``-n auto``.
@@ -39,7 +38,6 @@ contended — the suite never contends for the real ``.plan/`` under ``-n auto``
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
 from argparse import Namespace
@@ -52,14 +50,13 @@ from _resolve_project_dir_fixtures import (
     patch_query_worktree_path,
 )
 
-from conftest import get_script_path
+from conftest import get_script_path, load_script_module
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'integrate_into_main.py')
 
-_spec = importlib.util.spec_from_file_location('integrate_into_main', SCRIPT_PATH)
-assert _spec is not None and _spec.loader is not None
-integrate_into_main = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(integrate_into_main)
+integrate_into_main = load_script_module(
+    'plan-marshall', 'workflow-integration-git', 'integrate_into_main.py', 'integrate_into_main'
+)
 
 
 # =============================================================================
@@ -281,7 +278,7 @@ class TestIntegrateSuppressesMergeLockTitleToken:
 
 
 # =============================================================================
-# cwd-independence regression (Deliverable 1 — related lesson 2026-06-03-13-001)
+# cwd-independence regression
 # =============================================================================
 
 

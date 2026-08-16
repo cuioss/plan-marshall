@@ -33,10 +33,9 @@ the verdict. ``triage_ran=False`` (default, the FIND-only step) treats a
 ``triage_ran=True`` treats a still-``pending`` required finding as a real
 incompleteness.
 
-The verdict proves PARTICIPATION, never review QUALITY — the three D8-interaction
-obligations that follow from that ceiling are pinned by
-``TestParticipationIsNotReviewQuality`` below. See
-``automatic-review/standards/bot-participation-contract.md``.
+The verdict proves PARTICIPATION, never review QUALITY; the obligations that
+follow from that ceiling are pinned by ``TestParticipationIsNotReviewQuality``.
+See ``automatic-review/standards/bot-participation-contract.md``.
 
 The store is seeded in-process via ``_findings_core.add_finding`` /
 ``resolve_finding`` under the ``plan_context`` PLAN_BASE_DIR sandbox, so
@@ -469,14 +468,14 @@ class TestStateTaxonomy:
         structural member ahead of this axis — see ``test_structural_refusal.py``), the
         three-valued ``rate_limit_class`` splits ONE-TO-ONE into three refusal
         members: ``awaitable_window`` -> ``refused_awaitable``, ``hard_quota`` ->
-        ``refused_hard``, ``unknown`` -> ``refused_unknown``. A binary
-        ``== 'awaitable_window'`` test collapsed ``unknown`` into ``refused_hard``,
-        rendering a declared *we-do-not-know* as a positive *hard quota* finding —
-        which steers an operator toward "waiting is futile, force it" when the refusal
-        shape had simply never been observed. ``refused_unknown`` is its own member so
-        the declared ignorance reaches the reader as ignorance, not as a hard quota.
-        It is still an UNPROVEN, blocking state — a refusal is a refusal — but a
-        DIFFERENT one from ``refused_hard``.
+        ``refused_hard``, ``unknown`` -> ``refused_unknown``.
+
+        Keeping ``refused_unknown`` its own member is load-bearing: folding it into
+        ``refused_hard`` would render a declared *we-do-not-know* as a positive
+        *hard quota*, steering an operator toward "waiting is futile, force it" when
+        the refusal shape had simply never been observed. It is still an UNPROVEN,
+        blocking state — a refusal is a refusal — but a DIFFERENT one.
+
         """
         plan_id = 'rc-state-refused-unknown'
         plan_context.plan_dir_for(plan_id)

@@ -2,8 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Real-git end-to-end regression test for the worktree move-in lifecycle.
 
-This is the test whose absence let the move-in defect ship (PR #556). It uses a
-REAL ``git init`` + ``git worktree add`` and the REAL resolvers — NO mocked
+It uses a REAL ``git init`` + ``git worktree add`` and the REAL resolvers — NO mocked
 ``get_worktree_root`` / ``get_plan_dir`` / ``cmd_worktree_create`` /
 ``resolve_main_anchored_path`` — so it exercises the post-redesign no-symlink
 contract end-to-end. The worktree-bound executor generation (which shells out to
@@ -28,7 +27,7 @@ Contract under test (solution_outline.md §5, deliverable 5):
   assertion) — NOT mocked — and the worktree gains NO ``run-configuration.json``
   / ``lessons-learned`` of its own.
 
-Isolation (test-isolation lessons 2026-06-02-12-001/002/003): every test stages
+Isolation: every test stages
 a unique ``tmp_path`` real-git repo, anchors runtime state via ``PLAN_BASE_DIR``
 pointed at the staged main checkout's ``.plan/local``, and pins cwd
 deterministically — the suite never contends for the real ``.plan/`` under

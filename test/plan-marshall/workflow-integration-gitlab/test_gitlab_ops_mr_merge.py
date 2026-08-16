@@ -14,10 +14,10 @@ After the refactor:
 * No local git state (checkout, ``git branch -D``) may be touched by this
   handler — that is the caller's responsibility.
 
-The regression guard for the lesson-2026-04-17-19-002 fork exercises the
-worktree scenario that broke with ``glab mr merge --remove-source-branch``:
-here the merge must finish cleanly and the branch delete must round-trip
-purely through the REST leaf, never through local git.
+The worktree fork exercises the scenario
+``glab mr merge --remove-source-branch`` cannot serve: the merge must finish
+cleanly and the branch delete must round-trip purely through the REST leaf,
+never through local git.
 """
 
 import argparse
@@ -342,23 +342,26 @@ def test_mr_merge_without_delete_branch_leaves_branch_untouched(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Regression: lesson-2026-04-17-19-002 — worktree error case (symmetric)
+# Branch deletion goes through REST, never local git (symmetric with GitHub)
 # ---------------------------------------------------------------------------
 
 
 def test_mr_merge_delete_branch_does_not_touch_local_git(monkeypatch):
-    """Regression for lesson-2026-04-17-19-002 — GitLab side.
+    """The GitLab side deletes the source branch remotely, never via local git.
 
-    The original bug on the GitHub side drove a local ``git checkout`` +
-    ``git branch -D`` against the *caller's* cwd. The GitLab analogue is
-    ``glab mr merge --remove-source-branch`` (the mapping of
-    ``--delete-branch``), which must not be emitted by ``cmd_pr_merge``.
-    The refactor removes that pass-through entirely, so ``glab mr merge``
-    runs clean and the remote branch is deleted via a pure REST call.
+    ``glab mr merge --remove-source-branch`` — the analogue of
+    ``--delete-branch`` — drives a local ``git checkout`` + ``git branch -D``
+    against the *caller's* cwd. That reaches outside this handler's remit: it
+    mutates whatever tree the caller happens to be standing in, and in an
+    isolated worktree it targets a branch that is still checked out, so the
+    delete fails and the merge is reported against a tree the caller never
+    asked to touch. ``cmd_pr_merge`` must therefore not emit the flag; the
+    remote branch is deleted via a pure REST call instead.
 
-    This test enforces both halves of that contract:
+    This test enforces three parts of that contract:
       1. ``glab mr merge`` is invoked without ``--remove-source-branch``.
-      2. No ``git`` subprocess is ever spawned by ``cmd_pr_merge``.
+      2. ``subprocess.run`` is not reached during merge + delete (a trip-wire
+         on that one entry point, which is the seam the local-git path uses).
       3. The remote branch is deleted via ``cmd_branch_delete``'s REST leaf.
     """
     _install_common(monkeypatch)

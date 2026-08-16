@@ -15,7 +15,7 @@ Contract under test (solution_outline.md §4):
   state WHOLLY on main (never half-moved) and returns ``status: error``.
 * **cwd invariant** — the script never mutates the process cwd.
 
-Isolation (test-isolation lessons 2026-06-02-12-001/002/003): every test runs
+Isolation: every test runs
 against an isolated ``PLAN_BASE_DIR`` staged under ``tmp_path`` with cwd pinned
 to a stable location; ``cmd_worktree_create`` is stubbed so no real
 ``git worktree add`` runs and the suite never contends for the real ``.plan/``
@@ -24,7 +24,6 @@ under ``-n auto``.
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import shutil
 from argparse import Namespace
@@ -32,14 +31,13 @@ from pathlib import Path
 
 import pytest
 
-from conftest import get_script_path
+from conftest import get_script_path, load_script_module
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'prepare_execute.py')
 
-_spec = importlib.util.spec_from_file_location('prepare_execute', SCRIPT_PATH)
-assert _spec is not None and _spec.loader is not None
-prepare_execute = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(prepare_execute)
+prepare_execute = load_script_module(
+    'plan-marshall', 'workflow-integration-git', 'prepare_execute.py', 'prepare_execute'
+)
 
 # Capture the REAL _generate_worktree_executor before any fixture monkeypatches
 # it away. The function-level post-assertion / copy-from-main tests exercise THIS

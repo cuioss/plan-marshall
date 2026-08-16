@@ -11,7 +11,7 @@ Malformed --component input must surface
 ``status: error / error: invalid_component`` on stdout TOON (exit 0).
 
 Re-uses ``test/_shared/_input_validation_fixtures.py`` for the
-canonical 6-axis matrix (TASK-2 foundation).
+canonical 6-axis matrix.
 """
 
 from __future__ import annotations

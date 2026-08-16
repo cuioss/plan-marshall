@@ -10,13 +10,13 @@ validator path we need a marshal.json that declares a github provider so
 the router delegates to ``github_ops.main()`` which calls
 ``parse_args_with_toon_errors``.
 
-The canonical TASK-3 migration target was the ``pr prepare-body`` subcommand,
+The canonical migration target is the ``pr prepare-body`` subcommand,
 which uses ``add_plan_id_arg`` (line 627 in ci_base.py). Malformed input
 must surface ``status: error / error: invalid_plan_id`` on stdout TOON
 with exit code 0.
 
 Re-uses ``test/_shared/_input_validation_fixtures.py`` for the
-canonical 6-axis matrix (TASK-2 foundation).
+canonical 6-axis matrix.
 """
 
 from __future__ import annotations

@@ -1,36 +1,16 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Regression tests for github_pr.cmd_fetch_findings cross-iteration dedup.
+"""``github_pr.cmd_fetch_findings``: cross-iteration dedup, classification, and participation.
 
-Covers the producer-side dedup guard hardened to key on
-``(bot_kind, comment_id)`` for ALL bot kinds — thread-bearing and thread_id-less
-alike:
-
-    1. A second ``fetch_findings`` over the same PR (mixed bot kinds,
-       thread-bearing + thread_id-less) stores zero new findings and raises no
-       ``(producer-mismatch)`` Q-Gate false-positive.
-    2. Two distinct bots reusing the same numeric ``comment_id`` are kept
-       distinct — keying on ``(bot_kind, comment_id)`` rather than ``comment_id``
-       alone means a second bot's identically-numbered comment is NOT wrongly
-       deduped against the first bot's.
-    3. The pre-filter's CONTENTLESS BOILERPLATE layer (``_is_contentless_boilerplate``
-       and ``_is_obvious_noise``'s layer 3), driven directly with a body string and
-       a ``bot_kind`` — the fail-closed empty-marker short-circuit, the
-       ``all(required)`` conjunction member-by-member, the ``any(disqualifying)``
-       veto, the strip-before-compare normalization, and the layer ordering.
-    4. The ``stale_participation_bots[]`` observation — the
-       ``participation_requires_update`` currency-test failure is REPORTED rather
-       than discarded, over a bot population derived from the registry: the
-       unchanged-comment stale case, the ``updated_at``-movement case that credits
-       participation instead, and the proven-set subtraction that keeps a bot with
-       one stale and one fresh comment out of the stale set.
+The producer-side dedup keys on ``(bot_kind, comment_id)`` for every bot kind,
+thread-bearing and thread_id-less alike. Covered here: re-fetch idempotence, the
+``(bot_kind, comment_id)`` collision boundary, the contentless-boilerplate
+pre-filter layer, and the ``stale_participation_bots[]`` currency observation.
 
 The findings store is REAL (isolated via the autouse ``plan_context``
 ``PLAN_BASE_DIR`` sandbox); only the GitHub provider surface (``check_auth``,
-``fetch_pr_comments_data``, ``fetch_pr_head_sha``) is monkeypatched, so the
-dedup path exercises the genuine ``_findings_core`` add/query round-trip —
-including the ``bot_kind`` field the guard now keys on. Module import resolves
-via the root conftest's marketplace PYTHONPATH setup.
+``fetch_pr_comments_data``, ``fetch_pr_head_sha``) is monkeypatched, so the dedup
+path exercises the genuine ``_findings_core`` add/query round-trip.
 """
 
 import argparse
@@ -98,11 +78,9 @@ _COMMENTS = [
 def _patch_provider(monkeypatch, comments, head_sha='deadbeef'):
     """Monkeypatch the GitHub provider surface ``github_pr`` reaches through ``_github``.
 
-    ``head_sha`` is the PR HEAD the producer stamps as ``reviewed_commit_sha`` and,
-    since the currency fix, compares each comment's recorded SHA against. It defaults
-    to ``deadbeef`` so tests that do not care about HEAD movement are unaffected; a
-    test simulates a loop-back / force-push by re-patching with a DIFFERENT value
-    between fetches.
+    ``head_sha`` is the PR HEAD the producer stamps as ``reviewed_commit_sha`` and
+    compares each comment's recorded SHA against. A test simulates a loop-back /
+    force-push by re-patching with a DIFFERENT value between fetches.
     """
     monkeypatch.setattr(github_pr._github, 'check_auth', lambda: (True, ''))
     monkeypatch.setattr(
@@ -158,8 +136,11 @@ def test_second_fetch_dedupes_all_bot_kinds(plan_context, monkeypatch):
     """A re-fetch of an already-staged PR stores zero new findings for every bot kind.
 
     Thread-bearing (coderabbit/pr-agent) AND thread_id-less (sourcery/human)
-    comments are all deduped on ``(bot_kind, comment_id)``, and the deduped
-    comments — legitimate non-stores — do not trip the producer-mismatch Q-Gate.
+    comments are all deduped on ``(bot_kind, comment_id)``. Without that, every
+    barrier re-fetch re-stores the same comments as fresh ``pending`` findings,
+    so the queue accretes duplicates faster than triage can drain it and the
+    completeness gate never closes. The deduped comments are legitimate
+    non-stores, so they must also not trip the producer-mismatch Q-Gate.
     """
     plan_id = 'gh-pr-dedup-refetch'
     _patch_provider(monkeypatch, _COMMENTS)
@@ -183,25 +164,20 @@ def test_second_fetch_dedupes_all_bot_kinds(plan_context, monkeypatch):
 
 
 def test_a_deduped_comment_is_still_credited_as_participating(plan_context, monkeypatch):
-    """A bot deduped on STORAGE is still credited as participating — the decoupling regression.
+    """A bot deduped on STORAGE is still credited as participating.
 
-    The defect this plan is named after: ``fetch_findings`` once derived participation
-    from the SAME set the storage dedup emptied, so a re-fetch that deduped a bot's
-    already-stored comment emptied ``participated_bots`` — and the pre-merge barrier
-    (``branch-cleanup.md``) fed exactly that set to the participation predicate, reading
-    a proven reviewer as ``absent``. The fix derives participation from the raw comment
-    scan (unioned with the currency ledger for ``participation_requires_update`` bots)
-    BEFORE and INDEPENDENT of the storage dedup.
+    Participation derives from the raw comment scan (unioned with the currency
+    ledger for ``participation_requires_update`` bots) BEFORE and INDEPENDENT of
+    the storage dedup. That decoupling is load-bearing: the pre-merge barrier
+    feeds ``participated_bots`` to the participation predicate, so coupling it to
+    the dedup would read a proven reviewer as ``absent`` on any re-fetch.
 
-    This pins the decoupling with BOTH observables on ONE fetch: on a re-fetch at an
-    unchanged HEAD every comment is dropped by the storage dedup — the existing
-    ``count_skipped_duplicate`` counter, asserted against rather than instrumented anew —
-    YET every participating bot stays credited, byte-identically to the first fetch.
-    Re-coupling participation to the dedup (deriving it from the stored/deduped set)
-    empties ``participated_bots`` on the second fetch and fails this test. It covers a
-    ``participation_requires_update`` bot (pr-agent, credited via the SHA-current currency
-    arm since the head does not move) alongside the presence-credited bots, so the guard
-    holds across both participation shapes.
+    Both observables are pinned on ONE fetch: at an unchanged HEAD every comment
+    is dropped by the storage dedup, YET every participating bot stays credited
+    byte-identically to the first fetch. It covers a
+    ``participation_requires_update`` bot (pr-agent, credited via the SHA-current
+    currency arm) alongside the presence-credited bots, so the guard holds across
+    both participation shapes.
     """
     plan_id = 'gh-pr-dedup-decoupled'
     # A fixed head SHA across both fetches: the requires_update bot stays SHA-current on
@@ -233,10 +209,12 @@ def test_a_deduped_comment_is_still_credited_as_participating(plan_context, monk
 def test_same_comment_id_distinct_bots_not_collided(plan_context, monkeypatch):
     """Two bots reusing the same numeric comment_id stay distinct across fetches.
 
-    With the old ``comment_id``-only key the second bot's identically-numbered
-    comment would be wrongly skipped as a duplicate. Keying on
-    ``(bot_kind, comment_id)`` keeps them apart, so the second bot's comment is
-    stored on the follow-up fetch.
+    Comment ids are provider-assigned per comment surface, so they are not
+    unique across bots — two reviewers can legitimately arrive carrying the same
+    numeric id. A ``comment_id``-only dedup key therefore silently swallows the
+    second bot's comment as a duplicate: a genuine review finding that never
+    reaches triage, and never reaches the pre-merge barrier that reads the
+    store. Keying on ``(bot_kind, comment_id)`` keeps them apart.
     """
     plan_id = 'gh-pr-dedup-collision'
     coderabbit_999 = {
@@ -279,14 +257,11 @@ def _run_fetch_classified(pr_number, plan_id, *, required_bots=None, optional_bo
     """Invoke ``cmd_fetch_findings`` with explicit participation-classification lists.
 
     ``required_bots`` / ``optional_bots`` are the raw comma-joined flag values
-    (``'coderabbit'``, ``'coderabbit,pr-agent'``, or ``''`` for an
-    answered-empty list). Their union is the CLASSIFIED set; neither list admits
-    or drops a comment. The sibling ``_run_fetch`` omits both attributes
-    entirely, which the handler's ``getattr(args, ..., None)`` reads as the
-    never-supplied case — a shape the CLI itself no longer produces, since both
-    flags now declare ``default=''`` and an omitted flag parses to the empty
-    string (see ``TestBareClassificationFlags``). Both readings are falsy and
-    drive the identical empty-classification behaviour.
+    (``'coderabbit'``, ``'coderabbit,pr-agent'``, or ``''`` for an answered-empty
+    list). Their union is the CLASSIFIED set; neither list admits or drops a
+    comment. The sibling ``_run_fetch`` omits both attributes entirely, which the
+    handler's ``getattr(args, ..., None)`` reads as the never-supplied case. Both
+    readings are falsy and drive the identical empty-classification behaviour.
     """
     args = argparse.Namespace(
         pr_number=pr_number,

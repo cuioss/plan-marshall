@@ -8,80 +8,124 @@ These tests focus on the script interface, not live operations.
 """
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
+import pytest
+
 from conftest import get_script_path, run_script
 
 # Get script path
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-github', 'github_ops.py')
 
 
-def test_help_flag():
-    """Test --help flag works."""
-    result = run_script(SCRIPT_PATH, '--help')
-    assert result.success, f'--help failed: {result.stderr}'
-    assert 'pr' in result.stdout
-    assert 'checks' in result.stdout
-    assert 'issue' in result.stdout
+# ---------------------------------------------------------------------------
+# CLI plumbing. The subprocess layer proves the entry point wires up — argv
+# parses, the declared flags are advertised, the declared exit code is used.
+# The handlers' behaviour is asserted in-process elsewhere in this suite.
+# ---------------------------------------------------------------------------
+
+# (argv, substrings the help text MUST advertise, substrings it must NOT)
+_HELP_SURFACE = [
+    ((), ('pr', 'checks', 'issue'), ()),
+    (
+        ('pr',),
+        (
+            'create', 'view', 'reply', 'resolve-thread', 'thread-reply', 'merge',
+            'auto-merge', 'close', 'ready', 'edit', 'reviews', 'list',
+        ),
+        (),
+    ),
+    (('issue',), ('create', 'view', 'close'), ()),
+    (('checks',), ('status', 'wait', 'rerun', 'logs'), ()),
+    # The plan-bound store is the ONE body source: a retired --body-file must be
+    # gone from the advertised surface, since help text is what a caller reads to
+    # decide how to supply a body. The legacy inline --body is asserted absent at
+    # the parser level by test_ci_base.py.
+    (('pr', 'create'), ('--title', '--plan-id'), ('--body-file',)),
+    (('pr', 'view'), (), ()),
+    (('pr', 'reply'), ('--pr-number', '--plan-id'), ('--body',)),
+    (('pr', 'resolve-thread'), ('--thread-id',), ()),
+    (('pr', 'thread-reply'), ('--pr-number', '--thread-id', '--plan-id'), ('--body',)),
+    (('pr', 'merge'), ('--pr-number',), ()),
+    (('pr', 'comments'), ('--pr-number',), ()),
+    (('pr', 'auto-merge'), ('--pr-number',), ()),
+    (('pr', 'close'), ('--pr-number',), ()),
+    (('pr', 'ready'), ('--pr-number',), ()),
+    (('pr', 'edit'), ('--pr-number', '--title'), ()),
+    (('pr', 'list'), ('--head', '--state'), ()),
+    # --help renders the choices, so the advertised default doubles as the
+    # state-choices assertion.
+    (('pr', 'list'), ('open',), ()),
+    (('checks', 'rerun'), ('--run-id',), ()),
+    (('checks', 'logs'), ('--run-id',), ()),
+    (('issue', 'close'), ('--issue',), ()),
+]
 
 
-def test_pr_subcommand_help():
-    """Test pr subcommand help."""
-    result = run_script(SCRIPT_PATH, 'pr', '--help')
-    assert result.success, f'pr --help failed: {result.stderr}'
-    assert 'create' in result.stdout
-    assert 'view' in result.stdout
-    assert 'reply' in result.stdout
-    assert 'resolve-thread' in result.stdout
-    assert 'thread-reply' in result.stdout
-    assert 'merge' in result.stdout
-    assert 'auto-merge' in result.stdout
-    assert 'close' in result.stdout
-    assert 'ready' in result.stdout
-    assert 'edit' in result.stdout
-    assert 'reviews' in result.stdout
-    assert 'list' in result.stdout
+@pytest.mark.parametrize(
+    ('argv', 'advertised', 'absent'),
+    _HELP_SURFACE,
+    ids=[
+        'root', 'pr', 'issue', 'checks', 'pr-create', 'pr-view', 'pr-reply',
+        'pr-resolve-thread', 'pr-thread-reply', 'pr-merge', 'pr-comments',
+        'pr-auto-merge', 'pr-close', 'pr-ready', 'pr-edit', 'pr-list',
+        'pr-list-state-default', 'checks-rerun', 'checks-logs', 'issue-close',
+    ],
+)
+def test_help_advertises_the_declared_surface(argv, advertised, absent):
+    """``--help`` exits zero and advertises exactly the flags a caller drives it with."""
+    result = run_script(SCRIPT_PATH, *argv, '--help')
+    assert result.success, f'{" ".join(argv)} --help failed: {result.stderr}'
+    for token in advertised:
+        assert token in result.stdout, f'{token!r} missing from {" ".join(argv)} --help'
+    for token in absent:
+        assert token not in result.stdout, f'{token!r} still advertised by {" ".join(argv)} --help'
 
 
-def test_issue_subcommand_help():
-    """Test issue subcommand help."""
-    result = run_script(SCRIPT_PATH, 'issue', '--help')
-    assert result.success, f'issue --help failed: {result.stderr}'
-    assert 'create' in result.stdout
-    assert 'view' in result.stdout
-    assert 'close' in result.stdout
+# (argv, a substring the diagnostic must name — None when only the exit code is pinned)
+_MISSING_REQUIRED = [
+    (('pr', 'create'), 'title'),
+    (('pr', 'reviews'), None),
+    (('pr', 'reply'), None),
+    (('pr', 'resolve-thread'), None),
+    (('pr', 'thread-reply'), None),
+    (('checks', 'wait'), None),
+    (('checks', 'rerun'), None),
+    (('issue', 'create'), None),
+    ((), None),
+]
 
 
-def test_ci_subcommand_help():
-    """Test checks subcommand help."""
-    result = run_script(SCRIPT_PATH, 'checks', '--help')
-    assert result.success, f'checks --help failed: {result.stderr}'
-    assert 'status' in result.stdout
-    assert 'wait' in result.stdout
-    assert 'rerun' in result.stdout
-    assert 'logs' in result.stdout
+@pytest.mark.parametrize(
+    ('argv', 'names'),
+    _MISSING_REQUIRED,
+    ids=[
+        'pr-create', 'pr-reviews', 'pr-reply', 'pr-resolve-thread',
+        'pr-thread-reply', 'checks-wait', 'checks-rerun', 'issue-create',
+        'no-subcommand',
+    ],
+)
+def test_missing_required_argument_is_a_nonzero_exit(argv, names):
+    """A subcommand invoked without its required flags exits non-zero."""
+    result = run_script(SCRIPT_PATH, *argv)
+    assert not result.success, f'{" ".join(argv) or "<no subcommand>"} unexpectedly succeeded'
+    if names:
+        combined = result.stderr.lower()
+        assert names in combined or 'required' in combined, combined
 
 
-def test_pr_create_help():
-    """Test pr create help shows the ONE body source: the plan-bound store.
-
-    The retired ``--body-file`` (the second plan-less convention) must be gone
-    from the advertised surface, not merely unused by the handler: help text is
-    what a caller reads to decide how to supply a body, so a stale flag there
-    would keep sending callers down a path the handler no longer implements.
-    The legacy inline ``--body`` flag is asserted absent at the parser level by
-    test_ci_base.py, not here.
-    """
-    result = run_script(SCRIPT_PATH, 'pr', 'create', '--help')
-    assert result.success, f'pr create --help failed: {result.stderr}'
-    assert '--title' in result.stdout
-    assert '--plan-id' in result.stdout
-    assert '--body-file' not in result.stdout
+# Verbs whose required flags are mutually-exclusive alternatives: the parser
+# accepts the bare call and the HANDLER rejects it, so the diagnostic — not the
+# exit code — is the contract. Auth runs first, so its error is also admissible.
+_STRUCTURED_REFUSAL = [(('checks', 'status'),), (('pr', 'merge'),)]
 
 
-def test_pr_create_missing_required():
-    """Test pr create fails without required arguments."""
-    result = run_script(SCRIPT_PATH, 'pr', 'create')
-    assert not result.success, 'Expected failure without --title'
-    assert 'title' in result.stderr.lower() or 'required' in result.stderr.lower()
+@pytest.mark.parametrize('argv', [c[0] for c in _STRUCTURED_REFUSAL], ids=['checks-status', 'pr-merge'])
+def test_either_or_flags_missing_emits_a_structured_error(argv):
+    """Supplying neither ``--pr-number`` nor ``--head`` is reported, not ignored."""
+    result = run_script(SCRIPT_PATH, *argv)
+    combined = (result.stdout + result.stderr).lower()
+    assert 'pr-number' in combined or 'head' in combined or 'auth' in combined, (
+        f'Expected pr-number/head/auth in output, got: {combined}'
+    )
 
 
 def test_pr_create_handler_has_a_single_body_source():
@@ -143,186 +187,6 @@ def _assert_single_body_source(bundle: str, skill: str, script: str) -> None:
         f'{script}::cmd_pr_create retains a body_file local or attribute access'
     )
     assert 'body_file' not in literals, f'{script}::cmd_pr_create retains a body_file lookup'
-
-
-def test_pr_reviews_missing_required():
-    """Test pr reviews fails without pr-number."""
-    result = run_script(SCRIPT_PATH, 'pr', 'reviews')
-    assert not result.success, 'Expected failure without --pr-number'
-
-
-def test_ci_status_missing_required():
-    """Test checks status emits a structured error when neither --pr-number nor --head is supplied."""
-    result = run_script(SCRIPT_PATH, 'checks', 'status')
-    # Now both flags are optional; the handler validates that exactly one is given.
-    # Auth check runs first, so we accept either the auth error or the validation error.
-    combined = (result.stdout + result.stderr).lower()
-    assert 'pr-number' in combined or 'head' in combined or 'auth' in combined, (
-        f'Expected pr-number/head/auth in output, got: {combined}'
-    )
-
-
-def test_ci_wait_missing_required():
-    """Test checks wait fails without pr-number."""
-    result = run_script(SCRIPT_PATH, 'checks', 'wait')
-    assert not result.success, 'Expected failure without --pr-number'
-
-
-def test_issue_create_missing_required():
-    """Test issue create fails without required arguments."""
-    result = run_script(SCRIPT_PATH, 'issue', 'create')
-    assert not result.success, 'Expected failure without --title'
-
-
-def test_pr_view_help():
-    """Test pr view help works."""
-    result = run_script(SCRIPT_PATH, 'pr', 'view', '--help')
-    assert result.success, f'pr view --help failed: {result.stderr}'
-
-
-def test_pr_reply_help():
-    """Test pr reply help shows required arguments."""
-    result = run_script(SCRIPT_PATH, 'pr', 'reply', '--help')
-    assert result.success, f'pr reply --help failed: {result.stderr}'
-    assert '--pr-number' in result.stdout
-    assert '--plan-id' in result.stdout
-    assert '--body' not in result.stdout
-
-
-def test_pr_reply_missing_required():
-    """Test pr reply fails without required arguments."""
-    result = run_script(SCRIPT_PATH, 'pr', 'reply')
-    assert not result.success, 'Expected failure without --pr-number'
-
-
-def test_pr_resolve_thread_help():
-    """Test pr resolve-thread help shows required arguments."""
-    result = run_script(SCRIPT_PATH, 'pr', 'resolve-thread', '--help')
-    assert result.success, f'pr resolve-thread --help failed: {result.stderr}'
-    assert '--thread-id' in result.stdout
-
-
-def test_pr_resolve_thread_missing_required():
-    """Test pr resolve-thread fails without required arguments."""
-    result = run_script(SCRIPT_PATH, 'pr', 'resolve-thread')
-    assert not result.success, 'Expected failure without --thread-id'
-
-
-def test_pr_thread_reply_help():
-    """Test pr thread-reply help shows required arguments."""
-    result = run_script(SCRIPT_PATH, 'pr', 'thread-reply', '--help')
-    assert result.success, f'pr thread-reply --help failed: {result.stderr}'
-    assert '--pr-number' in result.stdout
-    assert '--thread-id' in result.stdout
-    assert '--plan-id' in result.stdout
-    assert '--body' not in result.stdout
-
-
-def test_pr_thread_reply_missing_required():
-    """Test pr thread-reply fails without required arguments."""
-    result = run_script(SCRIPT_PATH, 'pr', 'thread-reply')
-    assert not result.success, 'Expected failure without --pr-number'
-
-
-def test_pr_merge_help():
-    """Test pr merge help shows required arguments."""
-    result = run_script(SCRIPT_PATH, 'pr', 'merge', '--help')
-    assert result.success, f'pr merge --help failed: {result.stderr}'
-    assert '--pr-number' in result.stdout
-
-
-def test_pr_merge_missing_required():
-    """Test pr merge emits a structured error when neither --pr-number nor --head is supplied."""
-    result = run_script(SCRIPT_PATH, 'pr', 'merge')
-    combined = (result.stdout + result.stderr).lower()
-    assert 'pr-number' in combined or 'head' in combined or 'auth' in combined, (
-        f'Expected pr-number/head/auth in output, got: {combined}'
-    )
-
-
-def test_pr_comments_help():
-    """Test pr comments help shows required arguments."""
-    result = run_script(SCRIPT_PATH, 'pr', 'comments', '--help')
-    assert result.success, f'pr comments --help failed: {result.stderr}'
-    assert '--pr-number' in result.stdout
-
-
-def test_pr_auto_merge_help():
-    """Test pr auto-merge help shows required arguments."""
-    result = run_script(SCRIPT_PATH, 'pr', 'auto-merge', '--help')
-    assert result.success, f'pr auto-merge --help failed: {result.stderr}'
-    assert '--pr-number' in result.stdout
-
-
-def test_pr_close_help():
-    """Test pr close help shows required arguments."""
-    result = run_script(SCRIPT_PATH, 'pr', 'close', '--help')
-    assert result.success, f'pr close --help failed: {result.stderr}'
-    assert '--pr-number' in result.stdout
-
-
-def test_pr_ready_help():
-    """Test pr ready help shows required arguments."""
-    result = run_script(SCRIPT_PATH, 'pr', 'ready', '--help')
-    assert result.success, f'pr ready --help failed: {result.stderr}'
-    assert '--pr-number' in result.stdout
-
-
-def test_pr_edit_help():
-    """Test pr edit help shows arguments."""
-    result = run_script(SCRIPT_PATH, 'pr', 'edit', '--help')
-    assert result.success, f'pr edit --help failed: {result.stderr}'
-    assert '--pr-number' in result.stdout
-    assert '--title' in result.stdout
-
-
-def test_ci_rerun_help():
-    """Test checks rerun help shows required arguments."""
-    result = run_script(SCRIPT_PATH, 'checks', 'rerun', '--help')
-    assert result.success, f'checks rerun --help failed: {result.stderr}'
-    assert '--run-id' in result.stdout
-
-
-def test_ci_rerun_missing_required():
-    """Test checks rerun fails without required arguments."""
-    result = run_script(SCRIPT_PATH, 'checks', 'rerun')
-    assert not result.success, 'Expected failure without --run-id'
-
-
-def test_ci_logs_help():
-    """Test checks logs help shows required arguments."""
-    result = run_script(SCRIPT_PATH, 'checks', 'logs', '--help')
-    assert result.success, f'checks logs --help failed: {result.stderr}'
-    assert '--run-id' in result.stdout
-
-
-def test_issue_close_help():
-    """Test issue close help shows required arguments."""
-    result = run_script(SCRIPT_PATH, 'issue', 'close', '--help')
-    assert result.success, f'issue close --help failed: {result.stderr}'
-    assert '--issue' in result.stdout
-
-
-def test_pr_list_help():
-    """Test pr list help shows optional arguments."""
-    result = run_script(SCRIPT_PATH, 'pr', 'list', '--help')
-    assert result.success, f'pr list --help failed: {result.stderr}'
-    assert '--head' in result.stdout
-    assert '--state' in result.stdout
-
-
-def test_pr_list_state_choices():
-    """Test pr list accepts valid state choices."""
-    # --help already validates choices are defined; verify the default
-    result = run_script(SCRIPT_PATH, 'pr', 'list', '--help')
-    assert result.success
-    assert 'open' in result.stdout
-
-
-def test_no_subcommand():
-    """Test that script requires a subcommand."""
-    result = run_script(SCRIPT_PATH)
-    assert not result.success, 'Expected failure without subcommand'
 
 
 def _prepare_thread_reply_body(tmp_path, monkeypatch, body_text='Fixed it', plan_id='p'):

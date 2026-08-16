@@ -29,7 +29,7 @@ representative TOON envelopes exercise the same `parse_toon` →
 
 | Fixture | CI state | Why it matters |
 |---------|----------|----------------|
-| `green-success.toon` | All-green (mix of pass + skipping) | Baseline regression — the exact case PR #454 hit; resolver must return `wait_succeeded / ci_final_status: success`. |
+| `green-success.toon` | All-green (mix of pass + skipping) | Baseline: resolver must return `wait_succeeded / ci_final_status: success`. |
 | `failure-with-failing-checks.toon` | One failing check (rest pass) | `failing_checks[]` enumeration end-to-end. Resolver returns `wait_failed / ci_final_status: failure`. |
 | `no-checks.toon` | Empty `checks[]` (no CI configured) | `final_status: none` → resolver maps to `ci_final_status: no_checks`. |
 | `timeout-deadline-exceeded.toon` | True timeout — checks still running at deadline | `status: error / wait_outcome: deadline_exceeded`. Resolver maps to `ci_final_status: timeout`. |
@@ -49,12 +49,12 @@ for the fix.
 | Fixture | Stressor | Why it matters |
 |---------|----------|----------------|
 | `url-with-commas-and-quotes.toon` | (a) URL with commas/quotes | URL columns of tab-separated rows may contain commas, quotes, and escaped percent codes — the tab-mode splitter must ignore commas. |
-| `check-name-special-chars.toon` | (b) Check name with `:`, `[]`, `()`, `/`, `=` | Real CI check names like `lint:strict`, `coverage = 95%`, `build (linux/amd64)`. The colon-bearing names triggered the live bug in `parse_toon`'s key/value-detection heuristic — fixed in TASK-004. |
+| `check-name-special-chars.toon` | (b) Check name with `:`, `[]`, `()`, `/`, `=` | Real CI check names like `lint:strict`, `coverage = 95%`, `build (linux/amd64)`. Colon-bearing names must not trip `parse_toon`'s key/value-detection heuristic. |
 | `multi-line-error-summary.toon` | (c) Multi-line `\|` content | Older `gh` envelopes carry multi-line error summaries via the TOON `\|` block. Must parse cleanly with a trailing `checks[N]:` table. |
 | `older-gh-envelope.toon` | (d) Older `gh` CLI envelope | Older `gh` versions emitted empty `url` and `run_id` fields; the parser must tolerate empty tab-separated columns and the resolver must still classify by `final_status`. |
 | `huge-checks-block.toon` | (e) >50-row checks table | Pins parser correctness at realistic large-PR counts (55 rows). |
 | `mixed-skipped-cancelled-neutral.toon` | (f) SKIPPED + CANCELLED + NEUTRAL + FAIL | A failure envelope mixing all four non-success terminal states. The `failing_checks` enumeration must include CANCELLED, NEUTRAL, AND FAILURE conclusions. |
-| `failing-checks-with-colon-names.toon` | (b) companion | Companion to `check-name-special-chars`: a failure envelope whose `failing_checks[N]:` rows have colon-bearing names. Before the TASK-004 fix the resolver returned `failing_checks: []` — consumers depending on this enumeration (e.g. ci-verify consume-failures mode) silently received no failing-check signal. |
+| `failing-checks-with-colon-names.toon` | (b) companion | Companion to `check-name-special-chars`: a failure envelope whose `failing_checks[N]:` rows have colon-bearing names. A resolver that returns `failing_checks: []` here leaves consumers of that enumeration (e.g. ci-verify consume-failures mode) with no failing-check signal. |
 
 ## Envelope shape
 

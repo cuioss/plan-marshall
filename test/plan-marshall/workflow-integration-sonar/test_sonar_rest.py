@@ -5,23 +5,21 @@
 Tests REST client subcommands with mocked HTTP responses.
 """
 
-import importlib.util
 from argparse import Namespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-sonar', 'sonar_rest.py')
 
 # Module-level importlib load — the cmd_* logic tests call into the script's
 # functions in-process, so the module is imported once here rather than inside
 # each test.
-_spec = importlib.util.spec_from_file_location('sonar_rest', str(SCRIPT_PATH))
-assert _spec is not None and _spec.loader is not None
-sonar_rest = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(sonar_rest)
+sonar_rest = load_script_module(
+    'plan-marshall', 'workflow-integration-sonar', 'sonar_rest.py', 'sonar_rest'
+)
 
 
 class TestSonarRestCLI:

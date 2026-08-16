@@ -485,9 +485,9 @@ def test_ci_logs_without_default_cwd_passes_none(monkeypatch):
 # format_checks_toon (jobs) — Go zero-value timestamp regression
 # =============================================================================
 #
-# Regression for the lesson-2026-04-19-14-007 bug: a SKIPPED job with
-# `0001-01-01T00:00:00Z` timestamps used to leak ~63.9-billion-second
-# `elapsed_sec` values into the TOON aggregate. Contract after the fix:
+# A SKIPPED job carrying Go zero-value `0001-01-01T00:00:00Z` timestamps
+# must not leak ~63.9-billion-second `elapsed_sec` values into the TOON
+# aggregate. The contract:
 #
 #   (a) aggregate elapsed_sec is bounded by a 24h ceiling
 #   (b) skipped row (with Go zero-value timestamps) has NO `elapsed_sec` key

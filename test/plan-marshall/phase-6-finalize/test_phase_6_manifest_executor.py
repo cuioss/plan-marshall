@@ -179,11 +179,10 @@ class TestExecutorDispatchScenarios:
     def test_unlisted_steps_never_fire(self, plan_context):
         """A step absent from the manifest list MUST NOT appear in dispatch.
 
-        Under the new precondition-resolver model (lesson 2026-05-15-14-002),
-        Row 5 surgical_bug_fix RETAINS the review gates — the legacy
-        ``ci-wait`` step is dropped defensively, but ``automatic-review``
-        and ``sonar-roundtrip`` are kept. ``knowledge-capture`` is unrelated
-        to this lesson's contract; it stays out of the candidate list here.
+        Under the precondition-resolver model, Row 5 surgical_bug_fix RETAINS
+        the review gates — the legacy ``ci-wait`` step is dropped defensively,
+        but ``automatic-review`` and ``sonar-roundtrip`` are kept.
+        ``knowledge-capture`` stays out of the candidate list here.
         """
         plan_context.plan_dir_for('p6-pruned')
         # Inject legacy ci-wait (not in default set after the lesson)
@@ -225,8 +224,8 @@ class TestExecutorDispatchScenarios:
     def test_recipe_path_dispatches_only_recipe_steps(self, plan_context):
         """Recipe-driven manifest must yield a slim dispatch list.
 
-        Under the new precondition-resolver contract (lesson 2026-05-15-14-002)
-        Row 2 (recipe) RETAINS review gates — ``automatic-review`` and
+        Under the precondition-resolver contract, Row 2 (recipe) RETAINS
+        review gates — ``automatic-review`` and
         ``sonar-roundtrip`` survive. Only the legacy ``ci-wait`` step ID is
         defensively narrowed out when present in the candidate list.
         """

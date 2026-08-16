@@ -26,8 +26,8 @@ surface (``check_auth``, ``fetch_pr_comments_data``, ``fetch_pr_head_sha``):
         ``(self-response-loop)`` Q-Gate finding instead of passing silently.
     (e) stale-override refusal — an operator authorization granted at one HEAD
         does NOT authorize a merge at a later HEAD carrying commits the ruling
-        never covered (the plan-marshall#1067 shape), and a re-grant at the new
-        HEAD restores it, so the escape hatch is BOUND rather than removed.
+        never covered, and a re-grant at the new HEAD restores it, so the
+        escape hatch is BOUND rather than removed.
     (f) cross-kind refusal — an authorization granted over a DIFFERENT gap at the
         SAME HEAD (the ``pre-merge-consent`` the Pre-Merge Confirmation Gate
         grants moments earlier) does NOT satisfy this barrier, while the
@@ -40,9 +40,9 @@ surface (``check_auth``, ``fetch_pr_comments_data``, ``fetch_pr_head_sha``):
         transcribed expectation, with a matched ``participated`` negative control
         proving the comparison can fail.
 
-Per lesson 2026-07-09-14-001 the provider response is built from a real fixture
-shape (mirroring ``test_github_pr.py``), so a green fixture cannot diverge from
-production provider behaviour.
+The provider response is built from a real fixture shape (mirroring
+``test_github_pr.py``), so a green fixture cannot diverge from production
+provider behaviour.
 """
 
 import argparse
@@ -304,9 +304,9 @@ review_completeness = load_script_module(
 )
 
 
-# Only CodeRabbit speaks. `pr-agent` — the required bot — never publishes, which
-# is the plan-marshall#1045 shape: the fix commit was reviewed by CodeRabbit and
-# never by the required bot, yet nothing downstream blocked the merge.
+# Only CodeRabbit speaks. `pr-agent` — the required bot — never publishes: a
+# commit reviewed by a non-required bot and never by the required one, which
+# nothing downstream would otherwise block.
 _CODERABBIT_ONLY = [_INITIAL_COMMENTS[0]]
 
 
@@ -340,7 +340,7 @@ def _completeness(plan_id, participated_csv, required, optional, **observation):
 
 
 def test_absent_required_bot_blocks_merge_though_no_comment_is_pending(plan_context, monkeypatch):
-    """A required bot that never reviewed must block the merge — plan-marshall#1045.
+    """A required bot that never reviewed blocks the merge.
 
     The comment predicate is satisfied (every fetched comment triaged, zero
     pending), so on the pending count alone the barrier would proceed to merge.
@@ -407,8 +407,8 @@ def test_optional_bot_silence_does_not_block_merge(plan_context, monkeypatch):
 # Predicate 2 reporting `participation_complete: false` is what the barrier calls
 # a REPORTED GAP. The barrier may proceed past a reported gap only on an operator
 # authorization that is valid at the HEAD it is about to merge — never on a
-# decision-log entry recalled from an earlier pass, which is precisely how
-# plan-marshall#1067 merged five unreviewed production commits.
+# decision-log entry recalled from an earlier pass, which would admit
+# unreviewed production commits behind a stale authorization.
 
 _merge_auth = load_script_module(
     'plan-marshall', 'manage-status', '_cmd_merge_authorization.py', '_barrier_merge_auth_cmd'
@@ -465,7 +465,7 @@ def _authorization_check(plan_id, head):
 
 
 def test_stale_override_does_not_satisfy_barrier_after_head_advances(plan_context, monkeypatch):
-    """The plan-marshall#1067 shape, end to end.
+    """A stale override does not satisfy the barrier once HEAD advances.
 
     An operator rules "merge anyway" over a docs-only delta at HEAD A. A rebase
     then advances the branch to HEAD B carrying production commits, and the

@@ -32,7 +32,6 @@ import importlib.util
 import json
 import re
 import sys
-from pathlib import Path
 
 import pytest
 
@@ -41,25 +40,12 @@ import pytest
 # seams can be injected at the call level without spawning a subprocess.
 # ---------------------------------------------------------------------------
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'phase-6-finalize'
-    / 'scripts'
-)
+from conftest import get_scripts_dir, load_script_module  # noqa: E402
+_SCRIPTS_DIR = get_scripts_dir('plan-marshall', 'phase-6-finalize')
 
 
 def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None
-    assert spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
+    return load_script_module('plan-marshall', 'phase-6-finalize', filename, name)
 
 
 _mod = _load_module('ci_verify', 'ci_verify.py')
@@ -68,7 +54,6 @@ _mod = _load_module('ci_verify', 'ci_verify.py')
 # the PERSISTED head_at_completion record rather than a re-run of CI.
 from argparse import Namespace  # noqa: E402
 
-from conftest import load_script_module  # noqa: E402
 
 _ci_verify_lifecycle = load_script_module(
     'plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_ci_verify_lifecycle'
@@ -671,7 +656,7 @@ def test_jobs_file_written_with_normalized_checks(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Fail-closed hardening (PR #849 review) — status_fn error short-circuit,
+# Fail-closed hardening — status_fn error short-circuit,
 # malformed-checks guard, empty-conclusion fail-closed, '0' PR-number catch.
 # ---------------------------------------------------------------------------
 

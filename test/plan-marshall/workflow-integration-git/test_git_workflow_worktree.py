@@ -40,7 +40,6 @@ removes that skill in a later task.
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import shutil
 import subprocess
@@ -54,16 +53,15 @@ from _resolve_project_dir_fixtures import (
 )
 from toon_parser import parse_toon
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'workflow-integration-git', 'git-workflow.py')
 
 # The entrypoint filename is kebab-case (git-workflow.py), which is not a
 # valid Python module identifier — load it via importlib instead of `import`.
-_spec = importlib.util.spec_from_file_location('git_workflow', SCRIPT_PATH)
-assert _spec is not None and _spec.loader is not None
-git_workflow = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(git_workflow)
+git_workflow = load_script_module(
+    'plan-marshall', 'workflow-integration-git', 'git-workflow.py', 'git_workflow'
+)
 
 cmd_locate_plan_checkout = git_workflow.cmd_locate_plan_checkout
 cmd_worktree_create = git_workflow.cmd_worktree_create
@@ -184,7 +182,7 @@ class TestEnsureWorktreePlanLocalReal:
         """A pre-existing ``.plan/local`` symlink (a worktree created by an older
         symlinking revision, or manual intervention) is unlinked and replaced by a
         real directory — mkdir(exist_ok=True) alone would leave the symlink in
-        place, violating the fully-REAL guarantee (PR #557 review)."""
+        place, violating the fully-REAL guarantee."""
         worktree = tmp_path / 'wt'
         (worktree / '.plan').mkdir(parents=True)
         main_local = tmp_path / 'main' / '.plan' / 'local'

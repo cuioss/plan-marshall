@@ -522,7 +522,7 @@ def test_block_parser_isolates_two_adjacent_dispatches():
 
 
 def test_field_parser_strips_any_bracketed_skills_index():
-    """Regression pin (cuioss-review-bot, PR #1197): the field regex must strip
+    """The field regex must strip
     ANY bracketed index — a digit ``[2]`` OR a placeholder ``[N]`` (the form the
     generic templates write) — so the header normalizes to ``skills`` instead of
     silently dropping the field. A ``\\d*``-only index matched ``[2]`` but not
