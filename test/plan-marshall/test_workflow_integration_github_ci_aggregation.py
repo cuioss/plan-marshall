@@ -313,7 +313,7 @@ def test_three_successes_one_skipped_is_success():
         _check('SKIPPED', name='license-check'),
     ]
     status, failing, wait = github_ops._derive_overall_status(checks)
-    assert status == 'success', f'PR #410 regression: expected success, got {status}'
+    assert status == 'success', f'pass-plus-skipped must aggregate to success, got {status}'
     assert failing == []
     assert wait == []
 

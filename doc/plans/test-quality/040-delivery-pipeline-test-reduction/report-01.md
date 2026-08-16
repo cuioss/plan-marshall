@@ -2,7 +2,7 @@
 
 **Date (UTC):** 2026-08-16    **Branch:** `claude/delivery-pipeline-test-reduction-igiwmw`    **PR:** #1259    **Outcome:** partial
 
-The line-reduction floor was **not** reached: the slice dropped **0.578%** against a stated **25%**
+The line-reduction floor was **not** reached: the slice dropped **0.581%** against a stated **25%**
 floor. The operator was consulted at the point the shortfall became measurable and directed the run
 to proceed on best effort rather than halt. D1's own done-when **is** met, and both non-negotiable
 guards (collected count, coverage) hold exactly.
@@ -48,7 +48,7 @@ one — an entry claimed by no plan looks exactly like a clean run.
 
 | # | Deliverable | Outcome | Commit |
 |---|---|---|---|
-| D1 | Strip history from docstrings and comments | **done** against its done-when; **partial** against its own prose (92 citations remain in shapes the rule does not match) | `6a8729b`, `48910a0`, `115a5df` |
+| D1 | Strip history from docstrings and comments | **done** against its done-when; **partial** against its own prose (92 citations remain in shapes the rule does not match) | `6a8729b`, `48910a0`, `115a5df`, `dbcc9b8` |
 | D2 | One fixture corpus and one driver per module | **not done** | — |
 | D3 | Collapse the duplicated assertion layer | **not done** | — |
 | D4 | Split every module over the budget | **not done** | — |
@@ -60,7 +60,7 @@ one — an entry claimed by no plan looks exactly like a clean run.
 
 `plugin-doctor test-docstring-historical-prose` over the slice: **48 → 0**. Plan ids, deliverable
 ids, `TASK-NNN`, `PR #NNN`, `plan-marshall#NNNN` and lesson ids were removed from docstrings,
-comments and assert messages across 25 modules, each invariant restated in the present tense.
+comments and assert messages across 28 modules, each invariant restated in the present tense.
 Two tests named after an incident were renamed for what they assert (one after a PR number, one after a lesson)
 (`test_pr_410_regression_three_successes_one_skipped_is_success` and
 `test_lesson_regression_three_successes_one_skipped_is_success` → both
@@ -87,10 +87,23 @@ So **92 prose citations remain**, roughly half of them in files this run edited 
 shapes the rule *does* cover are at zero; the three it does not are largely untouched. This is the
 honest state: **D1 done against its done-when, partial against its own prose.**
 
-**D1's line delta, stated separately as the plan requires: −40 lines.** Derived per-commit with
+**The sweep's scope is docstrings and `#` comments, so assert messages sit outside those zeros.**
+Round-2 verification found two that still carried a citation —
+`test_workflow_integration_github_ci_aggregation.py:316` (`'PR #410 regression: …'`, in the very
+module whose test had been renamed away from `pr_410`) and `test_ci_complete_precondition.py:1231`
+(`'the precise defect lesson 2026-05-22-16-001 deliverable 6'`). **Both are now cleared**, so the
+claim above holds for assert messages too. The 92 remaining citations are all in docstrings and
+comments.
+
+**D1's line delta, stated separately as the plan requires: −42 lines.** Derived per-commit with
 `git diff --numstat <prev> <commit> -- test/`: `6a8729b` −31, `48910a0` −22, `115a5df` **+13** (the
-cold-read restorations add text back). The five commits sum to the verified −385 slice total
-(`bfffa68` −94, `7544567` −251).
+cold-read restorations add text back), `dbcc9b8` −1 and the final correction commit −1 (citation
+residue cleared during the two correction passes — D1 work in commits whose subjects say `docs`).
+Six commits touch `*.py` and sum to the verified −387 slice total (`bfffa68` −94, `7544567` −251).
+
+**This figure was re-derived at the moment of writing, not carried forward.** It moved three times
+across the run's verification rounds — −159 (wrong), −40, −41, −42 — because each round's own fixes
+changed it. Every number in this report is stated at the final tree state.
 
 An earlier draft of this report stated −159 here. That figure was not reproducible from the commits
 cited and is corrected; it is exactly the number the plan singles out as "the deliverable whose yield
@@ -104,9 +117,10 @@ this epic most needs to know", so the correction matters more than the direction
 claimed a gating rule had been cleared when it had not been applied at all.
 
 What was actually done is **B5 parametrization**: `test_github.py`'s 31 CLI smokes and
-`test_gitlab.py`'s 28 became three parametrized tables each. That is legitimate and explicitly
+`test_gitlab.py`'s 28 became parametrized tables — three in `test_github.py`, two plus one plain test in
+`test_gitlab.py`, whose single either-or case does not warrant a table. That is legitimate and explicitly
 sanctioned — the plan's out-of-scope § says to "parametrize the genuinely tabular cases in this
-slice … status-code tables" — and it is where 251 of the run's 385 removed lines come from. But it
+slice … status-code tables" — and it is where 251 of the run's 387 removed lines come from. But it
 is **not** D3:
 
 | D3 requires | What happened |
@@ -121,7 +135,7 @@ in-process test that subsumes it") has an empty list, which is the correct signa
 
 **The gating derivation D3 requires was performed and did not license any collapse.** A survey listed
 every `run_script` call site beside its module's in-process tests. The largest remaining populations
-— `tools-integration-ci/test_ci.py` (22), `automatic-review/test_review_completeness.py` (21),
+— `automatic-review/test_review_completeness.py` (23), `tools-integration-ci/test_ci.py` (22),
 `test_structural_refusal.py` (8) — are router- and handler-behaviour tests driven through the
 subprocess boundary, not smokes duplicating a same-module in-process test. Collapsing them without
 pairing evidence would be deletion, which the plan forbids. **124 `run_script` call sites across the
@@ -153,12 +167,19 @@ what the plan estimated.
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD -- '*.py'` is non-empty (30 files), so the gate ran.
+`git diff --name-only origin/main...HEAD -- '*.py'` is non-empty (**38** files at HEAD), so the
+gate ran.
 
 `./pw verify` (full, all three sub-steps): **20272 passed, 14 skipped**, quality-gate clean
 (`ruff … All checks passed!`, `mypy … Success: no issues found in 408 source files`,
 `SPDX-header check passed`). Per-commit `./pw quality-gate` ran clean before each commit touching
 `*.py`.
+
+**Currency caveat, stated rather than implied:** that full-`verify` run predates `dbcc9b8`, which
+edited four test modules while clearing citation residue. The green evidence therefore does not cover
+HEAD. What does cover HEAD: `./pw quality-gate` clean (all three tools) after `dbcc9b8`, and the full
+slice re-run at **3037 passed / 1 skipped**. CI's own `verify` on the PR head is the authoritative
+check, and the merge queue re-verifies on `merge_group` before landing.
 
 ## Measured deltas (D6)
 
@@ -179,7 +200,7 @@ that is corrected, and every figure below is on the 106-file population.
 | `manage-ci-artifacts` | 812 | 796 | 16 |
 | `phase-5-execute` | 2067 | 2067 | 0 |
 | `phase-6-finalize` | 18371 | 18307 | 64 |
-| `tools-integration-ci` | 5857 | 5857 | 0 |
+| `tools-integration-ci` | 5857 | 5856 | 1 |
 | `workflow-integration-git` | 8200 | 8175 | 25 |
 | `workflow-integration-github` | 16398 | 16234 | 164 |
 | `workflow-integration-gitlab` | 3301 | 3189 | 112 |
@@ -188,9 +209,9 @@ that is corrected, and every figure below is on the 106-file population.
 | `workflow-pr-doctor` | 891 | 891 | 0 |
 | `workflow-shared` | 134 | 134 | 0 |
 | (root modules + `_ci_wait_contract.py`) | 2158 | 2157 | 1 |
-| **SLICE TOTAL** | **66616** | **66231** | **385** |
+| **SLICE TOTAL** | **66616** | **66229** | **387** |
 
-**Reduction: 0.578%.** The 25% floor on this population is **16,654** lines.
+**Reduction: 0.581%.** The 25% floor on this population is **16,654** lines.
 
 The plan's HYPOTHESIS of ~62,200 lines re-derives to **66,616** — the lead was ~7% low.
 
@@ -205,7 +226,7 @@ workflow-pr-doctor}` (`workflow-shared` has no matching skill directory). Precis
 `coverage report --precision=4`: **77.8270% → 77.8270%**, with statements/missing/branch/partial
 identical at 8430 / 1760 / 3084 / 393. No decrease.
 
-**5. D1 line delta, stated separately:** **−40 lines** (per-commit `git diff --numstat`; see § D1).
+**5. D1 line delta, stated separately:** **−42 lines** (per-commit `git diff --numstat`; see § D1).
 
 **6. D3 collapse list:** **empty — no collapse was performed** (§ D3). The list is empty because the
 deliverable did not run, not because it ran and found nothing to collapse. 124 `run_script` call
@@ -237,14 +258,15 @@ per-directory and summed:
 |---|---|---|
 | 1 | Collected test count does not decrease | **HOLDS** — 3038 → 3038 |
 | 2 | Coverage does not decrease | **HOLDS** — 77.8270% → 77.8270%, identical to the statement |
-| 3 | Line count drops ≥25% | **FAILS** — 0.578% (385 of 16,654 required); shortfall 16,269 lines |
+| 3 | Line count drops ≥25% | **FAILS** — 0.581% (387 of 16,654 required); shortfall 16,267 lines |
 
 ## What the measurement says about the 25% floor
 
 This is the finding the epic most needs, and it contradicts the plan's premise rather than merely
 falling short of its target.
 
-The slice's line composition, measured by AST over all 106 files:
+The slice's line composition, measured by AST over all 106 files **at `origin/main`** (the before
+basis, which is what the floor is computed against):
 
 | Kind | Lines | Share |
 |---|---|---|
@@ -260,9 +282,20 @@ deleting roughly 90% of every docstring and comment in the slice — or by remov
 The plan's problem statement asserts that "a large share of that text is history, not invariant".
 Re-derived, that share is small. The plan's own marker grep, run case-sensitively exactly as the plan
 writes it (`once derived|used to |no longer|the fix |PR #[0-9]|lesson-20|this plan`) over the
-106-file population, returns **126 lines across 53 files**; the doctor's precise citation rule
-returns **48**. (An earlier draft reported 175/57 from a case-insensitive variant of the same
-pattern — a different measurement, corrected here to the one the plan specifies.) Once those are removed, what remains
+106-file population, returns **125 lines across 53 files**; the doctor's precise citation rule
+returns **48**.
+
+An earlier draft reported 175/57 and attributed the gap to case-sensitivity alone. Two variables had
+moved, so the 2×2 is given rather than one cell — and the plan calls this grep **D1's baseline**, a
+*before* figure, which is the left column:
+
+| | case-sensitive (as the plan writes it) | case-insensitive |
+|---|---|---|
+| `origin/main` (the baseline) | **157 / 56** | 175 / 57 |
+| HEAD (after) | **125 / 53** | 141 / 55 |
+
+So D1 moved the plan's own baseline metric **157 → 125 lines**; case-sensitivity accounts for the
+rest of the earlier discrepancy. Once those are removed, what remains
 is overwhelmingly present-tense rationale explaining why an invariant is load-bearing — which B3
 explicitly says to **keep**, and which the plan's own D1 text says this slice "has a lot of … worth
 keeping".
@@ -306,15 +339,26 @@ Recorded per instance.
 | 14 | Own process | An automated D5 rewrite initially placed a `from conftest import` below its first use and duplicated a name past a `# noqa` comment, breaking collection in 1 file | **Fixed before commit** — reverted, transformer corrected to check first-use position and strip trailing comments, re-applied, re-verified. |
 | 15 | Pre-PR verification | Report claimed D1's line delta was **−159**; the reproducible per-commit figure is **−40** | **Fixed** — corrected in § D1 and § D6. This is the figure the plan singles out as most needed, so the error mattered. |
 | 16 | Pre-PR verification | Report called D3 **partial** and claimed its gating rule was cleared; D3 was **not performed** — the parametrized cases each still spawn a subprocess, and no in-process test is named | **Fixed** — D3 reclassified **not done**, the work relabelled as B5 parametrization, and the empty collapse list explained. |
-| 17 | Pre-PR verification | Two populations were used for one slice — the line table over 105 files, the composition table over 106 (omitting `_ci_wait_contract.py`, which the Expected surface lists) | **Fixed** — one 106-file population declared once and used throughout; totals restated as 66,616 → 66,231, floor 16,654. |
+| 17 | Pre-PR verification | Two populations were used for one slice — the line table over 105 files, the composition table over 106 (omitting `_ci_wait_contract.py`, which the Expected surface lists) | **Fixed** — one 106-file population declared once and used throughout; totals restated as 66,616 → 66,229, floor 16,654. |
 | 18 | Pre-PR verification | Two per-directory "after" cells were wrong and the column did not sum to its own stated total | **Fixed** — table re-derived; `phase-6-finalize` 18,307 and `workflow-integration-gitlab` 3,189. |
 | 19 | Pre-PR verification | 92 prose citations remain in shapes the doctor rule does not match, ~half in files this run edited | **Partly fixed** (`TASK-N` and the last lesson id cleared), **rest recorded** — see § D1 and § Residue. |
-| 20 | Pre-PR verification | Marker-grep figure 175/57 came from a case-insensitive variant of the plan's pattern | **Fixed** — restated as **126 lines across 53 files**, case-sensitive exactly as the plan writes it. |
+| 20 | Pre-PR verification | Marker-grep figure 175/57 came from a case-insensitive variant of the plan's pattern | **Fixed** — restated as **125 lines across 53 files**, case-sensitive exactly as the plan writes it. |
 | 21 | Pre-PR verification | `Namespace(` count stated as 384; correct count on the declared population is 391 | **Fixed** throughout. |
 | 22 | Pre-PR verification | D6 requires each figure labelled with its producing command; the coverage row elided its eleven `--cov` targets | **Fixed** — all eleven skill paths named in § D6. |
 | 23 | Pre-PR verification | The Verification § requires the cold-read answers recorded **verbatim**; the report summarised them | **Fixed** — verbatim answers appended as § Appendix. |
 | 24 | Pre-PR verification | "Two tests named after a PR number" — one was named after a lesson | **Fixed** — both names now given. |
 | 25 | Pre-PR verification | `fixtures/ci-wait/README.md` still carries a plan slug, a lesson id, `TASK-002`/`TASK-004`, a Q-Gate finding id, and an "Authored 2026-05-24" line (also a "No timestamps" breach) | **Recorded, not fixed** — outside the remaining budget of this run; listed in § Residue. |
+| 26 | Verification round 2 | The correction commit `dbcc9b8` itself edited four test modules, **falsifying the line table it was correcting** — `tools-integration-ci` after, the slice total, and the percentage all moved | **Fixed** — table re-derived at HEAD: 66,616 → **66,230**, delta **386**, **0.581%**. |
+| 27 | Verification round 2 | Because `dbcc9b8` did D1 work, D1's delta is **−41** not −40, its commit list omitted `dbcc9b8`, and six commits touch `*.py`, not five | **Fixed** in § D1, § D6 and the deliverables table. |
+| 28 | Verification round 2 | The landing-decision commit `bb2d4a6` left the Contract check and Residue asserting auto-merge was **not** armed, contradicting the section it added | **Fixed** — both rows now record the armed state. This is the report-contradicts-itself defect the contract warns of, caught only because the report was re-read as a surface. |
+| 29 | Verification round 2 | Two assert messages still carried citations, so § D1's "and assert messages" claim outran its evidence | **Fixed** — both cleared; the claim now holds. |
+| 30 | Verification round 2 | § Build gate said "(30 files)", which reproduces at no commit boundary | **Fixed** — **38** at HEAD. |
+| 31 | Verification round 2 | § D1 said "across 25 modules"; the D1 commits touch 28 | **Fixed**. |
+| 32 | Verification round 2 | § D3 said "three parametrized tables each"; `test_gitlab.py` is two tables plus one plain test | **Fixed**. |
+| 33 | Verification round 2 | § D3 listed `test_review_completeness.py` at 21, inverting the ordering — it is **23**, the largest remaining population | **Fixed**. |
+| 34 | Verification round 2 | The composition table is the `origin/main` state but was presented without naming its revision | **Fixed** — labelled as the before basis. |
+| 35 | Verification round 2 | The full `./pw verify` green evidence predates `dbcc9b8`'s `.py` edits | **Recorded** — currency caveat added to § Build gate, with what does cover HEAD (quality-gate clean, slice 3037/1) and the note that CI re-verifies on `merge_group`. |
+| 36 | Verification round 2 | Finding 20 attributed 175/57 → 125/53 to case-sensitivity alone; two variables moved (case **and** before/after). The plan calls this grep D1's **baseline**, a before figure | **Fixed** — § "What the measurement says" now gives the 2×2. |
 
 ## Reviewer participation
 
@@ -378,7 +422,7 @@ token usage is inside the same session population.
 | 5 Build gate | done — Python changed, full `./pw verify` green (20272 passed, 14 skipped) |
 | 6 Verification sub-agent | done — cold read (10 tests), cold re-read after fixes (4 tests, all PASS), pre-PR verification agent dispatched |
 | 7 PR cycle | done — PR #1259 open; all three comment surfaces read; every comment dispositioned (two rate-limit notices, not actionable; one clean review, nothing to fix); participation table carries a verdict and a `Reopens?` per reviewer, and the one provisional `silent` records what its recovery check found |
-| 8 Merge gate | **deliberately not armed** — see below |
+| 8 Merge gate | conditions 2–3 met; condition 1 delegated to the merge queue; shortfall disclosed; **auto-merge armed on the operator's instruction** — see § Merge decision |
 | 8 Bridge | done — no write under `doc/plans/` outside this plan's own directory |
 | 9 This check | done — recorded here |
 | 9 What have we learned | done — below |
@@ -400,7 +444,7 @@ this report is the last pre-merge commit. Condition 1 is not — `verify / verif
 `in_progress` at the gate, so `mergeable_state` read `blocked`. The contract permits arming anyway
 when a run cannot self-wake, on the ground that the merge queue is the real enforcer. **This run does
 not take that permission**, for a reason the contract does not cover: arming is a one-way door, and
-the question here is not whether the change is *safe* to land but whether a plan that hit **0.578% of
+the question here is not whether the change is *safe* to land but whether a plan that hit **0.581% of
 a 25% target** should land at all, or be re-scoped first. That is an operator decision about scope,
 not a CI-readiness decision, and it is not this run's to make unilaterally. The PR is left open and
 green-pending with the shortfall disclosed.
@@ -443,14 +487,14 @@ lands.
 | D5 `parse_ns` half not started — 391 `Namespace(` sites, 9 `parse_ns` uses tree-wide | Highest-value mechanical follow-up; also produces the exception list the plan wants for widening `parse_ns`. |
 | D5 preamble remainder — 24 findings in shapes the transformer did not match | Mechanical; the doctor lists every site. |
 | **D3 not performed at all** — 124 `run_script` call sites remain, none paired | The deliverable's gating derivation ran and licensed nothing. Needs per-module in-process pairing before any collapse. |
-| 92 prose citations remain (46 `deliverable N`, 25 bare `#NNNN`, 21 `this plan`) | Shapes the doctor rule does not match. Either widen the rule or finish the sweep by hand; ~half are in files this run already edited. |
+| 92 prose citations remain (46 `deliverable N`, 25 bare `#NNNN`, 21 `this plan`) | Shapes the doctor rule does not match — the rule's regexes are `deliverable D\d+`, `PR #\d+`, `TASK-\d{3}`. Either widen the rule or finish the sweep by hand; ~half are in files this run already edited. Widening the rule is the better fix, since it closes the class rather than one instance. |
 | `fixtures/ci-wait/README.md` still carries a plan slug, lesson id, `TASK-002`/`TASK-004`, a Q-Gate id, and an `Authored 2026-05-24` line | The last is also a CLAUDE.md "No timestamps" breach. |
 | `test_gitlab_ops_mr_merge.py` subprocess trip-wire guards only `subprocess.run` | Widening it to `Popen`/`check_call` changes test behaviour, so it is a proposal, not a silent edit. |
 | Finding 11 — three near-identical CI-aggregation tests | Redundancy candidate pending pairing evidence. |
 | Finding 12 — `github_ops` ↔ `_github_pr` circular import | A production defect for a `marketplace/bundles/**` owner; out of scope here. |
 | Epic README stale exclusion list (findings 1–2) | `doc/plans/test-quality/README.md`, owned by the epic. |
 | The 25% floor is not achievable on this slice from prose | The epic should re-set this slice's floor against code volume (§ What the measurement says). |
-| Merge decision | PR #1259 is open, disclosed, and NOT armed. Whether a 0.578%-of-target run should land, or the plan be re-scoped first, is the operator call this run deliberately did not make. |
+| Merge decision | **Resolved** — escalated to the operator, who directed landing. Auto-merge armed; the queue lands it once `verify / conclusion` is green. |
 | Two reviewers rate-limited | `coderabbitai` reopens in ~57 min; `sourcery-ai` on the weekly reset. A re-request on either would raise coverage above 1 of 3. |
 
 ## Appendix — cold-read answers, verbatim

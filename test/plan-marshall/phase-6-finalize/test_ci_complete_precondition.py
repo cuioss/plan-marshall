@@ -1227,9 +1227,8 @@ def test_consume_failures_mode_threads_wait_failed_envelope(plan_context):
     # can classify the failing checks.
     assert result['status'] == 'wait_failed', (
         f'consume-failures resolution must surface wait_failed, not '
-        f'{result["status"]!r} — short-circuiting on wait_failed is '
-        'the precise defect lesson 2026-05-22-16-001 deliverable 6 '
-        'guards against'
+        f'{result["status"]!r} — short-circuiting on wait_failed would '
+        'hide the failing checks this resolution exists to surface'
     )
     assert result['ci_final_status'] == 'failure'
     # The mode echo is the load-bearing signal: consumers branch on
