@@ -563,6 +563,34 @@ rounds running while obeying the paragraph above:
 Each round swept the surface the *original* change touched and missed the surface the *previous
 round's fix* touched.
 
+**A rationale you *wrote* is a claim about code you may not have read.** The sweeps above both ask
+what your change made **false** — text that was true once and is not any more. This asks the other
+question, about text that was **never** true: of the prose this round *added*, which sentences assert a
+**mechanism** rather than restating the assertion beside them? "Rejected by the fail-closed whitelist",
+"these two can disagree", "a falsy sentinel would satisfy this comparison" — each names behaviour
+somewhere else in the tree. For every such clause, name the file and symbol that makes it true and
+confirm it there, or delete the clause and keep the plain restatement.
+
+⛔ **Nothing else in this contract catches an invented rationale, because there is nothing to catch it
+against.** A stale claim contradicts the current tree, so a sweep can find it. An invented one
+contradicts only reality: the suite is green, the linter is clean, the doctor passes, and the sentence
+has no earlier version to diff against. It is introduced most often at exactly the moment least
+scrutinised — writing a docstring to *explain a fix a reviewer just asked for*.
+
+An observed run produced all three of the examples above, each in prose written by the round that was
+fixing the previous round's finding:
+
+| Written to explain | The claim | What the code said |
+|---|---|---|
+| a knob-registration table | an unregistered knob "is rejected by the fail-closed provisioning whitelist" on `set` | that whitelist is wired to three unrelated blocks and never to these knobs — and it is `get` that rejects, not `set` |
+| the same table's header | the constant and the assembled config "can disagree" | assembly deep-copies the constant wholesale, so for these knobs they cannot |
+| an identity assertion | `''` "would satisfy `== None`-style chains" | `'' == None` is `False`; the counterexample does not exist |
+
+The fix in each case was right; only the *reason given for it* was wrong — which is the worst form,
+because a docstring that explains **why** is trusted more than one that repeats **what**. That is
+exactly why an unverified rationale is worse than none: it is the sentence a later reader believes
+instead of checking. Prefer no rationale to an unchecked one.
+
 The two obligations below are part of that same per-round sweep, not a separate pass done once at
 the end. Both are checked **before every re-dispatch and again before the merge gate**.
 
