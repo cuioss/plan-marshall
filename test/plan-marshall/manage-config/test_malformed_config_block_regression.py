@@ -24,41 +24,21 @@ to, the per-site unit assertions in ``test_cmd_system_plan.py`` and
 ``test_cmd_finalize_steps.py``.
 """
 
-import importlib.util
-import sys
 from argparse import Namespace
-from pathlib import Path
 
 import pytest
 from _manage_config_fixtures import create_marshal_json
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
-)
-
 # `_cmd_finalize_steps` imports `finalize_step_presets` and `_config_defaults`
 # at module level — make the scripts dir importable before loading handlers.
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
+from conftest import load_script_module
 
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_cmd_system_plan = _load_module('_cmd_system_plan', '_cmd_system_plan.py')
-_cmd_finalize_steps = _load_module('_cmd_finalize_steps', '_cmd_finalize_steps.py')
+_cmd_system_plan = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_system_plan.py', module_name='_cmd_system_plan'
+)
+_cmd_finalize_steps = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_finalize_steps.py', module_name='_cmd_finalize_steps'
+)
 
 cmd_system = _cmd_system_plan.cmd_system
 cmd_project = _cmd_system_plan.cmd_project

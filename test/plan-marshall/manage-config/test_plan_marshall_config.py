@@ -11,10 +11,7 @@ Detailed variant and corner case tests are in:
 Tier 2 (direct import) tests with 3 subprocess tests for CLI plumbing.
 """
 
-import importlib.util
-import sys
 from argparse import Namespace
-from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from _manage_config_fixtures import (
@@ -23,30 +20,23 @@ from _manage_config_fixtures import (
     create_nested_marshal_json,
 )
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
+from conftest import load_script_module, run_script
+
+_cmd_ext_defaults = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_ext_defaults.py', module_name='_cmd_ext_defaults'
 )
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_cmd_ext_defaults = _load_module('_cmd_ext_defaults', '_cmd_ext_defaults.py')
-_cmd_init_mod = _load_module('_cmd_init', '_cmd_init.py')
-_cmd_skill_domains = _load_module('_cmd_skill_domains', '_cmd_skill_domains.py')
-_cmd_skill_resolution = _load_module('_cmd_skill_resolution', '_cmd_skill_resolution.py')
-_cmd_system_plan = _load_module('_cmd_system_plan', '_cmd_system_plan.py')
+_cmd_init_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_init.py', module_name='_cmd_init'
+)
+_cmd_skill_domains = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_skill_domains.py', module_name='_cmd_skill_domains'
+)
+_cmd_skill_resolution = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_skill_resolution.py', module_name='_cmd_skill_resolution'
+)
+_cmd_system_plan = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_system_plan.py', module_name='_cmd_system_plan'
+)
 
 cmd_ext_defaults = _cmd_ext_defaults.cmd_ext_defaults
 cmd_init = _cmd_init_mod.cmd_init
@@ -55,7 +45,6 @@ cmd_resolve_domain_skills = _cmd_skill_resolution.cmd_resolve_domain_skills
 cmd_plan = _cmd_system_plan.cmd_plan
 cmd_system = _cmd_system_plan.cmd_system
 
-from conftest import run_script  # noqa: E402
 
 # =============================================================================
 # Happy-Path Integration Tests (Tier 2 - direct import)
@@ -367,7 +356,9 @@ def test_cli_ext_defaults_help():
 # Domain Invariant Validation Tests
 # =============================================================================
 
-_config_defaults = _load_module('_config_defaults', '_config_defaults.py')
+_config_defaults = load_script_module(
+    'plan-marshall', 'manage-config', '_config_defaults.py', module_name='_config_defaults'
+)
 
 
 def test_validate_domain_invariants_no_overlap():

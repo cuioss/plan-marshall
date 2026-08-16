@@ -22,36 +22,23 @@ future edit that diverges the two is caught:
   re-exported in its place.
 """
 
-import importlib.util
-from pathlib import Path
-
 # The shared resolver imports by bare name (script-shared/scripts on PYTHONPATH).
 from _step_key_canonical import PROMOTED_BUILTIN_STEP_IDS, canonicalize_step_key
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-execution-manifest'
-    / 'scripts'
+from conftest import load_script_module
+
+_core = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', '_manifest_core.py', module_name='_mig_core'
 )
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None, f'Failed to load module spec for {filename}'
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_core = _load_module('_mig_core', '_manifest_core.py')
-_lanes = _load_module('_mig_lanes', '_manifest_lanes.py')
-_rules = _load_module('_mig_rules', '_manifest_rules.py')
-_validation = _load_module('_mig_validation', '_manifest_validation.py')
+_lanes = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', '_manifest_lanes.py', module_name='_mig_lanes'
+)
+_rules = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', '_manifest_rules.py', module_name='_mig_rules'
+)
+_validation = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', '_manifest_validation.py', module_name='_mig_validation'
+)
 
 
 # =============================================================================

@@ -35,38 +35,19 @@ the file before and after each ``get``.
 # ruff: noqa: I001, E402
 
 import hashlib
-import importlib.util
 import json
-import sys
 from argparse import Namespace
-from pathlib import Path
+from conftest import load_script_module
 
-_MANAGE_CONFIG_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
+_config_defaults = load_script_module(
+    'plan-marshall', 'manage-config', '_config_defaults.py', module_name='_config_defaults_for_distribution'
 )
-
-if str(_MANAGE_CONFIG_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_MANAGE_CONFIG_SCRIPTS_DIR))
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _MANAGE_CONFIG_SCRIPTS_DIR / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_config_defaults = _load_module('_config_defaults_for_distribution', '_config_defaults.py')
-_cmd_quality_phases = _load_module('_cmd_quality_phases_for_distribution', '_cmd_quality_phases.py')
-_cmd_init = _load_module('_cmd_init_for_distribution', '_cmd_init.py')
+_cmd_quality_phases = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_quality_phases.py', module_name='_cmd_quality_phases_for_distribution'
+)
+_cmd_init = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_init.py', module_name='_cmd_init_for_distribution'
+)
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH).
 import conftest  # noqa: E402, F401

@@ -17,30 +17,12 @@ from pathlib import Path
 
 import pytest
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, load_script_module, run_script
 
 # Script path for subprocess (CLI plumbing) tests.
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py')
 
 # Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime).
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-execution-manifest'
-    / 'scripts'
-)
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None, f'Failed to load module spec for {filename}'
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
 
 
 # Lane-block fixture, loaded via importlib per the _fixtures.py convention (a
@@ -55,7 +37,9 @@ _fixtures_spec.loader.exec_module(_fixtures_mod)
 fake_lane_blocks = _fixtures_mod.fake_lane_blocks
 
 
-_mem = _load_module('_mem_script', 'manage-execution-manifest.py')
+_mem = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_script'
+)
 cmd_compose = _mem.cmd_compose
 read_manifest = _mem.read_manifest
 get_manifest_path = _mem.get_manifest_path

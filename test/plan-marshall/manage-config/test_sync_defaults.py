@@ -12,36 +12,17 @@ Covers the non-destructive deep-merge contract:
 
 # ruff: noqa: I001, E402
 
-import importlib.util
-import json
-import sys
-from argparse import Namespace
 from pathlib import Path
+import json
+from argparse import Namespace
+from conftest import load_script_module
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
+_sync_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_sync_defaults.py', module_name='_cmd_sync_defaults'
 )
-
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_sync_mod = _load_module('_cmd_sync_defaults', '_cmd_sync_defaults.py')
-_config_defaults_mod = _load_module('_config_defaults_for_sync_provisioning_test', '_config_defaults.py')
+_config_defaults_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_config_defaults.py', module_name='_config_defaults_for_sync_provisioning_test'
+)
 
 cmd_sync_defaults = _sync_mod.cmd_sync_defaults
 

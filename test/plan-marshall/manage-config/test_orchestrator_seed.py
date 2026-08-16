@@ -14,37 +14,17 @@ Covers the seed-side surface added by this plan:
 
 # ruff: noqa: I001, E402
 
-import importlib.util
-import sys
-from pathlib import Path
-
 import pytest
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
+
+from conftest import load_script_module
+
+_config_defaults_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_config_defaults.py', module_name='_config_defaults_for_orchestrator_seed_test'
 )
-
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_config_defaults_mod = _load_module('_config_defaults_for_orchestrator_seed_test', '_config_defaults.py')
-_config_core_mod = _load_module('_config_core_for_orchestrator_seed_test', '_config_core.py')
+_config_core_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_config_core.py', module_name='_config_core_for_orchestrator_seed_test'
+)
 
 validate_orchestrator_block = _config_defaults_mod.validate_orchestrator_block
 

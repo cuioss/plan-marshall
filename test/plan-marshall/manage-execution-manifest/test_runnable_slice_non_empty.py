@@ -47,7 +47,6 @@ the case states the restored CAPABILITY instead of today's incidental values.
 
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -60,28 +59,13 @@ from conftest import load_script_module
 from _build_execute_factory import compute_command_key
 from _build_shared import DEFAULT_BUILD_TIMEOUT, get_bash_timeout
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-execution-manifest'
-    / 'scripts'
+
+_mem = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_runnable_slice'
 )
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None, f'Failed to load module spec for {filename}'
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_mem = _load_module('_mem_runnable_slice', 'manage-execution-manifest.py')
-_core = _load_module('_core_runnable_slice', '_manifest_core.py')
+_core = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', '_manifest_core.py', module_name='_core_runnable_slice'
+)
 
 _arch_build = load_script_module(
     'plan-marshall',

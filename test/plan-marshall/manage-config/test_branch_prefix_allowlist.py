@@ -28,7 +28,6 @@ updated. ``docs/`` is explicitly retired and asserted absent.
 import importlib.util
 import json
 import re
-import sys
 from pathlib import Path
 
 # repo_root/test/plan-marshall/manage-config/test_branch_prefix_allowlist.py
@@ -37,31 +36,11 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 _WORKFLOW_PATH = _REPO_ROOT / '.github' / 'workflows' / 'python-verify.yml'
 _MARSHAL_PATH = _REPO_ROOT / '.plan' / 'marshal.json'
 
-_SCRIPTS_DIR = (
-    _REPO_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
-)
 
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
+from conftest import load_script_module
 
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_config_defaults_mod = _load_module(
-    '_config_defaults_for_branch_prefix_allowlist_test', '_config_defaults.py'
+_config_defaults_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_config_defaults.py', module_name='_config_defaults_for_branch_prefix_allowlist_test'
 )
 
 

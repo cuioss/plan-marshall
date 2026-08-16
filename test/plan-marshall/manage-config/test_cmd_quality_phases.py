@@ -8,32 +8,12 @@ as well as scalar phase commands (phase-1-init, phase-2-refine).
 Tier 2 (direct import) tests with 2 subprocess tests for CLI plumbing.
 """
 
-import importlib.util
 import json
-import sys
 from argparse import Namespace
-from pathlib import Path
 
 from _manage_config_fixtures import SCRIPT_PATH, create_marshal_json
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
-)
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
+from conftest import load_script_module, run_script
 
 # Load dependency modules first so sys.modules is populated with test-controlled instances
 # before _cmd_quality_phases executes its module-level imports. This ensures patch.object
@@ -41,15 +21,22 @@ def _load_module(name, filename):
 # that _cmd_quality_phases holds references to.
 # _cmd_quality_phases must still be registered in sys.modules BEFORE _cmd_system_plan
 # does `from _cmd_quality_phases import cmd_phase` — preserving that ordering.
-_cmd_skill_domains = _load_module('_cmd_skill_domains', '_cmd_skill_domains.py')
-_cmd_skill_resolution = _load_module('_cmd_skill_resolution', '_cmd_skill_resolution.py')
-_cmd_quality_phases = _load_module('_cmd_quality_phases', '_cmd_quality_phases.py')
-_cmd_system_plan = _load_module('_cmd_system_plan', '_cmd_system_plan.py')
+_cmd_skill_domains = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_skill_domains.py', module_name='_cmd_skill_domains'
+)
+_cmd_skill_resolution = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_skill_resolution.py', module_name='_cmd_skill_resolution'
+)
+_cmd_quality_phases = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_quality_phases.py', module_name='_cmd_quality_phases'
+)
+_cmd_system_plan = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_system_plan.py', module_name='_cmd_system_plan'
+)
 
 cmd_plan = _cmd_system_plan.cmd_plan
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script  # noqa: E402, I001
 
 
 # `plan.phase-6-finalize.steps` and `plan.phase-5-execute.verification_steps`

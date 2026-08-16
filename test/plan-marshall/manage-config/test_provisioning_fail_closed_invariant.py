@@ -10,35 +10,19 @@ fail-closed guard (``_config_core.reject_unknown_provisioning_field``) is caught
 by the enumeration below.
 """
 
-import importlib.util
-import sys
 from argparse import Namespace
-from pathlib import Path
 
 # conftest.py sets up PYTHONPATH; _manage_config_fixtures seeds marshal.json fixtures.
 from _manage_config_fixtures import create_marshal_json
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
+from conftest import load_script_module
+
+_cmd_system_plan = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_system_plan.py', module_name='_cmd_system_plan'
 )
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_cmd_system_plan = _load_module('_cmd_system_plan', '_cmd_system_plan.py')
-_cmd_orchestrator = _load_module('_cmd_orchestrator', '_cmd_orchestrator.py')
+_cmd_orchestrator = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_orchestrator.py', module_name='_cmd_orchestrator'
+)
 
 cmd_system = _cmd_system_plan.cmd_system
 cmd_project = _cmd_system_plan.cmd_project

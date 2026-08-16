@@ -33,30 +33,11 @@ independent and both fail open; a guard that keyed on ``decision != 'build'``
 would pass every footprint case here and still reject real plans on ``unknown``.
 """
 
-import importlib.util
-from pathlib import Path
+from conftest import load_script_module
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-execution-manifest'
-    / 'scripts'
+_validation = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', '_manifest_validation.py', module_name='_manifest_validation_for_verdict_guard'
 )
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None, f'Failed to load module spec for {filename}'
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_validation = _load_module('_manifest_validation_for_verdict_guard', '_manifest_validation.py')
 check_build_verdict_consistent = _validation.check_build_verdict_consistent
 
 # A representative non-empty footprint. Its CONTENT is irrelevant to the guard —

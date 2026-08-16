@@ -61,7 +61,6 @@ a hand-built fixture is what let the four-field contract drift away from its
 consumer unnoticed.
 """
 
-import importlib.util
 import json
 from argparse import Namespace
 from pathlib import Path
@@ -74,28 +73,14 @@ import run_config
 from conftest import load_script_module
 
 # Tier 2 direct imports via importlib (scripts loaded via PYTHONPATH at runtime).
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-execution-manifest'
-    / 'scripts'
+
+
+_mem = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', 'manage-execution-manifest.py', module_name='_mem_execution_tier'
 )
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None, f'Failed to load module spec for {filename}'
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_mem = _load_module('_mem_execution_tier', 'manage-execution-manifest.py')
-_core = _load_module('_core_execution_tier', '_manifest_core.py')
+_core = load_script_module(
+    'plan-marshall', 'manage-execution-manifest', '_manifest_core.py', module_name='_core_execution_tier'
+)
 
 # The PRODUCTION producers of the four-field execution-tier envelope. The
 # ceiling-boundary regressions below assert against the fields these emit, so the

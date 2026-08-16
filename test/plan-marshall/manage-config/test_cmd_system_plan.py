@@ -8,40 +8,21 @@ test_cmd_quality_phases.py.
 Tier 2 (direct import) tests with 2 subprocess tests for CLI plumbing.
 """
 
-import importlib.util
-import sys
 from argparse import Namespace
-from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 from _manage_config_fixtures import SCRIPT_PATH, create_marshal_json
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
+from conftest import load_script_module, run_script
+
+_cmd_system_plan = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_system_plan.py', module_name='_cmd_system_plan'
 )
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_cmd_system_plan = _load_module('_cmd_system_plan', '_cmd_system_plan.py')
 
 cmd_system = _cmd_system_plan.cmd_system
 cmd_project = _cmd_system_plan.cmd_project
 cmd_plan = _cmd_system_plan.cmd_plan
 
-from conftest import run_script  # noqa: E402
 
 # =============================================================================
 # system Command Tests (Tier 2 - direct import)

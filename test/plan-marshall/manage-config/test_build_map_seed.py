@@ -49,31 +49,15 @@ from pathlib import Path
 
 import pytest
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
+
+from conftest import load_script_module
+
+_cmd_build_map_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_build_map.py', module_name='_cmd_build_map_for_build_map_test'
 )
-
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_cmd_build_map_mod = _load_module('_cmd_build_map_for_build_map_test', '_cmd_build_map.py')
-_cmd_init_mod = _load_module('_cmd_init_for_build_map_test', '_cmd_init.py')
+_cmd_init_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_init.py', module_name='_cmd_init_for_build_map_test'
+)
 
 # Resolve the SAME _config_core module the handler imported its helpers from, so
 # patching aggregate_build_map there is what seed_build_map_into() actually sees.

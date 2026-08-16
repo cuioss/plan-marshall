@@ -15,90 +15,40 @@ Covers:
   description drift, and the three Sonar roundtrip knobs.
 """
 
-# ruff: noqa: I001, E402
-
-import importlib.util
 import json
-import sys
 from argparse import Namespace
-from pathlib import Path
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
+import pytest
+
+from conftest import PROJECT_ROOT, load_script_module
+
+_MANAGE_CONFIG = ('plan-marshall', 'manage-config')
+
+parse_sensible_int = load_script_module(
+    'plan-marshall', 'script-shared', 'sensible_number.py',
+    module_name='_sensible_number_for_config_defaults_test',
+).parse_sensible_int
+
+_config_core_mod = load_script_module(
+    *_MANAGE_CONFIG, '_config_core.py', module_name='_config_core_for_config_defaults_test'
 )
-
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
-
-
-def _load_module(name: str, filename: str, *, base_dir: Path = _SCRIPTS_DIR, extra_syspath_dirs=()):
-    """Load a module from ``base_dir / filename`` via importlib by explicit path.
-
-    Mirrors the per-file importlib loading used across the manage-config tests so
-    a test does not depend on conftest PYTHONPATH discovery order. ``extra_syspath_dirs``
-    are inserted into ``sys.path`` (if absent) before the module is exec'd, for
-    modules whose own top-level imports resolve against a sibling directory.
-    """
-    for d in extra_syspath_dirs:
-        if str(d) not in sys.path:
-            sys.path.insert(0, str(d))
-    spec = importlib.util.spec_from_file_location(name, base_dir / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-def _load_sensible_number():
-    """Load the script-shared sensible_number module by explicit path.
-
-    The module lives under the shared ``script-shared/scripts`` surface.
-    """
-    shared_dir = (
-        Path(__file__).parent.parent.parent.parent
-        / 'marketplace'
-        / 'bundles'
-        / 'plan-marshall'
-        / 'skills'
-        / 'script-shared'
-        / 'scripts'
-    )
-    return _load_module(
-        '_sensible_number_for_config_defaults_test', 'sensible_number.py', base_dir=shared_dir
-    )
-
-
-_sensible_number_mod = _load_sensible_number()
-parse_sensible_int = _sensible_number_mod.parse_sensible_int
-
-
-_config_core_mod = _load_module(
-    '_config_core_for_split_gate_test', '_config_core.py'
+_config_defaults_mod = load_script_module(
+    *_MANAGE_CONFIG, '_config_defaults.py', module_name='_config_defaults_for_config_defaults_test'
 )
-_config_defaults_mod = _load_module(
-    '_config_defaults_for_split_gate_test', '_config_defaults.py'
+_cmd_init_mod = load_script_module(
+    *_MANAGE_CONFIG, '_cmd_init.py', module_name='_cmd_init_for_config_defaults_test'
 )
-_cmd_init_mod = _load_module(
-    '_cmd_init_for_split_gate_test', '_cmd_init.py'
+_cmd_system_plan_mod = load_script_module(
+    *_MANAGE_CONFIG, '_cmd_system_plan.py', module_name='_cmd_system_plan_for_config_defaults_test'
 )
-_cmd_system_plan_mod = _load_module(
-    '_cmd_system_plan_for_split_gate_test', '_cmd_system_plan.py'
+_cmd_orchestrator_mod = load_script_module(
+    *_MANAGE_CONFIG, '_cmd_orchestrator.py', module_name='_cmd_orchestrator_for_config_defaults_test'
 )
-_cmd_orchestrator_mod = _load_module(
-    '_cmd_orchestrator_for_split_gate_test', '_cmd_orchestrator.py'
+_cmd_quality_phases_mod = load_script_module(
+    *_MANAGE_CONFIG, '_cmd_quality_phases.py', module_name='_cmd_quality_phases_for_config_defaults_test'
 )
-_cmd_quality_phases_mod = _load_module(
-    '_cmd_quality_phases_for_simplicity_test', '_cmd_quality_phases.py'
-)
-_cmd_effort_mod = _load_module(
-    '_cmd_effort_for_effort_defaults_test', '_cmd_effort.py'
+_cmd_effort_mod = load_script_module(
+    *_MANAGE_CONFIG, '_cmd_effort.py', module_name='_cmd_effort_for_config_defaults_test'
 )
 
 
@@ -231,32 +181,77 @@ def test_finalize_step_params_constant_is_deleted():
     )
 
 
-def test_default_plan_finalize_includes_final_merge_without_asking():
-    """final_merge_without_asking nests under default:branch-cleanup with default False.
+#: Every step-owned param of `default:branch-cleanup`, with its seeded default.
+#: Each is declared in that step's `configurable:` body-doc frontmatter and folded
+#: into the step's nested param object by the get_default_config() finalize seed.
+_BRANCH_CLEANUP_PARAM_DEFAULTS = [
+    ('final_merge_without_asking', False),
+    ('auto_rebase_threshold', 'no_overlap_only'),
+    ('merge_queue_wait_budget_seconds', 1800),
+    ('admin_merge_on_stuck_state', False),
+    ('merge_hold_window', 'full_window_release_at_waits'),
+    ('merge_hold_budget_seconds', 3600),
+    ('use_merge_queue', False),
+]
 
-    The knob is a step-owned param of `default:branch-cleanup` in the keyed-map
-    `steps` structure (no longer a flat sibling of `steps`). It is resolved via
-    the configurable_contract parser delegation, folded into the step's
-    nested param object by the get_default_config() finalize-step seed.
+#: The subset re-asserted through the assembled config (see the round-trip test).
+_BRANCH_CLEANUP_ROUND_TRIP = _BRANCH_CLEANUP_PARAM_DEFAULTS[1:4]
+
+
+def _branch_cleanup_params():
+    """Return the seeded nested param object of the `default:branch-cleanup` step."""
+    return _params_for(
+        _config_defaults_mod.get_default_config()['plan']['phase-6-finalize']['steps'],
+        'default:branch-cleanup',
+    )
+
+
+@pytest.mark.parametrize(
+    ('param', 'expected'),
+    _BRANCH_CLEANUP_PARAM_DEFAULTS,
+    ids=[f'{name}={value}' for name, value in _BRANCH_CLEANUP_PARAM_DEFAULTS],
+)
+def test_branch_cleanup_step_param_seeds_its_default(param, expected):
+    """Each default:branch-cleanup param seeds its default and is not a flat sibling.
+
+    The knob nests in the step's param object inside the keyed-map `steps`
+    structure. The negative half is load-bearing: a knob that ALSO survived as a
+    flat `plan.phase-6-finalize` sibling would be readable from two places that
+    can disagree, and the flat one would win silently for any caller that reads
+    the phase rather than the step.
     """
-    config = _config_defaults_mod.get_default_config()
-    branch_cleanup = _params_for(
-        config['plan']['phase-6-finalize']['steps'], 'default:branch-cleanup'
+    branch_cleanup = _branch_cleanup_params()
+
+    assert param in branch_cleanup, (
+        f'{param} must nest under default:branch-cleanup in the seeded steps map'
+    )
+    assert branch_cleanup[param] == expected, (
+        f'{param} default must be {expected!r}, got {branch_cleanup[param]!r}'
+    )
+    # bool is an int subclass, so equality alone would accept 0 for False.
+    assert type(branch_cleanup[param]) is type(expected)
+    assert param not in _config_defaults_mod.DEFAULT_PLAN_FINALIZE, (
+        f'{param} must not survive as a flat phase-level knob'
     )
 
-    # homed in the branch-cleanup step's nested param object with the False default
-    assert 'final_merge_without_asking' in branch_cleanup, (
-        'final_merge_without_asking must nest under default:branch-cleanup in the seeded steps map'
-    )
-    assert branch_cleanup['final_merge_without_asking'] is False, (
-        'final_merge_without_asking default must be False '
-        '(interactive-by-default: prompt the operator before the final merge; '
-        'set True to merge without asking, serialized via the cross-plan merge-lock)'
-    )
-    # it is NOT a flat sibling of steps anymore
-    assert 'final_merge_without_asking' not in _config_defaults_mod.DEFAULT_PLAN_FINALIZE, (
-        'final_merge_without_asking must not survive as a flat phase-level knob'
-    )
+
+@pytest.mark.parametrize(
+    ('param', 'expected'),
+    _BRANCH_CLEANUP_ROUND_TRIP,
+    ids=[f'{name}={value}' for name, value in _BRANCH_CLEANUP_ROUND_TRIP],
+)
+def test_get_default_config_round_trips_branch_cleanup_param(param, expected):
+    """get_default_config() carries the knob through into the assembled config.
+
+    The seed table above pins the default against DEFAULT_PLAN_FINALIZE; this
+    pins that the config a caller actually receives still carries it, so a seed
+    that computes the value and then drops it during assembly fails here instead
+    of passing silently.
+    """
+    branch_cleanup = _branch_cleanup_params()
+
+    assert branch_cleanup[param] == expected
+    assert type(branch_cleanup[param]) is type(expected)
 
 
 def test_default_plan_finalize_simplify_is_config_less_after_ceremony_lane_migration():
@@ -407,164 +402,12 @@ def test_seed_finalize_steps_default_on_non_infra_steps_have_no_lane_key():
         )
 
 
-def test_default_plan_finalize_includes_auto_rebase_threshold():
-    """auto_rebase_threshold nests under default:branch-cleanup with default 'no_overlap_only'."""
-    config = _config_defaults_mod.get_default_config()
-    branch_cleanup = _params_for(
-        config['plan']['phase-6-finalize']['steps'], 'default:branch-cleanup'
-    )
-
-    assert 'auto_rebase_threshold' in branch_cleanup, (
-        'auto_rebase_threshold must nest under default:branch-cleanup in the seeded steps list'
-    )
-    assert branch_cleanup['auto_rebase_threshold'] == 'no_overlap_only', (
-        "auto_rebase_threshold default must be 'no_overlap_only'"
-    )
-    # not a flat sibling of steps anymore
-    assert 'auto_rebase_threshold' not in _config_defaults_mod.DEFAULT_PLAN_FINALIZE
-
-
-def test_get_default_config_includes_auto_rebase_threshold():
-    """get_default_config() surfaces auto_rebase_threshold nested under default:branch-cleanup."""
-    config = _config_defaults_mod.get_default_config()
-
-    branch_cleanup = _params_for(
-        config['plan']['phase-6-finalize']['steps'], 'default:branch-cleanup'
-    )
-    assert 'auto_rebase_threshold' in branch_cleanup, (
-        'auto_rebase_threshold must round-trip through the LIST steps under default:branch-cleanup'
-    )
-    assert branch_cleanup['auto_rebase_threshold'] == 'no_overlap_only'
-
-
-def test_default_plan_finalize_includes_merge_queue_wait_budget_seconds():
-    """merge_queue_wait_budget_seconds nests under default:branch-cleanup with default 1800.
-
-    The knob is a step-owned param of `default:branch-cleanup`, declared in that
-    step's `configurable:` body-doc frontmatter (PR #716 removed the centralized
-    _FINALIZE_STEP_PARAMS) and surfaced through get_default_config() via
-    resolve_step_defaults_optional. It bounds (in seconds, ~30 min) the Pre-Merge
-    Gate FIFO merge-queue poll loop before the last-resort AskUserQuestion.
-    """
-    config = _config_defaults_mod.get_default_config()
-    branch_cleanup = _params_for(
-        config['plan']['phase-6-finalize']['steps'], 'default:branch-cleanup'
-    )
-
-    assert 'merge_queue_wait_budget_seconds' in branch_cleanup, (
-        'merge_queue_wait_budget_seconds must nest under default:branch-cleanup in the seeded steps list'
-    )
-    assert branch_cleanup['merge_queue_wait_budget_seconds'] == 1800, (
-        'merge_queue_wait_budget_seconds default must be 1800 (~30 min, the merge-queue wait budget)'
-    )
-    # not a flat sibling of steps anymore
-    assert 'merge_queue_wait_budget_seconds' not in _config_defaults_mod.DEFAULT_PLAN_FINALIZE
-
-
-def test_get_default_config_includes_merge_queue_wait_budget_seconds():
-    """get_default_config() surfaces merge_queue_wait_budget_seconds nested under default:branch-cleanup."""
-    config = _config_defaults_mod.get_default_config()
-
-    branch_cleanup = _params_for(
-        config['plan']['phase-6-finalize']['steps'], 'default:branch-cleanup'
-    )
-    assert 'merge_queue_wait_budget_seconds' in branch_cleanup, (
-        'merge_queue_wait_budget_seconds must round-trip through the LIST steps under default:branch-cleanup'
-    )
-    assert branch_cleanup['merge_queue_wait_budget_seconds'] == 1800
-
-
-def test_default_plan_finalize_includes_admin_merge_on_stuck_state():
-    """admin_merge_on_stuck_state nests under default:branch-cleanup with default False.
-
-    The knob is a step-owned param of `default:branch-cleanup`, declared in that
-    step's `configurable:` body-doc frontmatter and surfaced through
-    get_default_config() via resolve_step_defaults_optional. It gates the
-    GitHub-only stuck-state `--admin` fallback inside `ci pr safe-merge`;
-    `False` (the default) refuses the admin merge and surfaces the stuck PR to
-    the operator.
-    """
-    config = _config_defaults_mod.get_default_config()
-    branch_cleanup = _params_for(
-        config['plan']['phase-6-finalize']['steps'], 'default:branch-cleanup'
-    )
-
-    assert 'admin_merge_on_stuck_state' in branch_cleanup, (
-        'admin_merge_on_stuck_state must nest under default:branch-cleanup in the seeded steps list'
-    )
-    assert branch_cleanup['admin_merge_on_stuck_state'] is False, (
-        'admin_merge_on_stuck_state default must be False (admin fallback opt-in, off by default)'
-    )
-    # not a flat sibling of steps anymore
-    assert 'admin_merge_on_stuck_state' not in _config_defaults_mod.DEFAULT_PLAN_FINALIZE
-
-
-def test_get_default_config_includes_admin_merge_on_stuck_state():
-    """get_default_config() surfaces admin_merge_on_stuck_state nested under default:branch-cleanup."""
-    config = _config_defaults_mod.get_default_config()
-
-    branch_cleanup = _params_for(
-        config['plan']['phase-6-finalize']['steps'], 'default:branch-cleanup'
-    )
-    assert 'admin_merge_on_stuck_state' in branch_cleanup, (
-        'admin_merge_on_stuck_state must round-trip through the steps map under default:branch-cleanup'
-    )
-    assert branch_cleanup['admin_merge_on_stuck_state'] is False
-
-
 # ---------------------------------------------------------------------------
 # D4/D5 new-knob seed assertions — this deliverable (6) is the SINGLE owner of
 # the seed test for the three finalize-flow-hardening knobs declared in
 # default:branch-cleanup's configurable: frontmatter: merge_hold_window and
 # merge_hold_budget_seconds (D4), plus use_merge_queue (D5).
 # ---------------------------------------------------------------------------
-
-
-def test_default_plan_finalize_includes_merge_hold_window():
-    """merge_hold_window nests under default:branch-cleanup with default 'full_window_release_at_waits' (D4)."""
-    config = _config_defaults_mod.get_default_config()
-    branch_cleanup = _params_for(
-        config['plan']['phase-6-finalize']['steps'], 'default:branch-cleanup'
-    )
-    assert 'merge_hold_window' in branch_cleanup, (
-        'merge_hold_window must nest under default:branch-cleanup in the seeded steps map'
-    )
-    assert branch_cleanup['merge_hold_window'] == 'full_window_release_at_waits', (
-        "merge_hold_window default must be 'full_window_release_at_waits'"
-    )
-    assert 'merge_hold_window' not in _config_defaults_mod.DEFAULT_PLAN_FINALIZE, (
-        'merge_hold_window must not survive as a flat phase-level knob'
-    )
-
-
-def test_default_plan_finalize_includes_merge_hold_budget_seconds():
-    """merge_hold_budget_seconds nests under default:branch-cleanup with default 3600 (D4)."""
-    config = _config_defaults_mod.get_default_config()
-    branch_cleanup = _params_for(
-        config['plan']['phase-6-finalize']['steps'], 'default:branch-cleanup'
-    )
-    assert 'merge_hold_budget_seconds' in branch_cleanup, (
-        'merge_hold_budget_seconds must nest under default:branch-cleanup in the seeded steps map'
-    )
-    assert branch_cleanup['merge_hold_budget_seconds'] == 3600, (
-        'merge_hold_budget_seconds default must be 3600 (~60 min, the max merge-hold budget)'
-    )
-    assert 'merge_hold_budget_seconds' not in _config_defaults_mod.DEFAULT_PLAN_FINALIZE
-
-
-def test_default_plan_finalize_includes_use_merge_queue():
-    """use_merge_queue nests under default:branch-cleanup with default False (D5)."""
-    config = _config_defaults_mod.get_default_config()
-    branch_cleanup = _params_for(
-        config['plan']['phase-6-finalize']['steps'], 'default:branch-cleanup'
-    )
-    assert 'use_merge_queue' in branch_cleanup, (
-        'use_merge_queue must nest under default:branch-cleanup in the seeded steps map'
-    )
-    assert branch_cleanup['use_merge_queue'] is False, (
-        'use_merge_queue default must be False (opt-in platform merge-queue complement)'
-    )
-    assert 'use_merge_queue' not in _config_defaults_mod.DEFAULT_PLAN_FINALIZE
 
 
 def test_get_default_config_includes_finalize_flow_hardening_knobs():
@@ -680,76 +523,139 @@ def test_validate_cost_size_token_table_accepts_seeded_default():
     )
 
 
-def test_validate_cost_size_token_table_rejects_non_dict():
-    """validate_cost_size_token_table must reject a non-dict value."""
-    import pytest
+#: A complete six-size cost table, the shape every rejection row below perturbs.
+_VALID_COST_TABLE = {'XS': '5K', 'S': '25K', 'M': '60K', 'L': '130K', 'XL': '260K', 'XXL': '520K'}
 
-    with pytest.raises(ValueError, match='expected a dict'):
-        _config_defaults_mod.validate_cost_size_token_table(['25K', '60K'])
+#: A valid lane-prune mapping, the shape every rejection row below perturbs.
+_VALID_LANE_PRUNE = {'confidence_complete': 95, 'linear_change_max_deliverables': 1}
+
+#: One row per way a config value can be wrong: the validator, the argument list
+#: it is called with, and the fragment its ValueError must carry. The fragment is
+#: asserted, not just the raise, because a validator that rejects with the wrong
+#: message sends the operator to the wrong knob.
+_VALIDATOR_REJECTIONS = [
+    ('validate_cost_size_token_table', (['25K', '60K'],), 'expected a dict'),
+    (
+        'validate_cost_size_token_table',
+        ({'S': '25K', 'M': '60K', 'L': '130K', 'XL': '260K'},),
+        'expected exactly',
+    ),
+    (
+        'validate_cost_size_token_table',
+        ({k: v for k, v in _VALID_COST_TABLE.items() if k != 'XS'},),
+        'expected exactly',
+    ),
+    ('validate_cost_size_token_table', ({**_VALID_COST_TABLE, 'XXXL': '999K'},), 'expected exactly'),
+    (
+        'validate_cost_size_token_table',
+        ({**_VALID_COST_TABLE, 'M': 'sixty-thousand'},),
+        'not a parseable token magnitude',
+    ),
+    ('validate_lane_prune_thresholds', ([95, 1],), 'expected a dict'),
+    ('validate_lane_prune_thresholds', ({'confidence_complete': 95},), 'expected exactly'),
+    ('validate_lane_prune_thresholds', ({**_VALID_LANE_PRUNE, 'bogus': 7},), 'expected exactly'),
+    (
+        'validate_lane_prune_thresholds',
+        ({**_VALID_LANE_PRUNE, 'confidence_complete': 101},),
+        'confidence_complete',
+    ),
+    (
+        'validate_lane_prune_thresholds',
+        ({**_VALID_LANE_PRUNE, 'confidence_complete': True},),
+        'confidence_complete',
+    ),
+    (
+        'validate_lane_prune_thresholds',
+        ({**_VALID_LANE_PRUNE, 'linear_change_max_deliverables': 0},),
+        'linear_change_max_deliverables',
+    ),
+    ('validate_lane_selection', ('always',), 'Invalid lane_selection'),
+    (
+        'validate_lane_override',
+        ('sometimes', 'plan.phase-6-finalize.steps.sonar-roundtrip.lane'),
+        r'plan\.phase-6-finalize\.steps\.sonar-roundtrip\.lane',
+    ),
+    ('validate_lane_override', ('nope',), r"Invalid lane 'nope'"),
+    ('validate_per_deliverable_build', ('reckless',), 'expected a list'),
+    (
+        'validate_per_deliverable_build',
+        (['default:verify:compile', 'bogus-step'],),
+        'every entry must be a',
+    ),
+    (
+        'validate_q_gate_validation',
+        ('sometimes', 'plan.phase-4-plan.q_gate_validation'),
+        r'plan\.phase-4-plan\.q_gate_validation',
+    ),
+    ('validate_pr_strategy', ('sloppy',), 'Invalid pr_strategy'),
+    ('validate_pr_compact_max_changed_files', (-1,), 'pr_compact_max_changed_files'),
+    ('validate_pr_compact_max_changed_files', (True,), 'pr_compact_max_changed_files'),
+]
+
+_VALIDATOR_REJECTION_IDS = [
+    'cost_size_token_table-a-list-is-not-a-dict',
+    'cost_size_token_table-four-size-table-missing-XS-and-XXL',
+    'cost_size_token_table-missing-the-XS-key',
+    'cost_size_token_table-XXXL-is-outside-the-size-enum',
+    'cost_size_token_table-magnitude-is-not-a-sensible-int',
+    'lane_prune_thresholds-a-list-is-not-a-dict',
+    'lane_prune_thresholds-missing-linear_change_max_deliverables',
+    'lane_prune_thresholds-unexpected-extra-key',
+    'lane_prune_thresholds-confidence-above-100',
+    'lane_prune_thresholds-confidence-is-a-bool',
+    'lane_prune_thresholds-deliverables-below-1',
+    'lane_selection-value-outside-the-enum',
+    'lane_override-error-names-the-offending-field-path',
+    'lane_override-default-field-name-is-lane',
+    'per_deliverable_build-a-bare-string-is-not-a-list',
+    'per_deliverable_build-entry-lacks-the-default-verify-prefix',
+    'q_gate_validation-error-names-the-offending-field-path',
+    'pr_strategy-value-outside-the-enum',
+    'pr_compact_max_changed_files-a-negative-int',
+    'pr_compact_max_changed_files-a-bool-is-not-an-int',
+]
 
 
-def test_validate_cost_size_token_table_rejects_missing_key():
-    """validate_cost_size_token_table must reject a table missing one of XS/S/M/L/XL/XXL.
+@pytest.mark.parametrize(
+    ('validator', 'args', 'match'), _VALIDATOR_REJECTIONS, ids=_VALIDATOR_REJECTION_IDS
+)
+def test_config_validator_rejects_invalid_value(validator, args, match):
+    """Each config validator raises ValueError naming the knob for an invalid value."""
+    with pytest.raises(ValueError, match=match):
+        getattr(_config_defaults_mod, validator)(*args)
 
-    The four-size table (no XS, no XXL) is now incomplete under the six-size scale.
+
+#: (validator, the enum constant it accepts, trailing args the validator requires).
+_VALIDATOR_ENUMS = [
+    ('validate_lane_selection', 'VALID_LANE_SELECTION', ()),
+    ('validate_lane_override', 'VALID_LANE_OVERRIDE', ()),
+    ('validate_pr_strategy', 'VALID_PR_STRATEGY', ()),
+    ('validate_q_gate_validation', 'VALID_Q_GATE_VALIDATION', ('plan.phase-3-outline.q_gate_validation',)),
+]
+
+
+@pytest.mark.parametrize(
+    ('validator', 'enum_name', 'extra_args'),
+    _VALIDATOR_ENUMS,
+    ids=[f'{v}-accepts-every-{e}-value' for v, e, _ in _VALIDATOR_ENUMS],
+)
+def test_config_validator_accepts_every_enum_value(validator, enum_name, extra_args):
+    """Each enum-backed validator accepts every value its own enum constant declares.
+
+    Driven from the constant rather than from a copied literal list, so a value
+    added to the enum is covered the moment it is added.
     """
-    import pytest
-
-    with pytest.raises(ValueError, match='expected exactly'):
-        _config_defaults_mod.validate_cost_size_token_table(
-            {'S': '25K', 'M': '60K', 'L': '130K', 'XL': '260K'}
-        )
-
-
-def test_validate_cost_size_token_table_rejects_missing_new_xs_key():
-    """validate_cost_size_token_table must reject a six-size table missing the new XS key."""
-    import pytest
-
-    with pytest.raises(ValueError, match='expected exactly'):
-        _config_defaults_mod.validate_cost_size_token_table(
-            {'S': '25K', 'M': '60K', 'L': '130K', 'XL': '260K', 'XXL': '520K'}
-        )
-
-
-def test_validate_cost_size_token_table_rejects_extra_key():
-    """validate_cost_size_token_table must reject a table carrying an unexpected size key.
-
-    XXL is now a VALID key, so the extra-key case uses a genuinely out-of-enum
-    label (XXXL) on top of the complete six-size set.
-    """
-    import pytest
-
-    with pytest.raises(ValueError, match='expected exactly'):
-        _config_defaults_mod.validate_cost_size_token_table(
-            {'XS': '5K', 'S': '25K', 'M': '60K', 'L': '130K', 'XL': '260K', 'XXL': '520K', 'XXXL': '999K'}
-        )
-
-
-def test_validate_cost_size_token_table_rejects_unparseable_magnitude():
-    """validate_cost_size_token_table must reject a value that is not a sensible int."""
-    import pytest
-
-    with pytest.raises(ValueError, match='not a parseable token magnitude'):
-        _config_defaults_mod.validate_cost_size_token_table(
-            {'XS': '5K', 'S': '25K', 'M': 'sixty-thousand', 'L': '130K', 'XL': '260K', 'XXL': '520K'}
-        )
+    allowed = getattr(_config_defaults_mod, enum_name)
+    assert allowed, f'{enum_name} must not be empty, else this test is vacuous'
+    for value in allowed:
+        getattr(_config_defaults_mod, validator)(value, *extra_args)
 
 
 def _load_tasks_cost():
-    """Load the manage-tasks ``_tasks_cost.py`` consumer module by explicit path.
-
-    ``_tasks_cost.py`` imports ``from sensible_number import parse_sensible_int``
-    at module top, so the shared ``script-shared/scripts`` surface must be on
-    ``sys.path`` before the module is exec'd.
-    """
-    root = Path(__file__).parent.parent.parent.parent / 'marketplace' / 'bundles' / 'plan-marshall'
-    shared_dir = root / 'skills' / 'script-shared' / 'scripts'
-    tasks_scripts_dir = root / 'skills' / 'manage-tasks' / 'scripts'
-    return _load_module(
-        '_tasks_cost_for_drift_test',
-        '_tasks_cost.py',
-        base_dir=tasks_scripts_dir,
-        extra_syspath_dirs=(shared_dir, tasks_scripts_dir),
+    """Load the manage-tasks ``_tasks_cost.py`` consumer module."""
+    return load_script_module(
+        'plan-marshall', 'manage-tasks', '_tasks_cost.py',
+        module_name='_tasks_cost_for_drift_test',
     )
 
 
@@ -832,49 +738,11 @@ def test_valid_lane_selection_enumerates_ask_and_auto():
     )
 
 
-def test_validate_lane_selection_accepts_allowed_values():
-    """validate_lane_selection must accept every value in VALID_LANE_SELECTION."""
-    for value in _config_defaults_mod.VALID_LANE_SELECTION:
-        _config_defaults_mod.validate_lane_selection(value)
-
-
-def test_validate_lane_selection_rejects_unknown_value():
-    """validate_lane_selection must raise ValueError for a value outside the enum."""
-    import pytest
-
-    with pytest.raises(ValueError, match='Invalid lane_selection'):
-        _config_defaults_mod.validate_lane_selection('always')
-
-
 def test_valid_lane_override_enumerates_five_values():
     """VALID_LANE_OVERRIDE must enumerate exactly off|minimal|standard|full|ask."""
     assert _config_defaults_mod.VALID_LANE_OVERRIDE == (
         'off', 'minimal', 'standard', 'full', 'ask'
     )
-
-
-def test_validate_lane_override_accepts_allowed_values():
-    """validate_lane_override must accept every value in VALID_LANE_OVERRIDE."""
-    for value in _config_defaults_mod.VALID_LANE_OVERRIDE:
-        _config_defaults_mod.validate_lane_override(value)
-
-
-def test_validate_lane_override_rejects_unknown_value_naming_the_field():
-    """validate_lane_override must raise ValueError naming the offending field path."""
-    import pytest
-
-    with pytest.raises(ValueError, match=r'plan\.phase-6-finalize\.steps\.sonar-roundtrip\.lane'):
-        _config_defaults_mod.validate_lane_override(
-            'sometimes', 'plan.phase-6-finalize.steps.sonar-roundtrip.lane'
-        )
-
-
-def test_validate_lane_override_default_field_name():
-    """validate_lane_override default field_name is 'lane' (used in the error message)."""
-    import pytest
-
-    with pytest.raises(ValueError, match=r"Invalid lane 'nope'"):
-        _config_defaults_mod.validate_lane_override('nope')
 
 
 def test_default_lane_prune_thresholds_carries_expected_defaults():
@@ -917,66 +785,6 @@ def test_validate_lane_prune_thresholds_accepts_seeded_default():
     _config_defaults_mod.validate_lane_prune_thresholds(
         {'confidence_complete': 100, 'linear_change_max_deliverables': 5}
     )
-
-
-def test_validate_lane_prune_thresholds_rejects_non_dict():
-    """validate_lane_prune_thresholds must reject a non-dict value."""
-    import pytest
-
-    with pytest.raises(ValueError, match='expected a dict'):
-        _config_defaults_mod.validate_lane_prune_thresholds([95, 1])
-
-
-def test_validate_lane_prune_thresholds_rejects_missing_key():
-    """validate_lane_prune_thresholds must reject a mapping missing a required key."""
-    import pytest
-
-    with pytest.raises(ValueError, match='expected exactly'):
-        _config_defaults_mod.validate_lane_prune_thresholds({'confidence_complete': 95})
-
-
-def test_validate_lane_prune_thresholds_rejects_extra_key():
-    """validate_lane_prune_thresholds must reject a mapping carrying an unexpected key."""
-    import pytest
-
-    with pytest.raises(ValueError, match='expected exactly'):
-        _config_defaults_mod.validate_lane_prune_thresholds(
-            {
-                'confidence_complete': 95,
-                'linear_change_max_deliverables': 1,
-                'bogus': 7,
-            }
-        )
-
-
-def test_validate_lane_prune_thresholds_rejects_out_of_range_confidence():
-    """validate_lane_prune_thresholds must reject confidence_complete outside [0, 100]."""
-    import pytest
-
-    with pytest.raises(ValueError, match='confidence_complete'):
-        _config_defaults_mod.validate_lane_prune_thresholds(
-            {'confidence_complete': 101, 'linear_change_max_deliverables': 1}
-        )
-
-
-def test_validate_lane_prune_thresholds_rejects_bool_confidence():
-    """validate_lane_prune_thresholds must reject a bool confidence (bool is an int subclass)."""
-    import pytest
-
-    with pytest.raises(ValueError, match='confidence_complete'):
-        _config_defaults_mod.validate_lane_prune_thresholds(
-            {'confidence_complete': True, 'linear_change_max_deliverables': 1}
-        )
-
-
-def test_validate_lane_prune_thresholds_rejects_non_positive_deliverables():
-    """validate_lane_prune_thresholds must reject linear_change_max_deliverables < 1."""
-    import pytest
-
-    with pytest.raises(ValueError, match='linear_change_max_deliverables'):
-        _config_defaults_mod.validate_lane_prune_thresholds(
-            {'confidence_complete': 95, 'linear_change_max_deliverables': 0}
-        )
 
 
 def test_plan_phase_1_init_get_lane_selection_returns_ask_default(plan_context):
@@ -1055,29 +863,9 @@ def test_validate_per_deliverable_build_accepts_empty_list():
 
 def test_validate_per_deliverable_build_rejects_retired_enum_values():
     """validate_per_deliverable_build must reject every retired enum string with a migration error."""
-    import pytest
-
     for retired in _config_defaults_mod.RETIRED_PER_DELIVERABLE_BUILD_ENUM:
         with pytest.raises(ValueError, match='no longer accepts the enum value'):
             _config_defaults_mod.validate_per_deliverable_build(retired)
-
-
-def test_validate_per_deliverable_build_rejects_non_list():
-    """validate_per_deliverable_build must reject a non-list value that is not a retired enum string."""
-    import pytest
-
-    with pytest.raises(ValueError, match='expected a list'):
-        _config_defaults_mod.validate_per_deliverable_build('reckless')
-
-
-def test_validate_per_deliverable_build_rejects_non_canonical_entries():
-    """validate_per_deliverable_build must reject list entries lacking the default:verify: prefix."""
-    import pytest
-
-    with pytest.raises(ValueError, match='every entry must be a'):
-        _config_defaults_mod.validate_per_deliverable_build(
-            ['default:verify:compile', 'bogus-step']
-        )
 
 
 # =============================================================================
@@ -1494,8 +1282,6 @@ def test_validate_simplicity_accepts_allowed_values():
 
 def test_validate_simplicity_rejects_unknown_value():
     """validate_simplicity must raise ValueError for a value outside the enum."""
-    import pytest
-
     with pytest.raises(ValueError, match='Invalid simplicity'):
         _config_defaults_mod.validate_simplicity('reckless')
 
@@ -2072,11 +1858,8 @@ _EXPECTED_CANONICAL_KEY_ORDER = [
     'system',
 ]
 
-# The committed marshal.json the repo ships. Resolved relative to this test file:
-# test/plan-marshall/manage-config/test_config_defaults.py -> repo root -> .plan/marshal.json.
-_COMMITTED_MARSHAL_PATH = (
-    Path(__file__).parent.parent.parent.parent / '.plan' / 'marshal.json'
-)
+#: The committed marshal.json the repo ships, resolved from the shared project root.
+_COMMITTED_MARSHAL_PATH = PROJECT_ROOT / '.plan' / 'marshal.json'
 
 
 def _save_config_to(tmp_marshal_path, config, monkeypatch):
@@ -2711,25 +2494,6 @@ def test_valid_q_gate_validation_enumerates_expected_values():
     assert _config_defaults_mod.DEFAULT_PLAN_PLAN['q_gate_validation'] in values
 
 
-def test_validate_q_gate_validation_accepts_allowed_values():
-    """validate_q_gate_validation must accept every off|once|until_clean value."""
-    # no exception for any allowed value
-    for value in _config_defaults_mod.VALID_Q_GATE_VALIDATION:
-        _config_defaults_mod.validate_q_gate_validation(
-            value, 'plan.phase-3-outline.q_gate_validation'
-        )
-
-
-def test_validate_q_gate_validation_rejects_invalid_value():
-    """validate_q_gate_validation must raise ValueError naming the offending field path."""
-    import pytest
-
-    with pytest.raises(ValueError, match=r'plan\.phase-4-plan\.q_gate_validation'):
-        _config_defaults_mod.validate_q_gate_validation(
-            'sometimes', 'plan.phase-4-plan.q_gate_validation'
-        )
-
-
 def test_plan_phase_3_outline_get_q_gate_validation_returns_once_default(plan_context):
     """`plan phase-3-outline get --field q_gate_validation` returns 'once' from the merged default.
 
@@ -2909,19 +2673,9 @@ def test_finding_raw_input_max_bytes_matches_manage_findings_default():
     The config knob overrides that store-side default; the seed value must not
     drift from the store default, else a fresh project silently changes the cap.
     """
-    findings_core_dir = (
-        Path(__file__).parent.parent.parent.parent
-        / 'marketplace'
-        / 'bundles'
-        / 'plan-marshall'
-        / 'skills'
-        / 'manage-findings'
-        / 'scripts'
-    )
-    findings_core = _load_module(
-        '_findings_core_for_raw_input_cap_test',
-        '_findings_core.py',
-        base_dir=findings_core_dir,
+    findings_core = load_script_module(
+        'plan-marshall', 'manage-findings', '_findings_core.py',
+        module_name='_findings_core_for_raw_input_cap_test',
     )
     assert (
         _config_defaults_mod.DEFAULT_FINDING_RAW_INPUT_MAX_BYTES
@@ -2992,20 +2746,6 @@ def test_valid_pr_strategy_enumerates_compact_and_distinct():
     )
 
 
-def test_validate_pr_strategy_accepts_allowed_values():
-    """validate_pr_strategy must accept every value in VALID_PR_STRATEGY."""
-    for value in _config_defaults_mod.VALID_PR_STRATEGY:
-        _config_defaults_mod.validate_pr_strategy(value)
-
-
-def test_validate_pr_strategy_rejects_unknown_value():
-    """validate_pr_strategy must raise ValueError for a value outside the enum."""
-    import pytest
-
-    with pytest.raises(ValueError, match='Invalid pr_strategy'):
-        _config_defaults_mod.validate_pr_strategy('sloppy')
-
-
 def test_validate_pr_compact_max_changed_files_accepts_valid_ints():
     """validate_pr_compact_max_changed_files must accept int >= 0 (151 and 0 boundaries)."""
     _config_defaults_mod.validate_pr_compact_max_changed_files(151)
@@ -3014,22 +2754,6 @@ def test_validate_pr_compact_max_changed_files_accepts_valid_ints():
     _config_defaults_mod.validate_pr_compact_max_changed_files(
         _config_defaults_mod.DEFAULT_PROJECT['pr_compact_max_changed_files']
     )
-
-
-def test_validate_pr_compact_max_changed_files_rejects_negative():
-    """validate_pr_compact_max_changed_files must reject a negative int."""
-    import pytest
-
-    with pytest.raises(ValueError, match='pr_compact_max_changed_files'):
-        _config_defaults_mod.validate_pr_compact_max_changed_files(-1)
-
-
-def test_validate_pr_compact_max_changed_files_rejects_bool():
-    """validate_pr_compact_max_changed_files must reject a bool (bool is an int subclass)."""
-    import pytest
-
-    with pytest.raises(ValueError, match='pr_compact_max_changed_files'):
-        _config_defaults_mod.validate_pr_compact_max_changed_files(True)
 
 
 def test_pr_compact_rides_existing_pr_helper_semantics():
@@ -3223,8 +2947,8 @@ def test_project_pr_decision_rejects_corrupt_pr_compact_max_changed_files(plan_c
 # =============================================================================
 
 
-_cmd_sync_defaults_mod = _load_module(
-    '_cmd_sync_defaults_for_lane_migration_test', '_cmd_sync_defaults.py'
+_cmd_sync_defaults_mod = load_script_module(
+    *_MANAGE_CONFIG, '_cmd_sync_defaults.py', module_name='_cmd_sync_defaults_for_lane_migration'
 )
 _migrate_run_at_all_to_lane = _cmd_sync_defaults_mod._migrate_run_at_all_to_lane
 

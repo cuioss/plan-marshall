@@ -28,36 +28,23 @@ commands, mirroring the live shape, exactly as ``test_derive_verification.py``
 does.
 """
 
-import importlib.util
 import json
-import sys
 import tempfile
 from argparse import Namespace
 from pathlib import Path
 
+from conftest import load_script_module
+
 _REPO_ROOT = Path(__file__).parent.parent.parent.parent
-_SCRIPTS_DIR = (
-    _REPO_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-architecture'
-    / 'scripts'
+
+
+
+_architecture_core = load_script_module(
+    'plan-marshall', 'manage-architecture', '_architecture_core.py', module_name='_architecture_core'
 )
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_architecture_core = _load_module('_architecture_core', '_architecture_core.py')
-_cmd_client = _load_module('_cmd_client', '_cmd_client.py')
+_cmd_client = load_script_module(
+    'plan-marshall', 'manage-architecture', '_cmd_client.py', module_name='_cmd_client'
+)
 
 save_project_meta = _architecture_core.save_project_meta
 save_module_derived = _architecture_core.save_module_derived

@@ -7,40 +7,23 @@ Tests init command variants including force overwrite and error handling.
 Tier 2 (direct import) tests with 2 subprocess tests for CLI plumbing.
 """
 
-import importlib.util
 import json
-import sys
 from argparse import Namespace
-from pathlib import Path
 
 from _manage_config_fixtures import SCRIPT_PATH, create_marshal_json
 
-_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-config'
-    / 'scripts'
+from conftest import load_script_module, run_script
+
+_cmd_init_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_cmd_init.py', module_name='_cmd_init'
 )
-
-
-def _load_module(name, filename):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_cmd_init_mod = _load_module('_cmd_init', '_cmd_init.py')
-_config_defaults_mod = _load_module('_config_defaults_for_init_provisioning_test', '_config_defaults.py')
+_config_defaults_mod = load_script_module(
+    'plan-marshall', 'manage-config', '_config_defaults.py', module_name='_config_defaults_for_init_provisioning_test'
+)
 
 cmd_init = _cmd_init_mod.cmd_init
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import run_script  # noqa: E402, I001
 
 
 # `plan.phase-6-finalize.steps` and `plan.phase-5-execute.verification_steps`
