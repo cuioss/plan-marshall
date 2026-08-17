@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
 
 import file_ops
 from _resolve_project_dir_fixtures import (
@@ -124,6 +123,85 @@ def test_empty_error_paths(plan_context, monkeypatch):
     assert result['out_of_scope_count'] == 0
     assert result['exclusively_out_of_scope'] is False
     assert result['out_of_scope_paths'] == []
+
+
+def test_unmeasurable_footprint_does_not_attribute_failures_as_foreign(
+    plan_context, monkeypatch
+):
+    """An unresolvable footprint classifies NOTHING — it never claims "all foreign".
+
+    Returning the empty set here used to put every error path in
+    ``out_of_scope`` and set ``exclusively_out_of_scope``, which drives
+    phase-5-execute Step 11 to offer "Stash foreign files and re-verify" as the
+    DEFAULT remedy. That is a real action recommended off an input nobody
+    measured. The unmeasured state is now explicit and the flag stays false.
+    """
+    plan_dir = plan_context.plan_dir_for('vfs-unmeasurable')
+    _write_refs(plan_dir)
+    monkeypatch.setattr(vfs, '_resolve_declared_footprint', lambda plan_dir, plan_id: None)
+
+    result = vfs.classify_failure_scope(
+        'vfs-unmeasurable', ['foreign/x.py', 'foreign/y.py'], plan_dir=plan_dir
+    )
+
+    assert result['status'] == 'success'
+    assert result['footprint_resolved'] is False
+    assert result['unresolved_reason'] == vfs.UNRESOLVED_REASON_FOOTPRINT
+    assert result['exclusively_out_of_scope'] is False
+    assert result['in_scope_count'] == 0
+    assert result['out_of_scope_count'] == 0
+    assert result['out_of_scope_paths'] == []
+    assert sorted(result['unclassified_paths']) == ['foreign/x.py', 'foreign/y.py']
+    assert result['total'] == 2
+
+
+def test_unresolvable_worktree_does_not_classify_against_the_current_directory(
+    plan_context, monkeypatch, tmp_path
+):
+    """A worktree that will not resolve is UNMEASURABLE, not "use the cwd".
+
+    The previous fallback derived a diff from whatever checkout the classifier
+    happened to run in — this repository's own root, in practice — and returned
+    it as the plan's footprint, so error paths were classified against a
+    stranger's diff. Since the cwd here IS a git repo, the fallback would have
+    produced a real, plausible, wrong answer rather than an obvious failure.
+    """
+    plan_dir = plan_context.plan_dir_for('vfs-worktree-unresolvable')
+    _write_refs(plan_dir)
+
+    def _raise(_plan_id, **_kwargs):
+        raise vfs.WorktreeResolutionError('no worktree for this plan')
+
+    monkeypatch.setattr(vfs, 'resolve_plan_context', _raise)
+
+    assert vfs._resolve_declared_footprint(plan_dir, 'vfs-worktree-unresolvable') is None
+
+    result = vfs.classify_failure_scope(
+        'vfs-worktree-unresolvable', ['src/a.py'], plan_dir=plan_dir
+    )
+    assert result['footprint_resolved'] is False
+    assert result['unresolved_reason'] == vfs.UNRESOLVED_REASON_FOOTPRINT
+    assert result['unclassified_paths'] == ['src/a.py']
+
+
+def test_measured_empty_footprint_still_classifies_as_foreign(plan_context, monkeypatch):
+    """The peer direction: an OBSERVED-empty footprint keeps its measured verdict.
+
+    A plan that genuinely touched no files has every verify failure originating
+    outside it, and that conclusion is substantiated. The fix must not suppress
+    it — only the unmeasured case loses the claim.
+    """
+    plan_dir = plan_context.plan_dir_for('vfs-measured-empty')
+    _write_refs(plan_dir)
+    _stub_footprint(monkeypatch, [])
+
+    result = vfs.classify_failure_scope(
+        'vfs-measured-empty', ['foreign/x.py'], plan_dir=plan_dir
+    )
+
+    assert result['footprint_resolved'] is True
+    assert result['exclusively_out_of_scope'] is True
+    assert result['out_of_scope_paths'] == ['foreign/x.py']
 
 
 def test_missing_references_returns_error(tmp_path):
@@ -235,12 +313,19 @@ def test_footprint_resolver_accepts_the_no_plan_sentinel(plan_context, monkeypat
     assert mock.call_count == 0, 'the sentinel must never reach get-worktree-path'
 
 
-def test_footprint_resolver_falls_back_to_cwd_when_resolution_fails(plan_context, monkeypatch):
-    """An unresolvable worktree degrades to cwd rather than aborting classification.
+def test_footprint_resolver_never_diffs_the_current_directory(plan_context, monkeypatch):
+    """An unresolvable worktree yields ``None``; no diff is attempted at all.
 
-    Verify-failure classification is advisory: an archived plan whose worktree no
-    longer resolves must still produce a verdict, so the non-fatal fallback that
-    predated the migration is preserved deliberately.
+    This previously degraded to ``Path.cwd()`` on the reasoning that
+    verify-failure classification is advisory and an archived plan should still
+    produce a verdict. But the cwd is a different checkout, so the "verdict" was
+    a real diff of the wrong tree presented as the plan's footprint — every error
+    path classified in or out of scope by coincidence. An advisory check may
+    decline to answer; it may not answer from a substrate nobody asked about.
+
+    The assertion is that ``compute_plan_branch_diff`` is never reached: a test
+    that only checked the return value would still pass if the resolver diffed
+    the cwd and happened to discard the result.
     """
     plan_dir = plan_context.plan_dir_for('vfs-unresolvable')
     (plan_dir / 'references.json').write_text(json.dumps({'base_branch': 'main'}))
@@ -257,6 +342,5 @@ def test_footprint_resolver_falls_back_to_cwd_when_resolution_fails(plan_context
     monkeypatch.setattr(vfs, 'compute_plan_branch_diff', _fake_diff)
     monkeypatch.setattr(file_ops, '_query_worktree_path', _raise)
 
-    vfs._resolve_declared_footprint(plan_dir, 'vfs-unresolvable')
-
-    assert captured['worktree'] == Path.cwd()
+    assert vfs._resolve_declared_footprint(plan_dir, 'vfs-unresolvable') is None
+    assert 'worktree' not in captured, 'no diff may be attempted against any tree'

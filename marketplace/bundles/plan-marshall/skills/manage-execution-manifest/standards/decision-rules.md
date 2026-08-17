@@ -15,10 +15,10 @@ This standard codifies the decision matrix used by `manage-execution-manifest co
 | `affected_files_count` | `references.json::affected_files` length | int (≥0) |
 | `commit_and_push` | `manage-config plan phase-5-execute get --field commit_and_push` | bool (default: `true`) |
 | `build_map_globs` | derived from `marshal.json::build.map` — the union of every entry's `glob` across all domains | list[string] (default: empty when build_map absent) |
-| `live_footprint` | derived on demand from the worktree (`{base}...HEAD` ∪ porcelain via `compute_plan_branch_diff`); empty before the worktree is materialized | list[string] (default: empty) |
+| `live_footprint` | derived on demand from the worktree (`{base}...HEAD` ∪ porcelain via `compute_plan_branch_diff`); **`None` — unresolvable — before the worktree is materialized, never empty** | list[string] \| None |
 | `phase_5_candidates` | `marshal.json::plan.phase-5-execute.verification_steps` (phase-aware list-field — see [Phase-aware step source](#phase-aware-step-source)) | list[string] |
 | `phase_6_candidates` | `marshal.json::plan.phase-6-finalize.steps` | list[string] |
-| `live_footprint` (canonical-verify gate) | derived on demand from the worktree via `_resolve_footprint` (empty before the worktree is materialized) | list[string] |
+| `live_footprint` (canonical-verify gate) | derived on demand from the worktree via `_resolve_footprint` (**`None` — unresolvable — before the worktree is materialized, never empty**; see the three-state contract below) | list[string] \| None |
 | `affected_files` | `references.json::affected_files` | list[string] (read directly by the composer; empty by default in the current pipeline) |
 | `modified_files` (legacy back-compat) | `references.json::modified_files` | list[string] (read by Bundle source detection only, as a back-compat fallback for archived plans that still carry the key; see "Bundle source detection" below for the union semantics with `affected_files` and the solution-outline fallback) |
 | `outline_affected_files` | `solution_outline.md` deliverable `**Affected files:**` blocks (flattened across deliverables) | list[string] (read directly by the composer as the canonical pre-execute fallback when references-side fields are empty; see "Bundle source detection" below) |

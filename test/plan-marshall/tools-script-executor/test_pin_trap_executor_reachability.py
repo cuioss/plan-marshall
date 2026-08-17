@@ -20,7 +20,7 @@ Each test is written to FAIL against the pre-fix code and pass against the fix.
 import types
 from pathlib import Path
 
-from conftest import load_script_module
+from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, load_script_module
 
 _gen = load_script_module('plan-marshall', 'tools-script-executor', 'generate_executor.py', 'gen_executor_pin_trap')
 
@@ -112,19 +112,15 @@ def test_verify_executor_survives_quote_in_executor_path(tmp_path, monkeypatch):
     # Point the logging-module verification at a real plan_logging.py so the
     # second probe subprocess succeeds; the executor path is the quote-carrying one.
     logging_scripts = (
-        Path(__file__).parent.parent.parent.parent
+        PROJECT_ROOT
         / 'marketplace/bundles/plan-marshall/skills/manage-logging/scripts'
     )
-    shared_dirs = [
-        Path(__file__).parent.parent.parent.parent / 'marketplace/bundles/plan-marshall/skills' / rel
-        for rel in (
-            'tools-file-ops/scripts',
-            'tools-input-validation/scripts',
-            'ref-toon-format/scripts',
-            'script-shared/scripts',
-            'manage-change-ledger/scripts',
-        )
-    ]
+    # Derived from the production function rather than restated. A hardcoded
+    # mirror of the shared-module set goes stale the moment a shared skill is
+    # added, and this test would then validate the quote-path case with
+    # incomplete import coverage while still passing.
+    shared_dirs = _gen.get_shared_module_dirs(MARKETPLACE_ROOT)
+    assert shared_dirs, 'no shared module dirs resolved; the stub would be vacuous'
 
     monkeypatch.setattr(_gen, 'executor_path', lambda: executor)
     monkeypatch.setattr(_gen, 'get_logging_scripts_dir', lambda base_path: logging_scripts)

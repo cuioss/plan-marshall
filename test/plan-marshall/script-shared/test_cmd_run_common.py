@@ -7,16 +7,8 @@ across Maven, Gradle, npm, and Python build skills.
 
 from unittest.mock import patch
 
-from conftest import load_script_module
-
-
-def _load_module(name, filename):
-    """Load a script-shared script by (bundle, skill, file) identity."""
-    return load_script_module('plan-marshall', 'script-shared', f'build/{filename}', name)
-
-
-_build_parse_mod = _load_module('_build_parse', '_build_parse.py')
-_build_shared_mod = _load_module('_build_shared', '_build_shared.py')
+import _build_parse as _build_parse_mod
+import _build_shared as _build_shared_mod
 
 Issue = _build_parse_mod.Issue
 UnitTestSummary = _build_parse_mod.UnitTestSummary

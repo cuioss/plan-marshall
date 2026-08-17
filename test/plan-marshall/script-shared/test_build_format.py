@@ -4,16 +4,8 @@
 
 import json
 
-from conftest import load_script_module
-
-
-def _load_module(name, filename):
-    """Load a script-shared script by (bundle, skill, file) identity."""
-    return load_script_module('plan-marshall', 'script-shared', f'build/{filename}', name)
-
-
-_build_format_mod = _load_module('_build_format', '_build_format.py')
-_build_parse_mod = _load_module('_build_parse', '_build_parse.py')
+import _build_format as _build_format_mod
+import _build_parse as _build_parse_mod
 
 CORE_FIELDS = _build_format_mod.CORE_FIELDS
 EXTRA_FIELDS = _build_format_mod.EXTRA_FIELDS

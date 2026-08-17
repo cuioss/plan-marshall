@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import _MARKETPLACE_SCRIPT_DIRS, MARKETPLACE_ROOT, get_scripts_dir
+from conftest import _MARKETPLACE_SCRIPT_DIRS, MARKETPLACE_ROOT, PROJECT_ROOT, get_scripts_dir
 
 
 @pytest.fixture()
@@ -752,7 +752,7 @@ def test_marketplace_root_flag_anchors_discovery_to_supplied_path(outside_repo_d
     # the plugin cache when --marketplace-root is supplied.
     real_marketplace = str(MARKETPLACE_ROOT.resolve())
     plugin_cache = str(Path.home() / '.claude' / 'plugins' / 'cache' / 'plan-marshall')
-    real_cwd = str(Path(__file__).resolve().parents[3])  # project root
+    real_cwd = str(PROJECT_ROOT)  # project root
     for notation, path in mappings.items():
         assert not path.startswith(real_marketplace), (
             f'{notation} resolved to real marketplace {path}, not fake {fake_ws}'
@@ -812,7 +812,7 @@ def test_pm_marketplace_root_env_var_anchors_discovery(tmp_path, monkeypatch):
 # test/plan-marshall/manage-status/test_merge_lock_removed.py.
 
 TEMPLATE_PATH = (
-    Path(__file__).parent.parent.parent.parent
+    PROJECT_ROOT
     / 'marketplace/bundles/plan-marshall/skills/tools-script-executor/templates/execute-script.py.template'
 )
 
@@ -832,7 +832,7 @@ def _load_template_module():
     # placeholder pointing at the real logging scripts so `from plan_logging
     # import ...` succeeds at module load.
     logging_dir = str(
-        Path(__file__).parent.parent.parent.parent
+        PROJECT_ROOT
         / 'marketplace/bundles/plan-marshall/skills/manage-logging/scripts'
     )
     source = source.replace('{{SCRIPT_MAPPINGS}}', '')

@@ -819,14 +819,18 @@ The script derives the live footprint from the worktree (reading `references.jso
 
 ```toon
 status: success
+footprint_resolved: true|false
 total: N
 in_scope_count: I
 out_of_scope_count: O
 exclusively_out_of_scope: true|false
 out_of_scope_paths[O]: [paths]
+unclassified_paths[N]: [paths]     # only when footprint_resolved: false
 ```
 
-**When `exclusively_out_of_scope: true`**: the failing tests originate ENTIRELY outside the plan's declared scope (a sibling refactor on the same branch surfaced unrelated breakage). The `[BLOCKED]` triage message MUST include the distinction (e.g., `"All N failures originate outside plan scope: {paths}"`) and the AskUserQuestion offered to the user MUST present **"Stash foreign files and re-verify"** as the default recommended action, alongside the standard FIX / SUPPRESS / ACCEPT options.
+**Read `footprint_resolved` FIRST.** When it is `false` the live footprint could not be derived, so no path was classified: both scope counts are zero, every error path is listed under `unclassified_paths`, and `exclusively_out_of_scope` is `false` because nothing substantiates it. Treat the classification as **absent**, not as a measured "nothing foreign here" — proceed to the standard triage dispatch and do NOT offer the stash remedy below. An unmeasurable footprint reported as an empty one would attribute every failure away from the plan on no evidence.
+
+**When `exclusively_out_of_scope: true`** (which requires `footprint_resolved: true`): the failing tests originate ENTIRELY outside the plan's declared scope (a sibling refactor on the same branch surfaced unrelated breakage). The `[BLOCKED]` triage message MUST include the distinction (e.g., `"All N failures originate outside plan scope: {paths}"`) and the AskUserQuestion offered to the user MUST present **"Stash foreign files and re-verify"** as the default recommended action, alongside the standard FIX / SUPPRESS / ACCEPT options.
 
 **When `exclusively_out_of_scope: false`** (the common case): proceed to the standard triage dispatch below without the foreign-failure annotation. The classification is informational only.
 

@@ -7,12 +7,12 @@ including array row counts, no tabs, and basic structure.
 """
 
 import re
-from pathlib import Path
+
+from conftest import TEST_ROOT
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
 
 # Test root directory
-TEST_ROOT = Path(__file__).parent.parent.parent
 
 
 def find_toon_files():

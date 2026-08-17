@@ -46,7 +46,6 @@ from conftest import (
     MARKETPLACE_ROOT,
     PROJECT_ROOT,
     get_script_path,
-    load_script_module,
     run_script,
 )
 
@@ -67,8 +66,15 @@ from _resolve_project_dir_fixtures import (
     assert_worktree_face_routes_through_resolver,
 )
 
-_discovery = load_script_module('plan-marshall', 'extension-api', 'extension_discovery.py')
-_marketplace_paths = load_script_module('plan-marshall', 'script-shared', 'marketplace_paths.py')
+import extension_discovery as _discovery  # noqa: E402
+
+#: Imported by NAME rather than loaded by file. ``load_script_module`` registers the
+#: module it builds under its stem, so loading ``marketplace_paths`` here replaced the
+#: object that sibling directories import plainly — and a test holding the displaced
+#: object then failed ``importlib.reload`` with "module not in sys.modules", depending
+#: on collection order. A plain import binds THE registered module, so there is only
+#: ever one object and nothing to displace.
+import marketplace_paths as _marketplace_paths  # noqa: E402
 
 
 # =============================================================================

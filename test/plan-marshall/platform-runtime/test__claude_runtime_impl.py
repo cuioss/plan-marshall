@@ -1131,12 +1131,9 @@ class TestSessionRenderTitleSessionTitleEmit:
         self, rt, tmp_path, monkeypatch, capsys
     ):
         """(a) UserPromptSubmit emits both terminalSequence and the icon-free sessionTitle."""
-        from io import StringIO
 
         title_body = self._arrange(tmp_path, monkeypatch)
-        monkeypatch.setattr(
-            "sys.stdin", StringIO(json.dumps({"hook_event_name": "UserPromptSubmit"}))
-        )
+        _stub_hook_stdin(monkeypatch, {"hook_event_name": "UserPromptSubmit"})
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=False)
@@ -1252,13 +1249,10 @@ class TestSessionRenderTitleSessionTitleEmit:
         self, rt, tmp_path, monkeypatch, capsys
     ):
         """(e) statusLine mode is unchanged — plain text, no JSON, no sessionTitle channel."""
-        from io import StringIO
 
         title_body = self._arrange(tmp_path, monkeypatch)
         # Even a UserPromptSubmit payload on stdin yields plain text in statusLine mode.
-        monkeypatch.setattr(
-            "sys.stdin", StringIO(json.dumps({"hook_event_name": "UserPromptSubmit"}))
-        )
+        _stub_hook_stdin(monkeypatch, {"hook_event_name": "UserPromptSubmit"})
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=True)
@@ -1271,7 +1265,6 @@ class TestSessionRenderTitleSessionTitleEmit:
 
     def test_empty_title_body_emits_nothing(self, rt, tmp_path, monkeypatch, capsys):
         """(f) Empty/unrenderable state is a no-op even for a supporting event — nothing on stdout."""
-        from io import StringIO
 
         # status.json present but with no current_phase → composer returns None.
         _write_status_json(
@@ -1282,9 +1275,7 @@ class TestSessionRenderTitleSessionTitleEmit:
             short_description=None,
         )
         _redirect_render_env(tmp_path, monkeypatch, "sess-empty-title")
-        monkeypatch.setattr(
-            "sys.stdin", StringIO(json.dumps({"hook_event_name": "UserPromptSubmit"}))
-        )
+        _stub_hook_stdin(monkeypatch, {"hook_event_name": "UserPromptSubmit"})
 
         capsys.readouterr()
         returned = rt.session_render_title(statusline=False)

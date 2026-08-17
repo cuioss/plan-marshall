@@ -5,15 +5,7 @@
 import tempfile
 from pathlib import Path
 
-from conftest import load_script_module
-
-
-def _load_module(name, filename):
-    """Load a script-shared script by (bundle, skill, file) identity."""
-    return load_script_module('plan-marshall', 'script-shared', f'extension/{filename}', name)
-
-
-_build_discover_mod = _load_module('_build_discover', '_build_discover.py')
+import _build_discover as _build_discover_mod
 
 EXCLUDE_DIRS = _build_discover_mod.EXCLUDE_DIRS
 README_PATTERNS = _build_discover_mod.README_PATTERNS
