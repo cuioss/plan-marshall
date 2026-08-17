@@ -2,17 +2,24 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """The one home for the compose subtraction-record decision-log line shape.
 
-``manage-execution-manifest`` writes a ``[STATUS]`` decision-log line for every
-candidate a gate removes, and the retrospective's routing-decisions aspect reads
-those lines back to establish WHY a step left ``phase_6.steps``. Before this
+Several of ``manage-execution-manifest``'s gates record a removed candidate as a
+``[STATUS]`` decision-log line, and the retrospective's routing-decisions aspect
+reads those lines back to establish WHY a step left ``phase_6.steps``. Before this
 module the two sides each carried their own copy of the shape — the writer as an
 f-string, the reader as a hand-written regex — and the copies drifted: the writer
 moved to one line per dropped step with the posture in a trailing parenthetical,
 while the reader kept matching the retired aggregate form with the posture in the
 middle. The reader's pattern could then never match, so every posture-cutoff drop
 fell through to the predicate-re-evaluation branch and was reported as a
-mis-prune. Both sides now derive from the segments below, so the shape cannot
-drift again without breaking both at once.
+mis-prune. Every writer of THIS shape and its one reader now derive from the
+segments below, so the shape cannot drift on one side alone.
+
+⚠ Scope: this module owns ONE line shape, not every removal record the composer
+writes. Gates that render their own distinct lines — ``unresolved_ask_provider_drop``,
+``scope_gated_finalize``, ``ceremony_finalize_selection``, and the ``*_inactive``
+pre-filter omission line — carry no ``[STATUS]`` tag and are matched individually
+by the reader's own per-mechanism patterns. Do not read "one home" as "one shape
+for every subtraction"; it is one home for the shape defined here.
 
 The canonical rendering is documented at ``standards/decision-rules.md``; that
 document and this module state the same shape, and this module is what both the

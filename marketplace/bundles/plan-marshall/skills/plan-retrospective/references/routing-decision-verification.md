@@ -27,7 +27,9 @@ The predicate definitions (the closed `prunable_when` vocabulary, the class→de
 
 **A removal fact never implies a removal cause.** A prunable step can leave `phase_6.steps` through several recorded mechanisms that are all orthogonal to the realized footprint — every gate that reports a subtraction through the composer's shared `[STATUS] … dropped …` record (the posture-tier cutoff and the narrowing decision-matrix rows among them), plus an unresolved `lane: ask` with no provider, an inactive simplify step, and a ceremony-finalize selection resolving `never`. Inferring "the prune predicate fired" from the bare fact that the step is absent is therefore unsound, and it manufactured a false `fail` on every standard/minimal-posture plan whose footprint touched production code.
 
-**Reader coverage is part of that soundness.** The script parses the shared subtraction-record shape through the same definition the composer writes it with, and matches it gate-agnostically, so a mechanism cannot become invisible by being added to the composer without a matching edit here. A mechanism the reader cannot parse reads exactly like one that was never recorded — which is the same false `fail`, arriving by a different route.
+**Reader coverage is part of that soundness.** The script parses the shared subtraction-record shape through the same definition the composer writes it with, and matches it gate-agnostically, so a gate added to THAT family is recognised without an edit here. A mechanism the reader cannot parse reads exactly like one that was never recorded — the same false `fail`, arriving by a different route.
+
+⚠ That guarantee covers one shape, not every removal. A new gate that renders its own line still needs a matching pattern, and one already exists: the `reconcile` verb's `frozen_manifest_stale` path can drop an arbitrary `phase_6` step — a prunable one included — on a line carrying no `[STATUS]` tag, so its removals are still unrecognised and still produce the false `fail` this check exists to end.
 
 The script consults the recorded decision log FIRST and re-evaluates a predicate only for a step whose removal no recorded mechanism explains. The verdicts are mutually exclusive and jointly exhaustive over an absent step:
 
@@ -39,7 +41,7 @@ The script consults the recorded decision log FIRST and re-evaluates a predicate
 | Readable log names no cause, predicate now false | `fail` | `predicate_evaluated` |
 | Readable log names no cause, predicate still holds | `pass` | `predicate_evaluated` |
 
-Log readability is the sole discriminator between `fail` and `inconclusive`: the composer emits a decision-log line for every removal mechanism, so a *readable* log naming no cause is positive evidence the predicate is the remover, while an *unreadable or absent* log substantiates nothing.
+Log readability is the sole discriminator between `fail` and `inconclusive`: the composer records a decision-log line for the removal mechanisms this reader parses, so a *readable* log naming no cause is positive evidence the predicate is the remover, while an *unreadable or absent* log substantiates nothing. That inference is only as good as the reader's coverage — a mechanism it cannot parse is indistinguishable from one that was never recorded, which is why coverage is a property of the shared shape rather than of a hand-maintained list.
 
 **The generalizable rule this encodes**: a deterministic audit check that infers *why* something happened from the fact *that* it happened is sound only when the observable state has exactly one possible cause. When two or more mechanisms can produce the same observable state, the check MUST read the recorded cause — especially when that record is already in the script's own input set — and MUST report `inconclusive` rather than a fabricated verdict when no cause can be established. This applies to every deterministic check in this skill, not only to mis-prune.
 

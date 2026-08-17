@@ -572,12 +572,24 @@ def _log_pre_push_quality_gate_omitted(plan_id: str, reason: str) -> None:
     threaded through from the ``build-decision`` consult. The emitter never
     composes a reason of its own — a hardcoded string can state a reason the
     verdict did not give.
+
+    Renders through :func:`_decision_line_shapes.format_dropped_record` like every
+    other subtraction record. It previously hand-wrote the identical shape as an
+    f-string, so the retrospective reader matched it only by coincidence of
+    copied text — the exact arrangement the shared module exists to end, surviving
+    inside the change that introduced the module. This gate drops a single fixed
+    step, so it does not route through :func:`_log_dropped_records`'s record-list
+    loop; it shares the SHAPE, which is what has to have one home.
     """
-    message = (
-        '(plan-marshall:manage-execution-manifest:compose) [STATUS] pre_push_quality_gate_inactive — '
-        f'dropped pre-push-quality-gate from phase_6.steps: {reason}'
+    _emit_decision_log(
+        plan_id,
+        format_dropped_record(
+            'pre_push_quality_gate_inactive',
+            'pre-push-quality-gate',
+            reason,
+            target=' from phase_6.steps',
+        ),
     )
-    _emit_decision_log(plan_id, message)
 
 
 def _log_pre_push_quality_gate_kept_unknown(plan_id: str, reason: str) -> None:

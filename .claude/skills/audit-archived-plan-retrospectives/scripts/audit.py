@@ -3385,12 +3385,21 @@ _QC_BOT_RE = re.compile(r"gemini|copilot|bot|automated", re.IGNORECASE)
 #: The KNOWLEDGE half of this set is exactly the four types
 #: `plan-marshall/scripts/_invariants.py` names as never counted by the blocking
 #: gate — that half is a deliberate mirror, and a change to it obliges the same
-#: change here. The two partitions are NOT otherwise equivalent: `_invariants.py`
-#: leaves `bug`, `anti-pattern` and `triage` in neither of its sets, while this
-#: check treats every type outside the four as actionable. Those three leave the
-#: pending column by promotion rather than by disposition, so they do not
-#: reintroduce a floor — but the mirror is one-directional and is claimed only
-#: for the knowledge half.
+#: change here.
+#:
+#: The two partitions are NOT otherwise equivalent, and the mirror is claimed for
+#: the knowledge half ONLY. `_ACTIONABLE_FINDING_TYPES` holds six types and leaves
+#: `bug`, `anti-pattern`, `triage`, `arch-constraint` and `pr-comment-overflow` in
+#: neither of its sets, while this check treats every type outside the knowledge
+#: four as actionable — so a pending `bug` is chain debt here and does not block
+#: the gate there.
+#:
+#: None of those five reintroduces a floor, but by different routes and not all by
+#: promotion: `bug` / `improvement` / `anti-pattern` / `triage` are the promotable
+#: lesson types, while `arch-constraint` is documented non-promotable
+#: (`manage-findings/standards/jsonl-format.md`) and leaves the pending column by
+#: triage disposition. What they share is that SOME action moves them, which is
+#: the only property this partition needs.
 _QC_STRUCTURAL_PENDING_TYPES = frozenset(
     {"tip", "insight", "best-practice", "improvement"}
 )
@@ -5190,6 +5199,12 @@ _GENUINE_METRIC_PREFIX = "genuine__"
 
 _CHECK_HEADER_RE = re.compile(r"^check:\s*(\S+)\s*$", re.MULTILINE)
 _GENUINE_COUNT_RE = re.compile(r"^genuine_signal_count:\s*(\d+)\s*$", re.MULTILINE)
+#: The bare `genuine_signal_count` spelling AND the per-tier
+#: `{tier}_genuine_signal_count` one a multi-table block uses. Anchored at both
+#: ends so a tier prefix must be a whole `{word}_` segment.
+_GENUINE_TIERED_COUNT_RE = re.compile(
+    r"^(?:[a-z][a-z_]*_)?genuine_signal_count:\s*(\d+)\s*$", re.MULTILINE
+)
 
 
 def _stamp_era(block: str) -> str:
@@ -5244,21 +5259,39 @@ def _annotate_exclusions(block: str, excluded: list[PlanInputs]) -> str:
 
 
 def _extract_per_check_genuine(blocks: list[str]) -> dict[str, int]:
-    """Map each emitted check block to its `genuine_signal_count`.
+    """Map each emitted check block to its genuine-signal total.
 
-    Parses the block text (every `emit_*` block carries both a `check:` header
-    and a `genuine_signal_count:` line) so the substrate is uniform across all
-    checks without threading the count through each emitter. Meta blocks
-    (`report-diff`) whose header is not a known check name are skipped.
+    Parses the block text so the substrate is uniform across all checks without
+    threading the count through each emitter. Meta blocks (`report-diff`) whose
+    header is not a known check name are skipped.
+
+    A block states its genuine total either as one bare `genuine_signal_count`
+    line or as PER-TIER lines (`quality-chain` publishes
+    `plan_genuine_signal_count` and `finding_genuine_signal_count`, one per table
+    tier, and no bare one). `_GENUINE_TIERED_COUNT_RE` matches both spellings and
+    the tiers are summed, so a multi-tier check contributes its total like any
+    other rather than contributing nothing.
+
+    Reading only the bare spelling had two consequences, and the second is the
+    reason this is a total rather than a special case. `quality-chain` never
+    reached the retire-on-quiet substrate at all — and the suspect-zero census
+    then classified it `no_count` on EVERY run, including runs where it produced
+    genuine signals, so the class guard published one permanent suspect row about
+    a detector that was firing. A row that fires at 100% is not a detector, it is
+    a constant, which is the very failure mode the census exists to surface.
+
+    A block carrying no genuine count in either spelling still yields no entry —
+    that state is real (the `unmeasured` path withholds the line deliberately) and
+    is reported by the census rather than defaulted to zero.
     """
     out: dict[str, int] = {}
     for block in blocks:
         header = _CHECK_HEADER_RE.search(block)
         if header is None or header.group(1) not in CHECK_NAMES:
             continue
-        count = _GENUINE_COUNT_RE.search(block)
-        if count is not None:
-            out[header.group(1)] = int(count.group(1))
+        counts = _GENUINE_TIERED_COUNT_RE.findall(block)
+        if counts:
+            out[header.group(1)] = sum(int(c) for c in counts)
     return out
 
 
@@ -5360,11 +5393,13 @@ def _retire_on_quiet_proposals(
 # ---------------------------------------------------------------------------
 #
 # A detector that has never produced a positive is indistinguishable, from its
-# output alone, from a detector that CANNOT produce one. Every check in this file
-# reports a `genuine_signal_count`, and a permanent zero there reads as health —
-# which is exactly how a predicate reading a field live data never carries, a scan
-# rooted one directory above its emitter, and a regex that cannot match its
-# emitter all survived while their suite stayed green.
+# output alone, from a detector that CANNOT produce one. A check reports its
+# genuine total as a bare `genuine_signal_count` or as per-tier
+# `{tier}_genuine_signal_count` lines (and an `unmeasured` block withholds it
+# deliberately), and a permanent zero there reads as health — which is exactly how
+# a predicate reading a field live data never carries, a scan rooted one directory
+# above its emitter, and a regex that cannot match its emitter all survived while
+# their suite stayed green.
 #
 # The census makes every zero SUSPECT rather than silently clean, and classifies
 # what KIND of zero it is. It is a reporting instrument: it never blocks, never
@@ -5391,20 +5426,39 @@ _UNMEASURED_STATUS_RE = re.compile(r"^status:\s*unmeasured\s*$", re.MULTILINE)
 _EXCLUDED_NON_SHIPPING_RE = re.compile(
     r"^plans_excluded_non_shipping:\s*(\d+)\s*$", re.MULTILINE
 )
+_PLANS_IN_CORPUS_RE = re.compile(r"^plans_in_corpus:\s*(\d+)\s*$", re.MULTILINE)
 
 
 def _examined_population(block: str, corpus_size: int) -> int:
     """The plan count this check actually examined, not the corpus it ran under.
 
-    The two differ for every `DELIVERY_COST_CHECKS` member: those run over the
-    SHIPPING partition, and `_annotate_exclusions` stamps how many plans were
-    excluded into the block. Classifying on the raw corpus size would call a check
-    that examined nothing `disciplinary` — asserting "a non-empty corpus was
-    examined" of a check that saw no plan at all, which is a starved zero reported
-    as evidence and precisely the distinction this census exists to draw.
+    The two differ whenever a check narrows its own population, and classifying on
+    the raw corpus size then calls a check that examined nothing `disciplinary` —
+    asserting "a non-empty corpus was examined" of a check that saw no plan at
+    all. That is a starved zero reported as evidence, and precisely the
+    distinction this census exists to draw.
 
-    A block carrying no exclusion line examined the whole corpus.
+    Precedence, strongest evidence first:
+
+    1. `plans_in_corpus` — the check's OWN statement of what it examined. Read
+       first because a check that narrowed its population by any rule has already
+       computed the answer, and no exclusion arithmetic here can beat it.
+       `exploration-share` and `billing-composition` narrow on a SECOND axis
+       (`plans_excluded_no_counters`) that the shipping arithmetic below cannot
+       see, so deriving from exclusions alone reported both as `disciplinary` over
+       a population of zero.
+    2. `plans_excluded_non_shipping` — stamped by `_annotate_exclusions` on the
+       `DELIVERY_COST_CHECKS`, which run over the shipping partition.
+    3. The whole corpus, for a block declaring neither.
+
+    Reading the declaration first also means a check that grows a third narrowing
+    axis needs no edit here, provided it publishes its population — which is the
+    only durable arrangement, since an enumeration of exclusion keys is one new
+    axis away from being wrong.
     """
+    declared = _PLANS_IN_CORPUS_RE.search(block)
+    if declared is not None:
+        return int(declared.group(1))
     excluded = _EXCLUDED_NON_SHIPPING_RE.search(block)
     if excluded is None:
         return corpus_size

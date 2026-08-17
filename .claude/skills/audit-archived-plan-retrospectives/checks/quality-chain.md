@@ -52,7 +52,8 @@ Derived from the `resolution` field, refined by a `resolution_detail` regex:
 | `rerun_flake` | `resolution == fixed` whose detail names a transient / re-run / flake cause. Not a real defect — a flaky precondition. |
 | `accepted` | `resolution == accepted`. Acknowledged, not actioned. |
 | `suppressed` | `resolution == suppressed`. |
-| `pending` | `resolution` is `pending` / `none` / empty — unresolved at archive time. Partitioned into an ACTIONABLE and a STRUCTURAL half — see below. |
+| `rejected` | `resolution == rejected` — the `ext-point-verify` disposition. |
+| `pending` | `resolution` is `pending` / `none` / empty, **or any value this table does not name**. An unrecognised disposition buckets here rather than crashing the matrix, so it surfaces as unresolved until it earns its own row. Partitioned into an ACTIONABLE and a STRUCTURAL half — see below. |
 
 ### The pending column is two populations, not one
 
@@ -70,11 +71,17 @@ that cannot reach zero is not a backlog, it is a mislabelled population. That is
 worse than a false zero: a false zero invites a check, while a large permanent
 backlog invites resignation.
 
-The partition membership mirrors the fixed actionable-vs-knowledge split already
-shipped at `plan-marshall/scripts/_invariants.py` (`_ACTIONABLE_FINDING_TYPES`
-plus the knowledge types its comment names as never counted) — the blocking gate's
-own rule. Both consumers are asking "would an action resolve this?", so they
-answer it the same way; a change to that partition obliges the same change here.
+The KNOWLEDGE half of the partition mirrors the fixed split already shipped at
+`plan-marshall/scripts/_invariants.py` — the four types its comment names as never
+counted by the blocking gate. That half is an exact mirror, and a change to it
+obliges the same change here.
+
+⚠ The mirror is ONE-DIRECTIONAL. `_ACTIONABLE_FINDING_TYPES` holds six types and
+leaves `bug`, `anti-pattern`, `triage`, `arch-constraint` and `pr-comment-overflow`
+in neither set, while this check treats every type outside the knowledge four as
+actionable. So a pending `bug` is chain debt here and does not block the gate
+there. The two consumers ask a similar question and do NOT answer it identically;
+only the knowledge half is claimed.
 
 Structural rows stay in the `corpus_matrix` census. They are **labelled, not
 deleted**: the matrix answers "what was filed", the split answers "what could be
@@ -86,7 +93,7 @@ finding, and the partition never overrules the record.
 ## Matrix
 
 For each plan the script builds a `matrix[mechanism][resolution]` count grid over
-the five mechanisms × seven resolution buckets, plus a `mech_total` per
+the five mechanisms × the resolution buckets named above, plus a `mech_total` per
 mechanism. The corpus block sums every plan's matrix into a single
 `corpus_matrix` — the chain's overall shape: how many findings each gate caught
 across the whole corpus, and how each gate's findings were resolved. A healthy
@@ -140,7 +147,7 @@ pending_total: T
 pending_actionable: A
 pending_structural: S
 pending_structural_note: {why the structural half is excluded}
-corpus_matrix[5]{mechanism,direct_fix,loop_back,rerun_flake,accepted,suppressed,pending,lesson,total}
+corpus_matrix[5]{mechanism,direct_fix,loop_back,rerun_flake,accepted,suppressed,rejected,pending,lesson,total}
 plans[P]{plan_id,build,self_review,auto_review,human_review,other,total,structural_pending,flags,severity}
 findings[F]{plan_id,mechanism,resolution,source_file,shift_left_tier,title,severity}
 ```

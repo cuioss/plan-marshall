@@ -162,16 +162,46 @@ class TestNoCountAndExaminedPopulation:
             == audit._ZERO_NO_COUNT
         )
 
-    def test_quality_chain_is_classified_no_count_on_a_real_sweep(self, tmp_path: Path):
-        """End-to-end: the block genuinely publishes no bare genuine_signal_count."""
-        inputs = minimal_corpus(tmp_path)
-        output = audit.run_checks(inputs, list(audit.CHECK_NAMES), tmp_path)
+    def test_per_tier_genuine_counts_are_read_and_summed(self):
+        """A multi-tier block states its total across per-tier lines, not one bare one.
 
-        row = next(
-            ln for ln in output.splitlines() if ln.strip().startswith("quality-chain,")
+        `quality-chain` publishes `plan_genuine_signal_count` and
+        `finding_genuine_signal_count`. Reading only the bare spelling left it
+        with no count on every run, so the census reported it a permanent suspect
+        — including on runs where it FIRED, which is a constant rather than a
+        detector.
+        """
+        block = (
+            "check: quality-chain\nstatus: success\n"
+            "plan_genuine_signal_count: 1\n"
+            "finding_genuine_signal_count: 2\n"
         )
-        assert audit._ZERO_NO_COUNT in row
-        assert audit._ZERO_DISCIPLINARY not in row
+        assert audit._extract_per_check_genuine([block]) == {"quality-chain": 3}
+
+    def test_a_bare_genuine_count_is_still_read(self):
+        """The negative control — the widened read must not break the common shape."""
+        assert audit._extract_per_check_genuine([_MEASURED_ZERO_BLOCK]) == {
+            "dispatch-topology": 0
+        }
+
+    def test_a_firing_quality_chain_is_not_a_suspect(self, tmp_path: Path):
+        """The consequence: a detector that produced positives is not suspect.
+
+        D6's charter is to surface a detector that produced ZERO positives. One
+        that fired must never appear in the suspect population, whatever spelling
+        it used to state its count.
+        """
+        block = (
+            "check: quality-chain\nstatus: success\n"
+            "plan_genuine_signal_count: 1\n"
+            "finding_genuine_signal_count: 1\n"
+        )
+        genuine = audit._extract_per_check_genuine([block])
+        rows = audit.suspect_zero_census([block], genuine, {}, corpus_size=3)
+
+        row = next(r for r in rows if r["check"] == "quality-chain")
+        assert row["zero_class"] == audit._ZERO_NONE
+        assert row["suspect"] == "false"
 
     def test_a_check_that_examined_no_plans_is_starved_not_disciplinary(self):
         """A delivery-cost check whose shipping partition excluded every plan.
@@ -239,6 +269,50 @@ class TestCensusEndToEnd:
             if ln.strip().startswith("dispatch-topology,")
         )
         assert audit._ZERO_STRUCTURAL not in row
+
+    def test_no_registered_check_is_classified_no_count_on_a_real_sweep(
+        self, tmp_path: Path
+    ):
+        """Every emitted block states a genuine total the census can read.
+
+        `no_count` is a defensive class for a block that publishes none. A check
+        landing there on a normal sweep means the census is reporting a permanent
+        suspect about a detector it simply cannot read — which is a constant, not
+        a detector, and `quality-chain` was exactly that until its per-tier counts
+        were made readable.
+        """
+        inputs = minimal_corpus(tmp_path)
+        output = audit.run_checks(inputs, list(audit.CHECK_NAMES), tmp_path)
+
+        census = output.split("check: suspect-zero-census", 1)[1]
+        offenders = [
+            ln.strip()
+            for ln in census.splitlines()
+            if f",{audit._ZERO_NO_COUNT}," in ln
+        ]
+        assert offenders == []
+
+    def test_a_check_narrowing_its_own_population_to_zero_is_starved(
+        self, tmp_path: Path
+    ):
+        """Pins the call ORDER `_examined_population` silently depends on.
+
+        The population is read off the emitted block, so the census must run after
+        the blocks are built and annotated. Move it earlier and every
+        population-narrowing check regresses to `disciplinary` — a starved zero
+        reported as evidence — with a green suite otherwise. This test fails on
+        that reordering because it drives the real `run_checks`.
+        """
+        inputs = minimal_corpus(tmp_path)
+        output = audit.run_checks(inputs, list(audit.CHECK_NAMES), tmp_path)
+
+        census = output.split("check: suspect-zero-census", 1)[1]
+        # `exploration-share` narrows on its own axis (plans with no counters) and
+        # the minimal corpus supplies none, so its examined population is zero.
+        row = next(
+            ln for ln in census.splitlines() if ln.strip().startswith("exploration-share,")
+        )
+        assert audit._ZERO_DISCIPLINARY not in row
 
 
 class TestCensusBlock:

@@ -89,8 +89,13 @@ _TEST_NAME_RE = re.compile(
 # subtraction-record line is recognised gate-agnostically, so a new gate in that
 # family needs no edit here. The obligation still binds for a mechanism that
 # renders its OWN line shape — adding a step to this map, or adding a
-# differently-shaped emission to the composer, obliges a re-derivation against
-# ``manage-execution-manifest/standards/decision-rules.md``.
+# differently-shaped emission to the composer, obliges a re-derivation against the
+# composer's EMITTERS — the ``_emit_decision_log`` call sites in
+# ``manage-execution-manifest.py``. Re-derive against the CODE, not against
+# ``standards/decision-rules.md``: that document's renderings are current and
+# correct for the shapes it covers, but it does not enumerate every gate (its
+# pre-filter list omits ``terminal_emission_orchestration_gate``), so a doc-only
+# re-derivation can miss a live mechanism.
 _PRUNABLE_PREDICATES = {
     'sonar-roundtrip': 'no_code_delta',
     'finalize-step-simplify': 'no_code_delta',
@@ -176,9 +181,16 @@ def _bare_step(name: str) -> str:
 def _parse_step_tokens(raw: str) -> list[str]:
     """Split a decision-log ``{steps}`` capture into bare step names.
 
-    The lane-resolution mechanism renders its step list as a Python list repr
-    (``['a', 'b']``); the other three name a single bare step. Both forms are
-    tolerated.
+    Every CURRENT emitter names one step per line, so the live path is a single
+    bare (or ``default:``/``project:``-prefixed) step reference.
+
+    The Python-list-repr form (``['a', 'b']``) is retired: ``lane_resolution``
+    rendered it while it emitted one aggregate line per compose, and it now reports
+    one line per dropped step through the shared subtraction-record shape, whose
+    ``\\S+`` capture could not match a list repr in any case. Parsing it is kept so
+    an ARCHIVED decision log written under the old emitter still resolves its
+    causes — archived logs are immutable history, and this reader is the only thing
+    that can still read them.
     """
     text = raw.strip()
     if text.startswith('[') and text.endswith(']'):
