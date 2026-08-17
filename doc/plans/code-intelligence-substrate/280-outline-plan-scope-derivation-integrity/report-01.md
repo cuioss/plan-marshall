@@ -144,16 +144,22 @@ Python in six bundles plus eight test modules — so the full gate applies.
   output (`ruff … All checks passed!`, `mypy … Success: no issues found in 410 source files`,
   `SPDX-header check passed`). The direct-`./pw` path emits no TOON log, so those lines are the
   evidence.
-- Branch gate: **`./pw verify` — `=== verify: SUCCESS ===`, `20509 passed, 14 skipped` in 8:18.**
+- Branch gate: **`./pw verify` — `=== verify: SUCCESS ===`**, most recently after the PR-review fixes.
+  The preceding clean run reported `20509 passed, 14 skipped` in 8:18; the tree now collects
+  **20544 tests** (re-derived at the moment of this claim with `pytest --collect-only`, and stated as
+  a count of *collected cases* — the unit a reader sees when they run the suite — rather than of test
+  functions).
   All six sub-dimensions ran at full scope, per the run's own coverage line: mypy(production) over
   410 files, ruff over `marketplace/bundles` + `test` + `.claude`, SPDX headers, plugin-doctor
   marketplace-wide, mypy(test) over 764 files, and module-tests whole-tree. Read from the streamed
   tool output, not the exit code — the wrapper exits 0 even when `module-tests failed`, which is
   exactly how the 12 failures behind F16–F18 surfaced on the preceding run.
 
-  ⚠ Three `./pw verify` runs happened, and the first one **failed**: `verify: module-tests failed`
-  with 12 named failures, while the wrapper still exited 0. The second was clean at 20509 passed.
-  The third — after the verification round's fixes — is the figure quoted above.
+  ⚠ Four `./pw verify` runs happened, and the first one **failed**: `verify: module-tests failed`
+  with 12 named failures, while the wrapper still exited 0. The second was clean at 20509 passed; the
+  third followed the verification round's fixes; the fourth followed the PR-review fixes. The
+  distinction matters because `SUCCESS` versus `module-tests failed` is the only reliable signal —
+  the exit code is 0 either way.
 
   **CI agrees:** `verify / conclusion` concluded **success** on the head, alongside `verify / gate`,
   `dependency-review` and `generate-check`. The merge queue re-verifies on `merge_group` before
@@ -316,15 +322,21 @@ the hand-built TOON payloads, the skip-reason vocabulary, the `declared_bucket` 
 changes, and all remaining `has_worktree` call sites — so the short finding list is distinguishable
 from a check that examined nothing.
 
-**Convergence: the loop was stopped by judgement after one round, not because a round came back
-clean.** Every F20–F32 fix is committed and the full `./pw verify` re-run is recorded in § Contract
-check. No finding in that round was left unfixed, so the "a pass that found a defect has not
-finished" rule would normally demand a re-dispatch. It was not re-dispatched, and this document
-should be assumed to still contain prose residue of the kind that round found. The code was verified
-by something stronger than another read: the aggregator's verdict on all three F21 shapes was
-**executed** rather than argued (`_classify_paths_via_extensions` called directly on each), the
-coercion table in F24 is enumerated exhaustively over both input axes, and the whole-tree suite runs
-green.
+**Convergence: the loop was stopped by judgement after one sub-agent round, not because a round came
+back clean.** Every F20–F32 fix is committed. No finding in that round was left unfixed, so the "a
+pass that found a defect has not finished" rule would normally demand a re-dispatch. It was not
+re-dispatched, and this document should be assumed to still contain prose residue of the kind that
+round found. The code was verified by something stronger than another read: the aggregator's verdict
+on all three F21 shapes was **executed** rather than argued (`_classify_paths_via_extensions` called
+directly on each), the coercion table in F24 is enumerated exhaustively over both input axes, and the
+whole-tree suite runs green.
+
+⭐ **And the judgement was only half right, which is worth recording plainly.** The PR review then
+found six more (F33–F38), **two of them real defects in shipped code** — one of which, F34, is a
+guard *this run introduced* whose predicate inverted the moment the population changed underneath it.
+A converged sub-agent loop is not a defect-free diff, and this run has the receipts: a reviewer with a
+different method found what four reads by two agents did not. That is exactly why review coverage is
+not substitutable for the verification loop, nor the loop for coverage.
 
 ## Reviewer participation
 
