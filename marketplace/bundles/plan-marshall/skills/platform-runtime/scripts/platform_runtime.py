@@ -9,7 +9,7 @@ Usage:
         <operation> [operation-specific args...]
 
 Operations:
-    project initial-setup   --project-dir <path>  --target claude|opencode
+    project initial-setup   --project-dir <path>  --target <target-id>
     project install-hook    --target <settings-file-path>  [--enforcement]
     layout skill-roots      (no arguments)
     layout bundle-cache-root (no arguments)
@@ -36,7 +36,7 @@ Operations:
 
 The router resolves ``PLAN_DIR_NAME`` (default ``.plan``) from the environment,
 reads ``marshal.json``, looks up ``runtime.target``, and dispatches to the
-appropriate ``Runtime`` subclass (``ClaudeRuntime`` or ``OpenCodeRuntime``).
+``Runtime`` subclass the registration block registers for that target.
 
 Exit codes:
     0 — TOON printed on stdout (success, error, or no-op)
@@ -72,19 +72,6 @@ _COMMON_BOOTSTRAP_LIBS: tuple[str, ...] = (
     "platform-runtime",
 )
 
-# Additional libraries required per target, discovered via glob within the
-# skills root.  Keys match the ``runtime.target`` values in marshal.json.
-_TARGET_BOOTSTRAP_LIBS: dict[str, tuple[str, ...]] = {
-    "claude": (
-        "tools-file-ops",
-        "tools-permission-doctor",
-        "tools-permission-fix",
-        "workflow-permission-web",
-        "script-shared",
-    ),
-    "opencode": (),
-}
-
 
 def _find_skills_root() -> Path | None:
     """Walk ancestors of this file to locate the marketplace ``skills/`` root.
@@ -116,9 +103,16 @@ def _bootstrap_glob_discover(target: str | None = None) -> Path | None:
     Each directory is appended only when it exists on disk and is not already
     present in ``sys.path``, so repeated calls are idempotent.
 
+    ``_TARGET_BOOTSTRAP_LIBS`` lives further down, in the registration block
+    that also declares ``_REGISTRY`` — that block cannot be hoisted above this
+    function because it names classes only importable once the common bootstrap
+    below has run. The ``target is None`` guard is what makes the ordering safe:
+    the pre-import call passes ``None`` and therefore never evaluates the name.
+
     Args:
-        target: Platform target string (e.g. ``"claude"`` or ``"opencode"``).
-                Pass ``None`` to add only the common libs.
+        target: Platform target identifier — a key of the registration block's
+                ``_TARGET_BOOTSTRAP_LIBS``. Pass ``None`` to add only the
+                common libs.
 
     Returns:
         The resolved ``skills/`` root ``Path`` when the root was found, or
@@ -129,8 +123,8 @@ def _bootstrap_glob_discover(target: str | None = None) -> Path | None:
         return None
 
     libs = list(_COMMON_BOOTSTRAP_LIBS)
-    if target in _TARGET_BOOTSTRAP_LIBS:
-        libs.extend(_TARGET_BOOTSTRAP_LIBS[target])
+    if target is not None:
+        libs.extend(_TARGET_BOOTSTRAP_LIBS.get(target, ()))
 
     for lib_name in libs:
         lib_dir = skills_root / lib_name / "scripts"
@@ -159,12 +153,40 @@ from opencode_runtime import OpenCodeRuntime  # noqa: E402
 from runtime_base import Runtime, toon_error  # noqa: E402
 
 # ---------------------------------------------------------------------------
-# Target registry
+# Target registration block — the ONE place a runtime target is registered.
+#
+# Adding a target is an edit to this block and nothing else in this module:
+# add its ``Runtime`` subclass to ``_REGISTRY`` and its extra bootstrap
+# libraries to ``_TARGET_BOOTSTRAP_LIBS``. The two dicts are declared adjacently
+# so the pair cannot drift unnoticed, and a lockstep test asserts their key sets
+# stay equal.
+#
+# ``_DEFAULT_TARGET`` is the single fallback identifier: every argparse default
+# and every "no target resolved" fallback in this module reads it rather than
+# repeating a literal. The companion default in
+# ``script-shared/scripts/marketplace_paths.py`` is held equal to this one by
+# the same lockstep test.
 # ---------------------------------------------------------------------------
+
+_DEFAULT_TARGET = "claude"
 
 _REGISTRY: dict[str, type[Runtime]] = {
     "claude": ClaudeRuntime,
     "opencode": OpenCodeRuntime,
+}
+
+# Additional libraries required per target, discovered via glob within the
+# skills root.  Keys match the ``runtime.target`` values in marshal.json, and
+# must cover exactly the ``_REGISTRY`` key set.
+_TARGET_BOOTSTRAP_LIBS: dict[str, tuple[str, ...]] = {
+    "claude": (
+        "tools-file-ops",
+        "tools-permission-doctor",
+        "tools-permission-fix",
+        "workflow-permission-web",
+        "script-shared",
+    ),
+    "opencode": (),
 }
 
 _PLAN_DIR_NAME = os.environ.get("PLAN_DIR_NAME", ".plan")
@@ -246,7 +268,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     if operation == "project initial-setup":
         p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime project initial-setup")
         p.add_argument("--project-dir", default=".")
-        p.add_argument("--target", default="claude", choices=list(_REGISTRY))
+        p.add_argument("--target", default=_DEFAULT_TARGET, choices=list(_REGISTRY))
         ns = p.parse_args(remaining)
         return runtime.project_initial_setup(ns.project_dir, ns.target)
 
@@ -644,7 +666,7 @@ def main(argv: list[str] | None = None) -> int:
         # Peek at --project-dir without consuming remaining.
         peek = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
         peek.add_argument("--project-dir", default=None)
-        peek.add_argument("--target", default="claude")
+        peek.add_argument("--target", default=_DEFAULT_TARGET)
         ns_peek, _ = peek.parse_known_args(remaining)
         if ns_peek.project_dir:
             project_dir = ns_peek.project_dir
@@ -660,14 +682,15 @@ def main(argv: list[str] | None = None) -> int:
     if marshal is not None:
         target = _resolve_target(marshal)
         if not target:
-            # marshal.json found but runtime.target missing — default to claude.
-            target = "claude"
+            # marshal.json found but runtime.target missing — fall back to the
+            # registered default target.
+            target = _DEFAULT_TARGET
     else:
         # marshal.json absent — only valid for ``project initial-setup``.
         if operation == "project initial-setup":
             # Extract --target from remaining to bootstrap the correct runtime.
             peek2 = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
-            peek2.add_argument("--target", default="claude")
+            peek2.add_argument("--target", default=_DEFAULT_TARGET)
             ns_peek2, _ = peek2.parse_known_args(remaining)
             target = ns_peek2.target
         else:
