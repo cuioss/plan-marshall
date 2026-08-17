@@ -10,10 +10,12 @@ render. Keeping both scripts on one registry makes producer/consumer key drift
 structurally impossible — a typo'd or renamed aspect key now fails loudly at
 ``collect-fragments add`` time instead of silently emptying a report section.
 
-The module is pure and side-effect-free: it declares the registry and a derived
-key-set helper, nothing else. It imports no other module so both consumers can
-load it from the shared ``plan-retrospective/scripts/`` directory on the executor
-PYTHONPATH without pulling in transitive dependencies.
+The module is pure and side-effect-free: it declares the registry, a derived
+key-set helper, and the two vocabularies that make a section's *zero* legible
+(:data:`ZERO_ATTRIBUTION_FIELDS` and :data:`ZERO_DECLARED_UNMEASURED_STATUSES`) —
+nothing else. It imports no other module so both consumers can load it from the
+shared ``plan-retrospective/scripts/`` directory on the executor PYTHONPATH
+without pulling in transitive dependencies.
 """
 
 from __future__ import annotations
@@ -88,3 +90,35 @@ def valid_aspect_keys() -> set[str]:
     ``_``-prefixed keys, and that rule is preserved independently.
     """
     return {fragment_key for _heading, fragment_key, _trigger in SECTION_SPEC if not fragment_key.startswith('_')}
+
+
+# Fields whose presence lets a reader tell a section's "zero findings" apart from
+# "this section could not look". Every *"zero findings"* line carries that
+# ambiguity, and naming the population that was examined — and held — is the
+# discriminator. The vocabulary is DERIVED from what the deterministic aspects
+# already publish, not invented here:
+#
+# * ``evaluated_population`` — ``standards/execution-context-dispatch-audit.md``
+#   ("publishes the evaluated population beside every count so a zero is
+#   legible"); emitted by ``check-dispatch-audit.py`` on every fact block.
+# * ``population`` — the fragment-schema key in ``references/log-analysis.md``
+#   (e.g. ``population: plan_script_execution_log``), which names the corpus a
+#   block's counts were taken over.
+# * ``counts`` — the populated count block ``direct-gh-glab-usage.py`` emits
+#   beside an empty ``findings`` list, whose ``total`` / ``by_surface`` entries
+#   name what was counted.
+#
+# A fragment is read through this set by ``compile-report.unattributed_zero_sections``.
+ZERO_ATTRIBUTION_FIELDS: tuple[str, ...] = (
+    'evaluated_population',
+    'population',
+    'counts',
+)
+
+# Statuses with which a fragment DECLARES that it could not look, rather than
+# reporting a zero it never measured. Such a fragment is already unambiguous, so
+# it is not an unattributed zero. ``not_evaluated`` is the token
+# ``standards/execution-context-dispatch-audit.md`` mandates in place of "a bare
+# ``0`` a reader could mistake for evaluated-clean"; ``skipped`` is the
+# graceful-skip status specified by ``references/chat-history-analysis.md``.
+ZERO_DECLARED_UNMEASURED_STATUSES: frozenset[str] = frozenset({'not_evaluated', 'skipped'})

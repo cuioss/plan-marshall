@@ -16,6 +16,7 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
+import retro_sections as _rs
 
 from conftest import load_script_module
 
@@ -205,9 +206,19 @@ class TestBuildDocument:
         content, _written, _omitted, _dropped = _cr.build_document('demo', 'live', tmp_path, None, fragments)
         assert 'String summary here' in content
 
-    def test_missing_executive_summary_uses_placeholder(self, tmp_path):
-        content, _written, _omitted, _dropped = _cr.build_document('demo', 'live', tmp_path, None, {})
-        assert 'No executive summary provided' in content
+    def test_missing_executive_summary_emits_no_section(self, tmp_path):
+        # REGRESSION (D1). The compiler used to emit a heading whose entire body
+        # was the literal ``_No executive summary provided._`` placeholder. An
+        # empty heading is forbidden by ``references/report-structure.md``
+        # § "Conditional Rule", and counting one as written breaks the partition
+        # invariant *written implies non-empty*.
+        content, written, omitted, dropped = _cr.build_document('demo', 'live', tmp_path, None, {})
+        assert 'No executive summary provided' not in content
+        assert '## Executive Summary' not in content
+        assert 'Executive Summary' not in written
+        # Absent fragment ⇒ nothing was lost ⇒ benign omission, not a drop.
+        assert 'Executive Summary' in omitted
+        assert 'Executive Summary' not in dropped
 
     def test_conditional_section_omitted_when_no_data(self, tmp_path):
         # No script-failure-analysis fragment → that conditional section is omitted.
@@ -229,6 +240,119 @@ class TestBuildDocument:
         _content, _written, omitted, dropped = _cr.build_document('demo', 'live', tmp_path, None, fragments)
         assert 'Script Failure Analysis' in dropped
         assert 'Script Failure Analysis' not in omitted
+
+
+class TestWrittenImpliesNonEmpty:
+    """D1 regression: the partition invariant *written implies non-empty*.
+
+    The compiler used to append the Executive Summary heading to ``written``
+    UNCONDITIONALLY — including on the branch whose whole body is the literal
+    ``_No executive summary provided._`` placeholder. A headline section with no
+    content then rode the clean half of a partition whose loud half exists to
+    make content loss visible.
+    """
+
+    def test_placeholder_executive_summary_is_not_listed_as_written(self, tmp_path):
+        _content, written, _omitted, _dropped = _cr.build_document('demo', 'live', tmp_path, None, {})
+        assert 'Executive Summary' not in written
+
+
+    def test_payload_bearing_executive_summary_without_a_body_is_dropped(self, tmp_path):
+        # The fragment carried content the renderer could not turn into a body
+        # (no ``summary`` key). That is a LOSS, so it takes the loud half of the
+        # partition rather than the benign one.
+        fragments = {'_executive-summary': {'narrative': 'written to the wrong key'}}
+        content, written, omitted, dropped = _cr.build_document('demo', 'live', tmp_path, None, fragments)
+        assert '## Executive Summary' not in content
+        assert 'Executive Summary' not in written
+        assert 'Executive Summary' in dropped
+        assert 'Executive Summary' not in omitted
+
+
+class TestZeroReportingSectionNamesItsCheckedSet:
+    """D1's second property: a section reporting zero must say what it checked.
+
+    Every *"zero findings"* line is ambiguous between *looked and found nothing*
+    and *could not look*, and the checked set is the discriminator.
+    """
+
+    @staticmethod
+    def _doc(fragments):
+        _content, written, _omitted, _dropped = _cr.build_document(
+            'demo', 'live', Path('/tmp/plan'), None, fragments
+        )
+        return written, _cr.unattributed_zero_sections(written, fragments)
+
+    def test_bare_zero_is_flagged(self):
+        # The defect: an empty findings list and nothing naming the population.
+        fragments = {'direct-gh-glab-usage': {'status': 'success', 'findings': []}}
+        written, flagged = self._doc(fragments)
+        assert 'Direct gh/glab Usage' in written, 'precondition: the section must render'
+        assert 'Direct gh/glab Usage' in flagged
+
+    @pytest.mark.parametrize('field', _rs.ZERO_ATTRIBUTION_FIELDS)
+    def test_every_attribution_field_clears_the_flag(self, field):
+        # Quantified over the registry, not over a hand-listed subset, so a field
+        # added to ZERO_ATTRIBUTION_FIELDS later is covered without an edit here.
+        fragments = {
+            'direct-gh-glab-usage': {'status': 'success', 'findings': [], field: {'total': 0}},
+        }
+        written, flagged = self._doc(fragments)
+        assert 'Direct gh/glab Usage' in written
+        assert 'Direct gh/glab Usage' not in flagged
+
+    def test_a_measured_population_of_zero_still_counts_as_attribution(self):
+        # ``evaluated_population: 0`` is the honest "I looked at nothing, and
+        # here is that number". ``False == 0`` in Python, so an equality-based
+        # sentinel test would discard exactly this case.
+        fragments = {
+            'direct-gh-glab-usage': {'status': 'success', 'findings': [], 'evaluated_population': 0},
+        }
+        _written, flagged = self._doc(fragments)
+        assert 'Direct gh/glab Usage' not in flagged
+
+    @pytest.mark.parametrize('status', sorted(_rs.ZERO_DECLARED_UNMEASURED_STATUSES))
+    def test_declared_unmeasured_status_is_not_an_unattributed_zero(self, status):
+        # A fragment that DECLARES it could not look is already unambiguous.
+        fragment = {'status': status, 'findings': []}
+        assert _cr._names_checked_set(fragment) is True
+
+    def test_a_section_reporting_findings_is_not_a_zero(self):
+        fragments = {
+            'direct-gh-glab-usage': {
+                'status': 'success',
+                'findings': [{'severity': 'error', 'message': 'leak'}],
+            },
+        }
+        _written, flagged = self._doc(fragments)
+        assert 'Direct gh/glab Usage' not in flagged
+
+    def test_a_fragment_with_no_findings_key_makes_no_zero_claim(self):
+        assert _cr._reports_zero({'status': 'success', 'counts': {'total': 3}}) is False
+
+    def test_only_written_sections_are_probed(self):
+        # An omitted section reported nothing at all, so it cannot be an
+        # unattributed zero. Probing the whole registry instead of the written
+        # set would flag every absent section on every run.
+        fragments = {'direct-gh-glab-usage': {'status': 'success', 'findings': []}}
+        written, flagged = self._doc(fragments)
+        assert 'Script Failure Analysis' not in written
+        assert flagged == ['Direct gh/glab Usage']
+
+    def test_probe_bites_only_on_the_defect_it_names(self):
+        # Mutation check: the SAME fragment with its attribution restored must
+        # stop being flagged. A probe that flagged both (or neither) would be
+        # asserting something other than the property it is named for.
+        defective = {'direct-gh-glab-usage': {'status': 'success', 'findings': []}}
+        attributed = {
+            'direct-gh-glab-usage': {
+                'status': 'success',
+                'findings': [],
+                'counts': {'total': 0, 'by_surface': {'log_leak': 0, 'diff_leak': 0}},
+            },
+        }
+        assert self._doc(defective)[1] == ['Direct gh/glab Usage']
+        assert self._doc(attributed)[1] == []
 
 
 class TestFragmentHasPayload:

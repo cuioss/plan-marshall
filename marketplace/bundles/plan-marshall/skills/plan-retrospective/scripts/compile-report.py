@@ -34,7 +34,11 @@ from input_validation import (
     add_session_id_arg,
     parse_args_with_toon_errors,
 )
-from retro_sections import SECTION_SPEC
+from retro_sections import (
+    SECTION_SPEC,
+    ZERO_ATTRIBUTION_FIELDS,
+    ZERO_DECLARED_UNMEASURED_STATUSES,
+)
 from toon_parser import parse_toon
 
 # The canonical section→fragment-key registry lives in ``retro_sections`` so the
@@ -192,6 +196,82 @@ def _fragment_has_payload(fragment: Any) -> bool:
     return False
 
 
+def _reports_zero(fragment: Any) -> bool:
+    """Return True when a fragment makes an explicit *zero findings* claim.
+
+    The claim is a ``findings`` key holding a PRESENT-BUT-EMPTY list. A fragment
+    carrying no ``findings`` key at all makes no such claim (it reports some
+    other shape entirely), and one carrying a non-empty list reports findings —
+    neither is a zero.
+    """
+    if not isinstance(fragment, dict):
+        return False
+    findings = fragment.get('findings')
+    return isinstance(findings, list) and not findings
+
+
+def _names_checked_set(fragment: Any) -> bool:
+    """Return True when a zero-reporting fragment says what it checked.
+
+    Two ways to be unambiguous, and a fragment needs only one:
+
+    1. It DECLARES that it could not look — a status in
+       :data:`retro_sections.ZERO_DECLARED_UNMEASURED_STATUSES`. Such a fragment
+       is not claiming an evaluated-clean result at all.
+    2. It publishes the population it examined, under one of
+       :data:`retro_sections.ZERO_ATTRIBUTION_FIELDS`.
+
+    ``False`` is matched by identity for the same reason ``_fragment_has_payload``
+    does it: ``False == 0`` in Python, so an equality-based sentinel test would
+    read a published population of ``0`` as no publication at all — discarding
+    precisely the honest "I looked at nothing, and here is that number" case.
+    """
+    if not isinstance(fragment, dict):
+        return False
+    if str(fragment.get('status')) in ZERO_DECLARED_UNMEASURED_STATUSES:
+        return True
+    for field in ZERO_ATTRIBUTION_FIELDS:
+        value = fragment.get(field)
+        if value is False:
+            continue
+        if value not in (None, '', [], {}):
+            return True
+    return False
+
+
+def unattributed_zero_sections(written: list[str], fragments: dict[str, Any]) -> list[str]:
+    """Return the written sections whose zero cannot be told from *could not look*.
+
+    A section that reports ``findings: []`` is making one of two very different
+    statements — *I checked, and the signals held* or *I could not check* — and a
+    reader cannot tell which without the checked set. This probe names the
+    sections that leave that ambiguity standing.
+
+    It is a REPORTED signal, not a gate: unlike ``sections_dropped`` (content the
+    report lost) an unattributed zero loses nothing, so it does not raise the
+    run's status. Conflating the two would blur a content-loss signal with an
+    ambiguity signal, which is the class of defect this partition exists to
+    surface. Returned in ``SECTION_SPEC`` order.
+
+    Args:
+        written: Headings the document actually carries.
+        fragments: The fragment bundle the document was built from.
+
+    Returns:
+        The subset of ``written`` whose fragment reports zero without naming
+        what it checked.
+    """
+    written_set = set(written)
+    result: list[str] = []
+    for heading, fragment_key, _trigger in SECTION_SPEC:
+        if heading not in written_set:
+            continue
+        fragment = fragments.get(fragment_key)
+        if _reports_zero(fragment) and not _names_checked_set(fragment):
+            result.append(heading)
+    return result
+
+
 def render_dispatch_boundaries_body(fragment: Any) -> str:
     """Render the Phase Dispatch Boundaries section body.
 
@@ -327,18 +407,34 @@ def build_document(
     parts: list[str] = [build_header(plan_id, mode, plan_dir, session_id)]
 
     # Executive summary is synthesized from fragment data — if the caller
-    # provided one under ``_executive-summary``, use it verbatim; otherwise
-    # emit a placeholder.
+    # provided one under ``_executive-summary``, use it verbatim. When it did
+    # not, there is NO body to render, and the section takes the same non-emit
+    # partition every other section takes (see below). It is never emitted as a
+    # placeholder heading: ``references/report-structure.md`` § "Conditional
+    # Rule" forbids an empty heading, and counting one as written would break
+    # the partition invariant *written implies non-empty* — the loud half of
+    # this partition exists to make content loss visible, so the headline
+    # section must not ride the clean half on an empty body.
     exec_fragment = fragments.get('_executive-summary')
     if isinstance(exec_fragment, dict) and exec_fragment.get('summary'):
         exec_text = str(exec_fragment['summary']).strip()
     elif isinstance(exec_fragment, str) and exec_fragment.strip():
         exec_text = exec_fragment.strip()
     else:
-        exec_text = '_No executive summary provided._'
+        exec_text = ''
 
     for heading, fragment_key, trigger in SECTION_SPEC:
         if fragment_key == '_executive-summary':
+            if not exec_text:
+                # Same discriminator the conditional sections use: a fragment
+                # that carried payload the renderer nonetheless could not turn
+                # into a body is a DROP; an absent or empty one is a benign
+                # omission.
+                if _fragment_has_payload(exec_fragment):
+                    dropped.append(heading)
+                else:
+                    omitted.append(heading)
+                continue
             parts.append(f'## {heading}\n\n{exec_text}\n')
             written.append(heading)
             continue
@@ -425,6 +521,9 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         'sections_written': written,
         'sections_omitted': omitted,
         'sections_dropped': dropped,
+        # Reported, never gating: a written section whose "zero findings" cannot
+        # be told apart from "could not look". See ``unattributed_zero_sections``.
+        'sections_unattributed_zero': unattributed_zero_sections(written, fragments),
     }
     if dropped:
         result['message'] = (
