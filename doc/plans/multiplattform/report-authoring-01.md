@@ -67,6 +67,19 @@ authoring context, before the PR was opened. Round 1: 1 BLOCKER, 4 MAJOR, 7 MINO
 Round 2 (verifying the fixes): 0 BLOCKER/MAJOR/MINOR, 2 NIT. All findings fixed except the two
 noted rejections; per-instance detail in the fix commits (`d73fcfd`, `fcb43e3`).
 
+PR review then added a third independent round: CodeRabbit posted **9 actionable comments**, all
+fixed in `0a0f31b` — the design-relevant ones: the `sync-opencode` deletion scope could have
+removed user-managed entries in the shared `~/.config/opencode/` (plan `040` D1/D2 now bound
+deletion to the managed namespace with preservation tests); the `targets:` filter treated
+`pr-agent` as a component-tree target it is not (plan `020` now keys the filter on
+`emits_bundle_tree` and fails a list naming only non-component targets); plan `030`'s rendering
+latitude could have passed permission-grammar strings back to general callers (both deliverables
+now route through semantic ops with the write inside the runtime); plan `010`'s install-op
+contract was underspecified (now pinned: target id only, escape hatch behind the Claude
+implementation). The remaining five were consistency/duplication corrections (README
+shared-constraints claim, inventory scope statement, protocol/plan-040 documentation split,
+protocol rename gating on the discovery check, AGENTS.md bundle count).
+
 ### The findings that mattered
 
 1. **BLOCKER — the inventory's completeness claim was false.** Four verified-still-open coupling
