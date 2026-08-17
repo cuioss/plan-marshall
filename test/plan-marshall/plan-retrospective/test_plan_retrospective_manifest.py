@@ -301,7 +301,7 @@ class TestEarlyTerminateRule:
         assert check is not None
         assert check['status'] == 'pass'
 
-    def test_pass_when_only_bookkeeping_changes(self, tmp_path, monkeypatch):
+    def test_verdict_withheld_when_only_bookkeeping_changes(self, tmp_path, monkeypatch):
         plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_early_terminate())
         diff = _write_diff(
             tmp_path,

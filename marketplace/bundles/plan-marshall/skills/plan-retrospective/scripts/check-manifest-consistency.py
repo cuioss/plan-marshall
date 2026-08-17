@@ -226,10 +226,11 @@ def filter_bookkeeping(files: list[str]) -> tuple[list[str], list[str], dict[str
     role ``config``. Everything else is kept — production and test (the oracle's
     implementation roles), documentation, and any path no declared route covers.
 
-    This replaces a private ``('.plan/', '.claude/')`` prefix tuple that
-    contradicted the project's own ``build.map``, which routes the project-local
-    skill tree as ``production``. The filter was discarding production source as
-    bookkeeping and every downstream rule then evaluated the remainder.
+    This replaces a private prefix tuple that declared a project-local dotfile tree
+    to be bookkeeping. A build extension may route such a tree as ``production``
+    (on the Claude target the project-local skill root ``.claude/skills/*.py`` is
+    routed exactly that way), and wherever it did, the filter discarded production
+    source as bookkeeping and every downstream rule evaluated the remainder.
 
     Args:
         files: The supplied footprint, one repo-relative path per entry.
@@ -440,6 +441,12 @@ def evaluate_branch_cleanup(
     ``config``) is a POSITIVE classification, so an empty survivor set means every
     supplied path was positively identified as non-implementation — but the message
     must name the reduction that produced it.
+
+    ⚠ It must not go further and infer that there was nothing to push. Only
+    ``runtime_state`` is git-ignored; a ``report`` or ``config`` entry is a tracked
+    file that really did change on the branch. The finding says what it knows —
+    no IMPLEMENTATION file changed — and names the categories, rather than
+    concluding anything about the push.
     """
     phase_6 = manifest.get('phase_6', {}) if isinstance(manifest.get('phase_6'), dict) else {}
     steps = phase_6.get('steps', [])
@@ -467,8 +474,8 @@ def evaluate_branch_cleanup(
         'info',
         'branch_cleanup_without_changes',
         'phase_6.steps includes branch-cleanup but no implementation file changed — '
-        f'all {dropped_total} diff entries were classified as bookkeeping, '
-        'so there is nothing to push/clean',
+        f'all {dropped_total} diff entries classified as bookkeeping '
+        '(plan state, the plan report, or a build-config route)',
     )
     return _make_check('branch_cleanup_changes', 'fail', finding['message']), finding
 
@@ -492,11 +499,10 @@ _DIFF_FED_CHECKS = frozenset(
 )
 
 
-#: Emitted check status → its ``summary`` bucket name. Every status this script can
-#: emit appears here, and :func:`summarize_checks` reports a zero for each, so an
-#: absent key is never mistaken for a measured zero. Mirrors the derive-don't-
-#: hardcode shape ``check-artifact-consistency.summarize_checks`` documents, so a
-#: status added later is counted by adding one row rather than by editing a caller.
+#: Emitted check status → its ``summary`` bucket name, for the statuses whose bucket
+#: name differs from the status itself. Every status this script emits appears here,
+#: so :func:`summarize_checks` reports an explicit zero for each and an absent key is
+#: never mistaken for a measured zero.
 _STATUS_BUCKETS: dict[str, str] = {
     'pass': 'passed',
     'fail': 'failed',
@@ -506,12 +512,24 @@ _STATUS_BUCKETS: dict[str, str] = {
 
 
 def summarize_checks(checks: list[dict[str, str]]) -> dict[str, int]:
-    """Return the per-status counts for ``checks``, one key per known status."""
+    """Return the per-status counts for ``checks``, total over what was emitted.
+
+    Every known status gets an explicit zero, and an UNKNOWN status is counted under
+    its own name rather than dropped, so ``sum(result.values()) == len(checks)``
+    holds unconditionally.
+
+    That second half is the point, and it is the sibling
+    ``check-artifact-consistency.summarize_checks``'s rule rather than a variation
+    on it: a summary that counts only the statuses it knows lets every other verdict
+    land in no bucket at all, which reads to a summary consumer as a check that does
+    not exist. Silently dropping an unrecognised verdict is exactly the
+    absent-reads-as-nothing defect this aspect exists to surface, so it must not be
+    reproduced in the aspect's own summary.
+    """
     summary = dict.fromkeys(_STATUS_BUCKETS.values(), 0)
     for check in checks:
-        bucket = _STATUS_BUCKETS.get(check['status'])
-        if bucket is not None:
-            summary[bucket] += 1
+        bucket = _STATUS_BUCKETS.get(check['status'], check['status'])
+        summary[bucket] = summary.get(bucket, 0) + 1
     return summary
 
 
@@ -568,8 +586,8 @@ def apply_input_reduction(checks: list[dict[str, str]], reduction: dict[str, Any
     )
     if not reduction['oracle_available']:
         note += (
-            ' (build_map oracle unavailable — no path could be given a production/test/config '
-            'role, so only the oracle-independent categories were classifiable)'
+            ' (build_map oracle unavailable — no path could be classified BY THE ORACLE; '
+            'the categories decided without it still applied)'
         )
 
     annotated: list[dict[str, str]] = []

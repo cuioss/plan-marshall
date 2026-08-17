@@ -76,8 +76,9 @@ DECISION_LOG_RELPATH = ('logs', 'decision.log')
 # production code. The classification itself is the ORACLE'S (``build.map`` in
 # marshal.json), routed through the ``_footprint_classification`` module this
 # check now SHARES with ``check-manifest-consistency`` — the two used to carry
-# byte-identical private prefix tuples declaring the project-local skill tree to
-# be bookkeeping, which the project's own build map routes as ``production``.
+# byte-identical private prefix tuples declaring a project-local dotfile tree to be
+# bookkeeping, which a build extension may route as ``production`` (on the Claude
+# target the project-local skill root ``.claude/skills/*.py`` is routed that way).
 #
 # ``unclassified`` counts as production, and that is fail-closed rather than
 # sloppy: an unclassified path might be production, and the verdict this feeds is a

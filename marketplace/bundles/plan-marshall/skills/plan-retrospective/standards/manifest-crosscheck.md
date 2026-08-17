@@ -81,7 +81,7 @@ Two categories are resolved by convention rather than by the oracle, because the
 
 **`unclassified` is kept, and that is deliberate.** A path no declared route covers is one the oracle has no opinion about — a could-not-classify, not a classified-as-unimportant. Dropping it would put a private guess back in charge of the question, so it is retained and counted instead, which can only widen what a rule examines.
 
-This replaces a private `('.plan/', '.claude/')` prefix tuple that contradicted the project's own build map: `build.map` routes the project-local skill tree (`.claude/skills/*.py` on the Claude target) as `production`, so the filter was discarding production source as bookkeeping and every downstream rule then evaluated the remainder.
+This replaces a private prefix tuple that declared a project-local dotfile tree to be bookkeeping. A build extension may route such a tree as `production` — on the Claude target the project-local skill root `.claude/skills/*.py` is routed exactly that way — and wherever it did, the filter discarded production source as bookkeeping and every downstream rule evaluated the remainder.
 
 Pure-deletion diff entries (e.g., a removed file) are kept because deletion is still implementation activity.
 

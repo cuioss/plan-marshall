@@ -24,27 +24,35 @@ noticed, so the corrected rule lives here ONCE and both checks call it. The orac
 — not this module — decides what a path is; this module only names the categories
 and applies the fixed non-oracle rules below.
 
-**What stays hardcoded, and why.** Three things, and only three — none of them a
-guess about a particular project's layout.
+**What stays outside the oracle, and why.** The rungs :func:`classify_path`
+decides without consulting ``build.map`` are, in its order: ``runtime_state``,
+``report``, ``documentation``, ``test``. Each exists because the oracle
+structurally cannot answer for it, not because a guess was convenient:
 
-``.plan/`` is the genuinely-runtime plan-state directory: it is git-ignored
-bookkeeping that appears in no build map, so there is no oracle answer to consult
-for it. **Documentation** is not a build_map role at all — the vocabulary
-deliberately has none, because documentation has no build-system owner
-(``_extension_constants.py``, ``BUILD_MAP_ROLES``) — so an unrouted path is
-recognised as documentation by file suffix, a language- and layout-independent
-fact. **Test-ness by filename convention** is
-kept for the same reason in reverse: a project whose ``build.map`` carries no
-``test`` route would otherwise leave every test file unrouted, and both consumers
-treat an unrouted path fail-closed as possible production, which would turn a
-tests-only footprint into a false mis-prune. Every OTHER classification comes from
-the oracle.
+- ``runtime_state`` — the ``.plan/`` plan-state directory is git-ignored
+  bookkeeping that appears in no build map, so there is no oracle answer to
+  consult.
+- ``report`` — the plan's own quality-verification report is a phase-6-finalize
+  artifact named by this tooling, not a file type any build system routes.
+- ``documentation`` — not a build_map role at all: the vocabulary deliberately has
+  none, because documentation has no build-system owner
+  (``_extension_constants.py``, ``BUILD_MAP_ROLES``). Recognised by file suffix, a
+  language- and layout-independent fact.
+- ``test`` — a project whose ``build.map`` carries no ``test`` route would leave
+  every test file unrouted, and an unrouted path is treated fail-closed as possible
+  production, which would turn a tests-only footprint into a false mis-prune.
 
-⛔ The documentation and test suffix sets here are **these checks' own**, carried
-over unchanged from the pre-oracle code. They are NOT imported from, and not
-identical to, ``manage-execution-manifest``'s change-footprint classifier
-(``_manifest_core._DOC_SUFFIXES`` carries ``.asciidoc`` as well and has no
-directory concept). Do not describe them as that classifier's set.
+Every OTHER classification comes from the oracle.
+
+⛔ The documentation and test convention sets here are **these checks' own**. They
+are NOT imported from, and not identical to, ``manage-execution-manifest``'s
+change-footprint classifier (``_manifest_core._DOC_SUFFIXES`` carries ``.asciidoc``
+as well and has no directory concept). Do not describe them as that classifier's
+set — and do not describe them as carried over unchanged from the pre-oracle code
+either: unifying two divergent private copies necessarily changed each of them, and
+:data:`TEST_DIR_TOKENS` / :func:`is_docs_path` each record what moved and in which
+direction.
+
 
 **``unclassified`` is a could-not-classify, never a classified-as-unimportant.**
 A path no declared route covers is one the oracle has no opinion about. Both
@@ -81,16 +89,23 @@ DOCS_SUFFIXES: tuple[str, ...] = ('.md', '.adoc')
 DOCS_DIR_TOKENS: tuple[str, ...] = ('/references/', '/templates/')
 
 #: Test-file recognition by filename/directory convention, for a path no declared
-#: route covers. This is the UNION of the two sets the consumers previously carried
-#: separately, so neither loses a recognition it had: the directory tokens are
-#: matched against ``/{path}`` (which also catches a leading ``test/``), and the
-#: name pattern keeps ``*Spec.java``, which only one of the two used to carry.
-#:
-#: It exists because the oracle can be silent here. A project whose ``build.map``
-#: declares no ``test`` route leaves every test file ``unclassified``, and both
-#: consumers treat unclassified fail-closed as possible production — which would
+#: route covers. It exists because the oracle can be silent here: a project whose
+#: ``build.map`` declares no ``test`` route leaves every test file
+#: ``unclassified``, which is treated fail-closed as possible production and would
 #: report a tests-only footprint as a mis-prune. A routed path still takes the
-#: oracle's role; this fires only when the oracle has no answer.
+#: oracle's role; this fires only where the oracle has no answer.
+#:
+#: ⚠ This is NOT the union of the two sets the consumers previously carried
+#: separately, and the difference is deliberate in both directions:
+#:
+#: - The name pattern GAINS ``*Spec.java``, which only the manifest copy carried.
+#: - The directory tokens are the manifest copy's boundary-anchored pair, matched
+#:   against ``/{path}``. The routing copy's bare ``('test/', 'tests/', …)`` tokens
+#:   were matched with an unanchored ``token in path``, so they also matched
+#:   ``latest/foo.py``, ``contest/x.py`` and ``mytest/helper.py`` — a substring
+#:   defect, not a recognition. Dropping it moves those paths from ``test`` to
+#:   ``unclassified``, which the routing consumer treats as possible production:
+#:   the FAIL-CLOSED direction, so it can only widen scrutiny.
 TEST_DIR_TOKENS: tuple[str, ...] = ('/test/', '/tests/')
 TEST_NAME_RE = re.compile(
     r'(^|/)(test_[^/]+\.py|[^/]+_test\.py|[^/]+Test\.java|[^/]+Spec\.java'
@@ -156,9 +171,35 @@ def is_runtime_state_path(path: str) -> bool:
     return path.startswith(RUNTIME_STATE_PREFIXES)
 
 
+def is_docs_suffix_path(path: str) -> bool:
+    """Whether ``path`` is documentation by FILE SUFFIX alone.
+
+    The predicate :func:`classify_path` uses for its ``documentation`` rung, and it
+    is suffix-only on purpose. Widening it to the directory tokens
+    (:func:`is_docs_path`) would classify a ``.py`` file under a ``references/`` or
+    ``templates/`` directory as documentation, and a consumer that reads
+    ``documentation`` as "not production" would then EXONERATE a real source
+    change — the same unknown-into-exoneration move the ``unclassified`` handling
+    exists to refuse, arriving by the other door.
+    """
+    return path.endswith(DOCS_SUFFIXES)
+
+
 def is_docs_path(path: str) -> bool:
-    """Whether ``path`` is documentation by this module's suffix/directory set."""
-    if path.endswith(DOCS_SUFFIXES):
+    """Whether ``path`` is documentation by suffix OR by directory token.
+
+    The WIDER predicate, and deliberately NOT the classification rung — see
+    :func:`is_docs_suffix_path` for why the two differ. This one is the rule-side
+    predicate ``check-manifest-consistency``'s M1/M3 use to decide whether a
+    SURVIVING path is a culprit, carried over from that script unchanged so those
+    rules keep the reach they had.
+
+    Using it there is safe precisely because it never decides what is DROPPED: the
+    manifest filter keeps ``documentation`` and ``unclassified`` alike, so a wider
+    docs recognition inside a rule can only move a path from culprit to
+    non-culprit within an already-retained set, never remove it from view.
+    """
+    if is_docs_suffix_path(path):
         return True
     return any(token in f'/{path}' for token in DOCS_DIR_TOKENS)
 
@@ -167,8 +208,19 @@ def is_test_path(path: str) -> bool:
     """Whether ``path`` is a test file by filename/directory convention.
 
     The convention fallback for a path the oracle does not route — see
-    :data:`TEST_DIR_TOKENS`. Both consumers share it, so they cannot disagree about
-    whether the same path is a test.
+    :data:`TEST_DIR_TOKENS`. Both consumers resolve test-ness from THIS one set, so
+    neither carries a private idea of what a test file looks like.
+
+    ⚠ That is not the same as the two always returning the same answer for a given
+    path, and they do not. This predicate is consulted directly by
+    ``check-manifest-consistency``'s M1/M3 culprit filtering, whereas
+    ``check-routing-decisions`` reaches test-ness only through
+    :func:`classify_path`, where the ``test`` rung sits BEHIND the oracle and
+    behind the ``documentation`` rung. So ``test/foo/README.md`` is ``True`` here
+    and ``documentation`` there, and a test-shaped path the oracle routes
+    ``production`` is ``True`` here and ``production`` there. Shared vocabulary,
+    different question: this asks "does it look like a test", while
+    :func:`classify_path` asks "what is it, given everything that can say so".
     """
     if any(token in f'/{path}' for token in TEST_DIR_TOKENS):
         return True
@@ -185,9 +237,11 @@ def classify_path(path: str, routes: list[tuple[str, str | None]]) -> str:
     2. ``report`` — the plan's own quality-verification report, a finalize artifact.
     3. ``production`` / ``test`` / ``config`` — whatever the ORACLE says, via
        :func:`resolve_route_role`.
-    4. ``documentation`` — this module's own suffix/directory set (see the module
-       docstring: documentation is not a build_map role, so the oracle cannot
-       answer here).
+    4. ``documentation`` — by FILE SUFFIX only (:func:`is_docs_suffix_path`);
+       documentation is not a build_map role, so the oracle cannot answer here.
+       The wider :func:`is_docs_path` is deliberately NOT used at this rung — see
+       that function for why classifying a ``.py`` under ``references/`` as
+       documentation would exonerate a real source change.
     5. ``test`` — filename/directory convention, for a project whose ``build.map``
        declares no ``test`` route. Without this rung such a path would fall to
        ``unclassified``, which both consumers treat as possible production.
@@ -213,7 +267,7 @@ def classify_path(path: str, routes: list[tuple[str, str | None]]) -> str:
     role = resolve_route_role(path, routes)
     if role is not None:
         return role
-    if is_docs_path(path):
+    if is_docs_suffix_path(path):
         return CATEGORY_DOCUMENTATION
     if is_test_path(path):
         return CATEGORY_TEST
@@ -257,6 +311,7 @@ __all__ = [
     'classify_footprint',
     'classify_path',
     'is_docs_path',
+    'is_docs_suffix_path',
     'is_runtime_state_path',
     'is_test_path',
     'load_oracle_routes',

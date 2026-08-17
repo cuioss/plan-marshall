@@ -19,10 +19,11 @@ No skill was unobtainable by both routes.
 
 ### D0 — GATE: the population of private classification lists
 
-**Population found: 2. Components examined: 428** — every `*.py` file under `marketplace/bundles/`
-and `.claude/` (the two trees that can hold a classifier), re-derived at the moment of this claim as
-`find marketplace/bundles .claude -name '*.py' -not -path '*/__pycache__/*' | wc -l`. Swept along
-five independent dimensions so the answer is not one grep's blind spot:
+**Population found: 2. Components examined: 427** — every `*.py` file under `marketplace/bundles/`
+and `.claude/` **as of `origin/main`**, which is the tree the sweep actually ran over. The
+same count on HEAD is 428; the extra file is `_footprint_classification.py`, which this change
+created and which therefore cannot have been part of the population being derived. Swept along five
+independent dimensions so the answer is not one grep's blind spot:
 
 | Dimension | Query |
 |---|---|
@@ -119,8 +120,13 @@ stops `audit.py` being dropped. The reduction is never silent — D2 reports it.
 - a check that would otherwise emit a bare clean `pass` while `files_filtered > files_kept` takes the
   new status **`indeterminate`**, message prefixed `VERDICT WITHHELD`.
 
-A `fail` is never downgraded (a violation in the surviving fraction is still a violation); a `skip`
-is never downgraded (the rule did not apply, which filtering did not decide). The `diff` block now
+A `fail` is never downgraded, and the reason differs by rule shape — round 2 found the blanket
+version of this sentence false and it is not repeated here. For the rules that fail on a culprit
+**present** in the survivors (M1/M2/M3), a culprit that survived is real and filtering can only have
+concealed others. For M4, the one rule that fails on the survivors being **empty**, that argument
+does not apply at all, because the filter is what empties the set; its verdict rests instead on every
+drop category being a *positive* classification. A `skip` is never downgraded either: the rule did
+not apply, which filtering did not decide. The `diff` block now
 publishes `filtered_by_category` (one count per category, **always present even at zero**),
 `oracle_available`, and `majority_discarded`; `summary` gains `indeterminate`.
 
@@ -247,16 +253,81 @@ the consumer-level test and the classifier-level test see the same defect from d
 `git diff --name-only origin/main...HEAD -- '*.py'` is **non-empty** — production scripts and tests
 changed — so the full `./pw verify` ran, over the whole branch diff, from the repository root.
 
-**Result: `=== verify: SUCCESS ===`.** Read from the tool output, not the exit code: `20675 passed,
-14 skipped`, and the run's own coverage line reports **COMPLETE over all six dimensions** — mypy
-(production) [413 files], ruff [`marketplace/bundles`, `test`, `.claude`], SPDX headers,
-plugin-doctor [marketplace-wide], mypy (test) [766 files], and module-tests [whole-tree pytest].
+**Result: `=== verify: SUCCESS ===`.** Read from the tool output, not the exit code: **20687 passed,
+14 skipped** (20701 collected), and the run's own coverage line reports **COMPLETE over all six
+dimensions** — mypy(production) [413 files], ruff [`marketplace/bundles`, `test`, `.claude`], SPDX
+headers, plugin-doctor [marketplace-wide], mypy(test) [766 files], and module-tests [whole-tree
+pytest].
+
+⚠ **These figures are the DELIVERED tree's, re-measured after the last code change.** An earlier
+draft of this section carried an earlier commit's figures, which round 2 caught: the run had been
+recorded by the same commit that then changed three production files, so the number described a tree
+that was no longer the one being shipped. A build-gate figure is only evidence about the tree it ran
+against, and it is re-derived here rather than carried forward.
 
 `UV_HTTP_TIMEOUT=600` was exported, per the lane contract's note about the wrapper's dependency
 fetches; no `uv` HTTP timeout occurred. The build left no `uv.lock` churn — `git status` was checked
 before staging, and every commit stages named paths rather than `git add -A`.
 
 ## Findings
+
+Recorded **per instance**. Sources: the pre-PR verification sub-agent (rounds 1–3), the build gate,
+and PR review (below).
+
+### Round 1 — 2 behavioural, 12 false statements
+
+Both behavioural findings were confirmed by RUNNING the code, not by reading it.
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| B1 | round 1 | Moving test-ness onto the oracle lost it wherever the oracle is silent: with no `test` route, a tests-only footprint drove `mis_prune` to `fail` | **fixed** — test recognition by convention restored in the shared classifier |
+| B2 | round 1 | Rule M4 emitted `"diff is empty"` over a 2-path diff the filter had emptied, and `apply_input_reduction` declined to downgrade it | **fixed** — message states what is true; the rationale now distinguishes the two rule shapes |
+| A1 | round 1 | "a reduced input can only have hidden more violations" — true of M1/M2/M3, false of M4 (2 sites) | **fixed** at both |
+| A2 | round 1 | Docs recognition described as the change-footprint classifier's set; it is not (3 sites) | **fixed** at 2 of 3 in round 1; round 2 found the third (see F6) |
+| A3 | round 1 | "preserves the pre-oracle behaviour for unrouted paths" — false for test paths | **fixed** |
+| A4 | round 1 | Oracle-unavailable note: "only runtime-state paths were classifiable" | **fixed** (round 2 found the replacement also false — see F3) |
+| A5 | round 1 | Report said "6 oracle-API tests"; the diff adds 11 functions / 13 collected | **fixed**, both units stated |
+| A6 | round 1 | Red-first totals (10 failed, 1 passed = 11) did not cover the file's 13 tests | **fixed** — the red-first population is now stated as the 11 that existed then |
+| A7 | round 1 | Build-gate section promised a record it did not contain | **fixed** (round 2 found the recorded figures stale — see F8) |
+| A8 | round 1 | `CATEGORIES` comment claimed consumers quantify over it; both dispatches are name lists | **fixed**, plus a subset guard |
+| A9 | round 1 | "no declared route covers it at all" used as a synonym for `unclassified` (2 sites) | **fixed** at both |
+| A10 | round 1 | "the two cannot disagree about the same path" — too strong | **fixed** |
+| A11 | round 1 | "never as a bare `{canonical}`" — the `--phase-5-steps` CSV fallback forwards its argument verbatim (4 sites) | **fixed** at all 4 |
+| A12 | round 1 | `manage-execution-manifest/SKILL.md`'s worked example: `verification_steps` and `step_execution_tier` could not both describe one manifest | **fixed** |
+| C1 | round 1 | Manifest-side D4 equality test asserted one count, not the verdict | **fixed** — compares `checks`/`findings`/`summary`/`diff` |
+| C2 | round 1 | D0 reported the count found but no number examined | **fixed** (round 2 found the number named the wrong tree — see F13) |
+| C3 | round 1 | Summary buckets hardcoded where the sibling derives them | **fixed** (round 2 found the replacement inverted the sibling's rule — see F4) |
+| C4 | round 1 | Undeclared collateral: an M1 skip-message doc fix | **declared** |
+| C5 | round 1 | Undeclared test-meaning change | **declared** |
+| C6 | round 1 | This repo's incident narrative in a shipped bundle module | **fixed** at 1 of 4 in round 1; round 2 found the rest (see F11) |
+
+### Round 2 — 1 behavioural, 12 false statements
+
+⭐ **Round 2's most valuable finding, F12, was a behavioural regression round 1's own fix
+introduced — and which round 1's prose actively denied.** Unifying the two docs predicates gave the
+routing consumer the manifest consumer's `/references/` and `/templates/` directory tokens, which it
+never had (`origin/main`'s `_is_docs` was `endswith` only). An unrouted `src/references/helper.py`
+therefore moved from *production* to *documentation*, turning a `mis_prune` `fail` into a `pass` —
+**the exonerating direction**, which is precisely what the `unclassified` handling exists to refuse.
+The docstring beside it asserted the sets were "carried over unchanged".
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| F12 | round 2 | Docs directory tokens widened the routing consumer's recognition toward exoneration, denied by the docstring | **fixed** — classification uses a suffix-only predicate (`is_docs_suffix_path`); the wider `is_docs_path` stays the manifest rules' own predicate, where it cannot decide what is dropped |
+| F1 | round 2 | `TEST_DIR_TOKENS` claimed to be the UNION of both retired sets; it is not — the routing copy's unanchored tokens also matched `latest/`, `contest/`, `mytest/` | **fixed** — states what the set is, names the substring defect deliberately dropped, and names the direction (fail-closed) |
+| F2 | round 2 | "Both consumers share it, so they cannot disagree" — they reach test-ness by different paths and do disagree | **fixed**; the mis-named guard renamed and split into three that test what they say |
+| F3 | round 2 | The rewritten oracle-unavailable note was falsified by the same commit's own B1 fix — the convention rung assigns `test` (= `ROLE_TEST`) with no oracle | **fixed** |
+| F4 | round 2 | `_STATUS_BUCKETS` claimed to mirror the sibling's shape while inverting it: `.get(status)` DROPS an unmapped status, reproducing the absent-reads-as-nothing defect the sibling's docstring forbids | **fixed** — `.get(status, status)`, so `sum(values) == len(checks)` unconditionally |
+| F5 | round 2 | "Three things, and only three" — there are four non-oracle rungs; `report` was omitted, and "every OTHER classification comes from the oracle" was false for it | **fixed** — the rungs are named, not counted |
+| F6 | round 2 | A2 closed at 2 of 3 sites, the survivor being the exact phrasing the ⛔ block ten lines above forbids | **fixed** |
+| F7 | round 2 | A1 closed at 2 of 3 sites; the run report still stated the retracted blanket rationale | **fixed** |
+| F8 | round 2 | The recorded build-gate figures predated the commit recording them (20675 vs HEAD's collection) | **fixed** — re-run on the delivered tree; see Build gate |
+| F9 | round 2 | `test_pass_when_only_bookkeeping_changes` asserted `indeterminate` | **fixed** — renamed |
+| F10 | round 2 | M4's "so there is nothing to push/clean" is false for `report` and `config`; only `runtime_state` is git-ignored | **fixed** — the finding states what it knows and stops |
+| F11 | round 2 | The C6 remedy landed at 1 of 4 shipped sites | **fixed** at all 4, in one uniform verifiable form |
+| F13 | round 2 | D0's denominator (428) counted HEAD, including the file the fix created; the sweep ran over `origin/main`'s 427 | **fixed** — re-derived via `git ls-tree -r origin/main` |
+
+### Round 3 — see the stop record below
 
 ## Reviewer participation
 
