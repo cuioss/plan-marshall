@@ -88,7 +88,8 @@ the tree (files exist, symbols present) as its first action and reports — rath
 absorbs — any file the work turns out to need beyond it. Two plans discovering a shared file that
 this table calls disjoint is a partition defect: halt and report it.
 
-Three shared constraints, restated in every plan:
+Three shared constraints bind every plan in this epic. They are stated once here — each plan
+points back to this README through its epic header line rather than restating them:
 
 - A plan **never edits another plan's surface**, even for an obvious adjacent fix — the neighbour
   may be running concurrently. Record the finding in the report instead.

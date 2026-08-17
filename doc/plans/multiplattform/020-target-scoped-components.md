@@ -52,18 +52,26 @@ targets", so the normal case is untouched.
 ## Deliverables
 
 1. **D1 — The filter mechanism** — frontmatter parsing plus an emission filter honoured by every
-   registered target's pipeline: absent `targets:` ⇒ emit everywhere (the default, no behaviour
+   **component-tree-emitting** target's pipeline, with the set derived from the registry via the
+   `emits_bundle_tree` capability rather than enumerated (a target that emits no component tree —
+   `pr-agent` derives a single config artifact from skill rules — has nothing to filter and is
+   unaffected by construction): absent `targets:` ⇒ emit everywhere (the default, no behaviour
    change); present ⇒ emit only when the generating target's registry name is listed. The Claude
    equality check treats a component excluded by its own `targets:` declaration as deliberately
    absent, not as drift.
    *Done when:* a fixture component with `targets: [claude]` appears in the Claude output and in
-   no other registered target's output; one with no `targets:` appears in all; `run_equality_check`
-   passes on a tree containing a `targets:`-excluded component; all existing generation tests pass.
+   no other component-tree-emitting target's output; one with no `targets:` appears in all;
+   `run_equality_check` passes on a tree containing a `targets:`-excluded component; all existing
+   generation tests pass, including `pr-agent`'s.
 2. **D2 — Fail-closed validation** — a `targets:` value naming a target absent from
    `TARGET_REGISTRY` fails the build with an error naming the component and the unknown value; an
-   empty list fails the same way (a component shipped nowhere is authoring error, not intent).
-   *Done when:* tests prove generation fails on `targets: [typo]` and on `targets: []`, and the
-   error message names the offending file.
+   empty list fails the same way (a component shipped nowhere is authoring error, not intent);
+   and a list containing **only** non-component-tree-emitting targets (e.g. `targets: [pr-agent]`
+   alone) fails too, because such a declaration also ships the component nowhere while passing a
+   registry-membership check.
+   *Done when:* tests prove generation fails on `targets: [typo]`, on `targets: []`, and on a
+   list naming only non-component-tree-emitting targets, and each error message names the
+   offending file.
 3. **D3 — First consumer** — `tools-fix-intellij-diagnostics` declares `targets: [claude]`.
    *Done when:* the command is present in the Claude output tree and absent from every other
    registered target's output, asserted by test or by generation-output listing in the run report.
@@ -110,7 +118,7 @@ targets", so the normal case is untouched.
 | The Claude target is a verbatim mirror gated by `run_equality_check`, with no `mapping.json` | OBSERVED | `marketplace/targets/claude/equality_check.py` — `run_equality_check`; `claude/target.py` |
 | `TARGET_REGISTRY` holds `claude`, `opencode`, `pr-agent` | OBSERVED, membership is a lead | re-derive from `marketplace/targets/__init__.py`; D1/D2 iterate the registry, never an enumeration |
 | `tools-fix-intellij-diagnostics.md` has YAML frontmatter (`name`, `description`, `tools` incl. `mcp__ide__getDiagnostics`) | OBSERVED | the file itself |
-| `pr-agent`'s emission path also needs the filter | HYPOTHESIS | `marketplace/targets/pr_agent/` — read its `generate()`; if it does not emit per-component bundle trees, the filter may be inert there, which D1 records rather than forces |
+| `pr-agent` emits no per-component bundle tree (a single config artifact derived from skill rules), so the filter is inert there by construction | OBSERVED | `marketplace/targets/pr_agent/` — its `generate()`; `marketplace/targets/base.py` — the `emits_bundle_tree` capability D1 keys the filter on; re-read both before building |
 | `plugin-doctor` frontmatter validation would flag an unknown `targets:` key today | HYPOTHESIS | the doctor's frontmatter analyzers — run the doctor against D3's declaration before D4 and record the result |
 
 ## Verification
@@ -129,8 +137,9 @@ targets", so the normal case is untouched.
 - The Claude-side reconciliation is the plan's real design work: `run_equality_check` compares
   source and output byte-for-byte, so exclusion must be visible to it as intent (e.g. the check
   derives the expected file set from the same filter) rather than special-cased per file.
-- The `pr-agent` target proves the registry already has a third member; D1 must iterate the
-  registry rather than hardcoding the two bundle-tree targets, or the next registration silently
-  bypasses the filter.
+- The `pr-agent` target proves the registry already has a third member; D1 keys the filter on
+  the registry plus the `emits_bundle_tree` capability rather than hardcoding the two bundle-tree
+  targets, so the next registration is covered or exempted by its own declared capability, never
+  silently bypassed.
 - Plans `010`, `030`, `040` touch none of `marketplace/targets/**`; this plan touches no
   `platform-runtime` script — see the epic README's concurrency table.

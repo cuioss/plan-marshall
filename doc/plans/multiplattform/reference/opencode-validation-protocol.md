@@ -66,9 +66,13 @@ python3 marketplace/targets/generate.py --target opencode --output target/openco
 
 ### 1.2 Deploy with the singular→plural rename
 
-The generated tree uses singular `skill/`/`agent/`/`command/`; OpenCode discovers plural
-`skills/`/`agents/`/`commands/`. The `sync-opencode` skill (plan `040`) performs the rename;
-until it lands, stage manually:
+The generated tree uses singular `skill/`/`agent/`/`command/`; the expected discovery layout is
+plural `skills/`/`agents/`/`commands/` under `~/.config/opencode/` (per OpenCode's own
+documentation — plan `040` carries this as a labelled hypothesis, since no clone artifact can
+settle an external product's behaviour). **Check 1.2d below is what settles it**: if OpenCode
+does not discover the deployed plural layout, test the candidate layouts, record the passing
+one, and treat the rename mapping as conditional on that result rather than fixed. The
+`sync-opencode` skill (plan `040`) performs the rename; until it lands, stage manually:
 
 ```bash
 STAGE=$(mktemp -d)
@@ -238,14 +242,14 @@ Plannable only after this protocol has run; authored as new plans in this epic a
    or a deploy into `~/.config/opencode/` — is unverified on a live client. Test, then pin and
    document the working path as the primary one, and confirm the generated tree's root holds
    whatever manifest the chosen path expects.
-2. **OpenCode user + developer documentation.** Add the verified install/update path to
-   `doc/user/installation.adoc`; extend `doc/developer/` with the OpenCode inner loop
-   (generate → `sync-opencode` → test, the deploy options, the singular→plural rename);
-   document the per-operation OpenCode behaviour (real vs `no-op` with `reason`/`alternative`)
-   as an orientation layer over `platform-runtime/standards/contract.md`; record the confirmed
-   limitations (no platform-driven title/status hook, manual `--total-tokens`, any
-   `inline_only` step kinds discovered). Every documented behaviour traces to something this
-   protocol confirmed.
+2. **OpenCode user documentation and confirmed limitations.** Add the verified install/update
+   path to `doc/user/installation.adoc`; document the per-operation OpenCode behaviour (real vs
+   `no-op` with `reason`/`alternative`) as an orientation layer over
+   `platform-runtime/standards/contract.md`; record the confirmed limitations (no
+   platform-driven title/status hook, manual `--total-tokens`, any `inline_only` step kinds
+   discovered). Every documented behaviour traces to something this protocol confirmed. The
+   developer inner loop and deploy options are plan `040`'s documentation deliverable — this
+   item adds only the live-validated facts on top, cross-referencing rather than restating.
 3. **Upgrade the validation framing** in `doc/developer/marketplace-build.adoc` and the
    repo-root multi-assistant sections once OpenCode is a validated runtime rather than
    best-effort output.

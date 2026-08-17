@@ -2,10 +2,11 @@
 
 The registry of places where Claude-Code-specific behaviour, vocabulary, layout, or format sits
 in general/core code instead of one of the four placement homes
-([principles §6](principles.md)). This file lists **open** couplings only — it is the evidence
-base the epic's plans draw from, and it shrinks as work lands. The **Drawn by** column names the
-plan that scopes an entry; an entry with no plan is recorded open work awaiting a future plan —
-registered here precisely so a scoping exclusion is never a silent loss.
+([principles §6](principles.md)) — the evidence base the epic's plans draw from. Sections A–E
+hold the **open** couplings; the closing sections record the **deliberate non-migrations** and
+the **confirmed-clean boundary**, so intent and open work are never conflated. The **Drawn by**
+column names the plan that scopes an entry; an entry with no plan is recorded open work awaiting
+a future plan — registered here precisely so a scoping exclusion is never a silent loss.
 
 Every `file:line`-level pointer here is a **lead**: locate the site by the named symbol, not a
 line. An entry that cannot be re-found by symbol is reported as such, never silently skipped.

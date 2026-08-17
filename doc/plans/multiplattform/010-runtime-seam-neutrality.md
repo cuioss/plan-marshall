@@ -69,10 +69,14 @@ caller's level selection.
    ("wire this target's session/display integration into its own configuration, or decline via
    no-op") plus the no-op fallback; the Claude hook-event vocabulary, the `statusLine` command, and
    the `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` env var appear only in `claude_runtime` /
-   `_claude_runtime_impl`; the `target` parameter stops being typed as a settings-file path (the
-   escape-hatch semantics either become a target-opaque override or move behind the Claude
-   implementation). The operation's wire name stays `project install-hook` — the coupling is the
-   vocabulary and the path typing, not the word "hook", and keeping the name avoids a caller sweep.
+   `_claude_runtime_impl`. The contract is pinned, not left open: callers pass the **target id
+   only** (the existing semantic `--target claude` invocation is unchanged), each implementation
+   resolves its own configuration location, and the absolute-settings-path escape hatch becomes
+   Claude-implementation-internal (a test/recovery override handled inside the Claude
+   implementation, absent from the ABC signature and the router help). The router, both
+   implementations, `standards/contract.md`'s op entry, callers, and tests change together. The
+   operation's wire name stays `project install-hook` — the coupling is the vocabulary and the
+   path typing, not the word "hook", and keeping the name avoids a caller sweep.
    *Done when:* `runtime_base.py` contains no Claude hook-event name, no `CLAUDE_CODE_*` string,
    and no settings-file path in `project_install_hook`'s signature or docstring; existing Claude
    install behaviour is pinned by tests that pass unchanged in effect (updated only for the new

@@ -59,25 +59,30 @@ intent, consume resolved values, and behave identically on the Claude target.
 ## Deliverables
 
 1. **D1 — Default permissions render in the runtime** — the Claude-cache read permission that
-   `DEFAULT_PERMISSIONS` encodes moves behind `platform-runtime`: the runtime renders the
-   `Read(...)` string from the resolved bundle-cache root, and `permission_fix.py` consumes the
-   rendered value instead of embedding it.
-   *Done when:* no `.claude/` literal remains in `permission_fix.py`; the emitted default set on
-   Claude is byte-identical to before, pinned by test.
+   `DEFAULT_PERMISSIONS` encodes moves behind the semantic permission-op surface: the caller
+   states the goal (ensure the default permission set), the runtime renders the grammar from the
+   resolved bundle-cache root **and performs the settings write itself**, returning normalized
+   status/findings — no rendered permission string crosses back to the general script.
+   *Done when:* no `.claude/` literal and no received rendered `Read(...)` value remains in
+   `permission_fix.py`; the written default set on Claude is byte-identical to before, pinned by
+   test.
 2. **D2 — Settings-path reads delegate** — `permission_common.py`'s read-preference selector
    delegates to the same runtime path resolution the write path uses, and the module docstring
    matches what the module actually does.
    *Done when:* no `.claude/settings` literal remains in `permission_common.py`; read-preference
    behaviour (prefer `settings.local.json`, fall back to `settings.json`) is pinned by test; the
    docstring's delegation claim is true.
-3. **D3 — Credential deny rules render in the runtime** — the deny-rule strings
-   `_cred_ensure_denied.py` builds are rendered inside `platform-runtime` (behind the existing
-   permission-op surface or a Claude-runtime rendering helper — the constraint is *where the
-   grammar lives*, not the exact routing); the caller passes intent (protect the credential
-   directory) and handles a `no-op` on targets without a permission backend.
+3. **D3 — Credential deny rules render in the runtime** — the caller passes intent (protect the
+   credential directory) through a **semantic permission operation**; the runtime renders the
+   deny-rule grammar and performs the settings write itself, returning only normalized status —
+   or `no-op` on targets without a permission backend, which the caller handles gracefully. No
+   rendering helper hands grammar strings back to the general script: per
+   `doc/plans/multiplattform/reference/principles.md` §1 the wire format never crosses the
+   boundary in either direction.
    *Done when:* no `Read(`/`Bash(` permission-DSL string construction remains in
-   `_cred_ensure_denied.py`; the rules written on Claude are semantically identical to before,
-   pinned by test; a non-Claude runtime path degrades to `no-op` without error.
+   `_cred_ensure_denied.py` and none is received by it; the rules written on Claude are
+   semantically identical to before, pinned by test; a non-Claude runtime path degrades to
+   `no-op` without error.
 4. **D4 — Implementor scan routes through layout resolution** —
    `_scan_project_for_implementors` iterates `get_project_skill_roots()` instead of constructing
    `.claude/skills` segment-wise.

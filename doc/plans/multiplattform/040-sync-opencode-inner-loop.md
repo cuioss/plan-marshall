@@ -43,25 +43,33 @@ the `dist-opencode` branch and `opencode`-prefixed dist tags.
 ## Goal
 
 `/sync-opencode` deploys a generated `target/opencode/` tree into an OpenCode config directory
-with the singular→plural rename in one command, mirror-deleting stale files, testable without a
-live OpenCode install; and the distribution documentation states the publish matrix as it is.
+with the singular→plural rename in one command, removing stale entries it manages while never
+touching user-managed ones, testable without a live OpenCode install; and the distribution
+documentation states the publish matrix as it is.
 
 ## Deliverables
 
 1. **D1 — The `sync-opencode` project-local skill** — `.claude/skills/sync-opencode/` with
-   `scripts/sync_opencode.py`: mirror-sync (delete-extraneous semantics) of
-   `target/opencode/skill/` → `{dest}/skills/`, `agent/` → `{dest}/agents/`,
-   `command/` → `{dest}/commands/`. Default destination `~/.config/opencode/`; flags `--source`,
-   `--target-dir`, `--bundles` (subset by bundle prefix), `--dry-run`. Project-local for the same
-   reason `sync-plugin-cache` is: only this repository generates OpenCode output, and a consumer
-   project would be confused by the command.
+   `scripts/sync_opencode.py`: sync of `target/opencode/skill/` → `{dest}/skills/`,
+   `agent/` → `{dest}/agents/`, `command/` → `{dest}/commands/`. **Deletion is bounded to managed
+   entries**: the destination is the shared `~/.config/opencode/` where user-managed skills also
+   live, so the sync removes only stale entries the generated tree owns — those matching the
+   generated `{bundle}-{skill}` namespace of the bundles being synced — and never touches entries
+   outside that managed set; with `--bundles`, unselected bundles' entries are likewise preserved
+   (the boundary model is the OpenCode emitter's own prune behaviour, which removes only generated
+   component subtrees). Default destination `~/.config/opencode/`; flags `--source`,
+   `--target-dir`, `--bundles`, `--dry-run`. Project-local for the same reason `sync-plugin-cache`
+   is: only this repository generates OpenCode output, and a consumer project would be confused by
+   the command.
    *Done when:* running it against a generated tree produces the plural layout at the
-   destination with stale files removed; the skill is invocable as `/sync-opencode`; the SKILL.md
-   mirrors the `sync-plugin-cache` shape (source-of-truth statement, parameters table).
+   destination with stale **managed** entries removed and unmanaged entries untouched; the skill
+   is invocable as `/sync-opencode`; the SKILL.md mirrors the `sync-plugin-cache` shape
+   (source-of-truth statement, parameters table) and states the deletion boundary.
 2. **D2 — Unit tests** — under `test/sync-opencode/`, mirroring the `test/sync-plugin-cache/`
    precedent: the singular→plural path mapping, `--dry-run` (no filesystem effect, actions
-   listed), `--bundles` subsetting, and delete-extraneous behaviour, all against temp
-   directories — no live OpenCode install involved.
+   listed), `--bundles` subsetting, stale-managed-entry deletion, **preservation of unmanaged
+   destination entries**, and **preservation of unselected bundles' entries under `--bundles`**,
+   all against temp directories — no live OpenCode install involved.
    *Done when:* the tests pass in `./pw verify` and each behaviour above has at least one case.
 3. **D3 — Inner-loop documentation** — `doc/developer/marketplace-build.adoc` gains the OpenCode
    inner loop: generate → `/sync-opencode` → test, and the deploy options with the precedence
@@ -122,7 +130,8 @@ live OpenCode install; and the distribution documentation states the publish mat
 - `./pw verify` over the branch diff (Python changes — the build gate applies).
 - D2's behaviour tests demonstrated red-first against the not-yet-implemented flags.
 - A manual end-to-end run into a temp directory recorded in the run report: generate, sync,
-  re-sync after deleting a source file, and confirm the mirror-delete.
+  re-sync after deleting a source file, and confirm the stale managed entry is removed while a
+  planted unmanaged entry survives.
 - The pre-PR verification sub-agent re-reads D3/D4's documentation claims against the workflow
   and generator files they describe — documentation that restates another file's facts is the
   consumer-kind most likely to drift here.
