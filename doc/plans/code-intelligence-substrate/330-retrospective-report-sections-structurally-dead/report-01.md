@@ -45,9 +45,16 @@ aspects already publish, cited at its declaration in `retro_sections.py`:
 |---|---|
 | `evaluated_population` | `standards/execution-context-dispatch-audit.md` — "publishes the evaluated population beside every count so a zero is legible" |
 | `population` | `references/log-analysis.md` fragment schema (`population: plan_script_execution_log`) |
-| `counts` | `direct-gh-glab-usage.py`, emitted beside an empty `findings` list |
+| `counts` | `direct-gh-glab-usage.py`, emitted beside an empty `findings` list; also the fragment shape `ext-point-retrospective.md` mandates for every domain aspect |
+| `checks` | the per-check roster `check-artifact-consistency.py` emits — added in round 2 (F27) |
+| `expected_invariants` | the invariant roster `summarize-invariants.py` evaluated — added in round 2 (F27) |
 | `not_evaluated` | the token `execution-context-dispatch-audit.md` mandates in place of a bare `0` |
 | `skipped` | the graceful-skip status in `references/chat-history-analysis.md` |
+
+⚠ This table is a reader's aid and **is not the source of truth** — the vocabularies live in
+`retro_sections.py`. It is reproduced here because a reader of the report cannot open the module, and
+it carries the same drift risk every restatement does: it said three fields for two rounds after the
+registry had five.
 
 ⛔ **The first cut of this deliverable fixed an INSTANCE, not the CLASS — caught by the verification
 sub-agent, not by me.** `render_section_body(None)` returns the same literal placeholder for *any*
@@ -81,13 +88,14 @@ The zero-attribution probe was mutation-tested in both directions — forcing `_
 always return `True` (guard can never fire) and forcing it to ignore attribution (guard always fires)
 each turn the suite red.
 
-**A late correction to the probe's depth.** `_names_checked_set` originally read top-level fragment
-keys only, but of the three attribution fields only `counts` is published there:
-`evaluated_population` lives inside `shape_violation` / `dispatch_coverage`, and `population` inside
-`script_cost_rollup`. A top-level-only probe would have flagged fragments that **do** name the
-population they examined — a false positive against the very producers the vocabulary was derived
-from. It now reads the top level and one nesting level, bounded at one so an incidental deep key
-cannot clear the flag.
+**Two later corrections to the probe.** Its *depth*: `_names_checked_set` originally read top-level
+keys only, while `evaluated_population` lives inside `shape_violation` / `dispatch_coverage` and
+`population` inside `script_cost_rollup` — so a top-level-only probe flagged fragments that **do**
+name the population they examined. It now reads the top level and one nesting level, bounded at one
+so an incidental deep key cannot clear the flag. Its *vocabulary*: two more names were added in round
+2 (F27), and the count is deliberately not restated here — read
+`retro_sections.ZERO_ATTRIBUTION_FIELDS`. An earlier draft of this report and of the SKILL.md both
+said "three", and both were left saying it after the registry grew to five.
 
 ### D2 — GATE: registry rows against their reachability. Mutates nothing.
 
@@ -228,14 +236,17 @@ means it pins shipped behaviour and cannot witness anything this plan fixed.
 | `test_missing_executive_summary_emits_no_section` | **Regression** (restated) | Replaces `…_uses_placeholder`, which pinned the defect; the new assertions are the negation of pre-fix behaviour |
 | `test_payload_bearing_executive_summary_without_a_body_is_dropped` | **Regression** | Pre-fix this fragment was counted as *written* |
 | `test_no_section_is_written_from_an_empty_bundle` | **Regression** | The class-level case; pre-fix an empty bundle wrote 10 placeholder sections |
-| `test_an_always_emit_row_with_no_fragment_is_omitted_not_written` (10 collected, one per `trigger=None` row) | **Regression** | Each row is a separate pre-fix instance of the same breach |
+| `test_an_always_emit_row_with_no_fragment_is_omitted_not_written` (10 collected; the registry has 11 `trigger=None` rows and `_executive-summary` has its own branch and test) | **Regression** | Each row is a separate pre-fix instance of the same breach |
 | `test_an_empty_fragment_is_not_written` (5 collected: `''`, whitespace, `{}`, `[]`, `()`) | **Regression** | The production path: `parse_toon` yields `''`, which an `is None` guard misses |
-| `test_a_scalar_fragment_is_content_not_emptiness` (3 collected) | **Characterization of new behaviour** | Pins the falsy-versus-empty split so a measured `0` is never discarded |
+| `test_a_measured_zero_fragment_is_content` (2 collected) | **Characterization of PRE-EXISTING behaviour** | Replayed against `origin/main`: PASSES. Pins the half of the falsy-versus-empty split that must not move. Was labelled "new behaviour" for one round — the **third** instance of this mislabel class in this run (after F17 and F24), which is why the labels are now established by replay rather than by judgement |
+| `test_a_dict_with_no_payload_is_not_written` (5 collected) | **Regression** | The five shapes the round-3 verifier drove through the real pipeline, each reaching `written` with an unusable body |
+| `test_written_implies_payload_holds_for_every_registry_row` | **Regression** | The invariant as one property over the whole registry rather than a list of cases |
+| `test_a_bare_false_fragment_is_empty` | **Regression** | Pre-fix a bare `False` was written; it is now empty, matching `_fragment_has_payload`'s identity skip |
 | `test_an_empty_registry_fragment_is_omitted_exactly_once` | **Regression against round 1's own defect** | Round 1's fallback guard sat above the `spec_keys` skip and produced a duplicate plus a phantom heading |
 | `test_a_producer_naming_its_checked_set_by_roster_is_not_flagged` (2 collected) | **Regression** | Both producers were flagged on every clean run before the vocabulary covered them |
 | `test_a_row_with_a_real_fragment_is_still_written` | **Characterization of PRE-EXISTING behaviour** | Replayed pre-fix: PASSES. It guards the fix against over-reach ("empty ⇒ not written", never "write less"), which is a property the pre-fix code also had |
 | `test_a_fallback_aspect_mapped_to_none_is_omitted_not_written` | **Regression** | Pre-fix the fallback path wrote a placeholder too |
-| `TestZeroReportingSectionNamesItsCheckedSet` (15 methods, 21 collected) | **Characterization of new behaviour**, mutation-proven | The probed function did not exist pre-fix, so no pre-fix red is possible; non-vacuity established by mutations instead |
+| `TestZeroReportingSectionNamesItsCheckedSet` (15 methods, 21 collected at HEAD) | **Characterization of new behaviour**, mutation-proven | The probed function did not exist pre-fix, so no pre-fix red is possible; non-vacuity established by mutations instead |
 | `TestAspectTableKeysMatchTheRegistry` (5 methods, 5 collected) | **Characterization of new structure**, mutation-proven | The Key column did not exist pre-fix; three mutations (wrong key, reordered column, neutered corruption) turn it red |
 | `test_metadata_append_preserves_the_earlier_value` | **Regression** | The multi-session case the scalar destroyed |
 | `test_store_appends_to_the_session_ids_list` | **Regression** | Mutation reinstating the overwriting `--set` turns it red |
@@ -259,25 +270,27 @@ saying so explicitly, and are retained rather than dropped because the second on
 anomaly visible (see Findings F1).
 
 Test functions added, re-derived at the moment of this claim (`git diff origin/main...HEAD` counting
-added `def test_` lines): 10 (manage-status metadata) + 1 (orchestrator store) + 27 (compile-report
-behaviour) + 5 (render guard) + 8 (claude_runtime) = **51 test functions**. That is a count of test
+added `def test_` lines): 10 (manage-status metadata) + 1 (orchestrator store) + 30 (compile-report
+behaviour) + 5 (render guard) + 8 (claude_runtime) = **54 test functions**. That is a count of test
 *functions*; parametrized cases collect higher, and a reader running the suite sees the collected
 number, not this one.
 
 ⚠ **This figure moves with every round, and each round's reading was correct when taken** — round 1
-read 35, the round-2 verifier read 39 against its own HEAD, and it is 51 here. Do not carry it
+read 35, the round-2 verifier read 39 against its own HEAD, the round-3 verifier read 51, and it is
+54 here. Do not carry it
 forward; re-derive it.
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD -- '*.py'` → **13 files**, re-derived at HEAD. Python
-changed, so the full gate applies. (24 files changed overall, across 15 commits — a figure that moves
-with every commit, including the one carrying this report.)
+`git diff --name-only origin/main...HEAD -- '*.py'` → **14 files**, re-derived at HEAD. Python
+changed, so the full gate applies. (25 files changed overall.) ⛔ A commit count is deliberately NOT
+stated: it moves with every commit including the one carrying this sentence, so any value written
+here is stale before it is read. `git rev-list --count origin/main..HEAD` is the answer at any moment.
 
 - Per-commit `./pw quality-gate` before each `*.py`-touching commit: `ruff … All checks passed!`,
   `mypy … Success: no issues found in 412 source files`, `SPDX-header check passed`.
 - Full `./pw verify` over the branch diff, re-run after the round-1 fixes: **`=== verify: SUCCESS ===`**,
-  `20717 passed, 14 skipped` in 377 s — all three sub-steps (quality-gate, test-compile, module-tests).
+  `20723 passed, 14 skipped` in 378 s — all three sub-steps (quality-gate, test-compile, module-tests).
 - One gate rejection was fixed rather than worked around: plugin-doctor's
   `no-historical-prose-in-skills` fired on new wording in `phase-6-finalize/SKILL.md`; the sentence
   was reworded and the gate re-run clean.
@@ -367,11 +380,41 @@ A findings and were not deferrable, and both are fixed. **F15** (the one-directi
 guard) is unchanged and remains a B-(b) survivor. **S1** remains a survivor with its bound restated
 per F26.
 
-⭐ **What the two rounds together say about this run.** Round 1 found that D1 fixed an instance
-rather than a class. Round 2 found that round 1's class fix was itself keyed on the wrong predicate,
-and that round 1 introduced a fresh defect while fixing the old one. Three successive attempts at one
-invariant, each sound where it landed and each narrower than the claim it was written to support.
-The deliverables should be read as still carrying defects of that kind.
+### Verification round 3 (independent sub-agent)
+
+Round 3 targeted round 2's fixes, and found the same shape a third time.
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| V1 | Verifier, round-2 fix audit (A + B) | ⭐ **Attempt 3 was narrower than ITS claim.** It tested the emptiness of the **container**, not the content. `{'summary': ''}`, `{'findings': []}`, an envelope-only dict, `{'summary': '', 'findings': []}` and `{'summary': None}` are all non-empty dicts that render a JSON block stating nothing — and every one reached `sections_written` while `_fragment_has_payload` reported no payload for it. Driven end-to-end through the real pipeline. `{'findings': []}` is the literal shape an LLM aspect with nothing to report writes, and seven of the fifteen registry aspects are LLM-authored. | **Fixed** — the dict case is delegated to `_fragment_has_payload`, the discriminator already governing the drop/omit split. |
+| V2 | Verifier, rationale check (A) | `_fragment_renders_empty`'s docstring claimed its split was "the same falsy-versus-empty split `_fragment_has_payload` makes". Executed, they were **opposite on `False`** and disagreed on an all-empty-valued dict. | **Fixed by making it true** rather than by softening the sentence: a bare `False` is now empty, matching the identity skip. |
+| V3 | Verifier, sweep (A) | `_names_checked_set`'s comment said "only `counts` is published at the top of a fragment". `checks` and `expected_invariants` are top-level too — round 2 added them without reconciling the sentence. | **Fixed.** |
+| V4 | Verifier, inward sweep (B, bounded) | Two keys title-casing to the same heading produce a `written`/`omitted` overlap and mis-target the probe. | **Accepted as a survivor.** ⚠ **Bound:** unreachable today — `cmd_add` rejects unregistered keys and the only domain aspect (`wrapper-tangle`) collides with nothing. `origin/main` carries the same collision in a different shape, so the branch neither introduces nor widens it. |
+| V5 | Verifier, producer sweep (A) | `retro_sections`'s comment (mirrored in a test comment and a commit message) called its two new names "the ONLY two of eight" producers needing coverage. There is a **third** — `check-manifest-consistency` publishes `checks` on a plan that HAS an `execution.toon`. The denominator is wrong too: three of the eight never reach `written` on an ordinary plan. | **Fixed** in the comment and the test; the commit message is recorded here, being unfixable. |
+| V6 | Verifier, divergence-paragraph audit (A) | `report-structure.md` said **ANY** non-envelope field is seen as payload. An empty-valued one is not. | **Fixed.** |
+| V7 | Verifier, sweep (A) | ⭐ **The worst one: a shipped consumer-facing doc.** `plan-retrospective/SKILL.md` enumerated the attribution vocabulary as three fields when it has five — **in the same sentence instructing the reader not to restate it**. Made wrong by round 2's own change. | **Fixed** — it no longer enumerates the vocabulary at all, and says why. |
+| V8, V9, V10, V11 | Verifier, report + comment audit (A) | This report restated the vocabulary as three fields (V8) and presented an incomplete table as *the* vocabulary (V9); `retro_sections`'s depth paragraph covered three of five names (V10); and `test_a_scalar_fragment_is_content_not_emptiness` was mislabelled "new behaviour" when it passes on `origin/main` (V11) — the **third** instance of that mislabel class after F17 and F24. | **All fixed.** The vocabulary table now says explicitly that it is a reader's aid and not the source of truth. |
+| V-counts | Verifier, figure audit (A) | "15 commits" was 16; the `trigger=None` lead-in said 10 where the registry has 11 rows. | **Fixed** — and the report now states no commit count at all, since any value is stale before it is read. |
+
+**Two pre-existing guards failed on V1's fix, and both were right to.** Their shared fixture emitted
+`status: success` and nothing else, so they asserted that a section with no body renders. The fixture
+now carries a summary — what every real producer emits — and the guards test what they mean to test.
+The zero-probe fixtures needed the same correction: without a payload key the section is not written,
+so the probe was passing against a section the report does not carry. Recording this because
+"I changed a test so my change would pass" is exactly the move that needs to be visible.
+
+⭐ **What the three rounds together say about this run.** Round 1 found that D1 fixed an instance
+rather than a class. Round 2 found that round 1's class fix was keyed on the wrong predicate, and
+that round 1 had introduced a fresh defect while fixing the old one. Round 3 found that round 2's fix
+tested the wrong property again — the container rather than the content — and that round 2's own new
+prose had gone stale in four places. **Four successive attempts at one invariant**, each sound where
+it landed and each narrower than the claim it was written to support.
+
+The late rounds' findings did **not** become merely fewer — they stayed substantive and kept landing
+on the shipped deliverable, not only on the report. That is the honest reading, and it is the reason
+this run does not claim convergence. **The deliverables should be read as still carrying defects of
+that kind**, most plausibly: another shape that reaches `written` without a usable body, and another
+restatement of the attribution vocabulary that the registry has outgrown.
 
 ## Reviewer participation
 
