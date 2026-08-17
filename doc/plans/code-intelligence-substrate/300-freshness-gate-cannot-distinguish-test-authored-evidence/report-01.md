@@ -587,7 +587,7 @@ verdict here.
 | Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
 |---|---|---|---|
 | `cuioss-review-bot` | `reviewed` | — | Issue comment "PR Reviewer Guide 🔍": *PR contains tests* / *No security concerns identified* / *No major issues detected*. A review artifact over the diff with an explicit nothing-to-report. |
-| `coderabbitai` | `rate-limited` | **yes** | Issue comment: *"Review limit reached … we couldn't start this review. **Next review available in: N minutes**"* — read as **47** when the check-in was armed. ⚠ CodeRabbit **edits this comment in place** and the countdown decreases, so a verbatim quote of the figure is not re-verifiable (round 3 later read 40). The `Reopens? yes` verdict does not depend on the number. |
+| `coderabbitai` | `rate-limited` | **yes**, but see below | Issue comment: *"Review limit reached … we couldn't start this review. **Next review available in: N minutes**"*. ⚠ CodeRabbit **edits this one comment in place**, so the figure is not a stable quote: it read **47** when the check-in was armed, **40** when round 3 read it, and **58** at the scheduled re-check — it went **up**. The `Reopens? yes` verdict holds; the countdown does not. See the mechanism below. |
 | `sourcery-ai` | `rate-limited` | **no** | Review-summary body: *"your pull request is larger than the review limit of 150000 diff characters"*. ⛔ A property of **this diff**, not of the clock — the same request never succeeds at this size, so waiting is futile and no re-request is made. Its check-run separately concluded `skipped`. |
 
 **Coverage: 1 of 3.** Inline review threads: none (`get_review_comments`
@@ -597,9 +597,38 @@ not assumed.
 
 ⭐ **The two non-`reviewed` verdicts are rate-limited for opposite reasons, and
 rendering them identically would have hidden that.** One clears on a clock; the
-other is a size ceiling that never clears. Only the first is worth re-requesting,
-and a `send_later` check-in is armed to do exactly that once the window reopens —
-so the shortfall is being actively worked, not merely disclosed.
+other is a size ceiling that never clears. Only the first is worth re-requesting.
+
+### ⛔ The push cadence was resetting the review window — a mechanism, not bad luck
+
+The scheduled check-in fired to re-request CodeRabbit and found the countdown had
+**increased**, from 47 → 40 → **58 minutes**. The cause is visible in the evidence
+rather than inferred: the notice comment's `updated_at` matches this branch's last
+push to the second, and its `Run ID` changed between reads. CodeRabbit's own notice
+says a review can be triggered *"Alternatively, push new commits to this PR."* So
+each push triggers a fresh review attempt, that attempt is refused while the quota
+is spent, and **the countdown restarts from the moment of the refused attempt**.
+
+⇒ Three verification rounds meant three pushes, each one re-arming the window it
+was waiting on. The reviewer was never going to review, and **the run's own
+durability discipline is what prevented it** — not the reviewer's quota alone.
+
+⚠ **The quota is per-developer and shared across both PRs**, not per-PR: the notice
+reads *"you've reached your PR review limit … all 1 included review currently
+available under your plan"*, and #1279 and #1280 each hold a refusal from the same
+allowance. So there is **one** review to spend, and it must be allocated rather
+than hoped for.
+
+**Allocation, stated as a decision:** the single review goes to **#1279**, which
+carries 2 600+ lines of real code, not to #1280's 18 lines of settled prose. Acting
+on that means the opposite of retrying — **stop pushing**. The report commit
+carrying this paragraph is deliberately the run's *last* push, so the window can
+elapse undisturbed, and one further check-in is scheduled past its expiry.
+
+⛔ Per the check-in's own instruction, CodeRabbit was **not** re-requested on this
+pass: it is still rate-limited, and posting `@coderabbitai review` into a spent
+quota would have been another refused attempt — resetting the window a fourth
+time.
 
 ### The § Step 8 shortfall disclosure — it fired
 
@@ -629,7 +658,7 @@ Two reasons, and the first alone is sufficient:
    therefore **cleared**. Reason 2 is now the operative one, and the arming
    decision moves to the scheduled check-in, which re-reads the state rather than
    trusting either snapshot.
-2. ⭐ **Arming is a one-way door, and CodeRabbit's window reopens in ~47 minutes.**
+2. ⭐ **Arming is a one-way door, and CodeRabbit has still not reviewed this diff.**
    On this merge-queue repository, arming while the required checks are green
    enqueues the PR at once and a protected-branch hook then rejects every further
    push — and neither disabling auto-merge nor drafting the PR releases that lock.
@@ -640,10 +669,16 @@ Two reasons, and the first alone is sufficient:
 
 The contract does permit arming with a required check still running — but that
 allowance is for a run that **cannot self-wake** to watch the queue. This session
-can: `send_later` is available and a check-in is armed for the moment CodeRabbit's
-window reopens, to re-request it, disposition whatever it finds, and only then
-complete the merge gate. Arming under that allowance when the allowance's
-precondition does not hold would be borrowing a licence this run does not need.
+can: `send_later` is available, one check-in has already fired, and another is
+scheduled past the window's expiry to re-request CodeRabbit, disposition whatever
+it finds, and only then complete the merge gate. Arming under that allowance when
+its precondition does not hold would be borrowing a licence this run does not need.
+
+⚠ **This is not an indefinite hold, and it should not become one.** The shortfall
+is a *disclosure*, never a block: if CodeRabbit's window expires and the review
+still does not arrive, #1279 is armed on 1-of-3 coverage with that stated — exactly
+as #1280 was. What is being waited on is a bounded window with a stated expiry, not
+a reviewer's goodwill.
 
 ### PR #1280 — the contract change's own cycle
 
@@ -656,7 +691,23 @@ threads empty; **zero actionable comments**.
 | `coderabbitai` | `rate-limited` | **yes** | *"Review limit reached … Next review available in: 46 minutes"* — the same clock limit as on #1279. |
 | `sourcery-ai` | `rate-limited` | **yes**, window unstated | *"you have reached your weekly rate limit of 500000 diff characters. Please try again later or upgrade"*. |
 
-**Coverage: 1 of 3.**
+**Coverage: 1 of 3.** `verify / conclusion` is **success** and `mergeable_state` is
+`unstable` — every *required* context satisfied, only non-required Sourcery
+outstanding — so conditions 1, 2 and the condition-4 disclosure hold, and
+**auto-merge is ARMED** on this PR. It carries no report obligation of its own
+(condition 3 governs the plan's report, which lands in #1279).
+
+⭐ **Arming #1280 while holding #1279 is a deliberate asymmetry.** #1280 will
+realistically never receive CodeRabbit's review, because the single available
+review is allocated to #1279 (above). Holding #1280 open for a review that is not
+coming would strand a landing behind a bot's quota — the exact direction the
+contract calls wrong. #1279 is held instead, because there the review *is* coming
+and arming would lock the branch against acting on it.
+
+⚠ Its description was also stale — it still claimed "Two edits, not one" after
+round 3 found the third enumeration — and has been corrected in place, since a PR
+description is the restatement most reviewers actually read and the one no sweep
+of the repository can reach.
 
 ⭐ **The same reviewer refused the two PRs for two different reasons, and only the
 `Reopens?` column shows it.** On #1279 `sourcery-ai` hit a **per-PR** ceiling of
