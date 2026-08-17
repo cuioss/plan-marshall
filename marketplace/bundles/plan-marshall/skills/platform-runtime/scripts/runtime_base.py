@@ -147,9 +147,16 @@ class Runtime(ABC):
 
         The operation carries INTENT only: make this target surface plan status
         to the operator over whatever channel it has. WHERE that wiring lives and
-        WHAT it consists of are the implementation's to decide — the caller names
-        the target and nothing else. No configuration location, event name, or
-        setting key crosses this boundary in either direction.
+        WHAT it consists of are the implementation's to decide — INBOUND, the
+        caller names the target and nothing else, so no configuration location,
+        event name, or setting key is passed in.
+
+        The RETURN is not symmetric, and deliberately so: a caller that asked for
+        a write has to be told what was written, so the success payload names the
+        elements the target actually manages and reports each one's disposition.
+        Those names are the target's own. A caller reads them to report or to
+        prompt; it must not hardcode them, and no other operation's contract
+        depends on them.
 
         Unlike :meth:`project_initial_setup`, this operation creates no plan state
         and seeds no configuration file of plan-marshall's own; it only wires the
@@ -173,7 +180,11 @@ class Runtime(ABC):
                 conflict, so the caller can prompt the operator; naming that
                 conflict's key here authorises overwriting it instead. The key
                 set is target-defined — each implementation documents its own —
-                and an unrecognised key is rejected rather than silently ignored.
+                and a target that defines one rejects an unrecognised key rather
+                than silently ignoring it, so a typo can never read as "do not
+                overwrite". A target that declines the operation outright defines
+                no keys and reaches no key check; its ``no-op`` answers every
+                argument, this one included.
             enforcement: Wire the target's TOOL-INVOCATION GATE instead of its
                 session/display channel — the mechanism by which the target
                 consults plan-marshall before a tool call runs, so a call that

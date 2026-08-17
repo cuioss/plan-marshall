@@ -155,11 +155,15 @@ from runtime_base import Runtime, toon_error  # noqa: E402
 # ---------------------------------------------------------------------------
 # Target registration block — the ONE place a runtime target is registered.
 #
-# Adding a target is an edit to this block and nothing else in this module:
-# add its ``Runtime`` subclass to ``_REGISTRY`` and its extra bootstrap
-# libraries to ``_TARGET_BOOTSTRAP_LIBS``. The two dicts are declared adjacently
-# so the pair cannot drift unnoticed, and a lockstep test asserts their key sets
-# stay equal.
+# Registering a target is an edit to this block: add its ``Runtime`` subclass to
+# ``_REGISTRY`` and its extra bootstrap libraries to ``_TARGET_BOOTSTRAP_LIBS``.
+# The two dicts are declared adjacently so the pair cannot drift unnoticed, and a
+# lockstep test asserts their key sets stay equal.
+#
+# One edit falls OUTSIDE this block and is unavoidable: the subclass has to be
+# imported above, alongside the other runtime imports, before its name can be
+# bound here. That import cannot move into this block, because the imports must
+# follow the bootstrap that puts them on ``sys.path``.
 #
 # ``_DEFAULT_TARGET`` is the single fallback identifier: every argparse default
 # and every "no target resolved" fallback in this module reads it rather than
@@ -370,7 +374,8 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session bind")
         p.add_argument("--plan-id", required=True)
         p.add_argument("--session-id", default=None,
-                       help="Optional explicit session id; defaults to $CLAUDE_CODE_SESSION_ID")
+                       help="Optional explicit session id; falls back to whatever "
+                            "session identifier the active target exposes")
         ns = p.parse_args(remaining)
         return runtime.session_bind(ns.plan_id, ns.session_id)
 
@@ -380,7 +385,8 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     if operation == "session resolve-plan":
         p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session resolve-plan")
         p.add_argument("--session-id", default=None,
-                       help="Optional explicit session id; defaults to $CLAUDE_CODE_SESSION_ID")
+                       help="Optional explicit session id; falls back to whatever "
+                            "session identifier the active target exposes")
         ns = p.parse_args(remaining)
         return runtime.session_resolve_plan(ns.session_id)
 

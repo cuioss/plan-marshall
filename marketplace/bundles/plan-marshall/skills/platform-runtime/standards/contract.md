@@ -101,7 +101,9 @@ message: Target 'foobar' is not in the registry; valid targets are: claude, open
 
 Wire the target's session/display integration into its own configuration. Unlike `project initial-setup`, this does not create `.plan/` or seed `marshal.json` — it is the targeted integration-wiring primitive. Convergent: re-invocation never duplicates an element, and it brings an already-present element onto the current shape rather than making no change — an entry carrying a stale hook `timeout` is rewritten and reported as migrated. An element that is already correct is left untouched.
 
-**The operation is target-opaque.** The caller names the target and nothing else; no configuration location, event name, or setting key crosses the boundary. Where the wiring lands, and what it consists of, is the implementation's to decide, and callers read the file it actually wrote from the response's `settings_path` rather than assuming one.
+**The operation is target-opaque on the way in.** The caller names the target and nothing else: no configuration location, event name, or setting key is passed. Where the wiring lands, and what it consists of, is the implementation's to decide.
+
+The response is not symmetric, because a caller that asked for a write has to be told what was written. The success payload names the elements the target manages and reports each one's disposition — on Claude that means `settings_path`, the three `*_events` lists, `capture_status`, `statusLine_status` and `env_status`, all of them Claude's own names. Read them to report or to prompt; never hardcode them, and read the file that was written from `settings_path` rather than assuming which one it was.
 
 Two independent install modes, neither of which disturbs the other's configuration:
 

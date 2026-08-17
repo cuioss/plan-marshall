@@ -214,8 +214,15 @@ def _invoke_layout_op(target: str, method_name: str = 'layout_skill_roots') -> t
         from platform_runtime import _make_runtime
         from toon_parser import parse_toon
 
-        # An unregistered target resolves to the default target's runtime,
-        # matching the router's own "no target resolved" fallback.
+        # An unregistered target resolves to the default target's runtime. This
+        # is deliberately NOT what the router does — the router rejects an
+        # unregistered target with ``unknown_target`` and stops — because a
+        # layout lookup has no error channel: its callers get a root list or this
+        # module's own default, nothing else. Resolving the default runtime here
+        # yields the same roots that default carries (pinned by the lockstep
+        # test), so the two paths agree on the ANSWER while differing in how they
+        # reach it. ``_DEFAULT_TARGET`` is the router's fallback only for the
+        # distinct case of a marshal.json that omits ``runtime.target``.
         runtime: Any = _make_runtime(target) or _make_runtime(_DEFAULT_RUNTIME_TARGET)
         parsed = parse_toon(getattr(runtime, method_name)())
     except Exception:
