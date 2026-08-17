@@ -5253,6 +5253,31 @@ def _prior_genuine_runs(repo_root: Path, limit: int) -> list[dict[str, int]]:
     return runs
 
 
+def quiet_streaks(runs: list[dict[str, int]]) -> dict[str, int]:
+    """Per-check count of consecutive most-recent runs whose genuine count was 0.
+
+    `runs` is newest-first. A non-zero count breaks the streak, and so does a run
+    that never recorded the check — an absent record is not a recorded zero, and
+    counting it as one would let a check that stopped emitting accrue quiet runs
+    toward its own retirement. A check emitting `unmeasured` records no genuine
+    count at all, so it lands on that same path by construction.
+
+    Shared by `retire-on-quiet` (which reads a long streak as grounds to retire)
+    and `suspect-zero-census` (which reads it as grounds to doubt). One derivation,
+    two readings — so the two blocks can never disagree about the streak itself.
+    """
+    streaks: dict[str, int] = {}
+    for check in CHECK_NAMES:
+        streak = 0
+        for run in runs:
+            if run.get(check) == 0:
+                streak += 1
+            else:
+                break
+        streaks[check] = streak
+    return streaks
+
+
 def _retire_on_quiet_proposals(
     repo_root: Path, current_genuine: dict[str, int]
 ) -> tuple[list[dict[str, Any]], int]:
@@ -5268,14 +5293,10 @@ def _retire_on_quiet_proposals(
     threshold = int(THRESHOLDS["retire_on_quiet_runs"])
     prior_runs = _prior_genuine_runs(repo_root, threshold)
     runs = [current_genuine, *prior_runs]
+    streaks = quiet_streaks(runs)
     proposals: list[dict[str, Any]] = []
     for check in CHECK_NAMES:
-        streak = 0
-        for run in runs:
-            if run.get(check) == 0:
-                streak += 1
-            else:
-                break
+        streak = streaks[check]
         if streak >= threshold:
             proposals.append(
                 {
@@ -5289,6 +5310,176 @@ def _retire_on_quiet_proposals(
                 }
             )
     return proposals, len(runs)
+
+
+# ---------------------------------------------------------------------------
+# Suspect-zero census — the class guard
+# ---------------------------------------------------------------------------
+#
+# A detector that has never produced a positive is indistinguishable, from its
+# output alone, from a detector that CANNOT produce one. Every check in this file
+# reports a `genuine_signal_count`, and a permanent zero there reads as health —
+# which is exactly how a predicate reading a field live data never carries, a scan
+# rooted one directory above its emitter, and a regex that cannot match its
+# emitter all survived while their suite stayed green.
+#
+# The census makes every zero SUSPECT rather than silently clean, and classifies
+# what KIND of zero it is. It is a reporting instrument: it never blocks, never
+# removes a check, and never overrides a verdict.
+#
+# It is deliberately the inverse reading of `retire-on-quiet`, which sits directly
+# above and proposes RETIRING a check that has been quiet. Both read the same
+# streak; they draw opposite conclusions from it, and both readings are legitimate.
+# A quiet check is either doing its job over a clean corpus (retire it, or leave it
+# as a cheap regression guard) or structurally unable to speak (fix it). Publishing
+# only the retirement reading is what lets a broken detector be retired as
+# redundant — the strictly worse outcome, because it closes the case.
+
+#: The zero classes. `structural` and `starved` both mean "this zero is not
+#: evidence about the corpus"; they differ in WHY, and the remedies differ with
+#: them, so they are never merged.
+_ZERO_STRUCTURAL = "structural"
+_ZERO_STARVED = "starved"
+_ZERO_DISCIPLINARY = "disciplinary"
+_ZERO_NONE = "fired"
+
+_UNMEASURED_STATUS_RE = re.compile(r"^status:\s*unmeasured\s*$", re.MULTILINE)
+
+
+def _classify_zero(block: str, genuine_count: int, corpus_size: int) -> str:
+    """Classify one check's zero — or report that it fired.
+
+    The three classes answer "is this zero evidence about the corpus?":
+
+    * `structural` — the check DECLARED it could not substantiate a verdict
+      (`status: unmeasured`). Its zero says nothing about the corpus, and it says
+      so itself. The remedy is to the check's inputs or to its producer.
+    * `starved` — the corpus supplied no plans at all, so no check could have
+      fired. The zero is a property of this run's inputs, not of the check. This
+      is the class whose zero is one un-stubbed sibling away from being non-zero.
+    * `disciplinary` — a non-empty corpus was examined and nothing was genuine.
+      The only class in which a zero is a real (if provisional) statement about
+      the corpus.
+
+    A check that produced any genuine signal is `fired` and is not a suspect.
+
+    The classes are derived from signals every block already carries, so no
+    emitter needs to opt in and none can drift out of the census by omission.
+    """
+    if genuine_count > 0:
+        return _ZERO_NONE
+    if _UNMEASURED_STATUS_RE.search(block):
+        return _ZERO_STRUCTURAL
+    if corpus_size == 0:
+        return _ZERO_STARVED
+    return _ZERO_DISCIPLINARY
+
+
+def suspect_zero_census(
+    blocks: list[str],
+    per_check_genuine: dict[str, int],
+    streaks: dict[str, int],
+    corpus_size: int,
+) -> list[dict[str, Any]]:
+    """Build one census row per registered check.
+
+    Every check in `CHECK_NAMES` gets a row — including those that fired, and
+    including any that emitted no block at all. A check absent from this run's
+    output is itself reported (`no_block`), because a detector that silently
+    stopped emitting is the most complete form of the failure this census exists
+    to surface, and listing only the checks that spoke would hide it by
+    construction.
+    """
+    by_check: dict[str, str] = {}
+    for block in blocks:
+        header = _CHECK_HEADER_RE.search(block)
+        if header is not None and header.group(1) in CHECK_NAMES:
+            by_check[header.group(1)] = block
+
+    rows: list[dict[str, Any]] = []
+    for check in CHECK_NAMES:
+        check_block = by_check.get(check)
+        if check_block is None:
+            rows.append(
+                {
+                    "check": check,
+                    "genuine_signal_count": "",
+                    "zero_class": "no_block",
+                    "quiet_run_count": streaks.get(check, 0),
+                    "suspect": "true",
+                    "reading": "the check emitted no block on this sweep — its "
+                    "silence is not a clean verdict",
+                }
+            )
+            continue
+        genuine = per_check_genuine.get(check, 0)
+        zero_class = _classify_zero(check_block, genuine, corpus_size)
+        rows.append(
+            {
+                "check": check,
+                "genuine_signal_count": genuine,
+                "zero_class": zero_class,
+                "quiet_run_count": streaks.get(check, 0),
+                "suspect": str(zero_class != _ZERO_NONE).lower(),
+                "reading": _ZERO_READINGS[zero_class],
+            }
+        )
+    return rows
+
+
+_ZERO_READINGS = {
+    _ZERO_NONE: "the check produced a genuine signal — not a suspect",
+    _ZERO_STRUCTURAL: "the check declared it could not measure — this zero is "
+    "NOT evidence the corpus is clean; fix the inputs or the producer",
+    _ZERO_STARVED: "the corpus supplied no plans — no check could have fired, so "
+    "this zero is a property of the run's inputs, not of the check",
+    _ZERO_DISCIPLINARY: "a non-empty corpus was examined and nothing was genuine "
+    "— a real but provisional statement about the corpus, not proof the check can fire",
+}
+
+
+def emit_suspect_zero_census_block(rows: list[dict[str, Any]], corpus_size: int) -> str:
+    """Emit the `suspect-zero-census` meta block.
+
+    Reporting only — it proposes nothing and blocks nothing. The census is the
+    durable deliverable; the particular counts it prints on any one run are not,
+    since they move with the corpus.
+    """
+    suspects = [r for r in rows if r["suspect"] == "true"]
+    class_counts: dict[str, int] = defaultdict(int)
+    for r in rows:
+        class_counts[str(r["zero_class"])] += 1
+    out = [
+        "check: suspect-zero-census",
+        "status: success",
+        f"checks_registered: {len(rows)}",
+        f"corpus_size: {corpus_size}",
+        f"suspect_count: {len(suspects)}",
+        f"structural_count: {class_counts[_ZERO_STRUCTURAL]}",
+        f"starved_count: {class_counts[_ZERO_STARVED]}",
+        f"disciplinary_count: {class_counts[_ZERO_DISCIPLINARY]}",
+        f"no_block_count: {class_counts['no_block']}",
+        "census_note: a zero is not a clean verdict. A structural or starved zero "
+        "is not evidence about the corpus at all; a disciplinary zero is evidence "
+        "the corpus was clean, never proof the check is able to fire.",
+        f"rows[{len(rows)}]{{check,genuine_signal_count,zero_class,quiet_run_count,suspect,reading}}:",
+    ]
+    for r in rows:
+        out.append(
+            "  "
+            + ",".join(
+                _cell(c)
+                for c in [
+                    r["check"],
+                    r["genuine_signal_count"],
+                    r["zero_class"],
+                    r["quiet_run_count"],
+                    r["suspect"],
+                    r["reading"],
+                ]
+            )
+        )
+    return "\n".join(out) + "\n"
 
 
 def emit_retire_on_quiet_block(
@@ -8791,6 +8982,18 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
     if set(selected) == set(CHECK_NAMES):
         proposals, runs_recorded = _retire_on_quiet_proposals(repo_root, per_check_genuine)
         blocks.append(emit_retire_on_quiet_block(proposals, runs_recorded))
+        # The class guard, emitted from the SAME streak derivation the retirement
+        # proposals use so the two readings of a quiet check cannot disagree about
+        # the streak. Reporting only — it proposes nothing and blocks nothing.
+        streaks = quiet_streaks(
+            [per_check_genuine, *_prior_genuine_runs(repo_root, int(THRESHOLDS["retire_on_quiet_runs"]))]
+        )
+        blocks.append(
+            emit_suspect_zero_census_block(
+                suspect_zero_census(blocks, per_check_genuine, streaks, len(all_inputs)),
+                len(all_inputs),
+            )
+        )
 
     diff_block = _report_diff_block(repo_root, summary_metrics)
     if diff_block:

@@ -204,9 +204,41 @@ half only reads and acts on the surfaced signals, it never recomputes them.
   header (under `.plan/local/audit-reports/`), so the streak is read back across
   runs; a report predating the era model contributes no `genuine__` keys and
   therefore breaks a streak rather than silently extending it. Treat a surfaced
-  proposal as a prompt to confirm the check is genuinely obsolete (versus quiet
-  because the corpus simply had no offending plans) before any future plan
-  removes it.
+  proposal as a prompt to confirm the check is genuinely obsolete before any
+  future plan removes it — and read it alongside the census below, which answers
+  the "is it obsolete or is it broken?" question mechanically.
+
+- **suspect-zero-census (the class guard — reporting only).** A detector that has
+  never produced a positive is indistinguishable, from its output alone, from one
+  that CANNOT produce a positive. The `suspect-zero-census` block makes every zero
+  **suspect** rather than silently clean, with one row per registered check naming
+  its `zero_class`:
+
+  | `zero_class` | Meaning | Is the zero evidence about the corpus? |
+  |---|---|---|
+  | `structural` | The check declared `status: unmeasured` — it could not substantiate a verdict. | **No.** Fix the check's inputs or its producer. |
+  | `starved` | The corpus supplied no plans, so no check could have fired. | **No.** A property of the run's inputs, not of the check. |
+  | `disciplinary` | A non-empty corpus was examined and nothing was genuine. | **Yes** — but only that the corpus was clean, never that the check is *able* to fire. |
+  | `no_block` | The check emitted no block at all on this sweep. | **No.** A detector that silently stopped emitting is the completest form of this failure. |
+  | `fired` | The check produced a genuine signal. Not a suspect. | — |
+
+  The census is **the inverse reading of retire-on-quiet**, computed from the same
+  streak derivation (`quiet_streaks`) so the two can never disagree about the
+  streak itself. A quiet check is either doing its job over a clean corpus or
+  structurally unable to speak, and the two have opposite remedies. Publishing only
+  the retirement reading is what allows a *broken* detector to be retired as
+  redundant — the strictly worse outcome, because retiring it closes the case.
+
+  It is **reporting only**: it proposes nothing, removes nothing, and blocks
+  nothing. The census is the durable deliverable; the particular counts it prints
+  on any one run move with the corpus and are not.
+
+  ⛔ **A `disciplinary` zero is not a clean bill of health for the check.** It says
+  the corpus was clean under whatever predicate the check actually implements — a
+  predicate that reads a field live data never carries will report `disciplinary`
+  on every run, because it examines rows and finds nothing in all of them.
+  Distinguishing that case still requires reading the predicate against its
+  producer; the census narrows where to look, it does not remove the need.
 
 **Lifecycle-footer convention for future roadmap plans.** The not-yet-landed
 roadmap plans (plan-5 … plan-8) are not yet era boundaries. When one of them
