@@ -184,3 +184,19 @@ scales with file size rather than diff size.
 - Run 01's line-floor recommendation for `040`–`080` stands, and F1 and F5 both strengthen it: this
   plan's D2 scope was under-derived and its D1 scope over-derived. Both were flagged in the plan as
   leads to re-derive, and both were wrong in the direction the plan warned about.
+
+## Disposition update (2026-08-17) — appended by the epic re-scoping run
+
+Appended after this run closed, by the run that read every landed report in this epic and re-scoped
+the remaining plans. It covers the residue of **both** runs of plan `030` and does not revise anything
+above.
+
+| Item from run 01 or run 02 | Disposition |
+|---|---|
+| Run 01 § "Why — the plan's premise for this floor is refuted by measurement", and its recommendation to re-derive the floor for `040`–`080` | **Acted on, epic-wide.** Every percentage line floor in the epic is retired. The epic README § "Why there is no line floor" carries the arithmetic for all six slices and finds that **three of the six floors exceed that slice's entire comment-and-docstring volume**. A run now reports its line delta rather than targeting it. This report's recommendation is the reason the change was made |
+| D2 — 39 modules over the 400-line budget, unstarted | **Owner assigned: plan `100`**, which owns the module-budget campaign across all six slices, one slice per run. The split is no longer a reduction plan's deliverable at all: four plans sequenced it last and none reached it, and the whole-tree count moved 315 → 313 in consequence |
+| Run 02 § Findings F7 — the mutable-state invariant behind the shared-registration collapse has no automated guard, and the reviewer's proposed guard was too narrow | **Owner assigned: plan `090` § D3.** That deliverable builds the guard this report said would have to key on the registration/state pair rather than on one module's globals, and requires it be demonstrated failing before it is accepted |
+| D3 — arrange-into-fixtures, unstarted; the `parse_ns` exception list **empty by non-attempt** | **Still open in this plan's slice, and indexed** in the epic README § "What the executed half left open" so a follow-up run can be commissioned without re-reading this report. The README quotes this report's warning that an empty list produced by not attempting the sweep must not be read as a clean result |
+| Run 02 § Findings F5 — D1's named targets no longer carry a collapsible family; the body-shape residue needs re-specifying | **Recorded as-is.** No plan re-specifies it, deliberately: collapsing by body shape can drop a distinguishing assertion, which is the risk this report named. Indexed in the README as open |
+| Run 01 § Findings 5 — `test-docstring-historical-prose` fires on `TASK-001` when it names a real fixture artifact | **Closed**, by plan `050`'s second run, which taught the rule to exempt a match inside a backtick span or a quoted string |
+| Run 01 § Residue — the `subprocess-pythonpath` pair in `marshall-steward` | **Still open.** Re-derived whole-tree: that rule now reports 15 findings. Unowned |

@@ -142,7 +142,8 @@ early after the small ones.
 6. **D6 — Report the measured deltas** — per-directory and slice-total line counts before and after;
    collected test count before and after; coverage before and after for the bundle paths the slice
    exercises; the `parse_ns` exception list; and the per-rule `test-conventions` finding counts over
-   the slice. If the line floor in Verification was not reached, state the shortfall and what remains,
+   the slice. State the measured line delta and what remains (the floor this once reported against is
+   **retired** — see § Verification — so there is a measurement to state, not a shortfall),
    rather than reaching it another way.
    *Done when:* the report carries all six figures, each labelled with the command that produced it.
 
@@ -185,7 +186,7 @@ Exactly these directories under `test/plan-marshall/`, and nothing else:
 | The slice is ~53,800 lines across the six listed directories | HYPOTHESIS | Re-derive: `wc -l $(find test/plan-marshall/{manage-config,manage-execution-manifest,manage-run-config,manage-references,manage-solution-outline,marshall-steward} -name 'test_*.py')` |
 | `test_config_defaults.py` carries ~202 tests in ~3,990 lines, ~22 of them sharing the `_includes_{knob}` naming shape | OBSERVED | the file itself; `grep -n '^def test_default_plan_finalize_includes_\|^def test_get_default_config_includes_' test/plan-marshall/manage-config/test_config_defaults.py` |
 | Only **three** knobs are crossed against both accessors; the rest of the `_includes_` family is unpaired, and several assert unrelated subjects | OBSERVED | Extract the knob suffix under each prefix **separately** and intersect the two sets — a single grep returning the count 22 does **not** establish pairing. The three are `admin_merge_on_stuck_state`, `auto_rebase_threshold`, `merge_queue_wait_budget_seconds`. Re-derive before D1; the collapse shape depends on it |
-| The partition holds — every directory under `test/plan-marshall/*/`, every file at the root of `test/plan-marshall/`, and every top-level `test/` entry other than `plan-marshall/` itself (which the first two clauses already decompose) appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the three deliberate exclusions. An entry in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
+| The partition holds — every directory under `test/plan-marshall/*/`, every file at the root of `test/plan-marshall/`, and every top-level `test/` entry other than `plan-marshall/` itself (which the first two clauses already decompose) appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The partition, and how a run re-derives it" states the procedure and the deliberate exclusions its table names (**read the table; do not assume a count** — it has grown since these plans landed). An entry in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
 | Almost none of this slice is written as parametrized tables | HYPOTHESIS | `grep -rn '@pytest.mark.parametrize'` over the six directories, against their test-function count. Report the ratio — it is D1's baseline |
 | `test_config_defaults.py` opens with a private `_load_module` and a four-level `Path(__file__).parent` chain, loading seven modules under bespoke aliases | OBSERVED | the first ~105 lines of that file |
 | `test_manage_execution_manifest_compose.py` describes its own subject as table-driven and then writes each row longhand | OBSERVED | the file's "Decision Matrix Tests — table-driven cases" section comment and the functions under it |
@@ -194,14 +195,30 @@ Exactly these directories under `test/plan-marshall/`, and nothing else:
 
 ## Verification
 
-**The three-part done-when. All three must hold; the third alone is not success.**
+> ⛔ **SUPERSEDED IN PART — read this before the three conditions below.** This plan landed carrying a
+> three-part done-when whose third part is a **30% line floor**. That floor is **retired**, and so is
+> every other per-slice floor in this epic: four executed plans returned between 0.52% and 2.56%
+> against floors of 20–30%, and three of the six floors turned out to exceed their slice's entire
+> comment-and-docstring volume. A run re-entering this plan holds the **five conditions** in
+> `doc/plans/test-quality/README.md` § "What a reduction run must hold" — collected count, coverage,
+> skipped count, wall-clock, and a line delta that is **measured and reported, never targeted**.
+> Where that section and the text below disagree, **that section governs and the run reports the
+> disagreement**. Everything else below — the per-deliverable checks, the cold read, the executable
+> gate — stands unchanged.
+
+
+**The three-part done-when as this plan landed. ⛔ Its third condition is RETIRED — read it as a
+historical record, not as a gate.** Conditions 1 and 2 stand and are subsumed by the five in
+`README.md` § "What a reduction run must hold", which also add the skipped count and the
+wall-clock. **Condition 3 below is superseded**: the line delta is measured and reported, never
+targeted, and no run is held to the 30% figure it names.
 
 1. **Collected test count does not decrease.** Capture pytest's collected-item count for the slice
    before the first commit and again before the PR. Parametrizing raises it; deleting a case lowers
    it. Record both.
 2. **Coverage does not decrease** for the bundle paths this slice exercises. Record the before/after
    percentages and the command.
-3. **Line count drops by at least 30%** of the slice's starting total. This slice carries the epic's
+3. ⛔ **RETIRED — recorded, not required.** **Line count drops by at least 30%** of the slice's starting total. This slice carries the epic's
    highest floor because its content is the most tabular — the collapse in D1 is mechanical and its
    yield is large. If the floor cannot be reached without violating (1) or (2), **report the shortfall
    and stop**. The floor is a target, not a licence.
@@ -232,7 +249,7 @@ back, and fails this check.
 ## Notes
 
 * **Concurrency.** Plans `030` through `080` are mutually parallel by construction, each owning a
-  disjoint slice. `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time"
+  disjoint slice. `doc/plans/test-quality/README.md` § "The partition, and how a run re-derives it"
   carries the full partition and the three shared constraints restated in this plan's Out of scope.
 * **Order within the plan matters.** D1 before D2: parametrizing first is what brings several modules
   under budget without a split, and splitting first produces modules that then have to be split again.

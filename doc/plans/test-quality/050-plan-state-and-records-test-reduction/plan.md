@@ -171,12 +171,28 @@ nothing else:
 | `manage-tasks/_helpers.py` carries the bare generic basename the existing `unique-fixture-basenames` rule forbids | OBSERVED | the file path; `doctor-test-conventions.md` § `unique-fixture-basenames` detection step 2 |
 | Every assertion in `test_audit_checks.py` belongs to exactly one identifiable check, so the decomposition is a clean partition | HYPOTHESIS — **gating for D1; settle it before moving anything** | Map every one of the ~90 classes to its check before the first move, and record the map in the report. A class that spans two checks is the case that decides whether a module is duplicated or a check is split — decide it explicitly, do not let the first move settle it. |
 | No test in this slice depends on `test_audit_checks.py`'s module-level import side effects surviving the split | HYPOTHESIS — **asserted absence, the higher-risk half** | The module loads `audit.py` via `spec_from_file_location` and registers it in `sys.modules` under a fixed name at import time. Confirm what else in the tree reads that `sys.modules` entry before splitting the loader across modules; a split that leaves two modules racing to register the same name is a flaky green. |
-| The partition holds — every directory under `test/plan-marshall/*/`, every file at the root of `test/plan-marshall/`, and every top-level `test/` entry other than `plan-marshall/` itself (which the first two clauses already decompose) appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the three deliberate exclusions. An entry in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
+| The partition holds — every directory under `test/plan-marshall/*/`, every file at the root of `test/plan-marshall/`, and every top-level `test/` entry other than `plan-marshall/` itself (which the first two clauses already decompose) appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The partition, and how a run re-derives it" states the procedure and the deliberate exclusions its table names (**read the table; do not assume a count** — it has grown since these plans landed). An entry in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
 | Plans `010` and `020` have landed and their surfaces are present in this clone | HYPOTHESIS — **gating; this plan cannot start without it** | `grep -n 'def parse_ns' test/conftest.py`; the module-budget section of `persona-module-tester/standards/testing-methodology.md`. Absent → stop and report blocked. |
 
 ## Verification
 
-**The three-part done-when. All three must hold; the third alone is not success.**
+> ⛔ **SUPERSEDED IN PART — read this before the three conditions below.** This plan landed carrying a
+> three-part done-when whose third part is a **20% line floor**. That floor is **retired**, and so is
+> every other per-slice floor in this epic: four executed plans returned between 0.52% and 2.56%
+> against floors of 20–30%, and three of the six floors turned out to exceed their slice's entire
+> comment-and-docstring volume. A run re-entering this plan holds the **five conditions** in
+> `doc/plans/test-quality/README.md` § "What a reduction run must hold" — collected count, coverage,
+> skipped count, wall-clock, and a line delta that is **measured and reported, never targeted**.
+> Where that section and the text below disagree, **that section governs and the run reports the
+> disagreement**. Everything else below — the per-deliverable checks, the cold read, the executable
+> gate — stands unchanged.
+
+
+**The three-part done-when as this plan landed. ⛔ Its third condition is RETIRED — read it as a
+historical record, not as a gate.** Conditions 1 and 2 stand and are subsumed by the five in
+`README.md` § "What a reduction run must hold", which also add the skipped count and the
+wall-clock. **Condition 3 below is superseded**: the line delta is measured and reported, never
+targeted, and no run is held to the 20% figure it names.
 
 1. **Collected test count does not decrease.** Capture pytest's collected-item count for the slice
    before the first commit and again before the PR. For D1 specifically, capture the count for
@@ -185,7 +201,7 @@ nothing else:
 2. **Coverage does not decrease** for the bundle paths this slice exercises, and for
    `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py`, which is exercised by D1's
    modules but sits outside the default coverage denominator — measure it explicitly.
-3. **Line count drops by at least 20%** of the slice's starting total. The floor is the epic's lowest,
+3. ⛔ **RETIRED — recorded, not required.** **Line count drops by at least 20%** of the slice's starting total. The floor is the epic's lowest,
    deliberately: D1 is a decomposition, and a decomposition adds per-module preamble even as it
    improves the tree. The value of this plan is concentrated in navigability and in D2/D3/D5, not in
    raw line removal. If the floor cannot be reached without violating (1) or (2), **report the
@@ -218,7 +234,7 @@ rather than papering over it, since it may mean the check has no tests at all.
 ## Notes
 
 * **Concurrency.** Plans `030` through `080` are mutually parallel by construction, each owning a
-  disjoint slice. `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time"
+  disjoint slice. `doc/plans/test-quality/README.md` § "The partition, and how a run re-derives it"
   carries the full partition.
 * **D1 is this plan.** If the run's budget is tight, decomposing `test_audit_checks.py` correctly and
   reporting the check-to-module map is worth more than every other deliverable combined. Do it first,
