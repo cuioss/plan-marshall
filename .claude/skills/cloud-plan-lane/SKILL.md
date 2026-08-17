@@ -37,9 +37,10 @@ records the carve-out. Specifically, within this lane:
 | Findings via `manage-findings` + `ext-triage-*` | **Superseded** — findings go in the run report (§ Report) |
 | Plugin Cache Sync after editing `marketplace/bundles/` | **Not applicable — and not owed.** `/sync-plugin-cache` is a machine-local build step: it reads the git-ignored `target/` and writes `~/.claude/`, neither of which this lane has or may touch. A cloud run **neither performs nor owes** a sync — the merged bundle source is authoritative, and refreshing a local cache is a local-developer concern, not a debt this run tracks or records |
 | No shell file operations | **Binds, with one clarification** — `git mv` and `mkdir -p` are permitted for Step 2's directory work; the rule's target is reading and searching file content, which still goes through Read/Glob/Grep |
+| Bash: one command per call / no shell constructs | **Superseded** — ordinary shell use is fine here, loops, `&&`/`;` and heredocs included. That rule is the documented basis for the PreToolUse hook's **R1** family (`platform-runtime/standards/pretooluse-enforcement.md`), and the hook cannot apply in this lane on two independent grounds: its context gate fires only for an `execution-context` sub-agent or a cwd under `.plan/local/worktrees/`, and it is installed machine-locally into `.claude/settings.local.json`, which a fresh clone does not carry. Prefer one heredoc over ten Bash calls where that is genuinely clearer — this epic is about what enters context, and a rule with no enforcer here is pure tool-call overhead |
 
-Every other rule in `CLAUDE.md` still binds — in particular the documentation standards and the
-one-command-per-Bash-call discipline. The closed branch-prefix set binds for branches this run
+Every other rule in `CLAUDE.md` still binds — in particular the documentation standards and **No
+shell file operations**, whose remedy (the Read/Glob/Grep tools) is fully available in a cloud session. The closed branch-prefix set binds for branches this run
 creates; a cloud session's pre-assigned `claude/*` branch is kept as-is (§ Step 2).
 
 ## Cloud session affordances
@@ -753,6 +754,28 @@ The fix in each case was right; only the *reason given for it* was wrong — whi
 because a docstring that explains **why** is trusted more than one that repeats **what**. That is
 exactly why an unverified rationale is worse than none: it is the sentence a later reader believes
 instead of checking. Prefer no rationale to an unchecked one.
+
+⭐ **If the clause asserts what a function RETURNS, run the function.** Reading the callee and finding
+it compatible is not confirmation — it is the same act that produced the claim, so it agrees with the
+claim by construction. A rationale of the form *"X maps to Y"*, *"this shape resolves to Z"*, *"that
+predicate covers W"*, *"the producer only ever emits V"* is a prediction about an executable, and the
+tree can settle it in one call. Execute it on the **actual** argument the clause is about, not on a
+representative one: the two defects this rule comes from were both claims that held for the value
+their author had in mind and failed for the value the code actually passes.
+
+⛔ **This is not the paragraph above it restated.** That one asks whether a named site *says*
+something compatible; this one asks what the site *does* with your input. One run wrote both of these
+and neither sweep caught either:
+
+| Where | The claim | What running it showed |
+|---|---|---|
+| a run report's findings table | nine test stubs "supply a non-empty path, which the state machine maps to `materialized`" | True of the path; the stubs return a **boolean** as the tuple's first element. `True == 'materialized'` is `False`, so every one of them silently took the fallback branch. The build failed 12 tests |
+| a docstring, inside the check written to prevent this exact class | `documentation_only` "is the only bucket checkable without the build extensions" | Calling the aggregator on a config-only write-set returns `documentation_only`. The check was **rejecting three shapes the classifier accepts**, blocking valid outlines |
+
+Both were one function call from being falsified, and both were expensive to find: a full build, and
+a dispatched sub-agent. The second is the sharper warning — the sentence violating this rule sat
+three lines from the sentence stating the rule it violated, in prose written to explain a fix a
+reviewer had just asked for.
 
 The obligations below are part of that same per-round sweep, not a separate pass done once at the
 end. Each is checked **before every re-dispatch and again before the merge gate**.
