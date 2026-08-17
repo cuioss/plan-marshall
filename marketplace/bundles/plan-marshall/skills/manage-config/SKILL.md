@@ -545,7 +545,7 @@ canonical_command: quality-gate
 ```toon
 status: success
 decision: unknown
-reason: plan footprint unresolvable — worktree not yet materialised
+reason: plan footprint unresolvable — no materialized worktree carries evidence of what this plan changed
 ```
 
 The decision logic itself lives in the build-system-owned `should_execute_build` helper in `script-shared`; `build-decision` is a thin wrapper exposing it through the `manage-config` command surface (the home that already owns the `build_map` seed and footprint-matching logic the decision reuses).

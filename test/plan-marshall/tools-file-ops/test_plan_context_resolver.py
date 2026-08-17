@@ -32,6 +32,9 @@ import file_ops
 import pytest
 from file_ops import (
     NO_PLAN_SENTINEL,
+    WORKTREE_STATE_DISABLED,
+    WORKTREE_STATE_MATERIALIZED,
+    WORKTREE_STATE_PENDING,
     PlanContext,
     PlanNotFoundError,
     resolve_plan_context,
@@ -58,12 +61,17 @@ def stub_checkout_root(monkeypatch):
     return STUB_CHECKOUT_ROOT
 
 
-def _stub_worktree_query(monkeypatch, use_worktree, worktree_path=''):
-    """Stub the single ``manage-status get-worktree-path`` shell-out seam."""
+def _stub_worktree_query(monkeypatch, worktree_state, worktree_path=''):
+    """Stub the single ``manage-status get-worktree-path`` shell-out seam.
+
+    The seam yields the producer's published ``worktree_state`` discriminator,
+    not the primitive ``use_worktree`` boolean — the stub mirrors the real
+    payload so a test cannot pass against a shape production never sees.
+    """
     monkeypatch.setattr(
         file_ops,
         '_query_worktree_path',
-        lambda _pid: (use_worktree, worktree_path),
+        lambda _pid: (worktree_state, worktree_path),
     )
 
 
@@ -90,7 +98,11 @@ class TestRealPlanIdReturnsBothFaces:
         self, plan_context, monkeypatch, stub_checkout_root
     ):
         expected_dir = _create_real_plan(plan_context)
-        _stub_worktree_query(monkeypatch, use_worktree=True, worktree_path=STUB_WORKTREE)
+        _stub_worktree_query(
+            monkeypatch,
+            worktree_state=WORKTREE_STATE_MATERIALIZED,
+            worktree_path=STUB_WORKTREE,
+        )
 
         ctx = resolve_plan_context(REAL_PLAN_ID)
 
@@ -118,7 +130,7 @@ class TestRealPlanIdReturnsBothFaces:
 
         def counting_query(plan_id):
             calls.append(plan_id)
-            return True, STUB_WORKTREE
+            return WORKTREE_STATE_MATERIALIZED, STUB_WORKTREE
 
         monkeypatch.setattr(file_ops, '_query_worktree_path', counting_query)
 
@@ -137,19 +149,31 @@ class TestRealPlanIdReturnsBothFaces:
     ):
         """A persisted relative path is returned absolute, never verbatim."""
         _create_real_plan(plan_context)
-        _stub_worktree_query(monkeypatch, use_worktree=True, worktree_path='some/wt')
+        _stub_worktree_query(
+            monkeypatch,
+            worktree_state=WORKTREE_STATE_MATERIALIZED,
+            worktree_path='some/wt',
+        )
 
         ctx = resolve_plan_context(REAL_PLAN_ID)
 
         assert ctx.worktree_path.endswith('some/wt')
         assert ctx.worktree_path.startswith('/')
 
-    def test_use_worktree_true_with_empty_path_raises(
+    def test_materialized_with_empty_path_raises(
         self, plan_context, monkeypatch, stub_checkout_root
     ):
-        """``use_worktree=true`` with an empty path is corrupt metadata, not a fallback."""
+        """``materialized`` with an empty path is corrupt metadata, not a fallback.
+
+        The producer only publishes ``materialized`` when it has a non-empty
+        persisted path, so this pairing cannot arise from the contract — it means
+        the payload is self-contradictory, and guessing a working tree from it
+        would hand the caller a tree the plan never bound to.
+        """
         _create_real_plan(plan_context)
-        _stub_worktree_query(monkeypatch, use_worktree=True, worktree_path='')
+        _stub_worktree_query(
+            monkeypatch, worktree_state=WORKTREE_STATE_MATERIALIZED, worktree_path=''
+        )
 
         ctx = resolve_plan_context(REAL_PLAN_ID)
 
@@ -163,19 +187,104 @@ class TestRealPlanIdReturnsBothFaces:
 
 
 class TestRealPlanIdWithoutWorktree:
-    """``use_worktree=false`` resolves the worktree face to the main checkout."""
+    """``disabled`` resolves the worktree face to the main checkout."""
 
     def test_worktree_face_is_the_main_checkout(
         self, plan_context, monkeypatch, stub_checkout_root
     ):
         expected_dir = _create_real_plan(plan_context)
-        _stub_worktree_query(monkeypatch, use_worktree=False)
+        _stub_worktree_query(monkeypatch, worktree_state=WORKTREE_STATE_DISABLED)
 
         ctx = resolve_plan_context(REAL_PLAN_ID)
 
         assert ctx.plan_dir == expected_dir
         assert ctx.worktree_path == STUB_CHECKOUT_ROOT
         assert ctx.is_sentinel is False
+
+
+# =============================================================================
+# The published discriminator is what the faces branch on
+# =============================================================================
+
+
+class TestWorktreeStateDiscriminator:
+    """The three published states route to distinct, non-collapsing answers.
+
+    The producer (``manage-status get-worktree-path``) publishes an explicit
+    ``worktree_state``; these pin that the context branches on THAT value rather
+    than re-deriving a state from ``use_worktree`` / ``worktree_path``. The
+    ``pending`` row is the one the re-derivation got wrong: it is a normal
+    reading for every worktree-bound plan before phase-5-execute Step 2.5, and
+    it used to raise.
+    """
+
+    @pytest.mark.parametrize(
+        ('state', 'persisted_path', 'expected_path', 'expected_has_worktree'),
+        [
+            (WORKTREE_STATE_DISABLED, '', STUB_CHECKOUT_ROOT, False),
+            (WORKTREE_STATE_PENDING, '', STUB_CHECKOUT_ROOT, False),
+            (WORKTREE_STATE_MATERIALIZED, STUB_WORKTREE, STUB_WORKTREE, True),
+        ],
+        ids=['disabled', 'pending', 'materialized'],
+    )
+    def test_each_state_resolves_its_own_face(
+        self,
+        plan_context,
+        monkeypatch,
+        stub_checkout_root,
+        state,
+        persisted_path,
+        expected_path,
+        expected_has_worktree,
+    ):
+        _create_real_plan(plan_context)
+        _stub_worktree_query(
+            monkeypatch, worktree_state=state, worktree_path=persisted_path
+        )
+
+        ctx = resolve_plan_context(REAL_PLAN_ID)
+
+        assert ctx.worktree_state == state
+        assert ctx.worktree_path == expected_path
+        assert ctx.has_worktree is expected_has_worktree
+
+    def test_pending_does_not_raise(self, plan_context, monkeypatch, stub_checkout_root):
+        """A worktree opted into but not yet created is a success, not an error.
+
+        The producer publishes ``worktree_state: pending`` under ``status:
+        success`` and instructs callers to fall back to the main checkout. A
+        consumer that re-derived the state from ``use_worktree=true`` plus an
+        empty path raised instead, turning the producer's success into a
+        consumer error for every phase-1..4 reader of a worktree-bound plan.
+        """
+        _create_real_plan(plan_context)
+        _stub_worktree_query(monkeypatch, worktree_state=WORKTREE_STATE_PENDING)
+
+        ctx = resolve_plan_context(REAL_PLAN_ID)
+
+        assert ctx.worktree_path == STUB_CHECKOUT_ROOT
+
+    def test_has_worktree_is_false_while_pending(
+        self, plan_context, monkeypatch, stub_checkout_root
+    ):
+        """``has_worktree`` answers "does one exist", not "was one asked for".
+
+        Every consumer of this face refuses when it is False — the finalize
+        move-back, branch-sync-state, the footprint resolvers. A ``pending`` plan
+        has no worktree to act on, so reading ``use_worktree`` here claimed one
+        that was not there.
+        """
+        _create_real_plan(plan_context)
+        _stub_worktree_query(monkeypatch, worktree_state=WORKTREE_STATE_PENDING)
+
+        assert resolve_plan_context(REAL_PLAN_ID).has_worktree is False
+
+    def test_sentinel_state_is_disabled(self, plan_context, stub_checkout_root):
+        """The plan-less sentinel has no worktree and never will."""
+        ctx = resolve_plan_context(NO_PLAN_SENTINEL)
+
+        assert ctx.worktree_state == WORKTREE_STATE_DISABLED
+        assert ctx.has_worktree is False
 
 
 # =============================================================================
@@ -285,7 +394,11 @@ class TestSentinelWorktreeFace:
 
     def test_sentinel_face_is_never_a_worktree_path(self, plan_context, stub_checkout_root, monkeypatch):
         """Even with a worktree persisted under the sentinel id, main wins."""
-        _stub_worktree_query(monkeypatch, use_worktree=True, worktree_path=STUB_WORKTREE)
+        _stub_worktree_query(
+            monkeypatch,
+            worktree_state=WORKTREE_STATE_MATERIALIZED,
+            worktree_path=STUB_WORKTREE,
+        )
 
         ctx = resolve_plan_context(NO_PLAN_SENTINEL)
 

@@ -632,11 +632,13 @@ def _resolve_footprint(plan_id: str) -> list[str] | None:
 
     The composer-local symmetric peer of
     ``extension_base._resolve_plan_footprint``, and kept in lock-step with it: the
-    return distinguishes the same two materially different states.
+    two admit the same one worktree state and return the same two materially
+    different results.
 
-    - ``None`` — the footprint is **unresolvable** (the plan is not worktree-bound,
-      the plan-context resolver raises, ``worktree_path`` is not a directory, or
-      the diff walk raises). This is the normal condition during early compose at
+    - ``None`` — the footprint is **unresolvable** (the plan's worktree state is
+      ``pending`` or ``disabled``, the plan-context resolver raises, the worktree
+      is not a directory, or the diff walk raises). This is the normal condition
+      during early compose at
       phase-4-plan, *before* phase-5-execute Step 2.5 materialises the worktree.
       Every consumer treats it as **no evidence** — never as "nothing there" — so
       an unresolvable footprint fails toward inclusion at each gate rather than
@@ -653,7 +655,10 @@ def _resolve_footprint(plan_id: str) -> list[str] | None:
     is the gate rather than a truthiness test on the path: the resolver's
     ``worktree_path`` falls back to the main checkout for a plan that is not
     worktree-bound, so gating on the path would start deriving a main-checkout
-    footprint instead of reporting the unresolvable state.
+    footprint instead of reporting the unresolvable state. That face now answers
+    "is a worktree materialized", so a ``pending`` plan — one whose worktree
+    phase-5-execute has not created yet — reaches this gate as unresolvable
+    instead of claiming a worktree and then failing on the path lookup.
     """
     context = resolve_plan_context(plan_id, ensure=False)
     try:

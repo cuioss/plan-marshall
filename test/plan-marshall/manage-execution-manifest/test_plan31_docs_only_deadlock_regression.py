@@ -97,7 +97,7 @@ _NOT_NECESSARY_VERDICT = {
 # reports no evidence either way rather than a positive "nothing to build".
 _UNKNOWN_VERDICT = {
     'decision': 'unknown',
-    'reason': 'plan footprint unresolvable — worktree not yet materialised',
+    'reason': 'plan footprint unresolvable — no materialized worktree carries evidence of what this plan changed',
 }
 
 _WORKTREE_SHA = 'f' * 64

@@ -820,7 +820,7 @@ The six checks correspond to:
 2. **Skill Resolution Valid**: Every non-verification task has a non-empty `domain` and every `skills[]` entry matches the `bundle:skill` shape.
 3. **Dependency Graph Acyclic**: `depends_on` across all tasks forms a DAG (Kahn-style topological pass).
 4. **Steps Valid**: Every step target on non-verification tasks resolves on disk.
-5. **Keyword-drift**: Planning-domain keywords (`PR review`, `CI`, `merge comments`, `pipeline`, `automated review`, `build check`, `review comments`) appearing in a `task.description` but absent from the parent deliverable's haystack (title + metadata + profiles + affected files + verification).
+5. **Keyword-drift**: Planning-domain keywords (`PR review`, `CI`, `merge comments`, `pipeline`, `automated review`, `build check`, `review comments`) appearing in a `task.description` but absent from the parent deliverable's haystack (title + metadata + profiles + affected files + verification **+ the deliverable's own prose body**). The prose is part of the haystack because the check asks whether a task says something its deliverable does not, and a deliverable says things in prose — the intent gloss, the change-per-file narrative, the success criteria — not only in its structured fields; without it a task quoting its own deliverable was flagged for drift. This is the same body the structural-token-drift recipe in Step 9 reads, so the two checks agree on what "the deliverable" means.
 6. **Structural-token-drift**: `TASK-NNN` numbering monotonic, starting at `TASK-001`, no gaps.
 
 Parse the return TOON: `total_failed` is the aggregate finding count for the

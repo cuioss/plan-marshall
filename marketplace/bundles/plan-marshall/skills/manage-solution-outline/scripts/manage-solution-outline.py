@@ -37,6 +37,7 @@ from _architecture_core import (
 )
 from _plan_parsing import (
     _slugify_section_name,
+    deliverable_write_set,
     extract_deliverables,
     is_foreign_path,
     parse_document_sections,
@@ -176,12 +177,97 @@ def validate_solution_structure(content: str) -> tuple[list[str], list[str], dic
     return errors, warnings, info
 
 
+#: The one bucket value that asserts a deliverable changes no code. It is the
+#: only bucket whose claim is checkable without the build extensions, because
+#: documentation is recognised by an owner-less suffix rule rather than by a
+#: build system's claim — see ``_manifest_core._is_documentation_path``.
+_DOCUMENTATION_ONLY_BUCKET = 'documentation_only'
+
+
+def _is_documentation_only_write_set(write_set: list[str]) -> bool | None:
+    """Whether every declared write is documentation, per the owner-less rule.
+
+    Delegates to ``_manifest_core._is_documentation_path`` — the aggregator's own
+    extension-agnostic documentation predicate — rather than restating a suffix
+    list here. A second copy of "what counts as documentation" is exactly the
+    drift that lets the declared bucket and the derived one disagree while both
+    look right.
+
+    Returns ``None`` when the predicate cannot be imported, so the caller skips
+    the check rather than guessing. The import is deferred and fail-open for the
+    same reason ``_findings_core`` is elsewhere in this tree: outline validation
+    must not hard-fail because a sibling skill's module is unavailable on the
+    current path.
+    """
+    try:
+        from _manifest_core import _is_documentation_path
+    except ImportError:
+        return None
+    return all(_is_documentation_path(path) for path in write_set)
+
+
+def _check_declared_bucket(
+    num: int, deliverable: dict[str, Any], write_set: list[str]
+) -> list[str]:
+    """Check the recorded ``<!-- bucket: X -->`` against the declared write-set.
+
+    The bucket is the audit trail for the deliverable's profile assignment, and
+    it was authored by hand and read back by nobody — so a bucket that
+    contradicted the very files it describes reached phase-4-plan unchallenged,
+    and the profiles it licensed rode along with it.
+
+    Only the ``documentation_only`` claim is adjudicated, in both directions:
+
+    * declared ``documentation_only`` while the write-set contains a non-doc
+      path — the deliverable changes code under a bucket that forbids the
+      testing profiles;
+    * declared as some other bucket while every declared WRITE is documentation
+      — the classic read-only-reference flip, where a consulted ``.py`` or test
+      file in ``affected_files`` pulled a docs-only deliverable onto the code
+      path.
+
+    The remaining five buckets separate production from test from config, which
+    is a build-system-owned judgement (``BuildExtensionBase.classify_paths``)
+    and not adjudicable from paths alone here. They are deliberately left
+    unchecked rather than approximated: a partial re-derivation of the build
+    extensions' claims would be a second, weaker classifier competing with the
+    aggregator, which is the defect this check exists to catch.
+
+    A deliverable with an empty write-set is skipped — a verification-only
+    deliverable declares no writes, so there is nothing for a bucket to
+    contradict.
+    """
+    declared = deliverable.get('declared_bucket')
+    if not declared or not write_set:
+        return []
+    doc_only = _is_documentation_only_write_set(write_set)
+    if doc_only is None:
+        return []
+
+    declared_is_doc_only = declared == _DOCUMENTATION_ONLY_BUCKET
+    if declared_is_doc_only == doc_only:
+        return []
+
+    if declared_is_doc_only:
+        return [
+            f'D{num}: declared bucket {_DOCUMENTATION_ONLY_BUCKET!r} contradicts the '
+            f'write-set, which changes non-documentation files: '
+            f'{[p for p in write_set if not _is_documentation_only_write_set([p])]}'
+        ]
+    return [
+        f'D{num}: declared bucket {declared!r} contradicts the write-set, in which '
+        f'every changed file is documentation: {write_set}. A file declared '
+        f'(read) is consulted, not changed, and must not decide the bucket.'
+    ]
+
+
 def validate_deliverable_contract(deliverable: dict[str, Any]) -> tuple[list[str], list[str]]:
     """Validate a single deliverable against the deliverable contract.
 
     Contract requires:
     - Metadata block with required fields
     - Profiles block with valid profiles
+    - A declared file-type bucket consistent with the declared write-set
     - Affected files with explicit paths
     - Verification section
     - Success criteria
@@ -234,19 +320,24 @@ def validate_deliverable_contract(deliverable: dict[str, Any]) -> tuple[list[str
             if profile not in valid_profiles:
                 errors.append(f"D{num}: Invalid profile '{profile}' (must be one of: {', '.join(valid_profiles)})")
 
-    # Check 2b: Warn when module_testing profile but no test files in affected files.
-    # Each affected-file entry is a {path, intent} object.
-    affected_files = deliverable.get('affected_files', [])
-    if 'module_testing' in profiles and affected_files:
+    # Check 2b: Warn when module_testing profile but no test files in the WRITE-SET.
+    # The write-set, not the whole affected-files list: a deliverable that merely
+    # READS a test file for reference has not thereby acquired a test surface, and
+    # scanning the wholesale list let one such reference satisfy the profile.
+    write_set = deliverable_write_set(deliverable)
+    if 'module_testing' in profiles and write_set:
         test_indicators = ('test/', 'Test.', '_test.', 'test_', '.test.', 'spec/', '/tests/')
         has_test_files = any(
-            any(indicator in entry.get('path', '') for indicator in test_indicators) for entry in affected_files
+            any(indicator in path for indicator in test_indicators) for path in write_set
         )
         if not has_test_files:
             warnings.append(
-                f'D{num}: module_testing profile but no test files detected in affected files '
-                f'(expected paths containing: test/, Test., _test., test_, .test., spec/)'
+                f'D{num}: module_testing profile but no test files detected in the declared '
+                f'write-set (expected paths containing: test/, Test., _test., test_, .test., spec/)'
             )
+
+    # Check 2c: the declared file-type bucket must agree with the write-set.
+    errors.extend(_check_declared_bucket(num, deliverable, write_set))
 
     # Check 3: Affected files section
     affected_files = deliverable.get('affected_files', [])
@@ -977,16 +1068,21 @@ def main() -> int:
             output_toon(_routing.emit_mutually_exclusive_error(getattr(args, 'plan_id', None), args.project_dir))
             return 2
         except _routing.WorktreeResolutionError as exc:
-            # This routing block runs only for ``get-module-context`` — the
-            # sole subcommand declaring ``--project-dir`` — and that verb is a
-            # read-only architecture reader. A plan with ``use_worktree=true``
-            # has no materialized worktree until phase-5-execute (ADR-002), so
-            # phase-3-outline, the one phase that consumes this verb, always
-            # meets that window and would otherwise be rejected outright.
-            # Degrade to the cwd-relative checkout root and record why, so the
-            # payload names the checkout it read from instead of failing. The
-            # shared resolver keeps its fatal contract for every write-side
-            # caller; only this reader degrades.
+            # This degrade no longer covers the pre-materialization window, and
+            # must not be read as though it does. A plan with
+            # ``use_worktree=true`` whose worktree phase-5-execute has not
+            # created yet (ADR-002) is the ``pending`` state, and the shared
+            # resolver now branches on the producer's ``worktree_state``
+            # discriminator and returns the main checkout for it — so this verb
+            # never sees an exception for the ordinary phase-3-outline window it
+            # was written to survive.
+            #
+            # What remains here is the genuine-failure path: the executor cannot
+            # be located, ``manage-status`` fails, or the payload carries no
+            # recognised state. This verb is a read-only architecture reader, so
+            # it degrades to the cwd-relative checkout root and records why
+            # rather than failing outright; the shared resolver keeps its fatal
+            # contract for every write-side caller.
             args.project_dir = cwd_checkout_root()
             args.worktree_fallback_reason = str(exc)
 

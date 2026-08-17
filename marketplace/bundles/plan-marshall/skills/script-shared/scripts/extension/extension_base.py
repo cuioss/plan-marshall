@@ -472,19 +472,42 @@ def _read_build_map_globs(project_root: str | None = None) -> list[str]:
 def _resolve_plan_footprint(plan_id: str) -> list[str] | None:
     """Derive the live plan footprint for ``plan_id`` on demand.
 
-    Reads ``status.metadata.worktree_path`` to locate the worktree, then derives
-    the footprint live via ``compute_plan_branch_diff`` (``{base}...HEAD`` ∪
-    porcelain).
+    Branches on the plan's worktree-state discriminator to locate the working
+    tree, then derives the footprint live via ``compute_plan_branch_diff``
+    (``{base}...HEAD`` ∪ porcelain).
+
+    The state is obtained from ``file_ops.derive_worktree_state`` — the same
+    function ``manage-status get-worktree-path`` publishes its
+    ``worktree_state`` from — rather than re-read out of the primitive
+    ``use_worktree`` / ``worktree_path`` fields here. Reading those primitives
+    directly made a ``disabled`` plan indistinguishable from a ``pending`` one,
+    so every non-worktree plan reported its footprint permanently unresolvable
+    and carried the reason "worktree not yet materialised" — a statement that is
+    not merely unhelpful for such a plan but false, since no worktree will ever
+    be materialised for it.
+
+    Only a MATERIALIZED worktree yields a footprint. The other two states are
+    distinct reasons for the same ``None``, and keeping them distinct is the
+    point: ``pending`` means the evidence does not exist YET, ``disabled`` means
+    a worktree will never carry it. Neither is "the metadata is broken", which is
+    what the old primitive read reported for both.
+
+    Deriving a ``disabled`` plan's footprint from the main checkout is
+    deliberately NOT done here. It is a cross-cutting policy question — every
+    footprint gate in the tree (``manage-references``, the composer's own
+    ``_resolve_footprint``) treats "no materialized worktree" as "no derivable
+    footprint", and a main checkout carries no marker distinguishing the plan's
+    changes from whatever else is uncommitted in it. Changing that belongs with
+    those consumers, not inside this one resolver.
 
     The return distinguishes two materially different states that a single
     empty list used to collapse:
 
     - ``None`` — the footprint is **unresolvable**: no ``status.json``, malformed
-      status, an absent/empty ``worktree_path``, a ``worktree_path`` that is not a
-      directory, or ``compute_plan_branch_diff`` raising. This is the normal
-      condition during early compose (phase-4-plan), *before* phase-5-execute
-      Step 2.5 materialises the worktree. There is no evidence either way about
-      what changed, so :func:`should_execute_build` reports ``unknown``.
+      status, a ``pending`` or ``disabled`` worktree state, a ``worktree_path``
+      that is not a directory, or ``compute_plan_branch_diff`` raising. There is
+      no evidence either way about what changed, so
+      :func:`should_execute_build` reports ``unknown``.
     - ``[]`` — the worktree **is** resolvable and its diff is genuinely empty.
       Nothing changed, so :func:`should_execute_build` reports ``not_necessary``.
 
@@ -497,7 +520,7 @@ def _resolve_plan_footprint(plan_id: str) -> list[str] | None:
         plan_id: Plan identifier whose footprint to resolve.
 
     Returns:
-        The sorted repo-relative footprint paths for a resolvable worktree
+        The sorted repo-relative footprint paths for a resolvable working tree
         (possibly empty), or ``None`` when the footprint is unresolvable.
     """
     import json as _json
@@ -509,7 +532,12 @@ def _resolve_plan_footprint(plan_id: str) -> list[str] | None:
         resolve_base_ref,
     )
     from constants import FILE_REFERENCES, FILE_STATUS
-    from file_ops import get_plan_dir, read_json
+    from file_ops import (
+        WORKTREE_STATE_MATERIALIZED,
+        derive_worktree_state,
+        get_plan_dir,
+        read_json,
+    )
 
     status_path = get_plan_dir(plan_id) / FILE_STATUS
     if not status_path.exists():
@@ -520,14 +548,11 @@ def _resolve_plan_footprint(plan_id: str) -> list[str] | None:
         return None
     if not isinstance(status, dict):
         return None
-    metadata = status.get('metadata', {})
-    if not isinstance(metadata, dict):
+    worktree_state, worktree_path = derive_worktree_state(status.get('metadata'))
+    if worktree_state != WORKTREE_STATE_MATERIALIZED:
         return None
-    worktree_path = metadata.get('worktree_path', '')
-    if not isinstance(worktree_path, str) or not worktree_path:
-        return None
-    worktree = _Path(worktree_path)
-    if not worktree.is_dir():
+    working_tree = _Path(worktree_path)
+    if not working_tree.is_dir():
         return None
 
     refs_path = get_plan_dir(plan_id) / FILE_REFERENCES
@@ -539,7 +564,7 @@ def _resolve_plan_footprint(plan_id: str) -> list[str] | None:
         refs = {}
     base_ref = resolve_base_ref(None, refs)
     try:
-        footprint = compute_plan_branch_diff(worktree, base_ref)
+        footprint = compute_plan_branch_diff(working_tree, base_ref)
     except _subprocess.CalledProcessError:
         return None
     return sorted(footprint)
@@ -624,7 +649,10 @@ def should_execute_build(
     if footprint is None:
         return {
             'decision': 'unknown',
-            'reason': 'plan footprint unresolvable — worktree not yet materialised',
+            'reason': (
+                'plan footprint unresolvable — no materialized worktree carries '
+                'evidence of what this plan changed'
+            ),
             **label,
         }
     if not footprint:

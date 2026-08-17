@@ -28,7 +28,15 @@ from constants import (
     PHASE_STATUS_DONE,
     PHASE_STATUS_IN_PROGRESS,
 )
-from file_ops import get_base_dir, get_worktree_root, now_utc_iso
+from file_ops import (
+    WORKTREE_STATE_DISABLED,
+    WORKTREE_STATE_MATERIALIZED,
+    WORKTREE_STATE_PENDING,
+    derive_worktree_state,
+    get_base_dir,
+    get_worktree_root,
+    now_utc_iso,
+)
 from marketplace_paths import PLAN_DIR_NAME, resolve_main_anchored_path
 
 # Metadata fields that are semantically boolean. The ``metadata --set`` CLI
@@ -443,24 +451,26 @@ def cmd_get_worktree_path(args: argparse.Namespace) -> dict[str, Any] | None:
         return None
 
     metadata = status.get('metadata') or {}
-    use_worktree = bool(metadata.get('use_worktree', False))
+    # The state machine is derived by the ONE function that owns it, so the
+    # published discriminator and any consumer that reads status metadata
+    # directly (rather than shelling out here) cannot drift apart.
+    worktree_state, worktree_path = derive_worktree_state(metadata)
 
-    if not use_worktree:
+    if worktree_state == WORKTREE_STATE_DISABLED:
         return {
             'status': 'success',
             'plan_id': args.plan_id,
             'use_worktree': False,
-            'worktree_state': 'disabled',
+            'worktree_state': WORKTREE_STATE_DISABLED,
             'worktree_path': '',
         }
 
-    worktree_path = metadata.get('worktree_path')
-    if not worktree_path:
+    if worktree_state == WORKTREE_STATE_PENDING:
         pending: dict[str, Any] = {
             'status': 'success',
             'plan_id': args.plan_id,
             'use_worktree': True,
-            'worktree_state': 'pending',
+            'worktree_state': WORKTREE_STATE_PENDING,
             'worktree_path': '',
             'not_yet_materialized': True,
         }
@@ -473,7 +483,7 @@ def cmd_get_worktree_path(args: argparse.Namespace) -> dict[str, Any] | None:
         'status': 'success',
         'plan_id': args.plan_id,
         'use_worktree': True,
-        'worktree_state': 'materialized',
+        'worktree_state': WORKTREE_STATE_MATERIALIZED,
         'worktree_path': worktree_path,
     }
     worktree_branch = metadata.get('worktree_branch')

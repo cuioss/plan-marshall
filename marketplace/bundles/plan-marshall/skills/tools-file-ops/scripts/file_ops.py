@@ -663,6 +663,65 @@ def get_build_results_dir(plan_id: str) -> Path:
     return results_dir
 
 
+#: The plan runs against the main checkout — ``use_worktree`` is false (or the
+#: metadata is absent entirely). No worktree will ever be materialized for it.
+WORKTREE_STATE_DISABLED = 'disabled'
+#: The plan opted into a worktree that has NOT been materialized yet. This is
+#: the normal state for every worktree-bound plan before phase-5-execute Step
+#: 2.5 (ADR-002), so it is an expected reading — never corrupt metadata.
+WORKTREE_STATE_PENDING = 'pending'
+#: The worktree exists and its persisted path is authoritative.
+WORKTREE_STATE_MATERIALIZED = 'materialized'
+
+#: The closed three-state vocabulary of the worktree contract. A value outside
+#: this set is a producer/consumer contract break, not a state to interpret.
+VALID_WORKTREE_STATES = (
+    WORKTREE_STATE_DISABLED,
+    WORKTREE_STATE_PENDING,
+    WORKTREE_STATE_MATERIALIZED,
+)
+
+
+def derive_worktree_state(metadata: Any) -> tuple[str, str]:
+    """Derive ``(worktree_state, worktree_path)`` from a plan's status metadata.
+
+    The SINGLE definition of the worktree contract's three-state machine. The
+    producer — ``manage-status get-worktree-path`` — publishes its output as an
+    explicit ``worktree_state`` discriminator, and every consumer branches on
+    that published value (see :func:`_parse_get_worktree_path_output`). A
+    consumer that reads ``status.json`` metadata directly rather than shelling
+    out calls THIS function instead of re-implementing the rule, so there is one
+    definition of the state machine in the tree rather than one per reader.
+
+    Why that matters: re-deriving the state from the primitive ``use_worktree``
+    and ``worktree_path`` fields is where a legitimate ``pending`` reading
+    silently collapses into an error, and where a ``disabled`` plan becomes
+    indistinguishable from a ``pending`` one — two plans whose correct handling
+    differs (a ``pending`` worktree will exist later; a ``disabled`` one never
+    will).
+
+    Args:
+        metadata: The plan's ``status.metadata`` mapping, or any non-mapping
+            value (treated as absent metadata → ``disabled``).
+
+    Returns:
+        ``(state, worktree_path)`` where ``state`` is one of
+        :data:`VALID_WORKTREE_STATES`. ``worktree_path`` is ``''`` for every
+        state except :data:`WORKTREE_STATE_MATERIALIZED`, whose path is the
+        persisted value verbatim (NOT absolutized — that is the caller's
+        decision, since a metadata reader and a subprocess consumer normalize
+        differently).
+    """
+    if not isinstance(metadata, dict):
+        return WORKTREE_STATE_DISABLED, ''
+    if not bool(metadata.get('use_worktree', False)):
+        return WORKTREE_STATE_DISABLED, ''
+    worktree_path = metadata.get('worktree_path')
+    if not isinstance(worktree_path, str) or not worktree_path:
+        return WORKTREE_STATE_PENDING, ''
+    return WORKTREE_STATE_MATERIALIZED, worktree_path
+
+
 class WorktreeResolutionError(RuntimeError):
     """Raised when the worktree face of a plan context cannot be resolved.
 
@@ -728,13 +787,18 @@ def _run_get_worktree_path(plan_id: str) -> str:
     return completed.stdout
 
 
-def _query_worktree_path(plan_id: str) -> tuple[bool, str]:
-    """Return ``(use_worktree, worktree_path)`` for a plan id.
+def _query_worktree_path(plan_id: str) -> tuple[str, str]:
+    """Return ``(worktree_state, worktree_path)`` for a plan id.
 
     The worktree-path face of the single ``get-worktree-path`` channel; the
     branch face is :func:`_query_worktree_branch`. Both are separate seams so a
     consumer that needs only one pays for only one, and each can be stubbed
     independently in tests.
+
+    The first element is the producer's published ``worktree_state``
+    discriminator — one of :data:`VALID_WORKTREE_STATES` — NOT the primitive
+    ``use_worktree`` boolean it used to be. The three states route differently
+    and a boolean cannot express them.
 
     Raises:
         WorktreeResolutionError: when the executor cannot be located, the
@@ -793,7 +857,7 @@ def _parse_get_worktree_branch_output(stdout: str) -> str:
     return branch
 
 
-def _parse_get_worktree_path_output(stdout: str) -> tuple[bool, str]:
+def _parse_get_worktree_path_output(stdout: str) -> tuple[str, str]:
     """Parse the TOON payload produced by manage-status get-worktree-path.
 
     The output is a flat key/value document with the shape::
@@ -801,12 +865,29 @@ def _parse_get_worktree_path_output(stdout: str) -> tuple[bool, str]:
         status: success
         plan_id: X
         use_worktree: false
+        worktree_state: disabled
         worktree_path: ""
 
     Rather than pulling in the full ``toon_parser``, the shallow payload is
     walked manually — the contract is owned by ``_status_query.py``.
+
+    ``worktree_state`` is the producer's EXPLICIT discriminator over a
+    three-state contract, and it is what this parser returns. The primitive
+    ``use_worktree`` / ``worktree_path`` pair is deliberately NOT re-derived
+    into a state here: that re-derivation cannot distinguish a plan that will
+    never have a worktree (``disabled``) from one whose worktree simply does not
+    exist yet (``pending``), and the two route differently downstream.
+
+    Fails closed on a missing or unrecognised ``worktree_state``: a producer
+    that stopped publishing the discriminator is a contract break, and guessing
+    a state from the primitives is precisely the re-derivation this parser
+    exists to remove.
+
+    Raises:
+        WorktreeResolutionError: on a non-success payload, or on a payload
+            carrying no recognised ``worktree_state``.
     """
-    use_worktree = False
+    worktree_state = ''
     worktree_path = ''
     saw_status_success = False
     error_field: str | None = None
@@ -822,8 +903,8 @@ def _parse_get_worktree_path_output(stdout: str) -> tuple[bool, str]:
             value = value[1:-1]
         if key == 'status' and value == 'success':
             saw_status_success = True
-        elif key == 'use_worktree':
-            use_worktree = value.lower() == 'true'
+        elif key == 'worktree_state':
+            worktree_state = value
         elif key == 'worktree_path':
             worktree_path = value
         elif key == 'error':
@@ -835,7 +916,15 @@ def _parse_get_worktree_path_output(stdout: str) -> tuple[bool, str]:
             f"manage-status get-worktree-path returned non-success: "
             f"error='{error_field}' message='{message_field}'"
         )
-    return use_worktree, worktree_path
+    if worktree_state not in VALID_WORKTREE_STATES:
+        raise WorktreeResolutionError(
+            f'manage-status get-worktree-path published no recognised '
+            f'worktree_state (got {worktree_state!r}; expected one of '
+            f'{list(VALID_WORKTREE_STATES)}). The discriminator is the '
+            'contract — the state is never guessed from use_worktree / '
+            'worktree_path.'
+        )
+    return worktree_state, worktree_path
 
 
 def cwd_checkout_root() -> str:
@@ -865,8 +954,9 @@ class PlanContext:
     """The resolved plan context: plan directory, worktree faces, sentinel flag.
 
     The single struct every plan-id consumer resolves against. ``plan_dir`` is
-    computed eagerly (it is a pure path join); the three worktree faces —
-    ``worktree_path``, ``has_worktree`` and ``worktree_branch`` — are computed
+    computed eagerly (it is a pure path join); the worktree faces —
+    ``worktree_state``, ``worktree_path``, ``has_worktree`` and
+    ``worktree_branch`` — are computed
     LAZILY on first access, because resolving them shells out to
     ``manage-status get-worktree-path``. The laziness is load-bearing:
     ``get_plan_dir``
@@ -880,7 +970,7 @@ class PlanContext:
     plan_dir: Path
     is_sentinel: bool
     _worktree_path: str | None = field(default=None, init=False, repr=False)
-    _worktree_query: tuple[bool, str] | None = field(
+    _worktree_query: tuple[str, str] | None = field(
         default=None, init=False, repr=False
     )
     _worktree_branch: str | None = field(default=None, init=False, repr=False)
@@ -892,8 +982,12 @@ class PlanContext:
         For the ``NO_PLAN`` sentinel this is ALWAYS the main checkout — a
         plan-less caller has no worktree, so the sentinel never resolves to
         one. For a real plan id the value comes from ``manage-status
-        get-worktree-path``: the persisted ``worktree_path`` when
-        ``use_worktree`` is true, else the main-checkout root.
+        get-worktree-path``: the persisted ``worktree_path`` when the published
+        ``worktree_state`` is ``materialized``, else the main-checkout root.
+        Both non-materialized states resolve to the main checkout because that
+        is the tree those plans are actually working in — a ``disabled`` plan
+        permanently, a ``pending`` one until phase-5-execute creates its
+        worktree.
 
         Raises:
             WorktreeResolutionError: when resolution fails for a real plan id.
@@ -903,8 +997,30 @@ class PlanContext:
         return self._worktree_path
 
     @property
+    def worktree_state(self) -> str:
+        """The producer's three-state worktree discriminator for this plan.
+
+        One of :data:`VALID_WORKTREE_STATES`. The sentinel is always
+        :data:`WORKTREE_STATE_DISABLED` — a plan-less caller has no worktree and
+        never will.
+
+        This is the face a consumer branches on when the three states route
+        differently — in particular when ``pending`` (a worktree that does not
+        exist YET) and ``disabled`` (a worktree that will never exist) call for
+        different handling. :attr:`has_worktree` collapses the same reading to
+        the one boolean question "is a worktree materialized right now", which
+        is all most consumers need.
+
+        Raises:
+            WorktreeResolutionError: when resolution fails for a real plan id.
+        """
+        if self.is_sentinel:
+            return WORKTREE_STATE_DISABLED
+        return self._worktree_face_query()[0]
+
+    @property
     def has_worktree(self) -> bool:
-        """Whether this plan is bound to a DEDICATED worktree.
+        """Whether a DEDICATED worktree is materialized for this plan right now.
 
         Distinct from :attr:`worktree_path`, which always yields a usable
         working-tree root (falling back to the main checkout). A consumer that
@@ -913,12 +1029,18 @@ class PlanContext:
         inferring "no worktree" from a path it cannot tell apart from a
         legitimate main-checkout binding. Always ``False`` for the sentinel.
 
+        True for :data:`WORKTREE_STATE_MATERIALIZED` ONLY. A ``pending`` plan —
+        one that opted into a worktree that phase-5-execute has not created yet
+        — reads ``False``, because the question is whether a worktree EXISTS,
+        not whether one was asked for. Reading the primitive ``use_worktree``
+        flag here answered the second question while every caller was asking the
+        first, so a pre-materialization plan claimed a worktree it did not have
+        and then failed on the path lookup.
+
         Raises:
             WorktreeResolutionError: when resolution fails for a real plan id.
         """
-        if self.is_sentinel:
-            return False
-        return self._worktree_face_query()[0]
+        return self.worktree_state == WORKTREE_STATE_MATERIALIZED
 
     @property
     def worktree_branch(self) -> str:
@@ -937,20 +1059,32 @@ class PlanContext:
             self._worktree_branch = _query_worktree_branch(self.plan_id)
         return self._worktree_branch
 
-    def _worktree_face_query(self) -> tuple[bool, str]:
+    def _worktree_face_query(self) -> tuple[str, str]:
         if self._worktree_query is None:
             self._worktree_query = _query_worktree_path(self.plan_id)
         return self._worktree_query
 
     def _resolve_worktree_face(self) -> str:
+        """Branch on the published discriminator; never re-derive the state.
+
+        ``materialized`` yields the persisted path (absolutized); ``pending``
+        and ``disabled`` both yield the main checkout, which is the working tree
+        those plans genuinely operate in. ``pending`` falling back is the
+        producer's own documented instruction — a worktree-bound plan has no
+        worktree until phase-5-execute Step 2.5 (ADR-002), so every phase-1..4
+        consumer reads ``pending`` as a matter of course. Raising there turned a
+        producer ``status: success`` into a consumer error and forced one
+        read-only caller to special-case it; branching on the discriminator
+        removes both.
+        """
         if self.is_sentinel:
             return cwd_checkout_root()
-        use_worktree, worktree_path = self._worktree_face_query()
-        if use_worktree:
+        state, worktree_path = self._worktree_face_query()
+        if state == WORKTREE_STATE_MATERIALIZED:
             if not worktree_path:
                 raise WorktreeResolutionError(
-                    f"Plan '{self.plan_id}' reports use_worktree=true but "
-                    'worktree_path is empty.'
+                    f"Plan '{self.plan_id}' reports worktree_state=materialized "
+                    'but worktree_path is empty.'
                 )
             return os.path.abspath(worktree_path)
         return cwd_checkout_root()

@@ -392,7 +392,7 @@ class TestPrePushQualityGateInactive:
             'should_execute_build',
             lambda command, plan_id, project_root=None: {
                 'decision': 'unknown',
-                'reason': 'plan footprint unresolvable — worktree not yet materialised',
+                'reason': 'plan footprint unresolvable — no materialized worktree carries evidence of what this plan changed',
                 'canonical_command': command,
             },
         )
