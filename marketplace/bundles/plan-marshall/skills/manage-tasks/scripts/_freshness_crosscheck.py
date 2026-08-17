@@ -30,9 +30,12 @@ Three-valued verdict, never collapsed
     auditable and related; the gate may pass on it.
 
 :data:`REFUTED`
-    The architecture resolved a non-empty notation set and the row's notation is
-    not in it — or the row carries no notation at all. Either way the row cannot
-    be evidence of a build of this project, and the gate MUST fail closed.
+    The architecture resolved a non-empty notation set and **no** candidate row's
+    notation is in it — including the case where no candidate carries a usable
+    notation at all (missing, empty, or not a string). It is the whole candidate
+    list that is refuted, never a single row: one corroborating row is enough to
+    pass. No candidate can then be evidence of a build of this project, and the
+    gate MUST fail closed.
 
 :data:`UNVERIFIED`
     The notation set could not be established (the crawl raised, or resolved no
@@ -97,29 +100,40 @@ gate's ``fresh`` as *"tests are fresh"* while its predicate only says *"some bui
 succeeded"*, which a compile-only build satisfies. If the model were the problem,
 the fix would belong in the row, not in a reader.
 
-**The row is not the problem, and that was checked rather than assumed.**
-``_ledger_core.build_record`` already records ``args`` — the executor argv, e.g.
-``run --command-args "verify plan-marshall"`` — and ``command``, the line the
-wrapper actually ran, e.g. ``./pw verify plan-marshall``. The executor stamps
-``args`` on every build-class dispatch (``_append_build_ledger_record`` passes
-``' '.join(script_args)``). So *which canonical command ran* is recoverable from
-the row today, exactly as *which build system ran* is recoverable from
-``notation``. Both weaknesses are consumer-side: the row carries the evidence and
-the gate reads neither field.
+**The row already carries more than the gate reads — checked, not assumed.**
+``_ledger_core.build_record`` records ``notation``, and it also records ``args``
+(the executor argv, stamped on every build-class dispatch as
+``' '.join(script_args)``) and ``command`` (the line the wrapper reported running).
+The gate historically read none of the three. This module makes it read
+``notation``.
 
-⇒ **The model-level fix is therefore not the one that was rejected — it is the one
-that turned out to be unnecessary.** What this module does is read a field the row
-already has.
+⚠ **That is not the same as saying the row is sufficient for a TIER claim, and the
+difference is why the tier question is left alone.** ``args`` is joined
+**without quoting**, so a module-scoped ``run --command-args "verify plan-marshall"``
+is stamped as ``run --command-args verify plan-marshall`` and re-parsing it cannot
+tell that canonical apart from a whole-project ``verify`` — the argument boundary
+is gone. ``command`` is sourced from the wrapper's stdout payload and is ``None``
+whenever that payload was unreadable, which includes every killed build. So the
+row holds *evidence about* which canonical ran, not a field a consumer can read a
+tier off cleanly. Whether that evidence is enough, or whether the producer must
+stamp the canonical explicitly, is a real open question — and answering it is
+exactly the model-level work this module is NOT doing.
 
-⛔ **The tier question is deliberately NOT answered here, and that is a scope
-boundary rather than an oversight.** Making the gate require a test-running tier
-would change what the gate *means* — every document defines it as "a successful
-build was observed against this tree", never "tests ran" — and it would need a
-per-build-system ruling on which canonical commands count as test-running. Get
-that ruling wrong in the strict direction and the result is the mirror-image false
-signal: a legitimate transition refused because the plan's footprint only ever
-warranted a compile. That is its own change, with its own risk, and it is not
-smuggled in behind this one.
+⛔ **The tier question is deliberately NOT answered here, and this is a scope
+boundary, not a claim that the boundary is free.** Two costs make it its own
+change rather than a rider on this one. First, it would change what the gate
+*means*, and the documents do not currently agree on what that is: this skill's
+own contract says "a successful build was observed against this tree", while
+``phase-6-finalize/standards/push.md`` says freshness "verifies that the most
+recent ``verify`` run actually observed this version of the code" and
+``phase-6-finalize/SKILL.md`` says it validates "that a ``verify`` was actually
+performed". ⭐ **That disagreement is the tier defect, stated in prose** — the
+consumer-facing docs already promise the stronger claim the predicate does not
+make, which is why closing it needs a deliberate ruling rather than a patch here.
+Second, it needs a per-build-system decision on which canonicals count as
+test-running, and getting that wrong in the strict direction produces the
+mirror-image false signal: a legitimate transition refused because the footprint
+only ever warranted a compile.
 
 Structural stale verdicts are NOT this module's business
 ========================================================
@@ -142,7 +156,11 @@ REFUTED = 'refuted'
 #: The notation set could not be established; relatedness is unknown.
 UNVERIFIED = 'unverified'
 
-#: ``notation_cross_check_reason`` when the architecture resolver raised.
+#: ``notation_cross_check_reason`` when the resolver was reached and could not
+#: produce a usable set — it raised while running, or it returned something that
+#: is not a set of notations at all. Both are faults in the resolution rather
+#: than in reaching it, which is what separates this from
+#: :data:`REASON_RESOLVER_UNIMPORTABLE`.
 REASON_RESOLUTION_FAILED = 'architecture_resolution_failed'
 #: ``notation_cross_check_reason`` when the resolver could not even be IMPORTED.
 #: Distinct from :data:`REASON_RESOLUTION_FAILED` because the two are different
@@ -183,26 +201,39 @@ def resolve_expected_notations(project_dir: str) -> tuple[frozenset[str], str | 
 
         The three inabilities are named apart rather than folded, because they
         have different owners: :data:`REASON_RESOLVER_UNIMPORTABLE` is a fault in
-        THIS check's own deployment, :data:`REASON_RESOLUTION_FAILED` is a fault
-        the resolver hit while running, and
-        :data:`REASON_NO_NOTATIONS_RESOLVED` is the ordinary un-crawled project.
+        THIS check's own deployment (the resolver could not even be reached),
+        :data:`REASON_RESOLUTION_FAILED` is a fault in the resolution itself (it
+        raised while running, or returned a value that is not a set of
+        notations), and :data:`REASON_NO_NOTATIONS_RESOLVED` is the ordinary
+        un-crawled project.
         All three pass the gate, so the distinction buys nothing there and
         everything for a reader asking why nothing ever corroborates.
     """
     try:
         from _cmd_client_query import resolve_project_build_notations
-    except ImportError:
+    except Exception:  # noqa: BLE001 — see below: an import can fail as more than ImportError
+        # NOT just ``ImportError``. Importing this module executes another
+        # skill's module body, and that body can raise anything: today
+        # ``_cmd_client_build`` resolves its bundles root at module scope via
+        # ``marketplace_paths.resolve_bundles_root``, which raises ``RuntimeError``
+        # by design "so import-time misconfiguration fails loudly". Loudly is
+        # right for a build tool and wrong here — it escaped this function
+        # entirely, past the guard below, and gave the gate's callers a traceback
+        # instead of a TOON ``status``. Every failure raised WHILE importing is a
+        # deployment or PYTHONPATH fault, which is exactly what
+        # REASON_RESOLVER_UNIMPORTABLE names, so all of them map to it.
         return frozenset(), REASON_RESOLVER_UNIMPORTABLE
     try:
         notations = resolve_project_build_notations(project_dir)
     except Exception:  # noqa: BLE001 — any resolver failure is an inability, not a refutation
         return frozenset(), REASON_RESOLUTION_FAILED
-    # The resolver's annotation promises a frozenset and nothing enforces it. A
-    # non-container passes the truthiness test below and then raises TypeError
-    # from the ``in`` comparison in cross_check_candidates — OUTSIDE this try, so
-    # it would escape the gate and break the never-raises contract. The guard
-    # belongs here rather than at the comparison because this is the function
-    # whose job is to turn every inability into a named reason.
+    # Defence against a FUTURE resolver, not a live hazard: today
+    # ``resolve_project_build_notations`` has a single ``return frozenset(...)``,
+    # so it cannot hand back a non-container. A second return that could would
+    # pass the truthiness test below and then raise TypeError from the ``in``
+    # comparison in cross_check_candidates — OUTSIDE this try, escaping the gate.
+    # The guard belongs here rather than at the comparison because this is the
+    # function whose job is to turn every inability into a named reason.
     if not isinstance(notations, (frozenset, set)):
         return frozenset(), REASON_RESOLUTION_FAILED
     if not notations:

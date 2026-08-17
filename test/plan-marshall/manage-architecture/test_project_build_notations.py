@@ -195,8 +195,8 @@ def test_the_live_repository_resolves_its_own_build_notation() -> None:
     reporting ``unverified`` forever, and nothing in the suite would notice.
     This case is the one that would.
 
-    ⛔ It does **not** cover an import-path fault, and must not be described as
-    doing so. The module is loaded here by absolute path through ``_load_module``,
+    ⛔ It does **not** cover an import-path fault. The module is loaded here by
+    absolute path through ``_load_module``,
     which bypasses ``sys.path`` entirely, so a missing ``PYTHONPATH`` entry is
     invisible from this case by construction. The
     runtime import is exercised by the sibling gate-level case

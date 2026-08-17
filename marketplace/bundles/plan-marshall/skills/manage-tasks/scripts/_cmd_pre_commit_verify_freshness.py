@@ -174,20 +174,16 @@ _STALE_MUTATED = (
 def _stale_reason(entries: list[dict], current_sha: str) -> tuple[str, str, str | None]:
     """Derive the ``stale`` reason from what the ledger actually holds.
 
-    The historical gate emitted one message for every route to ``stale``:
-    "the worktree has been mutated since the last observed build ... re-dispatch
-    a build before retrying." That sentence asserts a CAUSE the gate never
-    established: no route but ``worktree_mutated`` involves a mutation at all.
-    Its REMEDY is a separate question and is wrong on fewer routes — re-running
-    the build IS right for ``build_timeout`` and ``build_indeterminate``, and is
-    actively wrong for ``build_error`` (fix the reported failures first) and for
-    ``build_killed`` (the blind retry the no-blind-retry rule forbids). Cause and
-    remedy are stated apart here because collapsing them makes it easy to assert
-    something false about the table above — the cause is wrong on nearly every
-    route while the remedy is wrong on only two. When the ledger holds a ``killed`` row for the CURRENT sha the tree
-    was not mutated at all — a build was observed and was killed — so the gate
-    was reporting a mutation that did not happen and prescribing exactly the
-    blind retry the no-blind-retry rule forbids.
+    One message for every route cannot be honest, because CAUSE and REMEDY differ
+    per route and they differ independently. Only ``worktree_mutated`` involves a
+    mutation at all, so any message asserting one states a cause the gate did not
+    establish. And re-running the build is the right remedy for ``build_timeout``
+    and ``build_indeterminate`` while being actively wrong for ``build_error``
+    (fix the reported failures first) and for ``build_killed`` (the blind retry
+    the no-blind-retry rule forbids). A ``killed`` row for the CURRENT sha is the
+    sharpest case: the tree was not mutated, a build was observed and was killed,
+    so a mutation message would name a cause that did not occur AND prescribe the
+    one action that rule forbids.
 
     Discrimination is by presence, then by status:
 

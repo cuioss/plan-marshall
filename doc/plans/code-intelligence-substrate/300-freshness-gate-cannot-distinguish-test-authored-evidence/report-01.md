@@ -16,9 +16,9 @@ leaves no committed artifact.
 
 ⚠ **A second deviation, also operator-directed:** verification round 2 was run
 because round 1's findings all changed code behaviour, which resets the loop. It
-found ten further defects — see § Findings. Without that round this PR would have
-shipped two invented rationales and a coverage control that could not detect what
-it claimed.
+found the `R2-1`…`R2-17` series — see § Findings. Without that round this PR would
+have shipped two invented rationales and a coverage control that could not detect
+what it claimed. A third round was then run and found more; see § Findings.
 
 ## Skills loaded
 
@@ -154,6 +154,16 @@ The comparison target is the **architecture**, deliberately not the ledger: the
 plan forbids comparing against "notations that appear in this plan's ledger rows",
 and the reason is stated in the module docstring — comparing ledger rows against
 other ledger rows would let a polluted ledger corroborate itself.
+
+⚠ **A departure from D4's wording, flagged rather than glossed.** D4 says compare
+against "**the plan's** architecture-resolved canonical build commands"; the
+shipped set is the **project-wide union over every module**, not a plan-scoped
+subset. The reason is D4's own precision warning: a plan-scoped set would refuse
+an orchestrator-tier build (which runs at the root module with no plan at all) and
+a polyglot project's second build system — the over-strict mirror-image false
+signal D4 warns against in the same breath. The wider set still refuses the
+founding defect, because an unrelated notation is unresolved by *every* module.
+Recorded as a scope judgement the reader may overrule, not as compliance.
 
 **Precision in both directions**, which the plan warns is where a one-directional
 fix trades one false signal for its mirror:
@@ -312,7 +322,7 @@ with `UV_HTTP_TIMEOUT=600`:
 
 | # | Source | Finding | Disposition |
 |---|---|---|---|
-| B3 | BUILD `quality-gate` | `plugin-doctor`'s `no-historical-prose-in-skills` rule flagged a paragraph I had added to `manage-tasks/SKILL.md` narrating what an earlier version of that paragraph had said. The repository's documentation standards are current-state-only; the history belongs in this report, not in the skill. | **Fixed** — the paragraph states the present rule, and three sibling docstrings written in the same round were converted from historical narrative to present-tense warnings for the same reason (`_command_executable`, `_stale_reason`, and the anti-vacuity control). A mechanical rule caught a standards violation four hand-written passes had not. |
+| B3 | BUILD `quality-gate` | `plugin-doctor`'s `no-historical-prose-in-skills` rule flagged a paragraph I had added to `manage-tasks/SKILL.md` narrating what an earlier version of that paragraph had said. The repository's documentation standards are current-state-only; the history belongs in this report, not in the skill. | **Fixed in the skill** — and ⛔ **this row's original claim was false.** It said three sibling docstrings "were converted", naming `_stale_reason` among them. Round 3 checked: `_stale_reason` was **not** converted — it still opened "The historical gate emitted one message…" and closed "was reporting … prescribing …". No gate would have caught it, because the rule is markdown-only. Corrected under R3-8, and the remedy changed from *convert* to *delete*. |
 
 The working tree was clean (`git status --porcelain` empty) at the start of the
 run and before each diff-derived read, so no uncommitted file was invisible to
@@ -393,7 +403,7 @@ because an invented rationale contradicts nothing in the tree.
 |---|---|---|
 | R2-11 | `_verdict_for_candidates` indexes two lists with `chosen` and does not guard its type, while the callee it just gained a `ValueError` from fails fast on its own precondition — the asymmetry sitting on the opposite side of the same boundary. | **Accepted as a real asymmetry; not guarded.** The invariant is local and provable in ten lines: `REFUTED` returns before the indexing, and the only two remaining branches set `chosen` to `0` or to an `enumerate` position. A runtime guard would be dead code today, and the honest defence is that both branches are pinned by tests (`test_the_chosen_position_indexes_the_list_it_was_given`, the `unverified` case). Recorded so a future third verdict value is a known hazard rather than a surprise. |
 | R2-14 | The new architecture test substitutes two shared modules into `sys.modules` at collection time, and one case mutates a module global on the shared instance. | **Accepted; matches the directory's existing convention** (`test_resolve_mutating.py` uses the same `_load_module` → `sys.modules` bootstrap). The mutation is restored in a `finally` and round 2 found no leak. Diverging from the convention in one file would be a worse outcome than the shared-instance hazard it would remove. |
-| R2-5, R2-6, R2-15, R2-17 | Stale figures in this report — changed-file counts, the wall-clock line, the crawl-cost range, and a finding count that disagreed with its own table. | **Fixed in this report**, each re-derived at its claim site, with the superseded value and why it was wrong stated rather than silently overwritten. |
+| R2-5, R2-6, R2-15, R2-17 | Stale figures in this report — changed-file counts, the wall-clock line, the crawl-cost range, and a finding count that disagreed with its own table. | **Fixed in this report**, each re-derived at its claim site. ⛔ **R2-15's disposition was itself incomplete**: it claimed the range was fixed "at its claim site", but the crawl cost has **two** claim sites and only the report's was swept — `manage-tasks/SKILL.md` kept "between 1 and 4 seconds", which is the *operator-facing* one. Caught as R3-2, now fixed in both from four measurements. |
 
 ### ⭐ R2-9 — a plan obligation that was neither discharged nor disclosed
 
@@ -441,6 +451,61 @@ tier-blind", with artifact "the row schema in the clone" — read against the sc
 the row is not blind; the *gate* is. The plan's instruction to settle claims from
 first-party evidence in the clone is what surfaced the difference.
 
+### From verification round 3 — dispatched because round 2 reset the loop
+
+⭐ **The pattern is now established beyond doubt: the highest-yield surface in this
+run is prose the PREVIOUS round wrote to explain its own fixes.** It has paid in
+every round that looked for it. Round 3's most serious finding is a mechanism claim
+round 2 invented — and round 3 falsified it **three times over**, once using a file
+this branch had already edited.
+
+| # | Finding | Disposition |
+|---|---|---|
+| R3-1 | ⭐ Round 2's new tier-blindness section asserted that "**every document** defines it as 'a successful build was observed against this tree', never 'tests ran'". Falsified three times: `phase-6-finalize/standards/push.md` says freshness "verifies that the most recent `verify` run actually observed this version of the code"; `phase-6-finalize/SKILL.md` says it validates "that a `verify` was actually performed"; and the **plan itself** says consumers read it as "tests are fresh". `push.md` is a file round 1 edited, and round 2 fixed this exact framing in `manage-tasks.py` (R2-10) **in the same commit** that claimed the framing exists nowhere. | **Fixed, and the argument is stronger for it.** The clause is replaced by the *verified* disagreement: the consumer-facing docs already promise the stronger "a `verify` ran" claim that the predicate does not make. ⭐ That disagreement **is** the tier defect stated in prose — so it now supports the scope boundary (this needs a deliberate ruling, not a patch here) instead of resting on a false universal. A universal quantifier over "every document" was the tell; it should have been checked or not written. |
+| R3-4 | ⛔ **A real bug, reproduced by round 3: an uncaught `RuntimeError` escaped the gate.** `resolve_expected_notations` caught only `ImportError`, but importing `_cmd_client_query` executes `_cmd_client_build`'s module body, which resolves its bundles root at module scope via a function documented to raise **`RuntimeError`** "so import-time misconfiguration fails loudly". Loudly is right for a build tool and wrong here: phase-5 Step 12a and phase-6 `push` would get a traceback and no TOON `status`. | **Fixed** — the import guard catches every exception and maps it to `REASON_RESOLVER_UNIMPORTABLE`, since anything raised *while importing* is a deployment or `PYTHONPATH` fault, which is what that reason names. ⛔ **This is the "what else needs this guard?" class landing one line above the guard round 2 added for the same contract** — round 2 hardened the resolver's *return* and left its *import* narrow. |
+| R3-9 | The `args` illustration was not what the row holds, and "recoverable" over-stated it. `_append_build_ledger_record` passes `' '.join(script_args)` **without quoting**, so `run --command-args "verify plan-marshall"` is stamped as `run --command-args verify plan-marshall` — re-parsing cannot tell that module-scoped canonical from a whole-project `verify`, because the argument boundary is gone. `command` is also `None` whenever the wrapper payload was unreadable, which includes every killed build. | **Fixed, and it changes the argument's shape rather than merely its wording.** The section no longer claims the tier is *recoverable*; it says the row holds **evidence about** which canonical ran, names both weaknesses of that evidence, and states that whether it is *sufficient* is a real open question — which is now the honest reason the tier work is its own plan. ⚠ The previous framing ("the model-level fix turned out to be unnecessary") was too strong and is withdrawn. |
+| R3-5 | Round 2 added a code path returning `REASON_RESOLUTION_FAILED` when the resolver **returned** a non-container — and updated none of its three descriptions, all of which say it means the resolver *raised*. In the module whose own thesis is that inabilities must be named apart because they have different owners. | **Fixed** in all three (the constant comment, the Returns docstring, and `SKILL.md`'s owner table): the reason now covers "raised while running, **or** returned a value that is not a set of notations", with the reach-vs-resolve distinction stated as what separates it from the unimportable reason. |
+| R3-6 | The `REFUTED` constant's docstring still carried **both** claims round 2 corrected in `SKILL.md` — the singular "the row's notation" reading that R2-8 identified as the defect, and the "no notation at all" wording R2-16 replaced. Both fixes landed in the skill doc only, leaving the source-of-truth docstring stale, in the very file whose new section round 2 wrote. | **Fixed** — the constant now says no *candidate*'s notation is in the set, names the missing/empty/non-string cases, and states that one corroborating row is enough. |
+| R3-7 | `phase-5-execute/SKILL.md` kept the retired "a row carrying no notation, which `build_record` **requires**" claim that R2-16 had established over-states it. Written by round 1 (V1-2), amended by round 2 elsewhere, missed here. | **Fixed** — "no usable notation — missing, empty, or not a string — which no dispatch boundary could have written". |
+| R3-2 | The crawl-cost range has **two** claim sites and R2-15's disposition claimed it was fixed "at its claim site". Only the report's was swept; `manage-tasks/SKILL.md` — the **operator-facing** one — kept "between 1 and 4 seconds", which round 2's own third measurement had already fallen outside. Round 3 measured a fourth at 4.23 s. | **Fixed in both**, now "roughly 1 to 5 seconds across four independent measurements", with the spread stated as the answer. The R2-15 row is corrected above. |
+| R3-8 | B3's disposition claimed three docstrings "were converted" from historical narrative. `_stale_reason` was **not** — it still opened "The historical gate emitted one message…". No gate could catch it: the `no-historical-prose-in-skills` rule is markdown-only. | **Fixed, with the remedy changed on the operator's point** (below): the historical framing is **deleted**, not paraphrased. The B3 row is corrected above. |
+| R3-11 | "Two of these five deliberately do not refuse" does not add up — three of the five rows do not refuse (worktree-unresolvable, status-metadata-irrelevant, architecture-unresolvable). | **Fixed by deletion**, not by correcting the count: the table's `Outcome` column already answers the question, so the closing sentence only ever added a figure that could go stale. |
+| R3-12 | "It found ten further defects" counted only round 2's code/doc-fix table, silently excluding R2-9 — which this report itself calls round 2's most consequential finding. The same class R2-17 raised. | **Fixed by naming the series** (`R2-1`…`R2-17`) instead of counting it, at both sites. |
+| R3-13 | The participation table quoted CodeRabbit's "47 minutes" verbatim. CodeRabbit **edits that comment in place** and the countdown decreases — round 3 read 40 — so a verbatim quote of a mutable body is not re-verifiable. | **Fixed** — the figure is given as "read as 47 when the check-in was armed" with the mutability noted, and the `Reopens? yes` verdict is stated not to depend on it. |
+| R3-14 | The `isinstance` guard's rationale said "the resolver's annotation promises a frozenset and **nothing enforces it**". The callee has exactly one `return frozenset(...)`, so the implementation does enforce it and the guard is unreachable through the real resolver. | **Fixed** — restated as defence against a *future* second return rather than a live hazard. The guard stays: it is free, and R3-4 showed this function's failure modes are broader than assumed. |
+| R3-3 | ⭐ **On PR #1280 — a third consumer-kind enumeration existed and was left stale.** The canonical list sits 22 lines above the edited sentence **in the same paragraph**, and the commit message quoted it while asserting "Two edits, not one … patching only the first would leave the second stale, making this change create the drift it exists to prevent." It did exactly that. | **Fixed on that branch** in a follow-up commit that states the correction rather than amending it away. ⛔ A **third** instance of the failure #1280 is about: the author identified the kind, wrote the rule, wrote a warning about missing an enumeration, then missed one. The landed rule's "re-walk the whole file" clause is the evidence, not an exception. |
+| R3-10 | The merge-gate section cited head `594c068` while being **introduced by** `384565d` — invalidated by the commit that made it — and its stated blocker has since cleared. | **Fixed above**; the arming decision moves to the scheduled check-in, which re-reads live state rather than trusting a snapshot. |
+| R3-15 | Plan D4 says compare against "**the plan's** architecture-resolved canonical build commands"; the shipped comparison is the project-wide union over every module. The report argues for project-wide on precision grounds but never flagged it as a **departure from the deliverable's wording**. | **Disclosed, not changed** — see D4 above, now flagged explicitly. The departure is deliberate: a plan-scoped set would refuse an orchestrator-tier build (no plan) and a polyglot project's second build system, which is the over-strict mirror D4 itself warns against. Recorded as a scope judgement the reader can overrule rather than as compliance. |
+
+### ⭐ What the operator caught that no round did
+
+Round 2's B3 fix converted four historical passages into present-tense prose. The
+operator asked the obvious question none of the three rounds had: **why paraphrase
+it forward at all, rather than just delete it?**
+
+That is the better rule, and the evidence is in this run:
+
+- A **deletion cannot introduce a claim; a paraphrase always can.** Two of round
+  2's four conversions were pure duplication of accurate prose already sitting
+  above them, and a third (R3-11) added a count that was simply wrong.
+- The paraphrase happens at the **worst possible moment** — during forced cleanup,
+  in tidying mode rather than design mode, with attention on satisfying a linter
+  rather than on whether the new sentence is true. That is precisely the
+  invented-rationale generator, and this run produced one in every round.
+
+All four sites are now **deletions**. What survives in each case is the accurate
+prose that was already there: the per-route naming in `_stale_reason`, the
+"nothing validates that shape" paragraph in `_command_executable`, the five-row
+table in `manage-tasks/SKILL.md`, and the factual "does not cover an import-path
+fault" plus its mechanism in the anti-vacuity control.
+
+⚠ **One correction to my own account of this**, since it was stated to the operator
+and is wrong: I said the `_stale_reason` paraphrase had introduced two figures that
+round 3 was auditing as a probable defect. Round 3 audited them and they were
+**correct** — cause wrong on 4 of 5 routes, remedy wrong on exactly 2. The
+paraphrase's real faults were that it was redundant, and that the conversion it
+claimed had **not actually happened** (R3-8).
+
 ### Rejected
 
 No finding from either round was rejected as wrong. Two round-2 findings were
@@ -452,32 +517,49 @@ it deliberately.
 
 Round 1's findings all changed code behaviour, which under the contract **resets**
 the loop; round 2 was therefore dispatched rather than the loop being declared
-converged. Round 2 confirmed the reset was the right call: it found ten further
-defects, **two of them in prose round 1 had written to explain round 1's fixes**
-(R2-1, R2-2) and one in a claim round 1's fix made about its own coverage (R2-4).
+converged. Round 2 confirmed the reset was the right call: it found the
+`R2-1`…`R2-17` series, **two of them in prose round 1 had written to explain round
+1's fixes** (R2-1, R2-2) and one in a claim round 1's fix made about its own
+coverage (R2-4). ⚠ An earlier version of this sentence said "ten further defects",
+counting only the code/doc-fix table and silently excluding R2-9 — which this
+report itself calls round 2's most consequential finding. The series is named
+rather than counted for exactly that reason.
 
-⛔ **The loop is stopped after round 2, and that is a decision, not a convergence
-report.** Round 2's findings still included code-behaviour changes (R2-12's
-`TypeError` escape), which by the same rule resets the loop again. A third round
-was not run.
+A third round was then dispatched, for the same reason: round 2's findings
+included code-behaviour changes (R2-12's `TypeError` escape), which resets the
+loop again. Round 3 found the `R3-*` series above — including a **reproduced
+runtime bug** (R3-4) and a mechanism claim round 2 had invented (R3-1).
 
-What supports stopping here instead:
+⛔ **The loop is stopped after round 3, and that is a decision, not a convergence
+report.** R3-4 changed code behaviour, so by the same rule the loop resets a third
+time. A fourth round was not run.
 
-- Every round-2 code fix is small and locally provable, and the two that changed
-  behaviour (the `isinstance` guard, the dead re-export removal) are covered by
-  the existing suite.
+What supports stopping here — stated as an argument the reader can reject, not as
+a verdict:
+
+- **The finding population is narrowing in kind, not just in count.** Round 1 was
+  dominated by missing coverage and unguarded values; round 3 found one runtime
+  bug and the rest were stale or over-stated *prose*. That is the narrowing the
+  contract names as a stopping signal.
+- **The one behaviour change is small, and its class was just swept.** R3-4 widens
+  an exception clause in the same function round 2 had already hardened; round 3
+  had explicitly re-swept that function's other failure modes and the `in`
+  comparison, and found no further escape.
+- **Each round's method differed materially**, so the loop was not three reads of
+  the same kind: round 2 replayed the new tests against pre-fix modules and
+  swapped a module in to test whether a control could detect what it claimed;
+  round 3 executed a reproduction of the `RuntimeError` escape and independently
+  re-measured the crawl.
 - The gate was re-run to green over the tree after each round.
-- The remaining findings were confined to prose and to this report's own figures —
-  the narrowing the contract names as a stopping signal.
-- Round 2's method was materially different from round 1's: it executed failure
-  scenarios, replayed the new tests against pre-fix modules to check
-  non-vacuity, and swapped modules in to test whether a control could detect what
-  it claimed. That is stronger than another read.
 
-**Assume this document still contains residue of the kinds round 2 found** — most
-likely in the prose written during round 2 to explain round 2's fixes, which no
-reviewer has yet seen. The PR's automated reviewers are the next independent
-method, and their method differs again from both rounds.
+⛔ **Assume this document still contains residue of the kinds round 3 found** — most
+likely in the prose written *during round 3* to explain round 3's fixes, which no
+reviewer has seen. That is not a hedge: it is the one prediction this run has made
+three times and been right about three times.
+
+The next independent methods are already scheduled rather than hoped for: the PR's
+automated reviewers, and CodeRabbit specifically once its window reopens — it has
+not reviewed this diff at all, and its method differs from every round above.
 
 ### Traceability gaps — named, not closed
 
@@ -505,7 +587,7 @@ verdict here.
 | Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
 |---|---|---|---|
 | `cuioss-review-bot` | `reviewed` | — | Issue comment "PR Reviewer Guide 🔍": *PR contains tests* / *No security concerns identified* / *No major issues detected*. A review artifact over the diff with an explicit nothing-to-report. |
-| `coderabbitai` | `rate-limited` | **yes** | Issue comment: *"Review limit reached … you've reached your PR review limit, so we couldn't start this review. **Next review available in: 47 minutes**"*. It engaged; it did not review this diff. A clock limit, so re-requesting later is productive. |
+| `coderabbitai` | `rate-limited` | **yes** | Issue comment: *"Review limit reached … we couldn't start this review. **Next review available in: N minutes**"* — read as **47** when the check-in was armed. ⚠ CodeRabbit **edits this comment in place** and the countdown decreases, so a verbatim quote of the figure is not re-verifiable (round 3 later read 40). The `Reopens? yes` verdict does not depend on the number. |
 | `sourcery-ai` | `rate-limited` | **no** | Review-summary body: *"your pull request is larger than the review limit of 150000 diff characters"*. ⛔ A property of **this diff**, not of the clock — the same request never succeeds at this size, so waiting is futile and no re-request is made. Its check-run separately concluded `skipped`. |
 
 **Coverage: 1 of 3.** Inline review threads: none (`get_review_comments`
@@ -538,9 +620,15 @@ defect the rule closes is the *silence*, not the shortfall — a run that merges
 
 Two reasons, and the first alone is sufficient:
 
-1. **Condition 1 is unmet.** `verify / conclusion` has not reported on head
-   `594c068`, so `mergeable_state` is `blocked` — a *required* context is
-   unsatisfied, and the gate's answer to that is to wait.
+1. **Condition 1 was unmet when this section was written**, and ⛔ **it named the
+   wrong head.** It cited `594c068` while being introduced by `384565d`, which
+   became the head on push — a claim invalidated by the very commit that made it.
+   Round 3 then read the live state: `verify / conclusion` is **`success`** on
+   `384565d`, alongside `verify / verify` and `verify / gate`, and
+   `mergeable_state` reads `unknown` rather than `blocked`. This reason has
+   therefore **cleared**. Reason 2 is now the operative one, and the arming
+   decision moves to the scheduled check-in, which re-reads the state rather than
+   trusting either snapshot.
 2. ⭐ **Arming is a one-way door, and CodeRabbit's window reopens in ~47 minutes.**
    On this merge-queue repository, arming while the required checks are green
    enqueues the PR at once and a protected-branch hook then rejects every further

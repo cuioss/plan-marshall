@@ -409,8 +409,10 @@ from inside the loop.
    project, plus each build tool's own discovery verbs on a Maven/Gradle/npm one
    (`crawl_all_modules` documents `help:all-profiles dependency:tree` per Maven
    module). Measured on this repository — Python-only — the first crawl took
-   between 1 and 4 seconds across two sessions; no figure exists for a Maven
-   project, so treat that range as a floor rather than an estimate. Two
+   roughly 1 to 5 seconds, across four independent measurements in different
+   sessions and filesystem-cache states; the spread is the honest answer and a
+   point estimate would not be. No figure exists for a Maven, Gradle or npm
+   project, so treat that range as a floor there rather than an estimate. Two
    properties bound the cost: it is paid only on the path where the primary
    predicate ALREADY matched (a `stale` refusal never crawls), and the
    short-circuit ahead of it means a footprint needing no build never reaches
@@ -428,10 +430,8 @@ absence of a crash:
 | Status metadata missing | Irrelevant | The gate does not read it — the worktree root resolves through `resolve_plan_context`, and `status.metadata.worktree_path` is a decoy the tests pin as ignored. |
 | Architecture unresolvable | **Not a refusal.** `fresh` with `notation_cross_check: unverified` and the inability named | An inability to *audit* evidence the primary predicate already accepted. Failing closed would refuse every transition in an un-crawled tree on strictly less evidence than the primary predicate supplied — see § "The notation cross-check". |
 
-⛔ Two of these five deliberately do not refuse, so "the gate never raises" must
-never be read as "the gate always refuses on bad input". The worktree fallback is
-the one most easily missed: it makes a *degenerate* input produce a *normal*
-verdict about a different tree.
+⛔ "The gate never raises" must never be read as "the gate always refuses on bad
+input" — the `Outcome` column above is the authority on which inputs refuse.
 
 ### Script-Level `[OUTCOME]` Emission (`finalize-step`)
 

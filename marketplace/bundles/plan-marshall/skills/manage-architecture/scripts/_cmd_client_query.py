@@ -647,8 +647,6 @@ def _command_executable(commands: dict[str, Any], command_name: str) -> str:
     module and must not lose the whole project's answer to one bad row; that
     caller wants :func:`_defensive_command_executable`.
 
-    ⛔ Do NOT describe this entry's shape as validated anywhere. Nothing validates
-    it, and saying otherwise is what stops a reader from checking.
     """
     cmd_data = commands[command_name]
     return cmd_data if isinstance(cmd_data, str) else cmd_data.get('executable', '')
