@@ -146,6 +146,27 @@ Per instance, not bundled.
 | F15 | Beyond-diff sweep | The routing-decisions script docstring and reference contract both carried a stale "four mechanisms" enumeration | **Fixed** (`482fde1`) |
 | F16 | Serialization | Plan 310, which the plan requires to run first, has not run; it will now rebase onto a changed `audit.py` | **Reported, not resolved** — the hard constraint (never concurrent) held; the ordering preference did not |
 
+### Verification sub-agent, round 1
+
+The round returned **twelve** findings against the change. The severe one is recorded first because it is the plan's own subject matter committed by the plan's own deliverable.
+
+| # | Severity | Finding | Disposition |
+|---|---|---|---|
+| V1 | **HIGH** | **D4 published a false zero.** `_qc_structural_pending` re-read the record's `resolution` while `_qc_resolution` short-circuits `promoted` → `lesson`. Numerator and denominator came from two derivations of the same population, so `actionable = pending − structural` underflowed: a promoted `tip` alone gave `pending_actionable: -1`, and a promoted tip beside a genuinely pending `build-error` gave `pending_actionable: 0` — real chain debt published as none | **Fixed.** The predicate takes the computed bucket as a parameter, so containment holds by construction. Five cases added for the boundary the exhaustiveness assertion never staged |
+| V2 | MEDIUM | The retired `.plan/local/logs/` claim survived in the merge-window section comment, fifteen lines above the constant documenting that it is false | **Fixed** |
+| V3 | MEDIUM | The census classified `quality-chain` `disciplinary` on a **defaulted** count — that block emits `plan_genuine_signal_count`/`finding_genuine_signal_count` and no bare one, so no count was ever read | **Fixed.** An unread count is `None`, with its own `no_count` class |
+| V4 | MEDIUM | `_classify_zero` used the whole corpus size while the nine delivery-cost checks run over the shipping partition, so a check that examined nothing was called `disciplinary` | **Fixed.** `_examined_population` reads the `plans_excluded_non_shipping` the block already carries |
+| V5 | MEDIUM | The `merge_window_ci_rerun` synthesis coupling rendered `contended_plans=0` on an unmeasured run, re-manufacturing the false zero downstream | **Fixed** |
+| V6 | MEDIUM | `recompose_divergence` counts lines, not composes — the same emitter change that broke `posture_cutoff`, reaching a second consumer in the same file | **Claim fixed, count left as-is** (reconstructing composes needs a per-compose delimiter the emitter does not provide; that belongs with the composer). Corrected at all three sites |
+| V7 | LOW | The `_invariants.py` mirror is one-directional — exact for the knowledge half, not the actionable half, which leaves `bug`/`anti-pattern`/`triage` in neither set | **Fixed.** The comment now claims only the half that holds |
+| V8 | LOW | The shared-shape gate enumeration omitted `terminal_emission_orchestration_gate` — wrong on its first read, having just replaced an enumeration that was wrong | **Fixed** by de-enumerating and pointing at the live call sites |
+| V9 | LOW | The D2 comment named the wrong producer: Step 5c-LESSON writes **both** fields, so it was never the gap | **Fixed.** Now names Step 5c-recipe-match's auto-route and operator-selection legs, which write `recipe_key` alone |
+| V10 | LOW | `build_pending_pile`'s rationale was an unearned absolute | **Fixed** (caught independently mid-run and already corrected before the round reported) |
+| V11 | LOW | D6 had no end-to-end assertion joining the real emitter to the real classification — the "suite synthesises its own marker" shape the plan names for D3 | **Fixed.** The new test earned itself immediately: it caught `no_count` masking `structural` on a real sweep, a precedence defect introduced by the very commit that added it |
+| V12 | LOW | The census does not census itself — `suspect-zero-census` and `retire-on-quiet` are not in `CHECK_NAMES`, so the class guard's own permanent zero is the one class it cannot report | **Documented, not resolved.** Recorded in SKILL.md as mode E standing unresolved in the instrument built to surface it; an instrument whose blind spot is undocumented is read as having none |
+
+**What round 1 verified clean** — so the list above is distinguishable from a pass that examined nothing: the D5 shape contract against all five live `_log_dropped_records` call sites and against `decision-rules.md`'s canonical renderings; the three surviving removal-cause patterns against their own emitters; that no unrecognised mechanism can remove a `_PRUNABLE_PREDICATES` member; the `_read_recipe_source` mirror; both `[LOCK]` path derivations; the retire-on-quiet streak mechanism; the absent-phase reproduction against the pre-change detector; that `add_finding` seeds every record `pending`; that an omitted summary-metric renders as `""` and never `0`; a retired-token sweep (no surviving `posture_cutoff`, no surviving "four mechanisms", no fixture encoding the retired line shape); the `status: success` sweep; the cross-skill import against `plugin-script-architecture`'s standard; and TOON quoting of the census `reading` column.
+
 ## Reviewer participation
 
 _To be completed after the PR is opened and the reviewers report._
