@@ -206,14 +206,18 @@ Exactly these directories under `test/plan-marshall/`, and nothing else:
 > gate — stands unchanged.
 
 
-**The three-part done-when. All three must hold; the third alone is not success.**
+**The three-part done-when as this plan landed. ⛔ Its third condition is RETIRED — read it as a
+historical record, not as a gate.** Conditions 1 and 2 stand and are subsumed by the five in
+`README.md` § "What a reduction run must hold", which also add the skipped count and the
+wall-clock. **Condition 3 below is superseded**: the line delta is measured and reported, never
+targeted, and no run is held to the 30% figure it names.
 
 1. **Collected test count does not decrease.** Capture pytest's collected-item count for the slice
    before the first commit and again before the PR. Parametrizing raises it; deleting a case lowers
    it. Record both.
 2. **Coverage does not decrease** for the bundle paths this slice exercises. Record the before/after
    percentages and the command.
-3. **Line count drops by at least 30%** of the slice's starting total. This slice carries the epic's
+3. ⛔ **RETIRED — recorded, not required.** **Line count drops by at least 30%** of the slice's starting total. This slice carries the epic's
    highest floor because its content is the most tabular — the collapse in D1 is mechanical and its
    yield is large. If the floor cannot be reached without violating (1) or (2), **report the shortfall
    and stop**. The floor is a target, not a licence.

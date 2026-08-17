@@ -29,11 +29,14 @@
 > If either is absent, **stop and report the run blocked**; do not invent a local substitute, because
 > sibling plans are converging on the same harness.
 >
-> **A second dependency, on plan `090`, and it is partial.** `090` publishes the parser seams a **B6**
-> conversion in this slice would otherwise hit, and widens the citation matchers D3's prose half is
-> measured by. If `090` has **not** landed, D1, D2 and D4 are unaffected and proceed; **D3's
-> `parse_ns` half stops at the first `ParserSeamNotFound`** and records the blocked call sites rather
-> than working around them. Check by reading whether the modules `ParserSeamNotFound` names publish a
+> **A second dependency, on plan `090`, and it is partial — it bites D3 in both halves.** `090` § D1
+> publishes the parser seams a **B6** conversion in this slice would otherwise hit, and `090` § D4
+> widens the citation matchers D3's prose half is measured by. If `090` has **not** landed: D1, D2 and
+> D4 of *this* plan are unaffected and proceed; **D3's `parse_ns` half stops at the first
+> `ParserSeamNotFound`** and records the blocked call sites rather than working around them; and
+> **D3's prose half proceeds but its measurement is provisional** — the rule cannot yet see the
+> `Deliverable 2` and bare `#NNN` spellings, so a zero finding count means "zero of what the current
+> matchers catch", which the report says in those words rather than as a clean result. Check by reading whether the modules `ParserSeamNotFound` names publish a
 > builder — do not assume from the calendar.
 >
 > **Read next.** `doc/plans/test-quality/README.md` — the epic's scoping brief, a git-tracked sibling

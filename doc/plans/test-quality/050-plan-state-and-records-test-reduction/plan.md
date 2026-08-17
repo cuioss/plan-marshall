@@ -188,7 +188,11 @@ nothing else:
 > gate — stands unchanged.
 
 
-**The three-part done-when. All three must hold; the third alone is not success.**
+**The three-part done-when as this plan landed. ⛔ Its third condition is RETIRED — read it as a
+historical record, not as a gate.** Conditions 1 and 2 stand and are subsumed by the five in
+`README.md` § "What a reduction run must hold", which also add the skipped count and the
+wall-clock. **Condition 3 below is superseded**: the line delta is measured and reported, never
+targeted, and no run is held to the 20% figure it names.
 
 1. **Collected test count does not decrease.** Capture pytest's collected-item count for the slice
    before the first commit and again before the PR. For D1 specifically, capture the count for
@@ -197,7 +201,7 @@ nothing else:
 2. **Coverage does not decrease** for the bundle paths this slice exercises, and for
    `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py`, which is exercised by D1's
    modules but sits outside the default coverage denominator — measure it explicitly.
-3. **Line count drops by at least 20%** of the slice's starting total. The floor is the epic's lowest,
+3. ⛔ **RETIRED — recorded, not required.** **Line count drops by at least 20%** of the slice's starting total. The floor is the epic's lowest,
    deliberately: D1 is a decomposition, and a decomposition adds per-module preamble even as it
    improves the tree. The value of this plan is concentrated in navigability and in D2/D3/D5, not in
    raw line removal. If the floor cannot be reached without violating (1) or (2), **report the

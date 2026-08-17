@@ -100,7 +100,7 @@ by what the consuming plans actually cite rather than by theme:
 
 | Consumer | What it depends on | How it says so | Therefore |
 |---|---|---|---|
-| `070` | **D1** (the parser seams its **B6** half needs) and **D6** (the `conftest.py` docstring its D1 rename would otherwise leave stale) | D1 described in its dependency note; **D6 cited by number**, twice | Both blocking for `070` |
+| `070` | **D1** (the parser seams its **B6** half needs) and **D6** (the `conftest.py` docstring its D1 rename would otherwise leave stale) | Both **cited by number, twice each** — `§ D1` in its D3 and its Out of scope, `§ D6` in its D1 and its claim labels | Both blocking for `070` |
 | `080` | **D1** (same seams) and **D4** (the citation matchers its D3 prose half is measured by) | Both described in its dependency note, neither cited by number. Its **only** numbered reference to this plan is `§ D2`, and that one is a *routing destination* — "record it against `090` § D2 and move on" — not a dependency | D1 and D4 blocking for `080` |
 | `100` | **D3**'s registration guard, which its splits rely on — as do `070` § D3 and `080` § D3, each of which carries the same `sys.modules` hazard as the first of its two stated hazards | `100` cites this plan by number once (`§ D7`, on the severity flip), not for D3 | D3 protects all three, and is not deferrable on the ground that it protects only the campaign |
 
@@ -292,7 +292,7 @@ concurrent edit to a shared file is the collision nobody notices until both land
 | `test/conftest.py`'s `_routing_namespaces` docstring names `test/plan-marshall/build_test_helpers.py` by path | OBSERVED | `test/conftest.py` — `_routing_namespaces`; surfaced by `grep -rln 'build_test_helpers' test` |
 | No plan in `030`–`080` claims any file under `marketplace/bundles/**` — the surface this plan's production deliverables change | HYPOTHESIS — **asserted absence; it is this plan's entire justification** | Read the **Out of scope** section of each of `030`–`080` and confirm every one excludes `marketplace/bundles/**`. If any plan claims a file there, this plan's production surface overlaps a sibling's: **halt and report it** |
 | This plan's **test** surface overlaps paths other plans own, and each overlap is declared rather than asserted away | OBSERVED | § "The surfaces this plan shares" above, cross-checked against `060`'s, `080`'s and `110`'s Expected surfaces and — for the `rule*` glob, which `010`'s own Expected surface does **not** state — the epic README's `010` row. **This is not an absence claim** — an earlier draft wrote it as one and was refuted by the tree, which would have halted the run on a defect the plan itself created |
-| No run is in flight against `100` campaign run 3 (plan `060`'s slice) or against plan `110` | HYPOTHESIS — **gating and halting; check before touching the shared test paths** | An open PR or an in-flight branch for either. Unresolvable → treat as a collision and halt |
+| No run is in flight against plan `080`, `100` campaign run 3 (plan `060`'s slice), `100` campaign run 7 (the `rule*` glob), or plan `110` | HYPOTHESIS — **gating and halting; check before touching ANY row of the carve-out table** | An open PR or an in-flight branch for any of the four. Unresolvable → treat as a collision and halt. This row must name exactly what the ⛔ block in § "The surfaces this plan shares" names — an earlier draft named two of the four, so a run reading the claim-labels table for its gating checks skipped half of them |
 
 ## Verification
 

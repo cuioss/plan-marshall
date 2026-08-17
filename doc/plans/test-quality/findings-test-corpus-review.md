@@ -59,7 +59,8 @@ than average practice, and a naive line-reduction pass would destroy it.
 
 **The consequence for remediation is the epic's central constraint:** a plan that deletes an assertion
 to hit a line target has failed, not succeeded. Every reduction plan therefore gates on an unchanged
-collected-test count and unchanged coverage before any line reduction. (Those floors have since
+collected-test count — **a count that does not decrease**, since parametrization legitimately raises
+it — and unchanged coverage before any line reduction. (Those floors have since
 been retired epic-wide — see `README.md` § "Why there is no line floor" — but the ordering this
 finding argues for is unchanged: the guards come first, and the line delta is whatever it turns out
 to be.)

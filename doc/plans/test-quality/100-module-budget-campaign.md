@@ -89,9 +89,12 @@ two to three deliverables, and one slice is one deliverable.
    module crosses the budget. **Report the disagreement rather than absorbing it** — a grouping that
    silently differs from this plan's own table is the shape D1 exists to surface.
    *Done when:* the per-slice over-budget counts are recorded, every finding is attributed to exactly
-   one slice, the per-slice counts sum to the whole-tree total with no residual bucket, any
-   unattributed module has halted the run with the defect reported, and any disagreement with the
-   table in § Expected surface is stated explicitly.
+   one slice **or to row 7**, the per-slice counts **plus row 7** sum to the whole-tree total with no
+   residual bucket beyond row 7 itself, any module attributed to neither has halted the run with the
+   defect reported, and any disagreement with the table in § Expected surface is stated explicitly.
+   ⚠️ Row 7 is **not** a residual bucket: it is a declared campaign item with an owner, which is the
+   whole reason it exists. A done-when that admits only the six slices makes the six-slice sum 312
+   against a whole-tree 313 and halts on this plan's own table — two earlier drafts did exactly that.
 
 2. **D2 — Split this run's slice by behaviour cluster.** **Derive the file set from the plan's own
    Expected surface, never from a convenient tree walk** — plan `060`'s third run ran a sweep whose
@@ -180,7 +183,7 @@ must land first, and finally the one module that belongs to a landed plan no red
 |---|---|---:|---|
 | 1 | `050`'s — plan state and records | 60 | nothing; `050` landed |
 | 2 | `040`'s — delivery pipeline | 55 | nothing; `040` landed |
-| 3 | `060`'s — runtime and script substrate | 53 | nothing; `060` landed |
+| 3 | `060`'s — runtime and script substrate | 53 | `060` landed; **halts if `090` is in flight** — see § Notes |
 | 4 | `030`'s — config and manifest | 39 | nothing; `030` landed |
 | 5 | `070`'s — architecture and orchestration | 63 | plan `070` landed |
 | 6 | `080`'s — plugin development and generator | 42 | plan `080` landed |
@@ -198,8 +201,8 @@ held them out as a separate bucket, which made its own totals disagree with the 
 every module matched by `plugin-doctor/test_test_conventions_rule*.py`, which the epic README assigns
 to plan `010` — and one of those modules is over budget. No reduction plan would ever take it, because
 `080`'s surface is the only one reaching that directory and it excludes the glob; and `010` has
-landed, so `010` will not take it either. and the campaign's own goal (the rule reaching zero) is unreachable without it. An
-earlier draft of this plan counted it into `080` and asserted a distribution that did not reconcile;
+landed, so `010` will not take it either — and the campaign's own goal, the rule reaching zero, is
+unreachable without it. An earlier draft of this plan counted it into `080` and asserted a distribution that did not reconcile;
 D1's halting derivation is what surfaces that class of error, and it would have halted on this plan's
 own table.
 
@@ -270,11 +273,17 @@ weaker check, and record what the check that would have established the unavaila
 * **Sequencing against the rest of the epic.** Rows 1–4 have no dependency and may start
   immediately. `070` and `080` must land before this campaign takes their slices — rows 5 and 6 of
   the table above.
-  ⛔ **Row 7 collides with plan `090`, and the check is halting.** It splits
-  `test_test_conventions_rule6.py`, which `090`'s carve-out also permits `090` to amend. **Before
-  starting row 7, confirm no open PR and no in-flight branch exists for `090`; if one does, halt and
-  report it** rather than editing a file two plans own. `090` carries the mirror of this check. Rows
-  1–6 are independent of `090` and may run alongside it.
+  ⛔ **Two of the seven runs collide with plan `090`, and the check is halting for both.** `090`'s
+  carve-out claims three test paths besides its production surface, and two of them are this
+  campaign's:
+  * **Row 3** — `090`'s carve-out claims `test/plan-marshall/script-shared/` and
+    `test/plan-marshall/manage-providers/`, both inside plan `060`'s slice, which row 3 re-enters.
+  * **Row 7** — `090`'s carve-out claims the `test_test_conventions_rule*.py` glob, which row 7 splits.
+
+  **Before starting row 3 or row 7, confirm no open PR and no in-flight branch exists for `090`; if
+  one does, halt and report it** rather than editing files two plans own. `090` carries the mirror of
+  this check and names the same two runs. **Rows 1, 2, 4, 5 and 6 are independent of `090`** and may
+  run alongside it.
 * **When every slice is done, one thing follows.** `test-module-line-budget` reaches zero and its
   flip to `severity: error` becomes available. That flip belongs to plan `090` § D7's ladder, not
   here — this plan produces the condition, it does not take the gate decision.

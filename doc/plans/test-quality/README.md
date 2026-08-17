@@ -292,7 +292,7 @@ it, and where a run cannot finish, **report what was not reached rather than thi
 | `020` | `test/conftest.py`, `test/_shared/**`, `test/README.md`, and the ≤10 modules it converts as proof-of-use | `010` only |
 | `030`–`080` | one disjoint slice of `test/` each, listed in the plan | each other, once `010` **and** `020` have landed |
 | `090` | `marketplace/bundles/**` (the doctor analyzers, `script-shared`, `manage-providers`) — **the only plan in the epic that may edit it** — plus `test/conftest.py`'s loader mechanics, and the tests for its own production changes | any reduction plan; **not** `110` (both edit `test/conftest.py`) and **not** `100`'s run against `060`'s slice |
-| `100` | one reduction slice per run, `test_*.py` only — plus a seventh run for the one over-budget module plan `010` owns, which no reduction slice covers | nothing running against the same slice; for its seventh run, **not** `090`, which shares those modules |
+| `100` | one reduction slice per run, `test_*.py` only — plus a seventh run for the one over-budget module plan `010` owns, which no reduction slice covers | nothing running against the same slice; and **not `090`** for its third or seventh run, both of which touch paths `090`'s carve-out also claims |
 | `110` | the tree's skip sites, which **cross** several slices — `test/sync-plugin-cache/`, `test/pm-plugin-development/`, `test/marketplace/` and scattered others — plus `test/conftest.py`'s session preflight and skip guard | nothing running against those directories, and **not** `090` |
 
 **`090`, `100` and `110` were added after the epic's executed half**, each from something four runs
@@ -340,6 +340,7 @@ as a **gating, halting derivation**, run before its first deliverable:
    | `test/README.md` | Plan `020`'s D4 deliverable; not a `.py` file |
    | `test/test_shared_harness.py` | Plan `020`'s D5 deliverable, created by its landing commit |
    | `test/fixtures/` | Holds no `.py` |
+   | `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` | Plan `010`'s — it ships the tests for the rules it added, and plan `080`'s Expected surface excludes the glob explicitly. **Not unowned**: the one module of the set that is over budget is plan `100`'s campaign row 7. Without this row the partition gate halts on a known, assigned entry |
 
    ⚠️ **`test/pm-code-intelligence/` is NOT an exclusion — it belongs to plan `080`'s slice**, and
    `080`'s Expected surface names it. It is a `pm-*` bundle test directory, which is the shape `080`
