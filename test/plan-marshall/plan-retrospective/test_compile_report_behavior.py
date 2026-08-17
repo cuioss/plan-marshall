@@ -288,12 +288,12 @@ class TestWrittenImpliesNonEmpty:
         assert '## Artifact Consistency' not in content
         assert dropped == []
 
-    @pytest.mark.parametrize('scalar', [0, 0.0, False], ids=['zero', 'zero-float', 'false'])
-    def test_a_scalar_fragment_is_content_not_emptiness(self, tmp_path, scalar):
-        # The falsy-versus-empty split, kept consistent with
-        # `_fragment_has_payload`: a scalar renders its value, which is a datum a
-        # reader can act on. Collapsing this into "falsy means empty" would
-        # discard a measured zero — the defect the identity checks elsewhere in
+    @pytest.mark.parametrize('scalar', [0, 0.0], ids=['zero', 'zero-float'])
+    def test_a_measured_zero_fragment_is_content(self, tmp_path, scalar):
+        # CHARACTERIZATION of pre-existing behaviour — it passes against
+        # `origin/main` too. It pins the half of the falsy-versus-empty split
+        # that must NOT move: collapsing this into "falsy means empty" would
+        # discard a measured zero, the defect the identity checks elsewhere in
         # this module exist to prevent.
         fragments = {'artifact-consistency': scalar}
         _content, written, omitted, _dropped = _cr.build_document(
@@ -301,6 +301,58 @@ class TestWrittenImpliesNonEmpty:
         )
         assert 'Artifact Consistency' in written
         assert 'Artifact Consistency' not in omitted
+
+    @pytest.mark.parametrize(
+        'fragment',
+        [
+            {'summary': ''},
+            {'findings': []},
+            {'status': 'success', 'aspect': 'artifact_consistency'},
+            {'summary': '', 'findings': []},
+            {'summary': None},
+        ],
+        ids=['blank-summary', 'empty-findings', 'envelope-only', 'both-empty', 'null-summary'],
+    )
+    def test_a_dict_with_no_payload_is_not_written(self, tmp_path, fragment):
+        # REGRESSION, and the third attempt at this invariant. Attempts 1 and 2
+        # asked whether the fragment was ABSENT; attempt 3 asked whether its
+        # CONTAINER was empty. Every shape here is a non-empty dict that renders
+        # a JSON block stating nothing — and `{'findings': []}` is the literal
+        # shape an LLM aspect with nothing to report writes. The compiler's own
+        # payload discriminator already called all of them empty while the
+        # partition counted them written.
+        assert _cr._fragment_has_payload(fragment) is False, 'precondition'
+        content, written, omitted, dropped = _cr.build_document(
+            'demo', 'live', tmp_path, None, {'artifact-consistency': fragment}
+        )
+        assert 'Artifact Consistency' not in written
+        assert 'Artifact Consistency' in omitted
+        assert '## Artifact Consistency' not in content
+        assert dropped == []
+
+    def test_written_implies_payload_holds_for_every_registry_row(self, tmp_path):
+        # The invariant stated as one property over the whole registry rather
+        # than as a list of cases: nothing reaches `written` that the payload
+        # discriminator calls empty.
+        fragments = {
+            key: {'status': 'success', 'aspect': key, 'findings': []}
+            for _h, key, _t in _rs.SECTION_SPEC
+            if not key.startswith('_')
+        }
+        _content, written, _omitted, _dropped = _cr.build_document(
+            'demo', 'live', tmp_path, None, fragments
+        )
+        assert written == [], f'sections written from payload-less fragments: {written}'
+
+    def test_a_bare_false_fragment_is_empty(self, tmp_path):
+        # Matches the identity skip `_fragment_has_payload` applies to a `False`
+        # VALUE, so the two discriminators agree rather than merely being
+        # described as agreeing.
+        _content, written, omitted, _dropped = _cr.build_document(
+            'demo', 'live', tmp_path, None, {'artifact-consistency': False}
+        )
+        assert 'Artifact Consistency' not in written
+        assert 'Artifact Consistency' in omitted
 
     def test_an_empty_registry_fragment_is_omitted_exactly_once(self, tmp_path):
         # The fallback loop's emptiness check must sit AFTER the `spec_keys`
@@ -325,9 +377,10 @@ class TestWrittenImpliesNonEmpty:
     def test_an_always_emit_row_with_no_fragment_is_omitted_not_written(
         self, tmp_path, heading, fragment_key
     ):
-        # Every `trigger=None` row reaches the render path unconditionally, so
-        # each one is a separate instance of the same breach. Driven from the
-        # registry so the population cannot silently shrink.
+        # There are 11 `trigger=None` rows; this parametrization covers the 10
+        # that are not `_executive-summary` (that row has its own branch and
+        # its own test above). Driven from the registry so the population
+        # cannot silently shrink.
         _content, written, omitted, _dropped = _cr.build_document('demo', 'live', tmp_path, None, {})
         assert heading not in written
         assert heading in omitted
@@ -382,7 +435,12 @@ class TestZeroReportingSectionNamesItsCheckedSet:
 
     def test_bare_zero_is_flagged(self):
         # The defect: an empty findings list and nothing naming the population.
-        fragments = {'direct-gh-glab-usage': {'status': 'success', 'findings': []}}
+        # `plan_id` is PAYLOAD (so the section is written) but is not an
+        # attribution field (so the zero stays unqualified) — the shape every
+        # real producer emits. Without a payload key the section would be
+        # omitted, and the probe would pass for the wrong reason: it would be
+        # asserting on a section the report does not carry.
+        fragments = {'direct-gh-glab-usage': {'status': 'success', 'plan_id': 'p', 'findings': []}}
         written, flagged = self._doc(fragments)
         assert 'Direct gh/glab Usage' in written, 'precondition: the section must render'
         assert 'Direct gh/glab Usage' in flagged
@@ -431,7 +489,7 @@ class TestZeroReportingSectionNamesItsCheckedSet:
         # An omitted section reported nothing at all, so it cannot be an
         # unattributed zero. Probing the whole registry instead of the written
         # set would flag every absent section on every run.
-        fragments = {'direct-gh-glab-usage': {'status': 'success', 'findings': []}}
+        fragments = {'direct-gh-glab-usage': {'status': 'success', 'plan_id': 'p', 'findings': []}}
         written, flagged = self._doc(fragments)
         assert 'Script Failure Analysis' not in written
         assert flagged == ['Direct gh/glab Usage']
@@ -442,7 +500,8 @@ class TestZeroReportingSectionNamesItsCheckedSet:
         # would exclude every such aspect, and those are the newest and least
         # conventional producers, so they are the population MOST likely to
         # report a bare zero.
-        fragments = {'_meta': {'mode': 'live'}, 'wrapper-tangle': {'status': 'success', 'findings': []}}
+        fragments = {'_meta': {'mode': 'live'},
+                     'wrapper-tangle': {'status': 'success', 'plan_id': 'p', 'findings': []}}
         written, flagged = self._doc(fragments)
         assert 'Wrapper Tangle' in written, 'precondition: the fallback must render it'
         assert 'Wrapper Tangle' in flagged
@@ -527,11 +586,16 @@ class TestZeroReportingSectionNamesItsCheckedSet:
         ids=['artifact-consistency-checks', 'summarize-invariants-expected'],
     )
     def test_a_producer_naming_its_checked_set_by_roster_is_not_flagged(self, aspect_key, fragment):
-        # These two are the only in-tree deterministic producers whose clean-run
-        # fragment names what it checked WITHOUT publishing a size — one lists
-        # its checks by name, the other its invariant roster. The probe flagged
-        # both on every clean run until the vocabulary covered them, and a signal
-        # that cries wolf on a quarter of its producers stops being read.
+        # Both name what they checked WITHOUT publishing a size — one lists its
+        # checks by name, the other its invariant roster — and the probe flagged
+        # both on every clean run until the vocabulary covered them. They are not
+        # the only such producers: `check-manifest-consistency` publishes `checks`
+        # too, on a plan that has an `execution.toon` and a clean cross-check.
+        #
+        # The fixtures are hand-written rather than derived from the producers, so
+        # a producer RENAMING its roster field would leave this green. The
+        # producer-side correspondence is covered by the sweep recorded in the run
+        # report, not here.
         written, flagged = self._doc({aspect_key: fragment})
         assert written, 'precondition: the section must render'
         assert flagged == []
@@ -540,10 +604,11 @@ class TestZeroReportingSectionNamesItsCheckedSet:
         # Mutation check: the SAME fragment with its attribution restored must
         # stop being flagged. A probe that flagged both (or neither) would be
         # asserting something other than the property it is named for.
-        defective = {'direct-gh-glab-usage': {'status': 'success', 'findings': []}}
+        defective = {'direct-gh-glab-usage': {'status': 'success', 'plan_id': 'p', 'findings': []}}
         attributed = {
             'direct-gh-glab-usage': {
                 'status': 'success',
+                'plan_id': 'p',
                 'findings': [],
                 'counts': {'total': 0, 'by_surface': {'log_leak': 0, 'diff_leak': 0}},
             },

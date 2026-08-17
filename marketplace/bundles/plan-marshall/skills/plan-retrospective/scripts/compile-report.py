@@ -439,16 +439,33 @@ def _fragment_renders_empty(fragment: Any) -> bool:
     ``is None`` guard — is emitted as a heading over an empty fenced block and
     counted as written.
 
-    Empty is: absent, a blank string, or an empty container. A scalar such as
-    ``0`` or ``False`` is NOT empty — it renders its value, which is a datum a
-    reader can act on. That is the same falsy-versus-empty split
-    ``_fragment_has_payload`` makes, kept consistent on purpose.
+    ⛔ **A non-empty CONTAINER is not the same as a usable BODY**, and testing the
+    container was the third of three attempts to get this right. A dict such as
+    ``{'summary': ''}`` or ``{'findings': []}`` — the literal shape an LLM aspect
+    with nothing to report writes — is a non-empty dict that renders a JSON block
+    stating nothing. So for a dict the question is delegated to
+    :func:`_fragment_has_payload`, the discriminator this module ALREADY uses for
+    the drop-versus-omit split: a fragment it says carries nothing beyond its
+    envelope cannot simultaneously be a written section with a body. One
+    discriminator, one answer, both halves of the partition.
+
+    For a non-dict the payload discriminator does not apply (it reports ``False``
+    for every non-dict, which would swallow a bare scalar's content), so
+    emptiness is judged directly: a blank string or an empty container is empty;
+    ``0`` and ``0.0`` are content, because they render a value a reader can act
+    on. ``False`` is empty, matching the identity skip ``_fragment_has_payload``
+    applies to a ``False`` *value* — the two are kept genuinely consistent rather
+    than merely described as such.
     """
     if fragment is None:
         return True
+    if isinstance(fragment, dict):
+        return not _fragment_has_payload(fragment)
+    if fragment is False:
+        return True
     if isinstance(fragment, str):
         return not fragment.strip()
-    if isinstance(fragment, (dict, list, tuple, set)):
+    if isinstance(fragment, (list, tuple, set, frozenset, bytes, bytearray)):
         return not fragment
     return False
 

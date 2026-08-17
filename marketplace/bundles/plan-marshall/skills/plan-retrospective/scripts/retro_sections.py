@@ -112,9 +112,10 @@ def valid_aspect_keys() -> set[str]:
 #   ``counts``, ``findings[]``), so an extension aspect that honours its own
 #   contract is attributed by construction.
 #
-# Where each name actually appears matters, because the probe has a depth:
-# ``counts`` is published at the TOP of a fragment, while ``evaluated_population``
-# appears one level down inside ``shape_violation`` / ``dispatch_coverage`` and
+# Where each name appears matters, because the probe has a depth. Measured
+# against the producers above: ``counts``, ``checks`` and ``expected_invariants``
+# are published at the TOP of a fragment; ``evaluated_population`` appears one
+# level down inside ``shape_violation`` / ``dispatch_coverage``, and
 # ``population`` one level down inside ``script_cost_rollup``.
 # ``compile-report._names_checked_set`` therefore reads the top level AND one
 # nesting level — a top-level-only read would flag a fragment that DOES name the
@@ -126,11 +127,18 @@ def valid_aspect_keys() -> set[str]:
 #   evaluated, published beside its ``phases`` breakdown.
 #
 # Those last two were added after a sweep over the eight in-tree deterministic
-# producers found them to be the ONLY two whose clean-run fragment names what it
-# checked without using one of the three names above — so the probe flagged them
-# on every clean run. A false positive here is not harmless: the whole point of
-# the signal is that an unattributed zero is worth a reader's attention, and a
-# list that cries wolf on two of eight producers stops being read.
+# producers, which flagged ``check-artifact-consistency`` and
+# ``summarize-invariants`` on every clean run. A third producer names its checked
+# set the same way — ``check-manifest-consistency`` publishes ``checks`` on a
+# plan that HAS an ``execution.toon`` and a clean cross-check — so ``checks``
+# covers two of the three; do not read the pair of names below as a count of the
+# producers they serve.
+#
+# A false positive here is not harmless: the whole point of the signal is that an
+# unattributed zero is worth a reader's attention, and a list that cries wolf on
+# its own producers stops being read. Note that the probe's live population is
+# smaller than eight — three of the eight never reach ``written`` at all on an
+# ordinary plan, being classified as drops.
 ZERO_ATTRIBUTION_FIELDS: tuple[str, ...] = (
     'evaluated_population',
     'population',

@@ -677,7 +677,13 @@ def _registry_render_fragment_lines(fragment_key: str, trigger: str | None) -> l
             '    unknown_count: 0',
             '    clean_exit_queue_empty_count: 0',
         ]
-    lines = [f'{fragment_key}:', '  status: success']
+    # A `summary` line, not a bare envelope. `status` and `aspect` are envelope
+    # metadata that `_fragment_has_payload` deliberately does not count, and the
+    # written/omitted partition now delegates to that same discriminator — so an
+    # envelope-only fragment is correctly omitted rather than rendered. A fixture
+    # without payload would therefore assert that a section with no body renders,
+    # which is the opposite of the invariant. Every real producer emits payload.
+    lines = [f'{fragment_key}:', '  status: success', '  summary: "registry round-trip probe"']
     if trigger is None:
         return lines
     if fragment_key == 'manifest-decisions':
