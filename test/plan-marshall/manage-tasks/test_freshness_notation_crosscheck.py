@@ -16,8 +16,8 @@ trades one false signal for its mirror:
   notations still passes, including when an unrelated row sits AHEAD of the
   related one in ledger file order — a first-match return would refuse it.
 
-Two further properties are pinned here because losing either would reintroduce
-a defect this work exists to close:
+Three further properties are pinned here because losing any would reintroduce a
+defect this work exists to close:
 
 * **The record names its evidence.** A ``fresh`` verdict carries the matched
   notation, the matched row's index in the ledger, its ``plan_id`` and its
@@ -27,11 +27,17 @@ a defect this work exists to close:
   is correctly ``stale``, and nothing here re-stamps or relaxes the sha
   comparison to make it pass. Weakening that would reintroduce the false-green
   class the cross-check exists to close.
+* **The check is not a no-op.** One case drives the gate with NO seam stubbed at
+  all, so a resolver that stopped importing at runtime — or stopped resolving
+  anything against a real tree — is a failure here rather than a permanent
+  ``unverified`` pass that leaves every other case green. Its comparison target
+  has its own coverage in
+  ``test/plan-marshall/manage-architecture/test_project_build_notations.py``.
 
-The resolver seam (``resolve_expected_notations``) is stubbed in the gate-level
-cases so no case runs the live architecture crawl; the resolver's own
-three-outcome contract is exercised directly against
-``_freshness_crosscheck``.
+The resolver seam (``resolve_expected_notations``) is stubbed in most gate-level
+cases so they neither depend on the working tree nor pay for a crawl; the
+resolver's own outcome contract is exercised directly against
+``_freshness_crosscheck``, and the live path has the dedicated case named above.
 """
 
 from __future__ import annotations
@@ -438,6 +444,34 @@ def test_resolver_reports_a_non_empty_set_with_no_reason(monkeypatch) -> None:
     assert reason is None
 
 
+def test_resolver_reports_an_unimportable_resolver_apart_from_a_failing_one(monkeypatch) -> None:
+    """An unimportable resolver gets its OWN reason, not the running-failure one.
+
+    Both pass the gate — neither is a refutation — so the distinction buys
+    nothing at the gate and everything to a reader asking why the cross-check
+    never corroborates anything. An unimportable resolver means THIS CHECK IS
+    BROKEN and will report ``unverified`` on every row forever; an un-crawled
+    project is a legitimate quiet pass.
+    """
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _refuse_query_module(name, *args, **kwargs):
+        if name == '_cmd_client_query':
+            raise ImportError('no module named _cmd_client_query')
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.delitem(__import__('sys').modules, '_cmd_client_query', raising=False)
+    monkeypatch.setattr(builtins, '__import__', _refuse_query_module)
+
+    notations, reason = crosscheck.resolve_expected_notations('.')
+
+    assert notations == frozenset()
+    assert reason == crosscheck.REASON_RESOLVER_UNIMPORTABLE
+    assert reason != crosscheck.REASON_RESOLUTION_FAILED
+
+
 def test_resolver_reports_an_empty_set_as_an_inability(monkeypatch) -> None:
     """An empty resolution is 'I do not know', carrying its own reason.
 
@@ -463,6 +497,91 @@ def test_resolver_reports_a_raising_crawl_as_an_inability(monkeypatch) -> None:
 
     assert notations == frozenset()
     assert reason == crosscheck.REASON_RESOLUTION_FAILED
+
+
+# =============================================================================
+# cross_check_candidates preconditions
+# =============================================================================
+
+
+def test_an_empty_candidate_list_is_a_precondition_violation() -> None:
+    """Zero candidates has no honest verdict, so it fails fast rather than guessing.
+
+    Both answers the code could otherwise reach are wrong: ``refuted`` would
+    assert "no row carries a notation" about zero rows, and ``unverified`` would
+    hand the caller a ``chosen`` position addressing nothing. The caller routes
+    the no-candidate case to ``stale`` before reaching here, so arriving with an
+    empty list is a programming error and is reported as one.
+    """
+    with pytest.raises(ValueError, match='at least one candidate'):
+        crosscheck.cross_check_candidates([], '.')
+
+
+def test_the_chosen_position_indexes_the_list_it_was_given(monkeypatch) -> None:
+    """``chosen`` is a position, not the row object — the caller maps it back itself.
+
+    Returning the dict instead would force the caller to recover the row's ledger
+    index by ``id()``, which is sound only while this function returns one of the
+    very objects it was handed — not a property its signature promises.
+
+    The resolver is pinned so a failure here is attributable to the position
+    contract and not to the live architecture; the real path has its own case.
+    """
+    _stub_expected(monkeypatch, {_PYPROJECT})
+    outcome = crosscheck.cross_check_candidates(
+        [_build_entry(notation=_NPM), _build_entry(notation=_PYPROJECT)],
+        '/nonexistent-project-dir',
+    )
+    assert outcome['chosen'] == 1
+    assert 'entry' not in outcome
+
+
+# =============================================================================
+# Positive control: the WHOLE real path, no seam stubbed
+# =============================================================================
+
+
+def test_the_real_resolution_path_refuses_and_corroborates_against_this_repository(
+    plan_context, monkeypatch, tmp_path
+) -> None:
+    """Anti-vacuity for every case above: the unstubbed check still discriminates.
+
+    Every other gate case here pins ``resolve_expected_notations``. If the real
+    resolver could not be imported at runtime, or resolved nothing against a real
+    tree, the cross-check would collapse to a permanent ``unverified`` pass — and
+    all of those cases would stay green, because none of them uses it. This one
+    drives the gate with NO seam stubbed but the ledger and the sha, so an import
+    path or a crawl that stopped working is a test failure rather than a silent
+    no-op.
+
+    Both directions are asserted in one case on purpose: a refusal alone would
+    also be produced by a resolver that resolves the empty set and (wrongly)
+    treated it as a refutation, so the corroboration is what proves the set was
+    really populated.
+    """
+    monkeypatch.setattr(
+        file_ops, '_query_worktree_path', lambda _plan_id: (True, str(PROJECT_ROOT))
+    )
+    plan_dir = plan_context.plan_dir_for('crosscheck-live')
+    _write_status(plan_dir)
+    monkeypatch.setattr(_freshness_mod, 'compute_worktree_sha', lambda _root: _CURRENT_SHA)
+
+    unrelated = _write_ledger(tmp_path, [_build_entry(notation=_NPM)])
+    monkeypatch.setattr(_freshness_mod, 'resolve_ledger_path', lambda: unrelated)
+    refused = cmd_pre_commit_verify_freshness(Namespace(plan_id='crosscheck-live'))
+
+    related = tmp_path / 'related.jsonl'
+    related.write_text(
+        json.dumps(_build_entry(notation=_PYPROJECT), sort_keys=True) + '\n', encoding='utf-8'
+    )
+    monkeypatch.setattr(_freshness_mod, 'resolve_ledger_path', lambda: related)
+    permitted = cmd_pre_commit_verify_freshness(Namespace(plan_id='crosscheck-live'))
+
+    assert refused['status'] == 'stale', refused
+    assert refused['reason'] == crosscheck.REASON_NOTATION_UNRELATED
+    assert permitted['status'] == 'fresh', permitted
+    assert permitted['notation_cross_check'] == crosscheck.CORROBORATED
+    assert _PYPROJECT in permitted['expected_notations']
 
 
 class _FakeQueryModule:

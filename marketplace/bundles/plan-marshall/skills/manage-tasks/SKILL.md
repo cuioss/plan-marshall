@@ -229,7 +229,7 @@ The verdict is three-valued and is **never** collapsed to two:
 |---|---|---|
 | `corroborated` | The row's notation is one the architecture resolves | `fresh` |
 | `refuted` | The architecture resolved a non-empty set and no candidate row is in it — or a candidate carries no `notation` at all | `stale` (`notation_unrelated` / `notation_absent`) |
-| `unverified` | The notation set could not be established (the resolver raised, or resolved no build notation anywhere) | `fresh`, with the inability stated in the record |
+| `unverified` | The notation set could not be established | `fresh`, with the inability stated in the record |
 
 The split fail-direction is deliberate. A **refutation is positive knowledge**
 ("the architecture resolves pyproject and nothing else; this row says npm"), so
@@ -243,6 +243,20 @@ discovered — a project mid-onboarding, a fresh clone, a fixture tree — none 
 which is evidence of anything wrong, and the primary predicate has already been
 satisfied at that point. `unverified` is a stated sentinel, never a quiet
 `corroborated`, so "passed uncross-checked" stays legible to a reader (ADR-015).
+
+The three inabilities behind `unverified` are named apart for the same reason,
+even though all three pass the gate identically — the distinction is for the
+reader asking why nothing ever corroborates, and it has different owners:
+
+| `notation_cross_check_reason` | What it means | Who owns it |
+|---|---|---|
+| `architecture_resolver_unimportable` | The resolver module could not be imported at all | **This check is broken.** A deployment or `PYTHONPATH` fault; it will report `unverified` on every row forever, so it is not a quiet pass but a silent outage. |
+| `architecture_resolution_failed` | The resolver was reached and raised while running | The architecture query — a crawl that failed against this tree. |
+| `architecture_resolved_no_build_notations` | The resolver ran and found no build notation anywhere | Nobody: the ordinary un-crawled or greenfield project. This is the legitimately quiet case. |
+
+⛔ An empty resolved set is an **inability**, never a refutation. Reading it as
+"this project builds with nothing" would refuse every real build row the ledger
+holds — a false-red manufactured from an absence of data.
 
 Every candidate row is examined, not just the first match. A project that
 legitimately builds with several notations can carry an unrelated row ahead of a
@@ -270,8 +284,9 @@ by a suffix list here.
   `worktree_sha` exists AND the notation cross-check did not refute it, so the
   gate is permitted to pass. The record **names its evidence**: `worktree_sha`,
   `matched_notation`, `matched_entry_index` (the row's position among the
-  ledger's *parsed* entries — malformed lines are skipped, so this is not a
-  physical line number), `matched_plan_id`, `timestamp_iso`,
+  ledger's *parsed* entries — `read_entries` skips blank lines, unparseable
+  lines, and valid-JSON-non-object lines, so this is not a physical line number
+  and a divergence between the two is not by itself evidence of corruption), `matched_plan_id`, `timestamp_iso`,
   `notation_cross_check` (`corroborated` or `unverified`), `expected_notations`
   (the resolved set), `worktree_root`, and `ledger_path`. An `unverified` pass
   additionally carries `notation_cross_check_reason`. Naming the row is what
@@ -301,7 +316,15 @@ by a suffix list here.
   | `build_killed` | Latest row for this sha is `status: killed` | Externally killed — **not flaky, do not blind-retry.** No budget fired and no verdict was reported. Establish why before re-running. |
   | `build_indeterminate` | Latest row for this sha is `status: unknown`, or a status outside the vocabulary | The outcome could not be read. It supports no conclusion either way; re-run to obtain a readable verdict. |
   | `notation_unrelated` | Successful rows carry this sha, but every notation they name is one the architecture does not resolve | The rows are evidence of some other project's build. Dispatch a real build of THIS project — and establish where the unrelated row came from before trusting the ledger again. |
-  | `notation_absent` | Successful rows carry this sha, but none carries a `notation` at all | `build_record` requires `notation`, so the row was not written by the dispatch boundary. Something other than a build is writing to the ledger; find it. |
+  | `notation_absent` | Successful rows carry this sha, but **none** carries a `notation` at all | `build_record` requires `notation`, so the row was not written by the dispatch boundary. Something other than a build is writing to the ledger; find it. |
+
+  The two `notation_*` routes are mutually exclusive and `notation_unrelated`
+  wins a mixed set: a candidate list holding one notation-less row and one
+  unresolved-notation row reports `notation_unrelated`, because
+  `candidate_notations` is non-empty. `notation_absent` therefore means *every*
+  candidate lacked a notation, not *some* did — read `candidate_notations` to see
+  which notations were actually present, and treat an empty list under
+  `notation_unrelated` as impossible by construction.
 
   `worktree_mutated` is the only route on which the tree is known to have
   changed. On the `build_*` routes a build **was** observed against exactly this
@@ -378,9 +401,31 @@ from inside the loop.
    available and no candidate corroborated → `stale` with `notation_unrelated`
    or `notation_absent`.
 
-The algorithm never raises uncaught exceptions on missing status metadata,
-missing ledger, or absent worktree — every degenerate input case returns a
-descriptive status (`undecidable` or `stale`).
+   ⚠ **Step 7 costs a live architecture crawl, and the consuming site should
+   budget for it.** The resolution runs the same crawl `architecture resolve`
+   runs — memoized per process, but the gate is a one-shot process, so the memo
+   never carries between invocations and each of the gate's two wiring points
+   (phase-5 Step 12a, phase-6 `push`) pays it once. It shells out: `git` on every
+   project, plus each build tool's own discovery verbs on a Maven/Gradle/npm one
+   (`crawl_all_modules` documents `help:all-profiles dependency:tree` per Maven
+   module). Measured on this repository — Python-only — the first crawl took
+   between 1 and 4 seconds across two sessions; no figure exists for a Maven
+   project, so treat that range as a floor rather than an estimate. Two
+   properties bound the cost: it is paid only on the path where the primary
+   predicate ALREADY matched (a `stale` refusal never crawls), and the
+   short-circuit ahead of it means a footprint needing no build never reaches
+   Step 4, let alone Step 7.
+
+The algorithm never raises uncaught exceptions on any degenerate input:
+missing status metadata, a missing ledger, an absent worktree, or an
+architecture that cannot be resolved. The first three return a refusal
+(`undecidable` or `stale`). ⛔ The fourth does **not**, and the difference is
+deliberate rather than an oversight in the enumeration: an unresolvable
+architecture is an inability to *audit* evidence the primary predicate has
+already accepted, so it returns `fresh` with `notation_cross_check: unverified`
+and the inability named in the record. Failing closed there would refuse every
+transition in an un-crawled tree on strictly less evidence than the primary
+predicate supplied — see § "The notation cross-check" for the full reasoning.
 
 ### Script-Level `[OUTCOME]` Emission (`finalize-step`)
 

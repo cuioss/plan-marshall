@@ -368,12 +368,18 @@ def test_log_script_execution_error_with_details():
 #
 # Regression guard for the orchestrator-context build-call bug (deliverable 1):
 # the pre-push-quality-gate build MUST forward --plan-id so its log line lands in
-# the plan-scoped script-execution.log tier — the exact log that
-# pre-commit-verify-freshness reads. The old --project-dir-only shape carried no
-# --plan-id, so log_script_execution's extract_plan_id() returned None and the
-# build line was misrouted to the global date-suffixed tier, false-negativing the
-# plan-scoped freshness gate. These tests pin both halves: the FIXED shape routes
-# plan-scoped, the legacy shape routes global.
+# the plan-scoped script-execution.log tier. The old --project-dir-only shape
+# carried no --plan-id, so log_script_execution's extract_plan_id() returned None
+# and the build line was misrouted to the global date-suffixed tier. These tests
+# pin both halves: the FIXED shape routes plan-scoped, the legacy shape routes
+# global.
+#
+# ⛔ This routing is NOT what pre-commit-verify-freshness reads, and an earlier
+# version of this comment said it was. That gate consumes the unified
+# change-ledger and is explicitly execution-log-TIER-agnostic (see
+# phase-6-finalize/standards/pre-push-quality-gate.md), so a misrouted audit line
+# cannot false-negative it. What is pinned here is the audit trail's own
+# correctness.
 
 _PYPROJECT_NOTATION = 'plan-marshall:build-pyproject:pyproject_build'
 

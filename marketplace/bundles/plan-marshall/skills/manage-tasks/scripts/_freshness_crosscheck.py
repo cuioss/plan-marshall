@@ -110,6 +110,15 @@ UNVERIFIED = 'unverified'
 
 #: ``notation_cross_check_reason`` when the architecture resolver raised.
 REASON_RESOLUTION_FAILED = 'architecture_resolution_failed'
+#: ``notation_cross_check_reason`` when the resolver could not even be IMPORTED.
+#: Distinct from :data:`REASON_RESOLUTION_FAILED` because the two are different
+#: facts with different owners: an un-crawlable project is a legitimate quiet
+#: pass, while an unimportable resolver means THIS CHECK IS BROKEN — a deployment
+#: or ``PYTHONPATH`` fault that will report ``unverified`` on every row forever.
+#: Both pass the gate (neither is a refutation), so folding them would cost
+#: nothing at the gate and everything to a reader trying to find out why the
+#: cross-check never corroborates anything.
+REASON_RESOLVER_UNIMPORTABLE = 'architecture_resolver_unimportable'
 #: ``notation_cross_check_reason`` when the resolver ran but resolved no build notation.
 REASON_NO_NOTATIONS_RESOLVED = 'architecture_resolved_no_build_notations'
 #: ``notation_cross_check_reason`` when every candidate row carried no notation.
@@ -137,10 +146,20 @@ def resolve_expected_notations(project_dir: str) -> tuple[frozenset[str], str | 
         ``notations`` with ``reason is None``, or an empty ``notations`` with a
         non-``None`` reason naming which inability occurred. An empty set is
         NEVER returned as a refutation-grade answer — see the module docstring.
+
+        The three inabilities are named apart rather than folded, because they
+        have different owners: :data:`REASON_RESOLVER_UNIMPORTABLE` is a fault in
+        THIS check's own deployment, :data:`REASON_RESOLUTION_FAILED` is a fault
+        the resolver hit while running, and
+        :data:`REASON_NO_NOTATIONS_RESOLVED` is the ordinary un-crawled project.
+        All three pass the gate, so the distinction buys nothing there and
+        everything for a reader asking why nothing ever corroborates.
     """
     try:
         from _cmd_client_query import resolve_project_build_notations
-
+    except ImportError:
+        return frozenset(), REASON_RESOLVER_UNIMPORTABLE
+    try:
         notations = resolve_project_build_notations(project_dir)
     except Exception:  # noqa: BLE001 — any resolver failure is an inability, not a refutation
         return frozenset(), REASON_RESOLUTION_FAILED
@@ -180,36 +199,58 @@ def cross_check_candidates(
     pure-append, so file order is write order.
 
     Args:
-        candidates: Matching ``kind=build`` rows in ledger file order. Must be
-            non-empty; the caller has already handled the no-candidate case as
-            ``stale``.
+        candidates: Matching ``kind=build`` rows in ledger file order. MUST be
+            non-empty — the caller handles the no-candidate case as ``stale``
+            before reaching here, and this function has no honest verdict for an
+            empty list: ``refuted`` would assert "no row carries a notation"
+            about zero rows, and ``unverified`` would hand the caller a
+            ``chosen`` index addressing nothing.
         project_dir: Project root the architecture is resolved against.
 
     Returns:
         A dict carrying ``verdict`` (:data:`CORROBORATED` / :data:`REFUTED` /
-        :data:`UNVERIFIED`), ``entry`` (the chosen row, or ``None`` on
-        :data:`REFUTED`), ``expected_notations`` (the sorted resolved set),
-        ``candidate_notations`` (the sorted distinct notations the candidates
-        carried, with a row carrying none contributing nothing), and ``reason``
-        (``None`` on :data:`CORROBORATED`, otherwise the naming constant).
+        :data:`UNVERIFIED`), ``chosen`` (the POSITION in ``candidates`` of the
+        cited row, or ``None`` on :data:`REFUTED`), ``expected_notations`` (the
+        sorted resolved set), ``candidate_notations`` (the sorted distinct
+        notations the candidates carried, with a row carrying none contributing
+        nothing), and ``reason`` (``None`` on :data:`CORROBORATED`, otherwise the
+        naming constant).
+
+        ``chosen`` is a position rather than the row object so the caller can map
+        it back to its own addressing (a ledger index) without either side
+        depending on object identity. Handing back the dict instead would force
+        the caller to recover the position by ``id()`` — sound only while this
+        function returns one of the very objects it was passed, which is not a
+        property its signature promises.
+
+    Raises:
+        ValueError: If ``candidates`` is empty. A precondition violation is a
+            programming error and is failed fast rather than answered with
+            whichever verdict the code happens to reach first.
     """
+    if not candidates:
+        raise ValueError(
+            'cross_check_candidates requires at least one candidate row; the '
+            'no-candidate case is the caller\'s stale route, not a cross-check verdict'
+        )
+
     expected, resolution_reason = resolve_expected_notations(project_dir)
     candidate_notations = sorted({n for n in map(_candidate_notation, candidates) if n})
 
     if resolution_reason is not None:
         return {
             'verdict': UNVERIFIED,
-            'entry': candidates[0],
+            'chosen': 0,
             'expected_notations': [],
             'candidate_notations': candidate_notations,
             'reason': resolution_reason,
         }
 
-    for entry in candidates:
+    for position, entry in enumerate(candidates):
         if _candidate_notation(entry) in expected:
             return {
                 'verdict': CORROBORATED,
-                'entry': entry,
+                'chosen': position,
                 'expected_notations': sorted(expected),
                 'candidate_notations': candidate_notations,
                 'reason': None,
@@ -217,7 +258,7 @@ def cross_check_candidates(
 
     return {
         'verdict': REFUTED,
-        'entry': None,
+        'chosen': None,
         'expected_notations': sorted(expected),
         'candidate_notations': candidate_notations,
         # A row with no notation at all and a row naming an unresolved build are

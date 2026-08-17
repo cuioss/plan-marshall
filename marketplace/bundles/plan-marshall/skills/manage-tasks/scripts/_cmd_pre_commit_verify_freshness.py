@@ -177,8 +177,8 @@ def _stale_reason(entries: list[dict], current_sha: str) -> tuple[str, str, str 
     The historical gate emitted one message for every route to ``stale``:
     "the worktree has been mutated since the last observed build ... re-dispatch
     a build before retrying." That sentence asserts a CAUSE the gate never
-    established, and prescribes a remedy that is wrong for three of the four
-    routes. When the ledger holds a ``killed`` row for the CURRENT sha the tree
+    established, and prescribes a remedy that is wrong for every route this
+    function serves except ``worktree_mutated`` itself. When the ledger holds a ``killed`` row for the CURRENT sha the tree
     was not mutated at all — a build was observed and was killed — so the gate
     was reporting a mutation that did not happen and prescribing exactly the
     blind retry the no-blind-retry rule forbids.
@@ -235,10 +235,12 @@ def _evidence_fields(index: int, entry: dict) -> dict:
     """Name the evidence row so a reader can find it, not merely trust it.
 
     ``matched_entry_index`` is the row's position among the ledger's PARSED
-    entries in file order — not its physical line number. ``read_entries``
-    skips malformed lines, so the two diverge exactly when the ledger has been
-    corrupted; the parsed index is the one that addresses the row this gate
-    actually read, which is what an auditor needs.
+    entries in file order — **not** its physical line number. ``read_entries``
+    skips three kinds of line: blank ones, unparseable ones, and lines that are
+    valid JSON but not objects. Any of the three shifts the two apart, so a
+    divergence is NOT by itself evidence of corruption — a stray newline
+    produces it too. The parsed index is nonetheless the one an auditor needs,
+    because it addresses the row this gate actually read.
 
     Args:
         index: The row's index among the parsed ledger entries.
@@ -289,7 +291,7 @@ def _verdict_for_candidates(
     Returns:
         The gate's ``fresh`` or ``stale`` verdict dict.
     """
-    index_by_id = {id(entry): index for index, entry in candidates}
+    ledger_indices = [index for index, _ in candidates]
     outcome = cross_check_candidates([entry for _, entry in candidates], str(worktree_root))
     verdict = outcome['verdict']
 
@@ -308,20 +310,25 @@ def _verdict_for_candidates(
                 f'A kind=build entry with status=success matches the current '
                 f'working-tree sha ({current_sha}), but no such entry names a build '
                 f'this project performs: the architecture resolves '
-                f'{outcome["expected_notations"]} and the matching rows carry '
-                f'{outcome["candidate_notations"] or "no notation at all"}. The row is '
-                f'not evidence that THIS tree was built, so the gate MUST fail closed. '
-                f'Re-dispatch a real build of this project, and establish where the '
-                f'unrelated row came from before trusting the ledger again.'
+                f'{", ".join(outcome["expected_notations"])} and the matching rows carry '
+                f'{", ".join(outcome["candidate_notations"]) or "no notation at all"}. The '
+                f'row is not evidence that THIS tree was built, so the gate MUST fail '
+                f'closed. Establish where the unattributable row came from before '
+                f'trusting the ledger again — a fresh build will clear the block and '
+                f'leave whatever wrote that row in place.'
             ),
         }
 
-    entry = outcome['entry']
+    # ``chosen`` is a POSITION in the list handed to the cross-check, and that
+    # list was built from ``candidates`` in order — so the same position indexes
+    # both, and the row's ledger index is recovered without either side relying
+    # on the identity of the dict that travelled across the boundary.
+    chosen = outcome['chosen']
     result = {
         'status': 'fresh',
         'plan_id': plan_id,
         'worktree_sha': current_sha,
-        **_evidence_fields(index_by_id[id(entry)], entry),
+        **_evidence_fields(ledger_indices[chosen], candidates[chosen][1]),
         'notation_cross_check': verdict,
         'expected_notations': outcome['expected_notations'],
         'worktree_root': str(worktree_root),

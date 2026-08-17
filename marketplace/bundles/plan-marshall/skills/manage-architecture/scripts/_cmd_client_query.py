@@ -632,9 +632,40 @@ _PROFILE_CANONICALS: frozenset[str] = frozenset(
 
 
 def _command_executable(commands: dict[str, Any], command_name: str) -> str:
-    """Return the executable string for ``command_name`` in a command map."""
+    """Return the executable string for ``command_name`` in a command map.
+
+    Trusts the entry to be a ``str`` or a mapping, which every command map a
+    resolve path has already validated satisfies. A reader that sweeps
+    unvalidated maps wants :func:`_defensive_command_executable` instead.
+    """
     cmd_data = commands[command_name]
     return cmd_data if isinstance(cmd_data, str) else cmd_data.get('executable', '')
+
+
+def _defensive_command_executable(entry: Any) -> str:
+    """Return ``entry``'s executable string, or ``''`` for any other shape.
+
+    The total counterpart to :func:`_command_executable`, for a caller that
+    sweeps every module's whole command map rather than resolving one validated
+    command. The distinction is not stylistic: ``_command_executable`` calls
+    ``.get`` on anything that is not a ``str``, so a single entry that is a list,
+    a number, or ``None`` raises ``AttributeError`` out of the enclosing sweep and
+    takes every OTHER module's notations down with it. A sweep whose caller treats
+    an exception as "the architecture could not be resolved" would then report
+    that for the whole project on the strength of one malformed entry.
+
+    Args:
+        entry: One value from a module's ``commands`` map, of unverified shape.
+
+    Returns:
+        The executable string, or ``''`` when ``entry`` carries none.
+    """
+    if isinstance(entry, str):
+        return entry
+    if isinstance(entry, dict):
+        executable = entry.get('executable', '')
+        return executable if isinstance(executable, str) else ''
+    return ''
 
 
 def _resolved_command_dict(
@@ -774,11 +805,16 @@ def resolve_project_build_notations(project_dir: str = '.') -> frozenset[str]:
     """
     notations: set[str] = set()
     for module_data in crawl_all_modules(project_dir).values():
+        if not isinstance(module_data, dict):
+            continue
         commands = module_data.get('commands', {})
         if not isinstance(commands, dict):
             continue
-        for command_name in commands:
-            notation = build_notation_for_executable(_command_executable(commands, command_name))
+        for entry in commands.values():
+            executable = _defensive_command_executable(entry)
+            if not executable:
+                continue
+            notation = build_notation_for_executable(executable)
             if notation is not None:
                 notations.add(notation)
     return frozenset(notations)

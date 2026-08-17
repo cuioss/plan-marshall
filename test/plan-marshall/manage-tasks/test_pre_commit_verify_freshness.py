@@ -444,14 +444,18 @@ def test_stale_when_only_change_entry_matches_sha(plan_context, monkeypatch, tmp
 
 
 # =============================================================================
-# The ``stale`` REASON — four routes, four remedies
+# The ``stale`` REASON — one route, one remedy
 #
 # The gate's pass/fail behaviour is identical on every route below (only
 # ``fresh`` ever permits), so these cases pin the half that differs: what the
 # refusal SAYS. The historical single message asserted "the worktree has been
 # mutated since the last observed build ... re-dispatch a build before
-# retrying" on all four — a cause the gate never established, and a remedy that
-# is exactly the blind retry a ``killed`` build forbids.
+# retrying" on every one of them — a cause the gate never established, and a
+# remedy that is exactly the blind retry a ``killed`` build forbids.
+#
+# The two ``notation_*`` routes are NOT exercised here: they come from the
+# cross-check rather than from ``_stale_reason``, and live in
+# ``test_freshness_notation_crosscheck.py``.
 # =============================================================================
 
 

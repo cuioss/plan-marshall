@@ -112,7 +112,7 @@ _BUILD_CONFIG_LOCATIONS: dict[str, tuple[str, str]] = {
 }
 
 
-def _classify_build_executable(executable: str) -> tuple[str, str] | None:
+def _parse_build_executable(executable: str) -> tuple[str, str, str] | None:
     """Detect Bucket B build notations in a resolved ``executable`` string.
 
     A build executable has the canonical shape::
@@ -123,12 +123,22 @@ def _classify_build_executable(executable: str) -> tuple[str, str] | None:
     and ``{args}`` is the canonical command-args string the run-config keys
     are persisted against.
 
-    The classifier returns ``(tool_name, command_args)`` when the executable
-    matches this shape — ``tool_name`` is the value from ``_BUILD_NOTATIONS``,
+    The single parse behind both public readers. It returns
+    ``(notation, tool_name, command_args)`` when the executable matches this
+    shape — ``notation`` is the token lifted verbatim from the executable,
+    ``tool_name`` is the value ``_BUILD_NOTATIONS`` maps it to, and
     ``command_args`` is the literal string passed after ``--command-args``.
     Returns ``None`` for non-build executables (Bucket A ``manage-*``
     notations, raw shell invocations, executables that lack the ``run``
     subcommand, or executables missing ``--command-args``).
+
+    The notation is carried out of the parse rather than recovered afterwards by
+    inverting :data:`_BUILD_NOTATIONS`. That inversion is only value-preserving
+    while the map's VALUES stay distinct, and nothing enforces that: two wrappers
+    for one language would share a ``tool_name`` (the docstring on that map notes
+    the value also prefixes every ``timeout_set`` key, which is a reason to share
+    it), and the inverse would then silently answer with whichever notation
+    happened to be written last.
 
     Detection is structural: shlex tokenises the executable string so a
     quoted ``--command-args "verify plan-marshall"`` survives intact, and
@@ -189,24 +199,31 @@ def _classify_build_executable(executable: str) -> tuple[str, str] | None:
     if command_args is None:
         return None
 
+    return notation, tool_name, command_args
+
+
+def _classify_build_executable(executable: str) -> tuple[str, str] | None:
+    """Return ``(tool_name, command_args)`` for a build executable, else ``None``.
+
+    The timeout/tier half of :func:`_parse_build_executable`, whose ``notation``
+    the callers here do not need — they key run-config lookups on ``tool_name``.
+    """
+    parsed = _parse_build_executable(executable)
+    if parsed is None:
+        return None
+    _, tool_name, command_args = parsed
     return tool_name, command_args
-
-
-# Inverse of :data:`_BUILD_NOTATIONS` (tool_name -> notation), derived from that
-# one map rather than restated beside it, so registering a new build skill adds
-# both directions from a single edit and the two can never drift apart.
-_NOTATION_BY_TOOL: dict[str, str] = {tool: notation for notation, tool in _BUILD_NOTATIONS.items()}
 
 
 def build_notation_for_executable(executable: str) -> str | None:
     """Return the build notation embedded in a resolved ``executable``, or ``None``.
 
-    The public half of :func:`_classify_build_executable`: same structural
-    detection, but it answers "which build notation does this resolved command
-    dispatch?" rather than "which tool and args does it carry". Callers that
-    need to compare an executor notation against what a project's architecture
-    actually resolves to use this instead of reaching for the private
-    classifier and re-inverting :data:`_BUILD_NOTATIONS` themselves.
+    The notation half of :func:`_parse_build_executable`, for callers comparing
+    an executor notation against what a project's architecture actually resolves
+    to. The notation comes straight out of the parse, so it is the token the
+    executable really carries and not a value recovered by inverting
+    :data:`_BUILD_NOTATIONS` — see that function's docstring for why the
+    inversion is not equivalent.
 
     Args:
         executable: A resolved command string from ``architecture resolve``.
@@ -215,10 +232,8 @@ def build_notation_for_executable(executable: str) -> str | None:
         The ``bundle:skill:script`` build notation, or ``None`` when
         ``executable`` is not a build executable in the canonical shape.
     """
-    classified = _classify_build_executable(executable)
-    if classified is None:
-        return None
-    return _NOTATION_BY_TOOL.get(classified[0])
+    parsed = _parse_build_executable(executable)
+    return None if parsed is None else parsed[0]
 
 
 def _load_build_config(tool_name: str) -> Any | None:

@@ -67,6 +67,7 @@ from _cmd_client_build import (  # noqa: E402, F401
     _compute_execution_tier_fields,
     _load_build_config,
     _lookup_bash_timeout,
+    _parse_build_executable,
     build_notation_for_executable,
 )
 from _cmd_client_handlers import (  # noqa: E402, F401
