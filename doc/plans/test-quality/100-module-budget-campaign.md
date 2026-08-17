@@ -181,13 +181,13 @@ must land first, and finally the one module that belongs to a landed plan no red
 
 | Run | Slice | Over-budget modules (lead — re-derive) | Depends on |
 |---|---|---:|---|
-| 1 | `050`'s — plan state and records | 60 | nothing; `050` landed |
-| 2 | `040`'s — delivery pipeline | 55 | nothing; `040` landed |
-| 3 | `060`'s — runtime and script substrate | 53 | `060` landed; **halts if `090` is in flight** — see § Notes |
-| 4 | `030`'s — config and manifest | 39 | nothing; `030` landed |
-| 5 | `070`'s — architecture and orchestration | 63 | plan `070` landed |
-| 6 | `080`'s — plugin development and generator | 42 | plan `080` landed |
-| 7 | plan `010`'s rule-test modules — `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` | 1 | `010` landed; **halts if `090` is in flight** — see § Notes |
+| 1 | `050`'s — plan state and records | 60 | `050` landed. Collisions: none in the matrix |
+| 2 | `040`'s — delivery pipeline | 55 | `040` landed. Collisions: none in the matrix |
+| 3 | `060`'s — runtime and script substrate | 53 | `060` landed. **Collisions: the matrix names `090`** |
+| 4 | `030`'s — config and manifest | 39 | `030` landed. Collisions: none in the matrix |
+| 5 | `070`'s — architecture and orchestration | 63 | `070` landed. Collisions: none in the matrix |
+| 6 | `080`'s — plugin development and generator | 42 | `080` landed. **Collisions: the matrix names `090`** |
+| 7 | plan `010`'s rule-test modules — `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` | 1 | `010` landed. **Collisions: the matrix names `090`** |
 
 **Each of the six reduction slices'** exact directory list is the **Expected surface** of the plan
 that owns it, read from that plan's own file — not restated here, because a restated list is a second
@@ -275,12 +275,13 @@ weaker check, and record what the check that would have established the unavaila
 * **Sequencing against the rest of the epic.** Rows 1–4 have no dependency and may start
   immediately. `070` and `080` must land before this campaign takes their slices — rows 5 and 6 of
   the table above.
-  ⛔ **Some campaign runs collide with plan `090`, and the check is halting. The set is stated in ONE
-  place:** `doc/plans/test-quality/README.md` § "The collision matrix". **Read it there — it is
-  deliberately not restated here**, because restating it is how one round named two colliding runs
-  where there are three, and left the third licensed to proceed. **Before starting any run, look this
-  campaign up in the matrix; if it names a party for that run, confirm no open PR and no in-flight
-  branch exists for it, and halt and report rather than editing files two plans own.**
+  ⛔ **Collisions are halting, and this plan states none of them.** The set lives in
+  `doc/plans/test-quality/README.md` § "The collision matrix"; the *Depends on* column of the table
+  above carries a **reference** to it per run, never a copy. **Before starting a run, look this
+  campaign up in the matrix; if it names a party, confirm no open PR and no in-flight branch exists
+  for it, and halt and report rather than editing files two plans own.** An earlier draft enumerated
+  the colliding runs here and in that column, the two disagreed, and the run the column licensed was
+  one the matrix forbade.
 * **When every slice is done, one thing follows.** `test-module-line-budget` reaches zero and its
   flip to `severity: error` becomes available. That flip belongs to plan `090` § D7's ladder, not
   here — this plan produces the condition, it does not take the gate decision.

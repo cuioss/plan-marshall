@@ -156,7 +156,7 @@ diff, so the gate's verdict is taken over committed work only.
 
 Recorded per instance across the verification rounds, against a budget declared **before the first
 dispatch** and later extended by the operator. **The per-round headings carry the totals; no aggregate
-is stated here**, because two drafts froze one and neither survived the next round. Sources: **V1…V5** = the independent pre-PR verification sub-agent, by round; **CR** = the `coderabbitai` PR review;
+is stated here**, because two drafts froze one and neither survived the next round. Sources: **Vn** = the independent pre-PR verification sub-agent, round *n*; **CR** = the `coderabbitai` PR review;
 **S** = self-caught while fixing.
 
 ### Round 1 — 23 findings: 22 fixed, 1 accepted as a labelled lead
@@ -299,7 +299,7 @@ is corroboration from a different method, not a duplicate pass.
 | 104 | V6 · "five executable plan documents" — the diff carries **ten** (five new/re-scoped plus four landed `plan.md` a re-entry run loads, plus the epic brief) and **eight records**, which the report itself calls bookkeeping | **Fixed** — both halves named, which sharpens Proposal 1 rather than weakening it |
 | 105 | V6 · Step 8 marked **Done** while Step 6 is in progress, and Step 9 likewise — the merge gate is downstream of the loop | **Fixed** — both reported open, with what settles them |
 | 106 | V6 · The surface-read line claimed `get_reviews` 1 and `get_review_comments` 0 while the report dispositions nine inline findings from those threads. Live: 4 and 9 | **Fixed** — the counts are stated as moving, with the instruction to re-derive |
-| 107 | V6 · **Two CodeRabbit comments were undispositioned** while the report asserted "Zero open comments" — a Major outside-diff finding on the README's hardcoded doctor `PYTHONPATH`, and a nitpick on partition ownership | **Both dispositioned** — the `PYTHONPATH` one is answered in the README and on the thread; the ownership one is what the collision matrix implements |
+| 107 | V6 · **Two CodeRabbit comments were undispositioned** while the report asserted "Zero open comments" — a Major outside-diff finding on the README's hardcoded doctor `PYTHONPATH`, and a nitpick on partition ownership | **Both dispositioned** — the `PYTHONPATH` one is answered in the README (it is an outside-diff comment with no review thread to reply on, so the README is the only surface available); the ownership one is what the collision matrix implements |
 | 108 | V6 · "CodeRabbit re-reviews on a new head" — the mechanism is **quota-gated**, and by round 6 it was rate-limited again, so every commit after `d66564f` is unreviewed by it and its `Reopens?` is `yes`, not blank | **Fixed** — stated, with what the coverage figure actually describes |
 | 109 | V6 · The PR description's aggregates are stale — the artifact reviewers actually read | **Fixed** — re-derived from the tables |
 
@@ -315,6 +315,53 @@ stop restating it —
   phrases its references was never this plan's business, and that column was falsified in five
   consecutive rounds — every time a fix to one plan's wording changed a citation the column counted.
 
+### Round 7 — 21 findings, all fixed. Its verdict changed the approach a second time
+
+Round 7's brief was narrow: **did round 6's structural change remove the recurring class, or move
+it?** Its answer was *moved*, with evidence rather than impression — and it named the mechanical fix
+this round applied.
+
+| # | Finding | Disposition |
+|---|---|---|
+| 90 | V7 · **`100`'s own slice table still licensed campaign run 6 alongside `090`.** Round 6 rewrote `100`'s Notes to point at the matrix and never swept the *Depends on* column 90 lines above — the column a run actually reads when it picks a slice. `100` went from consistently-wrong to internally contradictory | **Fixed structurally** — every row of that column now carries a **reference** to the matrix rather than a copy, so the table cannot say something the matrix does not |
+| 91 | V7 · `090`'s carve-out restated a collision two lines above the block declaring nothing is restated | **Fixed** — the row states ownership only |
+| 92 | V7 · `090`'s carve-out row 1 **denied** a collision the matrix asserts ("`010` has landed … the risk is a later re-entry, not a concurrent one") while `100` run 7 can start at any time and splits the very module `090` § D4 amends | **Fixed** — the row no longer judges scheduling |
+| 93 | V7 · **The "ONE place … none restates it" claim was false the moment round 6 wrote it** — `110`, `080` and the README's own later subsections all still enumerated, and three collisions (`110`↔`070`, `110`↔`080`, `110`↔`100`) were absent from the matrix entirely | **Fixed** — see the note below |
+| 94 | V7 · The README's plan graph said `090` "runs any time", 32 lines above the matrix — the exact wording round 4's #48 was filed against, surviving in a different file | **Fixed** |
+| 95 | V7 · Round 6's fix for the exclusion-count reached the four landed plans and **missed `070` and `080`** — the two unstarted plans that will actually execute the gate — and what those two said ("which four sibling runs have already corrected") is refuted by this report's own analysis | **Fixed** in both, and the false reassurance replaced |
+| 96 | V7 · **"the last round finding eight of ten" was STILL in the file** — recorded fixed in rounds 5 and 6. **The fourth consecutive round with a fix recorded as landed and not written**, and the finding that named the pattern was itself an instance of it | **Fixed at its actual site**, located by grep rather than by matching the sentence a previous round assumed it was in |
+| 97 | V7 · Proposal 2's series stale in three ways — missing round 6, carrying the superseded round-5 figure, and "two rounds" where the report says three | **Fixed** |
+| 98 | V7 · The PR description's aggregates stale; row 109 recorded them fixed | **Fixed** — re-derived, and the description now states the series without freezing a total |
+| 99 | V7 · "Three rounds have engaged condition B" followed by an enumeration of two | **Fixed** — each engaging round is now named rather than counted |
+| 100 | V7 · Proposal 1's document enumeration omitted `010/plan.md` and its "eight records" parenthetical named seven | **Fixed** |
+| 101 | V7 · Row 107 claimed the `PYTHONPATH` finding was answered "on the thread"; it is an outside-diff comment with no thread | **Fixed** — the claim is narrowed to the README, with why no thread exists |
+| 102 | V7 · The findings legend was a round stale, and defined an **S** source no row uses | **Fixed** — the legend is now round-agnostic |
+| 103 | V7 · The self-inflicted table stopped at round 5, and round 6 counted itself by the row-based rule its own #97 reports as unreliable | **Fixed** — rounds 6 and 7 added, round 6 recounted by provenance (6, not 3) |
+| 104 | V7 · "Every comment is dispositioned: one review with no findings, and **two refusal notices**" contradicted by the participation table eight lines above, which records `coderabbitai` as `reviewed` with nine findings | **Fixed** |
+| 105 | V7 · The quoted `coderabbitai` body was stale again — a different countdown, a different head | **Fixed** by removing the verbatim quote: the report now says to read it live and why |
+| 106 | V7 · **`090` § D3 would create a new root-level `test/*.py` module the partition assigns to nobody** — the `pm-code-intelligence` defect, created deliberately | **Fixed** — D3 now requires the guard be placed inside an owned surface, with the reason |
+| 107 | V7 · `090`'s Notes still counted how many deliverables consumers "cite", after the column was deleted for counting citations | **Fixed** |
+| 108 | V7 · Inserting the matrix as an `###` swallowed the entire partition contract into a section named for something else | **Fixed** — the matrix is its own `##`, and the partition contract has its heading back |
+| 109 | V7 · Pointers named § "The collision matrix"; the heading carried a trailing subtitle, so they resolved by prefix only | **Fixed** — the heading is exactly what the pointers name |
+| 110 | V7 · The matrix was `090`-scoped prose claiming epic-wide authority, and its closing "everything else may run concurrently" licensed `080` ∥ `110`, which both plans forbid | **Fixed** — the matrix is now epic-wide and complete, and its closing sentence is true |
+
+⭐ **Round 7's diagnosis, and why the approach changed again.** Round 6 declared one table
+authoritative while leaving five enumerations live — so, as round 7 put it, *"the class was never
+'restatement'; it was an ownership fact held in prose in N places with no derivation and no check.
+Round 6 raised N from five to six and designated one of the six authoritative."* Within the single
+commit that created the matrix, one pointing file already disagreed with it.
+
+This round did what round 7 prescribed instead of another editorial pass:
+
+* **Every collision enumeration outside the matrix is deleted** — from `090`, `100`, `110`, `080`, the
+  README's plan graph, its exclusion table and its `010` carve-out. A tree-wide grep for the phrases
+  that carry such a claim now returns only the matrix itself and the matrix's own instruction *"if you
+  are about to write this anywhere else, add a row here instead."* The matrix is sole **by
+  construction**, not by assertion.
+* **The matrix is complete**, covering the three `110` collisions it never had.
+* **`100`'s slice table references it per row** rather than restating, so the table a run reads when it
+  picks a slice cannot disagree with the table that governs.
+
 ### The stop record
 
 **The loop reached its declared budget at round 3, and the operator then extended it** by up to five
@@ -327,13 +374,17 @@ exits ended it.
 running out of rounds bounds how often the run *verifies*, never whether it *fixes* what verification
 already found. Every finding above is dispositioned; none is deferred.
 
-**Three rounds have engaged condition B.** Round 3's #37 — `090` D2's sizing. It is a behavioural under-specification
+**Four rounds have engaged condition B**, and each is named rather than counted. Round 3's #37 — `090` D2's sizing. It is a behavioural under-specification
 with neither a proof it cannot change what the deliverable does nor a bound on its reach: the *bound*
 was the thing that was wrong. It was therefore **fixed rather than characterised**, and D2 now carries
 no count for a later round to be wrong about. Round 4's #47 and #48 engaged it too — both decide
 whether a run halts and whether two plans may run concurrently, and neither was characterised, because
-one of them was recorded as fixed. Both are now fixed. **No finding is left open as a survivor**, so
-there are no survivor rows; the residue below is stated as a class rather than as an enumerated set.
+one of them was recorded as fixed. Both are now fixed. Round 5's #68 and #69 engaged it again — a deliverable that halts through its own
+exit condition, and a concurrency gate — as did round 7's #90, #92, #93 and #94, every one of which
+decides whether a run halts or whether two plans may edit the same file. **All were fixed rather than
+characterised**, because in each case the bound was the thing that was wrong. **No finding is left open
+as a survivor**, so there are no survivor rows; the residue below is stated as a class rather than as
+an enumerated set.
 
 **The late rounds' findings were NOT narrower.** This is the observation that matters more than the
 counts. Round 3's verifier was asked directly and answered: eight of its ten findings are about the
@@ -354,6 +405,13 @@ and got 3 where the provenance rule gives 9.
 | 3 | 10 | 7 | 70% |
 | 4 | 21 | 9 | 43% |
 | 5 | 13 (+9 from `coderabbitai`) | 9 | 69% |
+| 6 | 20 | 6 | 30% |
+| 7 | 21 | 4 | 19% |
+
+**Round 6's own figure is the provenance count, not the row count.** Its heading first said "three",
+which is what the *row-based* rule gives — the same error round 5 made about itself and round 6's own
+row #97 reports. Six of round 6's twenty trace to round-5 text or to a round-5 fix recorded as landed
+and not written.
 
 The count does not trend to zero and the self-inflicted share stays substantial. Round 4 is the
 sharpest case: nine of its findings trace to round 3's fixes, **including one round 3 recorded as
@@ -418,8 +476,9 @@ the count been believed as read, this table would have recorded a `silent` verdi
 `cuioss-review-bot`'s workflow was confirmed running on the head SHA before its body arrived, and both
 other reviewers engaged and published a refusal rather than staying quiet.
 
-**Every comment is dispositioned:** one review with no findings, and two refusal notices, which are
-not actionable. Zero open comments.
+**Every comment is dispositioned:** one review with no findings, one refusal notice, and one full
+review whose nine inline findings are all closed — eight fixed and one rejected with reason and replied
+on the thread. No comment is left open.
 
 ### `coderabbitai` is to be re-requested, and had NOT been when this section was first written
 
@@ -444,9 +503,10 @@ No trigger comment was ever needed for the review that arrived. CodeRabbit re-re
 its original rate-limit comment in place, replacing the refusal with a full review — walkthrough,
 `Merge Risk: 🟡 Moderate`, and nine inline findings, all stamped *"up to `d6656`"*.
 
-⚠️ **The mechanism is a quota, not an automatism, and it re-closed.** By round 6 that same comment had
-been rewritten again to *"Review limit reached … next review available in 39 minutes"*, scoped to the
-changes between `d66564f` and `f4f8caf`. So **every commit after `d66564f` is unreviewed by this
+⚠️ **The mechanism is a quota, not an automatism, and it re-closed.** The same comment has since been
+rewritten repeatedly back to a rate-limit warning, each time re-scoped to the newest head and carrying a
+different countdown. **Do not quote its body from here** — read it live; by the time this sentence is
+read, the wording and the head it names will both have moved. So **every commit after `d66564f` is unreviewed by this
 reviewer**, its `Reopens?` is `yes` rather than blank, and the coverage figure below describes the head
 it was measured at rather than the head that merges.
 
@@ -508,9 +568,10 @@ act on"* while the same section insists the label *"suppresses waste, never scru
 (`git diff --shortstat origin/main...HEAD` — **re-derive it; do not quote a figure from here**, since
 two drafts each froze a number that the very commit fixing it made stale again), of which the large
 majority is **executable plan text** — documents a future cloud run loads and acts on, as distinct from
-inert documentation prose — and the verification rounds found defects in it at every pass — the last round finding eight of ten in the shipped plan files. A reviewer had
-plenty to act on, and one of the two rate-limited reviewers is the one that found the vacuous guards
-elsewhere in this epic. Applying the label would have suppressed scrutiny on the strength of a proxy
+inert documentation prose — and every verification round found defects in it, with the share sitting in
+the shipped plan files **rising** in the late rounds rather than falling. A reviewer had plenty to act
+on, and the reviewer that did review found nine real findings including two no verification round had
+made. Applying the label would have suppressed scrutiny on the strength of a proxy
 that misfires here. **Reported as a deviation from the rule as written**, and raised as proposal 1
 below rather than settled unilaterally.
 
@@ -529,13 +590,14 @@ skill, with no `skip-bot-review` label.
 **Evidence from this run.** § Step 7 draws its bright line at three paths: `*.py`,
 `.claude/skills/**`, `marketplace/bundles/**`. It names the skip case as *"genuinely nothing but
 `doc/**` prose, run reports, or ledger bookkeeping."* This run's diff is `doc/plans/**` only — and it
-is neither prose nor bookkeeping. It is **ten executable plan documents** — `070`, `080`, `090`, `100`, `110`, and the four landed
-`plan.md` files a re-entry run loads, plus the epic brief every one of them reads as its contract.
+is neither prose nor bookkeeping. It is **ten executable plan documents** — `070`, `080`, `090`, `100`, `110`, and the five landed
+`plan.md` files a re-entry run loads (`010`, `030`, `040`, `050`, `060`) — plus the epic brief every one
+of them reads as its contract.
 A cloud run loads these and acts on them: they carry halting gates, done-when conditions, and Expected
 surfaces that decide what a run may edit. That is categorically different from the inert `doc/**` prose
-the skip case names, which no run executes — and from the eight **records** in the same diff (six
-landed run reports and this one), which are bookkeeping and would correctly take the skip case on
-their own.
+the skip case names, which no run executes — and from the **records** in the same diff — six landed run
+reports, this report, and the epic's evidence document — which are bookkeeping and would correctly take
+the skip case on their own.
 Every verification round found defects in them, and every round from 3 onward found a substantial share
 of its findings there rather than in the report — round 6's split was 6 shipped to 14 report-and-PR,
 and the six included two gate defects that would halt or mislead a future run. One of them — a per-slice count that did not reconcile — would have

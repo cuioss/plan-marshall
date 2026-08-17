@@ -207,9 +207,9 @@ and reports the rest as not done has done the valuable half.
   a seventh campaign item; do not count it here and do not split it.
 * **`test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py`.** Owned by plan `010`,
   which ships the tests for the doctor rules it added. Excluded because that is the one file path where
-  the two plans' surfaces meet — and because plan `090` may amend those same rules while plan `100`'s
-  seventh campaign run splits the one of them that is over budget, which makes a concurrent edit here
-  a **four-way** collision. Match the glob against the tree; do not assume which
+  the two plans' surfaces meet, and because plan `090` may amend those same rules while plan `100`'s
+  seventh campaign run splits the one of them that is over budget — see § "The collision matrix" for
+  what that means for scheduling. Match the glob against the tree; do not assume which
   numbers exist.
 * **`test/conftest.py` and `test/_shared/**`.** Owned by plan `020`, and shared after it by `090`
   (loader mechanics) and `110` (session preflight, skip guard); consumed read-only here. Excluded because sibling reduction plans run concurrently against the same harness. Note that
@@ -256,10 +256,10 @@ Exactly these paths, and nothing else:
   `090` § D2 and move on** rather than working around it.
 - `test/test_runner_falsifiability.py`, `test/test_conftest_discipline.py`
 
-⚠️ **Plan `110` also edits inside this surface** — `test/sync-plugin-cache/`,
-`test/pm-plugin-development/` and `test/marketplace/` hold most of the tree's skip sites. Before
-starting, confirm `110` is not in flight against those directories; if it is, **halt and report it**
-rather than editing files two plans own.
+⚠️ **This surface is shared, and the sharing is stated in one place.** See
+`doc/plans/test-quality/README.md` § "The collision matrix" for every plan this one may not run
+alongside — it is not restated here. Look this plan up there before starting, and **halt and report**
+if any party it names is in flight.
 
 ## Claim labels
 
@@ -276,7 +276,7 @@ rather than editing files two plans own.
 | No module outside `plugin-doctor/` imports its `_fixtures` module by bare name | HYPOTHESIS — **asserted absence; the rename's blast radius depends on it** | `grep -rn 'from _fixtures import\|^import _fixtures' test`. Beware a false positive from a sibling module whose own name ends in `_fixtures` — match the import statement, not the substring |
 | The slice carries ~222 `Namespace(` constructions against zero `parse_ns` calls | HYPOTHESIS — **it sizes D3** | `grep -c 'Namespace('` and `grep -c 'parse_ns('` over the Expected surface. Leads — re-derive |
 | Plan `090` has published a parser seam for every module a `parse_ns` conversion in this slice would otherwise block on | HYPOTHESIS — **it decides how much of D3 is reachable** | Attempt the conversion and read the `ParserSeamNotFound` failures. A module that raises has no seam: **record the call site, do not work around it**, and do not edit the production module — `090` owns it |
-| The partition holds — every directory under `test/plan-marshall/*/`, every file at the root of `test/plan-marshall/`, and every top-level `test/` entry other than `plan-marshall/` itself (which the first two clauses already decompose) appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the **named exclusions**, which four sibling runs have already corrected. An entry in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
+| The partition holds — every directory under `test/plan-marshall/*/`, every file at the root of `test/plan-marshall/`, and every top-level `test/` entry other than `plan-marshall/` itself (which the first two clauses already decompose) appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the exclusions its table names. **Read that table; do not assume a count or that it is settled** — it has grown since the first reduction plans landed, and four sibling runs each halted on an entry it did not then name. An entry in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
 | Plans `010` and `020` have landed and their surfaces are present in this clone | HYPOTHESIS — **gating; this plan cannot start without it** | `grep -n 'def parse_ns' test/conftest.py`; the module-budget section of `persona-module-tester/standards/testing-methodology.md`. Absent → stop and report blocked. |
 
 ## Verification

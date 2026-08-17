@@ -288,7 +288,7 @@ it, and where a run cannot finish, **report what was not reached rather than thi
                                         │  070  architecture & orchestration │
                                         └─ 080  plugin-development & generator ─┘
 
-090 harness & rule gaps ──→ unblocks the B6/B7 halves of 070 and 080; runs any time
+090 harness & rule gaps ──→ unblocks the B6/B7 halves of 070 and 080 (see the collision matrix)
 100 module-budget campaign ──→ one slice per run; takes 070's and 080's slices after they land
 110 every test runs, no slowdown ──→ builds the instruments conditions 3 and 4 rely on
 ```
@@ -320,31 +320,39 @@ duplication this epic exists to remove.
 **`030`–`080` are mutually parallel by construction.** Each owns a disjoint list of `test/`
 subdirectories, stated in its Expected surface.
 
-### The collision matrix — the single authoritative statement
+## The collision matrix
 
-⛔ **This table is the ONE place the epic states which plans may not run at the same time. Every other
-file points here; none restates it.** That rule exists because the restatement approach failed
-repeatedly: the same collision was corrected in one file and left wrong in another across several
-verification rounds, each time while a disposition recorded it as mirrored.
+⛔ **This table is the ONLY statement in the epic of which plans may not run at the same time.** No
+other file enumerates it — `070`, `080`, `090`, `100`, `110`, the plan graph above and the exclusion
+table below all point here and say nothing of their own. That is a construction rule, not an
+aspiration: the same collision was corrected in one file and left wrong in another across five
+verification rounds, and a sixth round that merely *declared* one table authoritative while leaving
+five enumerations live was found to have moved the defect rather than removed it.
 
-Plan `090`'s carve-out (`090` § "The surfaces this plan shares") claims four test paths besides its
-production surface. Each is owned by another plan, and three of them are re-entered by a plan `100`
-campaign run:
+**If you are about to write "must not run concurrently" anywhere else in this epic, add a row here
+instead.**
 
-| Path `090` shares | Owner | `100` run that re-enters it | May not run concurrently |
+| A | B | Shared path, and who owns it | Why they collide |
 |---|---|---|---|
-| `plugin-doctor/test_test_conventions_rule*.py` | `010` (landed) | **run 7** | `090` ↔ `100` run 7 |
-| `plugin-doctor/test_analyze_lesson_id_in_skill_prose.py` | `080` | **run 6** | `090` ↔ `080`, and `090` ↔ `100` run 6 |
-| `test/plan-marshall/script-shared/`, `…/manage-providers/` | `060` (landed) | **run 3** | `090` ↔ `100` run 3 |
-| `test/conftest.py` | `020` (landed), then `110` | — (`100` excludes it) | `090` ↔ `110` |
+| `090` | `080` | `plugin-doctor/test_analyze_lesson_id_in_skill_prose.py` — `080`'s | `090` § D5 amends the rule that module tests; `080` owns the module |
+| `090` | `110` | `test/conftest.py` — `020`'s, then shared | `090` owns its loader mechanics, `110` its session preflight and skip guard |
+| `090` | `100` run 3 | `test/plan-marshall/script-shared/`, `…/manage-providers/` — `060`'s | `090` § D1 adds parser seams and their tests there; run 3 splits that slice |
+| `090` | `100` run 6 | `plugin-doctor/test_analyze_lesson_id_in_skill_prose.py` — `080`'s | Same module as row 1: `090` § D5 amends its cases, run 6 splits it (1,020 lines, over budget) |
+| `090` | `100` run 7 | `plugin-doctor/test_test_conventions_rule*.py` — `010`'s | `090` § D4 amends the rule whose tests live in `rule6.py`; run 7 splits that same module |
+| `110` | `070` | `test/plan-marshall/**` skip sites | `110`'s skip sites cross slice boundaries into `070`'s directories |
+| `110` | `080` | `test/sync-plugin-cache/`, `test/pm-plugin-development/`, `test/marketplace/` | Most of the tree's skip sites are inside `080`'s slice |
+| `110` | `100` | whichever slice `100` is running | `110`'s skip sites cross every slice, so any campaign run may meet them |
 
-**Read as a rule:** plan `090` must not run concurrently with plan `080`, with plan `110`, or with
-plan `100`'s campaign **runs 3, 6 or 7**. `100`'s runs 1, 2, 4 and 5 are independent of `090`.
-Everything else in the epic may run concurrently as § "The plans, and what may run at the same time"
-describes.
+**Everything not in this table may run concurrently.** In particular `100`'s runs 1, 2, 4 and 5 are
+independent of `090`, and the six reduction plans `030`–`080` remain mutually parallel as § "The plans,
+and what may run at the same time" describes.
 
-**Before starting any of those, check for an open PR or an in-flight branch for the other party, and
-halt and report rather than editing a file two plans own.**
+**How to use it.** Before starting, find your plan in either column. For every row that names it,
+confirm no open PR and no in-flight branch exists for the other party — and **halt and report** rather
+than editing a file two plans own. `100` states the applicable row per campaign run in its own slice
+table's *Depends on* column, as a reference to this table rather than as a restatement of it.
+
+## The partition, and how a run re-derives it
 
 ⚠️ **The partition is a hand-written list, so every run re-derives it before acting on it.** The
 lists below cover every directory present when they were last reconciled, but a directory added to
@@ -368,7 +376,7 @@ as a **gating, halting derivation**, run before its first deliverable:
 
    | Excluded entry | Why |
    |---|---|
-   | `test/conftest.py` | Plan `020`'s, then shared by `090` (loader mechanics) and `110` (session preflight, skip guard) — those two must not run concurrently against it. Consumed read-only by every reduction plan |
+   | `test/conftest.py` | Plan `020`'s, then shared by `090` (loader mechanics) and `110` (session preflight, skip guard); see § "The collision matrix". Consumed read-only by every reduction plan |
    | `test/_shared/**` | Plan `020`'s, same reason |
    | `test/README.md` | Plan `020`'s D4 deliverable; not a `.py` file |
    | `test/test_shared_harness.py` | Plan `020`'s D5 deliverable, created by its landing commit |
@@ -413,10 +421,9 @@ already test this scope's rules plus the ones it added — their fixture directo
 which numbers exist**: `010` split its own new tests by behaviour cluster while landing, so the set is
 not a contiguous run. Plan `080` owns the rest of `test/pm-plugin-development/**` and excludes those
 modules explicitly; plan `090` may amend the rules themselves, and plan `100`'s seventh campaign run
-splits the one of them that is over budget — so a concurrent edit here is a **four-way** collision.
-`090` and `100` each carry a halting check against the other before touching those modules; `080`
-excludes the glob outright and states the same four-way risk, which is the stronger guarantee for a
-plan that never edits them at all.
+splits the one of them that is over budget. **Which of those may run at the same time is stated in
+§ "The collision matrix" and nowhere else** — `080` excludes the glob outright, which is the stronger
+guarantee for a plan that never edits them at all.
 
 ## Where a recorded finding goes
 

@@ -210,8 +210,8 @@ than found later.
   them there rather than in a root-level meta-test module. ⚠️ **Shared with plan `090`**, which owns
   this file's loader mechanics (`load_script_module`, `get_scripts_dir`, the registration behaviour,
   the `_routing_namespaces` docstring). This plan owns the preflight and the skip guard and touches
-  nothing else in the file. **The two must not run concurrently against it** — check for an open PR or
-  in-flight branch for `090` before starting, and halt on a live collision
+  nothing else in the file. See § "The collision matrix" for what that means for scheduling — it is
+  not restated here
 - `test/test_conftest_discipline.py` or a sibling root-level meta-test — D5's exception guard, placed
   per the convention that module already sets
 - `test/sync-plugin-cache/` — D2, the largest concentration of tool guards
@@ -227,10 +227,10 @@ than found later.
 - `doc/plans/test-quality/README.md` — D6 only, the two run conditions
 
 **This surface crosses several reduction slices deliberately, and that is a collision risk.** The skip
-sites do not respect the epic's partition. **Run this plan when no reduction plan is running against
-the same directories**, or confirm before starting that `070`, `080` and `100` are not in flight
-against `test/sync-plugin-cache/`, `test/pm-plugin-development/` or `test/marketplace/`. If one is,
-**halt and report it** rather than editing a file a sibling owns.
+sites do not respect the epic's partition. ⛔ **Which plans this one may not run alongside is stated in
+`doc/plans/test-quality/README.md` § "The collision matrix" and nowhere else** — look this plan up
+there before starting, confirm no open PR and no in-flight branch exists for any party it names, and
+**halt and report** rather than editing a file a sibling owns.
 
 ## Claim labels
 
@@ -245,7 +245,7 @@ against `test/sync-plugin-cache/`, `test/pm-plugin-development/` or `test/market
 | The `Run verification` step on `main` took 781 s / 786 s / 788 s at `7de3084` / `24271bc` / `7cadb98`, so the epic's executed half cost ~2 s | HYPOTHESIS — **it is this plan's reason for building an instrument rather than hunting a regression** | ⚠️ **This artifact is NOT git-reachable**, which every other claim in this table is: it lives in the GitHub Actions API (job steps of the `verify / verify` job of the `Python Verify` workflow, at those three commits on `main`). The three commits themselves are in your clone and can be confirmed in the stated order; the timings need the API. The figures are also restated in `doc/plans/test-quality/report-authoring-02.md`, which **is** git-tracked — read that as the recorded measurement, and the API as the way to re-derive it. If the API is unreachable, report the re-derivation **unavailable** rather than substituting a local run, whose population is not comparable. Either way the deliverable set is unchanged: D7 reports a regression or its absence, whichever the measurement says |
 | `parse_ns` re-executes the script module on every call | OBSERVED | `test/conftest.py` — `parse_ns`, its docstring's "Cost:" paragraph |
 | Slices `070` and `080` carry ~502 and ~222 hand-built `Namespace(` constructions and 1 and 0 `parse_ns` uses | HYPOTHESIS | `grep -c 'Namespace('` and `grep -c 'parse_ns('` over each plan's Expected surface. Leads — re-derive |
-| No reduction plan is running against this plan's directories, and plan `090` is not in flight against `test/conftest.py` | HYPOTHESIS — **gating and halting; check before D2** | The presence of an open PR or an in-flight branch for `070`, `080`, `100` or `090`. Unresolvable → treat as a collision and halt |
+| No party the epic's collision matrix names against this plan is in flight | HYPOTHESIS — **gating and halting; check before D2** | `doc/plans/test-quality/README.md` § "The collision matrix", read there rather than restated here. An open PR or an in-flight branch for any party it names → treat as a collision and halt |
 
 ## Verification
 

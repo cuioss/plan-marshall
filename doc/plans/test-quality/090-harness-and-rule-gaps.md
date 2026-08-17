@@ -29,9 +29,9 @@
 >
 > **This plan has no blocking dependency on `030`–`080`,** and it is the only plan in the epic that
 > may edit `marketplace/bundles/**`. It **shares** `test/conftest.py` with plan `110` — the two own
-> different parts of that file and must not run concurrently against it; see § "The surfaces this plan
-> shares". It should land **before** `070` and `080` start, because D1 and D2 are what unblocks their
-> **B6** and **B7** work.
+> different parts of that file; see § "The surfaces this plan shares" for what each owns, and the epic
+> README § "The collision matrix" for what that means for scheduling. It should land **before** `070`
+> and `080` start, because D1 and D2 are what unblocks their **B6** and **B7** work.
 
 ## Problem
 
@@ -158,7 +158,12 @@ reach rather than thinning what it did**.
 3. **D3 — Make a shared-registration collision impossible to introduce silently.** Give
    `load_script_module` a way not to publish into `sys.modules` (or to publish under a caller-chosen
    name that cannot collide), and add a guard test that fails when a module loaded by file registers
-   a name another test module imports plainly. Plan `060` fixed every collision it could reach by hand
+   a name another test module imports plainly. **Place that guard beside the file it guards**, in
+   `test/plan-marshall/` or in this plan's own declared surface — **not** as a new root-level
+   `test/*.py` module. The partition's gating derivation enumerates every top-level entry under
+   `test/` by name, and `080`'s Expected surface lists the two existing root-level modules by
+   filename rather than by glob, so a third one halts the next reduction run on a file nobody
+   claims — which is the `pm-code-intelligence` defect, created deliberately. Plan `060` fixed every collision it could reach by hand
    — the live reverse-order failure, six its own preamble sweep had introduced, and two pre-existing
    ones with real blast radius — and left **three** latent, safe only because no test imports those
    names plainly today, which is a property of the tree rather than an invariant.
@@ -271,10 +276,10 @@ That is a declared overlap, not an oversight, and it is bounded:
 
 | Shared path | Owner | What this plan may do |
 |---|---|---|
-| `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` + fixtures | plan `010` | **Add or amend only the cases that exercise the rule change D4 makes.** `010` has landed and is not running, so the risk is a later re-entry, not a concurrent one |
+| `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` + fixtures | plan `010` | **Add or amend only the cases that exercise the rule change D4 makes.** Whether anything may be running against it is the matrix's to say, not this row's |
 | `test/pm-plugin-development/plugin-doctor/test_analyze_lesson_id_in_skill_prose.py` | plan `080` — everything under `pm-plugin-development/` except the `rule*` glob | **Add or amend only the cases that exercise the rule change D5 makes.** D5 amends `no-lesson-id-in-skill-prose`, which is not a `test-conventions` rule, so its tests do not live with the four that are |
 | `test/plan-marshall/script-shared/`, `test/plan-marshall/manage-providers/` | plan `060`'s slice — landed; plan `100` re-enters it as campaign run 3 | **Add only a test that a D1 production change requires.** Do not refactor, reduce, or split anything there |
-| `test/conftest.py` | shared with plan `110`, which adds a session preflight (its D2) and a skip guard (its D5) | **This plan owns the loader mechanics** — `load_script_module`, `get_scripts_dir`, the registration behaviour, the `_routing_namespaces` docstring. `110` owns the preflight and the skip guard. The two must **not** run concurrently against this file |
+| `test/conftest.py` | shared with plan `110`, which adds a session preflight (its D2) and a skip guard (its D5) | **This plan owns the loader mechanics** — `load_script_module`, `get_scripts_dir`, the registration behaviour, the `_routing_namespaces` docstring. `110` owns the preflight and the skip guard |
 
 ⛔ **Check before starting, and halt on a live collision — the set is stated in ONE place.**
 `doc/plans/test-quality/README.md` § "The collision matrix" is the authoritative list of what may not
@@ -353,9 +358,9 @@ check that would have established the unavailability actually returned.
   under `doc/plans/test-quality/`, all of which are git-tracked and readable from your clone. No
   `.plan/` path is a source for this plan; the epic is standalone and has no orchestrator ledger, so
   **do not go looking for one.**
-* **The consuming plans cite four of the six deliverables, and the Deliverables table above says
-  which.** Do not re-derive that ordering from the deliverables' subject matter: an earlier draft did,
-  grouped D1 with D2 as "the blocking half", and deferred the two deliverables `070` and `080` name.
+* **The Deliverables table above states which consumer depends on which deliverable.** Do not
+  re-derive that ordering from the deliverables' subject matter: an earlier draft did, grouped D1 with
+  D2 as "the blocking half", and deferred deliverables `070` and `080` actually depend on.
 * **D7's ladder is a gate decision, so treat its blast radius seriously.** A rule at `error` fails
   the build for every subsequent plan in this repository. A flip is licensed only by a re-derived
   zero, and on the counts measured at authoring time no rule other than the already-flipped
