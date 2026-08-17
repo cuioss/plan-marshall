@@ -129,15 +129,26 @@ The terminal-title path ALWAYS emits every key below — the three event lists a
 | `installed_events`, `already_present_events`, `migrated_events` | the render-event labels falling in each bucket |
 | `enforcement_status` (`--enforcement` path) | `installed`, `migrated`, `already_present` |
 
+Each block below is captured verbatim from the serializer, not transcribed: a list renders as `key[N]:` followed by one indented `- item` per element, an empty list as a bare `key[0]:`, and a label containing `:` is quoted. `target` echoes the argument as passed, which is why it repeats `settings_path` in these captures (they were taken through the absolute-path recovery override).
+
 **Success (Claude — hook installed)**:
 ```toon
 status: success
 operation: project install-hook
-target: claude
+target: /repo/.claude/settings.local.json
 settings_path: /repo/.claude/settings.local.json
 hook_installed: true
 already_present: false
-installed_events[9]: SessionStart,SessionStart:clear,UserPromptSubmit,Notification,Stop,PreToolUse:AskUserQuestion,PreToolUse:Bash,PostToolUse:AskUserQuestion,PostToolUse:Bash
+installed_events[9]:
+  - "SessionStart:matcher-less"
+  - "SessionStart:clear"
+  - UserPromptSubmit
+  - Notification
+  - Stop
+  - "PreToolUse:AskUserQuestion"
+  - "PreToolUse:Bash"
+  - "PostToolUse:AskUserQuestion"
+  - "PostToolUse:Bash"
 already_present_events[0]:
 migrated_events[0]:
 capture_status: installed
@@ -149,12 +160,21 @@ env_status: installed
 ```toon
 status: success
 operation: project install-hook
-target: claude
+target: /repo/.claude/settings.local.json
 settings_path: /repo/.claude/settings.local.json
 hook_installed: true
 already_present: true
 installed_events[0]:
-already_present_events[9]: SessionStart,SessionStart:clear,UserPromptSubmit,Notification,Stop,PreToolUse:AskUserQuestion,PreToolUse:Bash,PostToolUse:AskUserQuestion,PostToolUse:Bash
+already_present_events[9]:
+  - "SessionStart:matcher-less"
+  - "SessionStart:clear"
+  - UserPromptSubmit
+  - Notification
+  - Stop
+  - "PreToolUse:AskUserQuestion"
+  - "PreToolUse:Bash"
+  - "PostToolUse:AskUserQuestion"
+  - "PostToolUse:Bash"
 migrated_events[0]:
 capture_status: already_present
 statusLine_status: already_present
@@ -165,17 +185,28 @@ env_status: already_present
 ```toon
 status: success
 operation: project install-hook
-target: claude
+target: /repo/.claude/settings.local.json
 settings_path: /repo/.claude/settings.local.json
 hook_installed: true
 already_present: false
 installed_events[0]:
 already_present_events[0]:
-migrated_events[9]: SessionStart,SessionStart:clear,UserPromptSubmit,Notification,Stop,PreToolUse:AskUserQuestion,PreToolUse:Bash,PostToolUse:AskUserQuestion,PostToolUse:Bash
+migrated_events[9]:
+  - "SessionStart:matcher-less"
+  - "SessionStart:clear"
+  - UserPromptSubmit
+  - Notification
+  - Stop
+  - "PreToolUse:AskUserQuestion"
+  - "PreToolUse:Bash"
+  - "PostToolUse:AskUserQuestion"
+  - "PostToolUse:Bash"
 capture_status: migrated
 statusLine_status: already_present
 env_status: already_present
 ```
+
+Note the third capture: the nine render entries migrated and `capture_status` reports `migrated`, while `statusLine_status` and `env_status` stay `already_present` — those two elements carry no `timeout` to go stale. `already_present` is `false` because something changed, which is exactly what that flag is for.
 
 **Success (Claude — `--enforcement`, entry installed)**:
 ```toon
