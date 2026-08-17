@@ -199,8 +199,8 @@ and reports the rest as not done has done the valuable half.
   conversion is what brings several of these modules under budget without a split at all, so splitting
   first would be work done twice. This plan therefore **reports** its over-budget count (a lead: 42
   modules) and does not act on it. A forty-third over-budget module sits in this directory tree —
-  `plugin-doctor/test_test_conventions_rule6.py` — but it is matched by the `rule*` glob the bullet
-  above excludes, so it is plan `010`'s and not this plan's. Plan `100` § Expected surface owns it as
+  `plugin-doctor/test_test_conventions_rule6.py` — but it is matched by the `rule*` glob this plan's
+  Out-of-scope section excludes, so it is plan `010`'s and not this plan's. Plan `100` § Expected surface owns it as
   a seventh campaign item; do not count it here and do not split it.
 * **`test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py`.** Owned by plan `010`,
   which ships the tests for the doctor rules it added. Excluded because that is the one file path where

@@ -95,8 +95,8 @@ README's exclusion list was also short by two entries the whole time.
 `marketplace/bundles/**` and `test/conftest.py`, and correctly records what it finds there instead.
 Nothing owned the records. `060` measured 27 `parse_ns` conversions blocked on production modules that
 publish no parser seam and wrote that a published `build_parser()` would unblock all fifteen of one
-group — and no plan could publish one. (That report's finding row says "14"; the same report corrects
-the subtotal to 15 two sections later.)
+group — and no plan could publish one. (That report's G3 row quotes "14"; its G8 row
+records the subtotal corrected to 15 in `f4bf557`.)
 
 ### Answer 2 — yes, three additional plans, each from something the reports could not act on
 

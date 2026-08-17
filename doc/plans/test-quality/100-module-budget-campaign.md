@@ -186,17 +186,17 @@ Each slice's exact directory list is the **Expected surface** of the reduction p
 read from that plan's own file — not restated here, because a restated list is a second thing to
 drift. **That includes the root-level `test/plan-marshall/*.py` modules**: four of them are over
 budget, and each is named by filename in the Expected surface of `040` or `050`, so each belongs to
-that slice. The counts above include them.
+that slice. The counts above include them, and they are called out because a root-level file is
+exactly the category a slice boundary is most likely to mis-assign — an earlier draft of this plan
+held them out as a separate bucket, which made its own totals disagree with the plans it cites.
 
 **Row 7 exists because the six slices do not cover the tree.** Plan `080`'s Expected surface excludes
 every module matched by `plugin-doctor/test_test_conventions_rule*.py`, which the epic README assigns
-to plan `010` — and one of those modules is over budget. `010` has landed, so nothing else would ever
-take it, and the campaign's own goal (the rule reaching zero) is unreachable without it. An earlier
-draft of this plan counted it into `080` and asserted a distribution that did not reconcile; D1's
-halting derivation is what surfaces that class of error, and it would have halted on this plan's own
-table. They are called out because a root-level file is exactly
-the category a slice boundary is most likely to mis-assign — an earlier draft of this plan held them
-out as a separate bucket, which made its own totals disagree with the plans it cites.
+to plan `010` — and one of those modules is over budget. `010` has landed, so no reduction plan would
+ever take it, and the campaign's own goal (the rule reaching zero) is unreachable without it. An
+earlier draft of this plan counted it into `080` and asserted a distribution that did not reconcile;
+D1's halting derivation is what surfaces that class of error, and it would have halted on this plan's
+own table.
 
 ## Claim labels
 

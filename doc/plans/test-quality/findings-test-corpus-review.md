@@ -70,7 +70,7 @@ to be.)
 
 | | Finding | Primary impact | Remediation |
 |---|---|---|---|
-| [F1](#f1--nearly-three-quarters-of-the-corpus-lives-in-modules-nobody-can-navigate) | ~40% of modules exceed 400 lines and hold ~73% of all lines | Navigability; compounds every other finding | [`010`](010-test-authoring-standards-and-enforcement/plan.md), [`030`](030-config-and-manifest-test-reduction/plan.md)–[`080`](080-plugin-development-and-generator-test-reduction.md) |
+| [F1](#f1--nearly-three-quarters-of-the-corpus-lives-in-modules-nobody-can-navigate) | ~40% of modules exceed 400 lines and hold ~73% of all lines | Navigability; compounds every other finding | [`010`](010-test-authoring-standards-and-enforcement/plan.md) (the budget), [`100`](100-module-budget-campaign.md) (the splits — see the note below) |
 | [F2](#f2--the-corpuss-own-module-size-standard-is-violated-by-three-quarters-of-it) | The ~200-line split standard is violated by ~75% of the tree and never enforced | A rule readers learn to skip | [`010`](010-test-authoring-standards-and-enforcement/plan.md) |
 | [F3](#f3--parametrization-is-the-corpuss-least-used-tool-against-its-most-tabular-content) | Parametrization in 179 of 770 modules | Largest available reduction; *strengthens* the suite | [`030`](030-config-and-manifest-test-reduction/plan.md) |
 | [F4](#f4--hand-built-argument-namespaces-are-a-correctness-defect-not-just-bloat) | ~2,900 hand-built namespaces bypass the parsers' defaults | **Live correctness risk** — the suite cannot see the change it exists to catch | [`020`](020-shared-test-harness/plan.md), [`010`](010-test-authoring-standards-and-enforcement/plan.md) |
@@ -83,6 +83,13 @@ to be.)
 
 Rules **B1**–**B10** are defined in [`README.md`](README.md#house-style); the slices are defined in
 [`README.md`](README.md#the-plans-and-what-may-run-at-the-same-time).
+
+⚠️ **The remediation column names owners as of this review, and two have moved since.** The
+module-budget split was a deliverable of each reduction plan `030`–`080`; none of the four executed
+plans reached it, and it now belongs to plan `100` as a campaign — the rows above say so. The
+production and harness defects a reduction plan may only *record* now belong to plan `090`. The
+epic's [`README.md`](README.md) § "Where a recorded finding goes" is the current map; this column is
+the review's own, and is not maintained against it.
 
 ---
 
@@ -304,7 +311,7 @@ contract ([**B8**](README.md#house-style)), rather than removing it.
 
 | Finding | Addressed by |
 |---|---|
-| F1, F2 | [`010`](010-test-authoring-standards-and-enforcement/plan.md) (module budget + enforcement), [`030`](030-config-and-manifest-test-reduction/plan.md)–[`080`](080-plugin-development-and-generator-test-reduction.md) (splits) |
+| F1, F2 | [`010`](010-test-authoring-standards-and-enforcement/plan.md) (module budget + enforcement), [`100`](100-module-budget-campaign.md) (splits — see the note below) |
 | F3 | [`030`](030-config-and-manifest-test-reduction/plan.md) primarily; [`050`](050-plan-state-and-records-test-reduction/plan.md), [`060`](060-runtime-and-script-substrate-test-reduction/plan.md), [`070`](070-architecture-and-orchestration-test-reduction.md) for their tabular families |
 | F4 | [`020`](020-shared-test-harness/plan.md) (`parse_ns` helper), [`010`](010-test-authoring-standards-and-enforcement/plan.md) (the rule), all reduction plans (adoption) |
 | F5 | [`010`](010-test-authoring-standards-and-enforcement/plan.md) (thresholds), [`060`](060-runtime-and-script-substrate-test-reduction/plan.md) primarily |

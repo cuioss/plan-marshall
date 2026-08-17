@@ -104,7 +104,8 @@ done; those two carry this slice's whole convergence argument.
    because `test/conftest.py`'s `_neutralize_daemon_routing` fixture depends on that fact and works
    around it by patching closure `__globals__`. If the consolidation lets the re-registration be
    avoided altogether, **do not take that decision here**: it changes behaviour `conftest.py` reasons
-   about, `conftest.py` is owned by plan `020`, and shared after it by `090` (loader mechanics) and `110` (session preflight, skip guard), and a concurrent change to both is exactly
+   about, `conftest.py` is owned by plan `020` and shared after it by `090` (loader mechanics) and `110`
+   (session preflight, skip guard), and a concurrent change to that file and this one is exactly
    the collision this epic's partition exists to prevent. Record it as a proposal.
    **Rename `test/plan-marshall/discovery_test_helpers.py` to `_discovery_fixtures.py` in the same
    deliverable.** It is the second unprefixed root-level helper, invisible to the same doctor rule for

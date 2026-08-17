@@ -292,7 +292,7 @@ it, and where a run cannot finish, **report what was not reached rather than thi
 | `020` | `test/conftest.py`, `test/_shared/**`, `test/README.md`, and the ≤10 modules it converts as proof-of-use | `010` only |
 | `030`–`080` | one disjoint slice of `test/` each, listed in the plan | each other, once `010` **and** `020` have landed |
 | `090` | `marketplace/bundles/**` (the doctor analyzers, `script-shared`, `manage-providers`) — **the only plan in the epic that may edit it** — plus `test/conftest.py`'s loader mechanics, and the tests for its own production changes | any reduction plan; **not** `110` (both edit `test/conftest.py`) and **not** `100`'s run against `060`'s slice |
-| `100` | one reduction slice per run, `test_*.py` only | nothing running against the same slice |
+| `100` | one reduction slice per run, `test_*.py` only — plus a seventh run for the one over-budget module plan `010` owns, which no reduction slice covers | nothing running against the same slice; for its seventh run, **not** `090`, which shares those modules |
 | `110` | the tree's skip sites, which **cross** several slices — `test/sync-plugin-cache/`, `test/pm-plugin-development/`, `test/marketplace/` and scattered others — plus `test/conftest.py`'s session preflight and skip guard | nothing running against those directories, and **not** `090` |
 
 **`090`, `100` and `110` were added after the epic's executed half**, each from something four runs
@@ -324,8 +324,9 @@ as a **gating, halting derivation**, run before its first deliverable:
 
 1. List every directory under `test/plan-marshall/*/`, **every file at the root of
    `test/plan-marshall/`**, and every top-level entry under `test/` **other than `plan-marshall/`
-   itself** — skipping `__pycache__`, which is git-ignored and absent from a fresh clone — — that one is decomposed by the first two clauses, so listing it as well would report it
-   unclaimed and halt on a non-defect. The root-level files are not an afterthought either: they are
+   itself** — that one is decomposed by the first two clauses, so listing it as well would report it
+   unclaimed and halt on a non-defect. Skip `__pycache__` wherever it appears: it is git-ignored and
+   absent from a fresh clone. The root-level files are not an afterthought either: they are
    exactly the category a slice boundary is most likely to mis-assign, since they sit in one plan's
    tree while being imported from another's.
 2. Confirm each appears in **exactly one** of `030`–`080`'s Expected surface, allowing for the
@@ -375,8 +376,9 @@ already test this scope's rules plus the ones it added — their fixture directo
 (it ships the tests for the rules it adds). **Match the glob against the tree rather than assuming
 which numbers exist**: `010` split its own new tests by behaviour cluster while landing, so the set is
 not a contiguous run. Plan `080` owns the rest of `test/pm-plugin-development/**` and excludes those
-modules explicitly; plan `090` may amend the rules themselves, which makes a concurrent edit here a
-three-way collision rather than a two-way one.
+modules explicitly; plan `090` may amend the rules themselves, and plan `100`'s seventh campaign run
+splits the one of them that is over budget — so a concurrent edit here is a **four-way** collision,
+and each of the three later plans carries a halting check for it.
 
 ## Where a recorded finding goes
 

@@ -52,9 +52,9 @@ failure but leaves the call site unconvertible. Plan `060` probed every such sit
 recorded 27 blocked on production modules that expose no seam at all — **15** in `script-shared`'s
 build CLI (`_build_cli.py`, `_build_execute_factory.py`) and **12** in `manage-providers`'
 module-level entry points (`_list_providers.py`, `_cred_*.py`) — with its own report stating that a
-published `build_parser()` would unblock all 15 of the first group. (That report's finding row says
-"14"; the same report records the subtotal corrected to 15 in a later commit, so the corrected figure
-is the one carried here.) **B6** is not a preference: `test/conftest.py`'s own
+published `build_parser()` would unblock all 15 of the first group. (Its G3 finding row quotes "14";
+its G8 row records that the prose subtotal said 14 where the table's own rows total **15**, fixed in
+`f4bf557`. 15 is the corrected figure and the one carried here.) **B6** is not a preference: `test/conftest.py`'s own
 `parse_ns` docstring explains that a hand-built namespace *"carries only the attributes its author
 remembered"*, which is the defect the rule exists to remove.
 
@@ -94,14 +94,19 @@ position is a measured, reported fact rather than an assumption.
 
 ## Deliverables
 
-**Six code deliverables and a report, with a declared cut.** That is more than the two-to-three a
-cloud run completes — the epic README § "How much one run does" carries the measurement — so the
-ordering is not decorative. **D1 and D2 are the blocking half**: they are the two `070` and `080` cite
-by name, D1 for their **B6** conversions and D2 for the preamble shapes their **B7** work hits. A run
-that finishes those two and reports the rest as not done has delivered what the epic needs first.
-D3–D6 are independent of each other and of the blocking half — D3 in particular protects plan `100`'s
-campaign rather than `070` or `080` — so a second run takes them. **Report what was not reached rather
-than thinning what was.**
+**Six code deliverables and a report, and more than the two-to-three a cloud run completes** — the
+epic README § "How much one run does" carries the measurement. So the ordering matters, and it is set
+by what the consuming plans actually cite rather than by theme:
+
+| Consumer | What it cites, by name | Therefore |
+|---|---|---|
+| `070` | **D1** (the parser seams its **B6** half needs) and **D6** (the `conftest.py` docstring its D1 rename would otherwise leave stale) | Both are blocking for `070` |
+| `080` | **D1**, and **D4** (the citation matchers its D3 prose half is measured by). Its one D2 reference is a *routing destination* — "record it against `090` § D2 and move on" — not a dependency | D1 and D4 are blocking for `080` |
+| `100` | nothing by name, but its campaign splits modules whose loads **D3**'s guard protects — as do `070` § D3 and `080` § D3, both of which open with the same `sys.modules` hazard | D3 protects all three, and is not deferrable on the ground that it protects only the campaign |
+
+**D1 first, then D6 and D4** — the smallest set that unblocks both consuming plans. D2 and D3 follow;
+D5 is the least coupled and goes last. A run that reaches only part of this **reports what it did not
+reach rather than thinning what it did**.
 
 1. **D1 — Publish a parser seam on every production module that blocks a `parse_ns` conversion.**
    Add a module-level `build_parser()` (the name `test/conftest.py`'s `PARSER_BUILDER_NAMES` already
@@ -124,12 +129,18 @@ than thinning what was.**
    cannot be applied. Take exactly one of the two and state in the report which, and why the other
    was rejected. Both halves are inside this plan's surface, so this is a decision the run makes from
    evidence rather than a proposal it records.
-   **There are two instances, and one of them is `test/pm-code-intelligence/`'s.** Plan `060`'s third
-   run reported "two that remain" over the **fifteen** directories it worked — its plan's fourteen plus
-   `test/pm-code-intelligence/`, which an operator decision had pulled into that run's scope — so its
-   two already include the one this epic now assigns to plan `080`. Re-derive the set rather than
-   taking the count on trust: an earlier draft of this plan read those as three by counting the
-   `pm-code-intelligence` finding twice.
+   ⛔ **Derive the instance set before sizing this deliverable; do not take a count from this plan.**
+   Plan `060`'s third run reported "two that remain" — but that figure is scoped to the **fifteen**
+   directories it worked (its plan's fourteen plus `test/pm-code-intelligence/`, pulled in by an
+   operator decision), and its two therefore already include the one this epic assigns to plan `080`.
+   The shape is not confined to that slice: a `test-module-preamble-boilerplate` finding whose file
+   resolves a **skill-root `extension.py`** occurs in several slices, and the whole-tree set is
+   materially larger than two. **Derive it**: take the whole-tree sweep, and for each
+   `test-module-preamble-boilerplate` finding read whether the path the module resolves ends at a
+   skill's own `extension.py` rather than at a `scripts/` module. That set is D2's real size, and it
+   is what the done-when below is written against. Two earlier drafts of this plan stated a count
+   instead — one of them by double-counting, the other by quoting a single slice's figure as though it
+   were the tree's — which is why this is a derivation now.
    *Done when:* every `test-module-preamble-boilerplate` finding whose file loads a skill-root
    `extension.py` is either fixable by the documented remedy or no longer reported, the whole-tree
    count for that rule is re-derived before and after, and no finding that was a true positive stopped
@@ -236,8 +247,10 @@ Exactly these, and nothing else:
 - `marketplace/bundles/plan-marshall/skills/manage-providers/scripts/` — D1, the module-level entry
   points a blocked call site names
 - `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` and their fixture
-  directories — the tests for the rule changes D4 and D5 make. ⚠️ **Owned by plan `010`**; see the
-  carve-out below
+  directories — the tests for the rule change D4 makes. ⚠️ **Owned by plan `010`**; see the carve-out
+  below
+- `test/pm-plugin-development/plugin-doctor/test_analyze_lesson_id_in_skill_prose.py` — the tests for
+  the rule change D5 makes. ⚠️ **Owned by plan `080`**; see the carve-out below
 - `test/plan-marshall/script-shared/`, `test/plan-marshall/manage-providers/` — only where a D1
   production change requires its own test. ⚠️ **Owned by plan `060`'s slice**, which plan `100`
   re-enters; see the carve-out below
@@ -256,7 +269,8 @@ That is a declared overlap, not an oversight, and it is bounded:
 
 ⛔ **Check before starting, and halt on a live collision.** These are ownership overlaps that are safe
 only while the other plan is not in flight. Confirm no open PR or in-flight branch exists for `080`,
-for `100` campaign run 3, or for `110`, before touching any row but the first. If one does, **halt and report
+for `100` campaign run 3, or for `100` campaign run 7 — **which claims the same `rule*` modules as the
+first row** — or for `110`, before touching any row of the table. If one does, **halt and report
 it** rather than editing a file two plans own — the epic's partition exists precisely because a
 concurrent edit to a shared file is the collision nobody notices until both land.
 
@@ -328,6 +342,9 @@ check that would have established the unavailability actually returned.
   under `doc/plans/test-quality/`, all of which are git-tracked and readable from your clone. No
   `.plan/` path is a source for this plan; the epic is standalone and has no orchestrator ledger, so
   **do not go looking for one.**
+* **The consuming plans cite four of the six deliverables, and the Deliverables table above says
+  which.** Do not re-derive that ordering from the deliverables' subject matter: an earlier draft did,
+  grouped D1 with D2 as "the blocking half", and deferred the two deliverables `070` and `080` name.
 * **D7's ladder is a gate decision, so treat its blast radius seriously.** A rule at `error` fails
   the build for every subsequent plan in this repository. A flip is licensed only by a re-derived
   zero, and on the counts measured at authoring time no rule other than the already-flipped
