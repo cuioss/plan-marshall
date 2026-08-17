@@ -58,7 +58,7 @@ from _invariants import (
     capture_all,
     is_invariant_blocking_at_phase,
 )
-from file_ops import get_executor_path
+from file_ops import get_executor_path, is_truthy_metadata
 from toon_parser import parse_toon
 
 
@@ -69,18 +69,15 @@ def _now_iso() -> str:
 def _is_truthy_metadata(value: Any) -> bool:
     """Decide whether a metadata field expressing a boolean is true.
 
-    ``status.json`` metadata serializes booleans through TOON, which yields
-    Python ``bool`` after ``parse_toon``. Tolerates the string forms
-    ``'true'`` / ``'True'`` / ``'1'`` for robustness against future TOON
-    schema changes — never returns true for empty / missing values.
+    Delegates to ``file_ops.is_truthy_metadata``, which owns the coercion. The
+    rule is shared with every other reader of ``status.json`` metadata booleans
+    — notably ``file_ops.derive_worktree_state``, which reads the same
+    ``use_worktree`` field this module reads — and two readers of one field
+    disagreeing about what ``'false'`` means is precisely the drift a single
+    owner removes. Kept as a module-local name so this module's call sites and
+    their tests are unaffected by where the rule lives.
     """
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {'true', '1', 'yes'}
-    if isinstance(value, int):
-        return value != 0
-    return False
+    return is_truthy_metadata(value)
 
 
 # Planning-phase boundaries that run on the main checkout. The on-disk

@@ -183,8 +183,8 @@ def patch_worktree_faces(
 ):
     """Patch BOTH worktree faces of the single ``get-worktree-path`` channel.
 
-    ``PlanContext`` exposes the path/presence faces
-    (``worktree_path`` / ``has_worktree``, backed by
+    ``PlanContext`` exposes the state/path/presence faces
+    (``worktree_state`` / ``worktree_path`` / ``has_worktree``, all backed by
     ``file_ops._query_worktree_path``) and the branch face
     (``worktree_branch``, backed by ``file_ops._query_worktree_branch``) over
     two SEPARATE seams, so a consumer that needs only one pays for only one.
@@ -212,7 +212,8 @@ def patch_main_checkout_root(path: str = MAIN_CHECKOUT_ROOT):
     """Patch the cwd-relative checkout-root resolver deterministically.
 
     Avoids dependence on the real checkout layout of the test runner. Used in
-    the "neither flag" and ``use_worktree=false`` branches of the contract.
+    the "neither flag" branch and every branch that falls back to the checkout
+    root — ``worktree_state`` of ``disabled`` or ``pending``, and the sentinel.
 
     BOTH bindings of ``cwd_checkout_root`` are patched, because there are two
     distinct call sites reached by two different lookups:
@@ -221,8 +222,8 @@ def patch_main_checkout_root(path: str = MAIN_CHECKOUT_ROOT):
       bound into that module's namespace by ``from file_ops import ...``, so
       patching ``file_ops`` alone would NOT affect it.
     * ``file_ops.cwd_checkout_root`` — reached through the module global inside
-      ``PlanContext._resolve_worktree_face`` on the ``use_worktree=false`` and
-      sentinel branches.
+      ``PlanContext._resolve_worktree_face`` on every non-``materialized``
+      branch (``disabled``, ``pending``) and on the sentinel branch.
 
     Patching only one of the two leaves the other resolving for real, which is
     exactly the kind of half-patched fixture that makes a test pass for the

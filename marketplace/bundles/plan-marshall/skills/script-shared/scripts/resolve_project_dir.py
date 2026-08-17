@@ -102,8 +102,11 @@ def resolve_project_dir(
     Raises:
         MutuallyExclusiveArgsError: when both ``plan_id`` and a
             non-default ``project_dir`` are set.
-        WorktreeResolutionError: when ``plan_id`` resolution fails
-            (manage-status error, missing worktree metadata, etc.).
+        WorktreeResolutionError: when ``plan_id`` resolution fails —
+            manage-status could not be invoked or returned a non-success
+            payload, or the payload carried no recognised
+            ``worktree_state``. Absent worktree metadata is NOT a failure:
+            it resolves to ``disabled`` and yields the checkout root.
     """
     project_dir_supplied = project_dir is not None and project_dir != default
     # The sentinel is excluded HERE rather than only inside the branch below:

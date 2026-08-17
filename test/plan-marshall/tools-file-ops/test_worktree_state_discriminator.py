@@ -87,15 +87,54 @@ class TestDeriveWorktreeState:
         assert derive_worktree_state(metadata) == (WORKTREE_STATE_DISABLED, '')
 
     @pytest.mark.parametrize(
-        'worktree_path', [None, 0, [], {}], ids=['none', 'int', 'list', 'dict']
+        'worktree_path', [None, 0, [], {}, '   ', '\t\n'], ids=['none', 'int', 'list', 'dict', 'spaces', 'tab-newline'],
     )
     def test_non_string_path_is_pending_not_materialized(self, worktree_path):
-        """A path that is not a usable string has not materialized a worktree."""
+        """A path that is not a usable string has not materialized a worktree.
+
+        Whitespace counts: ``os.path.abspath('   ')`` yields a directory under
+        the cwd, so a blank path would otherwise become a working-tree root.
+        """
         state, path = derive_worktree_state(
             {'use_worktree': True, 'worktree_path': worktree_path}
         )
 
         assert (state, path) == (WORKTREE_STATE_PENDING, '')
+
+    @pytest.mark.parametrize(
+        ('flag', 'expected_state'),
+        [
+            (True, WORKTREE_STATE_MATERIALIZED),
+            ('true', WORKTREE_STATE_MATERIALIZED),
+            ('True', WORKTREE_STATE_MATERIALIZED),
+            ('1', WORKTREE_STATE_MATERIALIZED),
+            (1, WORKTREE_STATE_MATERIALIZED),
+            (False, WORKTREE_STATE_DISABLED),
+            ('false', WORKTREE_STATE_DISABLED),
+            ('False', WORKTREE_STATE_DISABLED),
+            ('', WORKTREE_STATE_DISABLED),
+            (0, WORKTREE_STATE_DISABLED),
+            (None, WORKTREE_STATE_DISABLED),
+        ],
+        ids=[
+            'bool-true', 'str-true', 'str-True', 'str-1', 'int-1',
+            'bool-false', 'str-false', 'str-False', 'str-empty', 'int-0', 'absent',
+        ],
+    )
+    def test_the_flag_is_coerced_not_merely_truth_tested(self, flag, expected_state):
+        """``use_worktree`` goes through the shared metadata coercion.
+
+        A bare ``bool()`` reads the STRING ``'false'`` as True, which would bind
+        a main-checkout plan to a worktree it opted out of. Both ends of the pair
+        are guarded, and by the same rule the field's other reader
+        (``_handshake_commands._is_truthy_metadata``) uses — the guard-one-end
+        asymmetry is how those two readers came to disagree.
+        """
+        state, _path = derive_worktree_state(
+            {'use_worktree': flag, 'worktree_path': STUB_WORKTREE}
+        )
+
+        assert state == expected_state
 
     def test_every_returned_state_is_in_the_closed_vocabulary(self):
         """The machine cannot emit a state outside the published set.
@@ -127,14 +166,27 @@ class TestParseGetWorktreePathOutput:
     """The reader takes the published discriminator and never rebuilds it."""
 
     @pytest.mark.parametrize(
-        'state', list(VALID_WORKTREE_STATES), ids=list(VALID_WORKTREE_STATES)
+        ('state', 'published_path'),
+        [
+            (WORKTREE_STATE_DISABLED, ''),
+            (WORKTREE_STATE_PENDING, ''),
+            (WORKTREE_STATE_MATERIALIZED, STUB_WORKTREE),
+        ],
+        ids=list(VALID_WORKTREE_STATES),
     )
-    def test_published_state_is_returned_verbatim(self, state):
+    def test_published_state_is_returned_verbatim(self, state, published_path):
+        """Each state is paired with the path the producer actually publishes for it.
+
+        Parametrizing every state against a non-empty path would pin two shapes
+        the producer cannot emit — ``disabled`` and ``pending`` always publish an
+        empty ``worktree_path`` — and a fixture that encodes an impossible
+        payload is evidence about nothing.
+        """
         stdout = _payload(
-            status='success', worktree_state=state, worktree_path=f'"{STUB_WORKTREE}"'
+            status='success', worktree_state=state, worktree_path=f'"{published_path}"'
         )
 
-        assert _parse_get_worktree_path_output(stdout)[0] == state
+        assert _parse_get_worktree_path_output(stdout) == (state, published_path)
 
     def test_published_state_wins_over_the_primitives_it_rides_with(self):
         """The primitives are ignored, so a stale one cannot re-derive a state.

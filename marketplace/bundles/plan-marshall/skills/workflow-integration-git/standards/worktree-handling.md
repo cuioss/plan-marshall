@@ -253,14 +253,19 @@ The contract has four states — the enumerated rows below are the complete set:
 
 | Invocation | Resolution | Effective working tree |
 |------------|-----------|------------------------|
-| `--plan-id X` (preferred) | Script resolves through `file_ops.resolve_plan_context`, the single plan-context resolver that owns the one `manage-status get-worktree-path` invocation in the codebase, and binds subprocesses to the resolved `worktree_path`. | The worktree at `<project_root>/.plan/local/worktrees/X/`. |
+| `--plan-id X` (preferred) | Script resolves through `file_ops.resolve_plan_context`, the single plan-context resolver that owns the one `manage-status get-worktree-path` invocation in the codebase, and binds subprocesses to the resolved `worktree_path`. The resolved path is selected by the producer's published `worktree_state` discriminator, never re-derived from the primitive metadata fields. | The worktree at `<project_root>/.plan/local/worktrees/X/` when `worktree_state` is `materialized`; the cwd-resolved checkout root when it is `pending` (opted in, phase-5-execute has not created it yet) or `disabled`. |
 | `--plan-id NO_PLAN` (plan-less sentinel) | The same resolver, taking its sentinel branch. The sentinel has no worktree face at all: `has_worktree` is `False` and `worktree_path` is the checkout root. | The **main checkout**, always — the sentinel never binds to a worktree. |
 | `--project-dir <abs>` (override) | Script binds subprocesses verbatim to `<abs>`. Used when a caller already holds an absolute path — e.g., post-worktree-removal cleanup, fixture-driven test invocations. | The supplied absolute path. |
 | Neither flag | Script binds subprocesses to the plan root resolved cwd-relatively (the nearest ancestor of cwd containing `.plan/local`; ADR-002). | The cwd-resolved tree — main in phases 1-4, the pinned worktree in phase-5+. |
 
 `--plan-id` and `--project-dir` are **mutually exclusive at every call site**; passing both is a hard error.
 
-When a script invoked with `--plan-id X` resolves an empty path (i.e., the plan exists but `metadata.use_worktree == false`), the script falls back to the cwd-relative plan root — the plan opted out of worktree mode at init time, and the caller's `--plan-id` becomes a no-op for path resolution.
+When a script invoked with `--plan-id X` resolves no worktree path, the script falls back to the cwd-relative plan root and the caller's `--plan-id` becomes a no-op for path resolution. **Two distinct states reach that fallback, and they are not interchangeable:**
+
+- `worktree_state: disabled` — the plan opted out of worktree mode at init time. No worktree will ever exist for it.
+- `worktree_state: pending` — the plan opted IN, but phase-5-execute Step 2.5 has not materialized the worktree yet. This is the ordinary reading for every worktree-bound plan during phases 1-4, and it is a `status: success` the producer instructs callers to fall back on — not an error.
+
+A consumer that only needs a usable working tree may ignore the difference. A consumer whose *answer* depends on it — a skip reason, an operator-facing message, a decision about whether evidence could exist — MUST branch on `worktree_state` rather than on `has_worktree`, which collapses both states to `False`.
 
 `NO_PLAN` is an accepted `--plan-id` value because `validate_plan_id` carves it out ahead of the kebab-case regex (see [`tools-input-validation/SKILL.md`](../../tools-input-validation/SKILL.md) § "The `NO_PLAN` sentinel (plan_id carve-out)"). It is correct only for a caller that genuinely has no plan; a `--plan-id` that failed to resolve must be corrected rather than replaced with the sentinel, which is why the `plan_not_found` envelope ships its sentinel `hint` together with a `hint_caveat`.
 

@@ -36,6 +36,7 @@ from _resolve_project_dir_fixtures import (
     NO_PLAN_SENTINEL,
     patch_main_checkout_root,
     patch_query_worktree_path,
+    worktree_query_result,
 )
 from conftest import get_script_path
 
@@ -119,7 +120,9 @@ def _patch_resolve(monkeypatch, plan_dir):
     plan-dir patching is needed.
     """
     monkeypatch.setattr(
-        file_ops, '_query_worktree_path', lambda plan_id: (True, str(Path.cwd()))
+        file_ops,
+        '_query_worktree_path',
+        lambda plan_id: worktree_query_result(True, str(Path.cwd())),
     )
 
 

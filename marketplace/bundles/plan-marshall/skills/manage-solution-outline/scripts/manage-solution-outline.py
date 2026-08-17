@@ -177,15 +177,12 @@ def validate_solution_structure(content: str) -> tuple[list[str], list[str], dic
     return errors, warnings, info
 
 
-#: The one bucket value that asserts a deliverable changes no code. It is the
-#: only bucket whose claim is checkable without the build extensions, because
-#: documentation is recognised by an owner-less suffix rule rather than by a
-#: build system's claim — see ``_manifest_core._is_documentation_path``.
+#: The bucket value asserting a deliverable changes no code.
 _DOCUMENTATION_ONLY_BUCKET = 'documentation_only'
 
 
-def _is_documentation_only_write_set(write_set: list[str]) -> bool | None:
-    """Whether every declared write is documentation, per the owner-less rule.
+def _write_set_is_all_documentation(write_set: list[str]) -> bool | None:
+    """Whether EVERY declared write is documentation by the owner-less rule.
 
     Delegates to ``_manifest_core._is_documentation_path`` — the aggregator's own
     extension-agnostic documentation predicate — rather than restating a suffix
@@ -216,22 +213,28 @@ def _check_declared_bucket(
     contradicted the very files it describes reached phase-4-plan unchallenged,
     and the profiles it licensed rode along with it.
 
-    Only the ``documentation_only`` claim is adjudicated, in both directions:
+    **Exactly one contradiction is adjudicated, and it is the only one this
+    layer can PROVE.** When every declared write is documentation by suffix, the
+    aggregator's bucket is necessarily ``documentation_only``: stage 1 of
+    ``_classify_paths_via_extensions`` splits doc paths out *before* the build
+    extensions run, so no extension sees them, no other role can be claimed, and
+    the collapse has only ``documentation`` to work with. Any other declared
+    bucket over that write-set is therefore false, and it is the shape a
+    read-only reference produces — a consulted ``.py`` or test file in
+    ``affected_files`` pulling a docs-only deliverable onto the code path.
 
-    * declared ``documentation_only`` while the write-set contains a non-doc
-      path — the deliverable changes code under a bucket that forbids the
-      testing profiles;
-    * declared as some other bucket while every declared WRITE is documentation
-      — the classic read-only-reference flip, where a consulted ``.py`` or test
-      file in ``affected_files`` pulled a docs-only deliverable onto the code
-      path.
-
-    The remaining five buckets separate production from test from config, which
-    is a build-system-owned judgement (``BuildExtensionBase.classify_paths``)
-    and not adjudicable from paths alone here. They are deliberately left
-    unchecked rather than approximated: a partial re-derivation of the build
-    extensions' claims would be a second, weaker classifier competing with the
-    aggregator, which is the defect this check exists to catch.
+    **The converse is NOT adjudicated, deliberately.** A write-set containing a
+    non-doc path may still resolve to ``documentation_only``: infrastructure
+    config collapses to it (the ``config`` role is excluded from the plan-wide
+    collapse), a template whose render target is a doc or config takes that
+    role, and a build extension may itself claim a path as ``config``. Deciding
+    which of those applies needs ``BuildExtensionBase.classify_paths``, which
+    this layer does not have. Erroring on the un-decidable case would reject an
+    outline whose bucket is exactly what the classifier mandates — an
+    infra-only deliverable resolves ``documentation_only``, and phase-3-outline's
+    own standard says so — so the case is left to the aggregator rather than
+    approximated. Approximating it is the second-weaker-classifier defect this
+    check exists to catch, and building one here would be committing it.
 
     A deliverable with an empty write-set is skipped — a verification-only
     deliverable declares no writes, so there is nothing for a bucket to
@@ -240,20 +243,10 @@ def _check_declared_bucket(
     declared = deliverable.get('declared_bucket')
     if not declared or not write_set:
         return []
-    doc_only = _is_documentation_only_write_set(write_set)
-    if doc_only is None:
+    if declared.strip().lower() == _DOCUMENTATION_ONLY_BUCKET:
         return []
-
-    declared_is_doc_only = declared == _DOCUMENTATION_ONLY_BUCKET
-    if declared_is_doc_only == doc_only:
+    if not _write_set_is_all_documentation(write_set):
         return []
-
-    if declared_is_doc_only:
-        return [
-            f'D{num}: declared bucket {_DOCUMENTATION_ONLY_BUCKET!r} contradicts the '
-            f'write-set, which changes non-documentation files: '
-            f'{[p for p in write_set if not _is_documentation_only_write_set([p])]}'
-        ]
     return [
         f'D{num}: declared bucket {declared!r} contradicts the write-set, in which '
         f'every changed file is documentation: {write_set}. A file declared '

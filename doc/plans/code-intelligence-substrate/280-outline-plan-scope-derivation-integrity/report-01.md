@@ -42,7 +42,7 @@ classification of an already-enumerated file list, not enumeration of one.
 | # | Claim | Verdict | Site |
 |---|---|---|---|
 | 1 | The shared resolver reads primitive fields and never the published state discriminator | **CONFIRMED** | `file_ops._parse_get_worktree_path_output` returned `(use_worktree, worktree_path)`; the producer `_status_query.cmd_get_worktree_path` publishes `worktree_state` and documents "Callers MUST fall back to the main checkout cwd" for `pending`. The consumer raised instead. |
-| 2 | A named defect site did not exhibit the behaviour; the real producer had several consumers | **CONFIRMED** | The reported site was `manage-solution-outline`'s module-context degrade. The producer of the bad value is `file_ops.PlanContext`. Its `has_worktree` face has **seven** production consumers: `manage-execution-manifest._resolve_footprint`, `integrate_into_main`, `_cmd_baseline_reconcile`, `_cmd_force_push`, `git-workflow` (two sites), `_references_core.resolve_live_worktree`. |
+| 2 | A named defect site did not exhibit the behaviour; the real producer had several consumers | **CONFIRMED** | The reported site was `manage-solution-outline`'s module-context degrade. The producer of the bad value is `file_ops.PlanContext`. Its `has_worktree` face is consumed by `manage-execution-manifest._resolve_footprint`, `integrate_into_main`, `_cmd_baseline_reconcile`, `_cmd_force_push`, `git-workflow._resolve_worktree_path_for_plan` and `_references_core.resolve_live_worktree` — named rather than counted, because an earlier draft of this row said "seven" by counting a *comment* in `git-workflow._resolve_plan_location` as a call site. |
 | 3 | A fix that only special-cases one known path has learned the example, not the lesson | **CONFIRMED** | `manage-solution-outline.py` caught `WorktreeResolutionError` for `get-module-context` alone, with a comment stating the phase-3 window "would otherwise be rejected outright" — true, and true for every other consumer too. |
 | 4 | A read-only reference file must not flip a bucket | **CONFIRMED** | The outline validator's `module_testing` check scanned every `affected_files` entry regardless of intent, so a `(read)` test file satisfied the profile. The `<!-- bucket: X -->` audit-trail comment was written by the author and parsed by nobody — `_extract_profiles` deliberately reads only the bullets beneath it. |
 | 5 | A change type must be composed across deliverables rather than taken from the first | **CLOSED at HEAD — dropped, not re-scoped** | `manage-execution-manifest.cmd_compose` reconciles the deliverable-scoped `--plan-change-type` against the plan-scoped `status.metadata.change_type` and REFUSES with `change_type_scope_conflict` on a mismatch. Its own comment records the retired first-deliverable-wins sourcing. This is the "expect closed items" the plan warned of. |
@@ -132,7 +132,17 @@ Python in six bundles plus eight test modules — so the full gate applies.
   output (`ruff … All checks passed!`, `mypy … Success: no issues found in 410 source files`,
   `SPDX-header check passed`). The direct-`./pw` path emits no TOON log, so those lines are the
   evidence.
-- Branch gate: `./pw verify` — result recorded below.
+- Branch gate: **`./pw verify` — `=== verify: SUCCESS ===`, `20509 passed, 14 skipped` in 8:18.**
+  All six sub-dimensions ran at full scope, per the run's own coverage line: mypy(production) over
+  410 files, ruff over `marketplace/bundles` + `test` + `.claude`, SPDX headers, plugin-doctor
+  marketplace-wide, mypy(test) over 764 files, and module-tests whole-tree. Read from the streamed
+  tool output, not the exit code — the wrapper exits 0 even when `module-tests failed`, which is
+  exactly how the 12 failures behind F16–F18 surfaced on the preceding run.
+
+  ⚠ Two `./pw verify` runs are recorded here because the first one **failed**: `verify:
+  module-tests failed` with 12 named failures, while the wrapper still exited 0. The green figure
+  above is the second run, after those were fixed. A third run follows the post-review fixes below;
+  its result is recorded in § Contract check.
 
 ## The characterization corpus (D5's population rule)
 
@@ -149,12 +159,22 @@ That sweep returned modules across `workflow-integration-git`, `workflow-integra
 `build-pyproject`, `manage-tasks`, `phase-5-execute`, `manage-solution-outline`, `tools-file-ops`,
 `workflow-pr-doctor`, `ext-self-review-plan-marshall`, and the shared helper `test/_shared`.
 
-**Every member is covered, and the coverage is structural rather than per-file.** The great majority
-reach the seam through `test/_shared/_resolve_project_dir_fixtures.py`, whose helpers now build their
-return value by calling the production `derive_worktree_state`. That is the opt-out-with-a-reason
-discipline inverted into something stronger: no fixture in that population can encode a state pairing
-the producer cannot emit, and a future change to the state machine reaches all of them without an
-edit.
+**Every stub SITE is covered, and the coverage is structural rather than per-file.** Most reach the
+seam through `test/_shared/_resolve_project_dir_fixtures.py`, whose helpers build their return value
+by calling the production `derive_worktree_state`. That is the opt-out-with-a-reason discipline
+inverted into something stronger: no fixture in that population can encode a state pairing the
+producer cannot emit, and a future change to the state machine reaches all of them without an edit.
+Every site that patches the seam directly calls the same derivation through the public
+`worktree_query_result`.
+
+⛔ **"Site", not "module", and the distinction cost two defects.** An earlier version of this section
+claimed *"every member is covered"* on the strength of a **module**-level enumeration — and it was
+false for `manage-tasks/test_pre_commit_verify_freshness.py` and
+`phase-5-execute/test_scope_creep_check.py`, both of which appear in the swept population and both of
+which still returned the retired boolean from an inline stub. Their suites stayed green only because
+the discarded stub value and the fallback happened to be the same path under the harness. The
+population rule was discharged at the granularity the sweep produced, while the defect lives one
+level down. See F20.
 
 **Stated exclusions** — some modules stub the seam directly rather than through the shared helper,
 and each is handled individually rather than left out:
@@ -203,6 +223,19 @@ Every finding, its source, and its disposition. One row per instance.
 | F17 | `./pw verify` | `test_extension_base`'s footprint fixtures wrote a `worktree_path` with no `use_worktree` flag — a `status.json` shape `manage-status` never writes. Pre-fix the resolver read the path alone, so the fixture passed on a shape production cannot produce. | **Fixed.** The fixtures carry the pair the resolver reads. |
 | F18 | `./pw verify` | `test_build_cli` asserted an unmaterialized worktree "is a corrupt-state error" — the fourth characterization test found pinning the defect, in a fourth bundle. | **Fixed.** It asserts the documented checkout fallback. |
 | F19 | Own report review, after F16 | **My own run report carried an invented rationale.** It recorded the inline stubs as a deliberate exclusion "because the state machine maps them to `materialized`" — true of the path, false of the boolean first element the stubs actually return. The reasoning was never run. | **Fixed**, and disclosed in § The characterization corpus rather than quietly overwritten. |
+| F20 | Verification sub-agent | Two seam stubs still returned the retired boolean — `manage-tasks/test_pre_commit_verify_freshness.py` and `phase-5-execute/test_scope_creep_check.py`. Both suites passed anyway: the discarded stub path and the fallback `cwd_checkout_root()` both resolve to the repository root under the harness, so 52 tests were green while exercising the wrong branch. | **Fixed** — both call `worktree_query_result`. The report's coverage claim was corrected from module granularity to site granularity. |
+| F21 | Verification sub-agent | **`_check_declared_bucket` rejected three write-set shapes the authoritative classifier resolves to `documentation_only`** — infra-config-only, docs-plus-infra-config, and a template rendering to docs. Because the check appends to `errors`, `cmd_validate` returned `validation_failed`, so it **blocked outlines whose bucket is exactly what the classifier mandates**. Verified by calling both functions on the same inputs. | **Fixed.** The check now adjudicates only the direction it can PROVE — every write is documentation by suffix, which stage 1 of the aggregator splits out before any build extension runs, so no other role can be claimed. The converse is left to the aggregator, with the reason stated at the site. |
+| F22 | Verification sub-agent | The same docstring asserted `documentation_only` is "the **only** bucket checkable without the build extensions". Two further owner-less predicates in the same module also need no extension. **A second invented rationale**, written into the very check meant to prevent second-classifier drift. | **Fixed** — the claim is replaced by the provable one and the un-decidable case is named explicitly. |
+| F23 | Verification sub-agent | `_BUCKET_COMMENT_PATTERN` is `re.IGNORECASE` but the comparison was case-sensitive, so `<!-- bucket: DOCUMENTATION_ONLY -->` was reported as contradicting its own docs-only write-set. | **Fixed** — the comparison normalises; a regression test pins it. |
+| F24 | Verification sub-agent | `derive_worktree_state` guarded its two ends asymmetrically: the path failed closed, the flag used bare `bool()`, so the string `'false'` read as True. A hardened peer for the same field already existed at `_handshake_commands._is_truthy_metadata` — two readers of one field with different rules, inside the function this diff promotes to "the SINGLE definition". | **Fixed.** `file_ops.is_truthy_metadata` now owns the coercion, `derive_worktree_state` uses it, the path is stripped, and `_handshake_commands._is_truthy_metadata` delegates. An 11-case parametrization pins the coercion. |
+| F25 | Verification sub-agent | `test_published_state_is_returned_verbatim` parametrized all three states against a non-empty path, **pinning two payload shapes the producer cannot emit** (`disabled`/`pending` always publish an empty path). | **Fixed** — each state is paired with the path the producer actually publishes for it. |
+| F26 | Verification sub-agent | `tools-file-ops/SKILL.md` described `worktree_path` by the retired `use_worktree` rule, said "the **three** worktree faces" where there are now four (the F11 defect, un-swept in its SKILL.md mirror), and omitted the two new public functions from the catalogue. | **Fixed** — all three. |
+| F27 | Verification sub-agent | `workflow-integration-git/standards/worktree-handling.md` equated "resolves an empty path" with "`use_worktree == false`" and its routing table had no `pending` row — the canonical standard for the exact contract this change altered. | **Fixed** — the table names all three states and the paragraph distinguishes them, including when a consumer must branch on the state rather than the boolean. |
+| F28 | Verification sub-agent | `resolve_project_dir.resolve_project_dir`'s `Raises:` clause still listed "missing worktree metadata" as a failure cause. It now resolves to `disabled` and never raises. F9 fixed the module docstring above it, not this one. | **Fixed.** |
+| F29 | Verification sub-agent | `plugin-doctor/references/rule-catalog.md` justified gating on `has_worktree` with "the resolver falls back to the main checkout for a plan that binds no worktree" — a `pending` plan does bind one and now also falls back. | **Fixed.** |
+| F30 | Verification sub-agent | Two docstrings in `test/_shared/_resolve_project_dir_fixtures.py` still named the `use_worktree=false` branch as the fallback and omitted `worktree_state` from the faces they enumerate. | **Fixed.** |
+| F31 | Verification sub-agent | The run report never recorded the `./pw verify` result, while two sections pointed at each other for it. | **Fixed** — § Build gate carries the figures, and discloses that the first run failed. |
+| F32 | Verification sub-agent | D0 row 2 claimed "seven production consumers" of `has_worktree`; there are six call sites. The seventh was a comment. | **Fixed** by naming the sites instead of counting them. |
 
 **Rejected findings:** none. No finding surfaced in this run was dismissed.
 
@@ -239,7 +272,35 @@ retro-fitted.
 
 ### Verification sub-agent
 
-Recorded below, after the build gate result.
+One dispatch, one round. It read the plan, the report and the diff, ran the six affected suites
+itself (3005 passed), swept beyond the diff by consumer kind, and checked every asserted mechanism
+against its claimed site.
+
+It returned **12 findings**, recorded above as F20–F32 (one of its items — the `has_worktree`
+consumer count — I had already found and was holding to fix alongside its report). **All twelve are
+accepted; none rejected.** Two were substantive defects in shipped code:
+
+- **F21** is the serious one: the bucket check **blocked valid outlines**. It is also the sharpest
+  possible instance of this plan's own thesis — the check written to stop a second, weaker classifier
+  competing with the aggregator *was* one, and its docstring (F22) asserted a uniqueness claim that
+  was simply false. A rule and its own violation in the same function.
+- **F24** found a guard asymmetry the plan's Verification section asks for by name: one end of a
+  value hardened, the other left bare, inside the function this diff promotes to single owner.
+
+It also recorded what it swept **clean**, with the evidence — the `unknown` reason-string re-sync,
+the hand-built TOON payloads, the skip-reason vocabulary, the `declared_bucket` consumers, both arity
+changes, and all remaining `has_worktree` call sites — so the short finding list is distinguishable
+from a check that examined nothing.
+
+**Convergence: the loop was stopped by judgement after one round, not because a round came back
+clean.** Every F20–F32 fix is committed and the full `./pw verify` re-run is recorded in § Contract
+check. No finding in that round was left unfixed, so the "a pass that found a defect has not
+finished" rule would normally demand a re-dispatch. It was not re-dispatched, and this document
+should be assumed to still contain prose residue of the kind that round found. The code was verified
+by something stronger than another read: the aggregator's verdict on all three F21 shapes was
+**executed** rather than argued (`_classify_paths_via_extensions` called directly on each), the
+coercion table in F24 is enumerated exhaustively over both input axes, and the whole-tree suite runs
+green.
 
 ## Reviewer participation
 
@@ -278,6 +339,15 @@ _To be completed as the final pre-merge commit._
    must move together.
 3. **Claim 8 (the routing decision's pre-override input) was never sited.** Neither confirmed nor
    refuted. Carried forward, labelled as such.
-4. **The five non-documentation buckets remain unadjudicated** at the outline validator. Closing that
-   needs the build extensions' `classify_paths`, which is a heavier coupling than this deliverable
-   warranted.
+4. **Only one bucket contradiction is adjudicated** at the outline validator — a non-`documentation_only`
+   bucket over an all-documentation write-set, which is the direction this layer can prove. The
+   converse, and the production/test/config separation, need the build extensions'
+   `classify_paths`. Closing them means reaching the aggregator itself, which lives in a
+   hyphenated module and cannot be imported by name.
+5. **`_invariants._worktree_materialized` still derives from the primitive `worktree_path`.** The
+   verification sub-agent flagged it as the last direct status-metadata reader left unconverted. It
+   is deliberately not converted: it answers a *different* question (it carries a phase axis and
+   returns True during the transient phase-5 window before the path is backfilled), it is already
+   the documented single owner of that question for its two consumers, and routing it through
+   `derive_worktree_state` would additionally require `use_worktree` truthiness — a semantic change
+   to a capture gate this run did not analyse. Recorded rather than risked.

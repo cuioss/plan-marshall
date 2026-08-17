@@ -55,6 +55,7 @@ from _resolve_project_dir_fixtures import (
     NO_PLAN_SENTINEL,
     patch_main_checkout_root,
     patch_query_worktree_path,
+    worktree_query_result,
 )
 from toon_parser import serialize_toon
 
@@ -235,7 +236,9 @@ def _stub_resolver_seam(monkeypatch):
     chain executing while making every case hermetic and subprocess-free.
     """
     monkeypatch.setattr(
-        file_ops, '_query_worktree_path', lambda _plan_id: (True, str(Path.cwd()))
+        file_ops,
+        '_query_worktree_path',
+        lambda _plan_id: worktree_query_result(True, str(Path.cwd())),
     )
 
 

@@ -682,6 +682,30 @@ VALID_WORKTREE_STATES = (
 )
 
 
+def is_truthy_metadata(value: Any) -> bool:
+    """Decide whether a ``status.json`` metadata field expressing a boolean is true.
+
+    The SINGLE owner of that coercion. Metadata reaches readers by two routes —
+    ``json.load`` of ``status.json``, which yields a real ``bool``, and TOON
+    parsing, which historically yielded the string forms — so a reader that
+    tests truthiness with bare ``bool()`` reads the string ``'false'`` as True.
+    Empty and missing values are never true.
+
+    Args:
+        value: The raw metadata value.
+
+    Returns:
+        Whether the field is set.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {'true', '1', 'yes'}
+    if isinstance(value, int):
+        return value != 0
+    return False
+
+
 def derive_worktree_state(metadata: Any) -> tuple[str, str]:
     """Derive ``(worktree_state, worktree_path)`` from a plan's status metadata.
 
@@ -714,12 +738,18 @@ def derive_worktree_state(metadata: Any) -> tuple[str, str]:
     """
     if not isinstance(metadata, dict):
         return WORKTREE_STATE_DISABLED, ''
-    if not bool(metadata.get('use_worktree', False)):
+    # Both ends of the pair are read through a guard, and through the SAME
+    # guards their peers use: the flag via :func:`is_truthy_metadata` (so the
+    # string ``'false'`` is not read as True), the path stripped before it is
+    # tested (so whitespace is not a working-tree root). A guard on one end and
+    # a bare truthiness test on the other is how the two readers of this field
+    # came to disagree in the first place.
+    if not is_truthy_metadata(metadata.get('use_worktree')):
         return WORKTREE_STATE_DISABLED, ''
     worktree_path = metadata.get('worktree_path')
-    if not isinstance(worktree_path, str) or not worktree_path:
+    if not isinstance(worktree_path, str) or not worktree_path.strip():
         return WORKTREE_STATE_PENDING, ''
-    return WORKTREE_STATE_MATERIALIZED, worktree_path
+    return WORKTREE_STATE_MATERIALIZED, worktree_path.strip()
 
 
 class WorktreeResolutionError(RuntimeError):

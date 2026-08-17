@@ -16,6 +16,8 @@ write-set-blind implementation reaches the opposite verdict on every one of them
 which is what makes them discriminating rather than merely green.
 """
 
+import pytest
+
 from conftest import load_script_module
 
 _parsing = load_script_module(
@@ -187,7 +189,17 @@ class TestDeclaredBucketIsParsed:
 
 
 class TestDeclaredBucketAgreesWithTheWriteSet:
-    """The recorded bucket is adjudicated against the files it claims to describe."""
+    """The one bucket contradiction this layer can PROVE is adjudicated.
+
+    When every declared write is documentation by suffix, the aggregator's bucket
+    is necessarily ``documentation_only``: stage 1 of
+    ``_classify_paths_via_extensions`` splits doc paths out before the build
+    extensions run, so no other role can be claimed. Any other declared bucket
+    over that write-set is therefore false.
+
+    The converse is deliberately NOT adjudicated — see
+    :class:`TestNonProvableShapesAreNotAdjudicated`.
+    """
 
     def _contract_fields(self):
         return {
@@ -220,25 +232,14 @@ class TestDeclaredBucketAgreesWithTheWriteSet:
             f'a read-only code reference flipped the bucket; errors={errors}'
         )
 
-    def test_docs_only_bucket_over_a_code_write_is_rejected(self):
-        """Paired positive: the same declaration, with the code path declared as a WRITE."""
-        deliverable = _deliverable(
-            [(_CODE_PATH, 'write-replace'), (_DOC_PATH, 'write-replace')],
-            declared_bucket='documentation_only',
-            **self._contract_fields(),
-        )
-
-        errors, _warnings = validate_deliverable_contract(deliverable)
-
-        assert any('documentation_only' in e and 'contradicts' in e for e in errors), (
-            f'a code write under a documentation_only bucket was accepted; errors={errors}'
-        )
-
     def test_code_bucket_over_a_docs_only_write_set_is_rejected(self):
-        """The other direction: a code bucket whose every declared write is documentation.
+        """A code bucket whose every declared write is documentation.
 
         This is the shape a read-only reference produces when the author lets it
-        decide the bucket, so the error names that cause explicitly.
+        decide the bucket, so the error names that cause explicitly. Changing only
+        the code path's intent to a write makes the claim un-provable and the
+        error disappears (see the paired case below), so this arm is carried by
+        the write-set rather than by a check that fires on everything.
         """
         deliverable = _deliverable(
             [(_CODE_PATH, 'read'), (_DOC_PATH, 'write-replace')],
@@ -251,6 +252,35 @@ class TestDeclaredBucketAgreesWithTheWriteSet:
         assert any('production_only' in e and 'contradicts' in e for e in errors), (
             f'a docs-only write-set under a code bucket was accepted; errors={errors}'
         )
+
+    def test_the_same_bucket_over_a_code_write_is_not_rejected(self):
+        """Paired negative: intent is the only variable, and it flips the verdict."""
+        deliverable = _deliverable(
+            [(_CODE_PATH, 'write-replace'), (_DOC_PATH, 'write-replace')],
+            declared_bucket='production_only',
+            **self._contract_fields(),
+        )
+
+        errors, _warnings = validate_deliverable_contract(deliverable)
+
+        assert not any('bucket' in e for e in errors), f'errors={errors}'
+
+    def test_bucket_comparison_is_case_insensitive(self):
+        """The comment regex accepts any case, so the comparison must too.
+
+        A regex that parses ``<!-- bucket: DOCUMENTATION_ONLY -->`` into a value
+        the comparison then fails to recognise reports a docs-only deliverable as
+        contradicting its own docs-only write-set.
+        """
+        deliverable = _deliverable(
+            [(_DOC_PATH, 'write-replace')],
+            declared_bucket='DOCUMENTATION_ONLY',
+            **self._contract_fields(),
+        )
+
+        errors, _warnings = validate_deliverable_contract(deliverable)
+
+        assert not any('bucket' in e for e in errors), f'errors={errors}'
 
     def test_no_declared_bucket_is_not_adjudicated(self):
         """A deliverable with no recorded bucket has no claim to contradict."""
@@ -276,3 +306,52 @@ class TestDeclaredBucketAgreesWithTheWriteSet:
         errors, _warnings = validate_deliverable_contract(deliverable)
 
         assert not any('bucket' in e for e in errors), f'errors={errors}'
+
+
+class TestNonProvableShapesAreNotAdjudicated:
+    """A ``documentation_only`` claim over a non-doc write is left to the aggregator.
+
+    These write-sets all resolve to ``documentation_only`` in
+    ``_classify_paths_via_extensions`` — infrastructure config collapses to it
+    because the ``config`` role is excluded from the plan-wide collapse, and a
+    template takes the role of what it renders into. None of that is visible from
+    paths alone at this layer, so erroring here would reject an outline whose
+    bucket is exactly what the classifier mandates.
+
+    Each case is a real shape from this repository, not a synthetic one.
+    """
+
+    def _contract_fields(self):
+        return {
+            'metadata': {
+                'change_type': 'feature',
+                'execution_mode': 'automated',
+                'domain': 'python',
+                'module': 'plan-marshall',
+                'depends': 'none',
+            },
+            'verification': {'command': 'verify', 'criteria': 'green'},
+        }
+
+    @pytest.mark.parametrize(
+        'write_paths',
+        [
+            ['.github/workflows/python-verify.yml'],
+            ['doc/developer/build.adoc', '.github/workflows/python-verify.yml'],
+            ['doc/developer/readme.adoc.template'],
+        ],
+        ids=['infra-config-only', 'docs-plus-infra-config', 'template-rendering-to-docs'],
+    )
+    def test_documentation_only_over_a_non_doc_write_is_accepted(self, write_paths):
+        deliverable = _deliverable(
+            [(path, 'write-replace') for path in write_paths],
+            declared_bucket='documentation_only',
+            **self._contract_fields(),
+        )
+
+        errors, _warnings = validate_deliverable_contract(deliverable)
+
+        assert not any('bucket' in e for e in errors), (
+            f'the aggregator resolves {write_paths} to documentation_only, but the '
+            f'outline validator rejected the matching bucket; errors={errors}'
+        )
