@@ -960,6 +960,8 @@ Return the platform-specific invocation parameters for spawning a focused subage
 
 **Arguments**: `--agent <name>` (required), `--prompt-file <path>` (optional), `--context <json>` (optional)
 
+Every target echoes the requested `--agent` back as `invocation.subagent_type`; no target substitutes an agent of its own choosing, so a caller's selection always reaches the invocation.
+
 **Success (Claude)**:
 ```toon
 status: success
@@ -981,10 +983,12 @@ platform: opencode
 
 invocation:
   tool: task
-  description: Run phase-3-outline outline
+  description: Run execution-context-level-3
   prompt: ...agent body with context merged...
   subagent_type: execution-context-level-3
 ```
+
+OpenCode composes its `description` as `Run {agent}`, so that field and `subagent_type` always name the same agent. Claude sources `description` from the agent's own frontmatter instead, which is why its example above shows a different string alongside the same `subagent_type`.
 
 **No-op (unmapped tools)**:
 ```toon

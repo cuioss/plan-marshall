@@ -498,7 +498,9 @@ class OpenCodeRuntime(Runtime):
     ) -> str:
         """Return OpenCode subagent invocation parameters.
 
-        Uses ``task`` (lowercase) as the OpenCode native tool name.
+        Uses ``task`` (lowercase) as the OpenCode native tool name, and echoes
+        the REQUESTED *agent* back as ``subagent_type`` so the caller's
+        selection reaches the invocation instead of being discarded.
         """
         import pathlib
 
@@ -532,7 +534,7 @@ class OpenCodeRuntime(Runtime):
                     "tool": "task",
                     "description": f"Run {agent}",
                     "prompt": prompt_body,
-                    "subagent_type": "execution-context-level-3",
+                    "subagent_type": agent,
                 },
             },
         )

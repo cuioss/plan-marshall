@@ -515,6 +515,25 @@ def test_subagent_dispatch_missing_prompt_file_returns_error(
     assert result["error"] == "prompt_not_found"
 
 
+@pytest.mark.parametrize(
+    "agent",
+    ["execution-context-level-2", "execution-context-level-5"],
+    ids=["level-2", "level-5"],
+)
+def test_subagent_dispatch_echoes_requested_agent(
+    runtime: OpenCodeRuntime, agent: str
+) -> None:
+    """subagent_dispatch returns the REQUESTED agent as subagent_type.
+
+    The caller's level selection reaches the payload rather than being
+    discarded in favour of a fixed level, mirroring the Claude passthrough.
+    """
+    result = _parse(runtime.subagent_dispatch(agent, None, None))
+
+    assert result["status"] == "success"
+    assert result["invocation"]["subagent_type"] == agent
+
+
 # =============================================================================
 # 14. wait_for — declined no-op (OpenCode holds no wait channel)
 # =============================================================================
