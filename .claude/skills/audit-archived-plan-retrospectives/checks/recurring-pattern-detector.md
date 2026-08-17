@@ -26,6 +26,7 @@ emitted block). Signatures below the threshold are not emitted.
 
 ```
 threshold: 3
+plans_in_corpus: P    # plans that carried a findings directory
 systemic_count: M
 rows[M]{signature,occurrence_count,plan_ids}
 ```

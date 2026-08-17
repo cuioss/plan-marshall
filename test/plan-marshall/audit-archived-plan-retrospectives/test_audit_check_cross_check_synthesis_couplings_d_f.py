@@ -200,3 +200,92 @@ class TestCrossCheckSynthesisCouplingF:
 
         # not fired
         assert row['fired'] is False
+
+
+class TestUnmeasuredCarriesIntoTheCouplings:
+    """An `unmeasured` upstream check must not render as a measured zero here.
+
+    The synthesis block is the third surface of the `unmeasured` contract, after
+    the check's own block and its summary metric. A coupling that renders
+    `contended_plans=0` or `global_errors=0` on a run where nothing was read
+    republishes downstream the exact zero the check refused to publish — and the
+    synthesis block is what the LLM body reads for the completeness gate, so it is
+    the surface where a false zero does the most damage.
+    """
+
+    def test_merge_window_unmeasured_renders_as_unmeasured_not_zero(self):
+        all_results = {
+            'merge-window-accounting': {'rows': [], 'measured': False},
+            'sequence-and-build-minimality': {'rows': []},
+            'token-economics': {'rows': []},
+        }
+
+        row = _coupling_row(
+            audit.cross_check_synthesis(all_results), 'merge_window_ci_rerun'
+        )
+
+        assert row['fired'] is False
+        assert 'contended_plans=unmeasured' in row['detail']
+        assert 'contended_plans=0' not in row['detail']
+
+    def test_merge_window_measured_zero_still_renders_a_number(self):
+        """The discriminator — the flag must not suppress a real measured zero."""
+        all_results = {
+            'merge-window-accounting': {'rows': [], 'measured': True},
+            'sequence-and-build-minimality': {'rows': []},
+            'token-economics': {'rows': []},
+        }
+
+        row = _coupling_row(
+            audit.cross_check_synthesis(all_results), 'merge_window_ci_rerun'
+        )
+
+        assert 'contended_plans=0' in row['detail']
+        assert 'unmeasured' not in row['detail']
+
+    def test_a_result_without_the_flag_is_treated_as_measured(self):
+        """Back-compatibility: an upstream dict predating `measured` reads as measured.
+
+        Defaulting the other way would render every such result `unmeasured` and
+        manufacture the opposite false signal.
+        """
+        all_results = {
+            'merge-window-accounting': {'rows': []},
+            'sequence-and-build-minimality': {'rows': []},
+            'token-economics': {'rows': []},
+        }
+
+        row = _coupling_row(
+            audit.cross_check_synthesis(all_results), 'merge_window_ci_rerun'
+        )
+
+        assert 'contended_plans=0' in row['detail']
+
+    def test_global_log_unmeasured_renders_as_unmeasured_not_zero(self):
+        all_results = {
+            'recurring-pattern-detector': {'rows': []},
+            'global-log-analysis': {'error_count': 0, 'logs_readable': False},
+            'quality-verification-report': [],
+        }
+
+        row = _coupling_row(
+            audit.cross_check_synthesis(all_results), 'argparse_signature_cluster'
+        )
+
+        assert 'global_errors=unmeasured' in row['detail']
+        assert 'global_errors=0' not in row['detail']
+
+    def test_global_log_measured_zero_still_renders_a_number(self):
+        """The discriminator for the global-log half."""
+        all_results = {
+            'recurring-pattern-detector': {'rows': []},
+            'global-log-analysis': {'error_count': 0, 'logs_readable': True},
+            'quality-verification-report': [],
+        }
+
+        row = _coupling_row(
+            audit.cross_check_synthesis(all_results), 'argparse_signature_cluster'
+        )
+
+        assert 'global_errors=0' in row['detail']
+        assert 'unmeasured' not in row['detail']

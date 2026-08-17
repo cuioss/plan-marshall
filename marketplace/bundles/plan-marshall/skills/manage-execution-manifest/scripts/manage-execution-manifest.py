@@ -33,6 +33,7 @@ from typing import Any
 # the filter's domain-seeded membership check and the resolution gate's universe
 # in lock-step.
 import _manifest_validation
+from _decision_line_shapes import format_dropped_record
 from _manifest_core import (
     _CANONICAL_TO_ROLE,  # noqa: F401
     _CANONICAL_VERIFY_PREFIX,  # noqa: F401
@@ -512,6 +513,13 @@ def _log_dropped_records(
     candidates by that shape reports through here instead of re-deriving the same
     ``dropped {step}...: {reason}`` line at its own call site.
 
+    The line itself is rendered by
+    :func:`_decision_line_shapes.format_dropped_record`, which the retrospective's
+    routing-decisions aspect also parses through. Writer and reader share one
+    definition of the shape so a change to it cannot leave the reader silently
+    matching a retired form — the drift that made every posture-cutoff drop read
+    as a mis-prune.
+
     Args:
         plan_id: Plan identifier the log entry is written for.
         gate_name: The gate/rule name the ``[STATUS]`` line attributes the drop to.
@@ -522,11 +530,10 @@ def _log_dropped_records(
             applies.
     """
     for record in dropped_records:
-        message = (
-            f'(plan-marshall:manage-execution-manifest:compose) [STATUS] {gate_name} — '
-            f'dropped {record["step"]}{target}: {record["reason"]}'
+        _emit_decision_log(
+            plan_id,
+            format_dropped_record(gate_name, record['step'], record['reason'], target=target),
         )
-        _emit_decision_log(plan_id, message)
 
 
 def _log_commit_push_omitted(plan_id: str, step: str, reason: str) -> None:
@@ -565,12 +572,24 @@ def _log_pre_push_quality_gate_omitted(plan_id: str, reason: str) -> None:
     threaded through from the ``build-decision`` consult. The emitter never
     composes a reason of its own — a hardcoded string can state a reason the
     verdict did not give.
+
+    Renders through :func:`_decision_line_shapes.format_dropped_record` like every
+    other subtraction record. It previously hand-wrote the identical shape as an
+    f-string, so the retrospective reader matched it only by coincidence of
+    copied text — the exact arrangement the shared module exists to end, surviving
+    inside the change that introduced the module. This gate drops a single fixed
+    step, so it does not route through :func:`_log_dropped_records`'s record-list
+    loop; it shares the SHAPE, which is what has to have one home.
     """
-    message = (
-        '(plan-marshall:manage-execution-manifest:compose) [STATUS] pre_push_quality_gate_inactive — '
-        f'dropped pre-push-quality-gate from phase_6.steps: {reason}'
+    _emit_decision_log(
+        plan_id,
+        format_dropped_record(
+            'pre_push_quality_gate_inactive',
+            'pre-push-quality-gate',
+            reason,
+            target=' from phase_6.steps',
+        ),
     )
-    _emit_decision_log(plan_id, message)
 
 
 def _log_pre_push_quality_gate_kept_unknown(plan_id: str, reason: str) -> None:

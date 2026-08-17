@@ -22,10 +22,17 @@ def test_full_sweep_emits_new_blocks_and_couplings(tmp_path):
     for c in (
         "dispatch-topology",
         "finalize-flow-conformance",
-        "merge-window-accounting",
         "lane-lever-effectiveness",
     ):
         assert f"check: {c}\nstatus: success\nfixed_since: {audit.CHECK_ERA[c]}" in output
+    # merge-window-accounting reads the `[LOCK]` lifecycle timeline, which the
+    # minimal corpus does not stage, so it reports `unmeasured` on this sweep —
+    # the block is still emitted and still era-stamped. Asserting `success` here
+    # would require the check to publish a contention count no data supports.
+    assert (
+        "check: merge-window-accounting\nstatus: unmeasured\n"
+        f"fixed_since: {audit.CHECK_ERA['merge-window-accounting']}" in output
+    )
     for coupling in (
         "dispatch_topology_reentry",
         "finalize_gate_gap_ci_rerun",

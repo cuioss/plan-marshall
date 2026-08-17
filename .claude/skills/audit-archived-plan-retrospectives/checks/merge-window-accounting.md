@@ -17,10 +17,10 @@ the corpus-wide global `[LOCK]` lifecycle logs once and buckets by plan.
 ## Inputs the check reads
 
 The merge-lock primitive appends a best-effort `[LOCK] (merge:{event}) {lock_id}`
-lifecycle line to the **main-anchored global logs** (`.plan/local/logs/`) on every
-acquire / release / blocked-wait / stale-reclaim, with a following indented
-`waiting_count:` field (the post-mutation FIFO queue depth). The `{lock_id}` is the
-plan_id, so the corpus lines bucket per plan. Events:
+lifecycle line to a **main-anchored** log on every acquire / release /
+blocked-wait / stale-reclaim, with a following indented `waiting_count:` field
+(the post-mutation FIFO queue depth). The `{lock_id}` is the plan_id, so the
+corpus lines bucket per plan. Events:
 
 | Event | Meaning |
 |-------|---------|
@@ -29,8 +29,33 @@ plan_id, so the corpus lines bucket per plan. Events:
 | `blocked` | The plan was a non-front waiter (or lost the create) — it waited behind the admission queue. |
 | `reclaimed` | The plan re-created the lock after reclaiming a crashed holder's stale lock. |
 
-The check scans `.plan/local/logs/*.log`, matches `[LOCK] (merge:*)` lines, and
-reads the max `waiting_count` observed on the following indented lines.
+**Where the lines actually land.** `manage-locks/_locks_core._resolve_lock_log_path`
+resolves the main-anchored `.plan/local` base and then steps to its **parent**
+before appending `logs/`, so the lock timeline is written to **`.plan/logs/`** —
+NOT `.plan/local/logs/`, where every other global log lives. The check scans
+**both** roots (`_LOCK_LOG_ROOTS`) and matches `[LOCK] (merge:*)` lines by
+content, reading the max `waiting_count` from the following indented lines.
+
+Scanning both is deliberate. The check previously scanned `.plan/local/logs/`
+alone, one directory above where the emitter writes, so no real emission was ever
+in range and its zero was structural rather than observed. Reconciling the two
+paths belongs to the lock skill's surface; an auditor that reads only where it
+believes the producer *should* write is the same defect facing the other way, so
+this check follows the data.
+
+### `unmeasured` versus a measured zero
+
+The check reports `status: unmeasured` — with its reason and **no counts at
+all** — when no `lock-*.log` substrate existed to read. It reports
+`status: success` with a genuine `contended_plans: 0` when a lock timeline WAS
+read and recorded no contention.
+
+The distinction is the point. "No lock timeline was recorded" and "a lock timeline
+showed no contention" are different claims, and only the second is a finding about
+the corpus. An `unmeasured` block also carries no `genuine_signal_count`, so the
+`retire-on-quiet` streak reader records no quiet run for it — an unmeasured check
+must never accumulate toward its own retirement, which is how a detector that
+cannot fire gets read as a detector that found nothing.
 
 ## Computation and flags
 
@@ -48,12 +73,22 @@ totals but flagged `in_corpus: false`).
 
 ## Emitted columns
 
+On a measured run:
+
 ```
 plans_with_merge_events: P
 contended_plans: C
 total_blocked: B
 max_waiting_observed: W
 rows[N]{plan_id,in_corpus,acquired,released,blocked,reclaimed,max_waiting,flags,severity}
+```
+
+On an unmeasured run the counts above are absent entirely, replaced by:
+
+```
+status: unmeasured
+unmeasured_reason: {why no verdict can be substantiated}
+scanned_roots: {the roots that were searched}
 ```
 
 | Column | Meaning |
@@ -103,7 +138,12 @@ designed").
   (`_LOCK_WAITING_RE`) are module constants mirroring the merge-lock primitive's
   `log_lock_event` format. If that format changes, edit `scripts/audit.py` rather
   than substituting a different reading.
-- The `[LOCK]` lines live in the MAIN-ANCHORED global logs, so this check reads the
-  same corpus as `global-log-analysis`; it is cross-plan by construction (one scan,
-  bucketed by plan_id).
+- The `[LOCK]` lines are main-anchored, but they do NOT share a directory with the
+  logs `global-log-analysis` reads: that check reads `.plan/local/logs/`, while the
+  lock timeline is written to `.plan/logs/`. Do not assume a `[LOCK]` line is in
+  the `global-log-analysis` corpus, or that a finding there implies one here. This
+  check is still cross-plan by construction (one scan, bucketed by plan_id).
+- A zero is only ever reported as a count when the substrate was read. If no lock
+  timeline exists, the check says `unmeasured` and publishes no contention count —
+  never a `0` that reads as health.
 - This check is read-only; it never edits `.plan/` files.

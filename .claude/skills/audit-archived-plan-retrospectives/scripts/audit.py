@@ -130,7 +130,9 @@ suite of deterministic checks:
   merge-mutex + FIFO admission-queue window by bucketing the global
   `[LOCK] (merge:*)` lifecycle lines by `lock_id` (= plan_id); reports per-plan
   acquire/release/blocked/reclaim counts + max FIFO `waiting_count` and flags
-  `merge_contention` when a plan waited behind the queue front.
+  `merge_contention` when a plan waited behind the queue front. Reports
+  `unmeasured` — never a zero contention count — when no lock timeline existed to
+  read.
 - `lane-lever-effectiveness` (cross-plan) — the CHECKPOINT MEASUREMENT ARM of the
   token-optimization roadmap. Measures whether the cost-reducing lane levers
   (recipe auto-routing, the light planning lane, the minimal execution posture,
@@ -1228,11 +1230,36 @@ def collect_inputs(plan_dir: Path) -> PlanInputs:
     metadata = status.get("metadata", {})
     inputs.change_type = metadata.get("change_type")
 
-    plan_source = metadata.get("plan_source")
-    # `plan_source` populated by phase-1-init when sourced from a lesson;
-    # equivalent to `recipe_key` for matrix purposes.
-    if isinstance(plan_source, str) and plan_source.strip():
-        inputs.recipe_key = plan_source.strip()
+    # Recipe / lesson provenance rides on EITHER of two metadata fields, and both
+    # are read here. `plan_source` is seeded by phase-1-init: the raw lesson id for
+    # a code-shaped lesson-derived plan, and the literal `"recipe"` only on Step
+    # 5c-LESSON's doc-shaped branch (which also sets `recipe_key`). A plan routed by
+    # Step 5c-RECIPE-MATCH writes no `plan_source` at all — see the next paragraph.
+    #
+    # `recipe_key` can be written WITHOUT `plan_source`, which is what made reading
+    # only `plan_source` a structural gap rather than a redundancy. Per
+    # `phase-1-init/SKILL.md` Step 5c-recipe-match, both its auto-route leg
+    # (confidence >= `auto_route_recipe_threshold`) and its operator-selection leg
+    # persist `status.metadata.recipe_key` alone and write no `plan_source` at all.
+    # Row 2 (`recipe`) was therefore unreachable for every plan routed either way —
+    # it could not fire, whatever the corpus contained. (Step 5c-LESSON, the
+    # `auto-suggest` leg, sets BOTH `plan_source=recipe` and
+    # `recipe_key=lesson_cleanup`, so that path was always reachable; it is not the
+    # gap.)
+    #
+    # The field order mirrors the canonical resolver this check must agree with,
+    # `manage-execution-manifest/scripts/_manifest_decide.py::_read_recipe_source`
+    # (`for field in ('plan_source', 'recipe_key')`), so the audit's re-derivation
+    # of Row 2 and the composer's live decision read the same inputs in the same
+    # precedence. A change to that resolver's field set obliges the same change
+    # here. (`cmd_compose`'s explicit `--recipe-key` argument still outranks the
+    # resolver at the call site, so the agreement is on the metadata read, not on
+    # the composer's final value.)
+    for provenance_field in ("plan_source", "recipe_key"):
+        value = metadata.get(provenance_field)
+        if isinstance(value, str) and value.strip():
+            inputs.recipe_key = value.strip()
+            break
 
     inputs.scope_estimate = refs.get("scope_estimate")
     inputs.affected_files_count = len(refs.get("affected_files") or [])
@@ -2110,10 +2137,17 @@ def _finding_signature(obj: dict[str, Any]) -> str | None:
 
 def cross_recurring_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
     sig_to_plans: dict[str, set[str]] = {}
+    # Plans that actually carried a findings directory. Published as
+    # `plans_in_corpus` so the suspect-zero census reads this check's OWN examined
+    # population instead of assuming the whole corpus: a sweep where no plan filed
+    # findings starves this check, and a starved zero must not be reported as
+    # `disciplinary` evidence about the corpus.
+    examined = 0
     for inputs in all_inputs:
         findings_dir = inputs.plan_dir / "artifacts" / "findings"
         if not findings_dir.is_dir():
             continue
+        examined += 1
         seen_in_plan: set[str] = set()
         for jsonl in findings_dir.glob("*.jsonl"):
             for obj in read_jsonl(jsonl):
@@ -2136,6 +2170,7 @@ def cross_recurring_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
     return {
         "threshold": SYSTEMIC_THRESHOLD,
         "systemic_count": len(systemic),
+        "plans_in_corpus": examined,
         "rows": systemic,
     }
 
@@ -2290,10 +2325,15 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
     # authorship gate validates archived `bot_kind` values against it).
     recognized_bot_kinds = _recognized_bot_kinds()
     tuple_to_plans: dict[tuple[str, str, str], set[str]] = defaultdict(set)
+    # Same declaration obligation as `cross_recurring_pattern`: this check narrows
+    # on the identical predicate, so it publishes the population it examined rather
+    # than letting the census assume the whole corpus.
+    examined = 0
     for inputs in all_inputs:
         findings_dir = inputs.plan_dir / "artifacts" / "findings"
         if not findings_dir.is_dir():
             continue
+        examined += 1
         seen_in_plan: set[tuple[str, str, str]] = set()
         for jsonl in findings_dir.glob("*.jsonl"):
             for obj in read_jsonl(jsonl):
@@ -2350,6 +2390,7 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
         "threshold": threshold,
         "candidate_count": len(candidates),
         "unattributed_excluded_count": unattributed_excluded,
+        "plans_in_corpus": examined,
         "rows": candidates,
     }
 
@@ -2411,6 +2452,11 @@ def cross_token_trend(all_inputs: list[PlanInputs]) -> dict[str, Any]:
             )
     return {
         "plans_in_series": len(series),
+        # The census reads `plans_in_corpus`. `plans_in_series` is the same number
+        # under a check-local name, and a population published under a name the
+        # census does not read is, to the census, no population at all — it falls
+        # back to the whole corpus and calls a starved zero `disciplinary`.
+        "plans_in_corpus": len(series),
         "regression": regression,
         "rows": series,
     }
@@ -2695,11 +2741,17 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
     total_lines = 0
     total_seconds = 0.0
 
+    substrate_present = False
     if logs_dir.is_dir():
         patterns = ("script-execution-*.log", "work-*.log", "decision-*.log")
         log_files: list[Path] = []
         for pat in patterns:
             log_files.extend(logs_dir.glob(pat))
+        # Whether any log FILE was found — the substrate probe. Distinct from the
+        # directory probe below: `--dormate-global-logs` relocates completed logs
+        # OUT of a directory it leaves in place, so "the dir exists" and "there was
+        # something to read" come apart in a state this tool itself produces.
+        substrate_present = bool(log_files)
         for log in sorted(log_files):
             try:
                 content = log.read_text(encoding="utf-8", errors="replace")
@@ -2863,7 +2915,17 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
     impossible_calls.sort(key=lambda r: -float(r["seconds"]))
 
     return {
+        # `logs_present` stays the DIRECTORY probe (its existing readers ask
+        # about the dir). `logs_readable` is the substrate probe the unmeasured
+        # branch gates on — the same distinction `_merge_window_log_files` draws
+        # between a scanned root and a `lock-*.log` that was actually there.
         "logs_present": logs_dir.is_dir(),
+        # A file that EXISTS is not a file that was READ: the read loop swallows
+        # `OSError` per file, and a file whose lines match no grammar contributes
+        # nothing. Requiring a parsed line keeps an unreadable or unparseable log
+        # from re-opening every surface the unmeasured branch closes — the same
+        # pairing `_merge_window_log_files` uses (`substrate_present or bool(rows)`).
+        "logs_readable": substrate_present and total_lines > 0,
         "plan_windows_derived": len(windows),
         "total_log_lines": total_lines,
         "total_script_seconds": round(total_seconds, 1),
@@ -3338,6 +3400,86 @@ _QC_BOT_RE = re.compile(r"gemini|copilot|bot|automated", re.IGNORECASE)
 
 # Canonical axis orderings — the matrix columns/rows read off these so every
 # plan's matrix and the corpus totals share one stable shape.
+#: Finding types that are PENDING BY CONSTRUCTION — the knowledge partition.
+#:
+#: `manage-findings.add_finding` seeds EVERY record with `resolution: 'pending'`,
+#: and no DEFECT-FIXING work moves a knowledge finding off it: a `tip` is a
+#: suggestion, an `insight` an observation, a `best-practice` a note. They are
+#: filed to be read, not closed by fixing something. Counting them as unresolved
+#: chain debt made the pending population one that the chain's OWN work could
+#: never empty — and a chain-debt count the chain's work cannot drive to zero is
+#: not a backlog, it is a mislabelled population. It is worse
+#: than a false zero: a false zero invites a check, while a large permanent
+#: backlog invites resignation.
+#:
+#: ⚠ PROMOTION is the one route out, and it is not a disposition. A promoted
+#: record buckets to `lesson` (`_qc_resolution` short-circuits on `promoted`), so
+#: it is not in the pending column at all and cannot be structural — which is why
+#: `_qc_structural_pending` takes the computed bucket rather than re-reading
+#: `resolution`. `promote_finding` sets `promoted`/`promoted_to` and never touches
+#: `resolution`, so the seeded `pending` survives on the record and a second
+#: reading of that field would disagree with the first.
+#:
+#: The KNOWLEDGE half of this set is exactly the four types
+#: `plan-marshall/scripts/_invariants.py` names as never counted by the blocking
+#: gate — that half is a deliberate mirror, and a change to it obliges the same
+#: change here.
+#:
+#: The two partitions are NOT otherwise equivalent, and the mirror is claimed for
+#: the knowledge half ONLY. `_ACTIONABLE_FINDING_TYPES` holds six types and leaves
+#: `bug`, `anti-pattern`, `triage`, `arch-constraint` and `pr-comment-overflow` in
+#: neither of its sets, while this check treats every type outside the knowledge
+#: four as actionable — so a pending `bug` is chain debt here and does not block
+#: the gate there.
+#:
+#: None of the five reintroduces a floor, but by different routes: `bug`,
+#: `anti-pattern` and `triage` are promotable lesson types; `arch-constraint` is
+#: documented non-promotable (`manage-findings/standards/jsonl-format.md`) and
+#: leaves by triage disposition; `pr-comment-overflow` is closed by the loop-back
+#: it signals. What they share is that SOME action moves them, which is the only
+#: property this partition needs.
+_QC_STRUCTURAL_PENDING_TYPES = frozenset(
+    {"tip", "insight", "best-practice", "improvement"}
+)
+
+#: `{type}.jsonl` filenames whose whole population is structurally pending.
+_QC_STRUCTURAL_PENDING_FILES = frozenset(
+    f"{t}.jsonl" for t in _QC_STRUCTURAL_PENDING_TYPES
+)
+
+
+def _qc_structural_pending(obj: dict[str, Any], fname: str, resolution: str) -> bool:
+    """Is this finding pending BY CONSTRUCTION rather than as chain debt?
+
+    `resolution` MUST be this record's `_qc_resolution` bucket. The structural
+    count is a SUBSET of the `pending` column, and a subset derived by a second,
+    independent reading of the record is not a subset at all — it is a different
+    population that merely resembles one. Taking the bucket as an argument makes
+    the containment hold by construction rather than by two derivations happening
+    to agree.
+
+    They did not agree. `_qc_resolution` short-circuits `promoted` to `lesson`, so
+    a promoted `tip` leaves the pending column; a predicate that re-read
+    `resolution` (still the seeded `pending`) counted that same record structural,
+    and `actionable = pending − structural` went NEGATIVE. Worse than the
+    underflow: one promoted tip cancelled one genuinely pending `build-error`, so
+    real chain debt was published as `pending_actionable: 0` — a false zero
+    manufactured inside the deliverable written to end false zeroes.
+
+    Given a record that IS in the pending column: true for a knowledge type, read
+    from the record's own `type` when it carries one, else from the per-type JSONL
+    filename it was stored under. Both routes are needed — the per-type layout is
+    the normal case, and a record naming its own type is authoritative when the
+    two disagree.
+    """
+    if resolution != "pending":
+        return False
+    declared = str(obj.get("type") or "").strip().lower()
+    if declared:
+        return declared in _QC_STRUCTURAL_PENDING_TYPES
+    return fname in _QC_STRUCTURAL_PENDING_FILES
+
+
 _QC_MECHANISMS = ["build", "self-review", "auto-review", "human-review", "other"]
 _QC_RESOLUTIONS = [
     "direct_fix",
@@ -3454,6 +3596,13 @@ class _QualityChainPlan:
     matrix: dict[str, dict[str, int]]
     mech_total: dict[str, int]
     findings: list[dict[str, Any]]
+    # Count of this plan's findings that are pending BY CONSTRUCTION (knowledge
+    # types no defect-fixing work resolves). Reported in its own bucket, not removed
+    # from the matrix: the matrix stays a faithful census of what was filed, and
+    # this names how much of its `pending` column the backlog work an actionable
+    # count measures could never clear. Subtracting them silently would trade one
+    # untrue number for another.
+    structural_pending: int = 0
 
 
 def _collect_quality_chain(all_inputs: list[PlanInputs]) -> list[_QualityChainPlan]:
@@ -3474,19 +3623,24 @@ def _collect_quality_chain(all_inputs: list[PlanInputs]) -> list[_QualityChainPl
             m: dict.fromkeys(_QC_RESOLUTIONS, 0) for m in _QC_MECHANISMS
         }
         mech_total: dict[str, int] = dict.fromkeys(_QC_MECHANISMS, 0)
+        structural_pending = 0
         records: list[dict[str, Any]] = []
         for jsonl in sorted(findings_dir.glob("*.jsonl")):
             for obj in read_jsonl(jsonl):
                 mech = _qc_mechanism(jsonl.name, obj)
                 res = _qc_resolution(obj)
+                structural = _qc_structural_pending(obj, jsonl.name, res)
                 matrix[mech][res] += 1
                 mech_total[mech] += 1
+                if structural:
+                    structural_pending += 1
                 tier = _qc_shift_left_tier(obj) if mech == "auto-review" else 0
                 records.append(
                     {
                         "plan_id": inputs.plan_id,
                         "mechanism": mech,
                         "resolution": res,
+                        "structural_pending": structural,
                         "source_file": jsonl.name,
                         "title": str(obj.get("title") or obj.get("type") or "")[:80],
                         "shift_left_tier": tier,
@@ -3502,6 +3656,7 @@ def _collect_quality_chain(all_inputs: list[PlanInputs]) -> list[_QualityChainPl
                 matrix=matrix,
                 mech_total=mech_total,
                 findings=records,
+                structural_pending=structural_pending,
             )
         )
     return plans
@@ -3511,7 +3666,13 @@ def _quality_chain_flags(plan: _QualityChainPlan) -> list[str]:
     """Compute the chain anti-pattern flags for one plan.
 
     - `build_pending_pile` — a pile of build findings left `pending` at archive
-      time (a build-failure backlog the plan never cleared).
+      time (a build-failure backlog the plan never cleared). Needs no
+      structural-pending exclusion: the `build` mechanism is exactly
+      `build-error.jsonl` / `test-failure.jsonl` (`_QC_BUILD_FILES`), and
+      `manage-findings.add_finding` routes each record to the `{type}.jsonl`
+      named by its own `type`, so a record in either file declares an actionable
+      type and `_qc_structural_pending` returns False for it. Clearing the backlog
+      drives this count to zero.
     - `auto_review_only` — the plan carries auto-review findings but recorded ZERO
       build and ZERO self-review findings: the PR bot was the only quality gate
       that fired, so everything shifted right to the most expensive stage.
@@ -3589,6 +3750,7 @@ def cross_quality_chain(all_inputs: list[PlanInputs]) -> dict[str, Any]:
                 "human_review": plan.mech_total["human-review"],
                 "other": plan.mech_total["other"],
                 "total": sum(plan.mech_total.values()),
+                "structural_pending": plan.structural_pending,
                 "flags": flags,
             }
         )
@@ -3597,6 +3759,14 @@ def cross_quality_chain(all_inputs: list[PlanInputs]) -> dict[str, Any]:
             if f["mechanism"] == "auto-review" and f["shift_left_tier"] in tier_histogram:
                 tier_histogram[f["shift_left_tier"]] += 1
 
+    # The corpus `pending` column, split into the part an action could clear and
+    # the part it could not. Reported as two numbers rather than one net figure
+    # so the read-out can answer "what would make this zero?" for each: the
+    # actionable half by resolving the findings, the structural half only by
+    # promotion or an explicit disposition — never by the backlog work the
+    # actionable figure measures.
+    corpus_structural_pending = sum(p.structural_pending for p in plans)
+    corpus_pending = sum(corpus[mech]["pending"] for mech in _QC_MECHANISMS)
     return {
         "plans_in_corpus": len(plans),
         "rows": plan_rows,
@@ -3605,6 +3775,9 @@ def cross_quality_chain(all_inputs: list[PlanInputs]) -> dict[str, Any]:
         "tier_histogram": tier_histogram,
         "mechanisms": _QC_MECHANISMS,
         "resolutions": _QC_RESOLUTIONS,
+        "corpus_pending": corpus_pending,
+        "corpus_structural_pending": corpus_structural_pending,
+        "corpus_actionable_pending": corpus_pending - corpus_structural_pending,
     }
 
 
@@ -4292,13 +4465,23 @@ def check_input_integrity(inputs: PlanInputs) -> dict[str, Any]:
         and phase_tokens.get(ph, 0) == 0
         and ph not in explained_phases
     ]
-    # execute_blind is a GENUINE (accidental) blind: 5-execute recorded zero
-    # tokens with no end_time-presence marker to explain it. A marker-explained
-    # zero-token execute is an explained gap (bucket `partial`), not `blind`.
+    # execute_blind is a GENUINE (accidental) blind: the 5-execute phase carries no
+    # usable token figure and no end_time-presence marker explains why. A
+    # marker-explained gap is an explained one (bucket `partial`), not `blind`.
+    #
+    # ABSENT counts as blind, and that is the load-bearing half. The predecessor
+    # tested `phase_tokens.get(_II_EXECUTE_PHASE, None) == 0`, which is False for an
+    # absent phase (`None == 0`), so the guard's precondition was the presence of
+    # the very record whose absence it exists to detect — vacuous at exactly the
+    # value it was written to catch. The consequence was an INVERTED severity: a
+    # plan recording `5-execute` at zero tokens graded `blind`, while a plan whose
+    # metrics.toon has no 5-execute section at all — strictly less recorded — graded
+    # only `partial`. Absence is never better-recorded than a recorded zero, so it
+    # can never grade milder.
     execute_marker_explained = _II_EXECUTE_PHASE in explained_phases
-    execute_blind = (
-        phase_tokens.get(_II_EXECUTE_PHASE, None) == 0 and not execute_marker_explained
-    )
+    execute_absent = _II_EXECUTE_PHASE not in recorded_phases
+    execute_recorded_zero = phase_tokens.get(_II_EXECUTE_PHASE, None) == 0
+    execute_blind = (execute_absent or execute_recorded_zero) and not execute_marker_explained
     metrics_blind = ";".join(blind_phases)
 
     # incomplete_lifecycle — no 5-execute OR no 6-finalize section recorded.
@@ -5057,6 +5240,12 @@ _GENUINE_METRIC_PREFIX = "genuine__"
 
 _CHECK_HEADER_RE = re.compile(r"^check:\s*(\S+)\s*$", re.MULTILINE)
 _GENUINE_COUNT_RE = re.compile(r"^genuine_signal_count:\s*(\d+)\s*$", re.MULTILINE)
+#: The bare `genuine_signal_count` spelling AND the per-tier
+#: `{tier}_genuine_signal_count` one a multi-table block uses. Anchored at both
+#: ends so a tier prefix must be a whole `{word}_` segment.
+_GENUINE_TIERED_COUNT_RE = re.compile(
+    r"^(?:[a-z][a-z_]*_)?genuine_signal_count:\s*(\d+)\s*$", re.MULTILINE
+)
 
 
 def _stamp_era(block: str) -> str:
@@ -5111,21 +5300,48 @@ def _annotate_exclusions(block: str, excluded: list[PlanInputs]) -> str:
 
 
 def _extract_per_check_genuine(blocks: list[str]) -> dict[str, int]:
-    """Map each emitted check block to its `genuine_signal_count`.
+    """Map each emitted check block to its genuine-signal total.
 
-    Parses the block text (every `emit_*` block carries both a `check:` header
-    and a `genuine_signal_count:` line) so the substrate is uniform across all
-    checks without threading the count through each emitter. Meta blocks
-    (`report-diff`) whose header is not a known check name are skipped.
+    Parses the block text so the substrate is uniform across all checks without
+    threading the count through each emitter. Meta blocks (`report-diff`) whose
+    header is not a known check name are skipped.
+
+    A block states its genuine total either as one bare `genuine_signal_count`
+    line or as PER-TIER lines (`quality-chain` publishes
+    `plan_genuine_signal_count` and `finding_genuine_signal_count`, one per table
+    tier, and no bare one). `_GENUINE_TIERED_COUNT_RE` matches both spellings and
+    the tiers are summed, so a multi-tier check contributes its total like any
+    other rather than contributing nothing.
+
+    ⚠ For a multi-tier block the sum spans DIFFERENT populations — `quality-chain`
+    adds flagged plans to genuine findings — so the result is a count of genuine
+    ROWS the check emitted, not a count of any one thing. That is the right
+    quantity for the two consumers here, both of which ask only "was anything
+    genuine?": the retire-on-quiet streak and the suspect-zero census. It is NOT a
+    comparable magnitude, and the `genuine__{check}` summary metric it feeds is
+    diffed across runs on that basis — read a change in it as "the check's output
+    changed", never as "N more of some thing".
+
+    Reading only the bare spelling had two consequences, and the second is the
+    reason this is a total rather than a special case. `quality-chain` never
+    reached the retire-on-quiet substrate at all — and the suspect-zero census
+    then classified it `no_count` on EVERY run, including runs where it produced
+    genuine signals, so the class guard published one permanent suspect row about
+    a detector that was firing. A row that fires at 100% is not a detector, it is
+    a constant, which is the very failure mode the census exists to surface.
+
+    A block carrying no genuine count in either spelling still yields no entry —
+    that state is real (the `unmeasured` path withholds the line deliberately) and
+    is reported by the census rather than defaulted to zero.
     """
     out: dict[str, int] = {}
     for block in blocks:
         header = _CHECK_HEADER_RE.search(block)
         if header is None or header.group(1) not in CHECK_NAMES:
             continue
-        count = _GENUINE_COUNT_RE.search(block)
-        if count is not None:
-            out[header.group(1)] = int(count.group(1))
+        counts = _GENUINE_TIERED_COUNT_RE.findall(block)
+        if counts:
+            out[header.group(1)] = sum(int(c) for c in counts)
     return out
 
 
@@ -5163,6 +5379,31 @@ def _prior_genuine_runs(repo_root: Path, limit: int) -> list[dict[str, int]]:
     return runs
 
 
+def quiet_streaks(runs: list[dict[str, int]]) -> dict[str, int]:
+    """Per-check count of consecutive most-recent runs whose genuine count was 0.
+
+    `runs` is newest-first. A non-zero count breaks the streak, and so does a run
+    that never recorded the check — an absent record is not a recorded zero, and
+    counting it as one would let a check that stopped emitting accrue quiet runs
+    toward its own retirement. A check emitting `unmeasured` records no genuine
+    count at all, so it lands on that same path by construction.
+
+    Shared by `retire-on-quiet` (which reads a long streak as grounds to retire)
+    and `suspect-zero-census` (which reads it as grounds to doubt). One derivation,
+    two readings — so the two blocks can never disagree about the streak itself.
+    """
+    streaks: dict[str, int] = {}
+    for check in CHECK_NAMES:
+        streak = 0
+        for run in runs:
+            if run.get(check) == 0:
+                streak += 1
+            else:
+                break
+        streaks[check] = streak
+    return streaks
+
+
 def _retire_on_quiet_proposals(
     repo_root: Path, current_genuine: dict[str, int]
 ) -> tuple[list[dict[str, Any]], int]:
@@ -5178,14 +5419,10 @@ def _retire_on_quiet_proposals(
     threshold = int(THRESHOLDS["retire_on_quiet_runs"])
     prior_runs = _prior_genuine_runs(repo_root, threshold)
     runs = [current_genuine, *prior_runs]
+    streaks = quiet_streaks(runs)
     proposals: list[dict[str, Any]] = []
     for check in CHECK_NAMES:
-        streak = 0
-        for run in runs:
-            if run.get(check) == 0:
-                streak += 1
-            else:
-                break
+        streak = streaks[check]
         if streak >= threshold:
             proposals.append(
                 {
@@ -5199,6 +5436,255 @@ def _retire_on_quiet_proposals(
                 }
             )
     return proposals, len(runs)
+
+
+# ---------------------------------------------------------------------------
+# Suspect-zero census — the class guard
+# ---------------------------------------------------------------------------
+#
+# A detector that has never produced a positive is indistinguishable, from its
+# output alone, from a detector that CANNOT produce one. A check reports its
+# genuine total as a bare `genuine_signal_count` or as per-tier
+# `{tier}_genuine_signal_count` lines (and an `unmeasured` block withholds it
+# deliberately), and a permanent zero there reads as health — which is exactly how
+# a predicate reading a field live data never carries, a scan rooted one directory
+# above its emitter, and a regex that cannot match its emitter all survived while
+# their suite stayed green.
+#
+# The census makes every zero SUSPECT rather than silently clean, and classifies
+# what KIND of zero it is. It is a reporting instrument: it never blocks, never
+# removes a check, and never overrides a verdict.
+#
+# It is deliberately the inverse reading of `retire-on-quiet`, which sits directly
+# above and proposes RETIRING a check that has been quiet. Both read the same
+# streak; they draw opposite conclusions from it, and both readings are legitimate.
+# A quiet check is either doing its job over a clean corpus (retire it, or leave it
+# as a cheap regression guard) or structurally unable to speak (fix it). Publishing
+# only the retirement reading is what lets a broken detector be retired as
+# redundant — the strictly worse outcome, because it closes the case.
+
+#: The zero classes. `structural` and `starved` both mean "this zero is not
+#: evidence about the corpus"; they differ in WHY, and the remedies differ with
+#: them, so they are never merged.
+_ZERO_STRUCTURAL = "structural"
+_ZERO_STARVED = "starved"
+_ZERO_DISCIPLINARY = "disciplinary"
+_ZERO_NO_COUNT = "no_count"
+_ZERO_NONE = "fired"
+
+_UNMEASURED_STATUS_RE = re.compile(r"^status:\s*unmeasured\s*$", re.MULTILINE)
+_EXCLUDED_NON_SHIPPING_RE = re.compile(
+    r"^plans_excluded_non_shipping:\s*(\d+)\s*$", re.MULTILINE
+)
+#: Every scalar under which a check may declare the population it EXAMINED.
+#: `plans_in_corpus` is canonical; the other two are check-local names published
+#: alongside it and read here as well, so a check that publishes only its own
+#: spelling is still understood. Reading a SET rather than one key is the point:
+#: `plans_in_series` and `plans_measured` went unread for five verification
+#: rounds, each round finding the gap in a check the previous one had not
+#: enumerated. A test asserts this set and the emitters agree, so a new
+#: population key is a failure rather than a silent gap.
+_EXAMINED_POPULATION_KEYS = ("plans_in_corpus", "plans_in_series", "plans_measured")
+_PLANS_IN_CORPUS_RE = re.compile(
+    rf"^(?:{'|'.join(_EXAMINED_POPULATION_KEYS)}):\s*(\d+)\s*$", re.MULTILINE
+)
+
+
+def _examined_population(block: str, corpus_size: int) -> int:
+    """The plan count this check actually examined, not the corpus it ran under.
+
+    The two differ whenever a check narrows its own population, and classifying on
+    the raw corpus size then calls a check that examined nothing `disciplinary` —
+    asserting "a non-empty corpus was examined" of a check that saw no plan at
+    all. That is a starved zero reported as evidence, and precisely the
+    distinction this census exists to draw.
+
+    Precedence, strongest evidence first:
+
+    1. `plans_in_corpus` — the check's OWN statement of what it examined. Read
+       first because a check that narrowed its population by any rule has already
+       computed the answer, and no exclusion arithmetic here can beat it.
+       `exploration-share` and `billing-composition` narrow on a SECOND axis
+       (`plans_excluded_no_counters`) that the shipping arithmetic below cannot
+       see, so deriving from exclusions alone reported both as `disciplinary` over
+       a population of zero.
+    2. `plans_excluded_non_shipping` — stamped by `_annotate_exclusions` on the
+       `DELIVERY_COST_CHECKS`, which run over the shipping partition.
+    3. The whole corpus, for a block declaring neither.
+
+    Reading the declaration first also means a check narrowing on ANY axis needs no
+    edit here, provided it publishes its population. Several already do beyond the
+    two named above — `token-economics` drops a plan with no parseable
+    `metrics.toon`, `quality-chain` one with no findings directory — and that is
+    the point: an enumeration of exclusion keys is one new axis away from being
+    wrong, so the declaration is read instead of the axes being counted.
+    """
+    declared = _PLANS_IN_CORPUS_RE.search(block)
+    if declared is not None:
+        return int(declared.group(1))
+    excluded = _EXCLUDED_NON_SHIPPING_RE.search(block)
+    if excluded is None:
+        return corpus_size
+    return max(0, corpus_size - int(excluded.group(1)))
+
+
+def _classify_zero(block: str, genuine_count: int | None, corpus_size: int) -> str:
+    """Classify one check's zero — or report that it fired.
+
+    The classes answer "is this zero evidence about the corpus?":
+
+    * `structural` — the check DECLARED it could not substantiate a verdict
+      (`status: unmeasured`). Its zero says nothing about the corpus, and it says
+      so itself. The remedy is to the check's inputs or to its producer.
+    * `starved` — the check examined no plans, so it could not have fired. The
+      zero is a property of this run's inputs, not of the check. This is the class
+      whose zero is one un-stubbed sibling away from being non-zero.
+    * `no_count` — the block published no genuine count in EITHER spelling (bare
+      or per-tier), so this census never READ one for it. Defensive: no registered
+      check is in this state today, and a test asserts none reaches it on a real
+      sweep. A check landing here has stopped stating its own result.
+    * `disciplinary` — a non-empty examined population and nothing genuine. The
+      only class in which a zero is a real (if provisional) statement about the
+      corpus.
+
+    A check that produced any genuine signal is `fired` and is not a suspect.
+
+    ⛔ `genuine_count` is `None` — never `0` — when no count was read, and the
+    distinction is the whole point. Defaulting an unread count to `0` and then
+    reporting `disciplinary` would have this census assert "a non-empty corpus was
+    examined and nothing was genuine" on the strength of a default, which is the
+    unsubstantiated-clean-verdict defect it was built to surface, committed by the
+    instrument itself.
+    """
+    if genuine_count is not None and genuine_count > 0:
+        return _ZERO_NONE
+    # `structural` outranks `no_count`, and the order is load-bearing. An
+    # `unmeasured` block withholds its `genuine_signal_count` DELIBERATELY — that
+    # withholding is how an unmeasured check stays out of the retire-on-quiet
+    # streak — so its absent count is a consequence of the declaration, not an
+    # independent fact. Classifying it `no_count` would report the symptom and
+    # discard the reason the block already gave.
+    if _UNMEASURED_STATUS_RE.search(block):
+        return _ZERO_STRUCTURAL
+    if genuine_count is None:
+        return _ZERO_NO_COUNT
+    if _examined_population(block, corpus_size) == 0:
+        return _ZERO_STARVED
+    return _ZERO_DISCIPLINARY
+
+
+def suspect_zero_census(
+    blocks: list[str],
+    per_check_genuine: dict[str, int],
+    streaks: dict[str, int],
+    corpus_size: int,
+) -> list[dict[str, Any]]:
+    """Build one census row per registered check.
+
+    Every check in `CHECK_NAMES` gets a row — including those that fired, and
+    including any that emitted no block at all. A check absent from this run's
+    output is itself reported (`no_block`), because a detector that silently
+    stopped emitting is the most complete form of the failure this census exists
+    to surface, and listing only the checks that spoke would hide it by
+    construction.
+    """
+    by_check: dict[str, str] = {}
+    for block in blocks:
+        header = _CHECK_HEADER_RE.search(block)
+        if header is not None and header.group(1) in CHECK_NAMES:
+            by_check[header.group(1)] = block
+
+    rows: list[dict[str, Any]] = []
+    for check in CHECK_NAMES:
+        check_block = by_check.get(check)
+        if check_block is None:
+            rows.append(
+                {
+                    "check": check,
+                    "genuine_signal_count": "",
+                    "zero_class": "no_block",
+                    "quiet_run_count": streaks.get(check, 0),
+                    "suspect": "true",
+                    "reading": "the check emitted no block on this sweep — its "
+                    "silence is not a clean verdict",
+                }
+            )
+            continue
+        # `.get(check)` — NOT `.get(check, 0)`. An unread count must reach
+        # `_classify_zero` as None so it is reported as such rather than
+        # classified as a measured zero.
+        genuine = per_check_genuine.get(check)
+        zero_class = _classify_zero(check_block, genuine, corpus_size)
+        rows.append(
+            {
+                "check": check,
+                "genuine_signal_count": "" if genuine is None else genuine,
+                "zero_class": zero_class,
+                "quiet_run_count": streaks.get(check, 0),
+                "suspect": str(zero_class != _ZERO_NONE).lower(),
+                "reading": _ZERO_READINGS[zero_class],
+            }
+        )
+    return rows
+
+
+_ZERO_READINGS = {
+    _ZERO_NONE: "the check produced a genuine signal — not a suspect",
+    _ZERO_STRUCTURAL: "the check declared it could not measure — this zero is "
+    "NOT evidence the corpus is clean; fix the inputs or the producer",
+    _ZERO_STARVED: "the check examined no plans — it could not have fired, so "
+    "this zero is a property of the run's inputs, not of the check",
+    _ZERO_NO_COUNT: "the block published no genuine count in either spelling "
+    "(bare or per-tier), so this census read none for it — the blank shown is "
+    "absence of a reading, NOT a measured zero",
+    _ZERO_DISCIPLINARY: "a non-empty examined population and nothing genuine — a "
+    "real but provisional statement about the corpus, not proof the check can fire",
+}
+
+
+def emit_suspect_zero_census_block(rows: list[dict[str, Any]], corpus_size: int) -> str:
+    """Emit the `suspect-zero-census` meta block.
+
+    Reporting only — it proposes nothing and blocks nothing. The census is the
+    durable deliverable; the particular counts it prints on any one run are not,
+    since they move with the corpus.
+    """
+    suspects = [r for r in rows if r["suspect"] == "true"]
+    class_counts: dict[str, int] = defaultdict(int)
+    for r in rows:
+        class_counts[str(r["zero_class"])] += 1
+    out = [
+        "check: suspect-zero-census",
+        "status: success",
+        f"checks_registered: {len(rows)}",
+        f"corpus_size: {corpus_size}",
+        f"suspect_count: {len(suspects)}",
+        f"structural_count: {class_counts[_ZERO_STRUCTURAL]}",
+        f"starved_count: {class_counts[_ZERO_STARVED]}",
+        f"disciplinary_count: {class_counts[_ZERO_DISCIPLINARY]}",
+        f"no_count_count: {class_counts[_ZERO_NO_COUNT]}",
+        f"no_block_count: {class_counts['no_block']}",
+        "census_note: a zero is not a clean verdict. A structural or starved zero "
+        "is not evidence about the corpus at all; a disciplinary zero is evidence "
+        "the corpus was clean, never proof the check is able to fire.",
+        f"rows[{len(rows)}]{{check,genuine_signal_count,zero_class,quiet_run_count,suspect,reading}}:",
+    ]
+    for r in rows:
+        out.append(
+            "  "
+            + ",".join(
+                _cell(c)
+                for c in [
+                    r["check"],
+                    r["genuine_signal_count"],
+                    r["zero_class"],
+                    r["quiet_run_count"],
+                    r["suspect"],
+                    r["reading"],
+                ]
+            )
+        )
+    return "\n".join(out) + "\n"
 
 
 def emit_retire_on_quiet_block(
@@ -5396,6 +5882,15 @@ def emit_recurring_block(result: dict[str, Any]) -> str:
         "check: recurring-pattern-detector",
         "status: success",
         f"threshold: {result['threshold']}",
+        # Emitted only when the producer declared a population. An ABSENT key must
+        # read as "undeclared" — leaving the census to its other precedence rules —
+        # never as a zero, which would assert a starved population the result never
+        # claimed.
+        *(
+            [f"plans_in_corpus: {result['plans_in_corpus']}"]
+            if "plans_in_corpus" in result
+            else []
+        ),
         f"systemic_count: {result['systemic_count']}",
         f"genuine_signal_count: {genuine_signal_count}",
         f"rows[{len(rows)}]{{signature,occurrence_count,plan_ids,candidate,severity}}:",
@@ -5426,6 +5921,12 @@ def emit_preference_pattern_block(result: dict[str, Any]) -> str:
         "check: preference-pattern-detector",
         "status: success",
         f"threshold: {result['threshold']}",
+        # See `emit_recurring_block` — an absent key is undeclared, not zero.
+        *(
+            [f"plans_in_corpus: {result['plans_in_corpus']}"]
+            if "plans_in_corpus" in result
+            else []
+        ),
         f"candidate_count: {result['candidate_count']}",
         # D2: unattributed (`default`-bucket) recurrences that cleared the
         # threshold but were declined promotion — surfaced so the decision is
@@ -5463,6 +5964,13 @@ def emit_trend_block(result: dict[str, Any]) -> str:
         "check: token-efficiency-trend",
         "status: success",
         f"plans_in_series: {result['plans_in_series']}",
+        # Absent key reads as UNDECLARED, never as a zero — see
+        # `emit_recurring_block`.
+        *(
+            [f"plans_in_corpus: {result['plans_in_corpus']}"]
+            if "plans_in_corpus" in result
+            else []
+        ),
         f"regression: {_cell(result['regression'])}",
         f"genuine_signal_count: {genuine_signal_count}",
         f"rows[{len(rows)}]{{plan_id,phases,total_tokens,tokens_per_phase,severity}}:",
@@ -5578,6 +6086,27 @@ def emit_global_log_block(result: dict[str, Any]) -> str:
         signals, lambda r: r["kind"] != "dominant-cost-caller"
     )
 
+    # No global-log directory means no substrate was read, so every count below
+    # would be a zero nothing supports. The check already knew this and published
+    # it as `logs_present: false` beside a `genuine_signal_count: 0` — and the
+    # suspect-zero census then read the zero and reported `disciplinary`,
+    # asserting a non-empty population had been examined. Declaring `unmeasured`
+    # is the same contract D3 gave merge-window-accounting, and the plan's Goal
+    # states it for every check, not for one: a check either can fire, or says
+    # `unmeasured` instead of a number that reads as health.
+    if not result.get("logs_readable", result["logs_present"]):
+        return "\n".join(
+            [
+                "check: global-log-analysis",
+                "status: unmeasured",
+                f"logs_present: {str(result['logs_present']).lower()}",
+                "logs_readable: false",
+                "unmeasured_reason: no global log file was read (absent directory, "
+                "or one holding no matching log) — the corpus is SILENT about "
+                "operational signals, which is not the same as having none",
+            ]
+        ) + "\n"
+
     level_summary = ";".join(
         f"{lvl}={cnt}" for lvl, cnt in sorted(result["level_counts"].items())
     )
@@ -5585,6 +6114,7 @@ def emit_global_log_block(result: dict[str, Any]) -> str:
         "check: global-log-analysis",
         "status: success",
         f"logs_present: {str(result['logs_present']).lower()}",
+        f"logs_readable: {str(result['logs_readable']).lower()}",
         f"plan_windows_derived: {result['plan_windows_derived']}",
         f"total_log_lines: {result['total_log_lines']}",
         f"total_script_seconds: {result['total_script_seconds']}",
@@ -5720,15 +6250,27 @@ def _qc_finding_genuine(row: dict[str, Any]) -> bool:
     """Genuine-signal predicate for one quality-chain per-finding row.
 
     Genuine (actionable): an `auto-review` finding (shift-left subject — caught
-    only at the most expensive stage), OR a build/self/auto finding still
-    `pending` at archive time (unresolved chain debt). Informational: a finding
-    cleanly resolved by an earlier mechanism (`direct_fix` / `lesson`) or a
-    human-review row, which is the expected disposition rather than a signal.
+    only at the most expensive stage), OR a finding still `pending` at archive
+    time (unresolved chain debt). Informational: a finding cleanly resolved by an
+    earlier mechanism (`direct_fix` / `lesson`) or a human-review row, which is
+    the expected disposition rather than a signal.
+
+    A STRUCTURALLY pending finding is never genuine on the pending leg. A
+    knowledge-type record (`tip` / `insight` / `best-practice` / `improvement`) is
+    seeded `pending` by `add_finding` and no defect-fixing work resolves it, so
+    counting it as chain debt puts rows in the genuine population that the chain's
+    own work could never remove. The answer to "what would make this count zero?"
+    has to be work of the kind the count measures; for these rows it is promotion
+    or an explicit disposition instead, so they are counted apart.
+
+    The auto-review leg is unaffected: a knowledge-type finding surfaced by the PR
+    bot is still a genuine shift-left signal — what it cost to catch is the point,
+    not whether anyone closes it.
     """
     if row["mechanism"] == "auto-review":
         return True
     if row["resolution"] == "pending":
-        return True
+        return not row.get("structural_pending", False)
     return False
 
 
@@ -5777,6 +6319,18 @@ def emit_quality_chain_block(result: dict[str, Any]) -> str:
         f"plan_genuine_signal_count: {plan_genuine_count}",
         f"finding_genuine_signal_count: {finding_genuine_count}",
         f"shift_left_tiers: {_cell(tier_summary)}",
+        # The `pending` column split into what an action could clear and what it
+        # could not. Both are published: reporting only the net actionable figure
+        # would hide that part of the census is permanent, and reporting only the
+        # gross figure is the mislabelled population this split exists to end.
+        f"pending_total: {result['corpus_pending']}",
+        f"pending_actionable: {result['corpus_actionable_pending']}",
+        f"pending_structural: {result['corpus_structural_pending']}",
+        "pending_structural_note: knowledge-type findings (tip/insight/"
+        "best-practice/improvement) are seeded pending and no DEFECT-FIXING work "
+        "moves them, so they are excluded from the genuine count. What would zero "
+        "this half is promotion or an explicit disposition (manage-findings "
+        "promote / resolve), never the backlog work the actionable half measures",
     ]
 
     # 1. Corpus mechanism×resolution matrix.
@@ -5788,7 +6342,8 @@ def emit_quality_chain_block(result: dict[str, Any]) -> str:
 
     # 2. Per-plan mechanism totals + flags.
     out.append(
-        f"plans[{len(plan_rows)}]{{plan_id,build,self_review,auto_review,human_review,other,total,flags,severity}}:"
+        f"plans[{len(plan_rows)}]{{plan_id,build,self_review,auto_review,human_review,"
+        f"other,total,structural_pending,flags,severity}}:"
     )
     for r in plan_rows:
         out.append(
@@ -5803,6 +6358,7 @@ def emit_quality_chain_block(result: dict[str, Any]) -> str:
                     r["human_review"],
                     r["other"],
                     r["total"],
+                    r["structural_pending"],
                     r["flags_str"],
                     r["severity"],
                 ]
@@ -7458,8 +8014,10 @@ def _finalize_flow_genuine(row: dict[str, Any]) -> bool:
 # Accounts for the #849 widened merge-mutex + FIFO admission-queue window (fair
 # merge ordering / the parallelism enabler). The deterministic signal is the
 # best-effort `[LOCK] (merge:{event}) {lock_id}` lifecycle lines the merge-lock
-# primitive appends to the main-anchored global logs (`.plan/local/logs/`), each
-# carrying a following indented `waiting_count:` field (the FIFO queue depth). The
+# primitive appends to its main-anchored log — `.plan/logs/`, NOT the
+# `.plan/local/logs/` the other global-log checks read; see `_LOCK_LOG_ROOTS`
+# below for why both are scanned. Each line carries a following indented
+# `waiting_count:` field (the FIFO queue depth). The
 # `{lock_id}` is the plan_id, so the corpus lines bucket per plan. Events:
 # `acquired` / `released` / `blocked` (a non-front plan waiting behind the FIFO
 # front) / `reclaimed`.
@@ -7474,25 +8032,74 @@ _LOCK_MERGE_RE = re.compile(
 )
 _LOCK_WAITING_RE = re.compile(r"^\s*waiting_count:\s*(?P<n>\d+)")
 
+#: The `[LOCK]` lifecycle log's filename shape — `_locks_core.log_lock_event`
+#: writes `lock-{date}.log`.
+_LOCK_LOG_GLOB = "lock-*.log"
+
+#: The global-log roots the `[LOCK]` lifecycle log can land in, in scan order.
+#:
+#: These are two DIFFERENT directories, and the distinction is the reason this
+#: check reported a permanent zero. `manage-locks/_locks_core._resolve_lock_log_path`
+#: resolves the main-anchored `.plan/local` base and then steps to its PARENT
+#: before appending `logs/`, so the lock timeline is written to `.plan/logs/`.
+#: Every other global log — and this check's original scan — uses
+#: `file_ops.get_base_dir() / logs`, which is `.plan/local/logs/`. The emitter was
+#: never absent; the scan was looking one directory up from it, so no corpus could
+#: ever produce a merge event and the check's zero was structural.
+#:
+#: Both roots are scanned rather than one being declared correct. Reconciling the
+#: two paths is the lock skill's surface, not this check's: an auditor that reads
+#: only where it believes the producer *should* write is the same defect in the
+#: other direction. This scan follows the data.
+_LOCK_LOG_ROOTS = ((".plan", "logs"), (".plan", "local", "logs"))
+
+
+def _merge_window_log_files(repo_root: Path) -> tuple[list[Path], bool]:
+    """Return `(files_to_scan, substrate_present)` for the merge-window scan.
+
+    `files_to_scan` is every `*.log` under either global-log root — the
+    lifecycle lines are matched by content, so a lock timeline appended to a
+    general log is still found.
+
+    `substrate_present` answers a DIFFERENT question, and the two must not be
+    conflated: did any `lock-*.log` exist to be read at all? It is the
+    discriminator between a measured zero (a lock timeline was read and recorded
+    no merge events — genuinely no contention) and an unmeasured one (no lock
+    timeline exists, so the corpus is silent about contention rather than
+    reporting none). Emitting `0` for the second is the defect this check carried.
+    """
+    files: list[Path] = []
+    substrate_present = False
+    for parts in _LOCK_LOG_ROOTS:
+        root = repo_root.joinpath(*parts).resolve()
+        try:
+            files.extend(sorted(root.glob("*.log")))
+            substrate_present = substrate_present or any(root.glob(_LOCK_LOG_GLOB))
+        except OSError:
+            continue
+    return files, substrate_present
+
 
 def cross_merge_window_accounting(
     all_inputs: list[PlanInputs], repo_root: Path
 ) -> dict[str, Any]:
     """Cross-plan merge-mutex admission-queue accounting from the global logs.
 
-    Scans the `[LOCK] (merge:*)` lifecycle lines across `.plan/local/logs/` and
-    buckets them by `lock_id` (= plan_id). Emits one row per plan in the scanned
-    corpus that recorded any merge-lock event, plus corpus totals. Best-effort: an
-    absent logs dir yields no rows.
+    Scans the `[LOCK] (merge:*)` lifecycle lines across both global-log roots
+    (see `_LOCK_LOG_ROOTS`) and buckets them by `lock_id` (= plan_id). Emits one
+    row per plan in the scanned corpus that recorded any merge-lock event, plus
+    corpus totals.
+
+    Carries `measured`: False when no `lock-*.log` substrate existed to read. The
+    caller reports that state as `unmeasured` rather than as a zero contention
+    count — "no lock timeline was recorded" and "a lock timeline was read and
+    showed no contention" are different claims, and only the second is a finding
+    about the corpus. Best-effort throughout: an absent logs dir yields no rows.
     """
     corpus_plan_ids = {i.plan_id for i in all_inputs}
     # per plan_id → {event_counts, max_waiting}
     acc: dict[str, dict[str, Any]] = {}
-    logs_dir = (repo_root / ".plan" / "local" / "logs").resolve()
-    try:
-        log_files = sorted(logs_dir.glob("*.log"))
-    except OSError:
-        log_files = []
+    log_files, substrate_present = _merge_window_log_files(repo_root)
     for log_file in log_files:
         try:
             lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -7545,7 +8152,11 @@ def cross_merge_window_accounting(
         "total_blocked": sum(int(r["blocked"]) for r in rows),
         "max_waiting_observed": max((int(r["max_waiting"]) for r in rows), default=0),
     }
-    return {"rows": rows, "corpus": corpus}
+    # A lock timeline that WAS read and named events is measured even if the
+    # `lock-*.log` probe missed the file the lines came from — evidence of the
+    # substrate beats the filename convention that usually carries it.
+    measured = substrate_present or bool(rows)
+    return {"rows": rows, "corpus": corpus, "measured": measured}
 
 
 def _merge_window_genuine(row: dict[str, Any]) -> bool:
@@ -7554,9 +8165,30 @@ def _merge_window_genuine(row: dict[str, Any]) -> bool:
 
 
 def emit_merge_window_accounting_block(result: dict[str, Any]) -> str:
-    """Emit the merge-window-accounting block with the D1 severity column."""
+    """Emit the merge-window-accounting block with the D1 severity column.
+
+    On an UNMEASURED run — no `[LOCK]` lifecycle substrate existed to read — the
+    block emits `status: unmeasured` with its reason and NO counts at all. The
+    counts are withheld rather than zeroed on purpose: a `contended_plans: 0` is
+    read as "the corpus had no merge contention", which is a claim this run cannot
+    make. Withholding them also keeps the block free of a `genuine_signal_count`,
+    so the retire-on-quiet streak reader (which advances only on a recorded zero)
+    treats the run as no evidence rather than as a quiet run — an unmeasured check
+    must never accumulate toward its own retirement.
+    """
     rows = result["rows"]
     corpus = result["corpus"]
+    if not result.get("measured", True):
+        return "\n".join(
+            [
+                "check: merge-window-accounting",
+                "status: unmeasured",
+                "unmeasured_reason: no [LOCK] lifecycle log found under any global-log "
+                "root — merge contention is unrecorded for this corpus, which is NOT "
+                "the same as no contention having occurred",
+                f"scanned_roots: {_cell(';'.join('/'.join(p) for p in _LOCK_LOG_ROOTS))}",
+            ]
+        ) + "\n"
     rows, genuine_signal_count = _severity_summary(rows, _merge_window_genuine)
     out = [
         "check: merge-window-accounting",
@@ -7723,6 +8355,8 @@ def cross_lane_lever_effectiveness(all_inputs: list[PlanInputs]) -> dict[str, An
     }
     corpus = {
         "plans_measured": sum(1 for r in rows if int(r["total_tokens"]) > 0),
+        # Published under the key the census reads — see `cross_token_trend`.
+        "plans_in_corpus": sum(1 for r in rows if int(r["total_tokens"]) > 0),
         "recipe_routed_count": sum(1 for r in rows if r["recipe_routed"] == "true"),
         "light_lane_fires": sum(1 for r in rows if r["lane"] == "light"),
         "minimal_posture_chosen": sum(1 for r in rows if r["posture"] == "minimal"),
@@ -7744,6 +8378,7 @@ def emit_lane_lever_effectiveness_block(result: dict[str, Any]) -> str:
         "check: lane-lever-effectiveness",
         "status: success",
         f"plans_measured: {corpus['plans_measured']}",
+        f"plans_in_corpus: {corpus['plans_in_corpus']}",
         f"recipe_routed: {corpus['recipe_routed_count']}",
         f"light_lane_fires: {corpus['light_lane_fires']}",
         f"minimal_posture_chosen: {corpus['minimal_posture_chosen']}",
@@ -7927,6 +8562,14 @@ def cross_check_synthesis(all_results: dict[str, Any]) -> dict[str, Any]:
         if isinstance(r, dict):
             qv_unfiled_total += int(r.get("unfiled_lessons") or 0)
     d_fired = bool(argparse_signatures and global_error_count > 0 and qv_unfiled_total > 0)
+    # The global-log half can be UNMEASURED. Without the flag the non-fired detail
+    # renders `global_errors=0`, republishing downstream the zero the check itself
+    # now refuses to publish.
+    d_logs_measured = (
+        global_log.get("logs_readable", global_log.get("logs_present", True))
+        if isinstance(global_log, dict)
+        else True
+    )
     rows.append(
         {
             "coupling": "argparse_signature_cluster",
@@ -7937,7 +8580,16 @@ def cross_check_synthesis(all_results: dict[str, Any]) -> dict[str, Any]:
                 f"quality-verification signatures={qv_unfiled_total} — collapse to ONE "
                 f"source-keyed candidate"
                 if d_fired
-                else f"argparse_signatures={len(argparse_signatures)};global_errors={global_error_count};qv_unfiled={qv_unfiled_total}"
+                else (
+                    f"argparse_signatures={len(argparse_signatures)};"
+                    + (
+                        "global_errors=unmeasured (no global log was read — NOT a "
+                        "measured zero)"
+                        if not d_logs_measured
+                        else f"global_errors={global_error_count}"
+                    )
+                    + f";qv_unfiled={qv_unfiled_total}"
+                )
             ),
             "caveat": (
                 "the three facets are three views of ONE source-keyed argparse "
@@ -8100,6 +8752,14 @@ def cross_check_synthesis(all_results: dict[str, Any]) -> dict[str, Any]:
     )
     i_plans = sorted(contended_plans & (i_ci_rerun_plans | i_finalize_heavy_plans))
     i_fired = bool(i_plans)
+    # The merge-window half of this coupling can be UNMEASURED (no `[LOCK]`
+    # lifecycle substrate). The non-fired detail below reports
+    # `contended_plans=N`, and an unmeasured run would render that as `0` —
+    # indistinguishable from a measured zero, in the block the LLM body reads for
+    # the completeness gate. Carrying the flag through is what stops this coupling
+    # from re-manufacturing downstream the false zero the check itself now refuses
+    # to publish.
+    i_measured = merge_window.get("measured", True) if isinstance(merge_window, dict) else True
     rows.append(
         {
             "coupling": "merge_window_ci_rerun",
@@ -8108,7 +8768,13 @@ def cross_check_synthesis(all_results: dict[str, Any]) -> dict[str, Any]:
                 f"{len(i_plans)} plan(s) with merge_contention AND ci_rerun OR "
                 f"finalize_heavy: {';'.join(i_plans)}"
                 if i_fired
-                else f"contended_plans={len(contended_plans)};ci_rerun_plans={len(i_ci_rerun_plans)};finalize_heavy_plans={len(i_finalize_heavy_plans)}"
+                else (
+                    "contended_plans=unmeasured (no [LOCK] lifecycle substrate — NOT a "
+                    f"measured zero);ci_rerun_plans={len(i_ci_rerun_plans)};"
+                    f"finalize_heavy_plans={len(i_finalize_heavy_plans)}"
+                    if not i_measured
+                    else f"contended_plans={len(contended_plans)};ci_rerun_plans={len(i_ci_rerun_plans)};finalize_heavy_plans={len(i_finalize_heavy_plans)}"
+                )
             ),
             "caveat": (
                 "merge-queue contention co-occurring with a CI re-run / heavy finalize "
@@ -8380,17 +9046,29 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
         all_results["token-efficiency-trend"] = result
         if "token-efficiency-trend" in selected:
             blocks.append(emit_trend_block(result))
-            summary_metrics["token-efficiency-trend_regression"] = bool(result["regression"])
+            # Published only over a non-empty examined population: a regression
+            # verdict derived from zero plans is a figure no data supports, and
+            # `_report_diff_block` cannot tell it from a real one afterwards.
+            if result["plans_in_corpus"] > 0:
+                summary_metrics["token-efficiency-trend_regression"] = bool(
+                    result["regression"]
+                )
 
     if "global-log-analysis" in selected or synth_needed:
         log_result = cross_global_log_analysis(repo_root)
         all_results["global-log-analysis"] = log_result
         if "global-log-analysis" in selected:
             blocks.append(emit_global_log_block(log_result))
-            summary_metrics["global-log-analysis_errors"] = log_result["error_count"]
-            summary_metrics["global-log-analysis_fixture_leaks"] = log_result[
-                "fixture_leak_count"
-            ]
+            # Published ONLY when a log was actually read. Persisting a 0 from an
+            # unmeasured run seeds the cross-run summary-metric history with a
+            # figure no data supports, and `_report_diff_block` cannot tell such a
+            # 0 from a real one after the fact — the same reason
+            # merge-window-accounting's contention count is withheld.
+            if log_result.get("logs_readable", log_result["logs_present"]):
+                summary_metrics["global-log-analysis_errors"] = log_result["error_count"]
+                summary_metrics["global-log-analysis_fixture_leaks"] = log_result[
+                    "fixture_leak_count"
+                ]
 
     if "token-economics" in selected or synth_needed:
         te_result = cross_token_economics(
@@ -8534,9 +9212,14 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
         all_results["merge-window-accounting"] = mwa_result
         if "merge-window-accounting" in selected:
             blocks.append(emit_merge_window_accounting_block(mwa_result))
-            summary_metrics["merge-window-accounting_contended"] = mwa_result["corpus"][
-                "contended_plans"
-            ]
+            # Publish the contention count ONLY when it was measured. Persisting a
+            # 0 from an unmeasured run would seed the cross-run summary-metric
+            # history with a figure no data supports, and the report-diff reader
+            # cannot tell such a 0 from a real one after the fact.
+            if mwa_result.get("measured", True):
+                summary_metrics["merge-window-accounting_contended"] = mwa_result["corpus"][
+                    "contended_plans"
+                ]
 
     if "lane-lever-effectiveness" in selected or synth_needed:
         lle_result = cross_lane_lever_effectiveness(
@@ -8545,9 +9228,11 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
         all_results["lane-lever-effectiveness"] = lle_result
         if "lane-lever-effectiveness" in selected:
             blocks.append(emit_lane_lever_effectiveness_block(lle_result))
-            summary_metrics["lane-lever-effectiveness_checkpoint_over"] = lle_result[
-                "corpus"
-            ]["checkpoint_over_count"]
+            # Gated on a measured population — see the token-trend metric above.
+            if lle_result["corpus"]["plans_in_corpus"] > 0:
+                summary_metrics["lane-lever-effectiveness_checkpoint_over"] = lle_result[
+                    "corpus"
+                ]["checkpoint_over_count"]
 
     # exploration-share is a standalone cross-plan check (not consumed by
     # synthesis), so it is gated only on explicit selection.
@@ -8598,6 +9283,18 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
     if set(selected) == set(CHECK_NAMES):
         proposals, runs_recorded = _retire_on_quiet_proposals(repo_root, per_check_genuine)
         blocks.append(emit_retire_on_quiet_block(proposals, runs_recorded))
+        # The class guard, emitted from the SAME streak derivation the retirement
+        # proposals use so the two readings of a quiet check cannot disagree about
+        # the streak. Reporting only — it proposes nothing and blocks nothing.
+        streaks = quiet_streaks(
+            [per_check_genuine, *_prior_genuine_runs(repo_root, int(THRESHOLDS["retire_on_quiet_runs"]))]
+        )
+        blocks.append(
+            emit_suspect_zero_census_block(
+                suspect_zero_census(blocks, per_check_genuine, streaks, len(all_inputs)),
+                len(all_inputs),
+            )
+        )
 
     diff_block = _report_diff_block(repo_root, summary_metrics)
     if diff_block:

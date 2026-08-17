@@ -118,7 +118,7 @@ directory the auditor was invoked from.
 
 ## Shipping-predicate corpus partition
 
-The **delivery-cost checks** — the eight whose numbers are cost-per-delivery
+The **delivery-cost checks** — the nine whose numbers are cost-per-delivery
 ratios — run over the SHIPPING partition of the corpus rather than every scanned
 plan. A plan that consumed budget and delivered nothing would otherwise dilute
 every one of their aggregates.
@@ -170,7 +170,7 @@ the rows.
 | Preference-pattern detector | [`checks/preference-pattern-detector.md`](checks/preference-pattern-detector.md) | Cross-plan recurring user gate-dispositions: `(module, finding-class, disposition)` tuples (`suppressed`/`accepted`/`taken_into_account`) appearing in N≥`THRESHOLDS["preference_disposition_occurrences"]` plans, surfaced as candidate preferences. The threshold gate is script-owned; Step 4c routes every surfaced row to `architecture enrich` per the shared `disposition-to-hint-routing.md` contract (generalize, do not log raw dispositions). |
 | Dispatch topology | [`checks/dispatch-topology.md`](checks/dispatch-topology.md) | Per-plan verification of the roadmap's leaf/dispatch-topology invariant (subagents are LEAVES — only the orchestrator dispatches further subagents). Scans each plan's `logs/work.log` `[DISPATCH] (caller) target=…` lines and flags any whose `(bundle:skill)` caller is NOT an allowed dispatcher (`plan-marshall:plan-marshall` or a `plan-marshall:phase-N-…` phase context) — a leaf that spawned a subagent. The allowlist catches a newly-added leaf by default. |
 | Finalize-flow conformance | [`checks/finalize-flow-conformance.md`](checks/finalize-flow-conformance.md) | Per-plan verification of the post-#849/#850 finalize mechanics (deterministic `ci_verify` gate, adaptive ci-wait ratchet). Reads the `phase_6.steps` roster + `artifacts/ci-runs/*/manifest.toon` and flags `missing_ci_verify` (a PR was created with no ci-verify gate — pre-#849 shape), `ci_wait_timeout` (a recorded `wait_outcome: deadline_exceeded`), and `ci_unresolved` (the latest run's `final_status` never reached `success`). |
-| Merge-window accounting | [`checks/merge-window-accounting.md`](checks/merge-window-accounting.md) | Cross-plan accounting of the #849 widened merge-mutex + FIFO admission-queue window. Buckets the global `[LOCK] (merge:*)` lifecycle lines by `lock_id` (= plan_id) and reports per-plan acquire/release/blocked/reclaim counts + max FIFO `waiting_count`; flags `merge_contention` when a plan waited behind the queue front. Accounts for the merge-window cost the widened mutex trades for fair ordering / parallelism. |
+| Merge-window accounting | [`checks/merge-window-accounting.md`](checks/merge-window-accounting.md) | Cross-plan accounting of the #849 widened merge-mutex + FIFO admission-queue window. Buckets the global `[LOCK] (merge:*)` lifecycle lines by `lock_id` (= plan_id) and reports per-plan acquire/release/blocked/reclaim counts + max FIFO `waiting_count`; flags `merge_contention` when a plan waited behind the queue front. Reports `status: unmeasured` with NO counts — never a zero contention count — when no `[LOCK]` lifecycle log exists to read. Accounts for the merge-window cost the widened mutex trades for fair ordering / parallelism. |
 | Lane-lever effectiveness | [`checks/lane-lever-effectiveness.md`](checks/lane-lever-effectiveness.md) | The **checkpoint measurement arm** of the token-optimization roadmap. Cross-plan measure of whether the cost-reducing lane levers (recipe auto-routing, the light planning lane, the minimal execution posture, the #854 surgical-fix micro-lane) are engaged, and scores each plan's summed `total_tokens` against its scope class's armed checkpoint target (surgical ≤1.2M / single_module ≤1.5M / multi_module ≤2.5M): per-plan `within`/`over`/`unclassed`/`no_metrics` checkpoint verdict (`checkpoint_over` is the genuine overspend signal), corpus lever-engagement counts (recipe routes / light-lane fires / minimal-posture choices), the `posture_not_taken` lever-adoption gap on surgical plans, and an `estimated_avoided_tokens` scope-gated subtraction (an upper bound). Runs over the shipping partition; non-shipping plans are counted in `plans_excluded_non_shipping`. |
 | Exploration share | [`checks/exploration-share.md`](checks/exploration-share.md) | Cross-plan measure of how much of each plan's tool-call spend went to **exploration** (locating/inspecting existing state) rather than to producing or mutating it — the measured counterpart to `architecture-lookup-ratio`, which counts calls to the navigation *lever* while this counts the navigation *cost*, whichever tool paid it. Sums the ten per-phase exploration counters from `metrics.toon` and reports each plan's payload-byte share (headline) and turn share (companion) over the productive `exploration + work + execute` denominator, with corpus-derived (never hard-coded) cut-points behind a degenerate-corpus spread guard: `exploration_byte_heavy`, `exploration_turn_heavy`, `many_cheap_probes` (the groping-around signature `architecture-lookup-ratio` cannot see), `unclassified_tools`. **Absent is not zero**: a plan carrying no counters is EXCLUDED from the corpus and named in `excluded_plan_ids`, never counted as zero exploration. Also runs over the shipping partition, whose separate exclusion is counted in `plans_excluded_non_shipping` — a DIFFERENT exclusion from the absent-counter one above. |
 | Billing composition | [`checks/billing-composition.md`](checks/billing-composition.md) | Cross-plan re-derivation of the corpus **billing composition** — the billing-formula reconstruction `input + output + round(0.1 × cache_read) + round(1.25 × cache_creation)` with its `cache_read` / `cache_creation` / `output` shares — and the **payload-byte composition** (`exploration` / `work` / `execute` / `orchestration` shares over ALL five buckets, with the `unclassified` residual emitted as an explicit byte count rather than folded into a named share). Not a re-read of the phase rows: each phase is reconciled against the plan's `work/metrics-dispatch-boundaries-{phase}.toon` ledger under the same same-population `max(row, boundary)` rule `cmd_generate` applies (NOT a sum — the accumulator and the ledger record the same leaves), and the two named under-counts are reported SEPARATELY — `unabsorbed_loop_back` (a `close_count > 1` row whose figures are sums across closes) and `omitted_row` (a canonical phase absent from `metrics.toon`, i.e. a member of the persisted `unrecorded_phases`). **Every emitted figure carries its OWN `population` and `floor_population`** (the two families are independent, so a plan may contribute to one and not the other), and a figure any `metrics_blind` / `partial` / omitted-row plan contributed to is labelled `floor` — a lower bound, never a truth. **Absent is not zero**: a plan measuring neither family is EXCLUDED and named in `excluded_plan_ids`. Measurement only — no saving is quantified or projected. Also runs over the shipping partition, whose separate exclusion is counted in `plans_excluded_non_shipping`. |
@@ -204,9 +204,53 @@ half only reads and acts on the surfaced signals, it never recomputes them.
   header (under `.plan/local/audit-reports/`), so the streak is read back across
   runs; a report predating the era model contributes no `genuine__` keys and
   therefore breaks a streak rather than silently extending it. Treat a surfaced
-  proposal as a prompt to confirm the check is genuinely obsolete (versus quiet
-  because the corpus simply had no offending plans) before any future plan
-  removes it.
+  proposal as a prompt to confirm the check is genuinely obsolete before any
+  future plan removes it — and read it alongside the census below, which answers
+  the "is it obsolete or is it broken?" question mechanically.
+
+- **suspect-zero-census (the class guard — reporting only).** A detector that has
+  never produced a positive is indistinguishable, from its output alone, from one
+  that CANNOT produce a positive. The `suspect-zero-census` block makes every zero
+  **suspect** rather than silently clean, with one row per registered check naming
+  its `zero_class`:
+
+  | `zero_class` | Meaning | Is the zero evidence about the corpus? |
+  |---|---|---|
+  | `structural` | The check declared `status: unmeasured` — it could not substantiate a verdict. | **No.** Fix the check's inputs or its producer. |
+  | `starved` | The check examined no plans. Any narrowing reaches this: an empty corpus, a shipping partition that excluded every plan, or the check's own declared `plans_in_corpus: 0` (a full-corpus check can narrow too — `quality-chain` and the two pattern detectors drop a plan with no findings directory). | **No.** A property of the run's inputs, not of the check. |
+  | `no_count` | The block published no genuine count in EITHER spelling — bare `genuine_signal_count` or per-tier `{tier}_genuine_signal_count` — so the census read none for it. Defensive: no registered check is in this state, and a test asserts none reaches it on a real sweep. | **No.** Absence of a reading, not a measured zero. |
+  | `disciplinary` | A non-empty examined population and nothing genuine. | **Yes** — but only that the corpus was clean, never that the check is *able* to fire. |
+  | `no_block` | The check emitted no block at all on this sweep. | **No.** A detector that silently stopped emitting is the completest form of this failure. |
+  | `fired` | The check produced a genuine signal. Not a suspect. | — |
+
+  `structural` outranks the rest: an `unmeasured` block withholds its count *by
+  design* (that withholding is how it stays out of the retire-on-quiet streak), so
+  its absent count is a consequence of the declaration, not an independent fact.
+
+  ⛔ **The census does not census itself.** `suspect-zero-census` and
+  `retire-on-quiet` are meta blocks and are not in `CHECK_NAMES`, so the class
+  guard's own permanent zero is the one class it cannot report. That is the
+  detector-inside-its-own-population failure mode, standing unresolved in the
+  instrument built to surface it — recorded here rather than left silent, because
+  an instrument whose blind spot is undocumented is read as having none.
+
+  The census is **the inverse reading of retire-on-quiet**, computed from the same
+  streak derivation (`quiet_streaks`) so the two can never disagree about the
+  streak itself. A quiet check is either doing its job over a clean corpus or
+  structurally unable to speak, and the two have opposite remedies. Publishing only
+  the retirement reading is what allows a *broken* detector to be retired as
+  redundant — the strictly worse outcome, because retiring it closes the case.
+
+  It is **reporting only**: it proposes nothing, removes nothing, and blocks
+  nothing. The census is the durable deliverable; the particular counts it prints
+  on any one run move with the corpus and are not.
+
+  ⛔ **A `disciplinary` zero is not a clean bill of health for the check.** It says
+  the corpus was clean under whatever predicate the check actually implements — a
+  predicate that reads a field live data never carries will report `disciplinary`
+  on every run, because it examines rows and finds nothing in all of them.
+  Distinguishing that case still requires reading the predicate against its
+  producer; the census narrows where to look, it does not remove the need.
 
 **Lifecycle-footer convention for future roadmap plans.** The not-yet-landed
 roadmap plans (plan-5 … plan-8) are not yet era boundaries. When one of them

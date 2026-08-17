@@ -63,12 +63,26 @@ per-plan rows:
 | Bucket | A plan lands here when |
 |--------|-----------------------|
 | `fully-recorded` | No flag fired: every canonical input present, no blind phase, a complete lifecycle, dispatch markers present, **and** the #812 marker record readable (`metrics_marker_schema: current`). |
-| `partial` | At least one input absent, or a non-execute zero-token phase / incomplete lifecycle / missing dispatch markers — **but the 5-execute phase DID record tokens** (not blind); OR the 5-execute phase recorded zero tokens that #812's `phases_missing_end_time` markers explain; OR the marker record is UNREADABLE (`old-schema` / `pre-#812`). |
-| `blind` | The **5-execute** phase recorded zero tokens **that the #812 markers do NOT explain** (`metrics_blind` on the load-bearing phase). Every downstream number for these plans is a FLOOR. |
+| `partial` | At least one input absent, or a non-execute zero-token phase / incomplete lifecycle / missing dispatch markers — **but the 5-execute phase DID record a usable token figure** (not blind); OR the 5-execute phase's missing figure is one #812's `phases_missing_end_time` markers explain; OR the marker record is UNREADABLE (`old-schema` / `pre-#812`). |
+| `blind` | The **5-execute** phase carries no usable token figure — it recorded zero tokens, **or it is absent from `metrics.toon` entirely** — and the #812 markers do NOT explain it. Every downstream number for these plans is a FLOOR. |
 
 The bucket precedence is `blind` > `partial` > `fully-recorded`: a genuinely-blind
-execute wins regardless of other inputs. A #812-marker-explained zero-token
-execute is `partial`, NEVER `blind` and NEVER the false-healthy `fully-recorded`.
+execute wins regardless of other inputs. A #812-marker-explained missing execute
+figure is `partial`, NEVER `blind` and NEVER the false-healthy `fully-recorded`.
+
+⛔ **An ABSENT 5-execute phase is blind, not merely partial**, and the ordering is
+the reason. The predicate previously tested the recorded value for equality with
+zero, which is false when the phase is absent — so its precondition was the
+presence of the very record whose absence it exists to detect, leaving it vacuous
+at exactly the value it was written to catch. The result was an inverted severity:
+a plan recording `5-execute` at zero graded `blind`, while a plan with no
+`5-execute` section at all — strictly less recorded — graded only `partial`.
+Absence is never better-recorded than a recorded zero, so it can never grade
+milder.
+
+`metrics_blind` still lists only phases that RECORDED a zero; an absent phase is
+reported by `incomplete_lifecycle`, which is a different fact. The two columns stay
+distinct — it is the confidence BUCKET that must not rank absence below a zero.
 
 **An unreadable marker record can never be `fully-recorded`.** When
 `metrics_marker_schema` is `old-schema` or `pre-#812`, the check could not
@@ -115,9 +129,10 @@ consumer side, where the breakage would surface.
 carries no `end_time` boundary marker is listed in `phases_missing_end_time`.
 This check reads them via `parse_metrics_end_time_presence` and consumes the
 signal instead of inferring blindness from zero tokens alone. The distinction is
-load-bearing for no-false-healthy: a zero-token execute the recorder deliberately
+load-bearing for no-false-healthy: an execute figure the recorder deliberately
 declared never-closed is an **explained gap** (bucket `partial`), whereas an
-UNEXPLAINED zero-token execute is genuine **blindness** (bucket `blind`).
+UNEXPLAINED missing execute figure — recorded-zero or absent alike — is genuine
+**blindness** (bucket `blind`).
 
 The markers report one predicate — `end_time` presence — and nothing wider. A
 phase absent from `phases_missing_end_time` carries its boundary marker; that is

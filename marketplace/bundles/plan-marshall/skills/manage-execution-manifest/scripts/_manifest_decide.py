@@ -302,11 +302,13 @@ def _read_recipe_source(plan_id: str) -> str | None:
     longer depends on the ``phase-4-plan`` agent remembering to forward
     ``--recipe-key`` from ``manage-status read`` — the gap the archived-plan
     audit surfaced as recipe→default drift (lesson/recipe plans composing the
-    ``default`` rule because the flag was omitted). This mirrors the audit's own
-    surrogate (``audit-archived-plan-retrospectives/scripts/audit.py``
-    ``collect_inputs``: a non-empty ``plan_source`` is treated as ``recipe_key``
-    for matrix purposes). An explicit ``--recipe-key`` argument still takes
-    precedence at the call site in :func:`cmd_compose`.
+    ``default`` rule because the flag was omitted). The archived-plan audit's
+    re-derivation of Row 2 (``audit-archived-plan-retrospectives/scripts/audit.py``
+    ``collect_inputs``) reads the SAME two fields in the SAME precedence, so the
+    audit's counterfactual and this live decision agree by construction; a change
+    to the field set here obliges the same change there. An explicit
+    ``--recipe-key`` argument still takes precedence at the call site in
+    :func:`cmd_compose`.
 
     Returns the trimmed provenance string, or ``None`` when ``status.json`` is
     absent or its metadata carries no ``plan_source`` / ``recipe_key``.

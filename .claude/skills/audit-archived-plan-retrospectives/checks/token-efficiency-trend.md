@@ -63,6 +63,7 @@ means no sustained upward trend was detected.
 
 ```
 plans_in_series: K
+plans_in_corpus: P    # the population the suspect-zero census reads
 regression: "<verdict or empty>"
 rows[K]{plan_id,phases,total_tokens,tokens_per_phase}
 ```
