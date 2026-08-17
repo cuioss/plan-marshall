@@ -221,9 +221,11 @@ def _names_checked_set(fragment: Any) -> bool:
     2. It publishes the population it examined, under one of
        :data:`retro_sections.ZERO_ATTRIBUTION_FIELDS`.
 
-    ``False`` is matched by identity for the same reason ``_fragment_has_payload``
-    does it: ``False == 0`` in Python, so an equality-based sentinel test would
-    read a published population of ``0`` as no publication at all — discarding
+    The empty-sentinel tuple below deliberately EXCLUDES ``False``, which is
+    filtered by a separate identity check — the same split ``_fragment_has_payload``
+    makes, for the same reason. ``False == 0`` in Python, so folding ``False`` into
+    the sentinel tuple (the natural way to spell "falsy means empty") would make
+    ``0 in sentinels`` true and swallow a published population of ``0`` — discarding
     precisely the honest "I looked at nothing, and here is that number" case.
     """
     if not isinstance(fragment, dict):
