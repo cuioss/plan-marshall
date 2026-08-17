@@ -129,7 +129,7 @@ intent, consume resolved values, and behave identically on the Claude target.
 | `get_project_settings_path` inlines `.claude/settings*.json` on the read path while the write path delegates | OBSERVED | `permission_common.py` — `get_project_settings_path` vs `get_project_settings_path_for_write` |
 | `_cred_ensure_denied.py` renders `Read(...)`/`Bash(...)` deny strings over `_BASH_VECTORS` | OBSERVED | the file — `_BASH_VECTORS` and the rule-building block |
 | The segment-wise `.claude` construction sits in `_scan_project_for_implementors` | OBSERVED | `extension_discovery.py` — `_scan_project_for_implementors` |
-| `runtime_mount` and `_BOOKKEEPING_PREFIXES` are the remaining display/filter literals | OBSERVED, set is a lead | re-derive the full residual set before starting: sweep `marketplace/bundles/**` scripts for `.claude` literals (both quote styles, segment-wise included), discard `platform-runtime` internals and the sanctioned multi-root resolvers; anything beyond these five sites is reported, not silently adopted or skipped |
+| `runtime_mount` and `_BOOKKEEPING_PREFIXES` are the remaining display/filter literals | OBSERVED, set is a lead | re-derive the full residual set before starting: sweep `marketplace/bundles/**` scripts for `.claude` literals (both quote styles, segment-wise included), discard `platform-runtime` internals and the sanctioned multi-root resolvers; anything beyond the five clusters above (seven files — the fifth cluster spans three) is reported, not silently adopted or skipped |
 | `get_project_skill_roots()` / `get_bundle_cache_roots()` exist memoised in `script-shared/scripts/marketplace_paths.py` and are the mandated route | OBSERVED | `marketplace_paths.py` — the two helpers and their cache constants |
 | The existing permission-op TOON contract can carry D1/D3 without a schema change | HYPOTHESIS | `platform-runtime/standards/contract.md` — the permission-op schemas; a needed schema addition is recorded in the report and made minimally, not silently |
 
@@ -139,7 +139,8 @@ intent, consume resolved values, and behave identically on the Claude target.
 - Per-deliverable behaviour pins demonstrated red-first where they encode current output
   (D1's default set, D3's rule set).
 - The residual sweep from the claim table, re-run at verification time over the changed tree: the
-  five sites are clean and no new literal was introduced by the fixes themselves.
+  seven files across the five clusters are clean and no new literal was introduced by the fixes
+  themselves.
 - The pre-PR verification sub-agent checks each deliverable against this plan and sweeps the
   changed values' consumers by kind — prose restating the settings paths, tests stubbing the old
   literal strings, and the permission standards' worked examples are the known consumer kinds.

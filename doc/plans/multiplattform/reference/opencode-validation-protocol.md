@@ -2,7 +2,8 @@
 
 The runbook for the first execution of plan-marshall on a real OpenCode installation. Every
 OpenCode operation is coded — `opencode_runtime.py` implements the full `Runtime` contract
-(24 operations, most as honest no-ops) and the OpenCode emitter produces a complete
+(count it by `@abstractmethod` in `runtime_base.py`; most operations are honest no-ops on
+OpenCode) and the OpenCode emitter produces a complete
 `target/opencode/` tree — but none of it has executed in a live OpenCode session. Until it has,
 OpenCode support is theoretical: the marketplace *emits* OpenCode artifacts and the runtime
 *answers* every operation, and what is unknown is whether OpenCode's `task` tool, `skill` tool,
