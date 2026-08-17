@@ -3589,9 +3589,11 @@ def _quality_chain_flags(plan: _QualityChainPlan) -> list[str]:
     - `build_pending_pile` — a pile of build findings left `pending` at archive
       time (a build-failure backlog the plan never cleared). Needs no
       structural-pending exclusion: the `build` mechanism is exactly
-      `build-error.jsonl` / `test-failure.jsonl`, both actionable types, so no
-      pending-by-construction row can reach this count. Clearing the backlog does
-      drive it to zero.
+      `build-error.jsonl` / `test-failure.jsonl` (`_QC_BUILD_FILES`), and
+      `manage-findings.add_finding` routes each record to the `{type}.jsonl`
+      named by its own `type`, so a record in either file declares an actionable
+      type and `_qc_structural_pending` returns False for it. Clearing the backlog
+      drives this count to zero.
     - `auto_review_only` — the plan carries auto-review findings but recorded ZERO
       build and ZERO self-review findings: the PR bot was the only quality gate
       that fired, so everything shifted right to the most expensive stage.
