@@ -206,7 +206,7 @@ AskUserQuestion:
   question: "The terminal title SessionStart hook is not installed. Enable it now? (Shows active plan, phase, and status in the terminal tab.)"
   options:
     - label: "Enable"
-      description: "Install the SessionStart hook into ./.claude/settings.local.json"
+      description: "Install the SessionStart hook into the project's Claude settings file"
       value: "enable"
     - label: "Skip"
       description: "Leave terminal title disabled"
@@ -217,13 +217,16 @@ If the user chooses **Enable**, install the hook:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
-  project install-hook --target .claude/settings.local.json
+  project install-hook --target claude
 ```
+
+`--target` takes the platform target identifier; the runtime resolves its own
+settings file and reports it back as `settings_path`.
 
 Report the result:
 - `status: success` with `already_present: false` → Hook installed successfully
 - `status: success` with `already_present: true` → Hook was already present
-- `status: error` → Report `message` and advise checking write permissions on `./.claude/settings.local.json`
+- `status: error` → Report `message` and advise checking write permissions on the file the response names in `settings_path`
 - `status: no-op` → Platform does not support this hook (e.g. OpenCode); report info and continue
 
 If the user chooses **Skip**: continue to Step 7.

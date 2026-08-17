@@ -308,12 +308,12 @@ SessionStart capture:     <capture_status>
     multiSelect: false
   ```
 
-  On **Overwrite**: re-invoke `project install-hook` with
-  `--overwrite-statusline`:
+  On **Overwrite**: re-invoke `project install-hook`, authorising the
+  `statusline` conflict key:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
-    project install-hook --target claude --overwrite-statusline
+    project install-hook --target claude --overwrite statusline
   ```
 
   Expect `statusLine_status: overwritten` in the response.
@@ -341,12 +341,12 @@ SessionStart capture:     <capture_status>
     multiSelect: false
   ```
 
-  On **Overwrite**: re-invoke `project install-hook` with
-  `--overwrite-env-disable`:
+  On **Overwrite**: re-invoke `project install-hook`, authorising the
+  `env-disable` conflict key:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime \
-    project install-hook --target claude --overwrite-env-disable
+    project install-hook --target claude --overwrite env-disable
   ```
 
   Expect `env_status: overwritten` in the response.

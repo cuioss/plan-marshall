@@ -141,8 +141,8 @@ def test_project_initial_setup_invalid_dir_returns_error(
 
 
 def test_project_install_hook_is_noop(runtime: OpenCodeRuntime) -> None:
-    """project_install_hook returns no-op because OpenCode has no SessionStart hook."""
-    result = _parse(runtime.project_install_hook(".claude/settings.local.json"))
+    """project_install_hook returns no-op — OpenCode exposes no hook channel to wire."""
+    result = _parse(runtime.project_install_hook("opencode"))
     assert result["status"] == "no-op"
     assert result["operation"] == "project install-hook"
     assert "reason" in result

@@ -10,7 +10,7 @@ Usage:
 
 Operations:
     project initial-setup   --project-dir <path>  --target <target-id>
-    project install-hook    --target <settings-file-path>  [--enforcement]
+    project install-hook    --target <target-id>  [--overwrite <key>]  [--enforcement]
     layout skill-roots      (no arguments)
     layout bundle-cache-root (no arguments)
     session capture         --plan-id <id>
@@ -277,19 +277,19 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # ------------------------------------------------------------------
     if operation == "project install-hook":
         p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime project install-hook")
-        p.add_argument("--target", required=True)
-        p.add_argument("--overwrite-statusline", action="store_true",
-                       help="Overwrite an existing statusLine whose command differs from the renderer")
-        p.add_argument("--overwrite-env-disable", action="store_true",
-                       help="Overwrite an existing env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE that is not '1'")
+        p.add_argument("--target", required=True,
+                       help="Platform target identifier, as in marshal.json runtime.target")
+        p.add_argument("--overwrite", action="append", default=[], metavar="KEY",
+                       help="Conflict key this call may overwrite instead of preserving and "
+                            "reporting (repeatable; the key set is target-defined, and an "
+                            "unrecognised key is rejected)")
         p.add_argument("--enforcement", action="store_true",
-                       help="Install ONLY the orthogonal PreToolUse enforcement hook entry "
-                            "(does not install the terminal-title bundle)")
+                       help="Wire the target's tool-invocation enforcement integration instead "
+                            "of its session/display one")
         ns = p.parse_args(remaining)
         return runtime.project_install_hook(
             ns.target,
-            overwrite_statusline=ns.overwrite_statusline,
-            overwrite_env_disable=ns.overwrite_env_disable,
+            overwrite=tuple(ns.overwrite),
             enforcement=ns.enforcement,
         )
 

@@ -46,6 +46,7 @@ alternative: <what the caller can do instead>
 | `marshal_not_found` | `.plan/marshal.json` missing |
 | `prompt_not_found` | `subagent dispatch --prompt-file` path not found |
 | `unknown_target` | `runtime.target` value not in the target registry |
+| `unknown_overwrite_key` | `project install-hook --overwrite` names a conflict key the target does not define; rejected fail-closed before any write, so a typo never reads as "do not overwrite" |
 | `hook_not_configured` | SessionStart hook not installed; `$CLAUDE_CODE_SESSION_ID` unset |
 | `invalid_settings` | Settings file is malformed (JSON parse error); fail-closed before any write so a malformed file is never clobbered — returned by `permission configure`, `permission fix`, `permission ensure-wildcards`, `permission ensure-steps`, `permission web-apply` |
 | `invalid_marshal` | `.plan/marshal.json` is malformed (parse error); fail-closed instead of degrading to a zero-step audit — returned by `permission analyze`, `permission ensure-steps` |
@@ -98,22 +99,24 @@ message: Target 'foobar' is not in the registry; valid targets are: claude, open
 
 ### `project install-hook`
 
-Install hook wiring into a caller-specified settings file. Unlike `project initial-setup`, this does not create `.plan/` or seed `marshal.json` — it is the targeted hook-installation primitive. Convergent: re-invocation never duplicates an entry, and it brings an already-present entry onto the current shape rather than making no change — an entry carrying a stale hook `timeout` is rewritten and reported as migrated. An entry that is already correct is left untouched.
+Wire the target's session/display integration into its own configuration. Unlike `project initial-setup`, this does not create `.plan/` or seed `marshal.json` — it is the targeted integration-wiring primitive. Convergent: re-invocation never duplicates an element, and it brings an already-present element onto the current shape rather than making no change — an entry carrying a stale hook `timeout` is rewritten and reported as migrated. An element that is already correct is left untouched.
 
-Two independent install modes, neither of which disturbs the other's entries:
+**The operation is target-opaque.** The caller names the target and nothing else; no configuration location, event name, or setting key crosses the boundary. Where the wiring lands, and what it consists of, is the implementation's to decide, and callers read the file it actually wrote from the response's `settings_path` rather than assuming one.
 
-- **Default — the terminal-title bundle.** Installs the SessionStart capture entry, the nine render-trigger entries, the `statusLine` command, and `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE`.
-- **`--enforcement` — ONLY the PreToolUse enforcement entry.** Installs the single matcher-less enforcement entry and no render wiring, no `statusLine`, and no env entry.
+Two independent install modes, neither of which disturbs the other's configuration:
+
+- **Default — the session/display integration.** On Claude: the SessionStart capture entry, the nine render-trigger entries, the `statusLine` command, and `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE`.
+- **`--enforcement` — the tool-invocation enforcement integration only.** On Claude: the single matcher-less PreToolUse enforcement entry and no render wiring, no `statusLine`, and no env entry.
 
 **Arguments**:
 
-- `--target <value>` (required) — either the literal `claude` or an absolute path ending in `.json`. Any other value (a relative path, an unknown identifier) is rejected with `unknown_target` rather than silently creating a stray file. `claude` resolves through `_claude_project_settings_path()` for the terminal-title mode (`.claude/settings.json` when present, else `.claude/settings.local.json`) and pins `.claude/settings.local.json` for the `--enforcement` mode.
-- `--enforcement` (optional) — select the enforcement-only mode described above.
-- `--overwrite-statusline` / `--overwrite-env-disable` (optional) — overwrite a foreign `statusLine` command or env value instead of preserving it and reporting `already_present_other`.
-
-Callers read the resolved file from the response's `settings_path` rather than assuming which of the two settings files was written.
+- `--target <target-id>` (required) — the platform target identifier, as in `marshal.json`'s `runtime.target`.
+- `--enforcement` (optional) — select the enforcement mode described above.
+- `--overwrite <key>` (optional, repeatable) — authorise overwriting the named conflict. A pre-existing configuration value that differs from the one the integration wants is preserved by default and reported as `already_present_other`, so the caller can prompt; naming its key here overwrites it instead and reports `overwritten`. **The key set is target-defined** — the router does not validate it, and an unrecognised key is rejected by the target with `unknown_overwrite_key` rather than silently ignored, so a typo can never read as "do not overwrite". Claude's keys are `statusline` and `env-disable`.
 
 `target` echoes the argument as passed; `settings_path` is the file the call actually resolved and wrote.
+
+**Claude's settings-file resolution** is internal to that implementation, not part of this contract: `claude` resolves through `_claude_project_settings_path()` for the default mode (`.claude/settings.json` when present, else `.claude/settings.local.json`) and pins `.claude/settings.local.json` for `--enforcement`. That implementation additionally honours an absolute path ending in `.json` as a test/recovery override; it is Claude-internal, no other target need offer it, and any other value (a relative path, an unknown identifier) is rejected with `unknown_target` rather than silently creating a stray file.
 
 **Success (Claude — hook installed)**:
 ```toon
@@ -180,7 +183,7 @@ message: Failed to install enforcement hook into .claude/settings.local.json
 ```toon
 status: no-op
 operation: project install-hook
-reason: OpenCode has no Claude-style SessionStart settings hook to install (issue anomalyco/opencode#8619)
+reason: OpenCode exposes no session/display hook channel to wire (issue anomalyco/opencode#8619)
 alternative: Use OpenCode's built-in session mechanism for plan visibility
 ```
 

@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for runtime_base.py — Runtime ABC and TOON helpers."""
 
-import pytest  # noqa: I001
+from collections.abc import Sequence  # noqa: I001
+
+import pytest
 
 # conftest.py sets up PYTHONPATH so imports resolve without manual sys.path work.
 from runtime_base import Runtime, toon_error, toon_noop, toon_success
@@ -138,8 +140,7 @@ class _ConcreteRuntime(Runtime):
     def project_install_hook(
         self,
         target: str,
-        overwrite_statusline: bool = False,
-        overwrite_env_disable: bool = False,
+        overwrite: Sequence[str] = (),
         enforcement: bool = False,
     ) -> str:
         return toon_success("project install-hook")
@@ -290,7 +291,7 @@ def test_concrete_returns_valid_toon_for_each_method():
 
     outputs = [
         runtime.project_initial_setup(".", "claude"),
-        runtime.project_install_hook(".claude/settings.local.json"),
+        runtime.project_install_hook("claude"),
         runtime.layout_skill_roots(),
         runtime.layout_bundle_cache_root(),
         runtime.session_capture("my-plan"),

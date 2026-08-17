@@ -12,6 +12,7 @@ ad-hoc parsing or serialization in this module.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from typing import Any
 
 from toon_parser import serialize_toon
@@ -127,57 +128,50 @@ class Runtime(ABC):
     def project_install_hook(
         self,
         target: str,
-        overwrite_statusline: bool = False,
-        overwrite_env_disable: bool = False,
+        overwrite: Sequence[str] = (),
         enforcement: bool = False,
     ) -> str:
-        """Install the full terminal-title hook wiring into a named settings file.
+        """Wire this target's session/display integration into its own configuration.
 
-        Reads (or creates) *target* and installs the SessionStart capture entry,
-        nine render entries across six render-trigger hook events
-        (SessionStart:matcher-less, SessionStart:clear, UserPromptSubmit,
-        Notification, Stop, PreToolUse:AskUserQuestion, PreToolUse:Bash,
-        PostToolUse:AskUserQuestion, PostToolUse:Bash), the ``statusLine``
-        command, and ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE = "1"``.
+        The operation carries INTENT only: make this target surface plan status
+        to the operator over whatever channel it has. WHERE that wiring lives and
+        WHAT it consists of are the implementation's to decide — the caller names
+        the target and nothing else. No configuration location, event name, or
+        setting key crosses this boundary in either direction.
 
-        Re-invocation CONVERGES an existing entry on the current shape rather
-        than making no change: an already-present entry whose hook ``timeout``
-        is stale is rewritten to the current value, and that outcome is reported
-        separately from a genuine no-op (``migrated_events`` on the
-        terminal-title path, ``capture_status`` for the SessionStart capture
-        entry, ``enforcement_status: migrated`` on the enforcement path).
-        Nothing is ever duplicated, and an entry that is already correct is left
-        untouched. ``already_present`` is False whenever ANY of those three
-        reported anything other than a no-op.
+        Unlike :meth:`project_initial_setup`, this operation creates no plan state
+        and seeds no configuration file of plan-marshall's own; it only wires the
+        integration.
 
-        Unlike ``project_initial_setup``, this operation does not create
-        ``.plan/`` or seed ``marshal.json`` — it only mutates the named file.
+        Re-invocation CONVERGES rather than merely detecting a duplicate: an
+        already-present element whose shape is stale is rewritten to the current
+        shape, and that outcome is reported distinguishably from a genuine no-op.
+        Nothing is ever duplicated, and an element that is already correct is left
+        untouched.
+
+        A target that has no such integration channel returns ``no-op`` with a
+        reason and an alternative rather than faking an install.
 
         Args:
-            target: Path to the settings file the hooks are installed into
-                (e.g. ``.claude/settings.local.json``).
-            overwrite_statusline: When True, overwrite an existing
-                ``statusLine`` whose command differs from the renderer; when
-                False, preserve the foreign value and surface
-                ``statusLine_status: already_present_other`` so the caller
-                can prompt.
-            overwrite_env_disable: Same semantics for
-                ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE``.
-            enforcement: When True, install ONLY the orthogonal PreToolUse
-                enforcement hook entry and skip the terminal-title bundle
-                entirely. The two install modes are independent: neither
-                disturbs the other's entries.
+            target: Platform target identifier — the value that appears as
+                ``runtime.target`` in ``marshal.json``.
+            overwrite: Conflict keys this call is authorised to overwrite. A
+                pre-existing configuration value that differs from the one the
+                integration wants is PRESERVED by default and reported as a
+                conflict, so the caller can prompt the operator; naming that
+                conflict's key here authorises overwriting it instead. The key
+                set is target-defined — each implementation documents its own —
+                and an unrecognised key is rejected rather than silently ignored.
+            enforcement: Select this target's tool-invocation enforcement
+                integration instead of the session/display one. The two are
+                independent: neither disturbs the other's configuration.
 
         Returns:
-            Serialized TOON string (success, error, or no-op). The
-            terminal-title path carries ``target``, ``hook_installed``,
-            ``already_present``, ``installed_events``,
-            ``already_present_events``, ``migrated_events``, ``capture_status``
-            (``installed`` / ``migrated`` / ``already_present``),
-            ``statusLine_status``, and ``env_status``; the ``enforcement`` path
-            carries ``target``, ``enforcement_installed``,
-            ``enforcement_status`` (``installed`` / ``already_present`` /
-            ``migrated``), and ``already_present``.
+            Serialized TOON string (success, error, or no-op). A success payload
+            reports, per element the target manages, whether that element was
+            installed, converged, or already correct, and carries
+            ``already_present`` — True only when the call changed nothing at all.
+            Which elements those are is target-defined.
         """
 
     # ------------------------------------------------------------------

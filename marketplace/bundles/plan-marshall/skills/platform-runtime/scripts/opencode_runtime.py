@@ -26,6 +26,7 @@ All methods return a serialized TOON string via the helpers in runtime_base.
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from runtime_base import Runtime, toon_error, toon_noop, toon_success
@@ -99,14 +100,19 @@ class OpenCodeRuntime(Runtime):
     def project_install_hook(
         self,
         target: str,
-        overwrite_statusline: bool = False,
-        overwrite_env_disable: bool = False,
+        overwrite: Sequence[str] = (),
         enforcement: bool = False,
     ) -> str:
-        """No-op: OpenCode has no Claude-style SessionStart settings hook."""
+        """No-op: OpenCode exposes no session/display integration to wire.
+
+        The decline is honest rather than a stub: OpenCode offers no hook channel
+        at all (issue anomalyco/opencode#8619), so there is no configuration to
+        write and no conflict an ``overwrite`` key could resolve. Declining every
+        invocation — both install modes, any key set — is the whole behaviour.
+        """
         return toon_noop(
             "project install-hook",
-            "OpenCode has no Claude-style SessionStart settings hook to install"
+            "OpenCode exposes no session/display hook channel to wire"
             " (issue anomalyco/opencode#8619)",
             "Use OpenCode's built-in session mechanism for plan visibility",
         )

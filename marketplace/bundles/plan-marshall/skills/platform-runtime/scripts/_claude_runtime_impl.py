@@ -23,6 +23,7 @@ import json
 import os
 import re
 import sys
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -92,24 +93,33 @@ class ClaudeRuntime(Runtime):
             },
         )
 
+    #: Conflict keys ``project_install_hook``'s ``overwrite`` argument accepts on
+    #: this target. The ABC leaves the key set target-defined; this is Claude's.
+    _OVERWRITE_STATUSLINE = "statusline"
+    _OVERWRITE_ENV_DISABLE = "env-disable"
+    _OVERWRITE_KEYS = (_OVERWRITE_STATUSLINE, _OVERWRITE_ENV_DISABLE)
+
     def project_install_hook(
         self,
         target: str,
-        overwrite_statusline: bool = False,
-        overwrite_env_disable: bool = False,
+        overwrite: Sequence[str] = (),
         enforcement: bool = False,
     ) -> str:
-        """Install the full terminal-title hook wiring into the named settings file.
+        """Install the full terminal-title hook wiring into the Claude settings file.
 
-        Installs the SessionStart capture entry, nine render-trigger hook
-        entries, the ``statusLine`` command, and
-        ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE``. Re-invocation CONVERGES an
-        already-present entry on the current shape rather than always making no
-        change: an entry carrying a stale hook ``timeout`` is rewritten, and that
-        outcome is reported distinguishably — in ``migrated_events`` on the
-        terminal-title path, on ``capture_status`` for the SessionStart capture
-        entry (which owns none of the nine render labels), and as
-        ``enforcement_status: migrated`` on the enforcement path.
+        This is where the ABC's target-opaque "wire this target's session/display
+        integration" becomes concrete Claude Code wiring. Installs the
+        SessionStart capture entry, nine render entries across six render-trigger
+        hook events (SessionStart:matcher-less, SessionStart:clear,
+        UserPromptSubmit, Notification, Stop, PreToolUse:AskUserQuestion,
+        PreToolUse:Bash, PostToolUse:AskUserQuestion, PostToolUse:Bash), the
+        ``statusLine`` command, and ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE =
+        "1"``. Re-invocation CONVERGES an already-present entry on the current
+        shape rather than always making no change: an entry carrying a stale hook
+        ``timeout`` is rewritten, and that outcome is reported distinguishably —
+        in ``migrated_events`` on the terminal-title path, on ``capture_status``
+        for the SessionStart capture entry (which owns none of the nine render
+        labels), and as ``enforcement_status: migrated`` on the enforcement path.
         ``already_present`` is False whenever anything was installed OR
         migrated — the capture entry included — so it never reads as "nothing
         changed" over a run that rewrote a stale value.
@@ -121,34 +131,53 @@ class ClaudeRuntime(Runtime):
         ``project install-hook --enforcement`` installs the enforcement entry;
         neither disturbs the other's entries.
 
-        The ``target`` argument is one of two shapes:
+        **Settings-file resolution is this implementation's own.** The ABC hands
+        over a target identifier and nothing else, and the location is derived
+        here:
 
-        - ``"claude"`` — the platform identifier. For the terminal-title install
-          this resolves to the project's Claude Code settings file via
+        - ``"claude"`` — the canonical invocation, and the only shape the router
+          help documents. For the terminal-title install it resolves to the
+          project's Claude Code settings file via
           ``_claude_project_settings_path()`` (``.claude/settings.json`` when
-          present, else ``.claude/settings.local.json``). For the
-          ``enforcement`` install it pins ``.claude/settings.local.json`` via
+          present, else ``.claude/settings.local.json``). For the ``enforcement``
+          install it pins ``.claude/settings.local.json`` via
           ``_claude_local_settings_path()`` — the operator-local opt-in belongs
           there and that is the file the ``display`` health-check enforcement
           label and the install contract both reference.
-          This is the canonical invocation from the marshall-steward menu.
-        - An absolute path ending in ``.json`` — explicit settings file path.
-          Used by tests and recovery flows that need to target a specific file.
+        - An absolute path ending in ``.json`` — a Claude-INTERNAL test and
+          recovery override that names a specific settings file. It is not part
+          of the ABC contract and is not advertised by the router; other targets
+          need not honour any such shape.
 
         Any other value (relative path, unknown identifier) is rejected with
         ``unknown_target`` rather than silently creating a stray file.
 
-        The two ``overwrite_*`` flags govern conflict resolution when an
-        existing ``statusLine`` or env value differs from ours:
+        Claude's ``overwrite`` conflict keys are ``_OVERWRITE_KEYS``, and they
+        govern what happens when an existing ``statusLine`` or env value differs
+        from ours:
 
-        - ``overwrite_statusline=False`` (default): preserve the foreign value
-          and report ``statusLine_status: already_present_other`` so the
+        - key absent (default): preserve the foreign value and report
+          ``statusLine_status`` / ``env_status: already_present_other`` so the
           marshall-steward menu can surface an AskUserQuestion.
-        - ``overwrite_statusline=True``: overwrite with our command and report
-          ``statusLine_status: overwritten``.
+        - key present: overwrite with our value and report the corresponding
+          status as ``overwritten``.
 
-        ``overwrite_env_disable`` carries identical semantics for the env entry.
+        An unrecognised key is rejected with ``unknown_overwrite_key`` — a typo
+        must not read as "do not overwrite", which is the silent-wrong-answer the
+        ABC's reject-rather-than-ignore rule exists to prevent.
         """
+        unknown_keys = [key for key in overwrite if key not in self._OVERWRITE_KEYS]
+        if unknown_keys:
+            return toon_error(
+                "project install-hook",
+                "unknown_overwrite_key",
+                f"overwrite key(s) {', '.join(repr(k) for k in unknown_keys)} "
+                f"not recognised on this target; valid keys are: "
+                f"{', '.join(self._OVERWRITE_KEYS)}",
+            )
+        overwrite_statusline = self._OVERWRITE_STATUSLINE in overwrite
+        overwrite_env_disable = self._OVERWRITE_ENV_DISABLE in overwrite
+
         if target == "claude":
             settings_path = (
                 claude_runtime._claude_local_settings_path()

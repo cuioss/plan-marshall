@@ -505,31 +505,40 @@ class TestDispatch:
     # ---- project install-hook -------------------------------------------------
 
     def test_dispatch_project_install_hook(self, rt):
-        """project install-hook forwards --target and overwrite flags to runtime.project_install_hook."""
-        _dispatch(rt, "project install-hook", ["--target", ".claude/settings.local.json"])
+        """project install-hook forwards the target id, with no overwrite key authorised."""
+        _dispatch(rt, "project install-hook", ["--target", "claude"])
         rt.project_install_hook.assert_called_once_with(
-            ".claude/settings.local.json",
-            overwrite_statusline=False,
-            overwrite_env_disable=False,
+            "claude",
+            overwrite=(),
             enforcement=False,
         )
 
-    def test_dispatch_project_install_hook_with_overwrite_flags(self, rt):
-        """project install-hook forwards both overwrite flags when supplied."""
+    def test_dispatch_project_install_hook_with_overwrite_keys(self, rt):
+        """Repeated --overwrite accumulates into the overwrite key tuple, in order."""
         _dispatch(
             rt,
             "project install-hook",
             [
                 "--target",
-                ".claude/settings.local.json",
-                "--overwrite-statusline",
-                "--overwrite-env-disable",
+                "claude",
+                "--overwrite",
+                "statusline",
+                "--overwrite",
+                "env-disable",
             ],
         )
         rt.project_install_hook.assert_called_once_with(
-            ".claude/settings.local.json",
-            overwrite_statusline=True,
-            overwrite_env_disable=True,
+            "claude",
+            overwrite=("statusline", "env-disable"),
+            enforcement=False,
+        )
+
+    def test_dispatch_project_install_hook_forwards_unknown_overwrite_key(self, rt):
+        """The router does not validate overwrite keys — the target owns the key set."""
+        _dispatch(rt, "project install-hook", ["--target", "claude", "--overwrite", "bogus"])
+        rt.project_install_hook.assert_called_once_with(
+            "claude",
+            overwrite=("bogus",),
             enforcement=False,
         )
 
@@ -538,12 +547,11 @@ class TestDispatch:
         _dispatch(
             rt,
             "project install-hook",
-            ["--target", ".claude/settings.local.json", "--enforcement"],
+            ["--target", "claude", "--enforcement"],
         )
         rt.project_install_hook.assert_called_once_with(
-            ".claude/settings.local.json",
-            overwrite_statusline=False,
-            overwrite_env_disable=False,
+            "claude",
+            overwrite=(),
             enforcement=True,
         )
 
