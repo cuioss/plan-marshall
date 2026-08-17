@@ -99,9 +99,20 @@ class Runtime(ABC):
     ``runtime.target`` in ``.plan/marshal.json`` and dispatches the requested
     operation.
 
-    All methods return a serialized TOON string ready for ``print()``.  Use
-    the ``toon_success``, ``toon_error``, and ``toon_noop`` helpers from this
-    module to build responses; never format TOON strings manually.
+    Methods return a serialized TOON string ready for ``print()``.  Use the
+    ``toon_success``, ``toon_error``, and ``toon_noop`` helpers from this module
+    to build responses; never format TOON strings manually. The one documented
+    exception is :meth:`session_render_title`: a target that renders the title
+    itself writes it to stdout and returns ``""`` as the already-emitted
+    sentinel, so the caller appends nothing. A target that declines that
+    operation returns an ordinary no-op TOON like any other.
+
+    **The per-operation wire schemas live in ``standards/contract.md``.** This
+    module states each operation's INTENT and its decline conditions; that
+    document states the exact field set each status variant carries. An
+    implementer needs both — the intent here to decide what to build, the schema
+    there to agree on the wire with every other target. The declinable-primitive
+    rules those schemas assume are in ``standards/no-op-policy.md``.
     """
 
     # ------------------------------------------------------------------
@@ -163,9 +174,13 @@ class Runtime(ABC):
                 conflict's key here authorises overwriting it instead. The key
                 set is target-defined — each implementation documents its own —
                 and an unrecognised key is rejected rather than silently ignored.
-            enforcement: Select this target's tool-invocation enforcement
-                integration instead of the session/display one. The two are
-                independent: neither disturbs the other's configuration.
+            enforcement: Wire the target's TOOL-INVOCATION GATE instead of its
+                session/display channel — the mechanism by which the target
+                consults plan-marshall before a tool call runs, so a call that
+                violates the active plan's discipline can be refused. A target
+                with no such interception point declines this mode exactly as it
+                would decline the operation. The two modes are independent:
+                neither disturbs the other's configuration.
 
         Returns:
             Serialized TOON string (success, error, or no-op). A success payload
@@ -214,9 +229,11 @@ class Runtime(ABC):
         from an installed plugin rather than the marketplace repo.
 
         A target that keeps a dedicated cache directory returns it. A target
-        whose deployed bundles instead live under its project-local-skill roots
-        returns those, mirroring :meth:`layout_skill_roots` — either way the
-        caller probes the returned list in order, first match wins.
+        whose deployed bundles instead live among its project-local-skill roots
+        returns the subset of those roots that are user-global — deployed bundles
+        are shared across checkouts, so a root anchored inside one project cannot
+        hold them. Either way the caller probes the returned list in order, first
+        match wins, and every entry is an absolute path.
 
         The result does not change for the lifetime of a process (the target
         is fixed by ``marshal.json``), so callers memoise it per process.
@@ -258,11 +275,14 @@ class Runtime(ABC):
         emits the platform-appropriate sequence.
 
         Args:
-            statusline: When True, the success branch emits plain text
-                (``f"{icon} {body}"``) instead of the JSON envelope, matching
-                the ``statusLine`` hook contract. Noop branches still emit
-                nothing on stdout. Default ``False`` preserves the
-                hook-driven JSON-envelope contract.
+            statusline: Select the target's PERSISTENT STATUS-READOUT channel
+                over its event-driven one. When True, the success branch emits
+                the composed title as plain text (``f"{icon} {body}"``) rather
+                than the structured envelope the event channel expects. Noop
+                branches still emit nothing on stdout either way. Default
+                ``False`` selects the event-driven channel. A target with only
+                one channel implements both settings over it, or declines the
+                one it lacks.
 
         Returns:
             Serialized TOON string (success or no-op).
@@ -345,8 +365,8 @@ class Runtime(ABC):
 
         Args:
             plan_id: Plan identifier to bind to the session's slot.
-            session_id: Optional explicit session id; falls back to the platform
-                session-id environment variable when omitted.
+            session_id: Optional explicit session id; falls back to whatever
+                session identifier the target exposes when omitted.
 
         Returns:
             Serialized TOON string (success or no-op) noting whether the slot
@@ -366,8 +386,8 @@ class Runtime(ABC):
         ``no-op`` when it exposes none.
 
         Args:
-            session_id: Optional explicit session id; falls back to the platform
-                session-id environment variable when omitted.
+            session_id: Optional explicit session id; falls back to whatever
+                session identifier the target exposes when omitted.
 
         Returns:
             Serialized TOON string carrying the resolved ``plan_id`` (empty when
@@ -713,7 +733,9 @@ class Runtime(ABC):
             ``four_field_phases_attributed``, ``unclassified_tool_calls`` — the
             run-level count of tool names outside the classifier's
             population-derived domain, non-zero when the classifier needs
-            extending); the no-op carries ``error: transcript_not_found``.
+            extending). The no-op carries ``transcript_not_found`` as its
+            ``reason`` — a no-op never carries an ``error`` field, and
+            ``toon_noop`` cannot emit one.
         """
 
     # ------------------------------------------------------------------
@@ -731,11 +753,14 @@ class Runtime(ABC):
 
         Does NOT spawn the subagent; returns a TOON payload with the exact
         parameters the caller must pass to the target's own subagent-spawning
-        tool, whose name the payload carries.
+        tool. The payload's ``invocation.tool`` names that tool, so the caller
+        need not know it in advance.
 
-        The requested *agent* is echoed back as the payload's ``subagent_type``:
-        no target substitutes an agent of its own choosing, so a caller's
-        selection always reaches the invocation.
+        Two ``invocation`` fields are fixed across targets rather than
+        target-defined, because the caller reads them: ``tool`` as above, and
+        ``subagent_type``, which echoes the requested *agent* back. No target
+        substitutes an agent of its own choosing, so a caller's selection always
+        reaches the invocation.
 
         Returns ``no-op`` when the agent requires tools the target has no
         equivalent for.
