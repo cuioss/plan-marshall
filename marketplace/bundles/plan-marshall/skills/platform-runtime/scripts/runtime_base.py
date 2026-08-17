@@ -3,8 +3,8 @@
 """
 Abstract base class and shared TOON helpers for platform-runtime.
 
-Defines the Runtime ABC with all 24 platform operations. Concrete subclasses
-(ClaudeRuntime, OpenCodeRuntime) implement each operation for their target.
+Defines the Runtime ABC with all 24 platform operations. Each concrete subclass
+implements every operation for one target, or declines it via the no-op policy.
 
 TOON helpers delegate to the canonical toon_parser from ref-toon-format — no
 ad-hoc parsing or serialization in this module.
@@ -118,7 +118,8 @@ class Runtime(ABC):
 
         Args:
             project_dir: Project root directory path.
-            target: Platform target identifier (``"claude"`` or ``"opencode"``).
+            target: Platform target identifier — the value seeded as
+                ``runtime.target``.
 
         Returns:
             Serialized TOON string (success or error).
@@ -189,12 +190,9 @@ class Runtime(ABC):
         root against the relevant base directory and probe in list order
         (first match wins).
 
-        On Claude: returns the single ``.claude/skills`` root.
-
-        On OpenCode: returns the multi-root list mirroring the executor's
-        discovery order (``$OPENCODE_CONFIG_DIR/skills``, ``.opencode/skills``,
-        ``.claude/skills``, ``.agents/skills`` and the ``~``-anchored
-        user-global variants).
+        A target with one such root returns a single-element list; a target that
+        discovers skills across several returns them all, in the order its own
+        discovery probes them.
 
         The result does not change for the lifetime of a process (the target
         is fixed by ``marshal.json``), so callers memoise it per process —
@@ -215,13 +213,10 @@ class Runtime(ABC):
         i.e. where ``extension.py`` / bundle scripts are found when running
         from an installed plugin rather than the marketplace repo.
 
-        On Claude: returns the single ``~/.claude/plugins/cache/plan-marshall``
-        cache root.
-
-        On OpenCode: OpenCode has no separate single plugin-cache; deployed
-        bundles live under the project-local-skill discovery roots themselves.
-        The op returns those root(s) so callers can probe them in priority
-        order (first match wins), mirroring ``layout_skill_roots``.
+        A target that keeps a dedicated cache directory returns it. A target
+        whose deployed bundles instead live under its project-local-skill roots
+        returns those, mirroring :meth:`layout_skill_roots` — either way the
+        caller probes the returned list in order, first match wins.
 
         The result does not change for the lifetime of a process (the target
         is fixed by ``marshal.json``), so callers memoise it per process.
@@ -229,8 +224,7 @@ class Runtime(ABC):
         Returns:
             Serialized TOON string carrying ``roots[N]`` — the ordered list of
             deployed-bundle cache roots for the active target (``~``-anchored
-            absolute paths). Claude returns a single-element list; OpenCode
-            returns its multi-root list.
+            absolute paths). The list may carry one root or several.
         """
 
     # ------------------------------------------------------------------
@@ -241,12 +235,12 @@ class Runtime(ABC):
     def session_capture(self, plan_id: str) -> str:
         """Read and persist the current platform session identifier.
 
-        On Claude: reads ``$CLAUDE_CODE_SESSION_ID`` and stores it via
-        ``manage-status``.  Returns ``error`` with code
-        ``hook_not_configured`` when the env var is absent.
-
-        On OpenCode: returns ``no-op`` because the platform does not expose a
-        session id to the shell environment.
+        A target that exposes a session identifier resolves it however that
+        target makes it available and stores it via ``manage-status``. When the
+        identifier ought to be reachable but is not — the target's wiring is
+        incomplete — that is an ``error`` with code ``hook_not_configured``,
+        never a silent pass. A target that exposes no session identifier at all
+        returns ``no-op``.
 
         Args:
             plan_id: Plan identifier used by ``manage-status``.
@@ -307,12 +301,11 @@ class Runtime(ABC):
         🔨). When omitted (``None``) the composer applies its default active
         icon — the shape every persisted-title-state change fires.
 
-        On Claude: best-effort — a no-op when the state is absent or unrenderable
-        (``reason: no_title_state``) or when the feature is configured off
-        (``reason: feature_inactive``). Never raises, and never changes the
-        caller's status or exit code.
-
-        On OpenCode: returns ``no-op`` (no plugin-driven terminal-title channel).
+        Best-effort on every target: a no-op when the state is absent or
+        unrenderable (``reason: no_title_state``) and when the feature is
+        configured off (``reason: feature_inactive``). It never raises and never
+        changes the caller's status or exit code. A target with no render channel
+        to settle state for returns ``no-op``.
 
         Args:
             plan_id: Plan identifier whose ``status.json`` supplies the title
@@ -345,11 +338,10 @@ class Runtime(ABC):
         and NO plan-dir-exists check — a session that switches to drive a
         different live plan rebinds cleanly instead of staying stuck.
 
-        On Claude: resolves ``session_id`` from the *session_id* argument or, when
-        absent, from ``$CLAUDE_CODE_SESSION_ID``, then delegates to the pure
-        ``session_binding`` policy. Best-effort — never raises.
-
-        On OpenCode: returns ``no-op`` (no platform-provided session id).
+        A target resolves ``session_id`` from the *session_id* argument first
+        and, when absent, from whatever session identifier it exposes.
+        Best-effort — never raises. A target that exposes none returns
+        ``no-op``.
 
         Args:
             plan_id: Plan identifier to bind to the session's slot.
@@ -369,11 +361,9 @@ class Runtime(ABC):
         counterpart of :meth:`session_bind`; ``session render-title`` resolves
         the session->plan binding through the same read path.
 
-        On Claude: resolves ``session_id`` from the *session_id* argument or, when
-        absent, from ``$CLAUDE_CODE_SESSION_ID``, then delegates to the pure
-        ``session_binding`` policy.
-
-        On OpenCode: returns ``no-op`` (no platform-provided session id).
+        A target resolves ``session_id`` exactly as :meth:`session_bind` does —
+        the argument first, then its own session identifier — and returns
+        ``no-op`` when it exposes none.
 
         Args:
             session_id: Optional explicit session id; falls back to the platform
@@ -398,9 +388,8 @@ class Runtime(ABC):
         elapsed-time grace period. When *fix* is True, GCs each stale slot. Keeps
         NO shared mutable index — the scan-then-GC is per-file and idempotent.
 
-        On Claude: delegates to the pure ``session_binding`` policy.
-
-        On OpenCode: returns ``no-op`` (no platform-provided session id).
+        A target that maintains per-session binding slots reports over them. A
+        target with no session identifier keeps no slots and returns ``no-op``.
 
         Args:
             fix: When True, GC (remove) each stale slot whose plan is
@@ -433,10 +422,9 @@ class Runtime(ABC):
         A project that never opted into terminal titles is never touched by the
         teardown.
 
-        On Claude: when active, resolves the session id from
-        ``$CLAUDE_CODE_SESSION_ID`` and unbinds the session slot. Never raises.
-
-        On OpenCode: returns ``no-op`` (no terminal-title channel).
+        When active, a target resolves its own session identifier and unbinds
+        that session's slot. Never raises. A target with no render channel has no
+        binding to release and returns ``no-op``.
 
         Returns:
             Serialized TOON string (success or no-op) carrying ``active`` and
@@ -454,13 +442,10 @@ class Runtime(ABC):
         TEXT for the operator/orchestrator to act on. Zero-touch is impossible in
         any harness.
 
-        On Claude: returns ``success`` with the resolved directive
-        (``/reload-plugins``) plus the monitor caveat — only monitors require a
-        full session restart, and plan-marshall registers none, so
-        ``/reload-plugins`` picks up the regenerated executor / agent set live.
-
-        On OpenCode: returns ``no-op`` (no live plugin-reload command); the
-        alternative is a full session restart.
+        A target with a live reload command returns ``success`` carrying that
+        command's text, together with any caveat on how completely it reloads. A
+        target with no such command returns ``no-op`` naming the alternative —
+        typically a full session restart.
 
         Returns:
             Serialized TOON string (success or no-op) carrying the resolved
@@ -593,11 +578,11 @@ class Runtime(ABC):
     ) -> str:
         """Record token consumption for a planning phase.
 
-        On Claude: reads session transcript and sums tokens since the last
-        capture for this phase.
-
-        On OpenCode: returns ``no-op`` unless ``total_tokens`` is provided, in
-        which case it stores the value directly.
+        A target that exposes a session transcript sums the tokens recorded
+        since this phase's last capture. A target that does not returns
+        ``no-op`` — unless *total_tokens* is supplied, in which case it stores
+        that value directly. An explicit count is always honoured, whatever the
+        target can measure on its own.
 
         Args:
             plan_id: Plan identifier.
@@ -678,7 +663,7 @@ class Runtime(ABC):
           test code.
         - ``exploration_doc_residency_bytes`` — the call targeted a workflow or
           standard document (skill and standard markdown bodies, ``doc/**``,
-          ``*.adoc``, ``CLAUDE.md``).
+          ``*.adoc``, and the target's own agent-instructions file).
         - ``exploration_unattributed_bytes`` — no target path is recoverable: the
           call carried no path input, or it is not path-addressed at all
           (``WebFetch`` / ``WebSearch``). This bucket FAILS OPEN exactly as
@@ -705,15 +690,15 @@ class Runtime(ABC):
         preserve that distinction rather than substituting zeros for a target
         that never measured.
 
-        On Claude: reads ``~/.claude/projects/.../{session_id}.jsonl`` and the
-        ``{session_id}/subagents/agent-*.jsonl`` transcripts, parses ``message.usage``
-        four-field records, ``<usage>`` return tags, and ``tool_use`` /
-        ``tool_result`` content items, and writes the per-phase JSON.
-        Returns ``no-op`` with code ``transcript_not_found`` when no transcript exists.
+        A target that exposes a session transcript walks it — the session's own
+        records and any subagent records it keeps — normalizes every usage and
+        tool-call record it recognises, and writes the per-phase JSON. When such a
+        target cannot locate a transcript for *session_id* it returns ``no-op``
+        with code ``transcript_not_found``.
 
-        On OpenCode: returns ``no-op`` with code ``transcript_not_found`` — OpenCode
-        exposes no session transcript, so it writes no bucket and its counters are
-        absent rather than zero.
+        A target that exposes no transcript at all returns that same
+        ``transcript_not_found`` no-op: it writes no bucket, and its counters are
+        ABSENT rather than zero, per the rule above.
 
         Args:
             session_id: Platform session identifier whose transcript is walked.
@@ -745,11 +730,15 @@ class Runtime(ABC):
         """Return platform-specific subagent invocation parameters.
 
         Does NOT spawn the subagent; returns a TOON payload with the exact
-        parameters the caller must pass to the platform's native tool (``Task:``
-        on Claude, ``task`` on OpenCode).
+        parameters the caller must pass to the target's own subagent-spawning
+        tool, whose name the payload carries.
 
-        Returns ``no-op`` when the agent requires tools with no platform
-        equivalent.
+        The requested *agent* is echoed back as the payload's ``subagent_type``:
+        no target substitutes an agent of its own choosing, so a caller's
+        selection always reaches the invocation.
+
+        Returns ``no-op`` when the agent requires tools the target has no
+        equivalent for.
 
         Args:
             agent: Agent name without ``.md`` extension.

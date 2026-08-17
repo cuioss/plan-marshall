@@ -192,7 +192,13 @@ class OpenCodeRuntime(Runtime):
     # ------------------------------------------------------------------
 
     def session_capture(self, plan_id: str) -> str:
-        """No-op: OpenCode does not expose a platform session id."""
+        """No-op: OpenCode does not expose a platform session id.
+
+        This is the ABC's "exposes no session identifier at all" case, not its
+        "ought to be reachable but is not" case: there is no wiring that could
+        supply one (upstream issue #9292), so the decline is ``no-op`` rather
+        than ``hook_not_configured``.
+        """
         return toon_noop(
             "session capture",
             "OpenCode does not expose a platform-provided session id to the shell;"
@@ -443,8 +449,10 @@ class OpenCodeRuntime(Runtime):
     ) -> str:
         """Record token consumption for OpenCode.
 
-        When ``total_tokens`` is provided, stores it directly and succeeds.
-        Without it, returns ``no-op`` because OpenCode has no session transcript.
+        OpenCode exposes no session transcript, so there is nothing to sum. When
+        ``total_tokens`` is provided it is stored directly and the call succeeds
+        — the ABC's "an explicit count is always honoured" rule. Without it, the
+        op returns ``no-op``.
         """
         if total_tokens is None:
             return toon_noop(

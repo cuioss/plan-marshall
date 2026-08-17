@@ -300,7 +300,14 @@ class ClaudeRuntime(Runtime):
     # ------------------------------------------------------------------
 
     def session_capture(self, plan_id: str) -> str:
-        """Read $CLAUDE_CODE_SESSION_ID and store via manage-status."""
+        """Read ``$CLAUDE_CODE_SESSION_ID`` and store it via ``manage-status``.
+
+        Claude Code exports the session id into the shell environment from its
+        SessionStart hook, so an unset variable means the hook is not wired up
+        rather than that no session exists. That is reported as an ``error`` with
+        code ``hook_not_configured`` — the ABC's "ought to be reachable but is
+        not" case — never as a silent pass.
+        """
         session_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
         if not session_id:
             return toon_error(
@@ -1425,7 +1432,12 @@ class ClaudeRuntime(Runtime):
     def metrics_capture(
         self, plan_id: str, phase: str, total_tokens: int | None
     ) -> str:
-        """Record token consumption for a planning phase on Claude."""
+        """Record token consumption for a planning phase on Claude.
+
+        Reads the Claude session transcript and sums the tokens recorded since
+        this phase's last capture. An explicit *total_tokens* bypasses the
+        transcript scan and is stored as given.
+        """
         if total_tokens is not None:
             # Manual override: store directly.
             claude_runtime._write_token_cursor(plan_id, phase, total_tokens)
@@ -1502,6 +1514,14 @@ class ClaudeRuntime(Runtime):
         counters — including ``unclassified_tool_calls``, the run-level count of
         tool names outside the classifier's population-derived domain.
 
+        The transcripts this target walks are
+        ``~/.claude/projects/.../{session_id}.jsonl`` and the session's
+        ``{session_id}/subagents/agent-*.jsonl`` files; the records it recognises
+        are ``message.usage`` four-field entries, ``<usage>`` return tags, and
+        ``tool_use`` / ``tool_result`` content items. Its agent-instructions file
+        — the ABC's target-defined doc-residency member — is ``CLAUDE.md``, which
+        :func:`claude_runtime._classify_exploration_target` matches by basename.
+
         Because this target walks a real transcript, every emitted phase bucket
         carries the full counter key set, so a zero is a MEASURED zero. Counters
         are ABSENT only when no bucket is emitted at all. Returns a
@@ -1547,7 +1567,12 @@ class ClaudeRuntime(Runtime):
         prompt_file: str | None,
         context: dict[str, Any] | None,
     ) -> str:
-        """Return Claude Code Task: invocation parameters for a subagent."""
+        """Return Claude Code ``Task:`` invocation parameters for a subagent.
+
+        Uses ``Task`` as the Claude native tool name, and echoes the REQUESTED
+        *agent* back as ``subagent_type`` so the caller's selection reaches the
+        invocation.
+        """
         # Locate the agent markdown file.
         agent_path = claude_runtime._find_agent_file(agent)
         if agent_path is None:
