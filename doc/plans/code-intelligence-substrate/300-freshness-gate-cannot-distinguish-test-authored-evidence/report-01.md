@@ -269,13 +269,24 @@ with `UV_HTTP_TIMEOUT=600`:
   new coverage: 25 collected cases were added and 13 pre-existing ones are counted
   in both totals, so the two figures count *different populations* and their
   difference is not a defect count.
-- A further `./pw verify` was started to make the gate authoritative over the
-  final tree, because one test file was edited while the previous run was already
-  executing. ⛔ **That run was killed by a container restart and its result is
-  unknown.** The re-run's outcome is recorded in § Residue rather than asserted
-  here; the 20488-passing run above covers every file in the branch except the one
-  edit, which was separately checked with a targeted `pytest` (17 passed) and with
-  `ruff` and `mypy` on that file.
+- **The authoritative gate over the pushed tree** — needed because one test file
+  was edited while the previous run was already executing, so that run did not
+  cover the tree being shipped. Two attempts to re-run `./pw verify` whole were
+  each killed by a container restart mid-run; ⛔ neither produced a verdict, and
+  neither is counted here. It was then run as its **three constituent sub-steps**,
+  each in the foreground against the pushed commit on a clean tree:
+
+  | Sub-step | Result |
+  |---|---|
+  | `./pw quality-gate` | clean — `ruff … All checks passed!`, `mypy … Success: no issues found in 411 source files`, `SPDX-header check passed`, `plugin-doctor` `issues[0]` |
+  | `./pw test-compile` | clean — `mypy … Success: no issues found in 763 source files` (the test tree, including the file whose edit forced this re-run) |
+  | `./pw module-tests` | **20488 passed, 14 skipped** in 8 m 59 s |
+
+  ⭐ These three **are** what `./pw verify` runs, so the coverage is the gate's,
+  not a narrower substitute — the contract's warning is against dropping
+  `test-compile`, which is run here explicitly and is the sub-step that caught
+  B1. What differs from a single `verify` invocation is only that the three ran as
+  separate processes.
 
 The working tree was clean (`git status --porcelain` empty) at the start of the
 run and before each diff-derived read, so no uncommitted file was invisible to
