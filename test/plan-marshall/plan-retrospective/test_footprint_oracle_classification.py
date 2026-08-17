@@ -476,4 +476,170 @@ class TestDiffFileRelativeResolution:
         )
         assert by_absolute.success, by_absolute.stderr
         assert by_relative.success, by_relative.stderr
-        assert by_relative.toon()['diff']['files_kept'] == by_absolute.toon()['diff']['files_kept']
+        # The deliverable's words are "produce the same verdict" — so compare the
+        # verdict, not one count of it.
+        absolute_data = by_absolute.toon()
+        relative_data = by_relative.toon()
+        assert relative_data['checks'] == absolute_data['checks']
+        assert relative_data['findings'] == absolute_data['findings']
+        assert relative_data['summary'] == absolute_data['summary']
+        assert relative_data['diff'] == absolute_data['diff']
+
+
+# =============================================================================
+# The oracle can be silent about test files, and silence must not read as production
+# =============================================================================
+
+
+class TestTestRecognitionSurvivesAnOracleWithNoTestRoute:
+    """A tests-only footprint must not become a mis-prune where no ``test`` route exists.
+
+    Both consumers treat an ``unclassified`` path fail-closed as possible
+    production. A project whose ``build.map`` declares no ``test`` route would
+    therefore have every test file counted as production, turning a tests-only
+    footprint into a fabricated ``mis_prune`` FAIL. Test-ness by filename
+    convention is recognised where the oracle is silent, which is what prevents it.
+    """
+
+    @staticmethod
+    def _write_production_only_marshal(base: Path) -> None:
+        (base / 'marshal.json').write_text(
+            json.dumps(
+                {'build': {'map': {'python': [{'glob': 'src/*.py', 'role': 'production'}]}}}
+            ),
+            encoding='utf-8',
+        )
+
+    def _setup_routing(self, tmp_path, monkeypatch):
+        plan_id, plan_dir = _setup(
+            tmp_path,
+            monkeypatch,
+            {
+                'manifest_version': 1,
+                'plan_id': 'oracle-plan',
+                'phase_5': {'early_terminate': False, 'verification_steps': ['verify:quality-gate']},
+                'phase_6': {'steps': ['push', 'create-pr']},
+            },
+        )
+        self._write_production_only_marshal(tmp_path / 'base')
+        logs = plan_dir / 'logs'
+        logs.mkdir(parents=True, exist_ok=True)
+        (logs / 'decision.log').write_text('[2026-04-17T10:00:00Z] [INFO] [aaaaaa] nothing\n', encoding='utf-8')
+        return plan_id
+
+    def test_tests_only_footprint_is_not_a_mis_prune(self, tmp_path, monkeypatch):
+        plan_id = self._setup_routing(tmp_path, monkeypatch)
+        diff = _write_diff(tmp_path, ['test/plan-marshall/plan-retrospective/test_check_routing_decisions.py'])
+
+        result = run_script(
+            ROUTING_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff)
+        )
+        assert result.success, result.stderr
+        simplify = [
+            c for c in result.toon()['mis_prune_checks'] if c['check'] == 'mis_prune:finalize-step-simplify'
+        ]
+        assert simplify[0]['status'] == 'pass', simplify[0]
+
+    def test_a_production_file_in_the_same_footprint_still_fails(self, tmp_path, monkeypatch):
+        """The negative control — recognising tests must not blind the rule to code."""
+        plan_id = self._setup_routing(tmp_path, monkeypatch)
+        diff = _write_diff(
+            tmp_path,
+            ['test/plan-marshall/plan-retrospective/test_check_routing_decisions.py', 'src/module.py'],
+        )
+
+        result = run_script(
+            ROUTING_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff)
+        )
+        assert result.success, result.stderr
+        simplify = [
+            c for c in result.toon()['mis_prune_checks'] if c['check'] == 'mis_prune:finalize-step-simplify'
+        ]
+        assert simplify[0]['status'] == 'fail', simplify[0]
+
+    def test_both_checks_agree_on_test_ness(self, tmp_path, monkeypatch):
+        """The two consumers share one classifier, so neither can disagree here."""
+        import sys as _sys
+
+        _sys.path.insert(0, str(MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts'))
+        from _footprint_classification import CATEGORIES, CATEGORY_TEST, classify_path, is_test_path
+
+        for path in (
+            'test/a/b.py',
+            'nested/tests/c.py',
+            'pkg/test_thing.py',
+            'pkg/thing_test.py',
+            'java/FooTest.java',
+            'java/FooSpec.java',
+            'js/a.test.js',
+            'js/a.spec.js',
+        ):
+            assert is_test_path(path), path
+            assert classify_path(path, []) == CATEGORY_TEST, path
+        assert CATEGORY_TEST in CATEGORIES
+
+
+class TestBranchCleanupRuleDoesNotClaimAnEmptyDiff:
+    """Rule M4 fails on an EMPTY survivor set, which the filter is what produces."""
+
+    def test_fully_filtered_footprint_names_the_reduction_not_an_empty_diff(self, tmp_path, monkeypatch):
+        plan_id, _ = _setup(
+            tmp_path,
+            monkeypatch,
+            {
+                'manifest_version': 1,
+                'plan_id': 'oracle-plan',
+                'phase_5': {'early_terminate': False, 'verification_steps': ['verify:quality-gate']},
+                'phase_6': {'steps': ['push', 'branch-cleanup']},
+            },
+        )
+        diff = _write_diff(
+            tmp_path,
+            ['.plan/plans/oracle-plan/status.json', '.plan/plans/oracle-plan/execution.toon'],
+        )
+
+        result = run_script(
+            MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff)
+        )
+        assert result.success, result.stderr
+        data = result.toon()
+
+        # The raw diff was NOT empty — the guard above already rules that case out.
+        assert data['diff']['files_total'] == 2
+        cleanup = _check(data['checks'], 'branch_cleanup_changes')
+        assert 'diff is empty' not in cleanup['message'], cleanup['message']
+        assert 'no implementation file changed' in cleanup['message'], cleanup['message']
+        assert '2 diff entries were classified as bookkeeping' in cleanup['message'], cleanup['message']
+
+        finding = [f for f in data['findings'] if f['code'] == 'branch_cleanup_without_changes']
+        assert finding, data['findings']
+        assert 'diff is empty' not in finding[0]['message'], finding[0]['message']
+
+
+class TestConsumerDispatchSetsAreKnownCategories:
+    """Each consumer selects from ``CATEGORIES`` by name; pin that the names exist.
+
+    This catches a typo or a renamed category. It cannot decide where a genuinely
+    NEW category belongs — that stays an edit at each consumer, which is what the
+    ``CATEGORIES`` comment says.
+    """
+
+    def test_dispatch_sets_are_subsets_of_the_category_vocabulary(self):
+        import sys as _sys
+
+        scripts = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts'
+        _sys.path.insert(0, str(scripts))
+        from _footprint_classification import CATEGORIES
+
+        from conftest import load_script_module
+
+        manifest_mod = load_script_module(
+            'plan-marshall', 'plan-retrospective', 'check-manifest-consistency.py', 'cmc_dispatch_mod'
+        )
+        routing_mod = load_script_module(
+            'plan-marshall', 'plan-retrospective', 'check-routing-decisions.py', 'crd_dispatch_mod'
+        )
+        assert set(manifest_mod._DROPPED_CATEGORIES) <= set(CATEGORIES)
+        assert set(routing_mod._PRODUCTION_CATEGORIES) <= set(CATEGORIES)
+        # And the two dispatches must not both claim the same category.
+        assert not set(manifest_mod._DROPPED_CATEGORIES) & set(routing_mod._PRODUCTION_CATEGORIES)

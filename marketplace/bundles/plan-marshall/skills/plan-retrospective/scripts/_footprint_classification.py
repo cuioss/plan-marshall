@@ -8,27 +8,43 @@ touched production code before re-evaluating a ``no_code_delta`` prune predicate
 and each used to answer "is this path implementation?" from its OWN hardcoded prefix
 tuple::
 
-    _BOOKKEEPING_PREFIXES = ('.plan/', '.claude/')
+    _BOOKKEEPING_PREFIXES = ('.plan/', '<a project-local dotfile tree>')
 
-That guess contradicted the project's own declared oracle. ``build.map`` in
-marshal.json routes the project-local skill tree (``.claude/skills/*.py`` on the
-Claude target) with role ``production`` — so both checks were discarding the
-project's own production source as bookkeeping. On a real plan the manifest check
-dropped 10 of 11 supplied paths and then reported ``passed: 2, failed: 0,
-findings: 0`` over the 1-file remainder, and the discarded set included the
-production module that was the whole subject of the run.
+That guess can contradict the project's own declared oracle, and did. ``build.map``
+in marshal.json is the file-to-build contract: any tree it routes with role
+``production`` is production source by the project's own declaration, and a build
+extension is free to route a dotfile tree — a project-local skill directory is
+routed exactly that way on some targets. Wherever that happened, both checks
+discarded production source as bookkeeping before any rule was evaluated, and the
+rules then reported a clean pass over the remainder. A footprint drawn entirely
+from such a tree was reduced to a single survivor.
 
 Two copies of one wrong rule is how the second site stayed live after the first was
 noticed, so the corrected rule lives here ONCE and both checks call it. The oracle
 — not this module — decides what a path is; this module only names the categories
-and applies the two fixed non-oracle rules below.
+and applies the fixed non-oracle rules below.
 
-**What stays hardcoded, and why.** ``.plan/`` is the genuinely-runtime plan-state
-directory: it is git-ignored bookkeeping that appears in no build map, so there is
-no oracle answer to consult for it. Documentation is likewise not a build_map role
-— the vocabulary deliberately has none, because documentation has no build-system
-owner — so docs are recognised by the generic file-suffix fact its declared owner
-uses. Every OTHER classification comes from the oracle.
+**What stays hardcoded, and why.** Three things, and only three — none of them a
+guess about a particular project's layout.
+
+``.plan/`` is the genuinely-runtime plan-state directory: it is git-ignored
+bookkeeping that appears in no build map, so there is no oracle answer to consult
+for it. **Documentation** is not a build_map role at all — the vocabulary
+deliberately has none, because documentation has no build-system owner
+(``_extension_constants.py``, ``BUILD_MAP_ROLES``) — so an unrouted path is
+recognised as documentation by file suffix, a language- and layout-independent
+fact. **Test-ness by filename convention** is
+kept for the same reason in reverse: a project whose ``build.map`` carries no
+``test`` route would otherwise leave every test file unrouted, and both consumers
+treat an unrouted path fail-closed as possible production, which would turn a
+tests-only footprint into a false mis-prune. Every OTHER classification comes from
+the oracle.
+
+⛔ The documentation and test suffix sets here are **these checks' own**, carried
+over unchanged from the pre-oracle code. They are NOT imported from, and not
+identical to, ``manage-execution-manifest``'s change-footprint classifier
+(``_manifest_core._DOC_SUFFIXES`` carries ``.asciidoc`` as well and has no
+directory concept). Do not describe them as that classifier's set.
 
 **``unclassified`` is a could-not-classify, never a classified-as-unimportant.**
 A path no declared route covers is one the oracle has no opinion about. Both
@@ -64,6 +80,23 @@ RUNTIME_STATE_PREFIXES: tuple[str, ...] = ('.plan/',)
 DOCS_SUFFIXES: tuple[str, ...] = ('.md', '.adoc')
 DOCS_DIR_TOKENS: tuple[str, ...] = ('/references/', '/templates/')
 
+#: Test-file recognition by filename/directory convention, for a path no declared
+#: route covers. This is the UNION of the two sets the consumers previously carried
+#: separately, so neither loses a recognition it had: the directory tokens are
+#: matched against ``/{path}`` (which also catches a leading ``test/``), and the
+#: name pattern keeps ``*Spec.java``, which only one of the two used to carry.
+#:
+#: It exists because the oracle can be silent here. A project whose ``build.map``
+#: declares no ``test`` route leaves every test file ``unclassified``, and both
+#: consumers treat unclassified fail-closed as possible production — which would
+#: report a tests-only footprint as a mis-prune. A routed path still takes the
+#: oracle's role; this fires only when the oracle has no answer.
+TEST_DIR_TOKENS: tuple[str, ...] = ('/test/', '/tests/')
+TEST_NAME_RE = re.compile(
+    r'(^|/)(test_[^/]+\.py|[^/]+_test\.py|[^/]+Test\.java|[^/]+Spec\.java'
+    r'|[^/]+\.test\.js|[^/]+\.spec\.js)$'
+)
+
 #: The plan's own quality-verification report, a phase-6-finalize artifact.
 REPORT_NAME_RE = re.compile(r'(^|/)quality-verification-report(-audit-[^/]+)?\.md$')
 
@@ -78,9 +111,17 @@ CATEGORY_CONFIG = ROLE_CONFIG
 CATEGORY_DOCUMENTATION = 'documentation'
 CATEGORY_UNCLASSIFIED = 'unclassified'
 
-#: Every category :func:`classify_path` can return. Consumers quantify over THIS
-#: set rather than over a hand-written name list, so a category added here cannot
-#: be silently missed by a consumer's dispatch.
+#: Every category :func:`classify_path` can return, and the set
+#: :func:`classify_footprint` seeds its buckets from — so every category key is
+#: present in that mapping even at zero, and a reader cannot mistake an absent key
+#: for a measured zero.
+#:
+#: ⚠ Each consumer still SELECTS from this set by name
+#: (``check-manifest-consistency._DROPPED_CATEGORIES``,
+#: ``check-routing-decisions._PRODUCTION_CATEGORIES``), so adding a category here
+#: does not automatically place it in either dispatch. Those selections are pinned
+#: as subsets of this tuple by test, which catches a typo but cannot decide where a
+#: genuinely new category belongs — that remains an edit at each consumer.
 CATEGORIES: tuple[str, ...] = (
     CATEGORY_RUNTIME_STATE,
     CATEGORY_REPORT,
@@ -116,10 +157,22 @@ def is_runtime_state_path(path: str) -> bool:
 
 
 def is_docs_path(path: str) -> bool:
-    """Whether ``path`` is documentation by the generic file-suffix fact."""
+    """Whether ``path`` is documentation by this module's suffix/directory set."""
     if path.endswith(DOCS_SUFFIXES):
         return True
     return any(token in f'/{path}' for token in DOCS_DIR_TOKENS)
+
+
+def is_test_path(path: str) -> bool:
+    """Whether ``path`` is a test file by filename/directory convention.
+
+    The convention fallback for a path the oracle does not route — see
+    :data:`TEST_DIR_TOKENS`. Both consumers share it, so they cannot disagree about
+    whether the same path is a test.
+    """
+    if any(token in f'/{path}' for token in TEST_DIR_TOKENS):
+        return True
+    return bool(TEST_NAME_RE.search(path))
 
 
 def classify_path(path: str, routes: list[tuple[str, str | None]]) -> str:
@@ -132,13 +185,19 @@ def classify_path(path: str, routes: list[tuple[str, str | None]]) -> str:
     2. ``report`` — the plan's own quality-verification report, a finalize artifact.
     3. ``production`` / ``test`` / ``config`` — whatever the ORACLE says, via
        :func:`resolve_route_role`.
-    4. ``documentation`` — the generic file-suffix fact, whose declared owner is
-       the change-footprint classifier rather than the build map.
-    5. ``unclassified`` — no declared route covers it and it is not documentation.
+    4. ``documentation`` — this module's own suffix/directory set (see the module
+       docstring: documentation is not a build_map role, so the oracle cannot
+       answer here).
+    5. ``test`` — filename/directory convention, for a project whose ``build.map``
+       declares no ``test`` route. Without this rung such a path would fall to
+       ``unclassified``, which both consumers treat as possible production.
+    6. ``unclassified`` — no declared route covers it, and neither convention
+       recognises it.
 
-    The oracle is consulted BEFORE the docs suffix so a routed path keeps the role
-    the project declared for it: a project that routes ``*.md`` (this one does not)
-    would have that declaration honoured rather than overridden here.
+    The oracle is consulted BEFORE both conventions, so a routed path keeps the
+    role the project declared for it: a project that routes ``*.md`` (this one does
+    not) would have that declaration honoured rather than overridden here. The two
+    conventions fire only where the oracle is silent.
 
     Args:
         path: Repo-relative, forward-slashed candidate path.
@@ -156,6 +215,8 @@ def classify_path(path: str, routes: list[tuple[str, str | None]]) -> str:
         return role
     if is_docs_path(path):
         return CATEGORY_DOCUMENTATION
+    if is_test_path(path):
+        return CATEGORY_TEST
     return CATEGORY_UNCLASSIFIED
 
 
@@ -191,10 +252,13 @@ __all__ = [
     'DOCS_SUFFIXES',
     'REPORT_NAME_RE',
     'RUNTIME_STATE_PREFIXES',
+    'TEST_DIR_TOKENS',
+    'TEST_NAME_RE',
     'classify_footprint',
     'classify_path',
     'is_docs_path',
     'is_runtime_state_path',
+    'is_test_path',
     'load_oracle_routes',
     'oracle_available',
 ]

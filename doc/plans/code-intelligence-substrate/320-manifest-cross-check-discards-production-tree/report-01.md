@@ -19,9 +19,10 @@ No skill was unobtainable by both routes.
 
 ### D0 — GATE: the population of private classification lists
 
-**Population found: 2. Components examined: the full `*.py` corpus of `marketplace/bundles/` and
-`.claude/`** (the two trees that can hold a classifier), swept along five independent dimensions so
-the answer is not one grep's blind spot:
+**Population found: 2. Components examined: 428** — every `*.py` file under `marketplace/bundles/`
+and `.claude/` (the two trees that can hold a classifier), re-derived at the moment of this claim as
+`find marketplace/bundles .claude -name '*.py' -not -path '*/__pycache__/*' | wc -l`. Swept along
+five independent dimensions so the answer is not one grep's blind spot:
 
 | Dimension | Query |
 |---|---|
@@ -167,15 +168,41 @@ now agree. Verified by equality:
 `test_documented_relative_form_matches_the_absolute_form` asserts the two invocations produce the
 **same** `mis_prune_checks`.
 
+#### Declared collateral
+
+Two changes that are neither a deliverable nor a defect fix, declared rather than left for a reader
+to notice:
+
+- **`manifest-crosscheck.md`'s M1 skip-message example was corrected** to `'… non-empty or
+  early_terminate=true'`. `origin/main`'s code already emitted that string, so this repairs a
+  pre-existing doc/code mismatch found while updating the surrounding block.
+- **An existing test's expected verdict changed.** `test_pass_when_only_bookkeeping_changes` lost
+  `.claude/settings.local.json` from its input (that path is no longer blanket-dropped) and its
+  expected M2 verdict moved `pass` → `indeterminate` (every remaining supplied path is filtered, so
+  D2 withholds the verdict). Both mechanisms are the deliverables working as intended, but the fact
+  that a pre-existing test's expected verdict moved is stated here explicitly.
+
 ### D5 — tests, each verified to FAIL pre-fix
 
-`test/plan-marshall/plan-retrospective/test_footprint_oracle_classification.py` (13 tests) plus 6
-oracle-API tests in `test/plan-marshall/script-shared/test_extension_base.py`.
+`test/plan-marshall/plan-retrospective/test_footprint_oracle_classification.py` carries **18 test
+functions, collecting as 18 cases**, and `test/plan-marshall/script-shared/test_extension_base.py`
+gains **11 test functions, collecting as 13 cases** (two are parametrized). Both figures re-derived
+at the moment of this claim; a count of test *functions* and a count of *collected cases* are
+different numbers and both are stated.
 
-**Recorded red-first run** (shared module written, no consumer wired): **10 failed, 1 passed**. The
-single pass was `test_m3_still_recognises_the_bare_module_tests_form`, which pins pre-existing
-back-compat behaviour and is a regression pin rather than a red-first test — stated rather than
-counted as coverage.
+**The red-first run covered the 11 tests that existed at that point** — the file then held 11 test
+functions, and the recorded result is **10 failed, 1 passed**. The single pass was
+`test_m3_still_recognises_the_bare_module_tests_form`, which pins pre-existing back-compat behaviour
+and is a regression pin rather than a red-first test — stated rather than counted as coverage.
+
+The remaining 7 tests were added later and so have **no red-first record**; each was instead shown
+non-vacuous by mutation (below). Naming which is more useful than counting them:
+`test_unclassifiable_path_counts_as_production_for_the_mis_prune` and
+`test_documentation_alone_does_not_count_as_production` (fail-closed pins, added in round 1), and the
+five added in round 2 to close that round's findings —
+`TestTestRecognitionSurvivesAnOracleWithNoTestRoute` (three),
+`TestBranchCleanupRuleDoesNotClaimAnEmptyDiff` (one), and
+`TestConsumerDispatchSetsAreKnownCategories` (one).
 
 | Deliverable | Test | Pre-fix |
 |---|---|---|
@@ -201,14 +228,33 @@ Each guard was re-run against the specific defect it names, not a neighbouring o
 | `_PRODUCTION_CATEGORIES` loses `unclassified` | `test_unclassifiable_path_counts_as_production_for_the_mis_prune` |
 | D2 downgrade disabled | `test_majority_filtered_footprint_never_yields_a_bare_pass` |
 | M3 normalization removed | `test_m3_fires_on_canonical_verify_step_shape` |
+| Test-convention rung removed from `classify_path` (the B1 defect) | `test_tests_only_footprint_is_not_a_mis_prune`, `test_both_checks_agree_on_test_ness` |
+| M4's `"diff is empty"` message restored (the B2 defect) | `test_fully_filtered_footprint_names_the_reduction_not_an_empty_diff` |
+| A dispatch set pointed at a non-existent category | `test_dispatch_sets_are_subsets_of_the_category_vocabulary` |
 
-All five mutations were caught; every mutation was reverted and the tree restored before proceeding.
+Every mutation was caught by the guard that names it; each was reverted and the tree restored
+(`git diff --stat`) before proceeding. The first five were run in round 1, the last three in round 2
+against the guards that round added.
+
+Two details worth recording rather than smoothing over. The precedence mutation was caught by only
+**one** arm of each parametrized pair — the adverse declaration order — which is the arm that exists
+for exactly that reason; the other order agrees with first-match by construction. And removing the
+test-convention rung failed two guards rather than one, which is what a shared classifier should do:
+the consumer-level test and the classifier-level test see the same defect from different ends.
 
 ## Build gate
 
 `git diff --name-only origin/main...HEAD -- '*.py'` is **non-empty** — production scripts and tests
-changed — so the full `./pw verify` ran. Result recorded below the build section of this report at
-the commit that carries it.
+changed — so the full `./pw verify` ran, over the whole branch diff, from the repository root.
+
+**Result: `=== verify: SUCCESS ===`.** Read from the tool output, not the exit code: `20675 passed,
+14 skipped`, and the run's own coverage line reports **COMPLETE over all six dimensions** — mypy
+(production) [413 files], ruff [`marketplace/bundles`, `test`, `.claude`], SPDX headers,
+plugin-doctor [marketplace-wide], mypy (test) [766 files], and module-tests [whole-tree pytest].
+
+`UV_HTTP_TIMEOUT=600` was exported, per the lane contract's note about the wrapper's dependency
+fetches; no `uv` HTTP timeout occurred. The build left no `uv.lock` churn — `git status` was checked
+before staging, and every commit stages named paths rather than `git add -A`.
 
 ## Findings
 

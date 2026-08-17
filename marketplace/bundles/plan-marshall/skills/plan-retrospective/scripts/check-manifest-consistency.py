@@ -24,7 +24,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import re
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -36,6 +35,7 @@ from _footprint_classification import (
     CATEGORY_RUNTIME_STATE,
     classify_footprint,
     is_docs_path,
+    is_test_path,
     load_oracle_routes,
     oracle_available,
 )
@@ -68,18 +68,19 @@ DECISION_LOG_RELPATH = ('logs', 'decision.log')
 # RETAINED and counted, which can only widen what a rule examines.
 _DROPPED_CATEGORIES = (CATEGORY_RUNTIME_STATE, CATEGORY_REPORT, CATEGORY_CONFIG)
 
-# Canonical-verify step-id prefix (Rule M3). The composer emits every built-in
-# verify step as ``default:verify:{canonical}``, boundary-normalized to the bare
-# ``verify:{canonical}`` form — never as a bare ``{canonical}``. Comparing a
-# manifest's verification_steps against an unprefixed name is what made M3
-# unreachable on every composer-produced manifest.
+# Canonical-verify step-id prefix (Rule M3). On the marshal.json compose path —
+# the one every real plan takes — the composer emits each built-in verify step as
+# ``default:verify:{canonical}`` and boundary-normalizes it to the bare
+# ``verify:{canonical}`` form; ``DEFAULT_PHASE_5_STEPS`` is itself
+# ``('verify:quality-gate', 'verify:module-tests')``. Comparing verification_steps
+# against an unprefixed name is what made M3 unreachable there.
+#
+# The bare ``{canonical}`` form is NOT impossible, so this is a normalization and
+# not a rewrite: the ``--phase-5-steps`` CSV fallback (callers without a
+# marshal.json, notably tests) passes its argument through verbatim, and archived
+# manifests predating the canonical-verify step id carry bare names too. Both forms
+# are accepted; see :func:`normalize_verification_step`.
 _CANONICAL_VERIFY_PREFIX = 'verify:'
-
-# Test-file classifier (Rule M3).
-_TEST_DIR_TOKENS = ('/test/', '/tests/')
-_TEST_NAME_RE = re.compile(
-    r'(^|/)(test_[^/]+\.py|[^/]+_test\.py|[^/]+Test\.java|[^/]+Spec\.java|[^/]+\.test\.js|[^/]+\.spec\.js)$'
-)
 
 # Decision-log caller tag we surface to the report.
 _DECISION_TAG = '(plan-marshall:manage-execution-manifest:compose)'
@@ -273,14 +274,6 @@ def _category_of(path: str, buckets: dict[str, list[str]]) -> str:
 # =============================================================================
 
 
-def is_test_path(path: str) -> bool:
-    """A path counts as a test file via either dir token or filename pattern."""
-    normalized = f'/{path}'
-    if any(token in normalized for token in _TEST_DIR_TOKENS):
-        return True
-    return bool(_TEST_NAME_RE.search(path))
-
-
 # =============================================================================
 # Rule evaluators
 # =============================================================================
@@ -373,10 +366,11 @@ def normalize_verification_step(step: str) -> str:
     prefix, so ``default:verify:module-tests``, ``verify:module-tests`` and a bare
     ``module-tests`` all resolve to ``module-tests``.
 
-    The composer emits the ``verify:``-prefixed form and never the bare one, so a
-    rule that compares against an unprefixed name without this normalization can
-    never fire on a composer-produced manifest. The bare form is still accepted
-    because archived manifests and hand-built fixtures carry it.
+    The marshal.json compose path emits the ``verify:``-prefixed form, so a rule
+    comparing against an unprefixed name without this normalization cannot fire on
+    a manifest composed that way. The bare form is still accepted: the
+    ``--phase-5-steps`` CSV fallback forwards its argument verbatim, and archived
+    manifests carry bare names.
     """
     bare = canonicalize_step_key(step)
     if bare.startswith(_CANONICAL_VERIFY_PREFIX):
@@ -390,10 +384,10 @@ def evaluate_tests_only(
     """Rule M3: verification_steps denotes module-tests only → tests-only diff (or docs).
 
     The manifest signal is compared on the NORMALIZED step names
-    (:func:`normalize_verification_step`), because the composer emits every
-    built-in verify step as ``verify:{canonical}``. Comparing the raw list against
-    a bare ``['module-tests']`` made this rule unreachable on every manifest the
-    composer produces.
+    (:func:`normalize_verification_step`), because the marshal.json compose path
+    emits every built-in verify step as ``verify:{canonical}``. Comparing the raw
+    list against a bare ``['module-tests']`` made this rule unreachable on every
+    manifest composed that way.
     """
     phase_5 = manifest.get('phase_5', {}) if isinstance(manifest.get('phase_5'), dict) else {}
     steps = phase_5.get('verification_steps', [])
@@ -426,7 +420,7 @@ def evaluate_branch_cleanup(
     base_label: str,
     raw_files_total: int,
 ) -> tuple[dict[str, str], dict[str, Any] | None]:
-    """Rule M4: branch-cleanup present in phase_6 → diff should not be empty.
+    """Rule M4: branch-cleanup present in phase_6 → some implementation file changed.
 
     The rule is skipped when no diff data is available — ``base_label`` is
     ``"unknown"`` or the raw diff is empty (``raw_files_total == 0``). In those
@@ -434,6 +428,18 @@ def evaluate_branch_cleanup(
     real defect, so emitting a fail would be a false positive. This mirrors the
     skip-on-missing-data behaviour of the other diff evaluators
     (``evaluate_docs_only``, ``evaluate_early_terminate``, etc.).
+
+    ⛔ **The failing state is "no implementation file changed", NOT "the diff is
+    empty", and the two are different.** This rule is the only diff-fed one that
+    fails on the EMPTINESS of the filtered set rather than on a culprit present
+    within it, so the filter is what produces that emptiness: reaching the fail
+    branch requires a non-empty raw diff (guarded above) whose every entry the
+    filter dropped. Saying "the diff is empty" there states something the
+    ``raw_files_total`` guard has already ruled out. The verdict itself is
+    substantiated — every drop category (``runtime_state`` / ``report`` /
+    ``config``) is a POSITIVE classification, so an empty survivor set means every
+    supplied path was positively identified as non-implementation — but the message
+    must name the reduction that produced it.
     """
     phase_6 = manifest.get('phase_6', {}) if isinstance(manifest.get('phase_6'), dict) else {}
     steps = phase_6.get('steps', [])
@@ -454,10 +460,15 @@ def evaluate_branch_cleanup(
             'branch_cleanup_changes', 'pass', f'branch-cleanup paired with {len(filtered_files)} changed file(s)'
         ), None
 
+    # Reachable only with raw_files_total > 0 and an empty survivor set, so the
+    # whole raw diff was filtered and this count is always non-zero.
+    dropped_total = raw_files_total - len(filtered_files)
     finding = _make_finding(
         'info',
         'branch_cleanup_without_changes',
-        'phase_6.steps includes branch-cleanup but diff is empty — nothing to push/clean',
+        'phase_6.steps includes branch-cleanup but no implementation file changed — '
+        f'all {dropped_total} diff entries were classified as bookkeeping, '
+        'so there is nothing to push/clean',
     )
     return _make_check('branch_cleanup_changes', 'fail', finding['message']), finding
 
@@ -481,6 +492,29 @@ _DIFF_FED_CHECKS = frozenset(
 )
 
 
+#: Emitted check status → its ``summary`` bucket name. Every status this script can
+#: emit appears here, and :func:`summarize_checks` reports a zero for each, so an
+#: absent key is never mistaken for a measured zero. Mirrors the derive-don't-
+#: hardcode shape ``check-artifact-consistency.summarize_checks`` documents, so a
+#: status added later is counted by adding one row rather than by editing a caller.
+_STATUS_BUCKETS: dict[str, str] = {
+    'pass': 'passed',
+    'fail': 'failed',
+    'skip': 'skipped',
+    STATUS_INDETERMINATE: 'indeterminate',
+}
+
+
+def summarize_checks(checks: list[dict[str, str]]) -> dict[str, int]:
+    """Return the per-status counts for ``checks``, one key per known status."""
+    summary = dict.fromkeys(_STATUS_BUCKETS.values(), 0)
+    for check in checks:
+        bucket = _STATUS_BUCKETS.get(check['status'])
+        if bucket is not None:
+            summary[bucket] += 1
+    return summary
+
+
 def apply_input_reduction(checks: list[dict[str, str]], reduction: dict[str, Any]) -> list[dict[str, str]]:
     """Annotate — and where required downgrade — every diff-fed check.
 
@@ -493,13 +527,28 @@ def apply_input_reduction(checks: list[dict[str, str]], reduction: dict[str, Any
       the supplied footprint was discarded becomes
       :data:`STATUS_INDETERMINATE` instead. A clean pass over a small fraction of
       the real input is an unsubstantiated verdict, and it reads in every
-      downstream summary exactly like a substantiated one — which is how a real
-      run reported ``passed: 2, failed: 0, findings: 0`` over a phantom one-file
-      footprint whose discarded remainder was the whole subject of the plan.
+      downstream summary exactly like a substantiated one — so a run whose filter
+      discarded all but one path could report every rule green while none of them
+      had seen the change the plan was about.
 
-    A ``fail`` is never downgraded: a violation found in the surviving fraction is
-    still a violation, and a reduced input can only have hidden more of them. A
-    ``skip`` is never downgraded either — the rule did not apply, which the
+    A ``fail`` is never downgraded, but the reason differs by rule shape and is
+    worth stating precisely, because the obvious blanket rationale — "a reduced
+    input can only have hidden more violations" — is true of only one of the two
+    shapes:
+
+    - **Rules that fail on a culprit PRESENT in the survivors** (M1 / M2 / M3) draw
+      their culprits from the filtered set, so a smaller input yields fewer of
+      them: a culprit that survived is real, and filtering can only have concealed
+      others.
+    - **The rule that fails on the survivors being EMPTY** (M4) is the case that
+      rationale does not cover, since the filter is what empties the set. Its
+      verdict is substantiated by a different argument — every drop category is a
+      positive classification, so an empty survivor set means every supplied path
+      was positively identified as non-implementation — and
+      :func:`evaluate_branch_cleanup` states that in its own message rather than
+      claiming the diff was empty.
+
+    A ``skip`` is never downgraded either — the rule did not apply, which the
     filtering did not decide.
 
     Args:
@@ -518,7 +567,10 @@ def apply_input_reduction(checks: list[dict[str, str]], reduction: dict[str, Any
         f'bookkeeping before evaluation'
     )
     if not reduction['oracle_available']:
-        note += ' (build_map oracle unavailable — only runtime-state paths were classifiable)'
+        note += (
+            ' (build_map oracle unavailable — no path could be given a production/test/config '
+            'role, so only the oracle-independent categories were classifiable)'
+        )
 
     annotated: list[dict[str, str]] = []
     for check in checks:
@@ -561,7 +613,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             'reason': f'{MANIFEST_FILENAME} not found',
             'checks': [],
             'findings': [],
-            'summary': {'passed': 0, 'failed': 0, 'skipped': 0, 'indeterminate': 0, 'findings': 0},
+            'summary': {**summarize_checks([]), 'findings': 0},
         }
 
     decision_entries = load_decision_log_entries(plan_dir)
@@ -607,13 +659,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     # majority-discarded footprint, and so the reduction is reported exactly once.
     checks = apply_input_reduction(checks, reduction)
 
-    summary = {
-        'passed': sum(1 for c in checks if c['status'] == 'pass'),
-        'failed': sum(1 for c in checks if c['status'] == 'fail'),
-        'skipped': sum(1 for c in checks if c['status'] == 'skip'),
-        'indeterminate': sum(1 for c in checks if c['status'] == STATUS_INDETERMINATE),
-        'findings': len(findings),
-    }
+    summary = {**summarize_checks(checks), 'findings': len(findings)}
 
     return {
         'status': 'success',

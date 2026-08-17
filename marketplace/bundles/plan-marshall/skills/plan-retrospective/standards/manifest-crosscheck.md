@@ -36,7 +36,9 @@ Each row is one rule. The script emits exactly one finding when the rule's expec
 
 **Manifest signal**: `phase_5.verification_steps` denotes module-tests and nothing else (the `tests_only` rule from the matrix).
 
-The comparison is made on NORMALIZED step names, not on the raw list. The composer emits every built-in verify step as a canonical-verify id — `default:verify:{canonical}`, boundary-normalized to the bare `verify:{canonical}` form — so `verification_steps` reads `['verify:module-tests']`, never `['module-tests']`. Normalization strips the optional `default:` prefix and then the `verify:` prefix, so `default:verify:module-tests`, `verify:module-tests`, and a bare `module-tests` (the form archived manifests carry) all denote `module-tests`. A rule comparing the raw list against an unprefixed name cannot fire on any manifest the composer produces.
+The comparison is made on NORMALIZED step names, not on the raw list. On the marshal.json compose path — the one every real plan takes — the composer emits each built-in verify step as a canonical-verify id, `default:verify:{canonical}`, boundary-normalized to the bare `verify:{canonical}` form (`DEFAULT_PHASE_5_STEPS` is itself `('verify:quality-gate', 'verify:module-tests')`), so `verification_steps` reads `['verify:module-tests']`. A rule comparing the raw list against an unprefixed name cannot fire on a manifest composed that way.
+
+The bare `{canonical}` form is **not impossible**, which is why this is a normalization and not a rewrite: the `--phase-5-steps` CSV fallback (callers without a marshal.json, notably tests) forwards its argument verbatim, and archived manifests predating the canonical-verify step id carry bare names. Normalization strips the optional `default:` prefix and then the `verify:` prefix, so `default:verify:module-tests`, `verify:module-tests`, and a bare `module-tests` all denote `module-tests`.
 
 **Expected diff**: All non-docs file paths must look like test files — path contains `/test/`, `/tests/`, or filename matches `test_*.py`, `*_test.py`, `*Test.java`, `*Spec.java`, `*.test.js`, `*.spec.js`.
 
@@ -44,9 +46,11 @@ The comparison is made on NORMALIZED step names, not on the raw list. The compos
 
 ### Rule M4: Phase 6 includes branch-cleanup implies branch present at base
 
-This is a soft consistency check — the script does not query git for branch state. Instead it asserts that `phase_6.steps` containing `branch-cleanup` is paired with at least one source-shaped diff entry (so there is something to clean up). When `branch-cleanup` is present but the diff is empty, emit:
+This is a soft consistency check — the script does not query git for branch state. Instead it asserts that `phase_6.steps` containing `branch-cleanup` is paired with at least one implementation-shaped diff entry (so there is something to clean up).
 
-**Finding**: `severity=info`, `code=branch_cleanup_without_changes`, `message="phase_6.steps includes branch-cleanup but diff is empty — nothing to push/clean"`.
+**M4 is the only diff-fed rule that fails on the survivor set being EMPTY** rather than on a culprit present within it, which makes the filter the thing that produces its failing state. Reaching that state requires a non-empty raw diff (an empty one is already skipped as missing data) whose every entry the filter dropped — so the finding names the reduction rather than claiming the diff was empty, which the missing-data guard has already ruled out.
+
+**Finding**: `severity=info`, `code=branch_cleanup_without_changes`, `message="phase_6.steps includes branch-cleanup but no implementation file changed — all N diff entries were classified as bookkeeping, so there is nothing to push/clean"`.
 
 ### Rule M5: Manifest version recognized
 
@@ -61,7 +65,7 @@ This is a soft consistency check — the script does not query git for branch st
 
 ## Diff Path Filtering Rules
 
-Before evaluating any rule, the script drops the diff entries that are bookkeeping side-effects produced by phase-6-finalize rather than implementation work. **The classification is the build map's, not the script's** — `build.map` in marshal.json is the declared file-to-build oracle, and every `{glob, role, build_class}` entry says which kind of file a path is. The script consults it through the shared `_footprint_classification` module that `check-routing-decisions.py` also uses, so the two cannot disagree about the same path.
+Before evaluating any rule, the script drops the diff entries that are bookkeeping side-effects produced by phase-6-finalize rather than implementation work. **The classification is the build map's, not the script's** — `build.map` in marshal.json is the declared file-to-build oracle, and every `{glob, role, build_class}` entry says which kind of file a path is. The script consults it through the shared `_footprint_classification` module that `check-routing-decisions.py` also uses, so the two resolve any given path to the same category. What each check then *does* with that category is its own policy — this one drops three of them, the routing check treats two as production — but neither reaches that policy from a private idea of what the path is.
 
 A path is dropped when it falls in one of exactly three categories:
 
@@ -69,7 +73,11 @@ A path is dropped when it falls in one of exactly three categories:
 - `report` — the plan's own `quality-verification-report*.md` files.
 - `config` — a path the **oracle** routes with role `config`.
 
-Everything else is kept: `production` and `test` (the oracle's implementation roles), `documentation` (recognised by the generic `.md` / `.adoc` / `references/` / `templates/` file-suffix fact, whose declared owner is the change-footprint classifier — the build_map role vocabulary deliberately has no documentation role), and `unclassified`.
+Everything else is kept: `production` and `test` (the oracle's implementation roles), `documentation`, and `unclassified`.
+
+Two categories are resolved by convention rather than by the oracle, because the oracle cannot answer for them. The build_map role vocabulary deliberately has **no** documentation role (documentation has no build-system owner), so an unrouted path is recognised as `documentation` by the `.md` / `.adoc` / `references/` / `templates/` set. And a project whose `build.map` declares no `test` route would leave every test file unrouted, so test-ness is recognised by filename/directory convention where the oracle is silent — without which a tests-only footprint would fall to `unclassified`, which the routing check treats as possible production. A routed path always keeps the role the project declared; the conventions fire only where the oracle has no answer.
+
+⛔ These convention sets are **these checks' own**, carried over unchanged from the pre-oracle code. They are not imported from, and not identical to, `manage-execution-manifest`'s change-footprint classifier (`_manifest_core._DOC_SUFFIXES` also carries `.asciidoc` and has no directory concept). Do not describe them as that classifier's set.
 
 **`unclassified` is kept, and that is deliberate.** A path no declared route covers is one the oracle has no opinion about — a could-not-classify, not a classified-as-unimportant. Dropping it would put a private guess back in charge of the question, so it is retained and counted instead, which can only widen what a rule examines.
 
@@ -84,7 +92,12 @@ Filtering happens before any rule sees the diff, so a rule can be evaluated agai
 - Every diff-fed check (`docs_only_diff`, `early_terminate_diff`, `tests_only_diff`, `branch_cleanup_changes`) that ran against a reduced input set carries the reduction in its message. `manifest_version_recognized` is exempt: it reads the manifest body alone, so no amount of filtering affects it.
 - A check that would otherwise emit a bare clean `pass` while the **majority** of the supplied footprint was discarded (`files_filtered > files_kept`) takes the status `indeterminate` instead, and its message names the withheld verdict.
 
-A `fail` is never downgraded — a violation found in the surviving fraction is still a violation, and a reduced input can only have hidden more. A `skip` is never downgraded either: the rule did not apply, which the filtering did not decide.
+A `fail` is never downgraded, for a reason that differs by rule shape — the blanket rationale "a reduced input can only have hidden more violations" covers only one of the two:
+
+- Rules that fail on a culprit **present** in the survivors (M1 / M2 / M3) draw their culprits from the filtered set, so a smaller input yields fewer of them: a culprit that survived is real.
+- The rule that fails on the survivors being **empty** (M4) is the case that rationale does not cover, since the filter is what empties the set. Its verdict is substantiated by a different argument — every drop category is a *positive* classification, so an empty survivor set means every supplied path was positively identified as non-implementation — and it says exactly that rather than claiming the diff was empty. See [Rule M4](#rule-m4-phase-6-includes-branch-cleanup-implies-branch-present-at-base).
+
+A `skip` is never downgraded either: the rule did not apply, which the filtering did not decide.
 
 The `diff` block publishes the evidence: `filtered_by_category` (one count per category, always present even at zero), `oracle_available` (whether the build map answered at all), and `majority_discarded`.
 

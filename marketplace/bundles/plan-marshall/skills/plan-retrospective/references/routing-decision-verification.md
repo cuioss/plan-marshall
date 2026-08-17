@@ -33,9 +33,11 @@ It must not return an empty footprint there. Doing so gave a could-not-look the 
 
 ## The realized footprint's production verdict comes from the build map
 
-`footprint_has_production` — the input to every `no_code_delta` re-evaluation — classifies each path through `build.map` in marshal.json, the declared file-to-build oracle, via the `_footprint_classification` module this check **shares** with `check-manifest-consistency.py`. The two previously carried byte-identical private prefix tuples declaring the whole project-local skill tree to be bookkeeping, which this project's own build map routes as `production`.
+`footprint_has_production` — the input to every `no_code_delta` re-evaluation — classifies each path through `build.map` in marshal.json, the declared file-to-build oracle, via the `_footprint_classification` module this check **shares** with `check-manifest-consistency.py`. The two previously carried byte-identical private prefix tuples declaring a whole project-local dotfile tree to be bookkeeping — a tree a build extension may route as `production`, and on the Claude target does (`.claude/skills/*.py`).
 
-A path counts as production when the oracle routes it `production`, **or when no declared route covers it at all**. The second half is fail-closed rather than sloppy: the verdict this feeds is a mis-prune `fail` — a step pruned as `no_code_delta` when code did change — so answering "not production" for a path nobody could classify would turn an unknown into an exoneration.
+A path counts as production when the oracle routes it `production`, **or when it resolves to `unclassified`**. The second half is fail-closed rather than sloppy: the verdict this feeds is a mis-prune `fail` — a step pruned as `no_code_delta` when code did change — so answering "not production" for a path nobody could classify would turn an unknown into an exoneration.
+
+`unclassified` is **narrower than "unrouted"**. Where the oracle is silent the shared classifier still recognises documentation (by suffix) and test files (by filename/directory convention), so an unrouted `README.md` or `test_foo.py` never reaches the production set. Without those convention rungs a project whose `build.map` declares no `test` route would have every tests-only footprint reported as a mis-prune.
 
 ## Removal cause precedes predicate re-evaluation
 

@@ -80,12 +80,18 @@ DECISION_LOG_RELPATH = ('logs', 'decision.log')
 # be bookkeeping, which the project's own build map routes as ``production``.
 #
 # ``unclassified`` counts as production, and that is fail-closed rather than
-# sloppy: a path no declared route covers might be production, and the verdict
-# this feeds is a mis-prune FAIL — a step pruned as ``no_code_delta`` when code
-# did change. Answering "not production" for a path nobody could classify would
-# turn an unknown into an exoneration. It also preserves the pre-oracle behaviour
-# for unrouted paths, which counted as production by falling through every
-# private test.
+# sloppy: an unclassified path might be production, and the verdict this feeds is a
+# mis-prune FAIL — a step pruned as ``no_code_delta`` when code did change.
+# Answering "not production" for a path nobody could classify would turn an unknown
+# into an exoneration.
+#
+# ``unclassified`` is NARROWER than "no declared route covers it": the shared
+# classifier recognises documentation and test files by convention where the oracle
+# is silent, so an unrouted ``README.md`` or ``test_foo.py`` is ``documentation`` /
+# ``test`` and does NOT reach this set. That is what keeps a docs-only or tests-only
+# footprint from being read as production in a project whose ``build.map`` carries
+# no route for them — the exact false-positive the convention rungs exist to
+# prevent.
 _PRODUCTION_CATEGORIES = frozenset({CATEGORY_PRODUCTION, CATEGORY_UNCLASSIFIED})
 
 # Prunable steps whose absence from the final phase_6.steps is re-checked against
@@ -399,8 +405,10 @@ def footprint_has_production(files: list[str]) -> bool:
 
     The per-path verdict comes from the declared ``build.map`` oracle via
     :func:`classify_path`; a path falls in :data:`_PRODUCTION_CATEGORIES` when the
-    oracle routes it ``production`` or when no declared route covers it at all
-    (see that constant for why an unclassifiable path counts).
+    oracle routes it ``production``, or when it resolves to ``unclassified`` — which
+    is narrower than "unrouted", since documentation and test files are recognised
+    by convention where the oracle is silent. See that constant for why an
+    unclassifiable path counts.
     """
     routes = load_oracle_routes()
     return any(classify_path(path, routes) in _PRODUCTION_CATEGORIES for path in files)
