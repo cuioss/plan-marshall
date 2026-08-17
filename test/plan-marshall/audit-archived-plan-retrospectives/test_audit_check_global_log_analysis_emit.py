@@ -125,6 +125,27 @@ class TestEmitGlobalLogBlock:
         assert 'error_count:' not in block
         assert 'rows[' not in block
 
+    def test_present_but_empty_log_dir_reports_unmeasured(self, tmp_path: Path):
+        """The directory exists and holds no matching log — no substrate was read.
+
+        Gating on the DIRECTORY probe alone left this state publishing
+        `total_log_lines: 0` and `genuine_signal_count: 0`, which the suspect-zero
+        census then reported as `disciplinary`. It is not hypothetical: this
+        tool's own `--dormate-global-logs` relocates completed logs out of a
+        directory it leaves in place.
+        """
+        logs_dir = tmp_path / '.plan' / 'local' / 'logs'
+        logs_dir.mkdir(parents=True)
+        (logs_dir / 'not-a-log.txt').write_text('x', encoding='utf-8')
+
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        assert result['logs_present'] is True
+        assert result['logs_readable'] is False
+        block = audit.emit_global_log_block(result)
+        assert 'status: unmeasured' in block
+        assert 'genuine_signal_count:' not in block
+
     def test_present_logs_with_no_signals_are_a_measured_zero(self, tmp_path: Path):
         """The discriminating half — substrate read, genuinely nothing to flag."""
         _write_log(

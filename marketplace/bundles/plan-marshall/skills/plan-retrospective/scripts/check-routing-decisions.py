@@ -24,9 +24,10 @@ Facts emitted:
     recorded non-predicate removal mechanism is SKIPPED — its predicate never
     fired, so its absence proves nothing about the footprint. Those mechanisms
     are every gate reporting through the composer's shared subtraction-record
-    line (recognised gate-agnostically, so the set follows the composer),
-    plus ``unresolved_ask_provider_drop``, ``simplify_inactive``, and a
-    ``ceremony_finalize_selection`` resolving ``never``.
+    line (recognised gate-agnostically, so the set follows the composer), plus the
+    individually-shaped ones: ``unresolved_ask_provider_drop``,
+    ``simplify_inactive``, a ``ceremony_finalize_selection`` resolving ``never``,
+    and ``posture_cutoff_legacy_aggregate`` for archived logs.
     Only a step whose removal no recorded mechanism explains, in a decision log
     that was actually readable, has its predicate re-evaluated: a predicate that
     is now FALSE (e.g. ``sonar-roundtrip`` skipped as "no code delta" but the
@@ -131,9 +132,12 @@ _LANE_DECISION_RE = re.compile(r'lane_resolution\b')
 #     narrow ``phase_6`` to the analysis minimum and thereby drop BOTH prunable
 #     steps — recorded a cause no pattern read.
 #
-# The three mechanisms below do NOT report through the shared shape (each renders
-# its own line), so each keeps a pattern of its own, re-derived against its
-# emitter. ``ceremony_finalize_selection`` shares one line shape across both
+# The patterns below do NOT report through the shared shape (each renders its own
+# line), so each keeps a pattern of its own, re-derived against its emitter. They
+# are named rather than counted, because a count here goes stale the moment one is
+# added — which has already happened to this file twice.
+#
+# ``ceremony_finalize_selection`` shares one line shape across both
 # directions — ``added {step} to`` and ``dropped {step} from``. Only the
 # ``dropped ... from`` direction is a removal; the ``added`` direction is a
 # force-include and MUST NOT be read as a cause.

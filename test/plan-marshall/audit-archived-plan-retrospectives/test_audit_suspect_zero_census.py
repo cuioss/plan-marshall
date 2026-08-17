@@ -292,6 +292,34 @@ class TestCensusEndToEnd:
         )
         assert audit._ZERO_STRUCTURAL not in row
 
+    def test_no_registered_check_reports_disciplinary_over_an_empty_population(
+        self, tmp_path: Path
+    ):
+        """The whole-census form of the claim each individual fix restates.
+
+        A `disciplinary` row asserts "a non-empty examined population and nothing
+        genuine". On a corpus where every plan is bare, no check examined
+        anything, so no row may make that claim — whatever route each check
+        narrowed by. Asserting it across the WHOLE census rather than per check is
+        the point: three separate rounds each fixed one check and left siblings
+        with the identical predicate unexamined.
+        """
+        inputs = _shipping_corpus(tmp_path)
+        output = audit.run_checks(inputs, list(audit.CHECK_NAMES), tmp_path)
+
+        census = output.split("check: suspect-zero-census", 1)[1]
+        # Findings-driven checks: the shipping plan files none, so each examined
+        # nothing and must not claim otherwise.
+        for check in (
+            "quality-chain",
+            "recurring-pattern-detector",
+            "preference-pattern-detector",
+        ):
+            row = next(
+                ln for ln in census.splitlines() if ln.strip().startswith(f"{check},")
+            )
+            assert f",{audit._ZERO_DISCIPLINARY}," not in row, check
+
     def test_no_registered_check_is_classified_no_count_on_a_real_sweep(
         self, tmp_path: Path
     ):

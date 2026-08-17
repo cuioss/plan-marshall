@@ -1233,8 +1233,8 @@ def collect_inputs(plan_dir: Path) -> PlanInputs:
     # Recipe / lesson provenance rides on EITHER of two metadata fields, and both
     # are read here. `plan_source` is seeded by phase-1-init: the raw lesson id for
     # a code-shaped lesson-derived plan, and the literal `"recipe"` only on Step
-    # 5c-lesson's doc-shaped branch (which also sets `recipe_key`). A plan sourced
-    # from a recipe skips Step 5c entirely and writes no `plan_source` at all.
+    # 5c-LESSON's doc-shaped branch (which also sets `recipe_key`). A plan routed by
+    # Step 5c-RECIPE-MATCH writes no `plan_source` at all — see the next paragraph.
     #
     # `recipe_key` can be written WITHOUT `plan_source`, which is what made reading
     # only `plan_source` a structural gap rather than a redundancy. Per
@@ -2137,10 +2137,17 @@ def _finding_signature(obj: dict[str, Any]) -> str | None:
 
 def cross_recurring_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
     sig_to_plans: dict[str, set[str]] = {}
+    # Plans that actually carried a findings directory. Published as
+    # `plans_in_corpus` so the suspect-zero census reads this check's OWN examined
+    # population instead of assuming the whole corpus: a sweep where no plan filed
+    # findings starves this check, and a starved zero must not be reported as
+    # `disciplinary` evidence about the corpus.
+    examined = 0
     for inputs in all_inputs:
         findings_dir = inputs.plan_dir / "artifacts" / "findings"
         if not findings_dir.is_dir():
             continue
+        examined += 1
         seen_in_plan: set[str] = set()
         for jsonl in findings_dir.glob("*.jsonl"):
             for obj in read_jsonl(jsonl):
@@ -2163,6 +2170,7 @@ def cross_recurring_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
     return {
         "threshold": SYSTEMIC_THRESHOLD,
         "systemic_count": len(systemic),
+        "plans_in_corpus": examined,
         "rows": systemic,
     }
 
@@ -2317,10 +2325,15 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
     # authorship gate validates archived `bot_kind` values against it).
     recognized_bot_kinds = _recognized_bot_kinds()
     tuple_to_plans: dict[tuple[str, str, str], set[str]] = defaultdict(set)
+    # Same declaration obligation as `cross_recurring_pattern`: this check narrows
+    # on the identical predicate, so it publishes the population it examined rather
+    # than letting the census assume the whole corpus.
+    examined = 0
     for inputs in all_inputs:
         findings_dir = inputs.plan_dir / "artifacts" / "findings"
         if not findings_dir.is_dir():
             continue
+        examined += 1
         seen_in_plan: set[tuple[str, str, str]] = set()
         for jsonl in findings_dir.glob("*.jsonl"):
             for obj in read_jsonl(jsonl):
@@ -2377,6 +2390,7 @@ def cross_preference_pattern(all_inputs: list[PlanInputs]) -> dict[str, Any]:
         "threshold": threshold,
         "candidate_count": len(candidates),
         "unattributed_excluded_count": unattributed_excluded,
+        "plans_in_corpus": examined,
         "rows": candidates,
     }
 
@@ -2722,11 +2736,17 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
     total_lines = 0
     total_seconds = 0.0
 
+    substrate_present = False
     if logs_dir.is_dir():
         patterns = ("script-execution-*.log", "work-*.log", "decision-*.log")
         log_files: list[Path] = []
         for pat in patterns:
             log_files.extend(logs_dir.glob(pat))
+        # Whether any log FILE was found — the substrate probe. Distinct from the
+        # directory probe below: `--dormate-global-logs` relocates completed logs
+        # OUT of a directory it leaves in place, so "the dir exists" and "there was
+        # something to read" come apart in a state this tool itself produces.
+        substrate_present = bool(log_files)
         for log in sorted(log_files):
             try:
                 content = log.read_text(encoding="utf-8", errors="replace")
@@ -2890,7 +2910,12 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
     impossible_calls.sort(key=lambda r: -float(r["seconds"]))
 
     return {
+        # `logs_present` stays the DIRECTORY probe (its existing readers ask
+        # about the dir). `logs_readable` is the substrate probe the unmeasured
+        # branch gates on — the same distinction `_merge_window_log_files` draws
+        # between a scanned root and a `lock-*.log` that was actually there.
         "logs_present": logs_dir.is_dir(),
+        "logs_readable": substrate_present,
         "plan_windows_derived": len(windows),
         "total_log_lines": total_lines,
         "total_script_seconds": round(total_seconds, 1),
@@ -3368,11 +3393,12 @@ _QC_BOT_RE = re.compile(r"gemini|copilot|bot|automated", re.IGNORECASE)
 #: Finding types that are PENDING BY CONSTRUCTION — the knowledge partition.
 #:
 #: `manage-findings.add_finding` seeds EVERY record with `resolution: 'pending'`,
-#: and no DISPOSITION ever moves a knowledge finding off it: a `tip` is a
+#: and no DEFECT-FIXING work moves a knowledge finding off it: a `tip` is a
 #: suggestion, an `insight` an observation, a `best-practice` a note. They are
-#: filed to be read, not to be closed. Counting them as unresolved chain debt made
-#: the pending population one no action could empty — and a pending count that
-#: cannot reach zero is not a backlog, it is a mislabelled population. It is worse
+#: filed to be read, not closed by fixing something. Counting them as unresolved
+#: chain debt made the pending population one that the chain's OWN work could
+#: never empty — and a chain-debt count the chain's work cannot drive to zero is
+#: not a backlog, it is a mislabelled population. It is worse
 #: than a false zero: a false zero invites a check, while a large permanent
 #: backlog invites resignation.
 #:
@@ -3561,7 +3587,7 @@ class _QualityChainPlan:
     mech_total: dict[str, int]
     findings: list[dict[str, Any]]
     # Count of this plan's findings that are pending BY CONSTRUCTION (knowledge
-    # types no action resolves). Reported in its own bucket rather than removed
+    # types no defect-fixing work resolves). Reported in its own bucket, not removed
     # from the matrix: the matrix stays a faithful census of what was filed, and
     # this names how much of its `pending` column no backlog work could ever
     # clear. Subtracting them silently would trade one untrue number for another.
@@ -3723,7 +3749,7 @@ def cross_quality_chain(all_inputs: list[PlanInputs]) -> dict[str, Any]:
                 tier_histogram[f["shift_left_tier"]] += 1
 
     # The corpus `pending` column, split into the part an action could clear and
-    # the part no action could. Reported as two numbers rather than one net figure
+    # the part it could not. Reported as two numbers rather than one net figure
     # so the read-out can answer "what would make this zero?" for each: the
     # actionable half by resolving the findings, the structural half never.
     corpus_structural_pending = sum(p.structural_pending for p in plans)
@@ -5584,9 +5610,9 @@ _ZERO_READINGS = {
     "NOT evidence the corpus is clean; fix the inputs or the producer",
     _ZERO_STARVED: "the check examined no plans — it could not have fired, so "
     "this zero is a property of the run's inputs, not of the check",
-    _ZERO_NO_COUNT: "the block published no genuine_signal_count line, so this "
-    "census read no count for it — the zero shown is absence of a reading, NOT a "
-    "measured zero",
+    _ZERO_NO_COUNT: "the block published no genuine count in either spelling "
+    "(bare or per-tier), so this census read none for it — the blank shown is "
+    "absence of a reading, NOT a measured zero",
     _ZERO_DISCIPLINARY: "a non-empty examined population and nothing genuine — a "
     "real but provisional statement about the corpus, not proof the check can fire",
 }
@@ -5832,6 +5858,15 @@ def emit_recurring_block(result: dict[str, Any]) -> str:
         "check: recurring-pattern-detector",
         "status: success",
         f"threshold: {result['threshold']}",
+        # Emitted only when the producer declared a population. An ABSENT key must
+        # read as "undeclared" — leaving the census to its other precedence rules —
+        # never as a zero, which would assert a starved population the result never
+        # claimed.
+        *(
+            [f"plans_in_corpus: {result['plans_in_corpus']}"]
+            if "plans_in_corpus" in result
+            else []
+        ),
         f"systemic_count: {result['systemic_count']}",
         f"genuine_signal_count: {genuine_signal_count}",
         f"rows[{len(rows)}]{{signature,occurrence_count,plan_ids,candidate,severity}}:",
@@ -5862,6 +5897,12 @@ def emit_preference_pattern_block(result: dict[str, Any]) -> str:
         "check: preference-pattern-detector",
         "status: success",
         f"threshold: {result['threshold']}",
+        # See `emit_recurring_block` — an absent key is undeclared, not zero.
+        *(
+            [f"plans_in_corpus: {result['plans_in_corpus']}"]
+            if "plans_in_corpus" in result
+            else []
+        ),
         f"candidate_count: {result['candidate_count']}",
         # D2: unattributed (`default`-bucket) recurrences that cleared the
         # threshold but were declined promotion — surfaced so the decision is
@@ -6022,15 +6063,16 @@ def emit_global_log_block(result: dict[str, Any]) -> str:
     # is the same contract D3 gave merge-window-accounting, and the plan's Goal
     # states it for every check, not for one: a check either can fire, or says
     # `unmeasured` instead of a number that reads as health.
-    if not result["logs_present"]:
+    if not result.get("logs_readable", result["logs_present"]):
         return "\n".join(
             [
                 "check: global-log-analysis",
                 "status: unmeasured",
-                "logs_present: false",
-                "unmeasured_reason: no global-log directory found — the corpus is "
-                "SILENT about operational signals, which is not the same as having "
-                "none",
+                f"logs_present: {str(result['logs_present']).lower()}",
+                "logs_readable: false",
+                "unmeasured_reason: no global log file was read (absent directory, "
+                "or one holding no matching log) — the corpus is SILENT about "
+                "operational signals, which is not the same as having none",
             ]
         ) + "\n"
 
@@ -6183,10 +6225,11 @@ def _qc_finding_genuine(row: dict[str, Any]) -> bool:
 
     A STRUCTURALLY pending finding is never genuine on the pending leg. A
     knowledge-type record (`tip` / `insight` / `best-practice` / `improvement`) is
-    seeded `pending` by `add_finding` and no action ever resolves it, so counting
-    it as chain debt puts rows in the genuine population that nothing could remove.
-    The answer to "what would make this count zero?" has to be a real action; for
-    these rows there is none, so they are not counted.
+    seeded `pending` by `add_finding` and no defect-fixing work resolves it, so
+    counting it as chain debt puts rows in the genuine population that the chain's
+    own work could never remove. The answer to "what would make this count zero?"
+    has to be work of the kind the count measures; for these rows it is promotion
+    or an explicit disposition instead, so they are counted apart.
 
     The auto-review leg is unaffected: a knowledge-type finding surfaced by the PR
     bot is still a genuine shift-left signal — what it cost to catch is the point,
@@ -8484,6 +8527,14 @@ def cross_check_synthesis(all_results: dict[str, Any]) -> dict[str, Any]:
         if isinstance(r, dict):
             qv_unfiled_total += int(r.get("unfiled_lessons") or 0)
     d_fired = bool(argparse_signatures and global_error_count > 0 and qv_unfiled_total > 0)
+    # The global-log half can be UNMEASURED. Without the flag the non-fired detail
+    # renders `global_errors=0`, republishing downstream the zero the check itself
+    # now refuses to publish.
+    d_logs_measured = (
+        global_log.get("logs_readable", global_log.get("logs_present", True))
+        if isinstance(global_log, dict)
+        else True
+    )
     rows.append(
         {
             "coupling": "argparse_signature_cluster",
@@ -8494,7 +8545,16 @@ def cross_check_synthesis(all_results: dict[str, Any]) -> dict[str, Any]:
                 f"quality-verification signatures={qv_unfiled_total} — collapse to ONE "
                 f"source-keyed candidate"
                 if d_fired
-                else f"argparse_signatures={len(argparse_signatures)};global_errors={global_error_count};qv_unfiled={qv_unfiled_total}"
+                else (
+                    f"argparse_signatures={len(argparse_signatures)};"
+                    + (
+                        "global_errors=unmeasured (no global log was read — NOT a "
+                        "measured zero)"
+                        if not d_logs_measured
+                        else f"global_errors={global_error_count}"
+                    )
+                    + f";qv_unfiled={qv_unfiled_total}"
+                )
             ),
             "caveat": (
                 "the three facets are three views of ONE source-keyed argparse "
@@ -8958,10 +9018,16 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
         all_results["global-log-analysis"] = log_result
         if "global-log-analysis" in selected:
             blocks.append(emit_global_log_block(log_result))
-            summary_metrics["global-log-analysis_errors"] = log_result["error_count"]
-            summary_metrics["global-log-analysis_fixture_leaks"] = log_result[
-                "fixture_leak_count"
-            ]
+            # Published ONLY when a log was actually read. Persisting a 0 from an
+            # unmeasured run seeds the cross-run summary-metric history with a
+            # figure no data supports, and `_report_diff_block` cannot tell such a
+            # 0 from a real one after the fact — the same reason
+            # merge-window-accounting's contention count is withheld.
+            if log_result.get("logs_readable", log_result["logs_present"]):
+                summary_metrics["global-log-analysis_errors"] = log_result["error_count"]
+                summary_metrics["global-log-analysis_fixture_leaks"] = log_result[
+                    "fixture_leak_count"
+                ]
 
     if "token-economics" in selected or synth_needed:
         te_result = cross_token_economics(

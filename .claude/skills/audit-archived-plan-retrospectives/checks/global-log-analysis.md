@@ -132,10 +132,40 @@ rather than silent. It is deliberately **not** the `high-frequency-caller`
 denominator: that view is derived from *all* notation-headed lines, timed or
 not, and `untimed_call_keys` names the difference.
 
+## `unmeasured` versus a measured zero
+
+The check reports `status: unmeasured` — with its reason and **no counts at
+all** — when no global log file was read. It reports `status: success` with a
+genuine `error_count: 0` when logs WERE read and named nothing.
+
+Two probes, and the distinction between them is the point:
+
+| Field | Asks | Gates the unmeasured branch? |
+|-------|------|------------------------------|
+| `logs_present` | Does the log DIRECTORY exist? | No |
+| `logs_readable` | Was any matching log FILE actually read? | **Yes** |
+
+They come apart in a state this tool itself produces: `--dormate-global-logs`
+relocates completed logs *out of* a directory it leaves in place. Gating on the
+directory probe alone left a present-but-empty directory publishing
+`total_log_lines: 0` and `genuine_signal_count: 0` — a zero that reads as health
+from a corpus that said nothing, which the `suspect-zero-census` then reported as
+`disciplinary`.
+
+An `unmeasured` block also carries no `genuine_signal_count`, so `retire-on-quiet`
+records no quiet run for it, and its `summary_metrics` are withheld rather than
+persisted as zeroes the cross-run diff cannot later distinguish from real ones.
+The `argparse_signature_cluster` synthesis coupling renders
+`global_errors=unmeasured` instead of `0` on such a run. This is the same contract
+[`merge-window-accounting.md`](merge-window-accounting.md) documents.
+
 ## Emitted columns
+
+On a measured run:
 
 ```
 logs_present: true|false
+logs_readable: true
 plan_windows_derived: W
 total_log_lines: N
 total_script_seconds: S
@@ -154,6 +184,15 @@ high_frequency_ceiling: 50
 cost_rollup_top_n: 10
 genuine_signal_count: G
 rows[N]{kind,detail,attributed_plans,severity}
+```
+
+On an unmeasured run the counts above are absent entirely, replaced by:
+
+```
+status: unmeasured
+logs_present: true|false
+logs_readable: false
+unmeasured_reason: {why no verdict can be substantiated}
 ```
 
 | Column | Meaning |

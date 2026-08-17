@@ -63,7 +63,7 @@ so the raw pending column mixes two things that must not be added together:
 | Half | What it is | What would make it zero |
 |------|-----------|-------------------------|
 | **actionable** | A defect-shaped finding nobody closed — real chain debt. | Resolving the findings. |
-| **structural** | A knowledge-type finding (`tip` / `insight` / `best-practice` / `improvement`). Filed to be read, not closed by defect-fixing work. | **Not the backlog work the actionable half measures.** Promotion (`manage-findings promote`) or an explicit disposition (`resolve --to accepted`) does empty it — neither is defect-fixing, and neither is what a chain-debt count is asking about. |
+| **structural** | A knowledge-type finding (`tip` / `insight` / `best-practice` / `improvement`). Filed to be read, not closed by defect-fixing work. | **Not the backlog work the actionable half measures.** Promotion (`manage-findings promote`) or an explicit disposition (`resolve --resolution accepted`) does empty it — neither is defect-fixing, and neither is what a chain-debt count is asking about. |
 
 Only the actionable half is counted as a genuine signal. Counting the structural
 half made the pending population one that no amount of DEFECT-FIXING could empty

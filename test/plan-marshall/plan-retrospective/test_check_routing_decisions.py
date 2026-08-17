@@ -323,9 +323,36 @@ class TestResolveRemovalCauses:
         assert causes['sonar-roundtrip'] == 'posture_cutoff_legacy_aggregate'
         assert causes['plan-retrospective'] == 'posture_cutoff_legacy_aggregate'
 
-    def test_the_legacy_line_is_the_only_list_repr_producer(self):
-        """Pins why `_parse_step_tokens`'s list branch is still reachable."""
-        assert _crd._parse_step_tokens("['a', 'b']") == ['a', 'b']
+    def test_the_legacy_pattern_is_the_only_route_to_the_list_repr_branch(self):
+        """Pins the COUPLING, not the splitter.
+
+        The predecessor of this test asserted `_parse_step_tokens("['a','b']")`
+        directly, which passes whether or not any pattern can ever hand it a list
+        repr — it pinned neither reachability nor uniqueness while claiming both.
+
+        These assertions fail if the legacy pattern is removed (the branch becomes
+        dead) and if some other pattern starts capturing a list repr (the
+        uniqueness claim becomes false).
+        """
+        legacy_capture = "['sonar-roundtrip', 'plan-retrospective']"
+
+        # Reachability: exactly one pattern can produce a list-repr capture.
+        producers = [
+            cause
+            for cause, pattern in _crd._REMOVAL_CAUSE_PATTERNS
+            if pattern.search(
+                '(plan-marshall:manage-execution-manifest:compose) lane_resolution — '
+                f'execution_profile=minimal, dropped {legacy_capture} '
+                'from phase_6.steps (tier above posture cutoff)'
+            )
+        ]
+        assert producers == ['posture_cutoff_legacy_aggregate']
+
+        # Uniqueness: the shared shape cannot capture one (its capture is `\\S+`).
+        assert not _crd._DROPPED_RECORD_RE.search(
+            '[STATUS] lane_resolution — dropped '
+            f'{legacy_capture} from phase_6.steps: a reason'
+        )
 
     def test_unknown_future_gate_in_the_shared_shape_is_still_a_cause(self):
         """Gate-agnostic by construction — a new composer gate needs no edit here.
