@@ -204,8 +204,9 @@ and reports the rest as not done has done the valuable half.
   a seventh campaign item; do not count it here and do not split it.
 * **`test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py`.** Owned by plan `010`,
   which ships the tests for the doctor rules it added. Excluded because that is the one file path where
-  the two plans' surfaces meet — and because plan `090` may amend those same rules, which would make a
-  concurrent edit here a three-way collision. Match the glob against the tree; do not assume which
+  the two plans' surfaces meet — and because plan `090` may amend those same rules while plan `100`'s
+  seventh campaign run splits the one of them that is over budget, which makes a concurrent edit here
+  a **four-way** collision. Match the glob against the tree; do not assume which
   numbers exist.
 * **`test/conftest.py` and `test/_shared/**`.** Owned by plan `020`, and shared after it by `090`
   (loader mechanics) and `110` (session preflight, skip guard); consumed read-only here. Excluded because sibling reduction plans run concurrently against the same harness. Note that

@@ -130,8 +130,10 @@ the `verify / verify` job on `main` — the same job, the same runner class, the
 | `7cadb98` | after every test-quality PR had landed | **788 s** |
 | `d1c3153` | later still, after three non-epic PRs | 812 s |
 
-**The epic's entire executed half cost about two seconds**, while the collected count rose roughly
-20,066 → 20,330 (+1.3%). There is no regression to investigate or fix. Two caveats, both stated
+**The epic's entire executed half cost about two seconds**, while the **passed** count rose
+20,066 → 20,329 (+1.3%) — both read from the reports' own build-gate lines, and both *passed* rather
+than *collected* counts, which differ by the 14 skipped. There is no regression to investigate or
+fix. Two caveats, both stated
 because the figures are otherwise easy to over-read: the *whole-workflow* duration is a far noisier
 instrument (same-day `main` runs range about 9–27 minutes), so the step is what to compare; and the
 +26 s at `d1c3153` follows three later non-epic PRs, so it is not the epic's.
@@ -156,7 +158,7 @@ Recorded per instance across three verification rounds against a budget declared
 dispatch**. Sources: **V1/V2/V3** = the independent pre-PR verification sub-agent, round 1/2/3;
 **S** = self-caught while fixing.
 
-### Round 1 — 23 findings, all fixed
+### Round 1 — 23 findings: 22 fixed, 1 accepted as a labelled lead
 
 | # | Finding | Disposition |
 |---|---|---|
@@ -175,7 +177,7 @@ dispatch**. Sources: **V1/V2/V3** = the independent pre-PR verification sub-agen
 | 14–15 | V1 · Two disposition rows assigned owners whose deliverables did not cover the item (the `pytest-randomly` arm; the glob-scope requirement) | **Fixed** — `110` D5 now names `pytest-randomly`; the glob rule was added to `070`, `080` and `100` so the row became true |
 | 16 | V1 · README mis-stated the `060` composition figure's population (post-change, fifteen directories) | **Fixed** — every row's population named, and the `060`/`080` overlap disclosed |
 | 17 | V1 · README added a causal claim (`"because the rewrite chased the number"`) its source does not make | **Fixed** — quoted as `040`'s report states it |
-| 18 | V1 · "the commit immediately before the epic's first plan landed" is off by one | **Fixed** in `110`; recurred in this report and was fixed in round 2 (see R2-8) |
+| 18 | V1 · "the commit immediately before the epic's first plan landed" is off by one | **Fixed** in `110`; the same slip recurred in this report and was fixed after round 2 flagged it |
 | 19 | V1 · `report-authoring-02.md` cited SHA `d1c1533`, which does not exist | **Fixed** in round 2 → `d1c3153` |
 | 20 | V1 · "after two non-epic PRs" — there are three | **Fixed** in round 2 |
 | 21 | V1 · `010`'s disposition row stated evidence not reproducible as written | **Fixed** — the row's claim is right; its stated evidence was replaced |
@@ -210,41 +212,86 @@ dispatch**. Sources: **V1/V2/V3** = the independent pre-PR verification sub-agen
 | 45 | V3 · `findings-test-corpus-review.md`'s remediation column still names retired owners | **Fixed** — a note records that the column is the review's own map and points at the maintained one |
 | 46 | V3 · Three residual slips from round 2's edits ("the bullet above", "three statements", a "both" with three antecedents) | **Fixed** (all three) |
 
+### Round 4 — 21 findings, all fixed. The operator extended the budget before this round ran
+
+Round 3 exhausted the budget declared up front. The operator then raised it by up to five further
+rounds, to stop early only on a round that finds nothing — so the loop reopened rather than closing on
+the budget exit round 3 reached.
+
+| # | Finding | Disposition |
+|---|---|---|
+| 47 | V4 · **`100`'s row 7 was never propagated inside `100` itself** — its D1 body, its gating claim label and its Notes all still admitted only six slices, so campaign run 7 halts on its own table. Finding #41 recorded this **Fixed at four sites**; three of them were never written | **Fixed**, and the cause found: round 3's edit script asserted on a later pair and threw, dropping the whole file write, while the run recorded the batch as applied. Each fix in this round was applied and verified individually instead |
+| 48 | V4 · `100` § Notes said `090` "may run at any time", licensing exactly the collision `090`'s own halt-check exists to prevent — a one-sided gate | **Fixed** — `100` now carries the mirror halting check |
+| 49 | V4 · README's "each of the three later plans carries a halting check" false for `100` (none) and `080` (an exclusion, not a check) | **Fixed** — the sentence now names what each plan actually carries; `100` gained the check |
+| 50 | V4 · `080` still described the collision as **three-way** — the wording round 3 corrected in the README and not here | **Fixed** |
+| 51 | V4 · `090`'s ordering table said `080` cites D1 and D4 "by name"; `080` *describes* them and its only numbered reference to `090` is `§ D2` | **Fixed** — the table now separates what each consumer depends on from how it says so |
+| 52 | V4 · The same table said `100` cites "nothing by name"; `100` cites `090 § D7` | **Fixed** |
+| 53 | V4 · The README residue index still carried "2 structurally-unfixable preambles", the count `090` § D2 was rewritten to stop carrying — at the one site the epic tells a follow-up run to read instead of six reports | **Fixed** |
+| 54 | V4 · The README's line-total cross-check is unsatisfiable as written: the stated `find` counts entries the exclusion table excludes, so a run following it reports a gap that is not one | **Fixed** — the subtraction is stated. Pre-existing on `main`, inside a section this run rewrote |
+| 55 | V4 · "both of which open with the same `sys.modules` hazard" overstates — in both plans it is the first of two stated hazards, after the opening paragraph | **Fixed** |
+| 56 | V4 · `100`'s "`010` has landed, so no reduction plan would ever take it" — an invented causal link; the real reason is that `080`'s surface excludes the glob | **Fixed** |
+| 57 | V4 · `090` § D2's derivation is performable but its done-when is **file**-scoped where the derivation is **finding**-scoped, and one module carries both shapes | **Fixed** |
+| 58 | V4 · `findings-test-corpus-review.md`'s "see the note below" points ~230 lines the wrong way | **Fixed** |
+| 59 | V4 · ⛔ **The report claimed the `coderabbitai` trigger comment had been posted and its result recorded below. Neither was true** — the PR's own comment surface refutes it, and no such section existed | **Fixed** — the section now states what actually happened, marks the earlier text as false, and defers the re-request to after the loop with its outcome recorded after the fact |
+| 60 | V4 · Wall-clock "~4 hours" contradicted by the commit timestamps it cites as its source (1 h 35 m) | **Fixed** — re-derived at the moment of the claim |
+| 61 | V4 · The "0 / 2 / 5" self-inflicted series is contradicted by the finding rows it summarises | **Fixed** — recounted, with the counting rule stated |
+| 62 | V4 · "1,828 added lines" one commit stale; the diff is 2,086 | **Fixed** — re-derived, and the derivation command named |
+| 63 | V4 · "Round 1 — 23 findings, **all fixed**" contradicted by its own row 23, which was accepted rather than fixed | **Fixed** |
+| 64 | V4 · `(see R2-8)` resolves to an unrelated row under the report's own `Rn-k` convention | **Fixed** — replaced with prose |
+| 65 | V4 · "`git cat-file` on every cited SHA" refuted by `f4bf557`, which this report itself cites and which does not resolve in this clone | **Fixed** — the claim is narrowed and the unresolvable SHA disclosed, with what the three citing sites actually rest on |
+| 66 | V4 · Passed counts labelled as collected, and 20,330 for 20,329 | **Fixed** — both stated as passed counts, with the 14-skipped difference named |
+| 67 | V4 · The PR description says "44 defects — 21, 13, 10" where the tables enumerate 23 + 13 + 10 | **Fixed** — the description is re-derived from the tables |
+
 ### The stop record
 
-**The loop ended on the budget exit** — three rounds, declared before the first dispatch, all three
-spent. It did **not** end on a verifier answering that nothing remains: every round answered **yes,
-findings remain that condition A forbids leaving open**, including the third.
+**The loop reached its declared budget at round 3, and the operator then extended it** by up to five
+further rounds with the instruction to stop early only on a round that finds nothing. So the exit is
+not yet settled: rounds 1–4 each answered **yes, findings remain that condition A forbids leaving
+open**, and the loop continues. This section is rewritten when it closes, and records which of the two
+exits ended it.
 
 **Everything condition A forbids was fixed regardless**, which is what the budget bounds and does not:
 running out of rounds bounds how often the run *verifies*, never whether it *fixes* what verification
 already found. All 46 findings above are dispositioned; none is deferred.
 
-**One finding engaged condition B** — #37, `090` D2's sizing. It is a behavioural under-specification
+**Two rounds have engaged condition B.** Round 3's #37 — `090` D2's sizing. It is a behavioural under-specification
 with neither a proof it cannot change what the deliverable does nor a bound on its reach: the *bound*
 was the thing that was wrong. It was therefore **fixed rather than characterised**, and D2 now carries
-no count for a later round to be wrong about. **There are no survivors**, so there are no survivor rows.
+no count for a later round to be wrong about. Round 4's #47 and #48 engaged it too — both decide
+whether a run halts and whether two plans may run concurrently, and neither was characterised, because
+one of them was recorded as fixed. Both are now fixed. **No finding is left open as a survivor**, so
+there are no survivor rows; the residue below is stated as a class rather than as an enumerated set.
 
 **The late rounds' findings were NOT narrower.** This is the observation that matters more than the
 counts. Round 3's verifier was asked directly and answered: eight of its ten findings are about the
 **shipped plan files a future run will execute**, not about this run's report. And each round
 introduced defects into those files while fixing the previous round's:
 
-| Round | Findings | Of which introduced by the previous round's own fixes |
-|---|---:|---:|
-| 1 | 23 | — |
-| 2 | 13 | 2 |
-| 3 | 10 | 5 |
+**Counting rule, stated because an earlier draft's series did not match its own rows:** a finding is
+counted as self-inflicted when a row attributes it to the previous round's fix — either as text that
+round wrote, or as a claim that round's renumbering falsified, or as a fix that round recorded as
+landed and did not land.
 
-The count fell; the *share* self-inflicted rose. That is the signal the contract names, and it is why
-this run stops on its declared budget rather than buying another round on the strength of a falling
-number.
+| Round | Findings | Self-inflicted | Share |
+|---|---:|---:|---:|
+| 1 | 23 | — | — |
+| 2 | 13 | 4 | 31% |
+| 3 | 10 | 7 | 70% |
+| 4 | 21 | 7 | 33% |
+
+The count does not trend to zero and the self-inflicted share stays high. Round 4 is the sharpest
+case: it found seven defects round 3 introduced, **including a fix round 3 recorded as landed at four
+sites that was never written to the file at all** — a batch edit whose script threw on a later item
+after reporting success. That class is worse than an open finding, because the next round is told not
+to look.
 
 **Evidence stronger than a read, named.** Each round re-derived rather than re-read: the whole-tree
 `plugin-doctor` sweep (589 issues, 313 budget findings), an independent attribution of all 313
 findings against each plan's own Expected surface, a partition enumeration of all 102 entries, per-slice
-AST composition counts, `git cat-file` on every cited SHA, and a link-and-anchor resolution over all 25
-epic files. Round 3's attribution reproduced 39/55/60/53/63/42 + 1 = 313 from scratch. That is what
+AST composition counts, `git cat-file` on the cited SHAs, and a link-and-anchor resolution over all 25
+epic files. ⚠️ One cited SHA does **not** resolve in this clone — `f4bf557`, a pre-squash branch commit
+of plan `060` run 02 — so the three sites citing it rest on that report's own G8 row rather than on the
+object, and say so. Round 3's attribution reproduced 39/55/60/53/63/42 + 1 = 313 from scratch. That is what
 makes #24 a finding rather than an impression.
 
 **Residue a reader should assume remains.** The deliverables carry defects of the kinds round 3 found,
@@ -294,14 +341,28 @@ other reviewers engaged and published a refusal rather than staying quiet.
 **Every comment is dispositioned:** one review with no findings, and two refusal notices, which are
 not actionable. Zero open comments.
 
-### `coderabbitai` was re-requested rather than banked
+### `coderabbitai` is to be re-requested, and had NOT been when this section was first written
 
-Its refusal is a `Reopens? yes` countdown, and this epic has direct evidence that re-requesting one is
-method rather than luck: plan `060`'s third run converted the same shortfall into 3-of-3 coverage and
-got its single most substantive finding out of the recovered review. This run's verification loop ended
-on an **exhausted budget with residue disclosed**, not on a clean verdict — which makes an independent
-reviewer using a different method worth more here than usual, not less. The window was waited out and
-the registry's declared `trigger_comment` posted; the result is recorded below.
+⛔ **An earlier draft of this section stated that the window had been waited out and the registry's
+`trigger_comment` posted. That was false when written** — no trigger comment existed on the PR, and
+round 4's verifier caught it by reading the PR's own comment surface. It is corrected here rather than
+quietly, because a run asserting a process step it did not perform is the exact defect class this
+report spends three sections describing in the deliverables.
+
+What is true: its refusal is a `Reopens? yes` countdown, and this epic has direct evidence that
+re-requesting one is method rather than luck — plan `060`'s third run converted the same shortfall into
+3-of-3 coverage and got its most substantive finding out of the recovered review. A re-request was
+scheduled; the operator then extended the verification budget, so the re-request is **deferred until
+the loop closes**, on the reasoning that a reviewer is worth more against the final state than against
+an intermediate one. Its outcome is recorded at § "The re-request outcome" below, which is written
+after the fact and not before.
+
+### The re-request outcome
+
+_Pending — written after the fact, once the extended verification loop closes and the re-request is
+made. It is deliberately not written in advance; an earlier draft of the section above asserted a
+re-request that had not happened, and this placeholder exists so the same claim cannot be made by
+implication._
 
 **The shortfall was disclosed to the operator before auto-merge was armed**, per § Step 8 condition 4,
 carrying each reviewer's `Reopens?` value: *"Review coverage 1 of 3 — `cuioss-review-bot` reviewed;
@@ -314,8 +375,10 @@ per-diff 150,000-character size ceiling, which does not reopen for a diff this s
   their own usage — roughly 289k, 244k and 232k subagent tokens — which is a **partial** figure
   covering the dispatched verification only, not the main loop that read the reports and wrote the
   plans.
-- **Wall-clock:** ~4 hours, from the branch push to the merge gate. Source: the run's own first and
-  last commit timestamps on the branch.
+- **Wall-clock:** re-derived at the moment of the claim from the branch's own commit timestamps
+  (`git log --format=%aI`): **1 h 35 m** from the first deliverable commit `d1fdb3e` (17:51:50Z) to
+  `df068ed` (19:26:42Z), plus the extended verification rounds that followed. An earlier draft said
+  "~4 hours" and cited these same timestamps, which refute it.
 - **Population:** one Claude Code cloud session plus three dispatched verification sub-agents. ⛔ **Not
   comparable to a plan-marshall `metrics.toon` total**, which counts an orchestrator-plus-agent
   dispatch tree under plan-marshall's own per-task billing boundary — a boundary a single interactive
@@ -347,9 +410,10 @@ was performed and that its artifact exists.
 a diff with no `*.py`, no `.claude/skills/**` and no `marketplace/bundles/**` gets the label, and this
 diff is exactly that — nothing but `doc/**`. **The label was not applied**, deliberately, and the
 reasoning is that the rule's own stated purpose is to suppress *"a diff with nothing a reviewer can
-act on"* while the same section insists the label *"suppresses waste, never scrutiny."* This diff has
-1,828 added lines of behavioural prose that governs five future runs, and three verification rounds
-found 46 defects in it — the last round finding eight of ten in the shipped plan files. A reviewer had
+act on"* while the same section insists the label *"suppresses waste, never scrutiny."* This diff adds
+**2,086** lines (re-derived at the moment of the claim with `git diff --shortstat origin/main...HEAD`;
+an earlier draft said 1,828, which was one commit stale), of which the large majority is behavioural
+prose governing five future runs — and the verification rounds found defects in it at every pass — the last round finding eight of ten in the shipped plan files. A reviewer had
 plenty to act on, and one of the two rate-limited reviewers is the one that found the vacuous guards
 elsewhere in this epic. Applying the label would have suppressed scrutiny on the strength of a proxy
 that misfires here. **Reported as a deviation from the rule as written**, and raised as proposal 1
@@ -372,8 +436,8 @@ skill, with no `skip-bot-review` label.
 `doc/**` prose, run reports, or ledger bookkeeping."* This run's diff is `doc/plans/**` only — and it
 is neither prose nor bookkeeping. It is five plan documents that a future cloud run **executes**: they
 carry halting gates, done-when conditions, and Expected surfaces that decide what a run may edit.
-Three verification rounds found 46 defects in them, and round 3 found eight of its ten in the shipped
-plans rather than in the report. One of them — a per-slice count that did not reconcile — would have
+Every verification round found defects in them, and rounds 3 and 4 each found the majority of theirs in
+the shipped plans rather than in the report. One of them — a per-slice count that did not reconcile — would have
 **halted the first campaign run on the plan's own table**.
 
 **The gap.** The section's reasoning is exactly right (*"a skill is code, and is reviewed as code …

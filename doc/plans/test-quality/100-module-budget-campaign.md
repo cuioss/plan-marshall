@@ -77,10 +77,14 @@ two to three deliverables, and one slice is one deliverable.
 
 1. **D1 — Derive the current over-budget set, and halt if the partition does not hold.** Before any
    split, run the whole-tree `test-conventions` sweep and group its `test-module-line-budget` findings
-   by slice, then confirm every finding's module falls in exactly one slice of the epic's partition.
-   **This is the gating, halting derivation** the epic README § "The plans, and what may run at the
-   same time" specifies; a module claimed by no slice is a partition defect and this run neither
-   claims nor skips it unilaterally.
+   by slice, then confirm every finding's module falls in exactly one slice of the epic's partition
+   **or in this plan's row 7**. **This is the gating, halting derivation** the epic README § "The
+   plans, and what may run at the same time" specifies; a module claimed by neither is a partition
+   defect and this run neither claims nor skips it unilaterally.
+   ⚠️ **Row 7 is why the halt is phrased that way.** Its one module is claimed by no reduction slice —
+   `080` excludes the `rule*` glob and the epic README assigns it to plan `010` — so a derivation
+   admitting only the six slices halts on this plan's own table. That is not a defect to report; it is
+   why row 7 exists.
    **The per-slice counts stated below are leads and one of them will differ**: they move whenever a
    module crosses the budget. **Report the disagreement rather than absorbing it** — a grouping that
    silently differs from this plan's own table is the shape D1 exists to surface.
@@ -180,7 +184,7 @@ must land first, and finally the one module that belongs to a landed plan no red
 | 4 | `030`'s — config and manifest | 39 | nothing; `030` landed |
 | 5 | `070`'s — architecture and orchestration | 63 | plan `070` landed |
 | 6 | `080`'s — plugin development and generator | 42 | plan `080` landed |
-| 7 | plan `010`'s rule-test modules — `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` | 1 | nothing; `010` landed |
+| 7 | plan `010`'s rule-test modules — `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` | 1 | `010` landed; **halts if `090` is in flight** — see § Notes |
 
 Each slice's exact directory list is the **Expected surface** of the reduction plan that owns it,
 read from that plan's own file — not restated here, because a restated list is a second thing to
@@ -192,8 +196,9 @@ held them out as a separate bucket, which made its own totals disagree with the 
 
 **Row 7 exists because the six slices do not cover the tree.** Plan `080`'s Expected surface excludes
 every module matched by `plugin-doctor/test_test_conventions_rule*.py`, which the epic README assigns
-to plan `010` — and one of those modules is over budget. `010` has landed, so no reduction plan would
-ever take it, and the campaign's own goal (the rule reaching zero) is unreachable without it. An
+to plan `010` — and one of those modules is over budget. No reduction plan would ever take it, because
+`080`'s surface is the only one reaching that directory and it excludes the glob; and `010` has
+landed, so `010` will not take it either. and the campaign's own goal (the rule reaching zero) is unreachable without it. An
 earlier draft of this plan counted it into `080` and asserted a distribution that did not reconcile;
 D1's halting derivation is what surfaces that class of error, and it would have halted on this plan's
 own table.
@@ -210,7 +215,7 @@ own table.
 | Exactly one class in the `060` slice exceeds the budget on its own, at 663 lines | OBSERVED for that slice, HYPOTHESIS for every other | `doc/plans/test-quality/060-…/report-03.md` § "D2 — still open, with a new finding". Re-derive per slice: the count of budget-exceeding classes is what bounds how many modules class-boundary splitting can reach |
 | A line-range or AST-node move silently drops comments preceding a definition | OBSERVED | `doc/plans/test-quality/050-…/report-01.md` § "What have we learned" — 162 column-0 comments lost from a commit whose message called it a pure move |
 | `conftest.load_script_module` registers under the script stem, and collapsing registrations leaks module-level mutable state between tests | OBSERVED | `test/conftest.py` — `load_script_module`; `doc/plans/test-quality/030-…/report-01.md` § Findings row 1 (173 order-dependent failures) |
-| Every module in this run's slice is claimed by exactly one of the epic's six slices | HYPOTHESIS — **gating and halting; run it before D2** | The six reduction plans' Expected-surface sections, read from their own files. A module in two lists or in none is a partition defect: **halt and report it** |
+| Every module in this run's slice is claimed by exactly one of the epic's six slices, **or by this plan's row 7** | HYPOTHESIS — **gating and halting; run it before D2** | The six reduction plans' Expected-surface sections, read from their own files, plus row 7's entry in § Expected surface. A module in two lists, or in neither the six nor row 7, is a partition defect: **halt and report it**. Row 7's module is claimed by no reduction slice **by design** — do not report it as the defect |
 
 ## Verification
 
@@ -262,9 +267,14 @@ weaker check, and record what the check that would have established the unavaila
 * **One slice per run, and the run says which slice it took.** The campaign's state is the tree: a
   slice is done when its `test-module-line-budget` count is zero. There is no ledger, no status file,
   and nothing to update outside this plan's own directory.
-* **Sequencing against the rest of the epic.** `090` (harness and rule gaps) is independent and may
-  run at any time. `070` and `080` must land before this campaign takes their slices — rows 5 and 6
-  of the table above. Rows 1–4 have no dependency and may start immediately.
+* **Sequencing against the rest of the epic.** Rows 1–4 have no dependency and may start
+  immediately. `070` and `080` must land before this campaign takes their slices — rows 5 and 6 of
+  the table above.
+  ⛔ **Row 7 collides with plan `090`, and the check is halting.** It splits
+  `test_test_conventions_rule6.py`, which `090`'s carve-out also permits `090` to amend. **Before
+  starting row 7, confirm no open PR and no in-flight branch exists for `090`; if one does, halt and
+  report it** rather than editing a file two plans own. `090` carries the mirror of this check. Rows
+  1–6 are independent of `090` and may run alongside it.
 * **When every slice is done, one thing follows.** `test-module-line-budget` reaches zero and its
   flip to `severity: error` becomes available. That flip belongs to plan `090` § D7's ladder, not
   here — this plan produces the condition, it does not take the gate decision.

@@ -311,7 +311,7 @@ contract ([**B8**](README.md#house-style)), rather than removing it.
 
 | Finding | Addressed by |
 |---|---|
-| F1, F2 | [`010`](010-test-authoring-standards-and-enforcement/plan.md) (module budget + enforcement), [`100`](100-module-budget-campaign.md) (splits — see the note below) |
+| F1, F2 | [`010`](010-test-authoring-standards-and-enforcement/plan.md) (module budget + enforcement), [`100`](100-module-budget-campaign.md) (splits — see the owner-drift note under “The findings at a glance”) |
 | F3 | [`030`](030-config-and-manifest-test-reduction/plan.md) primarily; [`050`](050-plan-state-and-records-test-reduction/plan.md), [`060`](060-runtime-and-script-substrate-test-reduction/plan.md), [`070`](070-architecture-and-orchestration-test-reduction.md) for their tabular families |
 | F4 | [`020`](020-shared-test-harness/plan.md) (`parse_ns` helper), [`010`](010-test-authoring-standards-and-enforcement/plan.md) (the rule), all reduction plans (adoption) |
 | F5 | [`010`](010-test-authoring-standards-and-enforcement/plan.md) (thresholds), [`060`](060-runtime-and-script-substrate-test-reduction/plan.md) primarily |

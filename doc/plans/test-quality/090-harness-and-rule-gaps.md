@@ -98,11 +98,11 @@ position is a measured, reported fact rather than an assumption.
 epic README § "How much one run does" carries the measurement. So the ordering matters, and it is set
 by what the consuming plans actually cite rather than by theme:
 
-| Consumer | What it cites, by name | Therefore |
-|---|---|---|
-| `070` | **D1** (the parser seams its **B6** half needs) and **D6** (the `conftest.py` docstring its D1 rename would otherwise leave stale) | Both are blocking for `070` |
-| `080` | **D1**, and **D4** (the citation matchers its D3 prose half is measured by). Its one D2 reference is a *routing destination* — "record it against `090` § D2 and move on" — not a dependency | D1 and D4 are blocking for `080` |
-| `100` | nothing by name, but its campaign splits modules whose loads **D3**'s guard protects — as do `070` § D3 and `080` § D3, both of which open with the same `sys.modules` hazard | D3 protects all three, and is not deferrable on the ground that it protects only the campaign |
+| Consumer | What it depends on | How it says so | Therefore |
+|---|---|---|---|
+| `070` | **D1** (the parser seams its **B6** half needs) and **D6** (the `conftest.py` docstring its D1 rename would otherwise leave stale) | D1 described in its dependency note; **D6 cited by number**, twice | Both blocking for `070` |
+| `080` | **D1** (same seams) and **D4** (the citation matchers its D3 prose half is measured by) | Both described in its dependency note, neither cited by number. Its **only** numbered reference to this plan is `§ D2`, and that one is a *routing destination* — "record it against `090` § D2 and move on" — not a dependency | D1 and D4 blocking for `080` |
+| `100` | **D3**'s registration guard, which its splits rely on — as do `070` § D3 and `080` § D3, each of which carries the same `sys.modules` hazard as the first of its two stated hazards | `100` cites this plan by number once (`§ D7`, on the severity flip), not for D3 | D3 protects all three, and is not deferrable on the ground that it protects only the campaign |
 
 **D1 first, then D6 and D4** — the smallest set that unblocks both consuming plans. D2 and D3 follow;
 D5 is the least coupled and goes last. A run that reaches only part of this **reports what it did not
@@ -141,7 +141,10 @@ reach rather than thinning what it did**.
    is what the done-when below is written against. Two earlier drafts of this plan stated a count
    instead — one of them by double-counting, the other by quoting a single slice's figure as though it
    were the tree's — which is why this is a derivation now.
-   *Done when:* every `test-module-preamble-boilerplate` finding whose file loads a skill-root
+   Note that the sweep's output names the **test module** and the line, not the path it resolves, so
+   the derivation is a read at `file:line` rather than a grep of the output — and a single module can
+   carry both shapes, so classify per **finding**, not per file.
+   *Done when:* every `test-module-preamble-boilerplate` **finding** that resolves a skill-root
    `extension.py` is either fixable by the documented remedy or no longer reported, the whole-tree
    count for that rule is re-derived before and after, and no finding that was a true positive stopped
    being reported.

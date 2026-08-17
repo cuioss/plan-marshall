@@ -351,9 +351,11 @@ as a **gating, halting derivation**, run before its first deliverable:
    than claiming or skipping it unilaterally. An entry claimed by no plan is the dangerous case,
    because it looks exactly like a clean run.
 
-Independently, the six slices' line totals must sum to the corpus total
-(`wc -l $(find test -name 'test_*.py')`); a sum that falls short means a gap, and one that exceeds it
-means an overlap.
+Independently, the six slices' line totals must sum to the corpus total **minus the excluded entries
+above** — `wc -l $(find test -name 'test_*.py')` counts `test/test_shared_harness.py` and plan `010`'s
+`test_test_conventions_rule*.py` modules, which no reduction slice claims. Subtract those before
+comparing: a sum that still falls short means a gap, and one that exceeds it means an overlap. A raw
+comparison against the unadjusted total reports a gap that is not one.
 
 Three shared constraints keep the slices disjoint once the partition is confirmed, and every
 reduction plan restates them:
@@ -377,8 +379,10 @@ already test this scope's rules plus the ones it added — their fixture directo
 which numbers exist**: `010` split its own new tests by behaviour cluster while landing, so the set is
 not a contiguous run. Plan `080` owns the rest of `test/pm-plugin-development/**` and excludes those
 modules explicitly; plan `090` may amend the rules themselves, and plan `100`'s seventh campaign run
-splits the one of them that is over budget — so a concurrent edit here is a **four-way** collision,
-and each of the three later plans carries a halting check for it.
+splits the one of them that is over budget — so a concurrent edit here is a **four-way** collision.
+`090` and `100` each carry a halting check against the other before touching those modules; `080`
+excludes the glob outright and states the same four-way risk, which is the stronger guarantee for a
+plan that never edits them at all.
 
 ## Where a recorded finding goes
 
@@ -413,7 +417,7 @@ taken from the report that recorded it; re-derive before acting.**
 | `030` config and manifest (39 over budget) | D3 arrange-into-fixtures, unstarted — the `monkeypatch.setattr`-to-`@pytest.fixture` ratio is untouched, and its `parse_ns` exception list is **empty by non-attempt, not by finding none**. D1's body-shape residue needs re-specifying before anyone attempts it | Its over-budget modules → `100`; the shared-registration guard its reviewer asked for → `090` § D3 |
 | `040` delivery pipeline (55 over budget) | D2 fixture corpus, unstarted. D3 subprocess-layer collapse, **not performed at all** — its gating survey ran and licensed no collapse, so ~124 `run_script` sites remain unpaired. D5's `parse_ns` half unstarted against ~391 `Namespace(` sites. A `fixtures/ci-wait/README.md` carrying a plan slug, a lesson id and a dated line | Its over-budget modules → `100`; the ~92 prose citations in shapes the rule does not match → `090` § D4 |
 | `050` plan state and records (60 over budget) | D2's remaining namespace builders; D3's five directories with no fixture module; D5's parametrization half, unstarted. Three findings its second run rejected as new scope with reasons recorded | Its over-budget modules → `100` |
-| `060` runtime and script substrate (53 over budget) | D4 parametrization beyond one family — ~223 families at ≥80% skeleton similarity, each needing a read because the set includes matched control pairs that must **not** collapse. D4's required cold read, never performed. The randomised hermeticity arm, unrun | Its over-budget modules → `100`, with the bound that exactly one class exceeds the budget alone; 3 latent `sys.modules` registrations → `090` § D3; 2 structurally-unfixable preambles → `090` § D2; 27 seam-blocked `parse_ns` sites → `090` § D1 |
+| `060` runtime and script substrate (53 over budget) | D4 parametrization beyond one family — ~223 families at ≥80% skeleton similarity, each needing a read because the set includes matched control pairs that must **not** collapse. D4's required cold read, never performed. The randomised hermeticity arm, unrun | Its over-budget modules → `100`, with the bound that exactly one class exceeds the budget alone; 3 latent `sys.modules` registrations → `090` § D3; the structurally-unfixable preambles it found → `090` § D2, **whose instance set that plan derives rather than takes from any count** — `060`'s figure is scoped to the fifteen directories it worked, one of which this brief now assigns to `080`; 27 seam-blocked `parse_ns` sites → `090` § D1 |
 
 A follow-up run against a landed plan re-enters it exactly as `030`, `050` and `060` already did — a
 new report ordinal in the same plan directory, and the plan's deliverables unchanged. Its
