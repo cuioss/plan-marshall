@@ -323,3 +323,35 @@ def test_metadata_append_leaves_sibling_metadata_untouched(plan_context):
     _append('append-siblings', 'session_ids', 'sess-1')
     assert _get('append-siblings', 'change_type')['value'] == 'feature'
     assert _get('append-siblings', 'session_ids')['value'] == ['sess-1']
+
+
+def test_a_resume_on_a_pre_list_plan_does_not_fail(plan_context):
+    """The plan's D4 verification case, end to end.
+
+    A plan created before the identity became a list carries the retired scalar
+    `session_id` and no `session_ids`. A resume then captures against it. The
+    append must SUCCEED (a naive guard asserting the stored identity never
+    changes would fail exactly here, which is why no such guard was shipped),
+    the new identity must be recorded, and the legacy value must survive
+    untouched for the read-side fallback to find.
+    """
+    _new_plan('resume-legacy')
+    # A pre-list plan: the scalar field, no list field.
+    cmd_metadata(
+        Namespace(plan_id='resume-legacy', set=True, get=False, append=False,
+                  field='session_id', value='sess-original')
+    )
+
+    # The resuming session captures.
+    first = _append('resume-legacy', 'session_ids', 'sess-resumed')
+    assert first['status'] == 'success'
+    assert first['value'] == ['sess-resumed']
+
+    # A third session captures too — still no failure, still additive.
+    second = _append('resume-legacy', 'session_ids', 'sess-third')
+    assert second['status'] == 'success'
+    assert second['value'] == ['sess-resumed', 'sess-third']
+
+    # The legacy scalar is untouched, so the read-side fallback still resolves
+    # for any consumer reading a plan that never gained a list.
+    assert _get('resume-legacy', 'session_id')['value'] == 'sess-original'
