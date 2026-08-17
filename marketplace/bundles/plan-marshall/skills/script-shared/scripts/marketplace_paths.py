@@ -402,10 +402,14 @@ def base_dir_override_active() -> bool:
 
     The single named predicate for "the caller has redirected plan-marshall's
     runtime-state root", covering both spellings: the ``PLAN_BASE_DIR``
-    environment variable and ``file_ops.set_base_dir()``. Every main-anchored
-    resolver honours the override branch first, so they all ask this one
-    question rather than re-spelling the disjunction — the resolved override
-    directory stands in for the main checkout's ``.plan/local``.
+    environment variable and ``file_ops.set_base_dir()``. A main-anchored
+    resolver checks the override branch first — the override directory stands in
+    for the main checkout's ``.plan/local`` — so this exists to be *called*
+    rather than re-spelled as a disjunction at each site. It is currently read by
+    :func:`resolve_main_anchored_path`, :func:`main_anchored_store_owns_bundle`,
+    ``_lessons_io.resolve_lesson_store`` and ``_invariants._main_repo_root``;
+    that list is what it covers today, not a claim that no other spelling of the
+    condition can exist.
 
     Returns:
         ``True`` when ``PLAN_BASE_DIR`` is set to a non-empty value or a

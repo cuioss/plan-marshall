@@ -48,7 +48,7 @@ VERIFY_REFUSAL_ERRORS = frozenset({
     'worktree_metadata_drift',
     'main_checkout_dirtied_during_plan',
     'worktree_dirty_at_boundary',
-    'worktree_sha_equals_main_sha',
+    'main_capture_read_the_worktree',
 })
 
 
@@ -135,7 +135,8 @@ def _loop_back_auto_override(
 
     Every other blocking result returns the refusal unchanged: drift WITHOUT
     the marker keeps today's blocking behavior, and the worktree-resolution /
-    dirty-boundary / main-dirtied refusals (``VERIFY_REFUSAL_ERRORS``) are
+    dirty-boundary / main-dirtied / main-capture-misresolution refusals
+    (``VERIFY_REFUSAL_ERRORS``) are
     NEVER bypassed by the marker — only invariant drift is auto-resolved.
     A failed re-capture also blocks (fail closed) by returning its error
     payload.
@@ -384,8 +385,8 @@ def cmd_transition(args: argparse.Namespace) -> dict[str, Any] | None:
     # workflow docs used to issue separately into the transition itself.
     # When ``next_phase`` is in ``_BLOCKING_BOUNDARIES`` (currently
     # ``{'6-finalize'}``), re-run the verify code path against the captured
-    # baseline for the completed phase. On drift (or any of the three
-    # worktree-/main-checkout boundary refusals listed in
+    # baseline for the completed phase. On drift (or any of the
+    # worktree-/main-checkout boundary refusals enumerated by
     # ``VERIFY_REFUSAL_ERRORS``) return the verify result unchanged and
     # SKIP ``write_status`` so ``current_phase`` stays on the completed
     # phase. Non-guarded transitions are unaffected — they keep today's

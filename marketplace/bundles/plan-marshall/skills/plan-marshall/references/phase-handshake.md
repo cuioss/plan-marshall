@@ -79,7 +79,7 @@ Scope limits:
 
 - Expected-by-construction drift on a sanctioned loop-back re-entry is the ONLY auto-resolved case. Drift WITHOUT the marker keeps the blocking behavior unchanged — the operator-facing drift protocol below applies only to unscheduled drift.
 - The marker never survives past the first guarded boundary check after the loop-back — it is consumed on that check's outcome either way (recapture on drift, plain clear on clean).
-- The worktree-resolution, dirty-boundary and self-contradictory-row refusals (`VERIFY_REFUSAL_ERRORS`: `worktree_unresolved`, `worktree_metadata_drift`, `main_checkout_dirtied_during_plan`, `worktree_dirty_at_boundary`, `worktree_sha_equals_main_sha`) are NEVER bypassed by the marker — only invariant drift is auto-resolved.
+- The worktree-resolution, dirty-boundary and self-contradictory-row refusals (`VERIFY_REFUSAL_ERRORS`: `worktree_unresolved`, `worktree_metadata_drift`, `main_checkout_dirtied_during_plan`, `worktree_dirty_at_boundary`, `main_capture_read_the_worktree`) are NEVER bypassed by the marker — only invariant drift is auto-resolved.
 - A failed re-capture blocks the transition (fail closed) with the re-capture's error payload.
 
 ### `findings-check`
@@ -283,36 +283,38 @@ The invariant-applicability gate (`_worktree_in_use`) evaluates the predicate wi
 
 ### Main-scoped resolution
 
-A column named for main is read from main, whatever the working directory is. The three `main_*` captures resolve their tree through `_invariants._main_repo_root()`, which is **cwd-independent**: under a base-dir override (`PLAN_BASE_DIR` / `set_base_dir()`) the override directory stands in for the checkout, and otherwise `git rev-parse --git-common-dir` names main's `.git` even when the process is inside a linked worktree. This mirrors `marketplace_paths.resolve_main_anchored_path`, the single sanctioned main-anchored exception (ADR-002).
+A column named for main is read from main. The three `main_*` captures resolve their tree through `_invariants._main_repo_root()`, whose property is **worktree-invariance**: it names the same main checkout from any tree in the repository, a linked worktree included. Under a base-dir override (`PLAN_BASE_DIR` / `set_base_dir()`) it honours the override; otherwise `git rev-parse --git-common-dir` names main's `.git` even from inside a linked worktree. Precedence has the shape `marketplace_paths.resolve_main_anchored_path` uses — override first, then git — that being the single sanctioned main-anchored exception (ADR-002).
 
-The distinction is load-bearing. Every *other* resolution here is uniform cwd-relative, including `_invariants._current_repo_root()` — the resolver `_run_script` uses to reach the worktree-resident executor and the plan state moved in at phase-5 start. That one follows the pinned worktree **by design**, so a `main_*` column must not share it: from phase-5 onward the orchestrator's cwd IS the worktree, and a cwd-derived `main_sha` would silently record a feature-branch commit under a name that claims main. Two columns describing one tree is what the [`worktree_sha_equals_main_sha`](#worktree_sha_equals_main_sha-capture-time-error) refusal exists to catch.
+⚠ Worktree-invariance is the accurate claim, not cwd-independence: `git rev-parse` runs in the process cwd, so the resolver names whichever *repository* the process is in. Within one repository it is invariant across main and every worktree, which is exactly what these columns need.
+
+The distinction from the cwd-relative resolver is load-bearing. Every *other* resolution here is uniform cwd-relative, including `_invariants._current_repo_root()` — the resolver `_run_script` uses to reach the worktree-resident executor and the plan state moved in at phase-5 start. That one follows the pinned worktree **by design**, so a `main_*` column must not share it: from phase-5 onward the orchestrator's cwd IS the worktree, and a cwd-derived `main_sha` would silently record a feature-branch commit under a name that claims main. Reading one tree under both column names is what the [`main_capture_read_the_worktree`](#main_capture_read_the_worktree-capture-time-error) refusal catches.
 
 When the main checkout cannot be resolved at all (not a git repository, git unavailable) the resolver returns `None` and the capture leaves the column **empty** — the registry's "not applicable" contract. It never falls back to the ambient working directory: an unresolvable main checkout is *unknown*, and filling the column with whichever tree the process happens to occupy is exactly the mis-resolution the main-anchored path exists to end.
 
-### `worktree_sha_equals_main_sha` capture-time error
+### `main_capture_read_the_worktree` capture-time error
 
-The `main_sha` and `worktree_sha` columns exist because they describe two different trees. A worktree-backed plan whose two captured commits are **equal** is therefore reporting one tree under two names — the row disproves itself with no external reference — so `capture_all` raises `WorktreeShaEqualsMainSha` and `cmd_capture` returns a structured error payload **without writing a row**:
+`main_sha` and `worktree_sha` describe two different trees. When they hold the same commit **and** both resolved to the same directory, one tree is being reported under two names — the row disproves itself with no external reference. `capture_all` raises `MainCaptureReadTheWorktree` and `cmd_capture` returns a structured error payload **without writing a row**:
 
 ```toon
 status: error
-error: worktree_sha_equals_main_sha
+error: main_capture_read_the_worktree
 plan_id: X
 phase: 5-execute
 sha: 3823a0dd…
-same_tree: true
-message: "phase 5-execute: worktree-backed plan captured main_sha == worktree_sha (3823a0dd…); both columns resolved to the SAME tree — the main-scoped resolution regressed to the worktree"
+main_root: /repo/.plan/local/worktrees/my-plan
+worktree_path: /repo/.plan/local/worktrees/my-plan
+message: "phase 5-execute: the main-scoped capture read the plan worktree — main_sha == worktree_sha (3823a0dd…) and both resolved to /repo/.plan/local/worktrees/my-plan. A column named for main must be read from main; repair the main-anchored resolution (_main_repo_root) before re-entering the phase."
 ```
 
-**Trigger condition:** both columns were captured — which is exactly "this plan is worktree-backed with a resolvable worktree", since `worktree_sha` is gated on [`_worktree_in_use`](#worktree-applicability) — and they hold the same value.
+**Trigger condition:** both columns were captured — which is exactly "a `metadata.worktree_path` is persisted", since `worktree_sha` is gated on [`_worktree_in_use`](#worktree-applicability), a predicate that keys on that path and does **not** read `use_worktree` — AND they hold the same commit AND `_main_repo_root()` resolves to the same directory as `worktree_path`.
 
-**One-sided by construction.** A plan genuinely running on main captures no `worktree_sha` at all, so an equal pair is impossible there and this refusal can never block an on-main run.
+⛔ **Equal commits alone are NOT the trigger.** Two *distinct* trees can legitimately hold one commit: a worktree-backed plan whose feature branch carries no commit of its own has its HEAD still on the commit it branched from. That state is produced by the shipped flow — `phase-5-execute` Step 2.5 materializes the worktree unconditionally, *before* the `early_terminate` short-circuit, so an analysis-only plan never commits on its branch — and refusing it would hard-block a legitimate boundary with no override escape. Such a row is permitted and is **correct**: its `main_sha` genuinely is main's HEAD. The refusal is keyed on the same-tree resolution, which is the defect, not on the equality, which is only its symptom.
 
-**`same_tree` carries the diagnosis**, derived from the two resolved paths rather than from the equal values:
+**Never fires on a plan with no worktree.** No persisted `worktree_path` means no `worktree_sha`, so there is nothing to compare.
 
-- `true` — both columns were read from the same directory, so the [main-scoped resolution](#main-scoped-resolution) regressed to the worktree. Repair the resolution; the row's `main_sha` provably never reached main.
-- `false` — two distinct trees genuinely hold the same commit. The reachable cause is a worktree-backed plan whose feature branch carries no commit of its own yet, so its HEAD is still the commit it branched from. Commit the branch's work before the boundary.
+**Resolution:** repair the main-anchored resolution ([above](#main-scoped-resolution)), then re-enter the phase. The payload's `main_root` and `worktree_path` name the two directories that collapsed.
 
-**Resolution:** repair whichever cause `same_tree` names, then re-enter the phase. The error is in `VERIFY_REFUSAL_ERRORS`, so a live re-capture that reproduces it at verify time refuses the boundary and is never auto-resolved by the [loop-back marker](#loop-back-auto-override-sanctioned-re-entry-drift).
+`cmd_verify` returns the **same** payload from the same shared builder: `capture_all` runs the cross-field check itself, so a live re-capture that reproduces the state surfaces the refusal at the `capture_all` call rather than as a traceback. The error is in `VERIFY_REFUSAL_ERRORS`, so such a boundary refuses and is never auto-resolved by the [loop-back marker](#loop-back-auto-override-sanctioned-re-entry-drift).
 
 ### `worktree_metadata_drift` capture-time error
 

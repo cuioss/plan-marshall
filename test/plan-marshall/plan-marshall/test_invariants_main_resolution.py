@@ -256,6 +256,38 @@ def test_capture_main_dirty_files_leaves_column_empty_when_main_unresolvable(
     assert inv._capture_main_dirty_files('p', {}, '5-execute') is None
 
 
+def test_a_commit_less_feature_branch_is_captured_not_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, production_resolution: None
+) -> None:
+    """A REAL worktree whose branch carries no commit must capture, not refuse.
+
+    ``phase-5-execute`` Step 2.5 materializes the worktree unconditionally,
+    before the ``early_terminate`` short-circuit, so an analysis-only plan
+    reaches its phase-5 boundary in exactly this state: two distinct trees, one
+    commit, nothing wrong. Refusing it would hard-block the boundary with no
+    override escape and write no ``5-execute`` row — which the summariser then
+    classifies as "the phase did not complete its handshake".
+
+    Deliberately built from a real ``git worktree add`` with **no** commit on the
+    branch, rather than by stubbing ``git_head`` to one value: the whole point is
+    that the equal pair here is genuine, and a stub cannot show that.
+    """
+    main_repo = tmp_path / 'main'
+    _init_main_repo(main_repo)
+    worktree = tmp_path / 'wt'
+    _git(main_repo, 'worktree', 'add', '-q', '-b', 'feature/analysis-only', str(worktree))
+    monkeypatch.chdir(worktree)
+    monkeypatch.setattr(
+        inv, 'INVARIANTS', [e for e in inv.INVARIANTS if e[0] in ('main_sha', 'worktree_sha')]
+    )
+    metadata = {'use_worktree': True, 'worktree_path': str(worktree)}
+
+    captured = inv.capture_all('p', metadata, '5-execute')
+
+    head = _git(main_repo, 'rev-parse', 'HEAD')
+    assert captured == {'main_sha': head, 'worktree_sha': head}
+
+
 # =============================================================================
 # The drift consumer (D5c)
 # =============================================================================

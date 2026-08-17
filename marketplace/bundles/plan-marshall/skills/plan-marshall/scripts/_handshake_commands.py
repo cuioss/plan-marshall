@@ -49,11 +49,10 @@ from _handshake_store import (
 from _invariants import (
     INVARIANTS,
     BlockingFindingsPresent,
+    MainCaptureReadTheWorktree,
     MainCheckoutDirtiedDuringPlan,
     PhaseStepsIncomplete,
     PrTitleMissing,
-    WorktreeShaEqualsMainSha,
-    _assert_main_differs_from_worktree,
     _capture_pending_findings_blocking_count,
     _main_dirty_drift_diff,
     _worktree_materialized,
@@ -352,6 +351,28 @@ def _check_main_dirty_drift(
     )
 
 
+def _main_capture_read_the_worktree_payload(
+    exc: MainCaptureReadTheWorktree,
+    plan_id: str,
+    phase: str,
+) -> dict[str, Any]:
+    """Structured refusal payload for a main-scoped capture that read the worktree.
+
+    Shared by ``cmd_capture`` and ``cmd_verify`` so the two envelopes cannot
+    drift apart — the operator sees one shape whichever verb hit the state.
+    """
+    return {
+        'status': 'error',
+        'error': 'main_capture_read_the_worktree',
+        'plan_id': plan_id,
+        'phase': phase,
+        'sha': exc.sha,
+        'main_root': exc.main_root,
+        'worktree_path': exc.worktree_path,
+        'message': str(exc),
+    }
+
+
 def _row_for_capture(
     _plan_id: str,
     phase: str,
@@ -421,16 +442,8 @@ def cmd_capture(args: Any) -> dict[str, Any]:
             'phase': phase,
             'message': str(exc),
         }
-    except WorktreeShaEqualsMainSha as exc:
-        return {
-            'status': 'error',
-            'error': 'worktree_sha_equals_main_sha',
-            'plan_id': plan_id,
-            'phase': phase,
-            'sha': exc.sha,
-            'same_tree': exc.same_tree,
-            'message': str(exc),
-        }
+    except MainCaptureReadTheWorktree as exc:
+        return _main_capture_read_the_worktree_payload(exc, plan_id, phase)
     row = _row_for_capture(
         plan_id,
         phase,
@@ -541,6 +554,15 @@ def cmd_verify(args: Any) -> dict[str, Any]:
             'drift_count': len(diffs),
             'diffs': diffs,
         }
+    except MainCaptureReadTheWorktree as exc:
+        # A live re-capture whose main-scoped columns read the worktree is a
+        # boundary REFUSAL, not drift: the observed ``main_sha`` is not main's,
+        # so there is nothing meaningful to diff against the baseline. The
+        # catch belongs on THIS call — ``capture_all`` runs the cross-field
+        # check itself, so the exception surfaces here and nowhere later.
+        # ``VERIFY_REFUSAL_ERRORS`` keeps it out of the loop-back
+        # auto-override path.
+        return _main_capture_read_the_worktree_payload(exc, plan_id, phase)
     except BlockingFindingsPresent as exc:
         # Treat observed blocking findings as drift on the
         # ``pending_findings_blocking_count`` column so callers see a
@@ -564,26 +586,6 @@ def cmd_verify(args: Any) -> dict[str, Any]:
             'override': captured_row.get('override', False),
             'drift_count': len(diffs),
             'diffs': diffs,
-        }
-
-    # A live re-capture that reproduces the self-contradictory row is a
-    # boundary refusal, not drift: the observed ``main_sha`` cannot be trusted
-    # as a comparison basis at all, so there is nothing meaningful to diff
-    # against the baseline. Fail closed with the same structured error
-    # ``cmd_capture`` returns, and let ``VERIFY_REFUSAL_ERRORS`` keep it out of
-    # the loop-back auto-override path. Without this handler the exception
-    # would escape ``cmd_verify`` as an unhandled traceback.
-    try:
-        _assert_main_differs_from_worktree(observed, metadata, phase)
-    except WorktreeShaEqualsMainSha as exc:
-        return {
-            'status': 'error',
-            'error': 'worktree_sha_equals_main_sha',
-            'plan_id': plan_id,
-            'phase': phase,
-            'sha': exc.sha,
-            'same_tree': exc.same_tree,
-            'message': str(exc),
         }
 
     # Layer-D enforcement (filesystem-state-based): proper-superset drift

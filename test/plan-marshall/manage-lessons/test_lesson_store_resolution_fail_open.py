@@ -70,24 +70,25 @@ def _write_plan_status(plan_dir, current_phase: str, phase_status: str, plan_sou
 
 
 class TestOverridePredicateMirroring:
-    """The override predicate is MIRRORED across its sites, not shared.
+    """The override predicate agrees across its sites.
 
     ``_lessons_io.resolve_lesson_store`` decides ``override`` vs
-    ``main_anchored`` by re-evaluating the condition
-    ``marketplace_paths.resolve_main_anchored_path`` branches on
+    ``main_anchored`` by calling ``marketplace_paths.base_dir_override_active``
+    — the same predicate ``resolve_main_anchored_path`` branches on
     (``PLAN_BASE_DIR`` set, or a ``file_ops.set_base_dir()`` override
-    installed). The two are textually identical COPIES, not one shared
-    predicate, so nothing structural stops them drifting apart — and the drift
-    is silent in the worst way: the handle would report a provenance the
-    returned path does not have, which is the resolved-value-for-a-substrate-we-
-    did-not-reach failure the whole ``STORE_RESOLUTIONS`` contract exists to
-    make impossible.
+    installed). These were formerly two textually identical copies whose
+    agreement nothing structural enforced; they now share one predicate.
 
-    These cases are the guard that keeps the copies honest — one per disjunct
-    of the condition, plus the negative arm. Each asserts the two sites agree
-    by comparing the handle's reported path against the resolver's own return,
-    so a divergence in either copy fails here rather than surfacing as a
-    mislabelled store much later.
+    The guard is still worth keeping, because a shared predicate does not by
+    itself prove this site reads it the same way round — an inverted branch
+    would make the handle report a provenance the returned path does not have,
+    which is the resolved-value-for-a-substrate-we-did-not-reach failure the
+    whole ``STORE_RESOLUTIONS`` contract exists to make impossible.
+
+    One case per disjunct of the condition, plus the negative arm. Each asserts
+    the two sites agree by comparing the handle's reported path against the
+    resolver's own return, so a divergence fails here rather than surfacing as
+    a mislabelled store much later.
     """
 
     def test_env_override_makes_both_sites_take_the_override_branch(
