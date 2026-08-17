@@ -133,6 +133,14 @@ def _load_deliverables(plan_id: str) -> tuple[list[dict[str, Any]], dict[int, st
         }
     except (ValueError, AttributeError):
         return [], {}, False
+    if not deliverables:
+        # A Deliverables section that exists but carries no `### N. Title`
+        # heading yields an empty list, and every check downstream then passes
+        # vacuously over it — coverage finds nothing uncovered, keyword-drift
+        # finds no drift — while `ambiguous` stays False and tells the
+        # orchestrator the mechanical pass was authoritative. An outline nobody
+        # could parse must reach the LLM dispatch, not a clean bill of health.
+        return [], {}, False
     return deliverables, prose_by_number, True
 
 

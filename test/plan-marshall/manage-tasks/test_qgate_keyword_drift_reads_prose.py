@@ -144,6 +144,30 @@ def test_keyword_present_only_in_prose_is_not_flagged(plan_context):
     )
 
 
+def test_heading_less_deliverables_section_is_unparseable(plan_context):
+    """A Deliverables section with no `### N.` heading must not read as parseable.
+
+    ``extract_deliverables`` returns an empty list for it, and every downstream
+    check then passes vacuously — coverage finds nothing uncovered, keyword-drift
+    finds no drift — while ``ambiguous`` stays False and reports the mechanical
+    pass as authoritative. An outline nobody could parse has to reach the LLM
+    dispatch instead of receiving a clean bill of health.
+    """
+    plan_dir = Path(plan_context.plan_dir_for('qgate-no-headings'))
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / 'solution_outline.md').write_text(
+        '# Solution Outline\n\n## Deliverables\n\nProse with no numbered heading.\n',
+        encoding='utf-8',
+    )
+    _write_task(plan_dir, "'Something'. Tighten the CI pipeline trigger.")
+
+    result = cmd_qgate_mechanical(Namespace(plan_id='qgate-no-headings', no_emit=True))
+
+    assert result['ambiguous'] is True, (
+        'an unparseable outline was reported as an authoritative mechanical pass'
+    )
+
+
 def test_keyword_absent_everywhere_is_still_flagged(plan_context):
     """The paired negative: the same task text over a deliverable that never says it.
 

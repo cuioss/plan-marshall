@@ -252,7 +252,16 @@ Every finding, its source, and its disposition. One row per instance.
 | F31 | Verification sub-agent | The run report never recorded the `./pw verify` result, while two sections pointed at each other for it. | **Fixed** — § Build gate carries the figures, and discloses that the first run failed. |
 | F32 | Verification sub-agent | D0 row 2 claimed "seven production consumers" of `has_worktree`; there are six call sites. The seventh was a comment. | **Fixed** by naming the sites instead of counting them. |
 
-**Rejected findings:** none. No finding surfaced in this run was dismissed.
+| F33 | `coderabbitai` (PR review) | `extract_declared_bucket` searched the **whole deliverable body**, so a bucket-shaped HTML comment in analysis prose would be read as the declared bucket and fail validation against a write-set it never described. The risk grew with this very PR, which made that prose part of the keyword-drift haystack. | **Fixed** — the pattern is anchored to the `**Profiles:**` line. Two regression tests: prose-quotes-plus-real-declaration, and prose-only. |
+| F34 | `coderabbitai` (PR review) | `if 'module_testing' in profiles and write_set:` — the non-empty guard **silenced the check on its strongest case.** A `module_testing` deliverable whose every entry is `(read)` has an empty write-set and writes no test file at all. | **Fixed** — guard removed, wholly-read-only regression case added. The sharpest of the six: I introduced this guard while converting the check to the write-set, carrying over a non-empty test whose original purpose (don't warn on an empty file list) had inverted once the population became the write-set. |
+| F35 | `coderabbitai` (PR review) | `_load_deliverables` returned `parseable=True` when `extract_deliverables` yielded nothing, so `ambiguous` stayed False and coverage / keyword-drift reported zero findings for an unparseable outline — **a detector passing vacuously over an empty set**, in a function this PR had already changed. | **Fixed** — returns unparseable, so the LLM dispatch runs. Regression test added. |
+| F36 | `coderabbitai` (PR review) | `phase-4-plan/SKILL.md` inlined a copy of the `_PLANNING_KEYWORDS` constant, so the documented Q-Gate contract could drift from the executed one. | **Fixed** — the copy is deleted and the line points at the constant. Markdown cannot generate from source, so an xref is the available form of "derive it", and it is what the repo's own integration-narrative constraint prefers. |
+| F37 | `coderabbitai` (PR review) | Two further stale doc sites the sub-agent's sweep did not reach: `worktree-handling.md:38` ("returns the absolute path when `use_worktree == true`") and `manage-config/SKILL.md:1429` (`unknown` explained as pending materialization only). | **Fixed** at both. The observation table at `worktree-handling.md:64-72` was **kept** — it documents the handshake's producer-side `_worktree_materialized` predicate, which has a phase axis and is unchanged — but is now labelled producer-side, with consumers directed to the published field. |
+| F38 | `coderabbitai` (PR review) | Add an executable `cloud-plan-lane` preflight gate: both plan files require the run to stop when the skill cannot load, but the skill is prose and `.claude/settings.json` registers no hook. | **REJECTED, with reason.** The observation is accurate; the remedy does not fit the artifact. `cloud-plan-lane` is a contract addressed to an agent, and a `PreToolUse` hook cannot evaluate its precondition — there is no observable signal for "this skill's content is in the agent's context", only for "a file exists", which is a different claim and would go green for an agent that never read it. It is also outside this plan's authorised surface. Reasoning posted on the PR, with a narrower framing offered for anyone who wants to pursue it. |
+
+**Rejected findings:** one — **F38**, with the reasoning above and posted publicly on the PR rather than only recorded here.
+
+⚠ **CodeRabbit's inline comments partially failed to post** ("Inline review comments failed to post … GitHub's internal server error or limits"). Five arrived on the inline-thread surface and the sixth survived only inside a *Comments failed to post* block in the review-summary body. Reading one surface would have lost findings either way — which is why all three are read, and why a count taken from a single surface is not a count of the review.
 
 ⭐ **The pattern across F1–F3, F18 and F17 is one defect class, not five instances of carelessness.**
 Four separate bundles each carried a green test asserting that a normal pre-materialization reading is
@@ -331,25 +340,37 @@ appears on neither of the other two.
 | Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
 |---|---|---|---|
 | `cuioss-review-bot` | **reviewed** | — | Posted a *PR Reviewer Guide* carrying an explicit nothing-to-report over the diff: "No major issues detected", "No security concerns identified", "PR contains tests". Filed against head `178c0dd`; the only change since is the docs-only Step 9 commit, so the **code** it read is the code that merges. |
-| `coderabbitai` | **rate-limited** | **yes** | "Review limit reached … we couldn't start this review. **Next review available in: 24 minutes.** You've used all 1 included review currently available under your plan." Re-requested with the registry's `@coderabbitai review` trigger at 18:36 UTC, after the stated window elapsed; no review had arrived by 18:50 UTC. The recovery attempt was made and did not land. |
+| `coderabbitai` | **reviewed** | — | Initially refused: "Review limit reached … **Next review available in: 24 minutes**". Re-requested with the registry's `@coderabbitai review` trigger at 18:36 UTC, once the stated window had elapsed. **The recovery worked** — a full review landed at 18:59 UTC against head `15f1988` with **6 actionable findings** (F33–F38). |
 | `sourcery-ai` | **rate-limited** | **no** | "your pull request is larger than the review limit of **150000 diff characters**". A property of *this diff*, not of the clock — the same request never succeeds at this size, so waiting is futile and no re-request was made. |
 
-**Coverage: 1 of 3.**
+**Coverage: 2 of 3.**
 
-Two reviewers refused this PR at essentially the same moment for reasons that call for opposite
-handling — one on a countdown worth waiting out, one on a size ceiling that never clears. Without the
-`Reopens?` column they would read identically in this table, and a reader could not tell which was
-worth re-requesting. Only `coderabbitai` was.
+⭐ **The `Reopens?` column earned its place here.** Two reviewers refused this PR within three minutes
+of each other, and the column is the only thing that told them apart: `coderabbitai` on a countdown,
+`sourcery-ai` on a size ceiling. Re-requesting the countdown one produced **six findings, two of them
+real defects in shipped code**. Re-requesting the other would have failed identically however long I
+waited. Had the table recorded both as "rate-limited" and stopped there, the rational move looks like
+"wait for neither", and those six findings do not exist.
+
+An earlier version of this section recorded `coderabbitai` as **rate-limited / Reopens? yes**,
+because at the time of writing the re-request had not yet returned. It returned nineteen minutes
+later. The verdict was corrected from the bodies rather than left standing — a participation record
+written once at the moment of asking is a snapshot, not a finding.
 
 No `silent` verdict arose, so the recovery check for that state was not needed. Every verdict above
 comes from a stored comment body, never from a check-run state: `Sourcery review` concluded
 `skipped` and `verify / conclusion` concluded `success`, and neither fact is evidence that any
 reviewer read the diff.
 
-**The § Step 8 shortfall disclosure fired**, before auto-merge was armed, stating the coverage as
-1-of-3 and naming each reviewer's reason and whether it reopens. The shortfall changed what the run
-*said*, not whether it merged — a rate limit is outside our control, and blocking on one would strand
-the landing behind a bot's quota.
+⚠ **CodeRabbit's review partially failed to post inline.** Five of its six findings arrived on the
+inline-thread surface; the sixth existed only inside a *Comments failed to post* block in the
+review-summary body. Reading either surface alone would have silently lost findings, and the
+review's own header said "Actionable comments posted: 6" while six were not posted. All three
+surfaces were read.
+
+**The § Step 8 shortfall disclosure fired** before auto-merge was armed, stating coverage as 2-of-3
+and naming `sourcery-ai`'s size ceiling and that it does not reopen. The shortfall changed what the
+run *said*, not whether it merged.
 
 ## Cost
 

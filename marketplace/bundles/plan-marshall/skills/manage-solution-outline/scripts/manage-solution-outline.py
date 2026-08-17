@@ -317,8 +317,14 @@ def validate_deliverable_contract(deliverable: dict[str, Any]) -> tuple[list[str
     # The write-set, not the whole affected-files list: a deliverable that merely
     # READS a test file for reference has not thereby acquired a test surface, and
     # scanning the wholesale list let one such reference satisfy the profile.
+    # No non-empty guard on the write-set: a module_testing deliverable whose
+    # every entry is `(read)` has an EMPTY write-set and no written test file at
+    # all, which is the sharpest instance of the case this check exists to
+    # report. Guarding on non-emptiness silenced the check precisely there. A
+    # verification-only deliverable is unaffected — it does not carry the
+    # module_testing profile, so the profile test above already excludes it.
     write_set = deliverable_write_set(deliverable)
-    if 'module_testing' in profiles and write_set:
+    if 'module_testing' in profiles:
         test_indicators = ('test/', 'Test.', '_test.', 'test_', '.test.', 'spec/', '/tests/')
         has_test_files = any(
             any(indicator in path for indicator in test_indicators) for path in write_set

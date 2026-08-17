@@ -35,7 +35,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-wo
   --plan-id {plan_id}
 ```
 
-The script returns the absolute path when `metadata.use_worktree == true` and an empty string when the plan runs against the main checkout.
+The script publishes a `worktree_state` discriminator — `materialized` / `pending` / `disabled` — and returns the absolute path only for `materialized`, an empty string for the other two. Consumers branch on that field; see [Worktree-Resolution Contract](#worktree-resolution-contract) for which of the two empty-path states a caller must distinguish.
 
 ## Worktree Lifecycle
 
@@ -61,7 +61,16 @@ The consequence for concurrent sessions: a plan-discovery operation (`manage-sta
 
 ### Worktree-Resolution Contract
 
-Every script and skill that consumes `worktree_path` reads it as a boolean disk-presence signal — there is no empty-path sentinel state to carry. The applicability decision is governed by a single materialization predicate (`_worktree_materialized` in the handshake's `_invariants.py`): the worktree is in play when **either** `worktree_path` is present and non-empty **or** the active phase is a materialization phase (`5-execute`, `6-finalize`). The phase term is what lets the predicate treat the transient phase-5 window — after phase entry but before Step 2.5 backfills the path — as materialized even while `worktree_path` is still empty. The three disk-presence observations below are the path-binding consequence of that predicate:
+Every script and skill that consumes `worktree_path` reads it as a boolean disk-presence signal — there is no empty-path sentinel state to carry. The applicability decision is governed by a single materialization predicate (`_worktree_materialized` in the handshake's `_invariants.py`): the worktree is in play when **either** `worktree_path` is present and non-empty **or** the active phase is a materialization phase (`5-execute`, `6-finalize`). The phase term is what lets the predicate treat the transient phase-5 window — after phase entry but before Step 2.5 backfills the path — as materialized even while `worktree_path` is still empty. The three disk-presence observations below are the path-binding consequence of that predicate.
+
+⚠ **These are PRODUCER-side facts, and a consumer does not read them directly.** `manage-status
+get-worktree-path` derives exactly this table into a published `worktree_state`
+(`disabled` / `pending` / `materialized`, in row order below), and every consumer branches on that
+field rather than on the raw pair — re-deriving the state from the primitives cannot distinguish the
+second row from the first, and they route differently. The rows remain here because the handshake's
+`_worktree_materialized` predicate is producer-side and additionally carries a phase axis this table
+describes; a consumer wanting the same question without the phase term calls
+`file_ops.derive_worktree_state`.
 
 | Observation | Meaning | Required behaviour |
 |-------------|---------|--------------------|

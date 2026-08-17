@@ -134,6 +134,33 @@ class TestModuleTestingProfileReadsTheWriteSet:
             f'a read-only test reference satisfied module_testing; warnings={warnings}'
         )
 
+    def test_wholly_read_only_deliverable_does_not_satisfy_module_testing(self):
+        """The sharpest case: an EMPTY write-set under a `module_testing` profile.
+
+        Such a deliverable writes no test file at all, so it is the strongest
+        instance of what this check reports — and a non-empty guard on the
+        write-set silenced the check exactly there, because the emptiest input
+        looked like "nothing to check" rather than "nothing is written".
+        """
+        deliverable = _deliverable(
+            [(_TEST_PATH, 'read'), (_CODE_PATH, 'read')],
+            profiles=['implementation', 'module_testing'],
+            metadata={
+                'change_type': 'feature',
+                'execution_mode': 'automated',
+                'domain': 'python',
+                'module': 'plan-marshall',
+                'depends': 'none',
+            },
+            verification={'command': 'verify', 'criteria': 'green'},
+        )
+
+        _errors, warnings = validate_deliverable_contract(deliverable)
+
+        assert any('module_testing profile but no test files' in w for w in warnings), (
+            f'a deliverable that writes nothing satisfied module_testing; warnings={warnings}'
+        )
+
     def test_written_test_file_satisfies_module_testing(self):
         """Paired negative: the same path, declared as a write, is a real test surface."""
         deliverable = _deliverable(
@@ -171,6 +198,32 @@ class TestDeclaredBucketIsParsed:
 
     def test_absent_bucket_comment_yields_none(self):
         content = '**Profiles:**\n- implementation\n'
+
+        assert extract_declared_bucket(content) is None
+
+    def test_bucket_comment_in_prose_is_not_read_as_the_declared_bucket(self):
+        """Extraction is anchored to the ``**Profiles:**`` line, not the whole body.
+
+        Deliverable prose is free text an author writes, and this convention is
+        the kind of thing prose quotes. A free-floating match would take a
+        documented example as the deliverable's own declaration and fail it
+        against a write-set it never described.
+        """
+        content = (
+            'The bucket convention is recorded as `<!-- bucket: production_only -->`.\n\n'
+            '**Profiles:** <!-- bucket: documentation_only -->\n'
+            '- implementation\n'
+        )
+
+        assert extract_declared_bucket(content) == 'documentation_only'
+
+    def test_bucket_comment_outside_the_profiles_line_is_ignored(self):
+        """With no comment on the Profiles line, prose mentions yield nothing."""
+        content = (
+            'Earlier work used `<!-- bucket: production_only -->` here.\n\n'
+            '**Profiles:**\n'
+            '- implementation\n'
+        )
 
         assert extract_declared_bucket(content) is None
 

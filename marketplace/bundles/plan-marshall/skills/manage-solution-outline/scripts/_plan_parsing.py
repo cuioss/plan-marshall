@@ -25,7 +25,16 @@ from constants import STEP_INTENT_READ
 #: The ``<!-- bucket: X -->`` audit-trail comment recorded on the
 #: ``**Profiles:**`` line. Owned here because ``_extract_profiles`` reads the
 #: same line and must keep ignoring the comment while this pattern reads it.
-_BUCKET_COMMENT_PATTERN = re.compile(r'<!--\s*bucket:\s*([a-z_]+)\s*-->', re.IGNORECASE)
+#:
+#: **Anchored to that line**, not free-floating over the deliverable body. The
+#: body is prose an author writes, so a bucket-shaped comment appearing anywhere
+#: in it — quoting this convention, or documenting a bucket in an example —
+#: would otherwise be read as the deliverable's own declared bucket and could
+#: fail validation against a write-set it was never describing.
+_BUCKET_COMMENT_PATTERN = re.compile(
+    r'^\*\*Profiles:\*\*[^\n]*?<!--\s*bucket:\s*([a-z_]+)\s*-->',
+    re.IGNORECASE | re.MULTILINE,
+)
 
 _HEADER_VIRTUAL_FIELDS = ('plan_id', 'source', 'source_id', 'created')
 _HEADER_FIELD_PATTERN = re.compile(
