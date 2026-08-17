@@ -559,49 +559,27 @@ Give it, at minimum:
 - the instruction to report every gap it finds with file and symbol, and to state explicitly when a
   deliverable cannot be verified from the diff alone rather than assuming it passed;
 - the instruction that a clean verdict must name what it checked, so an empty finding list is
-  distinguishable from a check that examined nothing.
+  distinguishable from a check that examined nothing;
+- **the stop question**, asked directly: *does anything you found remain that condition A or B forbids
+  leaving open?* — with A and B quoted to it, and every survivor still open from earlier rounds listed
+  for re-checking. Its answer is what ends the loop on the verifier exit (§ "When the loop stops"; the
+  other exit is the exhausted budget), so it is asked of the verifier here rather than decided by the
+  author afterwards.
 
 Then:
 
 - **Findings that are real** → fix them, then re-dispatch. A verification pass that found a defect
-  has not finished.
+  has not finished — unless conditions **A** and **B** permit that finding to be left open, or the
+  round budget is spent, in which case everything **A** forbids is still **fixed**, B's survivors are
+  characterised, and the loop ends there (§ "When the loop stops", at the end of this step).
 - **Findings you reject** → record the finding *and the reason for rejecting it* in the report. A
   dismissed finding is still evidence.
-- Every finding, accepted or rejected, goes in the run report (§ Report).
-
-### When the loop has converged — and what "converged" may NOT mean
-
-"A pass that found a defect has not finished" is the rule, and it is deliberately strict. But taken
-without a terminating condition it implies looping until a round returns literally nothing, and that
-is not always reachable: each round's *fixes* are new unreviewed prose, so a round can keep producing
-findings about the previous round's corrections indefinitely while the artefact under review stops
-improving. An observed run went five rounds; rounds 3-5 produced **zero** findings against the code
-and every finding against the run's own report.
-
-**The loop MAY be stopped short of a clean round, under all four of these conditions:**
-
-1. **No finding in the last round changed code behaviour, a test's meaning, or a deliverable's
-   verdict.** A single finding of any of those kinds resets this — fix and re-dispatch.
-2. **The code was verified by something stronger than another read.** A differential run against the
-   merge base, a fuzz sweep, a mutation test that proves a new guard non-vacuous, an exhaustive
-   enumeration of a function's return branches. "Three agents read it and found nothing" is not this.
-3. **The findings are declining and confined to the run's own prose.** Not merely fewer — *narrower*:
-   about the report and the plan documents rather than the shipped change.
-4. **The report says the loop was stopped by judgement**, names the round, and records that the
-   document should be assumed to still contain residue of the kind the last round found.
-
-⛔ **Stopping is a decision the run discloses, never a state it reports.** "Verification converged" and
-"I chose to stop at round 5 with prose findings outstanding" are different claims, and only the second
-is true in this situation. Writing the first is the same unmeasurable-rendered-as-measured defect this
-lane exists to catch, applied to the lane's own process.
-
-⭐ **Converged code is not defect-free code, and the report must not blur them.** In the run that
-produced this rule, the sub-agent loop was correctly assessed as converged — and an external reviewer
-then found **two real code defects** in the same diff, one of them a `Path.cwd()` fallback the run had
-seen and consciously left. What convergence licenses is stopping *this* loop; it licenses no claim
-about the code's correctness. Where a reviewer is still owed a look (§ Step 7), give it to them:
-convergence is not a substitute for review coverage, and a rate-limited reviewer whose window reopens
-is worth re-requesting precisely because its method differs from the loop that just converged.
+- Every finding — fixed, rejected-with-reason, deferred to a named follow-up, or left open as a
+  **survivor** — goes in the run report (§ Report). A *deferred* finding is real and unfixed here;
+  a *survivor* is one the run argues needs no fixing at all (§ "When the loop stops"). Neither is
+  available to a finding condition **A** governs: a false statement is fixed, not deferred. And
+  **B reaches a deferred behavioural finding too** — deferring it is still leaving it open, so it
+  carries the same (a) proof or (b) bound a survivor carries, or it is fixed here.
 
 **A fix is a change, so it gets the same beyond-diff sweep the original change got.** The sweep above
 is written against the diff under review; by the second round the diff under review is largely the
@@ -685,8 +663,8 @@ because a docstring that explains **why** is trusted more than one that repeats 
 exactly why an unverified rationale is worse than none: it is the sentence a later reader believes
 instead of checking. Prefer no rationale to an unchecked one.
 
-The two obligations below are part of that same per-round sweep, not a separate pass done once at
-the end. Both are checked **before every re-dispatch and again before the merge gate**.
+The obligations below are part of that same per-round sweep, not a separate pass done once at the
+end. Each is checked **before every re-dispatch and again before the merge gate**.
 
 **The run report is part of that surface.** A findings table recording a disposition the artifacts
 contradict — a row saying "fixed at all four sites" when one still carries the old claim — is the same
@@ -741,8 +719,102 @@ The run-report, PR-description, and moving-figure obligations above all exist be
 them: across one run's four verification rounds, each round's fixes landed at the site the finding
 named and not at the sites restating the same claim — twice in the run report's own findings table.
 (They are named rather than counted here for the reason the enumeration rule gives: a count in this
-position goes stale the moment an obligation is added to the list, which is how it read "three" while
-standing above four blocks.)
+position goes stale the moment an obligation is added to the list — as one was, in the very commit
+that rewrote this sentence.)
+
+### When the loop stops
+
+"Re-dispatch until a round finds nothing" is not a terminating rule: a round can always probe one
+more mutation, one more boundary, one more restatement. The evidence runs both ways. One observed run
+reached **twelve** rounds, eleven of which found a defect in the previous round's
+fix, and concluded that *"no findings" is not a state this process reaches*. Another went five, and
+its rounds 3–5 produced **zero** findings against the code and every finding against the run's own
+report — each round's fixes are new unreviewed prose, so the loop keeps finding defects in its own
+corrections long after the artefact under review has stopped improving.
+
+**The loop ends in exactly one of two ways**, and the report says which (§ Report):
+
+- **(i) the verifier answers that nothing remains** that A or B forbids leaving open, on the evidence
+  required below; or
+- **(ii) the round budget is exhausted** — the hard terminator, because (i) is not guaranteed to be
+  reachable.
+
+Either way, **A and B govern what may be left open**. Call them **A** and **B** (§ Step 8's merge gate
+has its own numbered conditions; these are not those).
+
+**A — nothing false is left, ever.** A finding that some STATEMENT is false — a comment, a docstring,
+a bundle doc, a test's own description, a report figure, the PR description — is fixed, wherever it
+lives and whether or not it executes. This step's beyond-diff sweep and its ⛔ on invented rationales
+exist to produce exactly these findings. **A is not subject to the budget below**: running out of
+rounds bounds how often you *verify*, never whether you *fix* what verification already found.
+
+**B — every behavioural finding left open is a characterised survivor.** For a finding about
+behaviour under some input — a mutant, an edge case, a shape no test covers — the loop may leave it
+open only when the run can state either
+
+> **(a)** a proof that it cannot change what the deliverable does, or
+> **(b)** the bound on what it *can* reach, and the promise it stays outside of — that promise named
+> in the plan's own terms.
+
+**(a) and (b) reach only a finding about behaviour under some input.** Both are stated about what the
+*deliverable* does, so neither is available to a finding that changes **a test's meaning or a
+deliverable's verdict**: those reset the loop always. That scoping is load-bearing, not pedantry — a
+vacuous test satisfies (a) trivially, since it cannot change what the code does at runtime, and a
+vacuous test is precisely the defect that hides a real one. **A finding that changes code behaviour
+resets the loop too, absent (a) or (b)** — fix it and re-dispatch. Characterisation is the only thing
+that lets one stay open, and being small is not characterisation. Survivors are listed individually;
+a bulk mention is not a disclosure. **A finding that is both a false statement and a behavioural
+defect is governed by A** — it is fixed, not characterised.
+
+**Exit (i) requires evidence stronger than another read.** A verifier's "nothing remains" rests on
+something that could have come back different: a differential run against the merge base, a fuzz
+sweep, a mutation test that proves a new guard non-vacuous, an exhaustive enumeration of a function's
+return branches — or, where the deliverable is prose, opening every cross-reference onto the section
+it names and re-deriving every figure from its source, each of which returns a verdict rather than an
+impression. A skill is behavioural prose reviewed as code (§ Step 7), so exit (i) is reachable for a
+prose deliverable; what it is not reachable by is another read.
+*"Three agents read it and found nothing"* is not that. Where the late rounds'
+findings are not merely fewer but **narrower** — about the run's own report and plan documents rather
+than the shipped change — say so, as the observation it is.
+
+⛔ **Whether A and B are met is the VERIFIER's call, not the author's.** The dispatch checklist above
+puts the question to the round, over its own findings *and* every survivor still open from earlier
+rounds. Honour the answer.
+The author is the party motivated to stop, and in the twelve-round run **three** of the tests written
+to close previously-found gaps were themselves vacuous — they passed against the fixed code *and*
+against the defect they named. An author polling their own work for permission to stop will get it.
+
+⛔ **Stopping is a decision the run discloses, never a state it reports.** The verifier supplies the
+answer; the run still owns the act of stopping on it, and must not launder the one into the other.
+"Verification converged" and "I stopped at round 6, on the verifier's answer, with these survivors
+open" are different claims. Writing the first is the same unmeasurable-rendered-as-measured defect
+this lane exists to catch, applied to the lane's own process.
+
+**A round budget, declared before the first dispatch.** The plan states it where it has one; otherwise
+the run does, **up front** — before it knows what the rounds will say, because a number chosen at the
+moment of wanting to stop is not a budget. Exhausting it is a **STOP CONDITION**, and what follows is
+its stated **autonomous fallback**.
+
+When it is exhausted the run still **fixes everything A forbids**, then stops with B's survivors
+characterised and disclosed per instance. Nothing false ships because the rounds ran out. `Outcome`
+keeps its ordinary meaning — a verdict on the **deliverables** (§ Report), not on the loop — so a run
+whose deliverables are complete records `completed` and discloses its survivors, exactly as one that
+exited on a verifier's "nothing left" would.
+
+A run that wants more rounds than it declared MAY ask a reachable operator — never must. Where the
+**plan** named the budget, that is § "Rules that outrank convenience" operating as written, since the
+permission it grants is conditioned on *a plan* naming the STOP CONDITION. Where the **run** declared
+the budget, no plan named one, so that section does not reach the case and the permission is granted
+here, on the same terms. The budget, the round that ended the loop, the verifier's last answer, and
+every survivor go in the report either way.
+
+⭐ **A stopped loop is not defect-free code, and the report must not blur them.** In the five-round run
+above the loop was correctly assessed as finished — and an external reviewer then found **two real
+code defects** in the same diff, one of them a `Path.cwd()` fallback the run had seen and consciously
+left. What either exit licenses is stopping *this loop*; it licenses no claim about the code's
+correctness. Where a reviewer is still owed a look (§ Step 7), give it to them: this loop is not a
+substitute for review coverage, and a rate-limited reviewer whose window reopens is worth
+re-requesting precisely because its method differs from the loop that just ended.
 
 ## GitHub access
 
@@ -1146,7 +1218,7 @@ that its artifact exists on disk:
 | 4 Per-commit gate | Every commit touching `*.py` was preceded by a clean quality gate — a `total_issues: 0` / empty `errors[]` executor log, or the direct `./pw` tools each reporting clean (`ruff`/`mypy`/SPDX passed) |
 | 4 Pushed | No unpushed commit remains (`git status -sb` reports no `ahead`) |
 | 5 Build gate | Report states the git-derived Python-change verdict and the build outcome |
-| 6 Verification sub-agent | Findings and dispositions in the report |
+| 6 Verification sub-agent | Findings and dispositions in the report; **which of the two exits ended the loop**, the **round budget declared up front**, and the round that stopped it. On the verifier exit: **the verifier's own last answer** — never the author's verdict — and the **evidence stronger than a read** it rests on, named. On the budget exit: that fact, with everything A forbids **fixed** regardless and what closing each remaining B survivor would take. Either way: each survivor — and each behavioural finding left `deferred` — listed individually with its (a) proof or (b) bound and confirmation it was **re-put to the verifier** in the stopping round; whether the late rounds' findings were **narrower and not merely fewer**; the **residue to assume remains**; and `Outcome` still reporting the deliverables, not the loop (§ Step 6, "When the loop stops") |
 | 7 PR cycle | PR exists; every comment dispositioned in the report; the participation table carries a verdict **and** a `Reopens?` value per reviewer, and every `silent` verdict records what its recovery check found |
 | 8 Merge gate | Conditions 1–3 met and auto-merge armed. Either `state: MERGED` was confirmed after arming, **or** the session could not self-wake to watch the queue (§ Cloud session affordances) and delegated the landing to the orchestrator's collect — both are completed, neither is partial (§ Step 8). The merge commit is recorded to the operator, not in the pre-merge report |
 | 8 Bridge | No **status or bookkeeping** write landed under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan's directory was touched; a **declared-deliverable** edit to a shared lane doc (e.g. `cloud-bridge.md`, `README.md`, the plan template) is permitted — and the report carries the PR number and per-deliverable outcome the orchestrator will collect from |
@@ -1232,8 +1304,30 @@ The `git diff --name-only origin/main...HEAD -- '*.py'` verdict, and the build r
 
 ## Findings
 Every finding from the verification sub-agent, from CI, and from PR review — each with source,
-description, and disposition (fixed / rejected-with-reason / deferred). An empty section states
-what was checked to reach it.
+description, and disposition (fixed / rejected-with-reason / deferred / **survivor**). An empty
+section states what was checked to reach it.
+
+Then the stop record (§ Step 6, "When the loop stops"):
+
+- **which of the two exits ended the loop** — the verifier's answer or the exhausted budget — the
+  round budget declared before the first dispatch, and which round stopped it;
+- on the **verifier exit**: **the verifier's own last answer**, since the run does not assert the stop
+  on its own authority, and **the evidence stronger than a read** that answer rests on — the
+  differential run, fuzz sweep, mutation campaign or branch enumeration, named;
+- whether the late rounds' findings were **narrower and not merely fewer** — about the run's own
+  report and plan documents rather than the shipped change — or were not: stated as the observation
+  it is, never as a licence to stop;
+- one row per **survivor, and per behavioural finding left `deferred`**, each either (a) proved
+  equivalent, with the proof, or (b) bounded, with the bound and the promise it stays outside of, and
+  each confirmed **re-put to the verifier** in the stopping round rather than carried forward unread;
+- **what residue to assume remains** — the deliverables should be read as still carrying defects of
+  the kind the last round found, and the report says so rather than implying the last round exhausted
+  them;
+- on the **budget exit**: that the rounds ran out — with everything A forbids fixed regardless, and
+  what closing each remaining B survivor would take. `Outcome` is unaffected either way: it reports
+  the deliverables, not the loop.
+
+A run that fixed everything says so, and has no survivor rows.
 
 ## Reviewer participation
 The expected reviewer population **derived from configuration** — the `author_login` of each
