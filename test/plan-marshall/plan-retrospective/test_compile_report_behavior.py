@@ -355,6 +355,48 @@ class TestZeroReportingSectionNamesItsCheckedSet:
         assert self._doc(attributed)[1] == []
 
 
+class TestSkippedFragmentPartitionCharacterization:
+    """CHARACTERIZATION — pins SHIPPED behaviour. NOT a regression proof.
+
+    These assertions pass against the pre-change tree, so they cannot witness
+    anything this plan fixed. They are recorded (rather than dropped) because
+    they pin a boundary the partition's calibration turns on, and because the
+    second one documents an anomaly this plan is explicitly scoped OUT of
+    fixing: a ``status: skipped`` fragment that NAMES its skip reason is
+    classified as a DROP, and a drop raises the compiled run's status to
+    ``warning``. Nothing was lost — the aspect declared it had nothing to say —
+    so the loud half of the partition fires on a benign outcome.
+
+    ``skip_reason`` is a non-empty, non-envelope value, so
+    ``_fragment_has_payload`` reports payload for it; a bare skipped fragment
+    with no such field is correctly a benign omission. Whether the drop branch
+    should exempt a self-declared skip belongs to whichever plan owns that
+    scope — this test only makes the current answer visible.
+    """
+
+    def test_a_bare_skipped_fragment_is_a_benign_omission(self, tmp_path):
+        fragment = {'status': 'skipped', 'aspect': 'script_failure_analysis', 'findings': []}
+        _c, _w, omitted, dropped = _cr.build_document(
+            'demo', 'live', tmp_path, None, {'script-failure-analysis': fragment}
+        )
+        assert 'Script Failure Analysis' in omitted
+        assert 'Script Failure Analysis' not in dropped
+
+    def test_a_skipped_fragment_naming_its_reason_is_classified_as_a_drop(self, tmp_path):
+        # The anomaly, pinned as it currently behaves — see the class docstring.
+        fragment = {
+            'status': 'skipped',
+            'aspect': 'script_failure_analysis',
+            'skip_reason': 'no script-execution.log for this plan',
+            'findings': [],
+        }
+        _c, _w, omitted, dropped = _cr.build_document(
+            'demo', 'live', tmp_path, None, {'script-failure-analysis': fragment}
+        )
+        assert 'Script Failure Analysis' in dropped
+        assert 'Script Failure Analysis' not in omitted
+
+
 class TestFragmentHasPayload:
     def test_non_dict_is_false(self):
         assert _cr._fragment_has_payload('nope') is False
