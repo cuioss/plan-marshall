@@ -78,15 +78,21 @@ _ASPECT_TABLE_HEADER = '| Order | Aspect | Key | Script(s) | Reference |'
 _KEY_CELL_INDEX = 2
 
 
-def _scan_aspect_table_keys() -> list[str]:
+def _scan_aspect_table_keys(skill_text: str | None = None) -> list[str]:
     """Return the canonical key each Step-3 aspect-table row declares.
 
     Read by COLUMN POSITION from the numbered rows, not by pattern-matching
     backticked spans: the Script(s) and Reference cells are backticked too, so a
     span-based scan would sweep script names and document paths into the key
     population and the correspondence assertion would be checking the wrong set.
+
+    ``skill_text`` defaults to the live ``SKILL.md``. It is a parameter so the
+    bite test can run this exact parser over a DELIBERATELY corrupted table —
+    without it a "the guard bites" test can only do set arithmetic on a literal,
+    which exercises neither the parse nor the correspondence check.
     """
-    skill_text = _SKILL_MD_PATH.read_text(encoding='utf-8')
+    if skill_text is None:
+        skill_text = _SKILL_MD_PATH.read_text(encoding='utf-8')
     assert _ASPECT_TABLE_HEADER in skill_text, (
         f'The Step-3 aspect table no longer carries the expected header '
         f'{_ASPECT_TABLE_HEADER!r} — the Key column is read by position, so a '
@@ -321,6 +327,14 @@ class TestAspectTableKeysMatchTheRegistry:
     written from the table was rejected on first attempt. The table now carries a
     Key column, and these assertions are what make that column *derived* rather
     than *transcribed*: a key that drifts from ``SECTION_SPEC`` fails here.
+
+    ⚠ The correspondence is checked in ONE direction only — ``table → registry``.
+    A ``SECTION_SPEC`` row shipped with no table row is caught by nothing here,
+    and deliberately so: the reverse assertion would fail today on the two rows
+    that have no producer (``_executive-summary``, ``dispatch_boundaries``), and
+    encoding those exemptions in a test would pin the dead rows in place rather
+    than surface them. They are carried as residue in the plan's run report
+    instead. Re-open the reverse direction once neither dead row remains.
     """
 
     def test_scan_finds_a_key_for_every_numbered_row(self):
@@ -329,9 +343,12 @@ class TestAspectTableKeysMatchTheRegistry:
         keys = _scan_aspect_table_keys()
         assert len(keys) >= 15, f'aspect-table key scan returned {len(keys)} rows: {keys}'
         assert all(keys), f'aspect-table row(s) with an empty Key cell: {keys}'
-        # Spot-anchor the two rows whose key differs from BOTH their prose name
-        # and their reference-document basename — the rows the Key column exists
-        # for. If the scan were reading the wrong cell these would not be present.
+        # Spot-anchor the one row whose key differs from BOTH its prose name and
+        # its reference-document basename (`invariant-summary`: prose slugs to
+        # `invariant-outcomes`, basename is `invariant-check-summary`) plus one
+        # that differs from its basename alone (`routing-decisions`, whose prose
+        # DOES slug to its key). Re-derived from the table, not recalled. If the
+        # scan were reading the wrong cell neither would be present.
         assert 'invariant-summary' in keys
         assert 'routing-decisions' in keys
 
@@ -365,15 +382,26 @@ class TestAspectTableKeysMatchTheRegistry:
         )
 
     def test_guard_bites_on_a_key_that_is_not_in_the_registry(self):
-        # Mutation: the correspondence check must FAIL for a plausible-looking
-        # key that the registry does not carry (e.g. the reference-document
-        # basename for the row whose key differs from it). Without this, the
-        # assertion above could be satisfied by an empty difference for the wrong
-        # reason.
-        spec_keys = _spec_fragment_keys()
-        plausible_but_wrong = 'invariant-check-summary'
-        assert plausible_but_wrong not in spec_keys
-        assert sorted({plausible_but_wrong} - spec_keys) == [plausible_but_wrong]
+        # Runs the REAL parser over a deliberately corrupted copy of the live
+        # table, then applies the same correspondence check. Set arithmetic on a
+        # literal would prove nothing about either step.
+        corrupted = _SKILL_MD_PATH.read_text(encoding='utf-8').replace(
+            '| `invariant-summary` |', '| `invariant-check-summary` |', 1
+        )
+        assert corrupted != _SKILL_MD_PATH.read_text(encoding='utf-8'), (
+            'the corruption did not apply — the row shape changed and this test '
+            'would pass vacuously against an unmodified table'
+        )
+
+        keys = _scan_aspect_table_keys(corrupted)
+        unknown = sorted(set(keys) - _spec_fragment_keys())
+
+        assert unknown == ['invariant-check-summary'], (
+            f'the correspondence check must flag the corrupted key; got {unknown}'
+        )
+        # And the uncorrupted table must be clean, so the assertion above is
+        # discriminating rather than always-true.
+        assert not sorted(set(_scan_aspect_table_keys()) - _spec_fragment_keys())
 
 
 class TestConditionalFragmentActuallyRenders:

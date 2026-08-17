@@ -216,6 +216,32 @@ class TestOrchestratorMetadata:
         assert get_result['status'] == 'success'
         assert get_result['value'] == 'operator'
 
+    def test_should_refuse_append_and_write_nothing(self, plan_context):
+        """REGRESSION: `--append` is on the SHARED subparser but implemented only
+        for the plans store. Ignored here it fell through to the --set branch and
+        OVERWROTE, reporting success — reproducing, on the store that never
+        implemented it, the exact clobber the flag exists to eliminate.
+        """
+        cmd_orchestrator_create(_create_args('meta-append-epic'))
+        cmd_orchestrator_metadata(
+            Namespace(plan_id='meta-append-epic', set=True, get=False, append=False,
+                      field='session_ids', value='sess-A')
+        )
+
+        result = cmd_orchestrator_metadata(
+            Namespace(plan_id='meta-append-epic', set=True, get=False, append=True,
+                      field='session_ids', value='sess-B')
+        )
+
+        assert result['status'] == 'error'
+        assert result['error'] == 'append_unsupported_for_store'
+        # The earlier value SURVIVES — the refusal wrote nothing.
+        get_result = cmd_orchestrator_metadata(
+            Namespace(plan_id='meta-append-epic', set=False, get=True, append=False,
+                      field='session_ids', value=None)
+        )
+        assert get_result['value'] == 'sess-A'
+
     def test_should_report_not_found_for_missing_metadata_field(self, plan_context):
         cmd_orchestrator_create(_create_args('meta-missing-epic'))
 

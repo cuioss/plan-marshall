@@ -256,6 +256,54 @@ class TestWrittenImpliesNonEmpty:
         _content, written, _omitted, _dropped = _cr.build_document('demo', 'live', tmp_path, None, {})
         assert 'Executive Summary' not in written
 
+    def test_no_section_is_written_from_an_empty_bundle(self, tmp_path):
+        # The CLASS, not the instance. `render_section_body(None)` returns the
+        # literal `_No data provided._`, and every `conditional_trigger = None`
+        # row used to append its heading to `written` regardless — so an empty
+        # bundle produced a report claiming ten written sections whose every body
+        # was a placeholder. Quantified over the whole registry rather than a
+        # name list, so a row added later is covered without an edit here.
+        content, written, omitted, dropped = _cr.build_document('demo', 'live', tmp_path, None, {})
+        assert written == [], f'sections written from an empty bundle: {written}'
+        assert '_No data provided._' not in content
+        assert dropped == []
+        assert len(omitted) == len(_rs.SECTION_SPEC)
+
+    @pytest.mark.parametrize(
+        'heading,fragment_key',
+        [(h, k) for h, k, trigger in _rs.SECTION_SPEC if trigger is None and not k.startswith('_')],
+    )
+    def test_an_always_emit_row_with_no_fragment_is_omitted_not_written(
+        self, tmp_path, heading, fragment_key
+    ):
+        # Every `trigger=None` row reaches the render path unconditionally, so
+        # each one is a separate instance of the same breach. Driven from the
+        # registry so the population cannot silently shrink.
+        _content, written, omitted, _dropped = _cr.build_document('demo', 'live', tmp_path, None, {})
+        assert heading not in written
+        assert heading in omitted
+
+    def test_a_row_with_a_real_fragment_is_still_written(self, tmp_path):
+        # The guard must not swallow a section that HAS content — the fix is
+        # "no fragment ⇒ not written", never "write less".
+        fragments = {'artifact-consistency': {'status': 'success', 'summary': 'all checks passed'}}
+        content, written, omitted, _dropped = _cr.build_document(
+            'demo', 'live', tmp_path, None, fragments
+        )
+        assert 'Artifact Consistency' in written
+        assert 'Artifact Consistency' not in omitted
+        assert 'all checks passed' in content
+
+    def test_a_fallback_aspect_mapped_to_none_is_omitted_not_written(self, tmp_path):
+        # The invariant is a property of the partition, not of one render path.
+        fragments = {'wrapper-tangle': None}
+        content, written, omitted, _dropped = _cr.build_document(
+            'demo', 'live', tmp_path, None, fragments
+        )
+        assert 'Wrapper Tangle' not in written
+        assert 'Wrapper Tangle' in omitted
+        assert '## Wrapper Tangle' not in content
+
 
     def test_payload_bearing_executive_summary_without_a_body_is_dropped(self, tmp_path):
         # The fragment carried content the renderer could not turn into a body
@@ -366,6 +414,52 @@ class TestZeroReportingSectionNamesItsCheckedSet:
         mapping = _cr._heading_to_fragment_key({'artifact-consistency': {}, 'wrapper-tangle': {}})
         assert mapping['Artifact Consistency'] == 'artifact-consistency'
         assert mapping['Wrapper Tangle'] == 'wrapper-tangle'
+
+    def test_a_population_published_one_level_down_counts_as_attribution(self):
+        # This is where the real producers put it: `evaluated_population` lives
+        # inside `shape_violation` / `dispatch_coverage` in check-dispatch-audit,
+        # and `population` inside `script_cost_rollup` in analyze-logs. A
+        # top-level-only probe would flag a fragment that DOES name what it
+        # checked, one level down.
+        fragments = {
+            'execution-context-dispatch-audit': {
+                'status': 'success',
+                'findings': [],
+                'shape_violation': {'status': 'evaluated', 'evaluated_population': 7},
+            },
+        }
+        _written, flagged = self._doc(fragments)
+        assert 'Execution-Context Dispatch Audit' not in flagged
+
+    def test_nesting_search_stops_at_one_level(self):
+        # Two levels down is NOT attribution: the population belongs to a named
+        # fact block, and an unbounded walk would let any incidental key deep in
+        # a payload clear the flag.
+        fragments = {
+            'direct-gh-glab-usage': {
+                'status': 'success',
+                'findings': [],
+                'outer': {'inner': {'evaluated_population': 7}},
+            },
+        }
+        _written, flagged = self._doc(fragments)
+        assert 'Direct gh/glab Usage' in flagged
+
+    def test_the_real_dispatch_audit_clean_shape_is_attributed(self):
+        # The shape check-dispatch-audit actually returns on a clean trail
+        # (top-level `counts`, nested `evaluated_population`).
+        fragments = {
+            'execution-context-dispatch-audit': {
+                'status': 'success',
+                'aspect': 'execution-context-dispatch-audit',
+                'shape_violation': {'status': 'not_evaluated', 'evaluated_population': 0},
+                'dispatch_coverage': {'evaluated_population': 3},
+                'findings': [],
+                'counts': {'findings_total': 0},
+            },
+        }
+        _written, flagged = self._doc(fragments)
+        assert flagged == []
 
     def test_probe_bites_only_on_the_defect_it_names(self):
         # Mutation check: the SAME fragment with its attribution restored must

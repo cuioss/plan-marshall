@@ -237,7 +237,7 @@ The plan-marshall hooks can drive a live session-tab title (plan + phase + lock/
 
 ## Session ID Resolver
 
-Main-context skill calls that need the current session ID (e.g., `phase-6-finalize` forwarding it to `manage-metrics enrich`) capture it via the platform-runtime `session capture` operation, which stores it in `status.json` at plan-init time. Retrieval: `manage-status metadata --get --field session_id`.
+Main-context skill calls that need the current session ID (e.g., `phase-6-finalize` forwarding it to `manage-metrics enrich`) capture it via the platform-runtime `session capture` operation, which APPENDS it to `status.metadata.session_ids` in `status.json` at plan-init time — a list, because a plan legitimately spans several sessions. Retrieval: `manage-status metadata --get --field session_ids`, then take the last entry.
 
 ## Phase Handshake & Blocking-Finding Invariant
 

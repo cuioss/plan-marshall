@@ -112,7 +112,13 @@ def valid_aspect_keys() -> set[str]:
 #   ``counts``, ``findings[]``), so an extension aspect that honours its own
 #   contract is attributed by construction.
 #
-# A fragment is read through this set by ``compile-report.unattributed_zero_sections``.
+# Where each name actually appears matters, because the probe has a depth:
+# ``counts`` is published at the TOP of a fragment, while ``evaluated_population``
+# appears one level down inside ``shape_violation`` / ``dispatch_coverage`` and
+# ``population`` one level down inside ``script_cost_rollup``.
+# ``compile-report._names_checked_set`` therefore reads the top level AND one
+# nesting level — a top-level-only read would flag a fragment that DOES name the
+# population it examined, simply because it named it inside its fact block.
 ZERO_ATTRIBUTION_FIELDS: tuple[str, ...] = (
     'evaluated_population',
     'population',

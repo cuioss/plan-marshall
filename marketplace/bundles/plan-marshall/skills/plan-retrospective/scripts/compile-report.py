@@ -232,8 +232,34 @@ def _names_checked_set(fragment: Any) -> bool:
         return False
     if str(fragment.get('status')) in ZERO_DECLARED_UNMEASURED_STATUSES:
         return True
+    # Top level, then ONE level of nesting. The nesting pass is not
+    # defensiveness — it is where the real producers put these fields: only
+    # ``counts`` is published at the top of a fragment, while
+    # ``evaluated_population`` appears inside ``shape_violation`` /
+    # ``dispatch_coverage`` (``check-dispatch-audit``) and ``population`` inside
+    # ``script_cost_rollup`` (``analyze-logs``). A top-level-only probe would
+    # therefore flag a fragment that DOES name the population it examined,
+    # simply because it named it one level down — a false positive against
+    # exactly the producers this vocabulary was derived from.
+    #
+    # One level, not arbitrary depth: the population belongs to a named fact
+    # block, and an unbounded walk would let any incidental key deep in a
+    # payload clear the flag.
+    if _has_attribution_field(fragment):
+        return True
+    return any(_has_attribution_field(value) for value in fragment.values())
+
+
+def _has_attribution_field(candidate: Any) -> bool:
+    """Return True when ``candidate`` is a dict publishing a non-empty population.
+
+    ``False`` is matched by identity for the reason spelled out in
+    :func:`_names_checked_set` — a published population of ``0`` must survive.
+    """
+    if not isinstance(candidate, dict):
+        return False
     for field in ZERO_ATTRIBUTION_FIELDS:
-        value = fragment.get(field)
+        value = candidate.get(field)
         if value is False:
             continue
         if value not in (None, '', [], {}):
@@ -485,6 +511,19 @@ def build_document(
                 omitted.append(heading)
             continue
         fragment = fragments.get(fragment_key)
+        if fragment is None:
+            # No fragment at all. ``render_section_body`` would emit the literal
+            # ``_No data provided._`` placeholder, and counting THAT as written
+            # is the same invariant breach the Executive Summary branch above
+            # closes — the placeholder body is what the partition must not call
+            # written, and the section it sits under is irrelevant. Every
+            # ``conditional_trigger = None`` row reaches here on a plan whose
+            # producer did not run, so the breach was never confined to one row.
+            #
+            # Nothing was lost (there was no fragment to lose), so this is the
+            # benign half of the partition.
+            omitted.append(heading)
+            continue
         # Dispatch_boundaries uses a dedicated per-phase table renderer; every
         # other fragment falls back to the generic JSON+findings renderer.
         if fragment_key == 'dispatch_boundaries':
@@ -503,6 +542,13 @@ def build_document(
     spec_keys = {fragment_key for _heading, fragment_key, _trigger in SECTION_SPEC}
     for aspect_key in sorted(fragments):
         if aspect_key.startswith('_'):
+            continue
+        # Same invariant as the static loop above: a key mapped to an explicit
+        # ``None`` renders the placeholder, and a placeholder body is never
+        # written. Applied here too because the invariant is a property of the
+        # PARTITION, not of one render path.
+        if fragments.get(aspect_key) is None:
+            omitted.append(_heading_from_aspect_key(aspect_key))
             continue
         if aspect_key in spec_keys:
             continue
