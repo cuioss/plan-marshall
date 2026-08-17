@@ -59,6 +59,7 @@ the shared contract below.)
 
 ```yaml
 threshold: 3
+plans_in_corpus: P    # plans that carried a findings directory
 candidate_count: M
 unattributed_excluded_count: K
 rows[M]{module,finding_class,disposition,occurrence_count,plan_ids,severity}

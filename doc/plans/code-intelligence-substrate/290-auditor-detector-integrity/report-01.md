@@ -115,7 +115,7 @@ The plan forbids fixing from the report text and requires each claim be confirme
 
 `git diff --name-only origin/main...HEAD -- '*.py'` is **non-empty** (5 Python files: `audit.py`, `_decision_line_shapes.py`, `_manifest_decide.py`, `manage-execution-manifest.py`, `check-routing-decisions.py`, plus 9 test modules), so the full gate ran.
 
-`./pw verify` → **`=== verify: SUCCESS ===`**, **20,537 passed, 14 skipped, 0 failed** (369 s). All three sub-steps clean: quality-gate (`ruff` all checks passed, `mypy` success over 411 production files, SPDX passed), test-compile (`mypy` over the test tree), module-tests.
+`./pw verify` → **`=== verify: SUCCESS ===`**, **20,540 passed, 14 skipped, 0 failed** (381 s). All three sub-steps clean: quality-gate (`ruff` all checks passed, `mypy` success over 411 production files, SPDX passed), test-compile (`mypy` over the test tree), module-tests.
 
 This figure is the FINAL one, re-derived after the last verification round's fixes landed. Earlier drafts of this report carried the pre-fix total (20,510 / 444 s), which each verification round added tests to and therefore invalidated; a build-gate figure that predates the commits it reports as landed is exactly the moving-figure defect this run kept finding elsewhere, so it is re-derived at the moment of the claim rather than carried forward.
 
@@ -260,7 +260,7 @@ _To be completed after the PR is opened and the reviewers report._
 ## Cost
 
 - **Tokens:** not available to the agent in this session — the harness does not expose a token counter to the running agent, so no figure is stated rather than an estimated one.
-- **Wall-clock:** not separately instrumented. The one measured component is the final full `./pw verify` at **369 s** (the same figure § Build gate records; earlier drafts of this line carried the superseded 444 s). The per-commit `./pw quality-gate` calls, the verification rounds' own builds, and the targeted `uv run pytest` calls are not individually timed.
+- **Wall-clock:** not separately instrumented. The one measured component is the final full `./pw verify` at **381 s** (the same figure § Build gate records; earlier drafts of this line carried the superseded 444 s). The per-commit `./pw quality-gate` calls, the verification rounds' own builds, and the targeted `uv run pytest` calls are not individually timed.
 - **Population:** what little is measured above covers **this single Claude Code cloud session's build invocations only**. ⛔ It is **NOT** comparable to a plan-marshall `metrics.toon` total, which counts the orchestrator-plus-agent dispatch tree under plan-marshall's own per-task billing boundary — a boundary a single interactive cloud session does not share. The figures cannot be made comparable, so no comparison is offered.
 
 ## Contract check (Step 9)

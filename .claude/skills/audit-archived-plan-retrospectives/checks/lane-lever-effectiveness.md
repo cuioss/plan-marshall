@@ -129,6 +129,7 @@ overspent. Summed corpus-wide into `estimated_avoided_tokens`.
 
 ```
 plans_measured: P
+plans_in_corpus: P    # the population the suspect-zero census reads
 recipe_routed: R
 light_lane_fires: L
 minimal_posture_chosen: M

@@ -5476,7 +5476,18 @@ _UNMEASURED_STATUS_RE = re.compile(r"^status:\s*unmeasured\s*$", re.MULTILINE)
 _EXCLUDED_NON_SHIPPING_RE = re.compile(
     r"^plans_excluded_non_shipping:\s*(\d+)\s*$", re.MULTILINE
 )
-_PLANS_IN_CORPUS_RE = re.compile(r"^plans_in_corpus:\s*(\d+)\s*$", re.MULTILINE)
+#: Every scalar under which a check may declare the population it EXAMINED.
+#: `plans_in_corpus` is canonical; the other two are check-local names published
+#: alongside it and read here as well, so a check that publishes only its own
+#: spelling is still understood. Reading a SET rather than one key is the point:
+#: `plans_in_series` and `plans_measured` went unread for five verification
+#: rounds, each round finding the gap in a check the previous one had not
+#: enumerated. A test asserts this set and the emitters agree, so a new
+#: population key is a failure rather than a silent gap.
+_EXAMINED_POPULATION_KEYS = ("plans_in_corpus", "plans_in_series", "plans_measured")
+_PLANS_IN_CORPUS_RE = re.compile(
+    rf"^(?:{'|'.join(_EXAMINED_POPULATION_KEYS)}):\s*(\d+)\s*$", re.MULTILINE
+)
 
 
 def _examined_population(block: str, corpus_size: int) -> int:

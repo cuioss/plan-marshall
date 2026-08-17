@@ -22,17 +22,16 @@ from pathlib import Path
 
 from _audit_fixtures import audit, minimal_corpus
 
-#: Population-declaring scalars whose value is a count of plans the check
-#: EXAMINED. Deliberately not the exclusion-flavoured keys
-#: (`plans_excluded_*`), where 0 means the opposite — nothing was excluded, so
-#: the population is full — nor `plans_scanned` (the corpus-wide total, not any
-#: one check's narrowing).
-_EXAMINED_POPULATION_KEYS = (
-    "plans_in_corpus",
-    "plans_in_series",
-    "plans_measured",
-    "plans_with_merge_events",
-)
+#: The scalars a check may declare its EXAMINED population under — bound to the
+#: production set rather than restated.
+#:
+#: A second hand-maintained copy is the very shape this guard exists to detect,
+#: and it drifted once already: this list named `plans_with_merge_events` while
+#: `_examined_population` did not read it, and no fixture reached the state where
+#: the disagreement showed. `TestPopulationKeyCoverage` keeps the set honest from
+#: the other side, asserting every `plans_*` scalar any emitter publishes is
+#: classified as a denominator or as a documented non-denominator.
+_EXAMINED_POPULATION_KEYS = audit._EXAMINED_POPULATION_KEYS
 
 _EMPTY_POPULATION_RE = re.compile(
     rf"^(?:{'|'.join(_EXAMINED_POPULATION_KEYS)}):\s*0\s*$", re.MULTILINE
@@ -42,15 +41,18 @@ _EMPTY_POPULATION_RE = re.compile(
 def _declares_empty_population(block: str) -> bool:
     """Does this block state, under ANY of its own names, that it examined nothing?
 
-    Read with a test-local key list rather than through
-    `audit._examined_population`, and that is the point. Deriving the expectation
-    from the same function the code under test uses makes the assertion
-    tautological: a check that publishes its population under a name that function
-    does not read would be judged to have a FULL population by both sides, and the
-    contradiction — block says zero, census says "a non-empty examined population"
-    — would be invisible. That is exactly the defect this test exists to catch, and
-    an earlier version of it, written against `_examined_population`, passed
-    against the broken code.
+    Reads the block DIRECTLY rather than calling `audit._examined_population`, and
+    that is the point. `_examined_population` applies precedence and falls back to
+    the corpus size when it finds no declaration, so an expectation derived from it
+    judges a block with an unread population key to have a FULL population — the
+    same verdict the census reaches — and the contradiction (block says zero,
+    census says "a non-empty examined population") is invisible to both sides. An
+    earlier version of this helper did exactly that and passed against the broken
+    code.
+
+    The KEY SET is shared with production deliberately; the READING is not. Sharing
+    the keys is what stops the two lists drifting apart, and reading independently
+    is what stops the assertion becoming a restatement of the implementation.
     """
     return bool(_EMPTY_POPULATION_RE.search(block))
 
@@ -290,6 +292,71 @@ class TestNoCountAndExaminedPopulation:
         assert audit._examined_population(block, 5) == 0
 
 
+class TestPopulationKeyCoverage:
+    """The key axis the whole-census guard does NOT quantify over.
+
+    That guard loops over `CHECK_NAMES`, so a check cannot slip past it by being
+    forgotten. But both it and `_examined_population` hard-code the KEY set, so a
+    check can still slip past by publishing its population under a new name —
+    which is the same enumeration shape, one axis over, and is exactly how
+    `plans_in_series` and `plans_measured` went unread for five rounds.
+
+    This closes that axis: every `plans_*` scalar any emitter publishes must be
+    classified, either as a denominator `_examined_population` reads or as a
+    deliberate non-denominator. A new key is a test failure, not a silent gap.
+    """
+
+    #: `plans_*` scalars that are NOT examined populations, each with its reason.
+    #: Adding a key here is a claim; the docstring above says what the claim means.
+    _NON_DENOMINATOR_KEYS = {
+        # Zero means nothing was excluded — the population is FULL.
+        "plans_excluded_non_shipping": "exclusion count",
+        "plans_excluded_no_counters": "exclusion count",
+        # The corpus-wide total, not one check's narrowing.
+        "plans_scanned": "corpus total",
+        # Numerators: how many plans landed in a result set. `plans_with_merge_events`
+        # is the load-bearing case — `len(rows)`, how many plans HAD merge events.
+        # Its check's substrate is the `[LOCK]` log, not the plan corpus, and an
+        # absent log already reports `unmeasured`, so a readable log naming no merge
+        # event is a genuine MEASURED zero and `disciplinary` is right for it.
+        "plans_with_merge_events": "result count",
+        "plans_without_ledger": "result count",
+        "plans_without_ledger_ids": "result count",
+    }
+
+    def test_every_published_population_key_is_classified(self):
+        published = set(
+            re.findall(r'f"(plans_[a-z_]+):', audit.__file__ and _audit_source())
+        )
+        assert published, "no plans_* keys found — the sweep would pass vacuously"
+
+        unclassified = published - set(_EXAMINED_POPULATION_KEYS) - set(
+            self._NON_DENOMINATOR_KEYS
+        )
+        assert unclassified == set(), (
+            f"unclassified population key(s): {sorted(unclassified)}. Either "
+            "`_examined_population` must read it (and it joins "
+            "`_EXAMINED_POPULATION_KEYS`), or it is not a denominator and joins "
+            "`_NON_DENOMINATOR_KEYS` with its reason."
+        )
+
+    def test_every_denominator_key_is_read_by_the_production_reader(self):
+        """A key this guard treats as a denominator the CODE must also read.
+
+        The two lists disagreeing is what produced round 6's finding: the guard
+        counted `plans_with_merge_events` as a population while
+        `_examined_population` did not read it, and no fixture reached the state
+        where that mattered.
+        """
+        for key in _EXAMINED_POPULATION_KEYS:
+            block = f"check: x\nstatus: success\n{key}: 0\n"
+            assert audit._examined_population(block, 7) == 0, key
+
+
+def _audit_source() -> str:
+    return Path(audit.__file__).read_text(encoding="utf-8")
+
+
 class TestCensusEndToEnd:
     """Joins the real emitter to the real classification.
 
@@ -365,6 +432,46 @@ class TestCensusEndToEnd:
                 offenders.append(check)
 
         assert offenders == []
+
+    def test_a_readable_lock_log_with_no_merge_events_is_a_measured_zero(
+        self, tmp_path: Path
+    ):
+        """The census fixture that reaches merge-window-accounting's measured path.
+
+        No census fixture staged a lock log, so this check only ever reached the
+        census via its `unmeasured` branch — and a disagreement between this
+        guard's key list and `_examined_population` about `plans_with_merge_events`
+        sat unseen because nothing exercised the state where they differ.
+
+        The state is ordinary: `log_lock_event` writes BOTH lock families to the
+        same dated file, so any repo with build-queue activity and no concurrent
+        merges lands here. It is a MEASURED zero — the substrate was read and the
+        corpus genuinely had no merge contention — so `disciplinary` is correct and
+        `starved` would be wrong.
+        """
+        logs_dir = tmp_path / ".plan" / "logs"
+        logs_dir.mkdir(parents=True)
+        (logs_dir / "lock-2026-07-01.log").write_text(
+            "[2026-07-01T10:00:00Z] [INFO] [a] [LOCK] (build:acquired) some-plan\n",
+            encoding="utf-8",
+        )
+        inputs = _shipping_corpus(tmp_path)
+        output = audit.run_checks(inputs, list(audit.CHECK_NAMES), tmp_path)
+
+        block = output.split("check: merge-window-accounting\n", 1)[1].split(
+            "\ncheck: ", 1
+        )[0]
+        assert "status: success" in block
+        assert "plans_with_merge_events: 0" in block
+        assert not _declares_empty_population(block)
+
+        census = output.split("check: suspect-zero-census", 1)[1]
+        row = next(
+            ln
+            for ln in census.splitlines()
+            if ln.strip().startswith("merge-window-accounting,")
+        )
+        assert f",{audit._ZERO_DISCIPLINARY}," in row
 
     def test_no_registered_check_is_classified_no_count_on_a_real_sweep(
         self, tmp_path: Path
