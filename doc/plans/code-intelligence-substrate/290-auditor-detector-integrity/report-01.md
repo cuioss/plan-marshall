@@ -1,6 +1,6 @@
 # Run report — 290-auditor-detector-integrity (run 01)
 
-**Date (UTC):** 2026-08-17    **Branch:** `claude/auditor-detector-integrity-in4tkx`    **PR:** [#1276](https://github.com/cuioss/plan-marshall/pull/1276)    **Outcome:** completed
+**Date (UTC):** 2026-08-17    **Branch:** `claude/auditor-detector-integrity-in4tkx`    **PR:** [#1276](https://github.com/cuioss/plan-marshall/pull/1276)    **Outcome:** completed — all deliverables done; merge-gate condition 2 (every comment handled) could NOT be established and was overridden on the operator's explicit instruction (see § Contract check)
 
 ## Skills loaded
 
@@ -287,7 +287,23 @@ The loop is stopped here **by judgement, not by a clean round.** Round 7 still r
 
 ## Reviewer participation
 
-_To be completed after the PR is opened and the reviewers report._
+Population derived from configuration — the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md`
+registry doc — never transcribed.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
+|---|---|---|---|
+| `sourcery-ai` | `rate-limited` | **no** | Its own review body: *"your pull request is larger than the review limit of 150000 diff characters."* A property of THIS diff (27 files, +3072/−165), not of the clock — re-requesting it later cannot succeed, so waiting would be futile |
+| `coderabbitai` | **UNREADABLE** | unknown | Its check context reported `Review queued` at 12:14 UTC. Its comment bodies could not be read at the merge gate: `pull_request_read method: get_comments` and `method: get_reviews` both returned **HTTP 404** on every attempt |
+| `cuioss-review-bot` | **UNREADABLE** | unknown | Same — no body could be read from either erroring surface |
+
+⛔ **Two verdicts are recorded as UNREADABLE, not as `silent`, and the distinction is the whole point.** `silent` is a claim that a reviewer published nothing. This run cannot make that claim: the surfaces that would carry a body returned an **error**, and an unreadable surface is not an empty one. The PR payload's own `comments: 2` is the positive control — it proves comment bodies exist that this run did not read. Recording these as `silent` would be a false clean signal manufactured from a tool failure, which is precisely the defect this plan exists to close.
+
+The third surface, `get_review_comments` (inline threads), read successfully and was genuinely empty (`totalCount: 0`) — so the failure is per-surface, not a blanket outage, and the empty inline result is trustworthy where the other two are not.
+
+**Coverage: 0 of 3 reviewed** — 1 refused on a non-reopening size ceiling, 2 unreadable. The § Step 8 shortfall disclosure fired and is reproduced in the closing hand-off to the operator.
+
+**No recovery check was run** for the two unreadable reviewers. The contract's recovery path (post the registry's `trigger_comment`, re-read the surfaces, record the result) is inert here: its final step is a re-read of the very surfaces that are erroring, so it could not establish an outcome either way. Recorded as not done rather than performed-and-inconclusive.
 
 ## Cost
 
@@ -297,14 +313,55 @@ _To be completed after the PR is opened and the reviewers report._
 
 ## Contract check (Step 9)
 
-_To be completed as the run's final pre-merge commit._
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | ✅ | Named in § Skills loaded, with the deliberately-omitted ones and their reasons |
+| 2 Branch | ✅ | `claude/auditor-detector-integrity-in4tkx` — **harness-assigned**, kept as-is, and published to `origin` as the run's first action (it existed only locally) |
+| 3 Plan directory | ✅ | `doc/plans/code-intelligence-substrate/290-auditor-detector-integrity/plan.md`; the `290-` priority prefix preserved by the move; the first-instruction block present and unmodified |
+| 4 Implement | ✅ | 22 commits, every one carrying the trailer |
+| 4 Per-commit gate | ✅ | `./pw quality-gate` before every commit touching `*.py`, read from the tools' own output (`ruff … All checks passed!`, `mypy … Success`, `SPDX-header check passed`). Two runs caught real defects pre-commit: an `F402` shadowing `dataclasses.field`, and a `mypy` narrowing conflict that also surfaced a parameter shadowing a new function |
+| 4 Pushed | ✅ | Pushed after every commit; `git status -sb` reports no `ahead` |
+| 5 Build gate | ✅ | Git-derived verdict: `*.py` present → full gate. `./pw verify` → `=== verify: SUCCESS ===`, 20,545 passed / 14 skipped / 0 failed. No lockfile churn reached any commit — paths staged explicitly, never `git add -A` |
+| 6 Verification sub-agent | ✅ | **Seven rounds**, 60 findings, each recorded per instance with its disposition above |
+| 7 PR cycle | ⚠ **PARTIAL** | PR [#1276](https://github.com/cuioss/plan-marshall/pull/1276) exists. The participation table carries a verdict and a `Reopens?` per reviewer — but **two verdicts are UNREADABLE**, so "every comment dispositioned" is **not established**. Reported as not done rather than narrated as complete |
+| 8 Merge gate | ⚠ Condition 2 unmet | Conditions 1 and 3 hold (required `verify / conclusion` success, `mergeable_state: clean`; this report is the last pre-merge commit). Condition 2 could not be established. Armed on the operator's explicit instruction — recorded below |
+| 8 Bridge | ✅ | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory. The report carries the PR number and the per-deliverable outcome |
+| 9 This check | ✅ | This table |
+| 9 What have we learned | ✅ | Below — a contract-change proposal, presented for approval, not self-approved |
+
+**GitHub access path:** the GitHub MCP server (the cloud path). **Branch form:** harness-assigned. **Plugin cache:** a cloud run never owes a `/sync-plugin-cache`; none was performed or recorded as owed.
+
+⛔ **Step 7 and condition 2 are reported as NOT DONE.** The run cannot show that every PR comment was handled, because two of the three comment surfaces returned HTTP 404 throughout the merge gate while the PR reported `comments: 2`. The merge was armed anyway **on the operator's explicit "land it now"**, which is their call to make; what this run must not do is describe the gate as satisfied when it was overridden. It was overridden.
+
+**Working-tree claims re-verified after the final build:** `git status --porcelain` empty at the time of writing.
 
 ## What have we learned (Step 9)
 
-_To be completed._
+**A contract change is proposed, with evidence from this run. It is NOT self-approved and has NOT been applied** — the lane contract forbids a run amending the contract that governs it, and requires a separate `chore/` PR on approval.
+
+**The gap.** § Step 6 tells a run to re-dispatch until the loop converges, and § Step 6's stopping rule (added by #1274) governs *when to stop*. Neither tells a run *how to apply a fix*, and this run's evidence says that is where the cost is. Across seven rounds:
+
+| Round | Findings | Of which were prior rounds' fixes applied at too few sites |
+|---|---|---|
+| 3 | 11 | 5 |
+| 4 | 13 | 5 (1-of-3 surfaces, 2-of-7 statements, 1-of-4 enumerations, 1-of-3) |
+| 5 | 6 | 3 |
+| 6 | 4 | 1 |
+| 7 | 4 | 1 |
+
+**Proposed addition to § Step 6 — two rules, both earned here:**
+
+1. **Sweep-and-count.** Before recording a claim as corrected, enumerate every site that states it and correct them in one commit. A fix at n−1 of n sites is how a corrected claim keeps reappearing, and it accounted for the majority of findings in rounds 3-5.
+2. **A guard must not derive its expectation from the code it guards.** Three tests written *in this run* to close verification findings were themselves vacuous: one because its fixture reached the state by a route other than the one it named, one because it read the population through the very function whose blind spot it was meant to detect, one because it pinned neither property in its name. Each passed against both the fixed and the broken code and was caught only by mutation testing. The rule: a new guard is mutation-tested against the defect it names before the finding is recorded as closed.
+
+**Evidence that the second rule is not theoretical:** every one of those three vacuous guards was written by a run that had *just* been told about vacuous guards, in a plan whose entire subject is detectors that cannot fire.
+
+**Also worth the operator's attention, not proposed as a contract change:** the `unmeasured` reporting contract this plan settled for the auditor generalises to the lane's own reporting. This run hit it directly at the merge gate — two comment surfaces erroring is *unmeasured*, not *silent*, and the report says so. The lane contract's § Step 7 verdict vocabulary (`reviewed` / `rate-limited` / `silent`) has no state for "the surface could not be read", so a run following it literally would have recorded `silent` and manufactured a clean signal from a tool failure. A fourth verdict — or an explicit instruction to report unreadability as such — would close that.
 
 ## Residue
 
 - **F8 — the unlocated warning (C5).** The plan's "drift warning that fires at every boundary" was not found at any site examined. It should go to whoever holds the withheld proposal it was rescued from, since the re-derivation this run performed was not sufficient to locate it.
 - **F2's emission half.** `_locks_core._resolve_lock_log_path` writes the lock timeline to `.plan/logs/` while every other global log lives in `.plan/local/logs/`. This run scanned both rather than changing the emitter, per the plan's explicit exclusion. Whether the two roots should be reconciled belongs to a `manage-locks` plan; the auditor is correct either way now.
 - **F16 — plan 310.** It now rebases onto a changed `audit.py`. The overlap is small (its subject is working-directory resolution; this run touched `collect_inputs`, the merge-window scan, the quality-chain partition, `check_input_integrity`, and added a census block), but it is not zero.
+
+- **Merge-gate condition 2, overridden.** Two of the three PR comment surfaces returned HTTP 404 throughout the gate while the PR reported `comments: 2`, so this run cannot show that every comment was handled. The operator instructed the merge to proceed. Whoever picks this up should read PR #1276's issue-comment and review-summary surfaces and handle anything there — this run did not.
