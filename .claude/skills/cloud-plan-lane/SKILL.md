@@ -532,7 +532,8 @@ Give it, at minimum:
   docs the diff never opened. **Sweep the changed value's consumers by kind, not by a single
   phrasing.** One value is restated in several distinct forms — a prose restatement, a schema field or
   its placeholder, a worked example, a cross-document reference, a test fixture or stub that hardcodes
-  the value — and a sweep that greps for the way the primary claim happens to be phrased finds the
+  the value, a prose-bearing string literal in production code — and a sweep that greps for the way the
+  primary claim happens to be phrased finds the
   restatement that reads like it and silently misses the rest. An observed run's single value change (a
   `SKILL.md`-only path widened to a `SKILL.md`-plus-`standards/*.md` set) had three stale consumers of
   three different kinds — an echo-field enumeration, a check description, and a schema placeholder — and
@@ -542,7 +543,20 @@ Give it, at minimum:
   because it is driven by a synthetic double rather than the real code path (a `_StubAttributor`
   encoding the old `(prefix, module)` claim), so neither the local build gate nor CI ever fails on it —
   it survived two sub-agent sweeps and was caught only by a third that explicitly grepped `*.py`
-  fixtures. So the sweep covers **test fixtures and stubs (`*.py`), not only prose and docs**; name the
+  fixtures. A further run surfaced the kind that hides in the seam between the two sweeps a run already
+  performs: **prose embedded in production code as a string literal** — an argparse
+  `help=` / `description=` / `epilog=`, an error-message or log-line template, an operator-facing
+  message assembled in code. It reads as documentation and lives as code, so a documentation sweep
+  never opens the file and a code sweep never reads the sentence; it is also the surface an **operator**
+  reads directly, which makes a stale claim there worse than a stale doc — it misinforms a human
+  decision rather than a later author. In that run the missed consumer was a subcommand's argparse
+  `description` restating the retired predicate verbatim, and the same literal was **already** stale
+  from an earlier change to the same code: two independent changes, one surface, and no gate that could
+  see either, because the literal type-checks, lints, and passes every test while stating something
+  false. ⛔ Naming the kind is not sufficient on its own — the same run then missed a SECOND instance,
+  a module-docstring verb summary, in the very file whose argparse string it had just corrected. So
+  re-walk the whole file, not the line the finding named. The sweep covers **test fixtures and stubs
+  (`*.py`) AND prose-bearing string literals in production code, not only prose and docs**; name the
   consumer kinds a changed value can take and sweep for each in turn, which surfaces the restatements by
   construction rather than by luck;
 - when the change introduces a computed metric — a rate, a share, a total, a duration roll-up — the
@@ -586,7 +600,8 @@ is written against the diff under review; by the second round the diff under rev
 *previous round's fixes*, and the sweep that matters is over what those fixes made false elsewhere. So
 before re-dispatching, list the claims your fix changed — the value, the ordering, the count, the
 mechanism it renamed — and sweep each one's restatements the same way: by **consumer kind** (naming
-each kind a changed value can take — prose, docs, tests, `*.py` fixtures and stubs — and sweeping for
+each kind a changed value can take — prose, docs, tests, `*.py` fixtures and stubs, and prose-bearing
+string literals in production code — and sweeping for
 each in turn, per the sub-agent instruction above), exactly as you did for the original change.
 
 ### Sweep-and-count: a claim is corrected at every site or it is not corrected
