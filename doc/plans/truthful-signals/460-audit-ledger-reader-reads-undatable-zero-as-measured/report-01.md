@@ -92,8 +92,9 @@ The archived corpus was not touched. The diff contains no corpus file.
 
 `_parse_dispatch_boundary_totals`'s docstring now says the cell reads **four** ways, enumerates the
 fourth state, and carries a `THE PROVENANCE GATE` paragraph naming the fingerprint rule, the per-row
-scope, and the fact that this reader expresses the undatable verdict as the field's *absence* (it sums
-rather than emitting per-row states, so it has no `indeterminate_columns` to name).
+scope, and the fact that this reader CANNOT express the undatable verdict per column (it sums rather than
+emitting per-row states, so it has no `indeterminate_columns` to name) — an undatable `0` merely fails
+to mark its field measured, which is observable only where no row datably measured that field.
 
 **One further consumer of the same claim was found beyond the diff and fixed in the same commit:**
 `.claude/skills/audit-archived-plan-retrospectives/checks/billing-composition.md` — the check's own
@@ -166,7 +167,9 @@ this row is the counterexample.
 carries the pre-token writer's shape — nine columns, every context-load cell a literal `0`, nothing on
 either row dating it. `test_undatable_zeros_are_not_measurements_in_either_reader` drives **both**
 readers off that one artifact and asserts the same verdict in each reader's own vocabulary
-(`indeterminate_columns` for the retrospective reader; field absence for the audit reader). Its
+(`indeterminate_columns` for the retrospective reader; field absence for the audit reader — which is
+the audit reader's only observable here precisely because no row in this fixture datably measured
+anything). Its
 premise — that the file carries no fingerprint — is asserted on the **bytes** in a separate test, so it
 does not rest on the code under test. The existing `unmeasured/` fixture could not serve: every one of
 its rows carries an `unmeasured` token, so all its zeros are datable.
@@ -228,6 +231,23 @@ One row per instance. Source is the round-1 or round-2 pre-PR verification sub-a
 | R1-L3 | Sub-agent (round 1) | Untested edges the change introduces or leaves open: a negative context-load integer dates the row and is summed; a header omitting or reordering a context column; whitespace-padded cells. | **Partly fixed** — added `test_a_negative_context_load_value_dates_the_row`, which pins the `!= 0` predicate and notes the sibling reader makes the same choice. Header-omission and whitespace left untested and recorded in Residue. |
 | R1-L4 | Sub-agent (round 1) | Vocabulary drift: `data-format.md` names the fourth state `indeterminate`, `audit.py` names it `UNDATABLE`, and the check doc's "four ways" lead-in listed three states plus a deferral. | **Fixed** — the check doc now names UNDATABLE as a state and cross-references the `indeterminate` spelling, explaining why this reader expresses it as absence. |
 
+### Round 2 — dispatched against commit `85848a8`
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| R2-1 | Sub-agent (round 2) | The clause *"which this reader expresses as the field's absence"* — written in round 2 to explain the gate — asserts a mechanism that holds only when NO row datably measured the field. In a mixed ledger the field is present and the undatable cell's verdict is expressed **nowhere**. The counterexample is this run's own parametrized test: two columns assert `== 0` from the dated row while the undated row's zeros in those columns produce no observable at all. Present in `checks/billing-composition.md`, in `audit.py`'s docstring, and twice in this report. | **Fixed at all four sites** (commit `7a2168e` for the two code sites; this commit for the report's two). The corrected statement: this reader cannot express the state per column because it sums, so an undatable `0` merely fails to mark its field measured; the gate is observable only where no row datably measured the field, and elsewhere the cell is subsumed — contributing nothing, which for a literal `0` is what summing it would have contributed anyway. |
+| R2-2 | Sub-agent (round 2) | `test_a_negative_context_load_value_dates_the_row`'s docstring names a cross-reader divergence as the risk it guards, but the test drives only `audit.py`; a divergence in `analyze-logs.py` would not fail it. | **Fixed** — restated as parity established by **reading** (citing `analyze-logs.py`'s `if value != 0`), with the cross-reader pinning pointed at the module that actually does it. |
+| R2-3 | Sub-agent (round 2) | My R1-M3 rejection was **broader than its premise supports**. The premise is confirmed — the "four surfaces" count IS mirrored in `analyze-logs.py:987` — but that only rules out a **count-changing** widening. A count-preserving one (naming more symbols *within* surface #4) falsifies nothing: the mirror asserts the count and identifies the fourth surface as the file, and its own scope is "this schema". | **Rejection withdrawn; fixed.** `data-format.md`'s surface #4 now names the `_parse_dispatch_boundary_totals` cell read and the provenance gate alongside the constants, so a future edit to § *Provenance of a measured zero* has a pointer to this reader. Count left at four. The plan's carve-out permits exactly this — the wording had become inaccurate as a description of what must move in lock-step. |
+| R2-4 | Sub-agent (round 2) | The Cost section still cited the superseded `417.56 s` gate run as the largest known component after the Build gate section had declared the `498.37 s` run authoritative. | **Fixed** — Cost now cites the governing run and names the superseded one as superseded. |
+| R2-5 | Own sweep (round 2) | `_BC_LEDGER_UNMEASURABLE_FIELDS`'s comment described it only as "the columns that can carry the unmeasured token"; since the gate landed it is also the set the gate applies to and over which a row's fingerprint is computed, so widening it silently widens the gate. | **Fixed** in commit `a487035`. |
+| R2-6 | Own sweep (round 2) | Three surviving references to the pre-rename test name. | **Deliberately not edited, all three.** `doc/plans/code-intelligence-substrate/030-…/report-01.md:110` is an archived record of a different landed plan — `CLAUDE.md`'s records exemption says a dated record is not documentation of current state and is not rewritten to match the present. `plan.md:119` is this plan's own explicitly self-hedged lead ("re-derive the exact names… they may have moved"); rewriting it would destroy the record of what was specified. This report's findings row quotes the old name *as the thing that was renamed*. Independently confirmed by the round-2 sub-agent's whole-tree sweep, which found no `.py`, skill-doc, or standard reference. |
+
+**Round-2 verdict on round 1.** The agent confirmed H1, M1 and M2 resolved, and confirmed each of the
+three mechanism claims round 2's prose asserted — the file-level mutant behaviour (`dated-first` is the
+*unique* kill among all seven scenarios), the sibling reader's `!= 0` parity, and the `indeterminate`
+cross-reference — with R2-1 as the one clause it refuted. It also independently substantiated the S-3
+era-stamp reasoning and the ruff-convention citation.
+
 ### Findings the run produced on itself, before dispatching
 
 | # | Source | Finding | Disposition |
@@ -254,7 +274,8 @@ _(pending)_
   running agent, so no figure is given rather than a guessed one.
 - **Wall-clock:** ~1 h from the first commit of the run (`2297407`, 2026-08-16T21:09:57Z) to the report
   commit; source is the git committer timestamps on this branch. The single largest known component is
-  the `./pw verify` gate at 417.56 s, reported by pytest itself.
+  the authoritative `./pw verify` gate at 498.37 s, reported by pytest itself (the superseded first run
+  took 417.56 s; both are recorded under Build gate, and only the second governs).
 - **Population:** this single Claude Code cloud session's activity, as the git log and the build's own
   output record it. ⛔ **NOT comparable to a plan-marshall `metrics.toon` total**, which counts an
   orchestrator-plus-agent dispatch tree under plan-marshall's per-task billing boundary. This run has no
@@ -270,4 +291,34 @@ _(pending)_
 
 ## Residue
 
-_(pending)_
+- **The two readers still disagree about DATABILITY itself on a malformed input** — the sharpest of the
+  set, and the one a follow-on should lead with. `audit.py` resolves the context columns **by name from
+  the declared header**; `analyze-logs.py` resolves them **positionally at indices 5–8**. So for a
+  ledger whose header declares only the legacy five columns while its rows carry nine cells,
+  `audit.py` measures nothing at all, while `analyze-logs.py` measures all four **and dates the row**.
+  Two further divergences of the same origin: a malformed `total_tokens` beside a nonzero context cell
+  (the retrospective reader drops the whole row; the audit reader keeps it, sums, and dates it), and a
+  missing `rows[]{…}:` header line (audit yields `{}`; retrospective parses the row). A reordered
+  header additionally transposes values between the two while the measured *set* agrees. **None is
+  introduced by this plan and none touches the fingerprint gate** — the plan's requirement is met for
+  the gate — but "the two parallel readers of one ledger stop disagreeing about the same bytes" is now
+  true of the gate and not yet of the surrounding parse. Fixing it means touching `analyze-logs.py`,
+  which this plan scopes out.
+- **`checks/billing-composition.md` is a restating surface registered in no lock-step list.** It now
+  carries the full gate text. It was deliberately NOT added to `data-format.md`'s list, because that
+  list's "four surfaces" count is mirrored in `analyze-logs.py:987` and registering a fifth *file*
+  would falsify the mirror (unlike R2-3's count-preserving widening within surface #4). Nothing tests
+  that list structurally — only the `termination_cause` enum has an equality guard. A plan that wants
+  the check doc registered must move `data-format.md` and the `analyze-logs.py` mirror **together**.
+- **Two stale "three ways" test names describing the RETROSPECTIVE reader** —
+  `test_record_model_representability.py:455` and `:783`. Made false by plan 420, not by this diff, on
+  a surface this plan scopes out. One cost this run created even though the staleness predates it: the
+  file is now internally asymmetric, carrying a correctly-named sibling beside them, so a reader cannot
+  tell whether the asymmetry is meaningful. A one-line rename in a `chore/` plan closes it.
+- **Untested edges, both judged not worth a test.** Whitespace-padded cells: both readers strip, no
+  divergence, nothing to protect. A header omitting or reordering a context column: this is the first
+  residue item above, where the right remedy is reconciling the two resolution strategies, not pinning
+  the current divergence.
+- **The two residues plan 420 named remain open and are not this plan's** — a denominator that states
+  *when* it was sampled but not *what* it counted, and a partiality verdict blind to a *stale-closed*
+  phase. Each deserves its own plan.
