@@ -28,8 +28,8 @@ The canonical Claude target is verbatim by construction (it has no
 `mapping.json`), which keeps its output independently
 equality-validatable. A **new target supplies only this data** — no
 transform code. See
-[07 — Target Extensibility](../../../doc/refactor/07-target-extensibility.md)
-§ structural item 3.
+[the multi-target principles](../../../doc/plans/multiplattform/reference/principles.md)
+§ 4 (single source of truth) and § 6 (open to further targets).
 
 ## Transform 1 — `Skill:` directive rewrite
 
