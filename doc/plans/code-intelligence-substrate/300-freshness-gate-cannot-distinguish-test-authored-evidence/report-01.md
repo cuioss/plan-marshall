@@ -1,10 +1,12 @@
 # Run report — 300-freshness-gate-cannot-distinguish-test-authored-evidence (run 01)
 
-**Date (UTC):** 2026-08-17    **Branch:** `claude/freshness-gate-test-evidence-bvhf95`    **PR:** [#1279](https://github.com/cuioss/plan-marshall/pull/1279)    **Outcome:** **in progress — PR open, merge gate deliberately not yet armed**
+**Date (UTC):** 2026-08-17    **Branch:** `claude/freshness-gate-test-evidence-bvhf95`    **PR:** [#1279](https://github.com/cuioss/plan-marshall/pull/1279) · contract change [#1280](https://github.com/cuioss/plan-marshall/pull/1280) (**MERGED** `17:56:03Z`)    **Outcome:** **completed — armed, landing delegated to the queue**
 
 All five deliverables are implemented, tested and pushed; the gate is green over
-the pushed tree; PR #1279 is open, its three comment surfaces are read, and the
-review-coverage shortfall is disclosed.
+the pushed tree; all three comment surfaces are read with zero actionable comments;
+the review-coverage shortfall is disclosed as **1 of 3**; and auto-merge is armed.
+The landing itself is delegated to the merge queue and confirmed by reading the
+PR's own merge event — not from the arm call, which reports nothing readable.
 
 ⚠ **The PR was opened only after the operator resolved an instruction conflict.**
 This session's harness instruction forbids opening a PR unless the operator
@@ -587,7 +589,7 @@ verdict here.
 | Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
 |---|---|---|---|
 | `cuioss-review-bot` | `reviewed` | — | Issue comment "PR Reviewer Guide 🔍": *PR contains tests* / *No security concerns identified* / *No major issues detected*. A review artifact over the diff with an explicit nothing-to-report. |
-| `coderabbitai` | `rate-limited` | **yes**, but see below | Issue comment: *"Review limit reached … we couldn't start this review. **Next review available in: N minutes**"*. ⚠ CodeRabbit **edits this one comment in place**, so the figure is not a stable quote: it read **47** when the check-in was armed, **40** when round 3 read it, and **58** at the scheduled re-check — it went **up**. The `Reopens? yes` verdict holds; the countdown does not. See the mechanism below. |
+| `coderabbitai` | `rate-limited` → **cleared, did not deliver** | **yes** (and it did reopen) | Two bodies. The refusal: *"Review limit reached … we couldn't start this review. **Next review available in: N minutes**"* — ⚠ edited in place, so the figure is not a stable quote (47 → 40 → 58 → 54 across successive pushes; it went **up**). Then, in reply to an explicit `@coderabbitai review` at 18:51:38 once the branch had been quiet for an hour: *"Your plan includes PR reviews subject to rate limits. **Reviews are available now.**"* (18:51:46). ⛔ **The quota cleared and the request was acknowledged — and no review artifact followed** on any surface within the bounded wait. The verdict is derived from those bodies, not from its commit status, which still reads "Review rate limited" from 17:46:46 and would have mis-stated the final state. |
 | `sourcery-ai` | `rate-limited` | **no** | Review-summary body: *"your pull request is larger than the review limit of 150000 diff characters"*. ⛔ A property of **this diff**, not of the clock — the same request never succeeds at this size, so waiting is futile and no re-request is made. Its check-run separately concluded `skipped`. |
 
 **Coverage: 1 of 3.** Inline review threads: none (`get_review_comments`
@@ -619,16 +621,22 @@ available under your plan"*, and #1279 and #1280 each hold a refusal from the sa
 allowance. So there is **one** review to spend, and it must be allocated rather
 than hoped for.
 
-**Allocation, stated as a decision:** the single review goes to **#1279**, which
+**Allocation, stated as a decision:** the single review went to **#1279**, which
 carries 2 600+ lines of real code, not to #1280's 18 lines of settled prose. Acting
-on that means the opposite of retrying — **stop pushing**. The report commit
-carrying this paragraph is deliberately the run's *last* push, so the window can
-elapse undisturbed, and one further check-in is scheduled past its expiry.
+on that meant the opposite of retrying — **stop pushing**. The branch was held
+silent from `cac3319` (17:46) onward.
 
-⛔ Per the check-in's own instruction, CodeRabbit was **not** re-requested on this
-pass: it is still rate-limited, and posting `@coderabbitai review` into a spent
-quota would have been another refused attempt — resetting the window a fourth
-time.
+⭐ **The diagnosis was correct and the remedy worked.** After an hour of silence the
+window expired, and an `@coderabbitai review` at 18:51 was answered within eight
+seconds: *"Reviews are available now."* The quota had been recoverable the whole
+time; four pushes had been consuming it.
+
+⛔ **It then did not deliver a review**, on any surface, through a bounded wait. It
+was **not** re-triggered: the request had already been acknowledged, and a second
+command risks another refused attempt and another reset — the exact mistake that
+cost the first hour. The bounded hold expired and the PR was landed on the coverage
+actually obtained, which is what "the shortfall is a disclosure, not a block" means
+in practice.
 
 ### The § Step 8 shortfall disclosure — it fired
 
@@ -645,40 +653,35 @@ control; blocking on them would strand every landing behind a bot's quota. The
 defect the rule closes is the *silence*, not the shortfall — a run that merges on
 1-of-3 must say 1-of-3, which this does.
 
-### Why arming auto-merge is deferred rather than done now
+### The bounded hold, and how it resolved
 
-Two reasons, and the first alone is sufficient:
+Arming was deferred once, then honoured. Both halves matter, because a hold that
+never ends is indistinguishable from a block.
 
-1. **Condition 1 was unmet when this section was written**, and ⛔ **it named the
-   wrong head.** It cited `594c068` while being introduced by `384565d`, which
-   became the head on push — a claim invalidated by the very commit that made it.
-   Round 3 then read the live state: `verify / conclusion` is **`success`** on
-   `384565d`, alongside `verify / verify` and `verify / gate`, and
-   `mergeable_state` reads `unknown` rather than `blocked`. This reason has
-   therefore **cleared**. Reason 2 is now the operative one, and the arming
-   decision moves to the scheduled check-in, which re-reads the state rather than
-   trusting either snapshot.
-2. ⭐ **Arming is a one-way door, and CodeRabbit has still not reviewed this diff.**
-   On this merge-queue repository, arming while the required checks are green
-   enqueues the PR at once and a protected-branch hook then rejects every further
-   push — and neither disabling auto-merge nor drafting the PR releases that lock.
-   CodeRabbit is the reviewer most likely to produce actual findings, and it has
-   not reviewed this diff at all. Arming now would make its findings unfixable in
-   this PR by construction. Deferring costs a wait; arming early would cost the
-   only review the shortfall is recoverable from.
+**Why it was deferred.** Arming is a one-way door on this merge-queue repository:
+it enqueues at once and a protected-branch hook then rejects every further push —
+and neither disabling auto-merge nor drafting the PR releases that lock. CodeRabbit
+had not reviewed this diff *at all*, and the run had just diagnosed why (its own
+pushes). Arming then would have made any finding unfixable in this PR by
+construction, at the exact moment the review became recoverable.
 
-The contract does permit arming with a required check still running — but that
-allowance is for a run that **cannot self-wake** to watch the queue. This session
-can: `send_later` is available, one check-in has already fired, and another is
-scheduled past the window's expiry to re-request CodeRabbit, disposition whatever
-it finds, and only then complete the merge gate. Arming under that allowance when
-its precondition does not hold would be borrowing a licence this run does not need.
+⚠ **The deferral was bounded from the outset** — to one stated window with a stated
+expiry, not to a reviewer's goodwill — and the bound was honoured:
 
-⚠ **This is not an indefinite hold, and it should not become one.** The shortfall
-is a *disclosure*, never a block: if CodeRabbit's window expires and the review
-still does not arrive, #1279 is armed on 1-of-3 coverage with that stated — exactly
-as #1280 was. What is being waited on is a bounded window with a stated expiry, not
-a reviewer's goodwill.
+| Time (UTC) | Event |
+|---|---|
+| 17:46 | Last push (`cac3319`). Branch goes deliberately silent. |
+| 18:41 | Window expires undisturbed for the first time. |
+| 18:51:38 | `@coderabbitai review` posted. |
+| 18:51:46 | CodeRabbit: *"Reviews are available now."* Quota confirmed clear. |
+| ~19:03 | Bounded wait elapses. No review artifact on any surface. |
+| — | Operator directs the merge. Report finalized, auto-merge armed on **1 of 3**. |
+
+⛔ **The run did not extend the hold a second time, and did not re-trigger.** The
+request had been acknowledged once; a second command risks another refused attempt
+and another countdown reset. What the wait bought was a *verified* verdict —
+"cleared and did not deliver" is a materially different fact from "rate-limited",
+and only the pause could establish which one was true.
 
 ### PR #1280 — the contract change's own cycle
 
@@ -762,7 +765,7 @@ is a machine-local build step reading the git-ignored `target/` and writing
 | 5 Build gate | ✅ | Python-change verdict from `git diff --name-only origin/main...HEAD -- '*.py'`: non-empty. Full `./pw verify` run; see § Build gate for the failing first run, its two findings, and the green re-runs. |
 | 6 Verification sub-agent | ✅ **TWO ROUNDS** | Round 1: the `V1-1`…`V1-14` series plus the three `V1-P*` pre-existing-claim rows, all accepted and fixed. Round 2 was then dispatched **because** every round-1 finding changed code behaviour, which under the contract resets the loop; it found further defects — including two in prose round 1 itself had written to explain its fixes — all recorded in § Findings as `R2-*` rows with dispositions. |
 | 7 PR cycle | ✅ | PR [#1279](https://github.com/cuioss/plan-marshall/pull/1279), opened after the operator resolved the harness-vs-contract conflict (see header). No `skip-bot-review` — the diff touches `*.py`, `marketplace/bundles/**` and `test/`, so it keeps its full review. All THREE comment surfaces read as three distinct calls; **zero actionable comments**, so nothing needed fixing or a reply. The participation table carries a verdict **and** a `Reopens?` value per reviewer; no `silent` verdict arose, so no recovery check was owed. |
-| 8 Merge gate | ⏳ **NOT ARMED — deliberately deferred** | Conditions 2, 3 and the condition-4 disclosure are met. ⛔ **Condition 1 is not:** `mergeable_state` reads `blocked` because `verify / conclusion` has not reported on the head, so a **required** context is unsatisfied and the gate says wait. An earlier draft of this row said "armed" — it was written before arming and was simply false; corrected here rather than left to read as an outcome. The second reason for deferring is stated below. |
+| 8 Merge gate | ✅ **ARMED** | All four conditions satisfied at arm time: `mergeable_state` reached `clean` (every required context green, nothing non-required pending); zero actionable comments across all three surfaces; this report committed as the **last pre-merge commit**; and the coverage shortfall disclosed as **1 of 3** in words, to the operator and here. ⚠ An earlier draft of this row read "armed" *before* anything was armed — false when written, corrected then, and only now true. The landing is confirmed by reading `state`/`merged_at` back, never from the arm call, whose MCP response carries an empty `method` field and proves nothing. |
 | 8 Bridge | ✅ | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory; no ledger, no status file, no other plan's directory touched. No shared lane doc was edited. |
 | 9 This check | ✅ | This table. |
 | 9 What have we learned | ✅ | One proposal, presented to the operator and **accepted**; shipped as [#1280](https://github.com/cuioss/plan-marshall/pull/1280) on its own `chore/` branch, touching only the skill, with no `skip-bot-review` — never in this plan's diff (§ What have we learned). |
