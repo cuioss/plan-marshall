@@ -105,6 +105,41 @@ than silent scope creep.
 in `opencode_runtime.py`; `subagent_type` echoes the requested `agent`, mirroring the Claude
 passthrough. `standards/contract.md` states the passthrough as a cross-target rule.
 
+### Coupling-inventory closure (operator-directed, outside the plan's Expected surface)
+
+The run initially recorded as residue that `reference/coupling-inventory.md` lists this plan's four
+couplings under a section it labels **open**, that landing this PR makes those rows false, and that
+the document states no convention for retiring a row — so inventing one unilaterally would couple
+this PR to an epic-level decision. The operator directed the run to establish the convention and
+apply it. Both are done, and both are outside the plan's Expected surface; they are recorded here as
+an operator-authorised addition rather than as plan scope.
+
+**The convention** is stated in the inventory's own preamble (`§ Closing a row`), because the
+document owns its rows. Its load-bearing rule is that a row is retired **on a re-derivation, never
+on a plan's merge status** — a plan can land with a deliverable descoped, so retiring rows on merge
+would record work that was never done. The three re-derivation outcomes (finds nothing → delete;
+still finds it → keep, narrowed to the residue; cannot be re-derived → treat as not closed, and
+rewrite the row first) are tabulated there. A closed row is deleted rather than archived, because a
+"formerly open" section would make the work list a changelog, which the repository's documentation
+standards forbid; the durable record is the closing plan's run report, which git holds. The one
+carve-out is a row closed by *deciding* rather than *removing*: it moves to **Deliberate
+non-migrations** or **Confirmed clean** instead of vanishing, so intent is never mistaken for
+oversight. The epic README carries a one-line obligation pointing at it, so a plan executor meets it
+without the rule being restated.
+
+**The closure.** Each of §A's four rows was re-derived against the tree before deletion, per the
+convention applied to itself: the Claude hook-event vocabulary / `statusLine` / `CLAUDE_CODE_*` /
+settings-path search over `runtime_base.py` → 0; `On Claude` / `On OpenCode` → 0;
+`execution-context-level-3` in `opencode_runtime.py` → 0; `_DEFAULT_TARGET` present and consumed at
+every argparse default and fallback, with `marketplace_paths` on `_DEFAULT_RUNTIME_TARGET`. All four
+re-derive clean, so all four are deleted. §A held only `010` rows, so it now holds none; per the
+convention it keeps its heading and records what was re-derived, since deleting the heading would
+leave a reader unable to distinguish a category checked and found clear from one nobody looked at.
+
+No row of this plan's closed clean by decision rather than removal, so nothing moved into the two
+intent sections. The plan's one deliberate non-migration (`wait_for` call sites) was already recorded
+there before this run.
+
 ## Build gate
 
 `git diff --name-only origin/main...HEAD -- '*.py'` returns **10 files** — Python changes are

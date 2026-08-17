@@ -13,14 +13,49 @@ a future plan — registered here precisely so a scoping exclusion is never a si
 Every `file:line`-level pointer here is a **lead**: locate the site by the named symbol, not a
 line. An entry that cannot be re-found by symbol is reported as such, never silently skipped.
 
+## Closing a row
+
+A row leaves this inventory when **the coupling it names is gone from the tree** — not when a plan
+claiming it merges. The two are different: a plan can land with a deliverable descoped, renegotiated,
+or partially met, and a row retired on the strength of a merge would then record work that was never
+done.
+
+So the closing test is a **re-derivation, never a plan status**. Re-run the detection the row's own
+`Coupling` column describes — the search, the symbol lookup, the zero-hit grep it was written
+from — and read the result:
+
+| Re-derivation | What happens to the row |
+|---|---|
+| Finds nothing | The coupling is gone. **Delete the row.** |
+| Still finds it | The row stays. Update `Drawn by` to the plan that will finish it, and narrow the `Coupling` text to what actually remains, so the next reader re-derives the residue rather than the original. |
+| Cannot be re-derived at all (the symbol is gone, the detection no longer applies) | Treat as **not closed**. Report it, and rewrite the row against the current tree before deciding — a detection that no longer parses is an unanswered question, not a clean result. |
+
+**A closed row is deleted, not archived.** This document records the couplings that are *open*; one
+that no longer exists is not a coupling, and a "formerly open" section would turn the work list into
+a changelog, which the repository's documentation standards forbid. The durable record of what was
+closed, how, and under whose verification is the closing plan's run report at
+`doc/plans/{epic}/{plan-name}/report-NN.md` — git holds that, so deleting the row loses nothing.
+
+**The one case where a row must not simply vanish:** when the plan closed it by *deciding* rather
+than by *removing*. A coupling deferred on purpose moves to
+[Deliberate non-migrations](#deliberate-non-migrations); one sanctioned as target-specific-by-design
+moves to [Confirmed clean](#confirmed-clean-no-action). Those two sections exist so intent is never
+mistaken for oversight, and a decision deleted as if it were a fix is exactly the silent loss the
+`Drawn by` column guards against.
+
+A section whose rows all close keeps its heading and records that it holds nothing open. The
+headings are a taxonomy of coupling kinds, not a list of outstanding items: deleting one would leave
+a reader unable to tell a category that was checked and found clear from a category nobody looked at.
+
 ## A. Runtime contract shape (`platform-runtime`)
 
-| Site | Coupling | Drawn by |
-|---|---|---|
-| `platform-runtime/scripts/runtime_base.py` — `project_install_hook` | Target-shaped contract: the ABC docstring names the Claude hook-event vocabulary (`SessionStart`, `UserPromptSubmit`, `Notification`, `Stop`, `PreToolUse:*`, `PostToolUse:*`), the `statusLine` command, and `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE`; `target` is typed as a settings-file path; `overwrite_statusline` / `overwrite_env_disable` are named for Claude mechanisms. The canonical invocation is already semantic — the residue is the contract text and the path-typed parameter | `010` |
-| `platform-runtime/scripts/runtime_base.py` — the layout, session, and metrics operation docstrings | Target enumeration: "On Claude: … On OpenCode: …" pairs instead of target-neutral intent + the no-op fallback (re-derive the full set by searching `On Claude`); `subagent_dispatch` names both targets inline | `010` |
-| `platform-runtime/scripts/platform_runtime.py` — `_REGISTRY`, `_TARGET_BOOTSTRAP_LIBS` | Registration is scattered: two separate per-target dicts, `default="claude"` argparse fallbacks and a bare `target = "claude"` fallback, no `_DEFAULT_TARGET` constant; `script-shared/scripts/marketplace_paths.py` repeats its own `'claude'` fallback returns | `010` |
-| `platform-runtime/scripts/opencode_runtime.py` — `subagent_dispatch` | Hardcodes `subagent_type: "execution-context-level-3"` while the Claude implementation parameterizes the agent name — both a bug and a target-shaped assumption | `010` |
+No open entries. Re-derived clean: the `Runtime` ABC states every operation as target-neutral intent
+plus its no-op fallback (a case-sensitive search for `On Claude` / `On OpenCode` over
+`runtime_base.py` returns nothing, as does one for the Claude hook-event vocabulary, `statusLine`,
+and `CLAUDE_CODE_*`); `project_install_hook` takes a target identifier with target-defined conflict
+keys rather than a settings-file path; target registration is one block in `platform_runtime.py`
+behind a `_DEFAULT_TARGET` constant, held in lockstep with `marketplace_paths._DEFAULT_RUNTIME_TARGET`
+by test; and `opencode_runtime.subagent_dispatch` echoes the requested agent.
 
 ## B. Claude literals and formats in general scripts
 
