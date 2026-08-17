@@ -151,10 +151,13 @@ Python in six bundles plus eight test modules — so the full gate applies.
   tool output, not the exit code — the wrapper exits 0 even when `module-tests failed`, which is
   exactly how the 12 failures behind F16–F18 surfaced on the preceding run.
 
-  ⚠ Two `./pw verify` runs are recorded here because the first one **failed**: `verify:
-  module-tests failed` with 12 named failures, while the wrapper still exited 0. The green figure
-  above is the second run, after those were fixed. A third run follows the post-review fixes below;
-  its result is recorded in § Contract check.
+  ⚠ Three `./pw verify` runs happened, and the first one **failed**: `verify: module-tests failed`
+  with 12 named failures, while the wrapper still exited 0. The second was clean at 20509 passed.
+  The third — after the verification round's fixes — is the figure quoted above.
+
+  **CI agrees:** `verify / conclusion` concluded **success** on the head, alongside `verify / gate`,
+  `dependency-review` and `generate-check`. The merge queue re-verifies on `merge_group` before
+  landing.
 
 ## The characterization corpus (D5's population rule)
 
@@ -317,10 +320,36 @@ green.
 ## Reviewer participation
 
 Derived from configuration — the `author_login` of each
-`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc.
-Population: `coderabbitai`, `cuioss-review-bot`, `sourcery-ai`.
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc,
+never a list transcribed here. Population: `coderabbitai`, `cuioss-review-bot`, `sourcery-ai`.
 
-_To be completed from the PR's three comment surfaces before the merge gate._
+All three comment surfaces were read — `get_comments` (issue comments), `get_reviews` (review-summary
+bodies) and `get_review_comments` (inline threads). They are three different MCP calls and none
+subsumes the others; the review-summary surface is where `sourcery-ai`'s verdict arrived, and it
+appears on neither of the other two.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
+|---|---|---|---|
+| `cuioss-review-bot` | **reviewed** | — | Posted a *PR Reviewer Guide* carrying an explicit nothing-to-report over the diff: "No major issues detected", "No security concerns identified", "PR contains tests". Filed against head `178c0dd`; the only change since is the docs-only Step 9 commit, so the **code** it read is the code that merges. |
+| `coderabbitai` | **rate-limited** | **yes** | "Review limit reached … we couldn't start this review. **Next review available in: 24 minutes.** You've used all 1 included review currently available under your plan." Re-requested with the registry's `@coderabbitai review` trigger at 18:36 UTC, after the stated window elapsed; no review had arrived by 18:50 UTC. The recovery attempt was made and did not land. |
+| `sourcery-ai` | **rate-limited** | **no** | "your pull request is larger than the review limit of **150000 diff characters**". A property of *this diff*, not of the clock — the same request never succeeds at this size, so waiting is futile and no re-request was made. |
+
+**Coverage: 1 of 3.**
+
+Two reviewers refused this PR at essentially the same moment for reasons that call for opposite
+handling — one on a countdown worth waiting out, one on a size ceiling that never clears. Without the
+`Reopens?` column they would read identically in this table, and a reader could not tell which was
+worth re-requesting. Only `coderabbitai` was.
+
+No `silent` verdict arose, so the recovery check for that state was not needed. Every verdict above
+comes from a stored comment body, never from a check-run state: `Sourcery review` concluded
+`skipped` and `verify / conclusion` concluded `success`, and neither fact is evidence that any
+reviewer read the diff.
+
+**The § Step 8 shortfall disclosure fired**, before auto-merge was armed, stating the coverage as
+1-of-3 and naming each reviewer's reason and whether it reopens. The shortfall changed what the run
+*said*, not whether it merged — a rate limit is outside our control, and blocking on one would strand
+the landing behind a bot's quota.
 
 ## Cost
 
@@ -349,7 +378,7 @@ exists.
 | 5 Build gate | **Done** | § Build gate records the git-derived `*.py` verdict (non-empty ⇒ full gate) and the outcome, including that the **first `./pw verify` failed** with 12 named failures while the wrapper exited 0. |
 | 6 Verification sub-agent | **Done** | § Verification records the dispatch, its 12 findings (F20–F32), the disposition of each — all accepted — and, explicitly, that the loop was **stopped by judgement after one round** rather than run to a clean round. |
 | 7 PR cycle | **Done for creation; the comment cycle is in progress at the time of writing** | PR [#1283](https://github.com/cuioss/plan-marshall/pull/1283). No `skip-bot-review`: the diff touches `*.py` and `marketplace/bundles/**`, and a skill is code. Reviewer participation is recorded in § Reviewer participation from all three comment surfaces. |
-| 8 Merge gate | **See § Reviewer participation and the operator disclosure** | Conditions 1–3 assessed there. |
+| 8 Merge gate | **Done** | Condition 1: `verify / conclusion` **success** on the head, `mergeable_state` read from GitHub's own ruleset computation rather than from a ruleset-config call (unreachable on the MCP path). Condition 2: every PR comment handled — see § Reviewer participation; no reviewer raised an actionable finding. Condition 3: this report finalized and committed as the **last pre-merge commit**, before arming, because a queued branch rejects every further push. Condition 4 (a disclosure, not a gate): the 1-of-3 shortfall was stated to the operator with each reason and its `Reopens?` value. |
 | 8 Bridge | **Done** | Only three paths under `doc/plans/` changed, all of them deliverables: this plan's own `plan.md` (moved) and `report-01.md`, plus the arm-A successor spec the split mandated. **No status file, no ledger, no other plan's directory.** Verified with `git diff --name-status origin/main...HEAD -- doc/plans`. |
 | 9 This check | **Done** | This table. |
 | 9 What have we learned | **Done** | Below. |
