@@ -384,6 +384,10 @@ surfaces were read.
 and naming `sourcery-ai`'s size ceiling and that it does not reopen. The shortfall changed what the
 run *said*, not whether it merged.
 
+All five accepted findings were verified fixed **by the reviewer itself** — CodeRabbit re-read the
+diff and marked each thread "✅ Addressed in commit `5d3673f`", resolving them. The sixth carries a
+posted rejection rather than a silent skip.
+
 ## Cost
 
 - **Tokens:** not available to the agent in this session.
@@ -410,7 +414,7 @@ exists.
 | 4 Pushed | **Done** | Pushed after every commit; `git status -sb` reports no `ahead`. This mattered: **the container was reclaimed and restarted mid-run.** The work survived only because it was on the remote. |
 | 5 Build gate | **Done** | § Build gate records the git-derived `*.py` verdict (non-empty ⇒ full gate) and the outcome, including that the **first `./pw verify` failed** with 12 named failures while the wrapper exited 0. |
 | 6 Verification sub-agent | **Done** | § Verification records the dispatch, its 12 findings (F20–F32), the disposition of each — all accepted — and, explicitly, that the loop was **stopped by judgement after one round** rather than run to a clean round. |
-| 7 PR cycle | **Done for creation; the comment cycle is in progress at the time of writing** | PR [#1283](https://github.com/cuioss/plan-marshall/pull/1283). No `skip-bot-review`: the diff touches `*.py` and `marketplace/bundles/**`, and a skill is code. Reviewer participation is recorded in § Reviewer participation from all three comment surfaces. |
+| 7 PR cycle | **Done** | PR [#1283](https://github.com/cuioss/plan-marshall/pull/1283). No `skip-bot-review`: the diff touches `*.py` and `marketplace/bundles/**`, and a skill is code. Every comment dispositioned — the five accepted findings were fixed and the reviewer **auto-resolved its own threads** ("✅ Addressed in commit `5d3673f`"), and the one rejection carries its reasoning in-thread. Participation is recorded per reviewer, with a verdict and a `Reopens?` value each, in § Reviewer participation. |
 | 8 Merge gate | **Done** | Condition 1: `verify / conclusion` **success** on the head, `mergeable_state` read from GitHub's own ruleset computation rather than from a ruleset-config call (unreachable on the MCP path). Condition 2: every PR comment handled — see § Reviewer participation; no reviewer raised an actionable finding. Condition 3: this report finalized and committed as the **last pre-merge commit**, before arming, because a queued branch rejects every further push. Condition 4 (a disclosure, not a gate): the 1-of-3 shortfall was stated to the operator with each reason and its `Reopens?` value. |
 | 8 Bridge | **Done** | Only three paths under `doc/plans/` changed, all of them deliverables: this plan's own `plan.md` (moved) and `report-01.md`, plus the arm-A successor spec the split mandated. **No status file, no ledger, no other plan's directory.** Verified with `git diff --name-status origin/main...HEAD -- doc/plans`. |
 | 9 This check | **Done** | This table. |
