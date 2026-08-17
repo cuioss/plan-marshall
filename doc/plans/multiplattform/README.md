@@ -26,6 +26,8 @@ plannable and validation-gated work, and the dependency/concurrency contract.
   live-runtime runbook (exact commands, expected observations, pass/fail criteria) for the first
   execution on a real OpenCode install, plus the post-validation work that becomes plannable once
   it has run.
+- [`reference/marketplace-audit.md`](reference/marketplace-audit.md) — the whole-marketplace
+  audit clusters §M1–§M11 extending the inventory; plans `050`–`070` draw from it.
 
 ## The baseline
 
@@ -58,24 +60,30 @@ OpenCode install is available. The install-path pin and the OpenCode user/develo
 documentation depend on its outcomes and are authored as new plans afterwards — the protocol's
 "Post-validation work" section is their staging list.
 
-Everything below that line is plannable now: none of the four plans requires an OpenCode
-install, an operator decision, or an unvalidated behaviour.
+Everything below that line is plannable now: none of the plans requires an OpenCode install, an
+operator decision, or an unvalidated behaviour.
 
 ## The plans, and what may run at the same time
 
 ```text
 010 runtime seam neutrality ─┬─ sequential, either order ─┬─ 030 claude-literal residuals
                              └─ (shared: claude_runtime) ─┘
-020 target-scoped components ── independent of everything
+010, 030 ──────────────→ 070 runtime-fact prose (runs after both)
+020 ─ sequential with 050 (shared: marketplace/targets) and 060 (shared: plugin-doctor)
 040 sync-opencode inner loop ── independent of everything
 ```
+
+Plan `060` also runs after `010` (its default-target fix consumes `010`'s single source).
 
 | Plan | Surface | May run concurrently with |
 |---|---|---|
 | `010` | `platform-runtime/scripts/**` (ABC, router, both runtimes), `script-shared/scripts/marketplace_paths.py`, `test/plan-marshall/platform-runtime/**`, `test/plan-marshall/script-shared/**`, conditionally `platform-runtime/standards/contract.md` and the `project install-hook` caller invocations its D1 parameter change reaches | `020`, `040` |
 | `020` | `marketplace/targets/**`, `plan-marshall/commands/tools-fix-intellij-diagnostics.md`, `pm-plugin-development` (plugin-doctor + frontmatter standards), `test/marketplace/targets/**`, `test/pm-plugin-development/plugin-doctor/**` | `010`, `030`, `040` |
 | `030` | permission/providers/extension/inventory/retrospective scripts named in its Expected surface, plus `platform-runtime/scripts/claude_runtime.py` + `_claude_runtime_impl.py` (and conditionally `platform-runtime/standards/contract.md`), and their `test/` subtrees | `020`, `040` |
-| `040` | `.claude/skills/sync-opencode/**`, `test/sync-opencode/**`, `doc/developer/marketplace-build.adoc`, `doc/developer/distribution.adoc` | `010`, `020`, `030` |
+| `040` | `.claude/skills/sync-opencode/**`, `test/sync-opencode/**`, `doc/developer/marketplace-build.adoc`, `doc/developer/distribution.adoc` | every other plan |
+| `050` | `marketplace/targets/**` (engine + opencode mapping), the §M2-named bundle files across six pm-* bundles, `test/marketplace/targets/**` | `010`, `030`, `040`, `060`, `070` — not `020` (shared `marketplace/targets`) |
+| `060` | `marketplace/bundles/pm-plugin-development/**`, `test/pm-plugin-development/**` | `040`, `050` (file-disjoint by M-cluster), `070` — not `020` (plugin-doctor) or `030` (inventory scripts); after `010` (default-target source) |
+| `070` | `marketplace/bundles/plan-marshall/**` prose + the M5 code sites, `test/plan-marshall/**`, platform-runtime docs | `040` only; runs after `010` and `030` |
 
 **`010` and `030` must not run concurrently.** Both edit `claude_runtime.py` /
 `_claude_runtime_impl.py` — `010` moves the install-op vocabulary in, `030` moves permission
