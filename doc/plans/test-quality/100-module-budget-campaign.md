@@ -189,9 +189,11 @@ must land first, and finally the one module that belongs to a landed plan no red
 | 6 | `080`'s — plugin development and generator | 42 | plan `080` landed |
 | 7 | plan `010`'s rule-test modules — `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` | 1 | `010` landed; **halts if `090` is in flight** — see § Notes |
 
-Each slice's exact directory list is the **Expected surface** of the reduction plan that owns it,
-read from that plan's own file — not restated here, because a restated list is a second thing to
-drift. **That includes the root-level `test/plan-marshall/*.py` modules**: four of them are over
+**Each of the six reduction slices'** exact directory list is the **Expected surface** of the plan
+that owns it, read from that plan's own file — not restated here, because a restated list is a second
+thing to drift. **Row 7 is the exception and is stated inline above**, because it has no owning
+reduction plan: plan `010` owns those modules, but its own Expected surface names only the one module
+it added, so there is no list to read from. **That includes the root-level `test/plan-marshall/*.py` modules**: four of them are over
 budget, and each is named by filename in the Expected surface of `040` or `050`, so each belongs to
 that slice. The counts above include them, and they are called out because a root-level file is
 exactly the category a slice boundary is most likely to mis-assign — an earlier draft of this plan
@@ -273,17 +275,12 @@ weaker check, and record what the check that would have established the unavaila
 * **Sequencing against the rest of the epic.** Rows 1–4 have no dependency and may start
   immediately. `070` and `080` must land before this campaign takes their slices — rows 5 and 6 of
   the table above.
-  ⛔ **Two of the seven runs collide with plan `090`, and the check is halting for both.** `090`'s
-  carve-out claims three test paths besides its production surface, and two of them are this
-  campaign's:
-  * **Row 3** — `090`'s carve-out claims `test/plan-marshall/script-shared/` and
-    `test/plan-marshall/manage-providers/`, both inside plan `060`'s slice, which row 3 re-enters.
-  * **Row 7** — `090`'s carve-out claims the `test_test_conventions_rule*.py` glob, which row 7 splits.
-
-  **Before starting row 3 or row 7, confirm no open PR and no in-flight branch exists for `090`; if
-  one does, halt and report it** rather than editing files two plans own. `090` carries the mirror of
-  this check and names the same two runs. **Rows 1, 2, 4, 5 and 6 are independent of `090`** and may
-  run alongside it.
+  ⛔ **Some campaign runs collide with plan `090`, and the check is halting. The set is stated in ONE
+  place:** `doc/plans/test-quality/README.md` § "The collision matrix". **Read it there — it is
+  deliberately not restated here**, because restating it is how one round named two colliding runs
+  where there are three, and left the third licensed to proceed. **Before starting any run, look this
+  campaign up in the matrix; if it names a party for that run, confirm no open PR and no in-flight
+  branch exists for it, and halt and report rather than editing files two plans own.**
 * **When every slice is done, one thing follows.** `test-module-line-budget` reaches zero and its
   flip to `severity: error` becomes available. That flip belongs to plan `090` § D7's ladder, not
   here — this plan produces the condition, it does not take the gate decision.

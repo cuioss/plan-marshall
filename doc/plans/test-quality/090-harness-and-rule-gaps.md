@@ -98,11 +98,17 @@ position is a measured, reported fact rather than an assumption.
 epic README § "How much one run does" carries the measurement. So the ordering matters, and it is set
 by what the consuming plans actually cite rather than by theme:
 
-| Consumer | What it depends on | How it says so | Therefore |
-|---|---|---|---|
-| `070` | **D1** (the parser seams its **B6** half needs) and **D6** (the `conftest.py` docstring its D1 rename would otherwise leave stale) | Both **cited by number, twice each** — `§ D1` in its D3 and its Out of scope, `§ D6` in its D1 and its claim labels | Both blocking for `070` |
-| `080` | **D1** (same seams) and **D4** (the citation matchers its D3 prose half is measured by) | Both described in its dependency note, neither cited by number. Its **only** numbered reference to this plan is `§ D2`, and that one is a *routing destination* — "record it against `090` § D2 and move on" — not a dependency | D1 and D4 blocking for `080` |
-| `100` | **D3**'s registration guard, which its splits rely on — as do `070` § D3 and `080` § D3, each of which carries the same `sys.modules` hazard as the first of its two stated hazards | `100` cites this plan by number once (`§ D7`, on the severity flip), not for D3 | D3 protects all three, and is not deferrable on the ground that it protects only the campaign |
+| Consumer | What it depends on, and why |
+|---|---|
+| `070` | **D1** — the parser seams its **B6** half needs; and **D6** — the `conftest.py` docstring its D1 rename would otherwise leave stale |
+| `080` | **D1** — the same seams; and **D4** — the citation matchers its D3 prose half is measured by, without which that half's finding count is provisional |
+| `100` | **D3** — the registration guard its splits rely on, as do `070` § D3 and `080` § D3, each of which carries the same `sys.modules` hazard among its stated hazards |
+
+**Read each consumer's own dependency note for the authoritative statement**; this table says what
+this plan owes them, not how they phrase it. An earlier draft carried a third column enumerating which
+references each consumer made *by number*, and it was falsified in five consecutive verification
+rounds — every time a fix to one plan's wording changed a citation the column counted. The column is
+gone; counting another document's phrasing is not this plan's business.
 
 **D1 first, then D6 and D4** — the smallest set that unblocks both consuming plans. D2 and D3 follow;
 D5 is the least coupled and goes last. A run that reaches only part of this **reports what it did not
@@ -270,10 +276,12 @@ That is a declared overlap, not an oversight, and it is bounded:
 | `test/plan-marshall/script-shared/`, `test/plan-marshall/manage-providers/` | plan `060`'s slice — landed; plan `100` re-enters it as campaign run 3 | **Add only a test that a D1 production change requires.** Do not refactor, reduce, or split anything there |
 | `test/conftest.py` | shared with plan `110`, which adds a session preflight (its D2) and a skip guard (its D5) | **This plan owns the loader mechanics** — `load_script_module`, `get_scripts_dir`, the registration behaviour, the `_routing_namespaces` docstring. `110` owns the preflight and the skip guard. The two must **not** run concurrently against this file |
 
-⛔ **Check before starting, and halt on a live collision.** These are ownership overlaps that are safe
-only while the other plan is not in flight. Confirm no open PR or in-flight branch exists for `080`,
-for `100` campaign run 3, or for `100` campaign run 7 — **which claims the same `rule*` modules as the
-first row** — or for `110`, before touching any row of the table. If one does, **halt and report
+⛔ **Check before starting, and halt on a live collision — the set is stated in ONE place.**
+`doc/plans/test-quality/README.md` § "The collision matrix" is the authoritative list of what may not
+run alongside this plan. **Read it there; it is deliberately not restated here**, because restating it
+is how three separate rounds left one file naming a subset of the collisions another file named.
+Confirm no open PR and no in-flight branch exists for any party the matrix names against `090`, before
+touching any row of the table above. If one does, **halt and report
 it** rather than editing a file two plans own — the epic's partition exists precisely because a
 concurrent edit to a shared file is the collision nobody notices until both land.
 
@@ -292,7 +300,7 @@ concurrent edit to a shared file is the collision nobody notices until both land
 | `test/conftest.py`'s `_routing_namespaces` docstring names `test/plan-marshall/build_test_helpers.py` by path | OBSERVED | `test/conftest.py` — `_routing_namespaces`; surfaced by `grep -rln 'build_test_helpers' test` |
 | No plan in `030`–`080` claims any file under `marketplace/bundles/**` — the surface this plan's production deliverables change | HYPOTHESIS — **asserted absence; it is this plan's entire justification** | Read the **Out of scope** section of each of `030`–`080` and confirm every one excludes `marketplace/bundles/**`. If any plan claims a file there, this plan's production surface overlaps a sibling's: **halt and report it** |
 | This plan's **test** surface overlaps paths other plans own, and each overlap is declared rather than asserted away | OBSERVED | § "The surfaces this plan shares" above, cross-checked against `060`'s, `080`'s and `110`'s Expected surfaces and — for the `rule*` glob, which `010`'s own Expected surface does **not** state — the epic README's `010` row. **This is not an absence claim** — an earlier draft wrote it as one and was refuted by the tree, which would have halted the run on a defect the plan itself created |
-| No run is in flight against plan `080`, `100` campaign run 3 (plan `060`'s slice), `100` campaign run 7 (the `rule*` glob), or plan `110` | HYPOTHESIS — **gating and halting; check before touching ANY row of the carve-out table** | An open PR or an in-flight branch for any of the four. Unresolvable → treat as a collision and halt. This row must name exactly what the ⛔ block in § "The surfaces this plan shares" names — an earlier draft named two of the four, so a run reading the claim-labels table for its gating checks skipped half of them |
+| No run is in flight against any party the epic's collision matrix names against this plan | HYPOTHESIS — **gating and halting; check before touching ANY row of the carve-out table** | `doc/plans/test-quality/README.md` § "The collision matrix", read there rather than restated here. An open PR or an in-flight branch for any party it names → treat as a collision and halt. **Deliberately not enumerated in this row**: earlier drafts enumerated it here and in the ⛔ block above, and the two disagreed twice |
 
 ## Verification
 

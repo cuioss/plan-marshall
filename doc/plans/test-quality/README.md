@@ -190,9 +190,16 @@ PYTHONPATH=marketplace/bundles/pm-plugin-development/skills/plugin-doctor/script
 This writes nothing anywhere, so the working tree stays clean and there is nothing to stage. It is a
 five-directory subset of the `PYTHONPATH` that `test/conftest.py::_setup_marketplace_pythonpath`
 assembles in-process for pytest by globbing every scripts directory — spelled out literally rather
-than derived, so it stays a single command with no shell substitution. The five
-directories are a lead like any other — if the import chain has grown a sixth, the `ModuleNotFoundError`
-names it, so add it and say so in the report. If the command cannot be made to run at all, the
+than derived, so it stays a single command with no shell substitution — which the lane's
+one-command-per-Bash-call discipline requires, and which is why this is not derived from
+`_setup_marketplace_pythonpath` at run time even though that function is the authority.
+
+**The five directories are a lead like any other, and the failure is loud rather than silent.** If the
+import chain has grown a sixth, the command dies with `ModuleNotFoundError: No module named '<name>'`,
+which **names the missing module** — resolve it to its scripts directory, add that directory to the
+prefix, and say so in the report so the next run inherits it. A run that hits this has not lost a
+measurement; it has been handed the fix by the error message. What it must not do is silently
+substitute a weaker check. If the command cannot be made to run at all, the
 measurement is genuinely **unavailable**: report it as such rather than substituting a weaker check.
 
 ## What a reduction run must hold
@@ -291,9 +298,9 @@ it, and where a run cannot finish, **report what was not reached rather than thi
 | `010` | `marketplace/bundles/pm-dev-python/skills/pytest-testing/**`, `marketplace/bundles/plan-marshall/skills/persona-module-tester/**`, `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/**`, `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py`, `test/pm-plugin-development/plugin-doctor/fixtures/test_conventions/rule*/`, `test/pm-plugin-development/plugin-doctor/test_doctor_marketplace_commands.py` (the `cmd_test_conventions` cases only), `test/pm-plugin-development/plugin-doctor/_fixtures.py` | `020` only |
 | `020` | `test/conftest.py`, `test/_shared/**`, `test/README.md`, and the ≤10 modules it converts as proof-of-use | `010` only |
 | `030`–`080` | one disjoint slice of `test/` each, listed in the plan | each other, once `010` **and** `020` have landed |
-| `090` | `marketplace/bundles/**` (the doctor analyzers, `script-shared`, `manage-providers`) — **the only plan in the epic that may edit it** — plus `test/conftest.py`'s loader mechanics, and the tests for its own production changes | any reduction plan; **not** `110` (both edit `test/conftest.py`) and **not** `100`'s run against `060`'s slice |
-| `100` | one reduction slice per run, `test_*.py` only — plus a seventh run for the one over-budget module plan `010` owns, which no reduction slice covers | nothing running against the same slice; and **not `090`** for its third or seventh run, both of which touch paths `090`'s carve-out also claims |
-| `110` | the tree's skip sites, which **cross** several slices — `test/sync-plugin-cache/`, `test/pm-plugin-development/`, `test/marketplace/` and scattered others — plus `test/conftest.py`'s session preflight and skip guard | nothing running against those directories, and **not** `090` |
+| `090` | `marketplace/bundles/**` (the doctor analyzers, `script-shared`, `manage-providers`) — **the only plan in the epic that may edit it** — plus `test/conftest.py`'s loader mechanics, and the tests for its own production changes | see § "The collision matrix" — it is the authoritative set, and this cell deliberately does not restate it |
+| `100` | one reduction slice per run, `test_*.py` only — plus a seventh run for the one over-budget module plan `010` owns, which no reduction slice covers | nothing running against the same slice; and see § "The collision matrix" for the runs that additionally collide with `090` |
+| `110` | the tree's skip sites, which **cross** several slices — `test/sync-plugin-cache/`, `test/pm-plugin-development/`, `test/marketplace/` and scattered others — plus `test/conftest.py`'s session preflight and skip guard | nothing running against those directories; see § "The collision matrix" for `090` |
 
 **`090`, `100` and `110` were added after the epic's executed half**, each from something four runs
 recorded and none could act on: `090` owns the production and harness defects every reduction plan is
@@ -312,6 +319,32 @@ duplication this epic exists to remove.
 
 **`030`–`080` are mutually parallel by construction.** Each owns a disjoint list of `test/`
 subdirectories, stated in its Expected surface.
+
+### The collision matrix — the single authoritative statement
+
+⛔ **This table is the ONE place the epic states which plans may not run at the same time. Every other
+file points here; none restates it.** That rule exists because the restatement approach failed
+repeatedly: the same collision was corrected in one file and left wrong in another across several
+verification rounds, each time while a disposition recorded it as mirrored.
+
+Plan `090`'s carve-out (`090` § "The surfaces this plan shares") claims four test paths besides its
+production surface. Each is owned by another plan, and three of them are re-entered by a plan `100`
+campaign run:
+
+| Path `090` shares | Owner | `100` run that re-enters it | May not run concurrently |
+|---|---|---|---|
+| `plugin-doctor/test_test_conventions_rule*.py` | `010` (landed) | **run 7** | `090` ↔ `100` run 7 |
+| `plugin-doctor/test_analyze_lesson_id_in_skill_prose.py` | `080` | **run 6** | `090` ↔ `080`, and `090` ↔ `100` run 6 |
+| `test/plan-marshall/script-shared/`, `…/manage-providers/` | `060` (landed) | **run 3** | `090` ↔ `100` run 3 |
+| `test/conftest.py` | `020` (landed), then `110` | — (`100` excludes it) | `090` ↔ `110` |
+
+**Read as a rule:** plan `090` must not run concurrently with plan `080`, with plan `110`, or with
+plan `100`'s campaign **runs 3, 6 or 7**. `100`'s runs 1, 2, 4 and 5 are independent of `090`.
+Everything else in the epic may run concurrently as § "The plans, and what may run at the same time"
+describes.
+
+**Before starting any of those, check for an open PR or an in-flight branch for the other party, and
+halt and report rather than editing a file two plans own.**
 
 ⚠️ **The partition is a hand-written list, so every run re-derives it before acting on it.** The
 lists below cover every directory present when they were last reconciled, but a directory added to
