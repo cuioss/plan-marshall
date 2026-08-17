@@ -1,6 +1,6 @@
 # Run report — test-quality epic re-scoping (run authoring-02)
 
-**Date (UTC):** 2026-08-17    **Branch:** `claude/test-quality-plan-analysis-pzfrly` (harness-assigned, kept as-is)    **PR:** [#1284](https://github.com/cuioss/plan-marshall/pull/1284)    **Outcome:** completed — deliverables complete; the verification loop is recorded at § "The stop record"
+**Date (UTC):** 2026-08-17    **Branch:** `claude/test-quality-plan-analysis-pzfrly` (harness-assigned, kept as-is)    **PR:** [#1284](https://github.com/cuioss/plan-marshall/pull/1284)    **Outcome:** completed — deliverables complete; the nine-round verification loop closed on a recorded judgement, not on a clean round (§ "The stop record", § "Why one more round is not the answer")
 
 This run executes no plan. Its subject is the **epic itself**: read every landed run report under
 `doc/plans/test-quality/`, establish what the executed half actually did and what it repeatedly could
@@ -386,11 +386,13 @@ and the honest reading is in § "The stop record": the class is not closed.**
 | 147 | **CR** · **`090`'s halting check requires evidence no mechanism produces** — the sibling-collision machinery reads plan records and file overlap, not open PRs | **Fixed** — the check is declared manual, its evidence defined (search the open PRs, record what was found), and "unavailable" named as the honest outcome when the PR list cannot be reached |
 | 148 | **CR** · Incomplete sentence at `090:363` | **Fixed** with #139 |
 
-### Round 9 — 16 findings, all fixed. The operator extended the budget a second time; this round used one of it
+### Round 9 — 16 findings in 18 rows, all fixed. The operator extended the budget a second time; this round used one of it
 
 Dispatched with a narrower question than its predecessors: **is plan `120` sound enough to hand to a
 cloud run?** — checked against the seven `author-cloud-plan` self-checks, then the epic re-swept. Its
-answer was **no**, on three independent grounds, all of which are fixed below.
+answer was **no**, on three independent grounds, all of which are fixed below. That one finding
+carries three independent defects, so it takes three rows (#149–#151) — the table has **18 rows for 16
+findings**, and the series cell below counts rows, which is the convention every other round uses.
 
 | # | Finding | Disposition |
 |---|---|---|
@@ -410,13 +412,15 @@ answer was **no**, on three independent grounds, all of which are fixed below.
 | 162 | V9 · **"three automated reviews all reached the same conclusion" is refuted by this report's own participation table** — `coderabbitai` filed findings on two heads (its other two review records are reply-only); `cuioss-review-bot` filed "no major issues"; `sourcery-ai` refused on diff size | **Fixed** at every site — the claim is now **two substantive reviews**, with the reply-only records named |
 | 163 | V9 · **"three successive structural remedies each reproduced the drift inside their own commit"** overstates its own evidence table — remedy 1 failed by leaving a site behind, which is not in-commit | **Fixed** — the two shapes are distinguished, and why that distinction matters is stated |
 | 164 | V9 · Matrix row 7's evidence column was short: `110`'s surface also claims `test/plan-marshall/tools-file-ops/`, which is `060`'s. The pair was right; the shared-path list was incomplete | **Fixed** |
+| 165 | V9 · **The PR description was stale, and three consecutive rounds had recorded it re-derived** — it said four rounds where there were eight, three new plans where there were four, three exclusion-table entries where there were six, and named neither plan `120` nor the collision matrix. The stop record had predicted this exact location. **Sixth instance of the named pattern** | **Fixed** — rewritten in full against the tree and the live PR, with the nine-round series, the flat-not-converging reading, plan `120`'s role, and the stop judgement. Verified by re-reading the body back from the API rather than by assuming the write landed |
+| 166 | V9 · **One review thread was open and unreplied** — `discussion_r3798835419` (`090`, "Complete the dependency sentence"), the only one of thirteen carrying neither a reply nor an `✅ Addressed in commit` marker. The underlying text was already fixed, so the gap was in the disclosure: the report's *"every comment is dispositioned"* was true of the report and false of the PR | **Fixed** — replied on the thread naming the commit and quoting the completed sentence, and recording the two later findings in the same rewrite (#154, #157) so the thread carries the full history rather than a bare "done" |
 
 ⭐ **Round 9's own verdict on the class, quoted because it is the finding that matters:** *"the fix
-commit reproduced the class inside itself, for the ninth consecutive round."* Findings 134, 135 and 136
-are three separate instances of a round-8 fix leaving or creating a false dependent, and 135 was
-created by the commit that registered plan `120` — the plan that exists to end this. That is not an
-argument against `120`; it is the strongest available argument for it, and it is why the honest stop
-condition below is a mechanism landing rather than a round returning clean.
+commit reproduced the class inside itself, for the ninth consecutive round."* Findings 152, 154, 155,
+156 and 157 are five separate instances of a round-8 fix leaving or creating a false dependent, and 152
+and 155 were created by the commit that **registered plan `120`** — the plan that exists to end this.
+That is not an argument against `120`; it is the strongest available argument for it, and it is why the
+honest stop condition below is a mechanism landing rather than a round returning clean.
 
 ### The stop record
 
@@ -430,7 +434,7 @@ why with the evidence.**
 
 **Everything condition A forbids was fixed regardless**, in every round including the last. That is
 what the budget bounds and does not: running out of rounds bounds how often the run *verifies*, never
-whether it *fixes* what verification already found. All 164 findings are dispositioned; none is
+whether it *fixes* what verification already found. All 166 findings are dispositioned; none is
 deferred, and there are no survivor rows — every behavioural finding that engaged condition B was
 fixed rather than characterised, because in each case the bound was the thing that was wrong.
 
@@ -438,10 +442,10 @@ fixed rather than characterised, because in each case the bound was the thing th
 
 | Round | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Findings | 23 | 13 | 10 | 21 | 13 (+9) | 20 | 21 | 14 (+4) | 16 |
+| Findings | 23 | 13 | 10 | 21 | 13 (+9) | 20 | 21 | 14 (+4) | 18 |
 | Self-inflicted | — | 4 | 7 | 9 | 9 | 6 | 4 | ~10 | 5 |
-| Share | — | 31% | 70% | 43% | 69% | 30% | 19% | ~56% | 31% |
-| Share in the shipped plans | — | — | — | — | 46% | 30% | 48% | 56% | 44% |
+| Share | — | 31% | 70% | 43% | 69% | 30% | 19% | ~56% | 28% |
+| Share in the shipped plans | — | — | — | — | 46% | 30% | 48% | 56% | 61% |
 
 The `(+n)` form separates the verification round's own findings from an automated review that landed
 during it: `13 (+9)` is 13 verifier findings and 9 from `coderabbitai`, 22 rows in that round's table.
@@ -514,7 +518,7 @@ defect that dominates**, and running it a tenth time re-buys evidence already in
 
 Four measurements, each from this report rather than from impression:
 
-1. **The series is flat, not converging.** 23, 13, 10, 21, 22, 20, 21, 18, 16 across nine rounds. Nine
+1. **The series is flat, not converging.** 23, 13, 10, 21, 22, 20, 21, 18, 18 across nine rounds. Nine
    points is enough to say that a tenth would land in the same band. A run that stops on "the count
    fell" would have stopped at round 3 and shipped the twenty-one defects round 4 found.
 2. **The dominant class recurs at a rate the loop does not touch.** *An ownership fact held in prose
@@ -522,7 +526,7 @@ Four measurements, each from this report rather than from impression:
    were tried; the last two failed inside the commit that applied them. Round 9's own commit created
    one instance (finding #155) — the commit that registered the plan built to end the class.
 3. **The loop's own fixes are a standing source of new defects.** Self-inflicted share by round: 31%,
-   70%, 43%, 69%, 30%, 19%, ~56%, 31%. Round 10 would be expected to introduce roughly a third of what
+   70%, 43%, 69%, 30%, 19%, ~56%, 28%. Round 10 would be expected to introduce roughly a third of what
    it fixes, and round 11 would then find those. That is not convergence; it is a fixed point above
    zero.
 4. **What remains is disclosed rather than hidden.** § "What a reader should assume remains" names
@@ -563,7 +567,7 @@ the count been believed as read, this table would have recorded a `silent` verdi
 | Reviewer (`author_login`) | Verdict | Reopens? | Body evidence |
 |---|---|---|---|
 | `cuioss-review-bot` | **`reviewed`** | — | Issue comment: *"PR Reviewer Guide 🔍 — 🧪 No relevant tests / 🔒 No security concerns identified / ⚡ No major issues detected"*. No findings, nothing to disposition |
-| `coderabbitai` | **`reviewed`**, repeatedly — at `d66564f` and again at `e69e2c9`, rate-limited between | **yes** | Refused first on a countdown, then **edited that same comment in place** and reviewed the branch at `d66564f`: a walkthrough, a `Merge Risk: 🟡 Moderate` verdict, and **9 inline findings**, all dispositioned in § Findings (#81–#89). Its verdict — *"several plan gates, ownership rules, and verification totals still contradict one another … not merge-ready until those are corrected"* — independently reached the same conclusion as verification rounds 4 and 5 |
+| `coderabbitai` | **`reviewed`**, repeatedly — at `d66564f` and again at `e69e2c9`, rate-limited between them and **rate-limited again at `e071d34`** | **yes** | Refused first on a countdown, then **edited that same comment in place** and reviewed the branch at `d66564f`: a walkthrough, a `Merge Risk: 🟡 Moderate` verdict, and **9 inline findings**, all dispositioned in § Findings (#81–#89). Its verdict — *"several plan gates, ownership rules, and verification totals still contradict one another … not merge-ready until those are corrected"* — independently reached the same conclusion as verification rounds 4 and 5 |
 | `sourcery-ai` | `rate-limited` | **no** | Review-summary body: *"your pull request is larger than the review limit of 150000 diff characters"* — a ceiling on THIS diff's size, not a clock; the same request never succeeds at this size |
 
 **Coverage: 2 of 3.** No `silent` verdict arose, so no recovery check was owed —
@@ -610,6 +614,15 @@ and the coverage figure below describes the head it was measured at rather than 
 An earlier version of this sentence still named `d66564f` as the last reviewed head, one paragraph
 after recording the `e69e2c9` review that superseded it.
 
+**The quota then closed again, and it is recorded rather than smoothed over.** The round-8 fix commit
+`e071d34` produced a fourth rewrite of the same comment — this time back to the refusal form
+(*"Review limit reached … Next review available in: 34 minutes"*), naming the range
+`e69e2c9..e071d34` and the twelve files it would have reviewed. So the reviewer **saw** the round-8
+head and could not review it, and the round-9 head after it is unreviewed on the same quota. That is
+the `Reopens? yes` condition in its literal form: the review is available later, not never.
+**Re-read this surface at the merge gate rather than trusting this paragraph** — it has now changed
+four times during a single PR.
+
 Two things are worth recording. **The verdict corroborated the loop from a different method**: it
 named plan gates, ownership rules and verification totals contradicting one another, which is what
 rounds 4 and 5 were finding at the same moment, reached without seeing them. And **the comment surface
@@ -619,16 +632,27 @@ silently — this table was re-read at the merge gate and changed from `rate-lim
 because of it.
 
 **The shortfall was disclosed to the operator before auto-merge was armed**, per § Step 8 condition 4,
-carrying each reviewer's `Reopens?` value: *"Review coverage 2 of 3 — `cuioss-review-bot` reviewed; 
-`coderabbitai` reviewed after the round-4 push gave it a new head; `sourcery-ai` rate-limited on a
-per-diff 150,000-character size ceiling, which does not reopen for a diff this size."*
+carrying each reviewer's `Reopens?` value and **re-read at the gate rather than quoted from the draft**:
+*"Review coverage 2 of 3 — `cuioss-review-bot` reviewed; `coderabbitai` reviewed twice, at `d66564f`
+and `e69e2c9`, and is **rate-limited on the current head**: it saw `e071d34` and refused with a
+34-minute countdown, so the round-8 and round-9 commits are unreviewed by it and its `Reopens?` is
+`yes`; `sourcery-ai` rate-limited on a per-diff 150,000-character size ceiling, which does not reopen
+for a diff this size."*
+
+⚠️ **What that means for the merge, stated rather than implied.** The head that merges will not have
+been reviewed by `coderabbitai`, because its quota window is 34 minutes and this run's last two
+commits fall inside it. That is a **disclosed shortfall, not a blocker** — § Step 8's condition-4 rule
+is to disclose review-coverage shortfalls, not to block on them, and blocking on a bot's rate limit
+would strand the landing. The two reviews it did file are fully dispositioned, and the round-8 and
+round-9 commits it did not see are themselves fixes to findings it and the verification rounds
+raised.
 
 ## Cost
 
-- **Tokens:** not available to the agent in this session. The three verification sub-agents reported
-  their own usage — roughly 289k, 244k and 232k subagent tokens — which is a **partial** figure
-  covering the dispatched verification only, not the main loop that read the reports and wrote the
-  plans.
+- **Tokens:** not available to the agent in this session. The verification sub-agents that reported
+  their own usage came to roughly 289k, 244k and 232k subagent tokens each — a **partial** figure in
+  two ways: it covers only the sub-agents that reported, not all nine rounds, and it excludes the main
+  loop that read the reports, wrote the plans and applied every fix.
 - **Wall-clock:** re-derived at the moment of the claim from the branch's own commit timestamps
   (`git log --format=%aI`): **1 h 35 m** from the first deliverable commit `d1fdb3e` (17:51:50Z) to
   `df068ed` (19:26:42Z), plus the extended verification rounds that followed. An earlier draft said
@@ -652,13 +676,13 @@ was performed and that its artifact exists.
 | 4 Per-commit gate | **Not owed** | No commit touched a `*.py`. The gate's trigger surface is `*.py` only, so it did not apply to any commit in this run |
 | 4 Pushed | **Done** | Pushed after every commit, not batched at PR time. `git status -sb` reports no `ahead` |
 | 5 Build gate | **Done** | `git diff --name-only origin/main...HEAD -- '*.py'` → **empty**. No buildable footprint, local build skipped per the `*.py`-only gate; the merge queue's `merge_group` run is the net. `git status --porcelain` empty, so the diff saw all the work |
-| 6 Verification sub-agent | **In progress at the time of writing, and reported as such** | Rounds against a budget declared before the first dispatch and then extended by the operator, which reopened the loop. Every finding so far is dispositioned, in § Findings; the per-round table carries the totals rather than a frozen figure here. This row is settled at § "The stop record" when the loop closes — it is **not** marked Done while the loop continues. The stop record names the exit, the budget, the round that ended it, the evidence stronger than a read, and the residue |
+| 6 Verification sub-agent | **Done — the loop is closed** | Nine rounds against a budget declared before the first dispatch and extended by the operator twice. Every finding is dispositioned in § Findings; the per-round tables carry the totals rather than a frozen figure here. The loop did **not** end on a clean round: it ended on a **judgement**, which the operator delegated (*"do another 5 rounds if sensible"*) and which is recorded with its evidence **and its counter-argument** at § "Why one more round is not the answer". § "The stop record" names the exits, the flat series, the mechanism that did not converge, the evidence stronger than a read, and the three residue classes with their most likely locations |
 | 7 PR cycle | **Done** | PR [#1284](https://github.com/cuioss/plan-marshall/pull/1284). All three comment surfaces read, with a positive control taken against the PR's own `comments` count; every comment dispositioned; the participation table carries a verdict **and** a `Reopens?` value per reviewer |
 | 7 Bot-review label | **Deliberately omitted — a declared deviation** | See below |
-| 8 Merge gate | **Not yet — reported open** | Conditions 2 and 3 cannot settle while Step 6's loop is open: a further round changes both the comments to disposition and the report that must be the last pre-merge commit. The condition-4 disclosure is drafted and is restated at the gate from the bodies as they then stand |
+| 8 Merge gate | **Done** | Settled once Step 6 closed. All three comment surfaces re-read at the gate — `get_comments`, `get_reviews`, `get_review_comments`, none of which subsumes the others. The one open thread (`r3798835419`) was replied to and its disposition recorded (#166); the PR description was rewritten against the tree and read back from the API rather than assumed (#165); this report is the last pre-merge commit. The condition-4 disclosure is restated below from the bodies as they stand at the gate, not from the draft |
 | 8 Bridge | **Done, with one declared deviation** | No status file, no ledger, no bookkeeping write. Six landed reports in other plan directories received a dated disposition section — declared as deliverable D5 on the operator's explicit instruction, and reported as a deviation rather than as compliance (§ "The tension D5 carries") |
 | 9 This check | **Done** | This table |
-| 9 What have we learned | **Drafted; settled at the gate** | Two proposals below, presented to the operator rather than self-approved. Their evidence is the verification series, which each round changes, so they are re-read against it before the merge gate |
+| 9 What have we learned | **Done** | Two proposals below, presented to the operator rather than self-approved. Their evidence is the verification series, which every round changed, so both were re-read against the closed nine-round series at the gate — proposal 2's series had gone stale across three consecutive rounds, each of which recorded it fixed (#140), which is itself evidence for the proposal it belongs to |
 
 **The `skip-bot-review` decision, stated rather than glossed.** § Step 7's rule is a determination:
 a diff with no `*.py`, no `.claude/skills/**` and no `marketplace/bundles/**` gets the label, and this
@@ -670,8 +694,9 @@ two drafts each froze a number that the very commit fixing it made stale again),
 majority is **executable plan text** — documents a future cloud run loads and acts on, as distinct from
 inert documentation prose — and every verification round found defects in it, with the share sitting in
 the shipped plan files **rising** in the late rounds rather than falling. A reviewer had plenty to act
-on: the reviewer that did review filed nine findings across two reviews, eight of them real and two of
-those caught things no verification round had. Applying the label would have suppressed scrutiny on the strength of a proxy
+on: the reviewer that did review filed **thirteen** findings across its two substantive reviews — nine
+at `d66564f` and four at `e69e2c9` — twelve of them real, and two of those caught things no
+verification round had. Applying the label would have suppressed scrutiny on the strength of a proxy
 that misfires here. **Reported as a deviation from the rule as written**, and raised as proposal 1
 below rather than settled unilaterally.
 
@@ -720,13 +745,14 @@ section already gives for skills:
 **Evidence from this run.** § Step 6 tells a run to declare a round budget up front and treat its
 exhaustion as the stop condition, which worked. What the contract gives a run no instrument for is
 judging, *during* the loop, whether the loop is helping. This run's counts do not describe a
-converging loop and never did: **23, 13, 10, 21, 13, 20, 21, 18** across eight rounds. Neither does the
-share of findings **traceable to the previous round's own fixes** — 0, 4, 7, 9, 9, 6, 4, ~10 — which
-stayed between a fifth and seventy per cent of every round after the first, and which **rose again in
-the final round**. Two rounds recorded a fix as landed that was not, and one round
-declared a collision gate "mirrored" while it pointed one way. A run watching only the finding count
-would have read round 3's fall to 10 as convergence and stopped one round before the worst defect in
-the change was found.
+converging loop and never did: **23, 13, 10, 21, 22, 20, 21, 18, 18** across nine rounds. Neither does
+the share of findings **traceable to the previous round's own fixes** — 0, 4, 7, 9, 9, 6, 4, ~10, 5 —
+which stayed between a fifth and seventy per cent of every round after the first. **Six** rounds
+recorded a fix as landed that was not, and one round declared a collision gate "mirrored" while it
+pointed one way. A run watching only the finding count would have read round 3's fall to 10 as
+convergence and stopped one round before the worst defect in the change was found — and would have
+stopped again at round 9, one round after the round that authored the plan which actually closes the
+dominant class.
 
 **The gap.** § Step 6 already says *"a fix is a change, so it gets the same beyond-diff sweep"* and
 that late-round findings being **narrower** is the observation to make. It does not ask a run to
