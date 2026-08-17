@@ -154,14 +154,28 @@ orchestrator.
 5. **Write the landing record** at `landings/{ORCH-PLAN-ID}.md` in the epic tree. Once step 6 removes
    the cloud plan and its report, this record plus the PR is the durable account — so it carries the
    outcome per deliverable, any refuted premise, the findings routed out, any contract gap the
-   run exposed, **the run's reviewer-participation verdicts** (the per-reviewer
-   `reviewed` / `rate-limited` / `silent` record and the N-of-M coverage, so a landing that merged on
-   partial review coverage stays legible after the report is deleted), and **the run's cost line with
+   run exposed, **the run's reviewer-participation verdicts** (the per-reviewer record — the full
+   verdict set is `cloud-plan-lane` § Step 7's, not a list restated here — plus each verdict's
+   `Reopens?` value and the N-of-M coverage, so a landing that merged on partial review coverage stays
+   legible after the report is deleted), and **the run's cost line with
    its stated population** (tokens and wall-clock, carried forward exactly as the report qualifies
    them — never copied in a way that implies parity with a `metrics.toon` total). Both survive the
    report's deletion only if this record carries them: a cloud run that reported its cost and then had
    its report removed would otherwise vanish from the corpus entirely, which is the silent-exclusion
    this closes.
+
+   ⛔ **An `unreadable` verdict is carried VERBATIM and never downgraded to `silent`.** The two are
+   opposite claims: `silent` says a reviewer published nothing, `unreadable` says the run could not
+   read the surface that would carry a body — and collapsing the second into the first converts a
+   known gap in the run's evidence into a positive statement about a reviewer. That conversion is at
+   its most damaging here, because step 6 deletes the report immediately afterwards: this record is
+   the last place the distinction can survive, so a landing whose gate was overridden rather than met
+   would otherwise read, forever after, as one that merged cleanly. Carry the reason with it — the
+   surface that errored, and whatever positive control the run took.
+
+   The verdict set is deliberately **referenced, not enumerated**. It was enumerated here once, and
+   when § Step 7 gained `unreadable` this line kept the old triple — so the one record designed to
+   outlive the report could not express the very state the new verdict exists to preserve.
 6. **Remove the cloud plan from the doc path** — delete `doc/plans/{epic}/{NNN}-{cloud-plan}/` entirely,
    plan and reports together. That removal *is* the state change; nothing else records it.
    `doc/plans/` is a queue of open work, not an archive: the content stays in git history, and step 5
