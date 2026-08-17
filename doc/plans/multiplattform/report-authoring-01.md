@@ -128,13 +128,17 @@ Population derived from configuration — the `author_login` of each
 
 | Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
 |---|---|---|---|
-| `cuioss-review-bot` | *pending — filled from the stored bodies at the merge gate* | | |
-| `coderabbitai` | *pending — filled from the stored bodies at the merge gate* | | |
-| `sourcery-ai` | *pending — filled from the stored bodies at the merge gate* | | |
+| `cuioss-review-bot` | reviewed | — | Issue-comment body (`get_comments`): "PR Reviewer Guide 🔍 — No relevant tests / No security concerns identified / No major issues detected" — an explicit nothing-to-report over the diff. |
+| `coderabbitai` | reviewed | — | Review-summary body (`get_reviews`, COMMENTED): "Actionable comments posted: 9", with the nine inline threads on `get_review_comments`. All nine fixed in `0a0f31b`; its addressed-tracker subsequently stamped each thread "✅ Addressed", and all threads are resolved. Its *incremental* full re-review of the three post-review pushes was rate-limited ("Review limit reached … Next review available in: 45 minutes"). |
+| `sourcery-ai` | rate-limited | yes — weekly quota reset, no countdown stated; not within this run's horizon | Review-summary body (`get_reviews`, COMMENTED): "you have reached your weekly rate limit of 500000 diff characters. Please try again later" — a refusal notice in place of a review. The `Sourcery review` check's `skipped` conclusion is the same event; the body, not the check, is the evidence. |
 
-Verdicts are derived from the stored bodies across all three comment surfaces (`get_reviews`,
-`get_comments`, `get_review_comments`), never from check states; the table is completed before
-this report's final pre-merge commit.
+**Coverage: 2 of 3.** Verdicts derived from the stored bodies across all three comment surfaces
+(`get_reviews`, `get_comments`, `get_review_comments`), never from check states. No reviewer was
+`silent`, so the recovery check did not arise. The § Step 8 disclosure fired: the run proceeds
+with `sourcery-ai` unreviewed (weekly-quota refusal, outside this run's control) and with
+CodeRabbit's coverage consisting of its full review of the main diff plus its per-finding
+addressed-verification of the fix commits, its fresh full re-review window being closed at
+arming time.
 
 ## Cost
 
@@ -156,12 +160,12 @@ this report's final pre-merge commit.
 | 1 Skills loaded | **partial, disclosed** — lane + authoring skill loaded; the two "always" skills deliberately not loaded for a docs-only authoring run (see § Skills loaded) |
 | 2 Branch | **done** — harness-assigned `claude/refactor-multiplatform-planning-xurgnn`, kept as-is; clean tree asserted at start; branch pushed to `origin` before any work |
 | 3 Plan directory | **not applicable** — this run authored plans; a flat `{NNN}-{slug}.md` is the tree's "authored and waiting" state, and creating plan directories would falsely signal started runs |
-| 4 Implement | **done** — commits `cfee28c`, `d73fcfd`, `6e0c6bc`, `fcb43e3` plus any review-cycle fixes and this report's commit, each with the trailer; pushed after every commit |
+| 4 Implement | **done** — commits `cfee28c`, `d73fcfd`, `6e0c6bc`, `fcb43e3`, `d3ec537`, `0a0f31b`, `642bd57`, plus this report's final commit, each with the trailer; pushed after every commit |
 | 4 Per-commit gate | **not applicable** — no commit touched `*.py` |
 | 5 Build gate | **done** — no `*.py` in the branch diff; build skipped, recorded above |
 | 6 Verification sub-agent | **done** — two adversarial rounds pre-PR; findings and dispositions above |
-| 7 PR cycle | PR #1275 open; all three comment surfaces read and every comment dispositioned before the merge gate; participation table above completed from the stored bodies at that point |
-| 8 Merge gate | conditions 1–3 checked at arming; auto-merge armed after this report's commit; landing read back from the PR |
+| 7 PR cycle | **done** — PR #1275; all three comment surfaces read; all nine review-thread findings fixed (`0a0f31b`), each thread stamped addressed and resolved, one thread additionally answered with the fix summary; participation table above from the stored bodies |
+| 8 Merge gate | **done** — see § Merge gate below; auto-merge armed after this report's commit; landing read back from the PR |
 | 8 Bridge | **done** — no status or bookkeeping write under `doc/plans/` outside this epic; the `AGENTS.md`/ADR/layout-doc/transforms-doc edits are declared deliverables of the removal, not bookkeeping |
 | 9 This check | **done** — this table |
 | 9 What have we learned | **done** — below |
@@ -191,6 +195,15 @@ self-approving a change to the contract that governs the run):
 No other contract change proposed: the remaining steps fit an authoring run once the two
 documented not-applicables are accepted, and the `test-quality` precedent already records the
 same shape.
+
+## Merge gate
+
+| Condition | State |
+|---|---|
+| 1 — every required context present on the head SHA and concluded successfully | **met.** On head `642bd57`: `verify / conclusion` success, `verify / gate` success, `dependency-review` success, `generate-check` success. `verify / verify` skipped — the `skip-on-docs-only` footprint gate working as designed for a change with no buildable source; `Sourcery review` skipped (the quota refusal above); `auto-merge` skipped pre-arm. Required-ness read from GitHub's own computation, never a ruleset-config call. |
+| 2 — every PR comment handled | **met.** Three surfaces read; nine actionable inline findings, all fixed in `0a0f31b`, all threads resolved; the two refusal/status notices required no action. |
+| 3 — report finalized and pushed as the last pre-merge commit | **met** — this commit. |
+| 4 — review-coverage shortfall disclosed *(a disclosure, not a gate)* | **fired: 2 of 3.** Stated in § Reviewer participation and to the operator before arming. |
 
 ## Residue
 
