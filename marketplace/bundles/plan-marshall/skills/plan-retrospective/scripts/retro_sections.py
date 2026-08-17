@@ -119,10 +119,24 @@ def valid_aspect_keys() -> set[str]:
 # ``compile-report._names_checked_set`` therefore reads the top level AND one
 # nesting level — a top-level-only read would flag a fragment that DOES name the
 # population it examined, simply because it named it inside its fact block.
+# * ``checks`` — the per-check roster ``check-artifact-consistency.py`` emits
+#   (one ``{name, status, message}`` row per check performed). A named roster IS
+#   the checked set, stated item by item rather than as a size.
+# * ``expected_invariants`` — the invariant roster ``summarize-invariants.py``
+#   evaluated, published beside its ``phases`` breakdown.
+#
+# Those last two were added after a sweep over the eight in-tree deterministic
+# producers found them to be the ONLY two whose clean-run fragment names what it
+# checked without using one of the three names above — so the probe flagged them
+# on every clean run. A false positive here is not harmless: the whole point of
+# the signal is that an unattributed zero is worth a reader's attention, and a
+# list that cries wolf on two of eight producers stops being read.
 ZERO_ATTRIBUTION_FIELDS: tuple[str, ...] = (
     'evaluated_population',
     'population',
     'counts',
+    'checks',
+    'expected_invariants',
 )
 
 # Statuses with which a fragment DECLARES that it could not look, rather than

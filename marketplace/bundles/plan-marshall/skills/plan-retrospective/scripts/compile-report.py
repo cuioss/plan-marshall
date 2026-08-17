@@ -424,6 +424,35 @@ def render_section_body(fragment: Any) -> str:
     return summary_text + findings_block + data_block
 
 
+def _fragment_renders_empty(fragment: Any) -> bool:
+    """Return True when ``fragment`` cannot produce a body with content in it.
+
+    This is the predicate the *written implies non-empty* invariant turns on, and
+    it asks about EMPTINESS rather than absence. Asking ``fragment is None``
+    instead — the obvious spelling — closes only the absent-key case and leaves
+    the invariant false on the path the real pipeline takes:
+    ``toon_parser.parse_toon`` returns ``''`` for a valueless key, never ``None``
+    (only the literal token ``null`` yields ``None``), and
+    ``collect-fragments._read_fragment`` accepts any file that is not
+    whitespace-only. A producer that writes prose instead of a fragment therefore
+    registers successfully, reaches this renderer as ``''``, and — under an
+    ``is None`` guard — is emitted as a heading over an empty fenced block and
+    counted as written.
+
+    Empty is: absent, a blank string, or an empty container. A scalar such as
+    ``0`` or ``False`` is NOT empty — it renders its value, which is a datum a
+    reader can act on. That is the same falsy-versus-empty split
+    ``_fragment_has_payload`` makes, kept consistent on purpose.
+    """
+    if fragment is None:
+        return True
+    if isinstance(fragment, str):
+        return not fragment.strip()
+    if isinstance(fragment, (dict, list, tuple, set)):
+        return not fragment
+    return False
+
+
 def _heading_from_aspect_key(aspect_key: str) -> str:
     """Derive a human-readable section heading from an aspect key.
 
@@ -511,16 +540,16 @@ def build_document(
                 omitted.append(heading)
             continue
         fragment = fragments.get(fragment_key)
-        if fragment is None:
-            # No fragment at all. ``render_section_body`` would emit the literal
-            # ``_No data provided._`` placeholder, and counting THAT as written
-            # is the same invariant breach the Executive Summary branch above
-            # closes — the placeholder body is what the partition must not call
-            # written, and the section it sits under is irrelevant. Every
-            # ``conditional_trigger = None`` row reaches here on a plan whose
-            # producer did not run, so the breach was never confined to one row.
+        if _fragment_renders_empty(fragment):
+            # Nothing to render. An absent fragment gets the literal
+            # ``_No data provided._`` placeholder; an EMPTY one (``''`` from a
+            # valueless TOON key, ``{}``, ``[]``) gets a heading over an empty
+            # fenced block. Counting either as written is the invariant breach
+            # the Executive Summary branch above closes, and it was never
+            # confined to one row: every ``conditional_trigger = None`` row
+            # reaches here whenever its producer wrote nothing usable.
             #
-            # Nothing was lost (there was no fragment to lose), so this is the
+            # Nothing was lost (there was no content to lose), so this is the
             # benign half of the partition.
             omitted.append(heading)
             continue
@@ -543,14 +572,18 @@ def build_document(
     for aspect_key in sorted(fragments):
         if aspect_key.startswith('_'):
             continue
-        # Same invariant as the static loop above: a key mapped to an explicit
-        # ``None`` renders the placeholder, and a placeholder body is never
-        # written. Applied here too because the invariant is a property of the
-        # PARTITION, not of one render path.
-        if fragments.get(aspect_key) is None:
-            omitted.append(_heading_from_aspect_key(aspect_key))
-            continue
         if aspect_key in spec_keys:
+            continue
+        # Same invariant as the static loop above, because the invariant is a
+        # property of the PARTITION rather than of one render path.
+        #
+        # This check sits AFTER the ``spec_keys`` skip, and the order is
+        # load-bearing: above it, a registry key whose value is empty was
+        # recorded twice — once by the static loop under its real heading, and
+        # again here under a heading SYNTHESIZED from the key, naming a section
+        # that exists in no registry row.
+        if _fragment_renders_empty(fragments.get(aspect_key)):
+            omitted.append(_heading_from_aspect_key(aspect_key))
             continue
         heading = _heading_from_aspect_key(aspect_key)
         body = render_section_body(fragments.get(aspect_key))

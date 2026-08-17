@@ -269,6 +269,55 @@ class TestWrittenImpliesNonEmpty:
         assert dropped == []
         assert len(omitted) == len(_rs.SECTION_SPEC)
 
+    @pytest.mark.parametrize('empty', ['', '   ', {}, [], ()], ids=['blank', 'whitespace', 'dict', 'list', 'tuple'])
+    def test_an_empty_fragment_is_not_written(self, tmp_path, empty):
+        # REGRESSION. The first two attempts at this invariant guarded on
+        # `fragment is None`, which closes only the ABSENT-key case. The real
+        # pipeline does not produce None: `parse_toon` returns `''` for a
+        # valueless key (only the literal `null` yields None), and
+        # `collect-fragments._read_fragment` accepts any file that is not
+        # whitespace-only. A producer that wrote prose instead of a fragment
+        # therefore registered successfully and was emitted as a heading over an
+        # empty fenced block, counted as written, with `dropped` empty.
+        fragments = {'artifact-consistency': empty}
+        content, written, omitted, dropped = _cr.build_document(
+            'demo', 'live', tmp_path, None, fragments
+        )
+        assert 'Artifact Consistency' not in written
+        assert 'Artifact Consistency' in omitted
+        assert '## Artifact Consistency' not in content
+        assert dropped == []
+
+    @pytest.mark.parametrize('scalar', [0, 0.0, False], ids=['zero', 'zero-float', 'false'])
+    def test_a_scalar_fragment_is_content_not_emptiness(self, tmp_path, scalar):
+        # The falsy-versus-empty split, kept consistent with
+        # `_fragment_has_payload`: a scalar renders its value, which is a datum a
+        # reader can act on. Collapsing this into "falsy means empty" would
+        # discard a measured zero — the defect the identity checks elsewhere in
+        # this module exist to prevent.
+        fragments = {'artifact-consistency': scalar}
+        _content, written, omitted, _dropped = _cr.build_document(
+            'demo', 'live', tmp_path, None, fragments
+        )
+        assert 'Artifact Consistency' in written
+        assert 'Artifact Consistency' not in omitted
+
+    def test_an_empty_registry_fragment_is_omitted_exactly_once(self, tmp_path):
+        # The fallback loop's emptiness check must sit AFTER the `spec_keys`
+        # skip. Above it, a registry key with an empty value was recorded twice —
+        # once by the static loop under its real heading, and again by the
+        # fallback under a heading SYNTHESIZED from the key, naming a section no
+        # registry row declares.
+        fragments = {'artifact-consistency': ''}
+        _content, _written, omitted, _dropped = _cr.build_document(
+            'demo', 'live', tmp_path, None, fragments
+        )
+        assert omitted.count('Artifact Consistency') == 1
+        assert len(omitted) == len(_rs.SECTION_SPEC)
+        spec_headings = {heading for heading, _k, _t in _rs.SECTION_SPEC}
+        phantom = [h for h in omitted if h not in spec_headings]
+        assert phantom == [], f'omitted names sections declared by no registry row: {phantom}'
+
     @pytest.mark.parametrize(
         'heading,fragment_key',
         [(h, k) for h, k, trigger in _rs.SECTION_SPEC if trigger is None and not k.startswith('_')],
@@ -459,6 +508,32 @@ class TestZeroReportingSectionNamesItsCheckedSet:
             },
         }
         _written, flagged = self._doc(fragments)
+        assert flagged == []
+
+    @pytest.mark.parametrize(
+        'aspect_key,fragment',
+        [
+            (
+                'artifact-consistency',
+                {'status': 'success', 'aspect': 'artifact_consistency', 'findings': [],
+                 'checks': [{'name': 'metrics_generated', 'status': 'pass', 'message': 'ok'}]},
+            ),
+            (
+                'invariant-summary',
+                {'status': 'success', 'aspect': 'invariant_summary', 'findings': [],
+                 'phases': [], 'drift': {}, 'expected_invariants': ['handshake', 'blocking']},
+            ),
+        ],
+        ids=['artifact-consistency-checks', 'summarize-invariants-expected'],
+    )
+    def test_a_producer_naming_its_checked_set_by_roster_is_not_flagged(self, aspect_key, fragment):
+        # These two are the only in-tree deterministic producers whose clean-run
+        # fragment names what it checked WITHOUT publishing a size — one lists
+        # its checks by name, the other its invariant roster. The probe flagged
+        # both on every clean run until the vocabulary covered them, and a signal
+        # that cries wolf on a quarter of its producers stops being read.
+        written, flagged = self._doc({aspect_key: fragment})
+        assert written, 'precondition: the section must render'
         assert flagged == []
 
     def test_probe_bites_only_on_the_defect_it_names(self):
