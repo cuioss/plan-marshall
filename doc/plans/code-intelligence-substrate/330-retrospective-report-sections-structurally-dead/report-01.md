@@ -55,11 +55,15 @@ absent fragment, and every `conditional_trigger = None` row appended its heading
 regardless. So the breach I had just closed for the Executive Summary was still open on ten other
 rows. Measured either side of the correction, on an empty bundle:
 
-| | before | after |
+| | `origin/main` | HEAD |
 |---|---|---|
-| sections written | 10 | **0** |
-| placeholder bodies in the document | 10 | **0** |
+| sections written | 11 | **0** |
+| placeholder bodies in the document | 11 | **0** |
 | omitted | 6 | **17** |
+
+⚠ Both columns are measured **at one tree each, named** — an earlier draft of this table mixed a
+`before` column taken from a mid-branch commit with an `after` from HEAD, so no single tree produced
+the figures it showed.
 
 A missing fragment is now an omission on **both** render paths — the static registry loop and the
 generic fallback — because the invariant is a property of the partition, not of one code path. The
@@ -199,10 +203,13 @@ the transcript `enrich` must open — with a `SHIM(B)`-marked fallback to the re
 `status.json` written before the list (owner, floor, and removal trigger all recorded at the
 definition site per the shim-marker convention).
 
-Four documentation surfaces that instruct this read were updated in lock-step: `phase-6-finalize`
-SKILL.md, the orchestrator's resolver in `plan-marshall/workflow/execution.md`, the
-`persona-plan-marshall-agent` tool-usage-patterns resolver note, and the `manage-status` verb
-reference (both the prose block and the Canonical-invocations entry).
+**Six** documentation surfaces that instruct this read were updated — four in the original commit and
+two more once the verifier found them (F10, F11): `phase-6-finalize` SKILL.md, the orchestrator's
+resolver in `plan-marshall/workflow/execution.md`, the `persona-plan-marshall-agent`
+tool-usage-patterns resolver note, the `manage-status` verb reference (both the prose block and the
+Canonical-invocations entry), `phase-1-init` Step 8a, and `plan-marshall/SKILL.md` § Session ID
+Resolver. The count is stated as six rather than four because this narrative was written before those
+two findings existed and was not reconciled with them until now.
 
 Mutation-tested: reverting the capture to an overwriting `--set`, and reading the first entry instead
 of the last, each turn the suite red.
@@ -221,11 +228,15 @@ means it pins shipped behaviour and cannot witness anything this plan fixed.
 | `test_missing_executive_summary_emits_no_section` | **Regression** (restated) | Replaces `…_uses_placeholder`, which pinned the defect; the new assertions are the negation of pre-fix behaviour |
 | `test_payload_bearing_executive_summary_without_a_body_is_dropped` | **Regression** | Pre-fix this fragment was counted as *written* |
 | `test_no_section_is_written_from_an_empty_bundle` | **Regression** | The class-level case; pre-fix an empty bundle wrote 10 placeholder sections |
-| `test_an_always_emit_row_with_no_fragment_is_omitted_not_written` (10 cases, one per `trigger=None` row) | **Regression** | Each row is a separate pre-fix instance of the same breach |
-| `test_a_row_with_a_real_fragment_is_still_written` | **Characterization of new behaviour** | Guards the fix against over-reach ("no fragment ⇒ not written", never "write less") |
+| `test_an_always_emit_row_with_no_fragment_is_omitted_not_written` (10 collected, one per `trigger=None` row) | **Regression** | Each row is a separate pre-fix instance of the same breach |
+| `test_an_empty_fragment_is_not_written` (5 collected: `''`, whitespace, `{}`, `[]`, `()`) | **Regression** | The production path: `parse_toon` yields `''`, which an `is None` guard misses |
+| `test_a_scalar_fragment_is_content_not_emptiness` (3 collected) | **Characterization of new behaviour** | Pins the falsy-versus-empty split so a measured `0` is never discarded |
+| `test_an_empty_registry_fragment_is_omitted_exactly_once` | **Regression against round 1's own defect** | Round 1's fallback guard sat above the `spec_keys` skip and produced a duplicate plus a phantom heading |
+| `test_a_producer_naming_its_checked_set_by_roster_is_not_flagged` (2 collected) | **Regression** | Both producers were flagged on every clean run before the vocabulary covered them |
+| `test_a_row_with_a_real_fragment_is_still_written` | **Characterization of PRE-EXISTING behaviour** | Replayed pre-fix: PASSES. It guards the fix against over-reach ("empty ⇒ not written", never "write less"), which is a property the pre-fix code also had |
 | `test_a_fallback_aspect_mapped_to_none_is_omitted_not_written` | **Regression** | Pre-fix the fallback path wrote a placeholder too |
-| `TestZeroReportingSectionNamesItsCheckedSet` (14 cases) | **Characterization of new behaviour**, mutation-proven | The probed function did not exist pre-fix, so no pre-fix red is possible; non-vacuity established by mutations instead |
-| `TestAspectTableKeysMatchTheRegistry` (5 cases) | **Characterization of new structure**, mutation-proven | The Key column did not exist pre-fix; three mutations (wrong key, reordered column, neutered corruption) turn it red |
+| `TestZeroReportingSectionNamesItsCheckedSet` (15 methods, 21 collected) | **Characterization of new behaviour**, mutation-proven | The probed function did not exist pre-fix, so no pre-fix red is possible; non-vacuity established by mutations instead |
+| `TestAspectTableKeysMatchTheRegistry` (5 methods, 5 collected) | **Characterization of new structure**, mutation-proven | The Key column did not exist pre-fix; three mutations (wrong key, reordered column, neutered corruption) turn it red |
 | `test_metadata_append_preserves_the_earlier_value` | **Regression** | The multi-session case the scalar destroyed |
 | `test_store_appends_to_the_session_ids_list` | **Regression** | Mutation reinstating the overwriting `--set` turns it red |
 | `test_read_returns_the_most_recent_entry` | **Regression** | Mutation returning the first entry turns it red |
@@ -248,24 +259,25 @@ saying so explicitly, and are retained rather than dropped because the second on
 anomaly visible (see Findings F1).
 
 Test functions added, re-derived at the moment of this claim (`git diff origin/main...HEAD` counting
-added `def test_` lines): 10 (manage-status metadata) + 1 (orchestrator store) + 23 (compile-report
-behaviour) + 5 (render guard) + 8 (claude_runtime) = **47 test functions**. That is a count of test
+added `def test_` lines): 10 (manage-status metadata) + 1 (orchestrator store) + 27 (compile-report
+behaviour) + 5 (render guard) + 8 (claude_runtime) = **51 test functions**. That is a count of test
 *functions*; parametrized cases collect higher, and a reader running the suite sees the collected
 number, not this one.
 
-⚠ **The verifier's D5 audit was performed against an earlier HEAD and its label table cites figures
-that have since moved** (it read 39 functions). Both readings were correct when taken; this one is
-re-derived at HEAD.
+⚠ **This figure moves with every round, and each round's reading was correct when taken** — round 1
+read 35, the round-2 verifier read 39 against its own HEAD, and it is 51 here. Do not carry it
+forward; re-derive it.
 
 ## Build gate
 
 `git diff --name-only origin/main...HEAD -- '*.py'` → **13 files**, re-derived at HEAD. Python
-changed, so the full gate applies. (24 files changed overall, across 13 commits.)
+changed, so the full gate applies. (24 files changed overall, across 15 commits — a figure that moves
+with every commit, including the one carrying this report.)
 
 - Per-commit `./pw quality-gate` before each `*.py`-touching commit: `ruff … All checks passed!`,
   `mypy … Success: no issues found in 412 source files`, `SPDX-header check passed`.
 - Full `./pw verify` over the branch diff, re-run after the round-1 fixes: **`=== verify: SUCCESS ===`**,
-  `20704 passed, 14 skipped` in 377 s — all three sub-steps (quality-gate, test-compile, module-tests).
+  `20717 passed, 14 skipped` in 377 s — all three sub-steps (quality-gate, test-compile, module-tests).
 - One gate rejection was fixed rather than worked around: plugin-doctor's
   `no-historical-prose-in-skills` fired on new wording in `phase-6-finalize/SKILL.md`; the sentence
   was reworded and the gate re-run clean.
@@ -289,7 +301,7 @@ calls, and reported against a HEAD that moved four times during its review.
 
 | # | Source | Finding | Disposition |
 |---|---|---|---|
-| F6 | Verifier, D2 re-derivation | **`script-failure-analysis` produces a false `sections_dropped` + `warning` on every clean plan.** Its real clean-run fragment (`status: success`, `findings: []`, `lessons: []`, `total_failures: 0`, plus `log_path` / `work_log_path`) fails `should_emit` — no non-empty payload list — and then `_fragment_has_payload` sees the non-empty `log_path` string and calls it a DROP. Executed: `should_emit: False`, `_fragment_has_payload: True`, `dropped: ['Script Failure Analysis']`, run status `warning`. This is the plan's own Problem statement live on the **most common** path, and a **different route** from the `status: skipped` case of F1. | **Rejected — not fixed.** See the reasoning note below the table. Escalated to Residue as the highest-value follow-up. |
+| F6 | Verifier, D2 re-derivation | **A false `sections_dropped` + `warning` on the common path.** `script-failure-analysis`'s clean-run fragment (`status: success`, `findings: []`, `lessons: []`, `total_failures: 0`) fails `should_emit` — no non-empty payload list — and `_fragment_has_payload` then reports payload, so the section is classified a DROP. Executed: `should_emit: False`, `_fragment_has_payload: True`, `dropped: ['Script Failure Analysis']`, run status `warning`. **⚠ Corrected in round 2 (F19):** an earlier version of this row named `log_path` as the cause. Executed key-by-key, the FIRST key that makes `_fragment_has_payload` true is **`plan_id`**, and removing both provenance paths still drops the section — so a follow-up acting on the original wording would have fixed nothing. **⚠ Scope corrected in round 2 (F20):** it is **three** rows, not one, on a manifest-less plan — `check-manifest-consistency` and `check-routing-decisions` both return `status: skipped` with a reason and both land in `dropped` too. This is the plan's own Problem statement live, and a different route from the `status: skipped` case of F1. | **Rejected — not fixed.** See the reasoning note below the table. Escalated to Residue as the highest-value follow-up. |
 | F7 | Verifier, D1 | **The invariant held for 1 of 17 rows.** The fix addressed `_executive-summary`; every other `conditional_trigger = None` row still wrote a `_No data provided._` placeholder into `sections_written`. | **Fixed** — class-level, both render paths, with a registry-quantified test. |
 | F8 | Verifier, D1 (Condition A) | Two statements were **false when written**: `plan-retrospective/SKILL.md` § Step 4 and `references/report-structure.md`, both asserting *written implies non-empty*, which held for one row. | **Fixed by F7's code change** — the spec was right and the code was wrong, so the code moved. No documentation was weakened to match a defect. |
 | F9 | Verifier, D4 inward sweep (Condition A + B) | **`--append` was silently ignored for `--store orchestrator`.** The flag sits on the shared `metadata` subparser; `cmd_orchestrator_metadata` had no append handling, so the call fell through to `--set`, OVERWROTE, and returned `status: success`. Executed: two appends left `{'session_ids': 'sess-B'}`. The exact clobber D4 exists to eliminate, reintroduced on the surface D4 added. | **Fixed** — refused with `append_unsupported_for_store`, writing nothing, with a regression test. |
@@ -297,7 +309,7 @@ calls, and reported against a HEAD that moved four times during its review.
 | F11 | Verifier, D4 sweep (Condition A) | `plan-marshall/SKILL.md` § "Session ID Resolver" named the retired field and its retrieval command. | **Fixed.** |
 | F12 | Verifier, D3 (Condition A) | A test comment claimed **"the two rows"** differ from both their prose name and their reference basename. Re-derived by execution: exactly **one** does (`invariant-summary`). `routing-decisions` and `manifest-decisions` differ from their basename alone — their prose slugs to their key. | **Fixed** — corrected and the distinction spelled out. |
 | F13 | Verifier, D3 (vacuous guard + Condition A) | `test_guard_bites_on_a_key_that_is_not_in_the_registry` was **vacuous**: set arithmetic on a literal that never called the scanner, its second assertion a tautology given its first, under a comment claiming it exercised the correspondence check. | **Fixed** — it now runs the real parser over a deliberately corrupted table. Neutering the corruption turns it red. |
-| F14 | Verifier, D1 inward sweep | The attribution probe read **top-level keys only**, but only `counts` is published there; `evaluated_population` and `population` are emitted one level down. The probe would have flagged fragments that **do** name their population. | **Fixed** — reads one nesting level, bounded, with tests for both the real dispatch-audit shape and the two-levels-down non-case. |
+| F14 | Verifier, D1 inward sweep | The attribution probe read **top-level keys only**, but only `counts` is published there; `evaluated_population` and `population` are emitted one level down. The probe would have flagged fragments that **do** name their population. | **Fixed** — reads one nesting level, bounded. ⚠ Corrected in round 2 (F30): the witness is `test_a_population_published_one_level_down_counts_as_attribution`, which is the only one of the three that fails against the defect. The two this row originally named both PASS against it — the dispatch-audit shape is over-determined (top-level `counts` as well as a nested population), and the two-levels-down case passes under a top-level-only probe too. |
 | F15 | Verifier, D3 | The correspondence guard is **one-directional** (`table → registry`). A new `SECTION_SPEC` row shipped with no table row is caught by nothing. | **Accepted as a stated limitation, not fixed.** The reverse assertion fails today on the two dead rows, and encoding them as exemptions would pin them in place. Recorded in the guard's own docstring with the condition for re-opening it. |
 | F16 | Verifier, D2 | This run's D2 conclusion appeared to contradict the plan's claim-labels table without flagging it. | **Fixed in this report** — the contradiction is stated and resolved in the D2 section (consumer vs producer). |
 | F17 | Verifier, D5 | Report figures had gone stale ("35 test functions", "session-read cases (5)"), four later tests were unlabelled, and `test_metadata_set_without_append_still_replaces` was mislabelled as characterization of *new* behaviour when it pins pre-existing behaviour. | **Fixed in this report** — figures re-derived at HEAD, all tests labelled. |
@@ -313,14 +325,53 @@ string like `log_path`), which ripples across every conditional row. That is a c
 and it belongs in a plan that scopes it. **A reviewer who wants it in this PR should say so and I
 will do it.**
 
-**Condition-B survivor accepted from round 1.** A `session_ids` field holding a *scalar* is invisible
-to `_manage_status_read_session`: `isinstance(values, list)` is False, so it falls through to the
-legacy scalar and returns `None`. **Bound (B-(b)):** no supported writer can create that state — the
-append path refuses a non-list and writes nothing, and no other writer targets the field. It is
-reachable only by a hand-edited `status.json` or a deliberate plain `--set --field session_ids`. The
-verifier independently classified this as a legitimate survivor.
+**Condition-B survivor (S1), bound RESTATED in round 2.** A `session_ids` field holding a *scalar* is
+invisible to `_manage_status_read_session`: `isinstance(values, list)` is False, so it falls through
+to the legacy scalar and returns `None`.
 
-_Round 2 findings are appended when that round completes._
+⚠ The bound this report first stated — "no supported writer can create that state" — was **false, and
+contradicted by its own next sentence**. `manage-status metadata --set --field session_ids --value X`
+is a documented, supported invocation, and `_coerce_metadata_value` stores a non-allowlisted field
+verbatim, so that call does produce a scalar. **The correct bound (B-(b)) is narrower and still
+adequate:** no writer *in the plan-marshall workflow* targets `session_ids` with a plain `--set` —
+verified by sweep, the only writer is `_manage_status_store_session`, which always passes `--append`.
+Reaching the state requires a hand-edited `status.json` or an operator deliberately issuing the plain
+`--set` against this field. The verifier re-checked the behaviour in round 2 and confirmed the
+survivor is legitimate once the bound is stated this way.
+
+### Verification round 2 (independent sub-agent)
+
+Round 2 targeted **round 1's own fixes** — by this point the highest-risk text in the branch is what
+round 1 wrote. It found that round 1's headline fix was still incomplete and that round 1 had
+introduced a defect of its own.
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| F18 | Verifier, round-1 fix audit (A + B) | ⭐ **The class fix was STILL incomplete, on the path the real pipeline takes.** Round 1 guarded `fragment is None`, which closes only the absent-key case. `parse_toon` returns `''` for a valueless key and never `None` (only the literal `null` yields `None`), and `collect-fragments._read_fragment` accepts any non-whitespace file — so a producer writing prose instead of a fragment registers successfully, arrives as `''`, and is emitted as a heading over an empty fenced block, counted as **written**, with `dropped` empty. Demonstrated end-to-end through `collect-fragments init` → `add` → `compile-report`. `{}` and `[]` behaved the same. The two invariant sentences round 1 had declared "made true" were false again. | **Fixed** — `_fragment_renders_empty` asks about emptiness rather than absence. Mutation-tested: restoring the `is None` guard turns six cases red. |
+| F19 | Verifier, report audit (A) | **This report's stated mechanism for F6 was wrong.** It named `log_path` as the cause; executed key-by-key, the first payload key is `plan_id`, and removing both provenance paths still drops the section. The Residue's remedy, as written, would have fixed nothing. | **Fixed in this report** — mechanism corrected in the F6 row and in Residue 1. |
+| F20 | Verifier, real-producer sweep (A) | **`report-structure.md` claimed every conditional section omits on `status: skipped`.** Measured against real producer output on a manifest-less plan, `check-manifest-consistency` and `check-routing-decisions` both land in `dropped`. F6's blast radius is **three** rows, not one. | **Fixed** — the requirement stays as the requirement (a spec is not weakened to match a defect); the divergence is now recorded beside it, with the measurement. |
+| F21 | Verifier, round-1 fix audit (B) | **Round 1 introduced a defect.** Its fallback-loop guard sat ABOVE the `spec_keys` skip, so a registry key with an empty value was recorded in `sections_omitted` twice — once under its real heading, once under a heading synthesized from the key that names no registry row. | **Fixed** — the check moved below the skip, with a test asserting both the count and the absence of phantom headings. |
+| F22 | Verifier, report audit (A) | "13 commits" was 14 at the time of the audit. | **Fixed** — re-derived, and the figure now says plainly that it moves with every commit. |
+| F23 | Verifier, report audit (A) | **The before/after table mixed two trees.** "10 written / 10 placeholders / 6 omitted" came from no single tree: at the named mid-branch commit it was 10/10/7, and at `origin/main` 11/11/6. | **Fixed** — both columns re-measured at one named tree each: `origin/main` 11/11/6 → HEAD 0/0/17. |
+| F24 | Verifier, D5 label replay (A) | `test_a_row_with_a_real_fragment_is_still_written` was labelled "Characterization of **new** behaviour"; replayed pre-fix it PASSES, so it pins pre-existing behaviour — the identical mislabel F17 had corrected eight rows above it. | **Fixed.** |
+| F25 | Verifier, report audit (A) | "`TestZeroReportingSectionNamesItsCheckedSet` (14 cases)" collected 17, in a table where a neighbouring row used "cases" to mean *collected* cases. One word, two meanings. | **Fixed** — every row now states methods and collected cases separately. |
+| F26 | Verifier, rationale check (A) | **S1's bound was over-stated and self-contradicting.** "No supported writer can create that state" is refuted by the documented plain `--set --field session_ids`, which the report's own next sentence conceded. | **Fixed** — bound restated to the narrower, true form: no writer *in the plan-marshall workflow* targets the field with a plain `--set`. |
+| F27 | Verifier, producer sweep (B) | **The attribution vocabulary missed two of eight in-tree deterministic producers.** `check-artifact-consistency` names its checked set as a `checks[]` roster and `summarize-invariants` as `expected_invariants[]` — item by item rather than as a size — so both were flagged on every clean run. Round 1 fixed the probe's *depth* and not its *vocabulary coverage*. | **Fixed** — both names added with citations. Mutation-tested. A signal that cries wolf on a quarter of its producers stops being read. |
+| F28 | Verifier, commit-message audit (A) | Commit `42a56ba` says "Six defects" above a list of six, then describes a seventh in its closing paragraph. | **Recorded, not fixed.** A pushed commit message cannot be corrected without rewriting history that other commits already build on; the correction lives here instead. |
+| F29 | Verifier, report audit (A) | "**Four** documentation surfaces … updated in lock-step" — six were, once F10 and F11 landed. The D4 narrative was never reconciled with the findings that followed it. | **Fixed** — six, enumerated, with the reason the figure had drifted. |
+| F30 | Verifier, guard-vacuity replay (A) | **F14's disposition cited as its evidence two tests that both PASS against the defect.** The dispatch-audit shape is over-determined and the two-levels-down case passes under a top-level-only probe; the only real witness is a third test the sentence did not name. | **Fixed** — the disposition now names the witness and says why the other two are not. |
+
+**Rulings the verifier made on the survivors carried into round 2**, all accepted: **F6** remains a
+legitimately-deferred B finding *on the behaviour* — but its mechanism (F19) and its scope (F20) were
+A findings and were not deferrable, and both are fixed. **F15** (the one-directional aspect-table
+guard) is unchanged and remains a B-(b) survivor. **S1** remains a survivor with its bound restated
+per F26.
+
+⭐ **What the two rounds together say about this run.** Round 1 found that D1 fixed an instance
+rather than a class. Round 2 found that round 1's class fix was itself keyed on the wrong predicate,
+and that round 1 introduced a fresh defect while fixing the old one. Three successive attempts at one
+invariant, each sound where it landed and each narrower than the claim it was written to support.
+The deliverables should be read as still carrying defects of that kind.
 
 ## Reviewer participation
 
@@ -348,13 +399,19 @@ _Completed at Step 8 condition 3._
 
 ## Residue
 
-1. ⭐ **`script-failure-analysis` reports a false `sections_dropped` and a `warning` status on every
-   plan with no script failures** (F6). This is the highest-value follow-up: it is the plan's own
-   Problem statement live on the most common path, and it is the *drop-side* calibration this plan's
-   deliverables do not reach. The mechanism is precise — `should_emit` refuses the fragment (no
-   non-empty payload list) and `_fragment_has_payload` then sees the non-empty `log_path` provenance
-   string and calls it content. A follow-up should decide what `_fragment_has_payload` counts as
-   content, since the same question governs every conditional row.
+1. ⭐ **Three conditional rows report a false `sections_dropped` and a `warning` status on ordinary
+   plans** (F6, scope corrected by F20). `script-failure-analysis` on any plan with no script
+   failures; `manifest-decisions` and `routing-decisions` on any plan with no `execution.toon`. This
+   is the highest-value follow-up: it is the plan's own Problem statement live on the common path,
+   and it is the *drop-side* calibration this plan's deliverables do not reach.
+
+   **The mechanism, as measured rather than as first guessed** (F19): `should_emit` refuses the
+   fragment — no non-empty payload list — and `_fragment_has_payload` then reports payload for *any*
+   non-envelope key. For `script-failure-analysis` the first such key is **`plan_id`**, so stripping
+   the provenance paths changes nothing. The follow-up's real question is what
+   `_fragment_has_payload` should count as content for a fragment whose own `status` already says it
+   produced nothing — a decision that governs every conditional row, which is why it belongs to a
+   change scoped to it.
 2. **`dispatch_boundaries` is a dead registry row** (D2). Registerable and renderable, but no producer
    registers it at top level — `analyze-logs` nests it inside the `log-analysis` fragment. The section
    is reported as a benign omission on every run. Two candidate remedies: register it as its own
