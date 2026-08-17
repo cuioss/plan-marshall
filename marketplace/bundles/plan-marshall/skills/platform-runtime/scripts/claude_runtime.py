@@ -1484,8 +1484,29 @@ def _read_orchestrator_title_state(slug: str) -> dict[str, Any] | None:
     return state
 
 
+SESSION_IDS_FIELD = "session_ids"
+LEGACY_SESSION_ID_FIELD = "session_id"
+
+
 def _manage_status_store_session(plan_id: str, session_id: str) -> bool:
-    """Store session_id in plan status.json via manage-status metadata --set.
+    """APPEND session_id to the plan's session-identity list via manage-status.
+
+    The identity is a LIST because a plan legitimately spans multiple sessions:
+    any resume, and any later process that captures against the same plan, is a
+    genuine second identity rather than a correction of the first. Held as a
+    scalar it was not merely imprecise — it was DESTRUCTIVE: the field had one
+    slot, so every later writer overwrote the identity of the session that came
+    before it, and the surviving value was well-formed, so nothing downstream
+    could reject it. A plan measured by an observing process ended up recording
+    the observer's session and losing its own.
+
+    Appending is what the second writer was always trying to express, so the
+    list subsumes the clobber rather than guarding against it. A guard asserting
+    the stored value never changes would have been WRONG in the opposite
+    direction: it would fail a legitimate multi-session resume.
+
+    ``--append`` is idempotent, so a repeated capture within one session does not
+    grow the list.
 
     Returns True when the subprocess exits 0.
     """
@@ -1499,8 +1520,9 @@ def _manage_status_store_session(plan_id: str, session_id: str) -> bool:
                 "--plan-id",
                 plan_id,
                 "--set",
+                "--append",
                 "--field",
-                "session_id",
+                SESSION_IDS_FIELD,
                 "--value",
                 session_id,
             ],
@@ -1513,8 +1535,12 @@ def _manage_status_store_session(plan_id: str, session_id: str) -> bool:
         return False
 
 
-def _manage_status_read_session(plan_id: str) -> str | None:
-    """Read session_id from plan status.json via manage-status metadata --get."""
+def _read_metadata_field(plan_id: str, field: str) -> Any:
+    """Return one ``status.metadata`` field via ``manage-status metadata --get``.
+
+    Returns ``None`` when the field is absent, the read fails, or the subprocess
+    could not run — every one of which means "no value to use here".
+    """
     try:
         result = subprocess.run(
             [
@@ -1526,7 +1552,7 @@ def _manage_status_read_session(plan_id: str) -> str | None:
                 plan_id,
                 "--get",
                 "--field",
-                "session_id",
+                field,
             ],
             capture_output=True,
             text=True,
@@ -1534,11 +1560,38 @@ def _manage_status_read_session(plan_id: str) -> str | None:
         )
         if result.returncode != 0:
             return None
-        parsed = parse_toon(result.stdout)
-        value = parsed.get("value")
-        return str(value) if value else None
+        return parse_toon(result.stdout).get("value")
     except (OSError, subprocess.SubprocessError):
         return None
+
+
+def _manage_status_read_session(plan_id: str) -> str | None:
+    """Return the plan's MOST RECENT session id, or None.
+
+    The identity is a list (see :func:`_manage_status_store_session`) held in
+    ``status.metadata.session_ids``, appended in capture order — so the last
+    entry is the newest session that captured against this plan, which is what
+    every consumer here wants: the transcript to open, the session to enrich
+    from. Earlier entries are retained rather than overwritten, so a
+    multi-session plan keeps the identities of the sessions that produced it.
+    """
+    values = _read_metadata_field(plan_id, SESSION_IDS_FIELD)
+    if isinstance(values, list):
+        for value in reversed(values):
+            if value:
+                return str(value)
+        return None
+
+    # SHIM(B): status.metadata.session_id held a bare STRING before the identity
+    # became the appendable ``session_ids`` list.
+    # shim-owner: platform-runtime
+    # shim-floor: the D4 change that switched `session capture` from
+    #   `metadata --set --field session_id` to
+    #   `metadata --set --append --field session_ids`
+    # shim-remove-when: no in-flight or archived plan whose status.json predates
+    #   that change is still read by `session capture` / `metrics capture`
+    legacy = _read_metadata_field(plan_id, LEGACY_SESSION_ID_FIELD)
+    return str(legacy) if legacy else None
 
 
 def _manage_status_set_title_token(plan_id: str, state: str) -> bool:

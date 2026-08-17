@@ -192,3 +192,124 @@ def test_get_context_not_found(plan_context):
     """Test get-context returns None for missing plan (TOON error already output)."""
     result = cmd_get_context(Namespace(plan_id='nonexistent'))
     assert result is None
+
+
+# =============================================================================
+# Test: Metadata Append (list-valued fields)
+# =============================================================================
+
+
+def _append(plan_id, field, value):
+    return cmd_metadata(
+        Namespace(plan_id=plan_id, set=True, get=False, append=True, field=field, value=value)
+    )
+
+
+def _get(plan_id, field):
+    return cmd_metadata(
+        Namespace(plan_id=plan_id, set=False, get=True, append=False, field=field, value=None)
+    )
+
+
+def _new_plan(plan_id):
+    cmd_create(Namespace(plan_id=plan_id, title='Append Test', phases='1-init,2-refine', force=False))
+
+
+def test_metadata_append_creates_the_list_when_the_field_is_absent(plan_context):
+    _new_plan('append-absent')
+    result = _append('append-absent', 'session_ids', 'sess-1')
+    assert result['status'] == 'success'
+    assert result['value'] == ['sess-1']
+    assert result['appended'] is True
+
+
+def test_metadata_append_preserves_the_earlier_value(plan_context):
+    """REGRESSION (D4): the multi-session case the scalar field destroyed.
+
+    A plan legitimately spans several sessions. Held as a scalar the field had
+    ONE slot, so a second writer — a resume, or an observing process capturing
+    against the plan it is measuring — overwrote the first identity outright,
+    and the surviving value was well-formed so nothing downstream rejected it.
+    """
+    _new_plan('append-multi')
+    _append('append-multi', 'session_ids', 'sess-measured')
+    result = _append('append-multi', 'session_ids', 'sess-observer')
+
+    assert result['value'] == ['sess-measured', 'sess-observer']
+    # The measured plan's own identity SURVIVES the observer's write.
+    assert 'sess-measured' in _get('append-multi', 'session_ids')['value']
+
+
+def test_metadata_append_is_idempotent(plan_context):
+    _new_plan('append-idem')
+    _append('append-idem', 'session_ids', 'sess-1')
+    result = _append('append-idem', 'session_ids', 'sess-1')
+    assert result['value'] == ['sess-1']
+    assert result['appended'] is False
+
+
+def test_metadata_append_order_is_capture_order(plan_context):
+    _new_plan('append-order')
+    for sid in ('a', 'b', 'c'):
+        _append('append-order', 'session_ids', sid)
+    assert _get('append-order', 'session_ids')['value'] == ['a', 'b', 'c']
+
+
+def test_metadata_append_refuses_a_non_list_field_and_writes_nothing(plan_context):
+    """A scalar is never silently coerced into a container."""
+    _new_plan('append-scalar')
+    cmd_metadata(
+        Namespace(plan_id='append-scalar', set=True, get=False, append=False,
+                  field='change_type', value='feature')
+    )
+    result = _append('append-scalar', 'change_type', 'bug_fix')
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'metadata_field_not_a_list'
+    # Nothing was written: the original scalar is intact.
+    assert _get('append-scalar', 'change_type')['value'] == 'feature'
+
+
+def test_metadata_append_without_set_is_an_error(plan_context):
+    _new_plan('append-no-set')
+    result = cmd_metadata(
+        Namespace(plan_id='append-no-set', set=False, get=False, append=True,
+                  field='session_ids', value='sess-1')
+    )
+    assert result['status'] == 'error'
+    assert result['error'] == 'append_without_set'
+
+
+def test_metadata_append_without_value_is_an_error(plan_context):
+    _new_plan('append-no-value')
+    result = cmd_metadata(
+        Namespace(plan_id='append-no-value', set=True, get=False, append=True,
+                  field='session_ids', value=None)
+    )
+    assert result['status'] == 'error'
+    assert result['error'] == 'missing_value'
+
+
+def test_metadata_set_without_append_still_replaces(plan_context):
+    """The default --set path is unchanged: last write wins, no list."""
+    _new_plan('append-default')
+    cmd_metadata(
+        Namespace(plan_id='append-default', set=True, get=False, append=False,
+                  field='change_type', value='feature')
+    )
+    cmd_metadata(
+        Namespace(plan_id='append-default', set=True, get=False, append=False,
+                  field='change_type', value='bug_fix')
+    )
+    assert _get('append-default', 'change_type')['value'] == 'bug_fix'
+
+
+def test_metadata_append_leaves_sibling_metadata_untouched(plan_context):
+    _new_plan('append-siblings')
+    cmd_metadata(
+        Namespace(plan_id='append-siblings', set=True, get=False, append=False,
+                  field='change_type', value='feature')
+    )
+    _append('append-siblings', 'session_ids', 'sess-1')
+    assert _get('append-siblings', 'change_type')['value'] == 'feature'
+    assert _get('append-siblings', 'session_ids')['value'] == ['sess-1']
