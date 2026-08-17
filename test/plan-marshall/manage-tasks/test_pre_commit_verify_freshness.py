@@ -47,6 +47,7 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
+import _freshness_crosscheck as _crosscheck_mod
 import file_ops
 import pytest
 from _resolve_project_dir_fixtures import (
@@ -97,6 +98,18 @@ _REAL_BUILD_NECESSITY_VERDICT = _freshness_mod._build_necessity_verdict
 _CURRENT_SHA = 'a' * 64
 _OTHER_SHA = 'b' * 64
 
+# The notation set the pinned cross-check resolver reports for every case here.
+# It holds each build notation this file's fixtures stamp, so the cross-check
+# corroborates them and the cases exercise the gate's own logic rather than the
+# cross-check's refusal branch (which has its own file).
+_RESOLVED_NOTATIONS = frozenset(
+    {
+        'plan-marshall:build-pyproject:pyproject_build',
+        'plan-marshall:build-maven:maven',
+        'plan-marshall:build-npm:npm',
+    }
+)
+
 
 # =============================================================================
 # Fixture builders
@@ -137,11 +150,14 @@ def _build_entry(
     Mirrors the GATE-RELEVANT SUBSET of the shape produced by
     ``_ledger_core.build_record`` — deliberately not the whole record. The
     constructor also emits ``command``, ``duration_seconds`` and ``outcome``
-    (the wrapper-reported fields), which this helper omits because the gate
-    filters on ``kind``, ``status`` and ``worktree_sha`` only — never
-    ``notation``, ``exit_code``, ``plan_id``, or any of the three. The extra
-    fields are parameterised or omitted here to prove that tier/tool
+    (the wrapper-reported fields), which this helper omits because the gate's
+    PRIMARY predicate filters on ``kind``, ``status`` and ``worktree_sha`` only
+    — never ``exit_code`` or ``plan_id``, and never any of those three. The
+    extra fields are parameterised or omitted here to prove that tier/tool
     agnosticism, so a row that lacks them must still be gated identically.
+    ``notation`` IS read, but only after the primary predicate has matched, by
+    the cross-check that compares it against the architecture-resolved
+    notations; it never widens or narrows the primary match itself.
     ``status=None`` omits the key entirely, modelling a pre-change row (which
     must fail closed to ``stale``).
     """
@@ -214,6 +230,18 @@ def _stub_ledger_path(monkeypatch, ledger_path: Path) -> None:
     monkeypatch.setattr(_freshness_mod, 'resolve_ledger_path', lambda: ledger_path)
 
 
+def _stub_expected_notations(monkeypatch, notations: frozenset[str]) -> None:
+    """Patch the notation cross-check's resolver to a fixed, non-empty set.
+
+    Patches ``_freshness_crosscheck.resolve_expected_notations`` — the seam the
+    cross-check consults — rather than the cross-check itself, so the real
+    corroborate/refute comparison still executes against a pinned expectation.
+    """
+    monkeypatch.setattr(
+        _crosscheck_mod, 'resolve_expected_notations', lambda _project_dir: (notations, None)
+    )
+
+
 def _stub_verdict(monkeypatch, verdict: dict) -> None:
     """Patch the command-free build-necessity consult to a fixed verdict.
 
@@ -248,6 +276,20 @@ def _build_is_necessary(monkeypatch):
     short-circuit override this with an explicit ``_stub_verdict`` call.
     """
     _stub_verdict(monkeypatch, {'decision': 'build'})
+
+
+@pytest.fixture(autouse=True)
+def _expected_notations_resolve(monkeypatch):
+    """Pin the notation cross-check's resolved set for every case in this file.
+
+    The real resolver runs the live architecture crawl against the checkout,
+    which would make every case here depend on the working tree AND pay for a
+    crawl per test. Pinning the set to the notations this file's fixtures use
+    isolates the gate's own logic from the resolver's; the resolver's own
+    behaviour — including what it does when resolution fails — is covered in
+    ``test_freshness_notation_crosscheck.py``.
+    """
+    _stub_expected_notations(monkeypatch, _RESOLVED_NOTATIONS)
 
 
 # =============================================================================
@@ -402,14 +444,18 @@ def test_stale_when_only_change_entry_matches_sha(plan_context, monkeypatch, tmp
 
 
 # =============================================================================
-# The ``stale`` REASON — four routes, four remedies
+# The ``stale`` REASON — a distinct remedy per route
 #
 # The gate's pass/fail behaviour is identical on every route below (only
 # ``fresh`` ever permits), so these cases pin the half that differs: what the
 # refusal SAYS. The historical single message asserted "the worktree has been
 # mutated since the last observed build ... re-dispatch a build before
-# retrying" on all four — a cause the gate never established, and a remedy that
-# is exactly the blind retry a ``killed`` build forbids.
+# retrying" on every one of them — a cause the gate never established, and a
+# remedy that is exactly the blind retry a ``killed`` build forbids.
+#
+# The two ``notation_*`` routes are NOT exercised here: they come from the
+# cross-check rather than from ``_stale_reason``, and live in
+# ``test_freshness_notation_crosscheck.py``.
 # =============================================================================
 
 
@@ -576,12 +622,20 @@ def test_undecidable_when_worktree_sha_unresolvable(plan_context, monkeypatch, t
     assert result['reason'] == 'head_unresolvable'
 
 
-def test_fresh_match_is_notation_and_tier_agnostic(plan_context, monkeypatch, tmp_path) -> None:
+def test_fresh_match_is_tier_agnostic_across_resolved_notations(
+    plan_context, monkeypatch, tmp_path
+) -> None:
     """A non-pyproject, plan-less (``plan_id=None``) build still satisfies the gate.
 
-    The query filters on ``kind``, ``status`` and ``worktree_sha`` only — so a
-    Maven build from an orchestrator-driven global-tier run with ``plan_id=None``
-    proves freshness exactly as a plan-scoped pyproject build does.
+    The primary predicate filters on ``kind``, ``status`` and ``worktree_sha``
+    and never on ``plan_id`` — so a Maven build from an orchestrator-driven
+    global-tier run with ``plan_id=None`` proves freshness exactly as a
+    plan-scoped pyproject build does. Tier-agnosticism is what this pins.
+
+    It is NOT notation-agnosticism: the row passes because Maven is in the
+    architecture-resolved notation set (the pinned fixture), not because the
+    gate ignores notations. A notation OUTSIDE that set is refused —
+    ``test_freshness_notation_crosscheck.py`` pins that half.
     """
     plan_dir = plan_context.plan_dir_for('freshness-agnostic')
     _write_status(plan_dir)

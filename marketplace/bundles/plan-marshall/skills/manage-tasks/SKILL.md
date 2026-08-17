@@ -77,7 +77,7 @@ Script: `plan-marshall:manage-tasks:manage-tasks`
 | `rename-path` | `--plan-id --old-path --new-path` | Record path rename and rewrite step targets |
 | `qgate-mechanical-checks` | `--plan-id [--no-emit]` | Run the six deterministic Q-Gate checks for phase-4-plan Step 9 (coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Pure regex + graph + filesystem; no LLM dispatch. Each failure becomes a Q-Gate finding under `--source qgate` so phase-4-plan's existing aggregate consumes it. Returns `total_failed`, per-check counts, and an `ambiguous` flag the caller uses to decide whether the LLM q-gate-validation dispatch still needs to fire. Also returns `qgate_persist_failed` (bool) and `qgate_persist_failures` (list of `{title, message}`) — a persist the Q-Gate primitive rejected means the check failed but its finding never reached the store, so the caller MUST fail loudly on `qgate_persist_failed: true` rather than trusting `total_failed` alone. |
 | `loop-exit-guard` | `--plan-id` | Script-level enforcement of the phase-5-execute "unfinished > 0 → must continue" invariant. The predicate is the union of `pending` AND `in_progress` tasks. Emits `status: continue` (with `pending_count`, `pending_ids`, `in_progress_count`, `in_progress_ids`) when EITHER bucket is non-empty — the non-success status forces the orchestrator to re-dispatch the execution-context. Emits `status: success` (with all four count/id fields present and zero-valued) only when BOTH counts are zero. See "Loop-Exit Guard" below for the contract. |
-| `pre-commit-verify-freshness` | `--plan-id` | Script-level enforcement that the current working-tree state has been observed by a successful build before any pre-commit transition — but only where a build was necessary at all. Consults the command-free `build-decision` verdict first, then queries the unified change-ledger for a `kind=build` entry with `status == success` whose `worktree_sha` matches the recomputed working-tree currency hash. Emits `status: fresh` (verdict `not_necessary`, with the verdict's own `reason` forwarded verbatim, or a matching successful build entry), `status: stale` (ledger has entries but none matches the current working-tree sha — carrying a `reason` that names WHICH route: `worktree_mutated`, `build_error`, `build_timeout`, `build_killed`, or `build_indeterminate`, since the four non-mutation routes need different remedies and a `killed` build must never be blind-retried), or `status: undecidable` (no positive proof — `no_registry` when the ledger is absent/empty, `head_unresolvable` when the working-tree sha cannot be computed). Fail-closed contract: only `fresh` permits transition. See "Pre-Commit Verify Freshness" below for the contract. |
+| `pre-commit-verify-freshness` | `--plan-id` | Script-level enforcement that the current working-tree state has been observed by a successful build before any pre-commit transition — but only where a build was necessary at all. Consults the command-free `build-decision` verdict first, then queries the unified change-ledger for a `kind=build` entry with `status == success` whose `worktree_sha` matches the recomputed working-tree currency hash, and finally cross-checks the matching rows' notations against the build notations this project's architecture resolves. Emits `status: fresh` (verdict `not_necessary`, with the verdict's own `reason` forwarded verbatim, or a matching successful build entry whose notation the cross-check corroborated or could not resolve — `notation_cross_check` says which, and the record names the matched row), `status: stale` (no successful build matches the current working-tree sha, or every one that does names a build this project never runs — carrying a `reason` that names WHICH route: `worktree_mutated`, `build_error`, `build_timeout`, `build_killed`, `build_indeterminate`, `notation_unrelated`, or `notation_absent`, since the routes need different remedies and a `killed` build must never be blind-retried), or `status: undecidable` (no positive proof — `no_registry` when the ledger is absent/empty, `head_unresolvable` when the working-tree sha cannot be computed). Fail-closed contract: only `fresh` permits transition. See "Pre-Commit Verify Freshness" below for the contract. |
 
 ### Loop-Exit Guard (`loop-exit-guard`)
 
@@ -185,11 +185,11 @@ gate (a false-positive `fresh`). Folding the uncommitted state into the sha
 means an edit after a clean-tree build changes the sha, and the gate correctly
 reports `stale`.
 
-The ledger query filters on `kind`, `status`, and `worktree_sha` only —
-never `notation`, `exit_code`, or `plan_id` — so it is build-tool-agnostic and
-tier-agnostic: a Maven/Gradle/npm build, or an orchestrator-driven global-tier
-build recorded under the `NO_PLAN` sentinel, satisfies the gate exactly as a
-plan-scoped pyproject build does. Requiring `status == success` rather than
+The ledger query's **primary predicate** filters on `kind`, `status`, and
+`worktree_sha` only — never `exit_code` or `plan_id` — so it stays
+tier-agnostic: an orchestrator-driven global-tier build recorded under the
+`NO_PLAN` sentinel satisfies the gate exactly as a plan-scoped build does.
+Requiring `status == success` rather than
 `exit_code == 0` is load-bearing: the build wrapper exits 0 on timeout (the
 outcome lives in its stdout TOON, not the exit code), so an exit-code
 predicate would launder a build that never finished into a false `fresh`. A
@@ -203,6 +203,76 @@ build-class invocation that runs to completion. See
 ledger API (entry schema, `query` verb, and the `kind=build` writer) — the
 ledger query semantics are not inline-copied here.
 
+#### The notation cross-check
+
+A row matching the primary predicate proves a row EXISTS; it does not prove the
+row is evidence of a build **this project performs**. The gate has been
+satisfied by a row naming a package-manager build the project has no module
+for — the verdict was right, the evidence did not support it, and nothing in
+the output said so. A gate that is right for the wrong reason produces no
+failure to learn from, so it can stay wrong indefinitely.
+
+Every row that clears the primary predicate is therefore cross-checked against
+the build notations this project's architecture actually resolves to
+(`manage-architecture`'s `resolve_project_build_notations`, which classifies
+every module's resolved command map). The comparison target is the
+**architecture**, deliberately not the ledger: comparing ledger rows against
+other ledger rows would let a polluted ledger corroborate itself. The check
+stays build-TOOL-agnostic — a Maven/Gradle/npm build satisfies the gate whenever
+the architecture resolves that notation for this project — and it stays
+plan-agnostic, because the notation set is the union over every module rather
+than a per-plan subset.
+
+The verdict is three-valued and is **never** collapsed to two:
+
+| `notation_cross_check` | Meaning | Gate effect |
+|---|---|---|
+| `corroborated` | The row's notation is one the architecture resolves | `fresh` |
+| `refuted` | The architecture resolved a non-empty set and **no** candidate row's notation is in it — including the case where no candidate carries a `notation` at all | `stale` (`notation_unrelated` / `notation_absent`) |
+| `unverified` | The notation set could not be established | `fresh`, with the inability stated in the record |
+
+The split fail-direction is deliberate. A **refutation is positive knowledge**
+("the architecture resolves pyproject and nothing else; this row says npm"), so
+it fails closed — that is the defect class the gate exists to close, and
+admitting it with a warning would leave the false-green in place while merely
+annotating it. An **inability to resolve is the absence of knowledge**, so it
+passes with `notation_cross_check: unverified` and a
+`notation_cross_check_reason` in the record: failing closed there would block
+every legitimate pre-commit transition in a tree whose architecture has not been
+discovered — a project mid-onboarding, a fresh clone, a fixture tree — none of
+which is evidence of anything wrong, and the primary predicate has already been
+satisfied at that point. `unverified` is a stated sentinel, never a quiet
+`corroborated`, so "passed uncross-checked" stays legible to a reader (ADR-015).
+
+The three inabilities behind `unverified` are named apart for the same reason,
+even though all three pass the gate identically — the distinction is for the
+reader asking why nothing ever corroborates, and it has different owners:
+
+| `notation_cross_check_reason` | What it means | Who owns it |
+|---|---|---|
+| `architecture_resolver_unimportable` | The resolver module could not be imported at all | **This check is broken.** A deployment or `PYTHONPATH` fault; it will report `unverified` on every row forever, so it is not a quiet pass but a silent outage. |
+| `architecture_resolution_failed` | The resolver was reached and raised while running | The architecture query — a crawl that failed against this tree. |
+| `architecture_resolved_no_build_notations` | The resolver ran and found no build notation anywhere | Nobody: the ordinary un-crawled or greenfield project. This is the legitimately quiet case. |
+
+⛔ An empty resolved set is an **inability**, never a refutation. Reading it as
+"this project builds with nothing" would refuse every real build row the ledger
+holds — a false-red manufactured from an absence of data.
+
+Every candidate row is examined, not just the first match. A project that
+legitimately builds with several notations can carry an unrelated row ahead of a
+related one in ledger file order, and a first-match return would refuse evidence
+two lines further down.
+
+**A doc-only carve-out is refused**, and the refusal is recorded in the shipped
+source (`_freshness_crosscheck` module docstring) rather than only in a run
+report, because an unexplained absence invites its re-introduction. Markdown
+under the bundle tree **is a build input in this repository** — tests read and
+assert on the bodies of bundle documents — so a doc-only freshness exemption
+would hand back `fresh` for a tree whose tests were never run against it, which
+is this very defect class re-entering through the exemption. Build necessity is
+in any case owned by the `build-decision` authority the gate consults first, not
+by a suffix list here.
+
 **Return statuses (fail-closed contract):**
 
 - `status: fresh`, `reason: <verdict reason>` — the command-free `build-decision`
@@ -211,21 +281,32 @@ ledger query semantics are not inline-copied here.
   to `fresh` BEFORE the ledger scan and forwards the verdict's own `reason` text
   verbatim; the gate invents no exemption vocabulary of its own.
 - `status: fresh` — a `kind=build` entry with `status == success` and a matching
-  `worktree_sha` exists; a successful build has been observed against the
-  current on-disk state, so the gate is permitted to pass. Carries
-  `worktree_sha`, `matched_notation`, `timestamp_iso`, `worktree_root`, and
-  `ledger_path` for the audit trail.
-- `status: stale` — the ledger has entries but none is a successful build
-  against the current working-tree sha, so the gate MUST fail closed. Carries
+  `worktree_sha` exists AND the notation cross-check did not refute it, so the
+  gate is permitted to pass. The record **names its evidence**: `worktree_sha`,
+  `matched_notation`, `matched_entry_index` (the row's position among the
+  ledger's *parsed* entries — `read_entries` skips blank lines, unparseable
+  lines, and valid-JSON-non-object lines, so this is not a physical line number
+  and a divergence between the two is not by itself evidence of corruption), `matched_plan_id`, `timestamp_iso`,
+  `notation_cross_check` (`corroborated` or `unverified`), `expected_notations`
+  (the resolved set), `worktree_root`, and `ledger_path`. An `unverified` pass
+  additionally carries `notation_cross_check_reason`. Naming the row is what
+  converts a silent wrong-reason pass into a visible one, and it holds even
+  where the cross-check itself could not run.
+- `status: stale` — either the ledger has entries but none is a successful build
+  against the current working-tree sha, or every such build names a notation
+  this project does not resolve. The gate MUST fail closed. Carries
   `worktree_sha`, `worktree_root`, `ledger_path`, and a **`reason` naming which
-  of the five routes to `stale` was taken** — plus `observed_status` (the
-  offending row's own build status) whenever the row carried a readable status
-  string. `observed_status` is absent on `worktree_mutated` (no row was
-  observed) and on the `build_indeterminate` sub-case where the row carried no
-  readable `status` at all; supplying one there would mean inventing it, so its
-  absence is the honest answer and `reason` still separates the two. The
-  pass/fail behaviour is identical on all five; what differs is the remedy, and
-  the gate must not assert a cause it did not establish:
+  route to `stale` was taken** — plus `observed_status` (the offending row's own
+  build status) whenever a row carried a readable status string, and
+  `notation_cross_check` / `expected_notations` / `candidate_notations` on the
+  two cross-check routes. `observed_status` is absent on `worktree_mutated` (no
+  row was observed), on the `build_indeterminate` sub-case where the row carried
+  no readable `status` at all, and on both cross-check routes (where every
+  candidate was `success`, so reporting it would say nothing); supplying one
+  where none was read would mean inventing it, so its absence is the honest
+  answer and `reason` still separates the routes. The pass/fail behaviour is
+  identical on every route; what differs is the remedy, and the gate must not
+  assert a cause it did not establish:
 
   | `reason` | Ledger evidence | Remedy the caller owes |
   |---|---|---|
@@ -234,12 +315,25 @@ ledger query semantics are not inline-copied here.
   | `build_timeout` | Latest row for this sha is `status: timeout` | The build exceeded its own outer budget; no verdict was reported. Not a code defect. Re-run, and diagnose the budget if it recurs. |
   | `build_killed` | Latest row for this sha is `status: killed` | Externally killed — **not flaky, do not blind-retry.** No budget fired and no verdict was reported. Establish why before re-running. |
   | `build_indeterminate` | Latest row for this sha is `status: unknown`, or a status outside the vocabulary | The outcome could not be read. It supports no conclusion either way; re-run to obtain a readable verdict. |
+  | `notation_unrelated` | Successful rows carry this sha, but every notation they name is one the architecture does not resolve | The rows are evidence of some other project's build. Dispatch a real build of THIS project — and establish where the unrelated row came from before trusting the ledger again. |
+  | `notation_absent` | Successful rows carry this sha, but **none** carries a usable `notation` — the key is missing, empty, or not a string | `build_record` always emits a non-empty `notation` for a dispatched build, so no such row came from the dispatch boundary. Something other than a build of this project is writing to the ledger; find it. |
+
+  The two `notation_*` routes are mutually exclusive and `notation_unrelated`
+  wins a mixed set: a candidate list holding one notation-less row and one
+  unresolved-notation row reports `notation_unrelated`, because
+  `candidate_notations` is non-empty. `notation_absent` therefore means *every*
+  candidate lacked a notation, not *some* did — read `candidate_notations` to see
+  which notations were actually present, and treat an empty list under
+  `notation_unrelated` as impossible by construction.
 
   `worktree_mutated` is the only route on which the tree is known to have
-  changed. On the other four a build **was** observed against exactly this tree
-  and did not produce a green — reporting those as a mutation would name a cause
-  that did not occur, and prescribing the mutation remedy (re-dispatch) is
-  precisely the blind retry a `killed` build forbids.
+  changed. On the `build_*` routes a build **was** observed against exactly this
+  tree and did not produce a green — reporting those as a mutation would name a
+  cause that did not occur, and prescribing the mutation remedy (re-dispatch) is
+  precisely the blind retry a `killed` build forbids. On the two `notation_*`
+  routes a green **was** recorded against this tree, but by something the
+  architecture cannot attribute to this project, so the remedy is an
+  investigation and not only a re-build.
 - `status: undecidable` — no positive freshness proof can be established. Two
   sub-reasons: (a) `reason: no_registry` — the change-ledger file is absent or
   empty; (b) `reason: head_unresolvable` — the working-tree sha cannot be
@@ -296,14 +390,48 @@ from inside the loop.
    `reason: head_unresolvable`.
 4. Read the change-ledger entries. When the ledger file is absent or empty,
    return `undecidable` with `reason: no_registry`.
-5. Scan for any entry with `kind == build`, `status == success`, and
-   `worktree_sha` equal to the current working-tree sha. On a match → `fresh`.
+5. Collect **every** entry with `kind == build`, `status == success`, and
+   `worktree_sha` equal to the current working-tree sha, in ledger file order.
    A row lacking `status` never matches (fail-closed for pre-existing rows).
-6. No match → `stale`.
+6. No candidate → `stale`, with the route derived from what the ledger holds.
+7. Candidates exist → resolve this project's build-notation set from the
+   architecture and cross-check them. First corroborated candidate → `fresh`.
+   Resolution unavailable → `fresh` on the first candidate, with
+   `notation_cross_check: unverified` and its reason in the record. Resolution
+   available and no candidate corroborated → `stale` with `notation_unrelated`
+   or `notation_absent`.
 
-The algorithm never raises uncaught exceptions on missing status metadata,
-missing ledger, or absent worktree — every degenerate input case returns a
-descriptive status (`undecidable` or `stale`).
+   ⚠ **Step 7 costs a live architecture crawl, and the consuming site should
+   budget for it.** The resolution runs the same crawl `architecture resolve`
+   runs — memoized per process, but the gate is a one-shot process, so the memo
+   never carries between invocations and each of the gate's two wiring points
+   (phase-5 Step 12a, phase-6 `push`) pays it once. It shells out: `git` on every
+   project, plus each build tool's own discovery verbs on a Maven/Gradle/npm one
+   (`crawl_all_modules` documents `help:all-profiles dependency:tree` per Maven
+   module). Measured on this repository — Python-only — the first crawl took
+   roughly 1 to 5 seconds, across four independent measurements in different
+   sessions and filesystem-cache states; the spread is the honest answer and a
+   point estimate would not be. No figure exists for a Maven, Gradle or npm
+   project, so treat that range as a floor there rather than an estimate. Two
+   properties bound the cost: it is paid only on the path where the primary
+   predicate ALREADY matched (a `stale` refusal never crawls), and the
+   short-circuit ahead of it means a footprint needing no build never reaches
+   Step 4, let alone Step 7.
+
+The algorithm never raises uncaught exceptions on a degenerate input, but it
+does **not** refuse on all of them, and the difference matters more than the
+absence of a crash:
+
+| Degenerate input | Outcome | Why |
+|---|---|---|
+| Ledger absent or empty | `undecidable` / `no_registry` | No evidence exists at all. |
+| Working-tree sha uncomputable | `undecidable` / `head_unresolvable` | The primitive the whole gate compares on is undefined. |
+| Worktree unresolvable | **Not a refusal.** `WorktreeResolutionError` is caught and the root falls back to the process cwd; the sha and the ledger scan proceed against *that* tree | Preserves the pre-existing non-fatal behaviour for a plan running against the main checkout. ⚠ It means the gate can answer about a tree other than the one the caller had in mind, which is a real limitation and is recorded rather than papered over. |
+| Status metadata missing | Irrelevant | The gate does not read it — the worktree root resolves through `resolve_plan_context`, and `status.metadata.worktree_path` is a decoy the tests pin as ignored. |
+| Architecture unresolvable | **Not a refusal.** `fresh` with `notation_cross_check: unverified` and the inability named | An inability to *audit* evidence the primary predicate already accepted. Failing closed would refuse every transition in an un-crawled tree on strictly less evidence than the primary predicate supplied — see § "The notation cross-check". |
+
+⛔ "The gate never raises" must never be read as "the gate always refuses on bad
+input" — the `Outcome` column above is the authority on which inputs refuse.
 
 ### Script-Level `[OUTCOME]` Emission (`finalize-step`)
 

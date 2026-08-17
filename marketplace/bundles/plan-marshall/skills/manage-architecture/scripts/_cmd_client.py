@@ -67,6 +67,7 @@ from _cmd_client_build import (  # noqa: E402, F401
     _compute_execution_tier_fields,
     _load_build_config,
     _lookup_bash_timeout,
+    build_notation_for_executable,
 )
 from _cmd_client_handlers import (  # noqa: E402, F401
     _augment_resolved,
@@ -126,6 +127,7 @@ from _cmd_client_query import (  # noqa: E402, F401
     get_project_info,
     get_sibling_modules,
     resolve_command,
+    resolve_project_build_notations,
 )
 from _cmd_client_render import (  # noqa: E402, F401
     _TRUNCATION_MARKER_PREFIX,

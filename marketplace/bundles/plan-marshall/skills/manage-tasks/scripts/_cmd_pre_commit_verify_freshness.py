@@ -40,11 +40,25 @@ looks for a matching successful build entry. Matching on ``status`` rather than
 outcome is modeled in its stdout TOON, not the exit code), so an ``exit_code``
 predicate would launder a build that never finished into a false ``fresh``.
 A row lacking ``status`` never matches — the gate fails closed to ``stale``.
-The query is build-tool-agnostic and tier-agnostic: it filters on ``kind``,
-``status`` and ``worktree_sha`` only — never ``notation`` or ``plan_id`` — so a
-Maven/Gradle/npm build, or an orchestrator-driven global-tier build with
-``plan_id: null``, satisfies the gate exactly as a plan-scoped pyproject build
-does.
+The scan stays **tier-agnostic and plan-agnostic**: it never filters on
+``plan_id``, so an orchestrator-driven global-tier build recorded under the
+``NO_PLAN`` sentinel satisfies the gate exactly as a plan-scoped build does. It
+is **no longer notation-blind**, and that is the one deliberate narrowing.
+Matching on ``kind``/``status``/``worktree_sha`` alone asserts that a row
+EXISTS; it never asks whether the row is evidence of a build THIS project
+performs, and the gate has been satisfied by a row naming a build the project
+has no module for. Every row that clears the primary predicate is therefore
+cross-checked against the build notations the project's architecture actually
+resolves to — see :mod:`_freshness_crosscheck` for the three-valued verdict, the
+split fail-direction, and the recorded refusal of a doc-only carve-out. The
+check remains build-TOOL-agnostic: a Maven/Gradle/npm build satisfies the gate
+whenever the architecture resolves that notation for this project.
+
+The matched evidence is NAMED in the decision record — the row's ``notation``,
+its position in the ledger, its ``plan_id`` and its timestamp — so a reader can
+see WHICH row satisfied the gate instead of taking the verdict on trust. That
+alone converts a silent wrong-reason pass into a visible one, independently of
+whether the cross-check could be performed.
 
 The primitive is the *working-tree* currency, NOT the committed ``HEAD``. This
 is a pre-commit gate: at gate time the plan's edits are still uncommitted, so a
@@ -62,15 +76,24 @@ Outcomes:
                      and none is demanded. The short-circuit fires BEFORE the
                      ledger scan and forwards the authority's own reason text.
 - ``fresh``        — a ``kind=build`` entry with ``status == 'success'`` and a
-                     matching ``worktree_sha`` exists; a successful build has
-                     been observed against the current on-disk state, so the
-                     gate is permitted to pass.
-- ``stale``        — the ledger has entries but none is a successful build
-                     against the current working-tree sha, so the gate MUST fail
-                     closed. The verdict carries a ``reason`` naming WHY,
-                     because the four ways to reach it need four different
+                     matching ``worktree_sha`` exists AND the notation
+                     cross-check did not refute it; a successful build has been
+                     observed against the current on-disk state, so the gate is
+                     permitted to pass. ``notation_cross_check`` records whether
+                     the evidence was ``corroborated`` or merely ``unverified``
+                     — the two are never folded together, so a pass on
+                     unaudited evidence is legible as such.
+- ``stale``        — either the ledger has entries but none is a successful
+                     build against the current working-tree sha, or every such
+                     build names a notation this project's architecture does not
+                     resolve. The gate MUST fail closed. The verdict carries a
+                     ``reason`` naming WHY, because the routes need different
                      remedies and this gate must not assert a cause it did not
-                     establish (see ``_stale_reason`` below).
+                     establish: ``worktree_mutated`` / ``build_error`` /
+                     ``build_timeout`` / ``build_killed`` /
+                     ``build_indeterminate`` (see ``_stale_reason`` below), plus
+                     ``notation_unrelated`` / ``notation_absent`` from the
+                     cross-check.
 - ``undecidable``  — no positive freshness proof can be established. Two
                      sub-reasons: ``no_registry`` (the ledger file is absent or
                      empty) and ``head_unresolvable`` (the working-tree sha
@@ -86,6 +109,11 @@ phase-6-finalize ``push`` — is documented in
 
 from pathlib import Path
 
+from _freshness_crosscheck import (
+    CORROBORATED,
+    REFUTED,
+    cross_check_candidates,
+)
 from _ledger_core import (
     KIND_BUILD,
     read_entries,
@@ -146,14 +174,16 @@ _STALE_MUTATED = (
 def _stale_reason(entries: list[dict], current_sha: str) -> tuple[str, str, str | None]:
     """Derive the ``stale`` reason from what the ledger actually holds.
 
-    The historical gate emitted one message for every route to ``stale``:
-    "the worktree has been mutated since the last observed build ... re-dispatch
-    a build before retrying." That sentence asserts a CAUSE the gate never
-    established, and prescribes a remedy that is wrong for three of the four
-    routes. When the ledger holds a ``killed`` row for the CURRENT sha the tree
-    was not mutated at all — a build was observed and was killed — so the gate
-    was reporting a mutation that did not happen and prescribing exactly the
-    blind retry the no-blind-retry rule forbids.
+    One message for every route cannot be honest, because CAUSE and REMEDY differ
+    per route and they differ independently. Only ``worktree_mutated`` involves a
+    mutation at all, so any message asserting one states a cause the gate did not
+    establish. And re-running the build is the right remedy for ``build_timeout``
+    and ``build_indeterminate`` while being actively wrong for ``build_error``
+    (fix the reported failures first) and for ``build_killed`` (the blind retry
+    the no-blind-retry rule forbids). A ``killed`` row for the CURRENT sha is the
+    sharpest case: the tree was not mutated, a build was observed and was killed,
+    so a mutation message would name a cause that did not occur AND prescribe the
+    one action that rule forbids.
 
     Discrimination is by presence, then by status:
 
@@ -201,6 +231,127 @@ def _stale_reason(entries: list[dict], current_sha: str) -> tuple[str, str, str 
     key = observed if isinstance(observed, str) else None
     reason, message = _STALE_BY_STATUS.get(key or '', _STALE_BY_STATUS['unknown'])
     return reason, message, key
+
+
+def _evidence_fields(index: int, entry: dict) -> dict:
+    """Name the evidence row so a reader can find it, not merely trust it.
+
+    ``matched_entry_index`` is the row's position among the ledger's PARSED
+    entries in file order — **not** its physical line number. ``read_entries``
+    skips three kinds of line: blank ones, unparseable ones, and lines that are
+    valid JSON but not objects. Any of the three shifts the two apart, so a
+    divergence is NOT by itself evidence of corruption — a stray newline
+    produces it too. The parsed index is nonetheless the one an auditor needs,
+    because it addresses the row this gate actually read.
+
+    Args:
+        index: The row's index among the parsed ledger entries.
+        entry: The ledger row itself.
+
+    Returns:
+        The evidence-identifying fields for the decision record.
+    """
+    return {
+        'matched_entry_index': index,
+        'matched_notation': entry.get('notation', ''),
+        'matched_plan_id': entry.get('plan_id', ''),
+        'timestamp_iso': entry.get('timestamp_iso', ''),
+    }
+
+
+def _verdict_for_candidates(
+    candidates: list[tuple[int, dict]],
+    *,
+    plan_id: str,
+    current_sha: str,
+    worktree_root: Path,
+    ledger_path: Path,
+) -> dict:
+    """Cross-check the matching build rows and render the decision record.
+
+    ``candidates`` have already satisfied the primary predicate, so the only
+    question left is whether any of them is evidence of a build THIS project
+    performs. The three-valued answer comes from :mod:`_freshness_crosscheck`
+    and is never collapsed:
+
+    * ``corroborated`` → ``fresh``, citing the corroborated row.
+    * ``unverified``   → ``fresh``, citing the first row AND recording that the
+      cross-check could not run. The pass is permitted (the primary predicate
+      holds and an inability to resolve is not evidence of anything wrong) but
+      it is never silent.
+    * ``refuted``      → ``stale``. The architecture resolved a notation set and
+      no candidate is in it, so every candidate is evidence of some build other
+      than one of this project's — the false-green this gate exists to close.
+
+    Args:
+        candidates: ``(parsed_index, entry)`` pairs in ledger file order.
+        plan_id: The plan the gate was invoked for.
+        current_sha: The recomputed working-tree currency hash.
+        worktree_root: The resolved worktree root, echoed into the record.
+        ledger_path: The ledger the rows were read from, echoed into the record.
+
+    Returns:
+        The gate's ``fresh`` or ``stale`` verdict dict.
+    """
+    ledger_indices = [index for index, _ in candidates]
+    outcome = cross_check_candidates([entry for _, entry in candidates], str(worktree_root))
+    verdict = outcome['verdict']
+
+    if verdict == REFUTED:
+        return {
+            'status': 'stale',
+            'plan_id': plan_id,
+            'reason': outcome['reason'],
+            'worktree_sha': current_sha,
+            'notation_cross_check': REFUTED,
+            'expected_notations': outcome['expected_notations'],
+            'candidate_notations': outcome['candidate_notations'],
+            'worktree_root': str(worktree_root),
+            'ledger_path': str(ledger_path),
+            'message': (
+                f'A kind=build entry with status=success matches the current '
+                f'working-tree sha ({current_sha}), but no such entry names a build '
+                f'this project performs: the architecture resolves '
+                f'{", ".join(outcome["expected_notations"])} and the matching rows carry '
+                f'{", ".join(outcome["candidate_notations"]) or "no notation at all"}. The '
+                f'row is not evidence that THIS tree was built, so the gate MUST fail '
+                f'closed. Establish where the unattributable row came from before '
+                f'trusting the ledger again — a fresh build will clear the block and '
+                f'leave whatever wrote that row in place.'
+            ),
+        }
+
+    # ``chosen`` is a POSITION in the list handed to the cross-check, and that
+    # list was built from ``candidates`` in order — so the same position indexes
+    # both, and the row's ledger index is recovered without either side relying
+    # on the identity of the dict that travelled across the boundary.
+    chosen = outcome['chosen']
+    result = {
+        'status': 'fresh',
+        'plan_id': plan_id,
+        'worktree_sha': current_sha,
+        **_evidence_fields(ledger_indices[chosen], candidates[chosen][1]),
+        'notation_cross_check': verdict,
+        'expected_notations': outcome['expected_notations'],
+        'worktree_root': str(worktree_root),
+        'ledger_path': str(ledger_path),
+    }
+    if verdict == CORROBORATED:
+        result['message'] = (
+            f'A successful kind=build entry matches the current working-tree sha '
+            f'({current_sha}), and its notation is one this project\'s architecture '
+            f'resolves. Gate permitted on corroborated evidence.'
+        )
+    else:
+        result['notation_cross_check_reason'] = outcome['reason']
+        result['message'] = (
+            f'A successful kind=build entry matches the current working-tree sha '
+            f'({current_sha}), so the gate is permitted — but its notation could NOT '
+            f'be cross-checked against this project\'s resolved build commands '
+            f'({outcome["reason"]}). The evidence is unaudited: it has not been shown '
+            f'unrelated, and it has not been shown related either.'
+        )
+    return result
 
 
 def _build_necessity_verdict(plan_id: str) -> dict:
@@ -299,31 +450,34 @@ def cmd_pre_commit_verify_freshness(args) -> dict:
             ),
         }
 
-    # Scan for any successful build entry stamped against the current
-    # working-tree sha. The query filters on kind, status and worktree_sha
-    # only — never notation or plan_id — so it is build-tool-agnostic and
-    # tier-agnostic. Requiring status == 'success' (not exit_code == 0) is
-    # what closes the false-fresh hole: a timed-out build exits 0 but stamps
+    # Collect EVERY successful build entry stamped against the current
+    # working-tree sha, in file order. The primary predicate filters on kind,
+    # status and worktree_sha — never plan_id — so it stays tier-agnostic.
+    # Requiring status == 'success' (not exit_code == 0) is what closes the
+    # first false-fresh hole: a timed-out build exits 0 but stamps
     # status: timeout, and a row lacking status never matches (fail-closed).
-    for entry in entries:
-        if (
-            entry.get('kind') == KIND_BUILD
-            and entry.get('status') == 'success'
-            and entry.get('worktree_sha') == current_sha
-        ):
-            return {
-                'status': 'fresh',
-                'plan_id': plan_id,
-                'worktree_sha': current_sha,
-                'matched_notation': entry.get('notation', ''),
-                'timestamp_iso': entry.get('timestamp_iso', ''),
-                'worktree_root': str(worktree_root),
-                'ledger_path': str(ledger_path),
-                'message': (
-                    f'A successful kind=build entry matches the current '
-                    f'working-tree sha ({current_sha}). Gate permitted.'
-                ),
-            }
+    #
+    # Collecting the whole list rather than returning on the first hit is what
+    # lets the notation cross-check below stay precise in the PASSING
+    # direction: a project that legitimately builds with several notations can
+    # carry an unrelated row ahead of a related one, and a first-match return
+    # would refuse evidence that is two lines further down.
+    candidates = [
+        (index, entry)
+        for index, entry in enumerate(entries)
+        if entry.get('kind') == KIND_BUILD
+        and entry.get('status') == 'success'
+        and entry.get('worktree_sha') == current_sha
+    ]
+
+    if candidates:
+        return _verdict_for_candidates(
+            candidates,
+            plan_id=plan_id,
+            current_sha=current_sha,
+            worktree_root=worktree_root,
+            ledger_path=ledger_path,
+        )
 
     # The gate has refused. WHY it refused is derived from the ledger rather
     # than assumed, so the caller is not told a mutation happened when a build
