@@ -1,14 +1,24 @@
 # Run report — 300-freshness-gate-cannot-distinguish-test-authored-evidence (run 01)
 
-**Date (UTC):** 2026-08-17    **Branch:** `claude/freshness-gate-test-evidence-bvhf95`    **PR:** none — not opened    **Outcome:** **partial**
+**Date (UTC):** 2026-08-17    **Branch:** `claude/freshness-gate-test-evidence-bvhf95`    **PR:** [#1279](https://github.com/cuioss/plan-marshall/pull/1279)    **Outcome:** **completed, landing delegated**
 
-⛔ **Partial, not completed.** All five deliverables are implemented, tested, and
-pushed to the branch, and the repository's full `./pw verify` is green over the
-branch diff. What is missing is the lane's Steps 7–8: no PR was opened, so no
-review cycle ran and no merge gate was reached. The reason is a genuine
-instruction conflict, escalated rather than resolved unilaterally — see § Contract
-check, Step 7. A collector reading this row must treat the change as **not
-landed**.
+All five deliverables are implemented, tested and pushed; the gate is green over
+the pushed tree; PR #1279 is open, its three comment surfaces are read, and the
+review-coverage shortfall is disclosed.
+
+⚠ **The PR was opened only after the operator resolved an instruction conflict.**
+This session's harness instruction forbids opening a PR unless the operator
+explicitly asks, which contradicts the lane contract's Step 7. A PR is
+outward-facing and hard to reverse, so the conflict was escalated rather than
+resolved unilaterally; the operator directed that the contract's Steps 7–8 run.
+The escalation and its answer are recorded here because a conversation event
+leaves no committed artifact.
+
+⚠ **A second deviation, also operator-directed:** verification round 2 was run
+because round 1's findings all changed code behaviour, which resets the loop. It
+found ten further defects — see § Findings. Without that round this PR would have
+shipped two invented rationales and a coverage control that could not detect what
+it claimed.
 
 ## Skills loaded
 
@@ -479,21 +489,54 @@ method, and their method differs again from both rounds.
 
 ## Reviewer participation
 
-⛔ **NOT PRODUCED, and this is not an empty pass.** No PR exists (§ Contract check,
-Step 7), so no reviewer was ever invited and no comment surface exists to read.
-
-The expected reviewer population is derived from configuration, never transcribed
-— the `author_login` of each
+**PR #1279.** Population derived from configuration — the `author_login` of each
 `marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md`
-registry doc, cross-named by `.github/workflows/pr-agent.yml`. That derivation was
-**not run**, because a population without a PR to review has nothing to report
-against.
+registry doc, read at claim time, never transcribed: `sourcery-ai`
+(`sourcery.md`), `coderabbitai` (`coderabbit.md`), `cuioss-review-bot`
+(`pr-agent.md`). **M = 3.**
 
-Coverage is therefore **0 of an undetermined M** — stated that way deliberately.
-A run that has not opened a PR has zero review coverage; writing "N/A" would make
-an un-reviewed change indistinguishable from a fully-reviewed one, which is the
-false-clean signal this lane exists to prevent. The § Step 8 shortfall disclosure
-did not fire, because the gate it belongs to was never reached.
+Each verdict below is derived from the reviewer's own stored comment **body**,
+across all three surfaces (`get_comments`, `get_reviews`, `get_review_comments`)
+— never from a check-run state. Note that CodeRabbit's own check reported
+`state: success` with description "Review rate limited": ⛔ **a green check that
+concluded having reviewed nothing**, which is exactly why a check state is not a
+verdict here.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
+|---|---|---|---|
+| `cuioss-review-bot` | `reviewed` | — | Issue comment "PR Reviewer Guide 🔍": *PR contains tests* / *No security concerns identified* / *No major issues detected*. A review artifact over the diff with an explicit nothing-to-report. |
+| `coderabbitai` | `rate-limited` | **yes** | Issue comment: *"Review limit reached … you've reached your PR review limit, so we couldn't start this review. **Next review available in: 47 minutes**"*. It engaged; it did not review this diff. A clock limit, so re-requesting later is productive. |
+| `sourcery-ai` | `rate-limited` | **no** | Review-summary body: *"your pull request is larger than the review limit of 150000 diff characters"*. ⛔ A property of **this diff**, not of the clock — the same request never succeeds at this size, so waiting is futile and no re-request is made. Its check-run separately concluded `skipped`. |
+
+**Coverage: 1 of 3.** Inline review threads: none (`get_review_comments`
+returned zero). **No actionable comment was received on any surface**, so nothing
+was fixed or replied to in this cycle — recorded as an empty set that was *read*,
+not assumed.
+
+⭐ **The two non-`reviewed` verdicts are rate-limited for opposite reasons, and
+rendering them identically would have hidden that.** One clears on a clock; the
+other is a size ceiling that never clears. Only the first is worth re-requesting,
+and a `send_later` check-in is armed to do exactly that once the window reopens —
+so the shortfall is being actively worked, not merely disclosed.
+
+### The § Step 8 shortfall disclosure — it fired
+
+Stated to the operator before arming auto-merge, in words, carrying each
+reviewer's `Reopens?` value:
+
+> Review coverage: **1 of 3** — `cuioss-review-bot` reviewed (no issues found);
+> `coderabbitai` rate-limited, reopens in ~47 minutes, re-request armed;
+> `sourcery-ai` rate-limited on a 150 000-diff-character size ceiling, does **not**
+> reopen.
+
+⛔ This is a **disclosure, not a block.** Rate limits are routine and outside our
+control; blocking on them would strand every landing behind a bot's quota. The
+defect the rule closes is the *silence*, not the shortfall — a run that merges on
+1-of-3 must say 1-of-3, which this does.
+
+**PR #1280** (the accepted contract change, on its own `chore/` branch) carries its
+own review cycle. Its participation is not recorded here — it is a separate PR with
+a separate population read, and the scheduled check-in covers it.
 
 ## Cost
 
@@ -538,11 +581,11 @@ is a machine-local build step reading the git-ignored `target/` and writing
 | 4 Pushed | ✅ | `git status -sb` reports no `ahead`; paths were staged explicitly and `git status` checked for generated-file churn before each commit (no `uv.lock` drift appeared). |
 | 5 Build gate | ✅ | Python-change verdict from `git diff --name-only origin/main...HEAD -- '*.py'`: non-empty. Full `./pw verify` run; see § Build gate for the failing first run, its two findings, and the green re-runs. |
 | 6 Verification sub-agent | ✅ **TWO ROUNDS** | Round 1: the `V1-1`…`V1-14` series plus the three `V1-P*` pre-existing-claim rows, all accepted and fixed. Round 2 was then dispatched **because** every round-1 finding changed code behaviour, which under the contract resets the loop; it found further defects — including two in prose round 1 itself had written to explain its fixes — all recorded in § Findings as `R2-*` rows with dispositions. |
-| 7 PR cycle | ⛔ **NOT DONE** | No PR exists. The harness instruction governing this session forbids opening one unless the operator explicitly asks, which conflicts with this step; the conflict was escalated to the operator rather than resolved unilaterally, because a PR is outward-facing and hard to reverse. No reviewer-participation table can therefore be produced — recorded as not done, not as an empty pass. |
-| 8 Merge gate | ⛔ **NOT DONE** | Conditions 1–3 unreachable without a PR. Nothing was armed. |
+| 7 PR cycle | ✅ | PR [#1279](https://github.com/cuioss/plan-marshall/pull/1279), opened after the operator resolved the harness-vs-contract conflict (see header). No `skip-bot-review` — the diff touches `*.py`, `marketplace/bundles/**` and `test/`, so it keeps its full review. All THREE comment surfaces read as three distinct calls; **zero actionable comments**, so nothing needed fixing or a reply. The participation table carries a verdict **and** a `Reopens?` value per reviewer; no `silent` verdict arose, so no recovery check was owed. |
+| 8 Merge gate | ✅ **armed** | Conditions 1–3 met and this report committed as the last pre-merge commit before arming. Condition 4's shortfall disclosure fired at 1-of-3 (§ Reviewer participation). See § Build gate and below for the required-check state at arm time and how the landing is confirmed. |
 | 8 Bridge | ✅ | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory; no ledger, no status file, no other plan's directory touched. No shared lane doc was edited. |
 | 9 This check | ✅ | This table. |
-| 9 What have we learned | ✅ | One proposal, presented to the operator and **accepted**; to ship as a separate `chore/` PR touching only the skill, never in this plan's diff (§ What have we learned). |
+| 9 What have we learned | ✅ | One proposal, presented to the operator and **accepted**; shipped as [#1280](https://github.com/cuioss/plan-marshall/pull/1280) on its own `chore/` branch, touching only the skill, with no `skip-bot-review` — never in this plan's diff (§ What have we learned). |
 
 ### Working-tree claims re-verified
 
@@ -617,12 +660,15 @@ instance of it in the same file. That is the strongest form of evidence a
 contract-change proposal can carry: the author knew the rule and the surface still
 escaped them.
 
-**Operator disposition: ACCEPTED.** To ship as its own `chore/` branch and PR,
-touching only the skill, with no `skip-bot-review` (a skill is code). Two edits are
-needed, not one: the Step 6 sub-agent instruction and the second consumer-kind
-enumeration in the fix-sweep paragraph — patching only the first would leave the
-second stale, making the contract change create the very drift it exists to
-prevent.
+**Operator disposition: ACCEPTED, and shipped** as
+[#1280](https://github.com/cuioss/plan-marshall/pull/1280) — branch
+`chore/cloud-plan-lane-string-literal-consumer-kind`, cut from `origin/main`,
+touching only the skill, with no `skip-bot-review` (a skill is code). Two edits,
+not one: the Step 6 sub-agent instruction and the second consumer-kind enumeration
+in the fix-sweep paragraph — patching only the first would leave the second stale,
+making the contract change create the very drift it exists to prevent. The landed
+rule also carries R2-10's lesson: **re-walk the whole file**, not the line the
+finding named.
 
 ## Residue
 
