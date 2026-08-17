@@ -115,7 +115,7 @@ The plan forbids fixing from the report text and requires each claim be confirme
 
 `git diff --name-only origin/main...HEAD -- '*.py'` is **non-empty** (5 Python files: `audit.py`, `_decision_line_shapes.py`, `_manifest_decide.py`, `manage-execution-manifest.py`, `check-routing-decisions.py`, plus 9 test modules), so the full gate ran.
 
-`./pw verify` → **`=== verify: SUCCESS ===`**, **20,540 passed, 14 skipped, 0 failed** (381 s). All three sub-steps clean: quality-gate (`ruff` all checks passed, `mypy` success over 411 production files, SPDX passed), test-compile (`mypy` over the test tree), module-tests.
+`./pw verify` → **`=== verify: SUCCESS ===`**, **20,545 passed, 14 skipped, 0 failed** (392 s). All three sub-steps clean: quality-gate (`ruff` all checks passed, `mypy` success over 411 production files, SPDX passed), test-compile (`mypy` over the test tree), module-tests.
 
 This figure is the FINAL one, re-derived after the last verification round's fixes landed. Earlier drafts of this report carried the pre-fix total (20,510 / 444 s), which each verification round added tests to and therefore invalidated; a build-gate figure that predates the commits it reports as landed is exactly the moving-figure defect this run kept finding elsewhere, so it is re-derived at the moment of the claim rather than carried forward.
 
@@ -249,6 +249,38 @@ The first dispatch of this round died on a transient API error (529 Overloaded) 
 
 ⭐ **The pattern round 3 named, and it is the most useful thing this run learned.** Across all three rounds, each round's *fix* was sound and each round's *accompanying prose* introduced a new false mechanism claim — X5, X7, X9 and X10 are all text the round-2 fixes wrote; X11's site was written by the original D2 commit and last rewritten by the round-1 fix, so it is the same class by a different author. The rounds were not converging on the code; they were converging on the explanations. Round 4 was therefore scoped to round 3's own instruction: accept no new explanatory clause that does not name and confirm the symbol making it true.
 
+### Verification sub-agents, rounds 6 and 7
+
+**Round 6** attacked the structural fix directly and returned **four** findings, two behavioural.
+
+| # | Severity | Finding | Disposition |
+|---|---|---|---|
+| S1 | BEHAVIOURAL | **My guard and my code disagreed, and no fixture reached the disagreement.** Round 5's key list named `plans_with_merge_events` a population while `_examined_population` did not read it — so the guard asserted the census was wrong about merge-window-accounting while that check's own test asserted it was right | **Resolved in the CODE's favour.** `plans_with_merge_events` is `len(rows)` — a numerator. The check's substrate is the `[LOCK]` log, not the plan corpus, and an absent log already reports `unmeasured`, so a readable log naming no merge event is a genuine measured zero. The key list was wrong; a census fixture now stages a lock log so the two tests meet |
+| S2 | TEST COVERAGE | The synthesis-coupling surface of the `unmeasured` contract had no test | **Not fixed in round 6** — see round 7's R1, and the disclosure below |
+| S3 | PROSE | The structural fix's generality claim was false on the KEY axis: both the guard and `_examined_population` hard-coded the key set | **Fixed.** The code reads a named set, the guard binds to it rather than restating it, and `TestPopulationKeyCoverage` asserts every published `plans_*` scalar is classified. That test caught a residual disagreement the same commit had not yet reached |
+| S4 | PROSE/DOC | Four check docs omitted the `plans_in_corpus` line their emitters gained in rounds 4-5 | **Fixed** |
+
+**Round 7** returned **four** findings and the stop signal.
+
+| # | Severity | Finding | Disposition |
+|---|---|---|---|
+| R1 | **Deliverable verdict** | **Round 6's S2 was listed as applied and was never written.** Mutation showed the branch-new coupling code completely unguarded: deleting it left all 628 audit tests green | **Fixed**, and the false disposition corrected here. Five tests now cover both halves, mutation-confirmed: deleting either carry-through fails them |
+| R2 | PROSE | `TestPopulationKeyCoverage`'s docstring claimed to close the key axis; the regex matches only `plans_*` keys emitted as an f-string literal. Evasion demonstrated by mutation | **Fixed** — the docstring now states the bound it actually enforces, and notes that today nothing evades it |
+| R3 | PROSE | `plans_scanned`'s reason string ("corpus total") is wrong for the three checks `emit_table_block` routes, where it is the narrowed count | **Fixed** — the entry now records why it is excluded anyway, and names the latent route that would make it a gap |
+| R4 | COSMETIC | An inert `audit.__file__ and` conjunction | **Fixed** |
+
+⛔ **R1 is the finding I most want on the record, because it is mine and it is this plan's own archetype.** I listed round 6's coverage gap as fixed in the brief I handed round 7, having never written the test. A disposition that the artifacts contradict is exactly the defect this run kept finding in the auditor — asserted in a record, unimplemented in fact, and invisible because nothing checked the record against the tree. It was caught only because round 7 was asked to verify the claims rather than accept them.
+
+### Convergence — stopped by judgement, and disclosed as such
+
+⭐ **Round 7 returned the stop signal: converged on behaviour.** Its words: *"Nothing I found changes code behaviour. Every mutation that survived proved a missing guard, never a wrong result on real data."* Its one non-prose finding was a missing test, now written.
+
+The loop is stopped here **by judgement, not by a clean round.** Round 7 still returned three prose findings, and by the pattern this run established, an eighth round would very likely find more prose about the seventh round's prose. What changed is the character of the residue: rounds 1-4 each found behavioural defects in surfaces no previous round had examined; rounds 5-7 found progressively smaller residue at sites already identified, and round 7 found none at all.
+
+⚠ **This document should be assumed to contain residue of the kind round 7 found** — over-claimed scope in a docstring, a reason-string more confident than its subject warrants. Those are the classes still being surfaced when the loop stopped.
+
+**What round 7 verified clean**, so its verdict is distinguishable from a check that examined nothing: the merge-window resolution mutation-proved correct and now reachable by fixture; doc/emitter lock-step swept in BOTH directions across all 24 check docs; every `plans_*` token in `audit.py` enumerated against the guard's regex with none missed; and the build figures reproduced independently.
+
 **What round 2 could not verify**, recorded rather than assumed: the historical claim that the retired aggregate emission wrote one `lane_resolution` line per compose (repo history is effectively squashed, so it is plausible and harmless but unverified from this clone); the audit corpus, which the plan declares unreachable and forbids looking for; and C5, the unlocated 100%-firing warning, which it did not re-derive and on which it has no evidence either way.
 
 **What round 1 verified clean** — so the list above is distinguishable from a pass that examined nothing: the D5 shape contract against all five live `_log_dropped_records` call sites and against `decision-rules.md`'s canonical renderings; the three surviving removal-cause patterns against their own emitters; that no unrecognised mechanism can remove a `_PRUNABLE_PREDICATES` member; the `_read_recipe_source` mirror; both `[LOCK]` path derivations; the retire-on-quiet streak mechanism; the absent-phase reproduction against the pre-change detector; that `add_finding` seeds every record `pending`; that an omitted summary-metric renders as `""` and never `0`; a retired-token sweep (no surviving `posture_cutoff`, no surviving "four mechanisms", no fixture encoding the retired line shape); the `status: success` sweep; the cross-skill import against `plugin-script-architecture`'s standard; and TOON quoting of the census `reading` column.
@@ -260,7 +292,7 @@ _To be completed after the PR is opened and the reviewers report._
 ## Cost
 
 - **Tokens:** not available to the agent in this session — the harness does not expose a token counter to the running agent, so no figure is stated rather than an estimated one.
-- **Wall-clock:** not separately instrumented. The one measured component is the final full `./pw verify` at **381 s** (the same figure § Build gate records; earlier drafts of this line carried the superseded 444 s). The per-commit `./pw quality-gate` calls, the verification rounds' own builds, and the targeted `uv run pytest` calls are not individually timed.
+- **Wall-clock:** not separately instrumented. The one measured component is the final full `./pw verify` at **392 s** (the same figure § Build gate records; earlier drafts of this line carried the superseded 444 s). The per-commit `./pw quality-gate` calls, the verification rounds' own builds, and the targeted `uv run pytest` calls are not individually timed.
 - **Population:** what little is measured above covers **this single Claude Code cloud session's build invocations only**. ⛔ It is **NOT** comparable to a plan-marshall `metrics.toon` total, which counts the orchestrator-plus-agent dispatch tree under plan-marshall's own per-task billing boundary — a boundary a single interactive cloud session does not share. The figures cannot be made comparable, so no comparison is offered.
 
 ## Contract check (Step 9)

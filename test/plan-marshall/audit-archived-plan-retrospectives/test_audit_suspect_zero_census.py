@@ -301,9 +301,17 @@ class TestPopulationKeyCoverage:
     which is the same enumeration shape, one axis over, and is exactly how
     `plans_in_series` and `plans_measured` went unread for five rounds.
 
-    This closes that axis: every `plans_*` scalar any emitter publishes must be
-    classified, either as a denominator `_examined_population` reads or as a
-    deliberate non-denominator. A new key is a test failure, not a silent gap.
+    This narrows that axis: every key matching `f"plans_*:"` at the head of an
+    f-string must be classified, either as a denominator `_examined_population`
+    reads or as a deliberate non-denominator. A new key of that shape is a test
+    failure rather than a silent gap.
+
+    ⚠ It is a SHAPE-bounded guard, not a complete one. A population published
+    under a different prefix, or assembled by concatenation rather than as an
+    f-string literal, is invisible to the regex below and would slip through —
+    verified by mutation. Today nothing does: every `plans_*` token in `audit.py`
+    is classified. State the bound rather than claiming the axis is shut, because
+    a guard believed stronger than it is is the defect this whole plan is about.
     """
 
     #: `plans_*` scalars that are NOT examined populations, each with its reason.
@@ -312,8 +320,16 @@ class TestPopulationKeyCoverage:
         # Zero means nothing was excluded — the population is FULL.
         "plans_excluded_non_shipping": "exclusion count",
         "plans_excluded_no_counters": "exclusion count",
-        # The corpus-wide total, not one check's narrowing.
-        "plans_scanned": "corpus total",
+        # `emit_table_block` emits `len(rows)` AFTER narrowing, so for the three
+        # delivery-cost checks it routes (scope-estimate-accuracy,
+        # task-count-efficiency, pr-merge-velocity) this IS the examined count,
+        # not the corpus total. It is excluded anyway because those same blocks
+        # carry the `plans_excluded_non_shipping` line `_examined_population`
+        # reads at precedence 2, so the population is already established. A
+        # FULL_CORPUS_CHECKS member that narrowed internally and emitted through
+        # `emit_table_block` would be the gap — none does today.
+        "plans_scanned": "narrowed row count; population established by the "
+        "exclusion line these blocks also carry",
         # Numerators: how many plans landed in a result set. `plans_with_merge_events`
         # is the load-bearing case — `len(rows)`, how many plans HAD merge events.
         # Its check's substrate is the `[LOCK]` log, not the plan corpus, and an
@@ -326,7 +342,7 @@ class TestPopulationKeyCoverage:
 
     def test_every_published_population_key_is_classified(self):
         published = set(
-            re.findall(r'f"(plans_[a-z_]+):', audit.__file__ and _audit_source())
+            re.findall(r'f"(plans_[a-z_]+):', _audit_source())
         )
         assert published, "no plans_* keys found — the sweep would pass vacuously"
 
