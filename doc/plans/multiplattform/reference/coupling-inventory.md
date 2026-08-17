@@ -3,8 +3,10 @@
 The registry of places where Claude-Code-specific behaviour, vocabulary, layout, or format sits
 in general/core code instead of one of the four placement homes
 ([principles §6](principles.md)) — the evidence base the epic's plans draw from. Sections A–E
-hold the **open** couplings; the closing sections record the **deliberate non-migrations** and
-the **confirmed-clean boundary**, so intent and open work are never conflated. The **Drawn by**
+hold the **open** couplings; [`marketplace-audit.md`](marketplace-audit.md) extends them with the
+whole-marketplace audit clusters §M1–§M11 (drawn by plans `050`–`070` where scoped); the closing
+sections record the **deliberate non-migrations** and the **confirmed-clean boundary**, so intent
+and open work are never conflated. The **Drawn by**
 column names the plan that scopes an entry; an entry with no plan is recorded open work awaiting
 a future plan — registered here precisely so a scoping exclusion is never a silent loss.
 
@@ -61,6 +63,8 @@ every target:
 | `plan-retrospective/references/permission-prompt-analysis.md` | The whole retrospective aspect is the Claude settings/permission model (`~/.claude/settings.json`, allow/deny/ask, `defaultMode`); same file-level mechanism need | — |
 | `marshall-steward` terminal-title wizard surfaces (`references/menu-terminal-title.md`, the healthcheck twin, the configuration branch, the session-restart prose) | An interactive Claude hook/statusline setup workflow naming every Claude hook event and `CLAUDE_CODE_*` env var. Requires a **split** — only these surfaces scope to Claude; the rest of the steward stays agnostic. The underlying install op stays in `platform-runtime` | — |
 | `pm-plugin-development/skills/plan-marshall-plugin/scripts/wrapper-tangle-scan.py` + `references/wrapper-tangle.md` | Hardcodes plan-marshall's own CI-wrapper source paths; meaningful only in this meta-repository (a repo-scoping concern rather than a target-scoping one, recorded here so the `targets:` mechanism's design accounts for it or explicitly declines it) | — |
+| `pm-plugin-development/skills/plugin-architecture/references/askuserquestion-patterns.md` | A whole-file knowledge body about the Claude `AskUserQuestion` schema (interfaces, UI behaviours, caps); passes the §6 admission test; needs the file-level mechanism like the reference candidates above ([audit](marketplace-audit.md) §M11) | — |
+| `marshall-steward` enforcement-hook wizard surfaces (`references/menu-enforcement-hook.md` + configuration row + SKILL prose) | A second interactive Claude hook-install workflow, parallel to the terminal-title wizard split above ([audit](marketplace-audit.md) §M6) | — |
 
 Rejected candidates, recorded so they are not re-proposed:
 
