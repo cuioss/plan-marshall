@@ -339,13 +339,24 @@ instead.**
 | `090` | `100` run 3 | `test/plan-marshall/script-shared/`, `…/manage-providers/` — `060`'s | `090` § D1 adds parser seams and their tests there; run 3 splits that slice |
 | `090` | `100` run 6 | `plugin-doctor/test_analyze_lesson_id_in_skill_prose.py` — `080`'s | Same module as row 1: `090` § D5 amends its cases, run 6 splits it (1,020 lines, over budget) |
 | `090` | `100` run 7 | `plugin-doctor/test_test_conventions_rule*.py` — `010`'s | `090` § D4 amends the rule whose tests live in `rule6.py`; run 7 splits that same module |
-| `110` | `070` | `test/plan-marshall/**` skip sites | `110`'s skip sites cross slice boundaries into `070`'s directories |
-| `110` | `080` | `test/sync-plugin-cache/`, `test/pm-plugin-development/`, `test/marketplace/` | Most of the tree's skip sites are inside `080`'s slice |
+| `110` | `040` | `phase-6-finalize/`, `workflow-integration-git/`, `workflow-integration-github/` — `040`'s | `110` D1–D5 rewrite skip sites in all three |
+| `110` | `060` | `lsp-client/`, `platform-runtime/` — `060`'s | `110` D5's in-process stub and D1's scattered sites are written there |
+| `110` | `070` | `build-server/` — `070`'s | `110` records that skip as a platform exception; it does not write it, so this is the weakest row in the table — but the file is shared |
+| `110` | `080` | `test/sync-plugin-cache/`, `test/pm-plugin-development/`, `test/marketplace/` — `080`'s | Most of the tree's skip sites are inside `080`'s slice |
 | `110` | `100` | whichever slice `100` is running | `110`'s skip sites cross every slice, so any campaign run may meet them |
 
-**Everything not in this table may run concurrently.** In particular `100`'s runs 1, 2, 4 and 5 are
-independent of `090`, and the six reduction plans `030`–`080` remain mutually parallel as § "The plans,
-and what may run at the same time" describes.
+⚠️ **This table is about CONCURRENT EDITING, not about ordering.** Blocking dependencies — `010` and
+`020` before every reduction plan, `090` before `070` and `080`'s **B6**/**B7** halves, `070`/`080`
+before `100`'s runs 5 and 6 — are stated in § "The plans, and what may run at the same time" and in
+each plan's own blocking-dependency note. A pair absent from this table may run at the same time **if
+its ordering constraints are met**; the two questions are separate.
+
+⛔ **This table is hand-maintained and nothing derives or checks it.** Eight verification rounds and
+three automated reviews all reached the same conclusion: an ownership set held in prose, with no
+derivation and no check, drifts — and three successive attempts to fix that by restructuring the prose
+each reproduced the drift inside their own commit. **Treat every row as a lead**: before acting on it,
+read the two plans' own Expected surfaces and confirm the shared path is still shared. The residue
+entry § "What the executed half left open" records the missing derivation as open work with no owner.
 
 **How to use it.** Before starting, find your plan in either column. For every row that names it,
 confirm no open PR and no in-flight branch exists for the other party — and **halt and report** rather

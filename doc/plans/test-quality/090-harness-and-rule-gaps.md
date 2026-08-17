@@ -102,7 +102,7 @@ by what the consuming plans actually cite rather than by theme:
 |---|---|
 | `070` | **D1** — the parser seams its **B6** half needs; and **D6** — the `conftest.py` docstring its D1 rename would otherwise leave stale |
 | `080` | **D1** — the same seams; and **D4** — the citation matchers its D3 prose half is measured by, without which that half's finding count is provisional |
-| `100` | **D3** — the registration guard its splits rely on, as do `070` § D3 and `080` § D3, each of which carries the same `sys.modules` hazard among its stated hazards |
+| `100` | **D3** — the registration guard would protect its splits, which today preserve registration names by hand (`100` § D3). ⚠️ `100` does **not** name this plan as a dependency; the coupling is this plan's claim about `100`, not `100`'s about this plan. `070` § D3 and `080` § D3 do each carry the same `sys.modules` hazard among their stated hazards |
 
 **Read each consumer's own dependency note for the authoritative statement**; this table says what
 this plan owes them, not how they phrase it. An earlier draft carried a third column enumerating which
@@ -167,9 +167,15 @@ reach rather than thinning what it did**.
    — the live reverse-order failure, six its own preamble sweep had introduced, and two pre-existing
    ones with real blast radius — and left **three** latent, safe only because no test imports those
    names plainly today, which is a property of the tree rather than an invariant.
-   *Done when:* the guard exists, it **fails** when one of the three latent registrations is given a
-   plain importer (demonstrate this by adding the importer, watching it go red, and removing it), and
-   the reverse-directory-order arm of the suite still passes.
+   ⚠️ **Do not hard-code the latent set.** Plan `060` counted three at its landing; that is a snapshot
+   of one tree at one moment, and a guard quantified over three names reproduces the n−1-of-n failure
+   by construction. **The guard enumerates the registrations the loader actually creates** — walk the
+   `load_script_module` call sites, resolve the name each publishes, and check each against what other
+   modules import plainly — so a registration added later is covered without anyone remembering.
+   *Done when:* the guard exists and quantifies over the live set rather than a name list, it **fails**
+   when any current latent registration is given a plain importer (demonstrate this by adding the
+   importer, watching it go red, and removing it), and the reverse-directory-order arm of the suite
+   still passes.
 
 4. **D4 — Match the citation spellings that actually occur.** Widen
    `_PLAN_DELIVERABLE_ID_RE` and `_PR_REFERENCE_RE` in
@@ -247,8 +253,8 @@ reach rather than thinning what it did**.
 
 Exactly these, and nothing else:
 
-- `test/conftest.py` — D2, D3, D6 (and the guard test D3 adds, placed per the tree's convention for
-  a root-level meta-test, alongside `test_conftest_discipline.py`)
+- `test/conftest.py` — D2, D3, D6. **D3's guard test goes inside an owned surface**, per D3's own
+  instruction — never as a new root-level `test/*.py` module, which the partition assigns to nobody
 - `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py`
   — D2 (if the exemption half is chosen), D4
 - `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/` — the
@@ -285,8 +291,15 @@ That is a declared overlap, not an oversight, and it is bounded:
 `doc/plans/test-quality/README.md` § "The collision matrix" is the authoritative list of what may not
 run alongside this plan. **Read it there; it is deliberately not restated here**, because restating it
 is how three separate rounds left one file naming a subset of the collisions another file named.
-Confirm no open PR and no in-flight branch exists for any party the matrix names against `090`, before
-touching any row of the table above. If one does, **halt and report
+
+**What counts as evidence, stated because no mechanism produces it.** This lane has no in-flight-plan
+registry: `manage-status`'s sibling-collision check reads active plan records, source ids and file
+overlap, none of which sees a cloud run's open PR. So the check is **manual and its evidence is
+recorded in the run report**: for each party the matrix names against `090`, search the repository's
+open pull requests for one whose head branch or title names that plan, and record what you found —
+the PR number and its state, or the fact that none exists. A run that cannot reach the PR list reports
+the check **unavailable** rather than assuming clear. Do this before touching any row of the table
+above. If one does, **halt and report
 it** rather than editing a file two plans own — the epic's partition exists precisely because a
 concurrent edit to a shared file is the collision nobody notices until both land.
 
@@ -360,7 +373,7 @@ check that would have established the unavailability actually returned.
   **do not go looking for one.**
 * **The Deliverables table above states which consumer depends on which deliverable.** Do not
   re-derive that ordering from the deliverables' subject matter: an earlier draft did, grouped D1 with
-  D2 as "the blocking half", and deferred deliverables `070` and `080` actually depend on.
+  D2 as "the blocking half", and deferred two deliverables that `070` and `080` actually depend on.
 * **D7's ladder is a gate decision, so treat its blast radius seriously.** A rule at `error` fails
   the build for every subsequent plan in this repository. A flip is licensed only by a re-derived
   zero, and on the counts measured at authoring time no rule other than the already-flipped

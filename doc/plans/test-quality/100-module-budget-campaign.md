@@ -79,7 +79,7 @@ two to three deliverables, and one slice is one deliverable.
    split, run the whole-tree `test-conventions` sweep and group its `test-module-line-budget` findings
    by slice, then confirm every finding's module falls in exactly one slice of the epic's partition
    **or in this plan's row 7**. **This is the gating, halting derivation** the epic README § "The
-   plans, and what may run at the same time" specifies; a module claimed by neither is a partition
+   partition, and how a run re-derives it" specifies; a module claimed by neither is a partition
    defect and this run neither claims nor skips it unilaterally.
    ⚠️ **Row 7 is why the halt is phrased that way.** Its one module is claimed by no reduction slice —
    `080` excludes the `rule*` glob and the epic README assigns it to plan `010` — so a derivation
@@ -175,19 +175,23 @@ two to three deliverables, and one slice is one deliverable.
 `test/**` only, one slice per run, and within that slice only `test_*.py` modules the D1 derivation
 names as over budget, plus the `_{domain}_fixtures.py` files D2 creates or extends.
 
-**Slice order, and why.** Take the four landed slices first — their reduction plans have landed and
-their split residue is unowned, so nothing is concurrent with them — then the two whose reduction plan
-must land first, and finally the one module that belongs to a landed plan no reduction slice covers:
+**Slice order, and why.** Take the four landed slices first — their reduction plans have landed, so
+their split residue is unowned and no ordering prerequisite blocks them — then the two whose reduction
+plan must land first, and finally the one module that belongs to a landed plan no reduction slice
+covers. **The column below states ordering only.** ⛔ **Which runs may not proceed while another plan
+is in flight is a separate question, answered only by the epic README § "The collision matrix"** —
+look every run up there before starting it, because more than one row of that table applies to this
+campaign and an earlier draft of this column summarised them wrongly for all seven runs.
 
-| Run | Slice | Over-budget modules (lead — re-derive) | Depends on |
+| Run | Slice | Over-budget modules (lead — re-derive) | Ordering prerequisite |
 |---|---|---:|---|
-| 1 | `050`'s — plan state and records | 60 | `050` landed. Collisions: none in the matrix |
-| 2 | `040`'s — delivery pipeline | 55 | `040` landed. Collisions: none in the matrix |
-| 3 | `060`'s — runtime and script substrate | 53 | `060` landed. **Collisions: the matrix names `090`** |
-| 4 | `030`'s — config and manifest | 39 | `030` landed. Collisions: none in the matrix |
-| 5 | `070`'s — architecture and orchestration | 63 | `070` landed. Collisions: none in the matrix |
-| 6 | `080`'s — plugin development and generator | 42 | `080` landed. **Collisions: the matrix names `090`** |
-| 7 | plan `010`'s rule-test modules — `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` | 1 | `010` landed. **Collisions: the matrix names `090`** |
+| 1 | `050`'s — plan state and records | 60 | `050` landed |
+| 2 | `040`'s — delivery pipeline | 55 | `040` landed |
+| 3 | `060`'s — runtime and script substrate | 53 | `060` landed |
+| 4 | `030`'s — config and manifest | 39 | `030` landed |
+| 5 | `070`'s — architecture and orchestration | 63 | `070` landed |
+| 6 | `080`'s — plugin development and generator | 42 | `080` landed |
+| 7 | plan `010`'s rule-test modules — `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` | 1 | `010` landed |
 
 **Each of the six reduction slices'** exact directory list is the **Expected surface** of the plan
 that owns it, read from that plan's own file — not restated here, because a restated list is a second

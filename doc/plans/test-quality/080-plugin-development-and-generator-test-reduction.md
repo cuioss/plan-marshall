@@ -276,7 +276,7 @@ if any party it names is in flight.
 | No module outside `plugin-doctor/` imports its `_fixtures` module by bare name | HYPOTHESIS — **asserted absence; the rename's blast radius depends on it** | `grep -rn 'from _fixtures import\|^import _fixtures' test`. Beware a false positive from a sibling module whose own name ends in `_fixtures` — match the import statement, not the substring |
 | The slice carries ~222 `Namespace(` constructions against zero `parse_ns` calls | HYPOTHESIS — **it sizes D3** | `grep -c 'Namespace('` and `grep -c 'parse_ns('` over the Expected surface. Leads — re-derive |
 | Plan `090` has published a parser seam for every module a `parse_ns` conversion in this slice would otherwise block on | HYPOTHESIS — **it decides how much of D3 is reachable** | Attempt the conversion and read the `ParserSeamNotFound` failures. A module that raises has no seam: **record the call site, do not work around it**, and do not edit the production module — `090` owns it |
-| The partition holds — every directory under `test/plan-marshall/*/`, every file at the root of `test/plan-marshall/`, and every top-level `test/` entry other than `plan-marshall/` itself (which the first two clauses already decompose) appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the exclusions its table names. **Read that table; do not assume a count or that it is settled** — it has grown since the first reduction plans landed, and four sibling runs each halted on an entry it did not then name. An entry in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
+| The partition holds — every directory under `test/plan-marshall/*/`, every file at the root of `test/plan-marshall/`, and every top-level `test/` entry other than `plan-marshall/` itself (which the first two clauses already decompose) appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The partition, and how a run re-derives it" states the procedure and the exclusions its table names. **Read that table; do not assume a count or that it is settled** — it has grown since the first reduction plans landed, and four sibling runs each halted on an entry it did not then name. An entry in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
 | Plans `010` and `020` have landed and their surfaces are present in this clone | HYPOTHESIS — **gating; this plan cannot start without it** | `grep -n 'def parse_ns' test/conftest.py`; the module-budget section of `persona-module-tester/standards/testing-methodology.md`. Absent → stop and report blocked. |
 
 ## Verification
@@ -342,10 +342,10 @@ the script has no `sys.path` bootstrap.
 ## Notes
 
 * **Concurrency.** Plans `030` through `080` are mutually parallel by construction, each owning a
-  disjoint slice. `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time"
-  carries the full partition and the epic's plan graph, including where `090`, `100` and `110` sit —
-  and `110`'s overlap with this surface is restated in Expected surface above, because it is this
-  plan's one live collision risk.
+  disjoint slice. `doc/plans/test-quality/README.md` § "The partition, and how a run re-derives it"
+  carries the full partition and the epic's plan graph, including where `090`, `100` and `110` sit.
+  **Which plans this one may not run alongside is stated only in § "The collision matrix"** — more
+  than one row of it names this plan, so read it there rather than assuming a single overlap.
 * **Order within the plan matters.** D1 before D2: the invariant check exists to prove D1's moves did
   not shrink what fires.
 * **This slice already knows how to do what the epic wants — in one file.** `_fixtures.py`'s

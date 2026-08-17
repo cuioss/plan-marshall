@@ -195,9 +195,10 @@ check rather than against a reviewer's memory.
      counter-example: `fired_rule_ids()` re-derives those ids independently from
      `crossfile_verified_findings()` precisely "so the meta-test never depends on test ordering" —
      `record_fired` is belt-and-braces there, not the mechanism.
-   * **There is no collision with plan `080`, which renames that file.** `080` may not start until
-     this plan has **landed on `main`** — every reduction plan gates on it — so the two are
-     sequential, not concurrent. `080` D1 inherits a `_fixtures.py` already carrying four
+   * **Ordering against plan `080`, which renames that file.** `080` may not start until this plan
+     has **landed on `main`** — every reduction plan gates on it. (Whether any two plans in this epic
+     may run at the same time is stated in the epic README § "The collision matrix" and nowhere else;
+     this bullet states ordering only.) `080` D1 inherits a `_fixtures.py` already carrying four
      test-conventions entries and renames it with them intact.
 
    **Do not add an `EXEMPT_RULE_IDS` entry** — that would register four rules and then excuse them

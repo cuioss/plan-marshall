@@ -198,7 +198,7 @@ rename, because plan `070` owns both of its importers (see the note under D3).
 | `test/plan-marshall/script-shared/` carries matched positive/negative control pairs whose arms are evidence only in contrast | OBSERVED | the module docstrings of the daemon-routing and root-fs neutralization control modules under that directory |
 | This slice contains units whose contract is universal in the **B8** sense | HYPOTHESIS — **D5 exists to settle it** | Derive from the slice itself. If the derivation finds few or none, that is the finding — report it, and say so plainly rather than padding the table. |
 | No property-based test already exists anywhere in the tree | HYPOTHESIS — **asserted absence** | `grep -rn 'hypothesis\|@given\|strategies' test --include=*.py`. If one exists, D5's table starts from it rather than from zero. |
-| The partition holds — every directory under `test/plan-marshall/*/`, every file at the root of `test/plan-marshall/`, and every top-level `test/` entry other than `plan-marshall/` itself (which the first two clauses already decompose) appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the deliberate exclusions its table names (**read the table; do not assume a count** — it has grown since these plans landed). An entry in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
+| The partition holds — every directory under `test/plan-marshall/*/`, every file at the root of `test/plan-marshall/`, and every top-level `test/` entry other than `plan-marshall/` itself (which the first two clauses already decompose) appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The partition, and how a run re-derives it" states the procedure and the deliberate exclusions its table names (**read the table; do not assume a count** — it has grown since these plans landed). An entry in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
 | Plans `010` and `020` have landed and their surfaces are present in this clone | HYPOTHESIS — **gating; this plan cannot start without it** | `grep -n 'def parse_ns' test/conftest.py`; the module-budget section of `persona-module-tester/standards/testing-methodology.md`. Absent → stop and report blocked. |
 
 ## Verification
@@ -260,7 +260,7 @@ any you leave in place and why.
 ## Notes
 
 * **Concurrency.** Plans `030` through `080` are mutually parallel by construction, each owning a
-  disjoint slice. `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time"
+  disjoint slice. `doc/plans/test-quality/README.md` § "The partition, and how a run re-derives it"
   carries the full partition.
 * **Order within the plan matters.** D1 before D2: hoisting fixtures shrinks modules and changes which
   ones are over budget, and a split done first strands fixtures away from the classes that need them.

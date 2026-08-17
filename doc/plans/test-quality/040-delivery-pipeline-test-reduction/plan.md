@@ -180,7 +180,7 @@ and the slice's own shared contract module, and nothing else:
 | The slice carries historical narrative at scale in test prose | HYPOTHESIS | Re-derive over this slice only: `grep -rn 'once derived\|used to \|no longer\|the fix \|PR #[0-9]\|lesson-20\|this plan' ` across the Expected surface. Report the count; it is D1's baseline. |
 | Some subprocess `run_script` tests in this slice duplicate an in-process test in the same module | HYPOTHESIS — **gating for D3; settle it per module before collapsing anything** | Per module, list its `run_script` call sites beside its in-process tests and identify the pairs that assert the same behaviour. A collapse performed without that pairing is a deletion, not a collapse. |
 | No test in this slice is the *only* coverage of a subprocess-boundary contract that D3 would remove | HYPOTHESIS — **asserted absence, the higher-risk half** | For every candidate collapse, confirm the in-process test asserts the same contract, and name it in the report. If no in-process test does, the subprocess test stays. |
-| The partition holds — every directory under `test/plan-marshall/*/`, every file at the root of `test/plan-marshall/`, and every top-level `test/` entry other than `plan-marshall/` itself (which the first two clauses already decompose) appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the deliberate exclusions its table names (**read the table; do not assume a count** — it has grown since these plans landed). An entry in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
+| The partition holds — every directory under `test/plan-marshall/*/`, every file at the root of `test/plan-marshall/`, and every top-level `test/` entry other than `plan-marshall/` itself (which the first two clauses already decompose) appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The partition, and how a run re-derives it" states the procedure and the deliberate exclusions its table names (**read the table; do not assume a count** — it has grown since these plans landed). An entry in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
 | Plans `010` and `020` have landed and their surfaces are present in this clone | HYPOTHESIS — **gating; this plan cannot start without it** | `grep -n 'def parse_ns' test/conftest.py`; the module-budget section of `persona-module-tester/standards/testing-methodology.md`. Absent → stop and report blocked. |
 
 ## Verification
@@ -234,7 +234,7 @@ verbatim.
 ## Notes
 
 * **Concurrency.** Plans `030` through `080` are mutually parallel by construction, each owning a
-  disjoint slice. `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time"
+  disjoint slice. `doc/plans/test-quality/README.md` § "The partition, and how a run re-derives it"
   carries the full partition.
 * **Order within the plan matters.** D1 and D2 before D4: both shrink modules, and splitting first
   produces modules that then have to be split again.
