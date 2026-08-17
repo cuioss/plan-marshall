@@ -228,6 +228,23 @@ Round 4 ran `./pw verify` (green), confirmed every round-3 fix real — mutation
 | Y12 | LOW | The report's § Cost still carried the superseded build figure that § Build gate had corrected | **Fixed** |
 | Y13 | LOW | The report misattributed one of five items in its headline lesson | **Fixed** |
 
+### Verification sub-agent, round 5
+
+The first dispatch of this round died on a transient API error (529 Overloaded) having produced nothing; it was re-dispatched rather than read as a clean verdict, since an aborted run is not evidence — the same distinction this plan is about. The completed round ran `./pw verify` (green) and returned **six** findings, three outside prose.
+
+| # | Severity | Finding | Disposition |
+|---|---|---|---|
+| Z1 | MEDIUM | **Round 4 swept a PREDICATE where the claim is broader.** Two more registered checks narrow their population and publish it under names the census does not read — `token-efficiency-trend` (`plans_in_series`) and `lane-lever-effectiveness` (`plans_measured`) — so both reported `disciplinary` over a population their own blocks state as zero, one line apart, and both persisted unsupported figures into the cross-run diff | **Fixed.** Both publish `plans_in_corpus`; both summary metrics gated on it |
+| Z2 | LOW-MEDIUM | `logs_readable` was a file-EXISTENCE probe, not a read probe: the read loop swallows `OSError` per file and a file matching no grammar contributes nothing, so an unreadable or unparseable log re-opened every surface the unmeasured branch closes | **Fixed** — it now requires a parsed line, mirroring `_merge_window_log_files`' pairing |
+| Z3 | LOW | Round 4's two other surfaces had no tests at all | **Fixed** — one each, with discriminators so suppression cannot silence a real zero |
+| Z4 | LOW | The doc listed `logs_readable` among the measured-run columns; the emitter never printed it there | **Fixed** — it is emitted, which is the more useful direction |
+| Z5 | LOW | The refuted "no action resolves a knowledge finding" absolute was still standing **inside the two comments round 4 edited**, two lines from where each sweep stopped | **Fixed** |
+| Z6 | LOW | A stale test-module count in this report | **Fixed** |
+
+⭐ **The structural fix, which matters more than any individual finding.** Round 4's whole-census test stated exactly the right claim — *"no row may make that claim, whatever route each check narrowed by"* — and then looped over **three hard-coded names**. It is now quantified over `CHECK_NAMES`. Five rounds each found this defect in a check the previous round had not thought to enumerate: one check, then two siblings sharing a predicate, then two more narrowing on entirely different axes. A name list reproduces that failure by construction; quantifying over the registry covers a check added later, or one that starts narrowing later, without anyone remembering to update a list.
+
+⛔ **That test was ALSO vacuous on first writing, and the reason generalises.** It derived its expectation from `_examined_population` — the same function the code under test uses — so a check publishing under a name that function does not read was judged to have a full population by **both sides**, and the contradiction was invisible. A guard whose expectation comes from the implementation cannot see the implementation's blind spot. It now reads a test-local key list, and was mutation-confirmed by modelling the defect (population computed but not published), which fails it naming both offenders.
+
 ⛔ **Round 4's diagnosis is the run's second real lesson, and it supersedes a naive reading of the first.** Each round's fix was sound *where it landed* and applied at **fewer sites than the claim it corrected spans** — 1 of 3 surfaces, 2 of 7 statements, 1 of 4 enumerations, 1 of 3. The remedy is not another prose pass but a **sweep-and-count discipline**: before declaring a claim corrected, enumerate every site that states it and correct them in one commit. Round 5 was given that as its acceptance criterion.
 
 ⭐ **The pattern round 3 named, and it is the most useful thing this run learned.** Across all three rounds, each round's *fix* was sound and each round's *accompanying prose* introduced a new false mechanism claim — X5, X7, X9 and X10 are all text the round-2 fixes wrote; X11's site was written by the original D2 commit and last rewritten by the round-1 fix, so it is the same class by a different author. The rounds were not converging on the code; they were converging on the explanations. Round 4 was therefore scoped to round 3's own instruction: accept no new explanatory clause that does not name and confirm the symbol making it true.
