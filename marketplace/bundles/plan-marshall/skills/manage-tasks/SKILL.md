@@ -228,7 +228,7 @@ The verdict is three-valued and is **never** collapsed to two:
 | `notation_cross_check` | Meaning | Gate effect |
 |---|---|---|
 | `corroborated` | The row's notation is one the architecture resolves | `fresh` |
-| `refuted` | The architecture resolved a non-empty set and no candidate row is in it — or a candidate carries no `notation` at all | `stale` (`notation_unrelated` / `notation_absent`) |
+| `refuted` | The architecture resolved a non-empty set and **no** candidate row's notation is in it — including the case where no candidate carries a `notation` at all | `stale` (`notation_unrelated` / `notation_absent`) |
 | `unverified` | The notation set could not be established | `fresh`, with the inability stated in the record |
 
 The split fail-direction is deliberate. A **refutation is positive knowledge**
@@ -316,7 +316,7 @@ by a suffix list here.
   | `build_killed` | Latest row for this sha is `status: killed` | Externally killed — **not flaky, do not blind-retry.** No budget fired and no verdict was reported. Establish why before re-running. |
   | `build_indeterminate` | Latest row for this sha is `status: unknown`, or a status outside the vocabulary | The outcome could not be read. It supports no conclusion either way; re-run to obtain a readable verdict. |
   | `notation_unrelated` | Successful rows carry this sha, but every notation they name is one the architecture does not resolve | The rows are evidence of some other project's build. Dispatch a real build of THIS project — and establish where the unrelated row came from before trusting the ledger again. |
-  | `notation_absent` | Successful rows carry this sha, but **none** carries a `notation` at all | `build_record` requires `notation`, so the row was not written by the dispatch boundary. Something other than a build is writing to the ledger; find it. |
+  | `notation_absent` | Successful rows carry this sha, but **none** carries a usable `notation` — the key is missing, empty, or not a string | `build_record` always emits a non-empty `notation` for a dispatched build, so no such row came from the dispatch boundary. Something other than a build of this project is writing to the ledger; find it. |
 
   The two `notation_*` routes are mutually exclusive and `notation_unrelated`
   wins a mixed set: a candidate list holding one notation-less row and one
@@ -416,16 +416,22 @@ from inside the loop.
    short-circuit ahead of it means a footprint needing no build never reaches
    Step 4, let alone Step 7.
 
-The algorithm never raises uncaught exceptions on any degenerate input:
-missing status metadata, a missing ledger, an absent worktree, or an
-architecture that cannot be resolved. The first three return a refusal
-(`undecidable` or `stale`). ⛔ The fourth does **not**, and the difference is
-deliberate rather than an oversight in the enumeration: an unresolvable
-architecture is an inability to *audit* evidence the primary predicate has
-already accepted, so it returns `fresh` with `notation_cross_check: unverified`
-and the inability named in the record. Failing closed there would refuse every
-transition in an un-crawled tree on strictly less evidence than the primary
-predicate supplied — see § "The notation cross-check" for the full reasoning.
+The algorithm never raises uncaught exceptions on a degenerate input, but it
+does **not** refuse on all of them, and the difference matters more than the
+absence of a crash:
+
+| Degenerate input | Outcome | Why |
+|---|---|---|
+| Ledger absent or empty | `undecidable` / `no_registry` | No evidence exists at all. |
+| Working-tree sha uncomputable | `undecidable` / `head_unresolvable` | The primitive the whole gate compares on is undefined. |
+| Worktree unresolvable | **Not a refusal.** `WorktreeResolutionError` is caught and the root falls back to the process cwd; the sha and the ledger scan proceed against *that* tree | Preserves the pre-existing non-fatal behaviour for a plan running against the main checkout. ⚠ It means the gate can answer about a tree other than the one the caller had in mind, which is a real limitation and is recorded rather than papered over. |
+| Status metadata missing | Irrelevant | The gate does not read it — the worktree root resolves through `resolve_plan_context`, and `status.metadata.worktree_path` is a decoy the tests pin as ignored. |
+| Architecture unresolvable | **Not a refusal.** `fresh` with `notation_cross_check: unverified` and the inability named | An inability to *audit* evidence the primary predicate already accepted. Failing closed would refuse every transition in an un-crawled tree on strictly less evidence than the primary predicate supplied — see § "The notation cross-check". |
+
+⛔ Two of these five deliberately do not refuse, so "the gate never raises" must
+never be read as "the gate always refuses on bad input". The worktree fallback is
+the one most easily missed: it makes a *degenerate* input produce a *normal*
+verdict about a different tree.
 
 ### Script-Level `[OUTCOME]` Emission (`finalize-step`)
 

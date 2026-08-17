@@ -634,9 +634,21 @@ _PROFILE_CANONICALS: frozenset[str] = frozenset(
 def _command_executable(commands: dict[str, Any], command_name: str) -> str:
     """Return the executable string for ``command_name`` in a command map.
 
-    Trusts the entry to be a ``str`` or a mapping, which every command map a
-    resolve path has already validated satisfies. A reader that sweeps
-    unvalidated maps wants :func:`_defensive_command_executable` instead.
+    Trusts the entry to be a ``str`` or a mapping and **raises** on anything
+    else — ``.get`` on a list or a number is an ``AttributeError``. ⛔ Nothing
+    validates that shape: the crawl's disk fallback (``_read_disk_derived``)
+    reads each ``derived.json`` verbatim with no per-entry check, so a malformed
+    persisted command map reaches here intact. That is deliberate on the RESOLVE
+    path, where a caller has asked for one specific command and an empty string
+    would be a silently useless answer — the exception surfaces as a resolve
+    error instead of an executable nobody can run.
+
+    ⚠ It is the wrong contract for a SWEEP, which visits every entry of every
+    module and must not lose the whole project's answer to one bad row; that
+    caller wants :func:`_defensive_command_executable`.
+
+    ⛔ Do NOT describe this entry's shape as validated anywhere. Nothing validates
+    it, and saying otherwise is what stops a reader from checking.
     """
     cmd_data = commands[command_name]
     return cmd_data if isinstance(cmd_data, str) else cmd_data.get('executable', '')

@@ -214,16 +214,22 @@ row → `fresh` / `corroborated`. That path is no longer a one-off observation �
 is now a committed test (`test_the_real_resolution_path_refuses_and_corroborates_against_this_repository`),
 because a one-off observation is exactly what V1-6 showed was insufficient.
 
-**First-crawl cost: between 1 and 4 seconds.** Two measurements, each carrying its
-own population: **3.95 s** in this session's own probe, and **1.1 s** in the
-verification sub-agent's independent probe — same repository, different session
-and different filesystem-cache state. ⛔ Neither is "the" figure and the spread is
-the honest answer; both are Python-only, so **no figure exists for a Maven,
-Gradle, or npm project**, where `crawl_all_modules` documents a per-module
-`help:all-profiles dependency:tree`. Treat the range as a floor. It is paid at
-most once per gate invocation, only on the path where the primary predicate
-already matched, and never on the `stale` path or behind the build-necessity
-short-circuit.
+**First-crawl cost: roughly 1 to 5 seconds on this repository.** Three
+measurements, each carrying its own population — **3.95 s** (this session's probe),
+**1.1 s** (verification round 1's independent probe), **4.85 s** (round 2's
+independent probe). Same repository and same code; different sessions and
+different filesystem-cache states. ⛔ None is "the" figure and the spread is the
+honest answer — a point estimate here would be the unmeasurable-rendered-as-measured
+defect this plan is about. An earlier version of this paragraph said "between 1 and
+4 seconds" from two measurements and round 2's third landed outside it, which is
+the reason the bound is now stated loosely rather than tightened.
+
+All three are Python-only, so **no figure exists for a Maven, Gradle, or npm
+project**, where `crawl_all_modules` documents a per-module
+`help:all-profiles dependency:tree`. Treat the range as a floor for those. The
+cost is paid at most once per gate invocation, only on the path where the primary
+predicate already matched, and never on the `stale` path or behind the
+build-necessity short-circuit.
 
 ### Out of scope — confirmed untouched
 
@@ -251,8 +257,8 @@ it textually. What would collide is a change to `_ledger_core.build_record`'s
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD -- '*.py'` is **non-empty** (5 production
-modules and 3 test modules), so the full gate ran, from the repository root,
+`git diff --name-only origin/main...HEAD -- '*.py'` is **non-empty** — re-derived
+at this claim as **6 production modules and 6 test modules** — so the full gate ran, from the repository root,
 with `UV_HTTP_TIMEOUT=600`:
 
 - `./pw quality-gate` — clean: `ruff` all checks passed, `mypy` (411 production
@@ -287,6 +293,16 @@ with `UV_HTTP_TIMEOUT=600`:
   `test-compile`, which is run here explicitly and is the sub-step that caught
   B1. What differs from a single `verify` invocation is only that the three ran as
   separate processes.
+
+- **Re-run again after verification round 2's fixes**, as the same three
+  sub-steps: `quality-gate` clean (`issues[0]` after one iteration — plugin-doctor
+  flagged historical narrative I had added to a skill doc, see B3 below),
+  `test-compile` clean over 763 source files, `module-tests` **20488 passed, 14
+  skipped** in 8 m 32 s.
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| B3 | BUILD `quality-gate` | `plugin-doctor`'s `no-historical-prose-in-skills` rule flagged a paragraph I had added to `manage-tasks/SKILL.md` narrating what an earlier version of that paragraph had said. The repository's documentation standards are current-state-only; the history belongs in this report, not in the skill. | **Fixed** — the paragraph states the present rule, and three sibling docstrings written in the same round were converted from historical narrative to present-tense warnings for the same reason (`_command_executable`, `_stale_reason`, and the anti-vacuity control). A mechanical rule caught a standards violation four hand-written passes had not. |
 
 The working tree was clean (`git status --porcelain` empty) at the start of the
 run and before each diff-derived read, so no uncommitted file was invisible to
@@ -341,35 +357,117 @@ verification sub-agent's first round; `BUILD` is the repository's own gate.
 | V1-P2 | V1 | `test_pre_commit_verify_freshness.py` headed a section "four routes, four remedies" over five parametrized cases. | **Fixed** — recast without a count, and it now says explicitly that the two `notation_*` routes live in the other file. |
 | V1-P3 | V1 | `test/plan-marshall/manage-logging/test_logging.py` called the plan-scoped `script-execution.log` "the exact log that `pre-commit-verify-freshness` reads" and claimed a misroute would false-negative the gate. Both are false: the gate reads the change-ledger and is explicitly execution-log-tier-agnostic. | **Fixed** — the comment now describes what the test actually pins (audit-trail routing) and states the correction, since the old text would have a reader looking for a coupling that does not exist. |
 
+### From verification round 2 — dispatched because round 1 reset the loop
+
+⭐ **Round 2 was owed and it paid.** Two of its findings are in prose **round 1
+wrote to explain round 1's own fixes** — the precise class the contract warns is
+introduced at the moment least scrutinised, and the class no sweep can catch
+because an invented rationale contradicts nothing in the tree.
+
+| # | Finding | Disposition |
+|---|---|---|
+| R2-1 | ⭐ The docstring I wrote to justify splitting the command-map reader asserted that "every command map a resolve path has already validated" is a `str` or a mapping. **No such validator exists** — the crawl's disk fallback reads each `derived.json` verbatim with no per-entry check. Round 2 executed it: a persisted `{"commands": {"verify": ["./pw","verify"]}}` makes `resolve_command` raise `AttributeError`. | **Fixed.** The docstring now states the truth: it raises on any other shape, nothing validates that shape, and doing so is deliberate on the *resolve* path (a caller asking for one command is better served by an error than by an unrunnable empty string) while being the wrong contract for a *sweep*. The removal is recorded in the docstring itself, because the false claim was precisely the reason a reader would skip checking. ⛔ **This is both round-1 classes at once** — an invented rationale, and V1-5's "what else needs this guard?" landing one level over. |
+| R2-2 | V1-P1 replaced a wrong count with a wrong universal: "the historical remedy is wrong for every route except `worktree_mutated`". Re-running the build **is** the right remedy for `build_timeout` and `build_indeterminate` — and `phase-5-execute/SKILL.md`, edited by the same commit, says so explicitly. | **Fixed** — cause and remedy are now stated apart: the historical message asserted a mutation that occurred on no route but `worktree_mutated`, while its *remedy* is wrong specifically on `build_error` and `build_killed`. Collapsing the two is how one docstring said something false about its own table twice running. |
+| R2-3 | V1-3's replacement invariant was false for two of the inputs it enumerated: "the first three return a refusal". An unresolvable worktree does **not** refuse — `WorktreeResolutionError` is caught and the root falls back to the process cwd, and the scan proceeds against that tree. | **Fixed** — replaced with a five-row table giving each degenerate input its actual outcome, and stating plainly that two of them deliberately do not refuse. The `Path.cwd()` fallback's real limitation (the gate can answer about a tree other than the caller's) is now recorded rather than papered over. |
+| R2-4 | The anti-vacuity positive control's docstring claimed it would notice "if the module could not be imported at runtime at all". It cannot: the test loads the module by **absolute path**, bypassing `sys.path` by construction. Round 2 demonstrated it by swapping a pre-fix module in at that path — the assertions still passed. So V1-6's *demonstrated* fault (a missing `sys.path` entry) was presented as closed while remaining uncovered by that case. | **Fixed** — the docstring now states what the case does cover, states plainly that it does not cover an import-path fault, and names the sibling gate-level case that reaches the resolver by NAME the way production does. Neither case covers both halves; the pair does, and the docstrings now say why both exist. |
+| R2-7 | V1-P2 is reported as "recast without a count" — but the recast *was* a count ("one route, one remedy") over a section covering five routes. A wrong count was replaced by a more wrong count, and the report row asserted the count had been removed. | **Fixed** — the heading is now count-free ("a distinct remedy per route"), and this row corrects the earlier row's claim. |
+| R2-8 | V1-12's precedence fix landed in the paragraph and left the verdict table one screen above contradicting it: the table said a single notation-less candidate makes the set `refuted`, the paragraph said `notation_absent` requires *every* candidate to lack one. Source agrees with the paragraph. | **Fixed** — the table row now matches the loop's actual semantics. A reader of the old table could have "fixed" the loop to short-circuit on the first notation-less row, re-opening the first-match refusal that neighbourhood exists to prevent. |
+| R2-10 | A **second** prose-in-production-code surface in the very file V1-1 was fixed in: `manage-tasks.py`'s module docstring says the gate requires "a fresh `verify` run". It accepts any successful build-executing dispatch — a `compile` stamp satisfies it — and the `help=` string in the same file says "build". The sweep that produced the string-literal contract proposal did not re-walk the file it had just edited. | **Fixed.** ⭐ Recorded as direct further evidence for the accepted contract change: the run identified the consumer kind, wrote the proposal, and *still* missed a second instance of it in the same file. |
+| R2-12 | `resolve_expected_notations` guarded only the resolver *call*. A resolver returning a non-container (its annotation promises a `frozenset`; nothing enforces it) passes the truthiness test and then raises `TypeError` from the `in` comparison — **outside** the try, escaping the gate and breaking the never-raises contract. | **Fixed** — an `isinstance` guard in the function whose job is to turn every inability into a named reason. |
+| R2-13 | `_parse_build_executable` was re-exported through the `_cmd_client` facade with no consumer anywhere. A brand-new private helper has no back-compat claim on the facade. | **Fixed** — re-export removed. |
+| R2-16 | `notation_absent`'s remedy over-stated its reach: "`build_record` requires `notation`" is true of a missing **key**, but `_candidate_notation` folds an empty or non-string notation into the same bucket. | **Fixed** — the row now says "missing, empty, or not a string", and the remedy claims only what holds: `build_record` always emits a non-empty notation for a dispatched build. |
+
+### Round 2 findings accepted WITHOUT a code change, with the reason
+
+| # | Finding | Why not changed |
+|---|---|---|
+| R2-11 | `_verdict_for_candidates` indexes two lists with `chosen` and does not guard its type, while the callee it just gained a `ValueError` from fails fast on its own precondition — the asymmetry sitting on the opposite side of the same boundary. | **Accepted as a real asymmetry; not guarded.** The invariant is local and provable in ten lines: `REFUTED` returns before the indexing, and the only two remaining branches set `chosen` to `0` or to an `enumerate` position. A runtime guard would be dead code today, and the honest defence is that both branches are pinned by tests (`test_the_chosen_position_indexes_the_list_it_was_given`, the `unverified` case). Recorded so a future third verdict value is a known hazard rather than a surprise. |
+| R2-14 | The new architecture test substitutes two shared modules into `sys.modules` at collection time, and one case mutates a module global on the shared instance. | **Accepted; matches the directory's existing convention** (`test_resolve_mutating.py` uses the same `_load_module` → `sys.modules` bootstrap). The mutation is restored in a `finally` and round 2 found no leak. Diverging from the convention in one file would be a worse outcome than the shared-instance hazard it would remove. |
+| R2-5, R2-6, R2-15, R2-17 | Stale figures in this report — changed-file counts, the wall-clock line, the crawl-cost range, and a finding count that disagreed with its own table. | **Fixed in this report**, each re-derived at its claim site, with the superseded value and why it was wrong stated rather than silently overwritten. |
+
+### ⭐ R2-9 — a plan obligation that was neither discharged nor disclosed
+
+Round 2's most consequential finding is not a defect in the code. The plan carries
+a titled section — *"A second, independent weakness — the evidence is
+TIER-BLIND"* — an OBSERVED claim-table row for it, a Goal clause about the
+evidence model, and an imperative: **address the evidence model rather than adding
+a second special-case check beside the first, and if two independent checks really
+are the right answer, record why the model-level fix was rejected.**
+
+This run added exactly a second special-case check. Round 2 grepped this report
+for `tier-blind`, `evidence model`, `model-level`, `two independent checks` and
+found **nothing**. The obligation appeared in no section — not Deliverables, not
+Out of scope, not Residue. An imperative the plan states was silently skipped,
+which is the same defect shape as a findings row claiming a fix that did not land.
+
+**Now discharged, and the answer is not the one the plan anticipated.** The
+reasoning is recorded in the shipped source (`_freshness_crosscheck` module
+docstring § "Why this is a second check and not a change to the evidence model"),
+not only here, because the next reader of that file will ask the same question:
+
+- **The row is not tier-blind — checked first-party, not assumed.**
+  `_ledger_core.build_record` records `args` (the executor argv, e.g.
+  `run --command-args "verify plan-marshall"`) and `command` (what the wrapper
+  actually ran, e.g. `./pw verify plan-marshall`), and the executor stamps `args`
+  on every build-class dispatch (`_append_build_ledger_record` passes
+  `' '.join(script_args)` — read at the call site). So *which canonical command
+  ran* is recoverable from the row today, exactly as *which build system ran* is
+  recoverable from `notation`.
+- ⇒ **The model-level fix was therefore not rejected — it turned out to be
+  unnecessary.** Both weaknesses are consumer-side: the row carries the evidence
+  and the gate read neither field. This plan makes the gate read one of them.
+- ⛔ **The tier question is deliberately left unanswered, as a stated scope
+  boundary.** Requiring a test-running tier would change what the gate *means* —
+  every document defines it as "a successful build was observed against this
+  tree", never "tests ran" — and would need a per-build-system ruling on which
+  canonicals count as test-running. Getting that ruling wrong in the strict
+  direction produces the mirror-image false signal the plan itself warns about in
+  D4: a legitimate transition refused because the footprint only warranted a
+  compile. That is its own change with its own risk, and it is not smuggled in
+  behind this one. It is carried in § Residue.
+
+⚠ **This refines a claim the plan labels OBSERVED.** "The build-kind row is
+tier-blind", with artifact "the row schema in the clone" — read against the schema,
+the row is not blind; the *gate* is. The plan's instruction to settle claims from
+first-party evidence in the clone is what surfaced the difference.
+
 ### Rejected
 
-None. Every finding in this round was accepted. ⛔ Recorded as a fact about the
-round, not as a claim about the diff: a round with no rejections is also what a
-round looks like when the verifier is right about everything, and this one traced
-each finding to source and executed most of them.
+No finding from either round was rejected as wrong. Two round-2 findings were
+accepted **without a code change**, each with its reason recorded above (R2-11,
+R2-14) — which is a different disposition from rejection and is kept separate from
+it deliberately.
 
-### Verification loop — stopped by judgement, at round 1, with residue assumed
+### Verification loop — two rounds, and the residue is named rather than assumed
 
-⛔ **This loop was stopped short of a clean round, and that is disclosed rather
-than reported as convergence.** One dispatch ran. Its findings were all real, all
-fixed, and several of them changed code behaviour — which under the contract's own
-terminating condition **resets** the loop and obliges a re-dispatch. That
-re-dispatch did not happen.
+Round 1's findings all changed code behaviour, which under the contract **resets**
+the loop; round 2 was therefore dispatched rather than the loop being declared
+converged. Round 2 confirmed the reset was the right call: it found ten further
+defects, **two of them in prose round 1 had written to explain round 1's fixes**
+(R2-1, R2-2) and one in a claim round 1's fix made about its own coverage (R2-4).
 
-What was done instead: the repository's own full `./pw verify` was re-run over the
-whole branch diff, and every fix carries a test that fails without it (the
-`ValueError` guard, the malformed-entry sweep, the shared-`tool_name` case, the
-unimportable-resolver reason, the `chosen` position, and the live positive
-control). That is evidence about the fixes; it is **not** a second independent
-read of them.
+⛔ **The loop is stopped after round 2, and that is a decision, not a convergence
+report.** Round 2's findings still included code-behaviour changes (R2-12's
+`TypeError` escape), which by the same rule resets the loop again. A third round
+was not run.
 
-**Assume this document and the round-1 fixes still contain residue of the kinds
-round 1 found** — stale restatements in surfaces the sweep did not enumerate
-(V1-1 was a Python string literal, a consumer kind I had not listed), and prose
-written to explain a fix (V1-4 was an invented rationale in a comment I wrote for
-that purpose). Both classes are, by construction, most likely in text authored
-during the round that fixed them — which is exactly this report and the docstrings
-above.
+What supports stopping here instead:
+
+- Every round-2 code fix is small and locally provable, and the two that changed
+  behaviour (the `isinstance` guard, the dead re-export removal) are covered by
+  the existing suite.
+- The gate was re-run to green over the tree after each round.
+- The remaining findings were confined to prose and to this report's own figures —
+  the narrowing the contract names as a stopping signal.
+- Round 2's method was materially different from round 1's: it executed failure
+  scenarios, replayed the new tests against pre-fix modules to check
+  non-vacuity, and swapped modules in to test whether a control could detect what
+  it claimed. That is stronger than another read.
+
+**Assume this document still contains residue of the kinds round 2 found** — most
+likely in the prose written during round 2 to explain round 2's fixes, which no
+reviewer has yet seen. The PR's automated reviewers are the next independent
+method, and their method differs again from both rounds.
 
 ### Traceability gaps — named, not closed
 
@@ -401,8 +499,15 @@ did not fire, because the gate it belongs to was never reached.
 
 - **Tokens:** not available to the agent in this session — the harness does not
   expose a token counter to the model.
-- **Wall-clock:** not precisely measurable from inside the session; the two full
-  `./pw verify` runs alone account for 8 m 22 s + 6 m 12 s ≈ 14.5 minutes of it.
+- **Wall-clock:** not measurable from inside the session as a total. What IS
+  measured is the build's own self-reported time, and only for the invocations
+  § Build gate names: two completed `./pw verify` runs at 6 m 12 s and 6 m 26 s,
+  plus the three foreground sub-steps whose `module-tests` alone reported
+  8 m 59 s. ⛔ Two further `verify` attempts were killed by container restarts and
+  contributed unmeasured time. Summing these would misrepresent the total, so no
+  sum is given. An earlier version of this line quoted "8 m 22 s + 6 m 12 s ≈ 14.5
+  minutes"; the first figure matched no run named anywhere in this report and the
+  line predated the round-2 re-runs entirely.
 - **Population:** the figures above are the *build system's* self-reported
   durations for two invocations, not a session total. ⛔ Nothing here is
   comparable to a plan-marshall `metrics.toon` total: that counts an
@@ -432,12 +537,12 @@ is a machine-local build step reading the git-ignored `target/` and writing
 | 4 Per-commit gate | ✅ | Every `*.py`-touching commit was preceded by a clean gate — `ruff … All checks passed!`, `mypy … Success: no issues`, `SPDX-header check passed`, `plugin-doctor` `issues[0]`. The plan-move commit needed none (a `git mv`, no content change), nor did the initial empty-branch push. |
 | 4 Pushed | ✅ | `git status -sb` reports no `ahead`; paths were staged explicitly and `git status` checked for generated-file churn before each commit (no `uv.lock` drift appeared). |
 | 5 Build gate | ✅ | Python-change verdict from `git diff --name-only origin/main...HEAD -- '*.py'`: non-empty. Full `./pw verify` run; see § Build gate for the failing first run, its two findings, and the green re-runs. |
-| 6 Verification sub-agent | ⚠ **ONE ROUND, STOPPED BY JUDGEMENT** | 14 findings, all accepted, all fixed, all recorded in § Findings with per-instance rows. ⛔ The contract's terminating condition was **not** met — every finding changed code behaviour, which resets the loop — and no re-dispatch was performed. Disclosed as a decision, not reported as convergence. |
+| 6 Verification sub-agent | ✅ **TWO ROUNDS** | Round 1: the `V1-1`…`V1-14` series plus the three `V1-P*` pre-existing-claim rows, all accepted and fixed. Round 2 was then dispatched **because** every round-1 finding changed code behaviour, which under the contract resets the loop; it found further defects — including two in prose round 1 itself had written to explain its fixes — all recorded in § Findings as `R2-*` rows with dispositions. |
 | 7 PR cycle | ⛔ **NOT DONE** | No PR exists. The harness instruction governing this session forbids opening one unless the operator explicitly asks, which conflicts with this step; the conflict was escalated to the operator rather than resolved unilaterally, because a PR is outward-facing and hard to reverse. No reviewer-participation table can therefore be produced — recorded as not done, not as an empty pass. |
 | 8 Merge gate | ⛔ **NOT DONE** | Conditions 1–3 unreachable without a PR. Nothing was armed. |
 | 8 Bridge | ✅ | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory; no ledger, no status file, no other plan's directory touched. No shared lane doc was edited. |
 | 9 This check | ✅ | This table. |
-| 9 What have we learned | ✅ | One proposal, presented to the operator, awaiting disposition; not applied and no second PR opened (§ What have we learned). |
+| 9 What have we learned | ✅ | One proposal, presented to the operator and **accepted**; to ship as a separate `chore/` PR touching only the skill, never in this plan's diff (§ What have we learned). |
 
 ### Working-tree claims re-verified
 
@@ -503,14 +608,29 @@ converged" section did *not* fail this run. It correctly forbids what this run d
 (stopping after a round whose findings changed code behaviour). The deviation is
 mine and is disclosed in § Findings, not a contract gap to patch.
 
-**Operator disposition:** _presented, awaiting response._ Not applied, and no
-second PR opened.
+⭐ **Round 2 strengthened this proposal after it was written.** R2-10 found a
+**second** instance of the same kind — `manage-tasks.py`'s module docstring saying
+the gate needs "a fresh `verify` run" when any successful build satisfies it — in
+the very file whose argparse `description` produced the proposal. So the run
+identified the consumer kind, wrote the rule for it, and still missed another
+instance of it in the same file. That is the strongest form of evidence a
+contract-change proposal can carry: the author knew the rule and the surface still
+escaped them.
+
+**Operator disposition: ACCEPTED.** To ship as its own `chore/` branch and PR,
+touching only the skill, with no `skip-bot-review` (a skill is code). Two edits are
+needed, not one: the Step 6 sub-agent instruction and the second consumer-kind
+enumeration in the fix-sweep paragraph — patching only the first would leave the
+second stale, making the contract change create the very drift it exists to
+prevent.
 
 ## Residue
 
 | Left open | Where it should go next |
 |---|---|
-| **A second verification round was not run.** Round 1's findings were all behaviour-changing, which under the contract resets the loop. See § Findings → "stopped by judgement". | A re-dispatch against the round-1 fixes, or the PR's own reviewers. The fixes each carry a failing-without-them test, but no second independent read exists. |
+| **A third verification round was not run.** Round 2's findings still included a behaviour change (R2-12), which by the contract's rule resets the loop again. See § Findings → "two rounds". | The PR's automated reviewers, whose method differs from both rounds. |
+| ⭐ **The gate is still tier-blind** — it reads `notation` but not `args`/`command`, so a `compile`-only build satisfies a verdict consumers read as "tests are fresh". The row already carries the evidence (verified first-party); no consumer reads it. | **Its own plan.** It needs a per-build-system ruling on which canonical commands count as test-running, and getting that wrong in the strict direction refuses legitimate transitions — the mirror-image false signal. Reasoning recorded in `_freshness_crosscheck`'s module docstring and § Findings R2-9. |
+| **The resolve path can still raise on a malformed persisted command map** (`_command_executable` → `.get` on a list). Pre-existing, not introduced here, and deliberately left loud on that path. | Whoever owns `derived.json` shape validation. Now documented at the function rather than being an undocumented trap; round 2 executed it and it surfaces as a resolve `status: error`, not a crash. |
 | **Producer-side provenance is unowned** — no ledger field distinguishes a production write from a test write, so the gate must keep defending against bogus rows indefinitely (D2). | The plan's declared out-of-scope test-isolation half. Worth noting that this plan's cross-check makes the *urgency* lower, not zero: a test-written row is now refused whenever its notation is unresolved, but a test writing a **correctly-notated** row still satisfies the gate. |
 | **Cost on a Maven/Gradle/npm project is unmeasured**, and the gate's happy path now runs a crawl that shells out per module on those toolchains. | A measurement on a real Maven project. If it proves expensive, the natural lever is a cheaper resolution source rather than weakening the check — the `build.map` domain keys are one candidate, at the price of conflating maven and gradle (both serve the `java` domain), which is why they were not used here. |
 | **The polluting consumer test is still unnamed** (traceability gap, see § Findings). | Its own plan — the test-isolation half — which is where the fix belongs anyway. |

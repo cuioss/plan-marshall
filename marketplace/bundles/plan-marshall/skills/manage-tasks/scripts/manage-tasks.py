@@ -27,7 +27,9 @@ Subcommands:
                      dispatch loop MUST continue while pending tasks remain
   pre-commit-verify-freshness
                    - Script-level enforcement that the worktree state has
-                     been observed by a fresh ``verify`` run before the
+                     been observed by a successful build -- ANY build-executing
+                     dispatch, not specifically ``verify`` -- whose notation the
+                     project's architecture resolves, before the
                      orchestrator may transition out of phase-5-execute or
                      dispatch ``push`` in phase-6-finalize. Returns
                      ``fresh``, ``stale``, or ``undecidable``; non-``fresh``

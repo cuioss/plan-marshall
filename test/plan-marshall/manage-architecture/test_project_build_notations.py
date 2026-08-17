@@ -187,14 +187,23 @@ def test_no_modules_resolves_to_the_empty_set(monkeypatch) -> None:
 
 
 def test_the_live_repository_resolves_its_own_build_notation() -> None:
-    """Anti-vacuity: the real crawl, through the real import path, resolves a build.
+    """Anti-vacuity: the real crawl resolves a real build notation for a real tree.
 
     Every other case here pins the crawl, and the gate's own tests pin the
     resolver seam — so all of them would stay green if this function resolved
-    nothing against a real tree, or if the module could not be imported at
-    runtime at all. The cross-check would then be a permanent no-op reporting
-    ``unverified`` forever, and nothing in the suite would notice. This case is
-    the one that would.
+    nothing against a real tree. The cross-check would then be a permanent no-op
+    reporting ``unverified`` forever, and nothing in the suite would notice.
+    This case is the one that would.
+
+    ⛔ It does **not** cover an import-path fault, and must not be described as
+    doing so. The module is loaded here by absolute path through ``_load_module``,
+    which bypasses ``sys.path`` entirely, so a missing ``PYTHONPATH`` entry is
+    invisible from this case by construction. The
+    runtime import is exercised by the sibling gate-level case
+    ``test_freshness_notation_crosscheck.test_the_real_resolution_path_refuses_and_corroborates_against_this_repository``,
+    which reaches the resolver the way production does — ``from _cmd_client_query
+    import …`` by NAME, inside ``resolve_expected_notations``. Neither case alone
+    covers both halves; the pair does, and that is why both exist.
 
     Asserted as a superset rather than an equality: the repository is Python-only
     today, and pinning that would turn adding a second build system into a test

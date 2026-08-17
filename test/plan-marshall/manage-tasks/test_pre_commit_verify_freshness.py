@@ -444,7 +444,7 @@ def test_stale_when_only_change_entry_matches_sha(plan_context, monkeypatch, tmp
 
 
 # =============================================================================
-# The ``stale`` REASON — one route, one remedy
+# The ``stale`` REASON — a distinct remedy per route
 #
 # The gate's pass/fail behaviour is identical on every route below (only
 # ``fresh`` ever permits), so these cases pin the half that differs: what the

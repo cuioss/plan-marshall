@@ -177,8 +177,14 @@ def _stale_reason(entries: list[dict], current_sha: str) -> tuple[str, str, str 
     The historical gate emitted one message for every route to ``stale``:
     "the worktree has been mutated since the last observed build ... re-dispatch
     a build before retrying." That sentence asserts a CAUSE the gate never
-    established, and prescribes a remedy that is wrong for every route this
-    function serves except ``worktree_mutated`` itself. When the ledger holds a ``killed`` row for the CURRENT sha the tree
+    established: no route but ``worktree_mutated`` involves a mutation at all.
+    Its REMEDY is a separate question and is wrong on fewer routes — re-running
+    the build IS right for ``build_timeout`` and ``build_indeterminate``, and is
+    actively wrong for ``build_error`` (fix the reported failures first) and for
+    ``build_killed`` (the blind retry the no-blind-retry rule forbids). Cause and
+    remedy are stated apart here because collapsing them makes it easy to assert
+    something false about the table above — the cause is wrong on nearly every
+    route while the remedy is wrong on only two. When the ledger holds a ``killed`` row for the CURRENT sha the tree
     was not mutated at all — a build was observed and was killed — so the gate
     was reporting a mutation that did not happen and prescribing exactly the
     blind retry the no-blind-retry rule forbids.

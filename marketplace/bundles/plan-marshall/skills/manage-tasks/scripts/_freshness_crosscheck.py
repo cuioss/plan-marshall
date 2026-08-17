@@ -87,6 +87,40 @@ ledger scan (see the caller's module docstring), and that authority reads the
 project's own ``build.map`` globs rather than a hard-coded notion of which
 suffixes matter.
 
+Why this is a second check and not a change to the evidence model
+=================================================================
+
+The obvious objection to this module is that it adds a second special-case check
+beside an existing one, when the recurring complaint about the ledger is that its
+**evidence model** is under-specified — most sharply that a consumer reads the
+gate's ``fresh`` as *"tests are fresh"* while its predicate only says *"some build
+succeeded"*, which a compile-only build satisfies. If the model were the problem,
+the fix would belong in the row, not in a reader.
+
+**The row is not the problem, and that was checked rather than assumed.**
+``_ledger_core.build_record`` already records ``args`` — the executor argv, e.g.
+``run --command-args "verify plan-marshall"`` — and ``command``, the line the
+wrapper actually ran, e.g. ``./pw verify plan-marshall``. The executor stamps
+``args`` on every build-class dispatch (``_append_build_ledger_record`` passes
+``' '.join(script_args)``). So *which canonical command ran* is recoverable from
+the row today, exactly as *which build system ran* is recoverable from
+``notation``. Both weaknesses are consumer-side: the row carries the evidence and
+the gate reads neither field.
+
+⇒ **The model-level fix is therefore not the one that was rejected — it is the one
+that turned out to be unnecessary.** What this module does is read a field the row
+already has.
+
+⛔ **The tier question is deliberately NOT answered here, and that is a scope
+boundary rather than an oversight.** Making the gate require a test-running tier
+would change what the gate *means* — every document defines it as "a successful
+build was observed against this tree", never "tests ran" — and it would need a
+per-build-system ruling on which canonical commands count as test-running. Get
+that ruling wrong in the strict direction and the result is the mirror-image false
+signal: a legitimate transition refused because the plan's footprint only ever
+warranted a compile. That is its own change, with its own risk, and it is not
+smuggled in behind this one.
+
 Structural stale verdicts are NOT this module's business
 ========================================================
 
@@ -162,6 +196,14 @@ def resolve_expected_notations(project_dir: str) -> tuple[frozenset[str], str | 
     try:
         notations = resolve_project_build_notations(project_dir)
     except Exception:  # noqa: BLE001 — any resolver failure is an inability, not a refutation
+        return frozenset(), REASON_RESOLUTION_FAILED
+    # The resolver's annotation promises a frozenset and nothing enforces it. A
+    # non-container passes the truthiness test below and then raises TypeError
+    # from the ``in`` comparison in cross_check_candidates — OUTSIDE this try, so
+    # it would escape the gate and break the never-raises contract. The guard
+    # belongs here rather than at the comparison because this is the function
+    # whose job is to turn every inability into a named reason.
+    if not isinstance(notations, (frozenset, set)):
         return frozenset(), REASON_RESOLUTION_FAILED
     if not notations:
         return frozenset(), REASON_NO_NOTATIONS_RESOLVED
