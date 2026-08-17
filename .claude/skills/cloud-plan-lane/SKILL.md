@@ -570,8 +570,8 @@ Then:
 
 - **Findings that are real** → fix them, then re-dispatch. A verification pass that found a defect
   has not finished — unless conditions **A** and **B** permit that finding to be left open, or the
-  round budget is spent, in which case the findings are still **fixed** and the loop ends there
-  (§ "When the loop stops", at the end of this step).
+  round budget is spent, in which case everything **A** forbids is still **fixed**, B's survivors are
+  characterised, and the loop ends there (§ "When the loop stops", at the end of this step).
 - **Findings you reject** → record the finding *and the reason for rejecting it* in the report. A
   dismissed finding is still evidence.
 - Every finding — fixed, rejected-with-reason, deferred to a named follow-up, or left open as a
@@ -719,8 +719,8 @@ The run-report, PR-description, and moving-figure obligations above all exist be
 them: across one run's four verification rounds, each round's fixes landed at the site the finding
 named and not at the sites restating the same claim — twice in the run report's own findings table.
 (They are named rather than counted here for the reason the enumeration rule gives: a count in this
-position goes stale the moment an obligation is added to the list, which is how it read "three" while
-standing above four blocks.)
+position goes stale the moment an obligation is added to the list — as one was, in the very commit
+that rewrote this sentence.)
 
 ### When the loop stops
 
@@ -1218,7 +1218,7 @@ that its artifact exists on disk:
 | 4 Per-commit gate | Every commit touching `*.py` was preceded by a clean quality gate — a `total_issues: 0` / empty `errors[]` executor log, or the direct `./pw` tools each reporting clean (`ruff`/`mypy`/SPDX passed) |
 | 4 Pushed | No unpushed commit remains (`git status -sb` reports no `ahead`) |
 | 5 Build gate | Report states the git-derived Python-change verdict and the build outcome |
-| 6 Verification sub-agent | Findings and dispositions in the report; **which of the two exits ended the loop**, the **round budget declared up front**, and the round that stopped it. On the verifier exit: **the verifier's own last answer** — never the author's verdict — and the **evidence stronger than a read** it rests on, named. On the budget exit: that fact, with everything A forbids **fixed** regardless and what closing each remaining B survivor would take. Either way: each survivor listed individually with its (a) proof or (b) bound and confirmation it was **re-put to the verifier** in the stopping round; whether the late rounds' findings were **narrower and not merely fewer**; the **residue to assume remains**; and `Outcome` still reporting the deliverables, not the loop (§ Step 6, "When the loop stops") |
+| 6 Verification sub-agent | Findings and dispositions in the report; **which of the two exits ended the loop**, the **round budget declared up front**, and the round that stopped it. On the verifier exit: **the verifier's own last answer** — never the author's verdict — and the **evidence stronger than a read** it rests on, named. On the budget exit: that fact, with everything A forbids **fixed** regardless and what closing each remaining B survivor would take. Either way: each survivor — and each behavioural finding left `deferred` — listed individually with its (a) proof or (b) bound and confirmation it was **re-put to the verifier** in the stopping round; whether the late rounds' findings were **narrower and not merely fewer**; the **residue to assume remains**; and `Outcome` still reporting the deliverables, not the loop (§ Step 6, "When the loop stops") |
 | 7 PR cycle | PR exists; every comment dispositioned in the report; the participation table carries a verdict **and** a `Reopens?` value per reviewer, and every `silent` verdict records what its recovery check found |
 | 8 Merge gate | Conditions 1–3 met and auto-merge armed. Either `state: MERGED` was confirmed after arming, **or** the session could not self-wake to watch the queue (§ Cloud session affordances) and delegated the landing to the orchestrator's collect — both are completed, neither is partial (§ Step 8). The merge commit is recorded to the operator, not in the pre-merge report |
 | 8 Bridge | No **status or bookkeeping** write landed under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan's directory was touched; a **declared-deliverable** edit to a shared lane doc (e.g. `cloud-bridge.md`, `README.md`, the plan template) is permitted — and the report carries the PR number and per-deliverable outcome the orchestrator will collect from |
@@ -1317,9 +1317,9 @@ Then the stop record (§ Step 6, "When the loop stops"):
 - whether the late rounds' findings were **narrower and not merely fewer** — about the run's own
   report and plan documents rather than the shipped change — or were not: stated as the observation
   it is, never as a licence to stop;
-- one row per **survivor**, each either (a) proved equivalent, with the proof, or (b) bounded, with
-  the bound and the promise it stays outside of, and each confirmed **re-put to the verifier** in the
-  stopping round rather than carried forward unread;
+- one row per **survivor, and per behavioural finding left `deferred`**, each either (a) proved
+  equivalent, with the proof, or (b) bounded, with the bound and the promise it stays outside of, and
+  each confirmed **re-put to the verifier** in the stopping round rather than carried forward unread;
 - **what residue to assume remains** — the deliverables should be read as still carrying defects of
   the kind the last round found, and the report says so rather than implying the last round exhausted
   them;
