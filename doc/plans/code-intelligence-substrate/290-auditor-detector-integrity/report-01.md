@@ -1,6 +1,6 @@
 # Run report — 290-auditor-detector-integrity (run 01)
 
-**Date (UTC):** 2026-08-17    **Branch:** `claude/auditor-detector-integrity-in4tkx`    **PR:** _pending_    **Outcome:** completed
+**Date (UTC):** 2026-08-17    **Branch:** `claude/auditor-detector-integrity-in4tkx`    **PR:** [#1276](https://github.com/cuioss/plan-marshall/pull/1276)    **Outcome:** completed
 
 ## Skills loaded
 
