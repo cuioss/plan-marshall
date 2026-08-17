@@ -35,9 +35,13 @@ re-derived from the raw per-phase fields.
 nonzero integer, or a literal `0` in a row the gate below can date), UNMEASURED
 (the literal `unmeasured`, or a column a legacy five-column row does not have),
 UNRECOGNISED (any other shape), or UNDATABLE (a literal `0` in a row the gate
-cannot date — the state `data-format.md` names `indeterminate`, which this reader
-expresses as the field's absence rather than per column, because it sums instead
-of emitting per-row states). Only measured cells are summed,
+cannot date — the state `data-format.md` names `indeterminate`). This reader
+CANNOT express that state per column at all, because it sums rather than emitting
+per-row states: an undatable `0` simply never marks its field measured. So it is
+observable only where no row datably measured the field, which is then absent from
+the totals; in a ledger where another row did measure it, the field is present and
+the undatable cell is subsumed — contributing nothing, which for a `0` is what
+summing it would have contributed anyway. Only measured cells are summed,
 and a field NO row measured is OMITTED from the per-phase ledger totals rather
 than returned as `0` — the same absent-is-not-zero rule the per-phase reader
 already applies. An unmeasured or unrecognised cell therefore contributes nothing

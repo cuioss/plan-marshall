@@ -6750,9 +6750,14 @@ def _parse_dispatch_boundary_totals(path: Path) -> dict[str, int]:
     (`analyze-logs.py` `_parse_dispatch_boundary_file`) applies; the two readers
     parse the same on-disk ledger in separate processes, so the two definitions of
     "datable" MUST stay identical. That reader names the state `indeterminate` and
-    reports it per column; this one sums rather than emitting per-row states, so an
-    undatable `0` surfaces here only as the field's ABSENCE from the totals — the
-    same absent-is-not-zero signal an all-unmeasured ledger already produces.
+    reports it per column; this one sums rather than emitting per-row states, so it
+    CANNOT report the state per column at all — an undatable `0` merely fails to
+    mark its field measured. The gate is therefore observable here only where NO
+    row datably measured the field, which is then ABSENT from the totals (the same
+    absent-is-not-zero signal an all-unmeasured ledger produces). Where another row
+    DID measure it, the field is present and the undatable cell is subsumed — it
+    contributes nothing, which for a literal `0` is exactly what summing it would
+    have contributed.
 
     The legacy five columns are unaffected: they carry a numeric default, so a
     non-int there stays the historical degrade-to-`0`, and their zeros are never

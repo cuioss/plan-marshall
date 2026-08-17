@@ -172,10 +172,14 @@ class TestDispatchBoundaryZeroProvenance:
         """The gate turns on `!= 0`, so a negative cell dates the row and sums.
 
         Pinned because the gate's predicate is a comparison against zero rather
-        than a positivity test, and because the sibling reader
-        (`analyze-logs.py` `_parse_dispatch_boundary_file`) makes the same
-        choice — a divergence here would put the two readers back into
-        disagreement about the same bytes.
+        than a positivity test: a positivity test would leave a negative cell
+        undatable and drop its sibling zeros.
+
+        The sibling reader makes the same choice (`analyze-logs.py`
+        `_parse_dispatch_boundary_file`, `if value != 0`) — parity established by
+        READING, not by this test, which drives only this reader and would not
+        fail if that one diverged. The cross-reader pinning lives in
+        `test_record_model_representability.py`, over a shared fixture.
         """
         path = self._ledger(
             tmp_path,
