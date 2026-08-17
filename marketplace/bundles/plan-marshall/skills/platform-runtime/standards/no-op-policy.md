@@ -55,8 +55,9 @@ alternative: Use OpenCode's built-in TUI status surface for plan visibility
 A target that RENDERS the title itself does not answer this way when a
 precondition is unmet — and it is the one operation that does not. It owns
 stdout, so it returns the empty string on every path and reports its outcome on
-a side channel instead; on Claude that is an `outcome:` row written to stderr
-(`outcome: no_session_id` for the case above). There is no `no-op` TOON on
+a side channel instead; on Claude that is an `outcome:` row written to stderr —
+an unset session id, for instance, yields `outcome: no_session_id`. There is no
+`no-op` TOON on
 stdout to read, which is why a caller cannot distinguish rendered, nothing-to-
 render, and render-failed from the return value. See `contract.md`
 § `session render-title`.

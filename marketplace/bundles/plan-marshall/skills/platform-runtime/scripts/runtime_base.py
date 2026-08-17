@@ -217,9 +217,9 @@ class Runtime(ABC):
         Returns the ordered list of directory paths where ``project:`` skills —
         finalize-steps, recipes, verify-steps, domain-attachable skills — are
         discovered on this target. They are typically project-relative or
-        ``~``-anchored, but a target whose own configuration override designates
-        a root passes that root through as given, so a caller must assume
-        neither. Callers resolve each returned root against the relevant base
+        ``~``-anchored, but a target with a configuration-directory override
+        derives a root beneath it and returns that, so a caller must assume
+        neither form. Callers resolve each returned root against the relevant base
         directory and probe in list order (first match wins).
 
         A target with one such root returns a single-element list; a target that
@@ -249,7 +249,7 @@ class Runtime(ABC):
         whose deployed bundles instead live among its project-local-skill roots
         returns the ones that can actually hold them — deployed bundles are shared
         across checkouts, so a root anchored inside a single project cannot — plus
-        any root the target's own configuration override designates. Either way
+        any root derived from the target's own configuration-directory override. Either way
         the caller probes the returned list in order, first match wins.
 
         The result does not change for the lifetime of a process (the target

@@ -246,9 +246,9 @@ def get_project_skill_roots() -> tuple[str, ...]:
     configured runtime keep working.
 
     The returned roots are typically relative project-local paths (or
-    ``~``-anchored user-global paths on OpenCode), but a target whose own
-    configuration override designates a root passes it through as given, so a
-    caller must assume neither form. Callers resolve each against the relevant
+    ``~``-anchored user-global paths on OpenCode), but a target with a
+    configuration-directory override derives a root beneath it and returns that,
+    so a caller must assume neither form. Callers resolve each against the relevant
     base directory and probe in list order (first match wins).
     """
     global _SKILL_ROOTS_CACHE

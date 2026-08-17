@@ -92,7 +92,7 @@ hook_skip_reason: OpenCode does not support a SessionStart hook equivalent (issu
 status: error
 operation: project initial-setup
 error: unknown_target
-message: Target 'foobar' is not in the registry; valid targets are: claude, opencode
+message: "Target 'foobar' is not in the registry; valid targets are: claude, opencode"
 ```
 
 ---
@@ -120,22 +120,22 @@ Two independent install modes, neither of which disturbs the other's configurati
 
 **Claude's settings-file resolution** is internal to that implementation, not part of this contract: `claude` resolves through `_claude_project_settings_path()` for the default mode (`.claude/settings.json` when present, else `.claude/settings.local.json`) and pins `.claude/settings.local.json` for `--enforcement`. That implementation additionally honours an absolute path ending in `.json` as a test/recovery override; it is Claude-internal, no other target need offer it, and any other value (a relative path, an unknown identifier) is rejected with `unknown_target` rather than silently creating a stray file.
 
-The terminal-title path ALWAYS emits every key below — the three event lists and the three `*_status` fields are never omitted, so a zero-length list is a measured "none of these", not an absent field. Per-element disposition vocabularies differ, and each is assigned in `claude_runtime._install_terminal_title_hooks`:
+The terminal-title path ALWAYS emits the first three rows below — the three event lists and the three `*_status` fields are never omitted, so a zero-length list is a measured "none of these", not an absent field. The `--enforcement` path emits its own row instead and none of theirs. Per-element disposition vocabularies differ:
 
-| Field | Values it can take |
-|---|---|
-| `capture_status` | `installed`, `migrated`, `already_present` |
-| `statusLine_status`, `env_status` | `installed`, `already_present`, `already_present_other`, `overwritten` |
-| `installed_events`, `already_present_events`, `migrated_events` | the render-event labels falling in each bucket |
-| `enforcement_status` (`--enforcement` path) | `installed`, `migrated`, `already_present` |
+| Field | Values it can take | Assigned in |
+|---|---|---|
+| `capture_status` | `installed`, `migrated`, `already_present` | `claude_runtime._install_terminal_title_hooks` |
+| `statusLine_status`, `env_status` | `installed`, `already_present`, `already_present_other`, `overwritten` | `claude_runtime._install_terminal_title_hooks` |
+| `installed_events`, `already_present_events`, `migrated_events` | the render-event labels falling in each bucket | `claude_runtime._install_terminal_title_hooks` |
+| `enforcement_status` (`--enforcement` path only) | `installed`, `migrated`, `already_present` | `claude_runtime._install_enforcement_hook` |
 
-Each block below is captured verbatim from the serializer, not transcribed: a list renders as `key[N]:` followed by one indented `- item` per element, an empty list as a bare `key[0]:`, and a label containing `:` is quoted. `target` echoes the argument as passed, which is why it repeats `settings_path` in these captures (they were taken through the absolute-path recovery override).
+Each block below was captured from a real invocation rather than transcribed, with only the temporary directory rewritten to a readable repository path. A list renders as `key[N]:` followed by one indented `- item` per element, an empty list as a bare `key[0]:`, and a value containing `:` or `,` is quoted. `test_contract_doc_toon_is_canonical.py` holds every block in these standards to that shape, so an example the serializer could not emit fails the suite rather than misleading a reader.
 
 **Success (Claude — hook installed)**:
 ```toon
 status: success
 operation: project install-hook
-target: /repo/.claude/settings.local.json
+target: claude
 settings_path: /repo/.claude/settings.local.json
 hook_installed: true
 already_present: false
@@ -160,7 +160,7 @@ env_status: installed
 ```toon
 status: success
 operation: project install-hook
-target: /repo/.claude/settings.local.json
+target: claude
 settings_path: /repo/.claude/settings.local.json
 hook_installed: true
 already_present: true
@@ -185,7 +185,7 @@ env_status: already_present
 ```toon
 status: success
 operation: project install-hook
-target: /repo/.claude/settings.local.json
+target: claude
 settings_path: /repo/.claude/settings.local.json
 hook_installed: true
 already_present: false
@@ -261,7 +261,7 @@ status: success
 operation: layout skill-roots
 target: claude
 roots[1]:
-- .claude/skills
+  - .claude/skills
 ```
 
 ---
@@ -278,7 +278,7 @@ status: success
 operation: layout bundle-cache-root
 target: claude
 roots[1]:
-- /Users/me/.claude/plugins/cache/plan-marshall
+  - /Users/me/.claude/plugins/cache/plan-marshall
 ```
 
 ---
@@ -361,16 +361,14 @@ status: success
 operation: permission analyze
 scope: both
 checks_run[3]:
-- redundant
-- suspicious
-- missing-steps
+  - redundant
+  - suspicious
+  - missing-steps
 total_findings: 3
-
 findings[3]{check,severity,details}:
-redundant	info	Bash(git:*) present in both global and project settings
-suspicious	medium	Write(/tmp/**) is a broad write permission; consider scoping to a specific path
-missing-steps	high	project:finalize-step-plugin-doctor in phase-6-finalize has no matching skill permission
-
+  redundant,info,"Bash(git:*) present in both global and project settings"
+  suspicious,medium,Write(/tmp/**) is a broad write permission; consider scoping to a specific path
+  missing-steps,high,"project:finalize-step-plugin-doctor in phase-6-finalize has no matching skill permission"
 summary:
   high: 1
   medium: 1
@@ -383,8 +381,8 @@ status: success
 operation: permission analyze
 scope: project
 checks_run[2]:
-- redundant
-- suspicious
+  - redundant
+  - suspicious
 total_findings: 0
 ```
 
@@ -393,7 +391,7 @@ total_findings: 0
 status: error
 operation: permission analyze
 error: invalid_check
-message: Unknown check 'typo'; valid checks are: redundant, suspicious, missing-steps, all
+message: "Unknown check 'typo'; valid checks are: redundant, suspicious, missing-steps, all"
 ```
 
 **Error (malformed marshal — fail-closed)**:
@@ -432,9 +430,8 @@ fix_operation: add
 dry_run: true
 target_file: .claude/settings.local.json
 changes_applied: 0
-
 proposed_additions[1]:
-- Bash(python3 scripts/*.py)
+  - Bash(python3 scripts/*.py)
 ```
 
 **Error**:
@@ -520,10 +517,9 @@ scope: project
 dry_run: true
 steps_scanned: 8
 permissions_added: 0
-
 proposed_additions[2]:
-- Skill(finalize-step-plugin-doctor)
-- Skill(finalize-step-sync-plugin-cache)
+  - Skill(finalize-step-plugin-doctor)
+  - Skill(finalize-step-sync-plugin-cache)
 ```
 
 **Error**:
@@ -556,14 +552,13 @@ status: success
 operation: permission web-analyze
 scope: both
 total_domains: 6
-
 domains[6]{domain,category,scope,duplicate}:
-github.com	major	global	false
-api.github.com	major	global	false
-example.com	unknown	project	false
-github.com	major	project	true
-raw.githubusercontent.com	major	global	false
-suspicious-domain.xyz	suspicious	project	false
+  github.com,major,global,false
+  api.github.com,major,global,false
+  example.com,unknown,project,false
+  github.com,major,project,true
+  raw.githubusercontent.com,major,global,false
+  suspicious-domain.xyz,suspicious,project,false
 ```
 
 **Error**:
@@ -571,7 +566,7 @@ suspicious-domain.xyz	suspicious	project	false
 status: error
 operation: permission web-analyze
 error: invalid_scope
-message: --scope must be 'global', 'project', or 'both'; got 'all'
+message: "--scope must be 'global', 'project', or 'both'; got 'all'"
 ```
 
 ---
@@ -826,7 +821,7 @@ reason: feature_inactive
 ```toon
 status: no-op
 operation: session teardown
-reason: OpenCode does not expose a platform-provided session id to the shell, so there is no per-session binding to release (issue #9292)
+reason: "OpenCode does not expose a platform-provided session id to the shell, so there is no per-session binding to release (issue #9292)"
 alternative: Use OpenCode's built-in session mechanism for plan visibility
 ```
 
@@ -846,14 +841,14 @@ fix: false
 scanned: 12
 conflict_count: 1
 conflicts[1]:
-- my-plan=sid-a,sid-b
+  - "my-plan=sid-a,sid-b"
 stale_count: 1
 stale[1]:
-- sid-c=archived-plan
+  - sid-c=archived-plan
 gc_removed: 0
 orphan_count: 1
 orphans[1]:
-- sid-d
+  - sid-d
 orphans_removed: 0
 ```
 
@@ -878,7 +873,7 @@ Resolve and surface the harness-appropriate post-upgrade reload directive after 
 status: success
 operation: session reload-directive
 directive: /reload-plugins
-caveat: Only monitors require a full session restart; plan-marshall registers no monitors, so /reload-plugins picks up the regenerated executor / agent set live.
+caveat: "Only monitors require a full session restart; plan-marshall registers no monitors, so /reload-plugins picks up the regenerated executor / agent set live."
 ```
 
 **No-op (OpenCode — restart alternative)**:
@@ -930,7 +925,7 @@ source: manual
 ```toon
 status: no-op
 operation: metrics capture
-reason: automatic token capture requires a platform-provided session id, which OpenCode does not expose (issue #9292)
+reason: "automatic token capture requires a platform-provided session id, which OpenCode does not expose (issue #9292)"
 alternative: pass --total-tokens manually
 ```
 
@@ -1022,7 +1017,6 @@ Every target echoes the requested `--agent` back as `invocation.subagent_type`; 
 status: success
 operation: subagent dispatch
 platform: claude
-
 invocation:
   tool: Task
   description: Run phase-3-outline outline
@@ -1035,7 +1029,6 @@ invocation:
 status: success
 operation: subagent dispatch
 platform: opencode
-
 invocation:
   tool: task
   description: Run execution-context-level-3
@@ -1049,7 +1042,7 @@ OpenCode composes its `description` as `Run {agent}`, so that field and `subagen
 ```toon
 status: no-op
 operation: subagent dispatch
-reason: Agent team-coordinator-agent requires unmapped tools: SendMessage
+reason: "Agent team-coordinator-agent requires unmapped tools: SendMessage"
 alternative: Remove unsupported tools from agent frontmatter or inline the agent logic
 ```
 
@@ -1058,7 +1051,7 @@ alternative: Remove unsupported tools from agent frontmatter or inline the agent
 status: error
 operation: subagent dispatch
 error: prompt_not_found
-message: prompt file not found: prompts/my-prompt.md
+message: "prompt file not found: prompts/my-prompt.md"
 ```
 
 ---
@@ -1124,7 +1117,7 @@ bound_seconds: 600
 status: error
 operation: wait for
 error: unsupported_observable
-message: --observable 'ci-run' is not an inspectable observable kind; valid kinds: build-job
+message: "--observable 'ci-run' is not an inspectable observable kind; valid kinds: build-job"
 ```
 
 **Error (inspection channel unreachable)**:
@@ -1139,8 +1132,8 @@ message: the build-job inspection channel could not be reached (socket_absent); 
 ```toon
 status: no-op
 operation: wait for
-reason: OpenCode's runtime holds no wait channel — it has no platform-provided session id (issue #9292), no hook channel (issue anomalyco/opencode#8619), and no shared build layer to inspect an observable through, so a wait held here would be unobservable and could not be re-attached
-alternative: Invoke the observable's own bounded-wait verb synchronously in-turn (build-server-client wait, ci checks wait), or checkpoint and re-dispatch to re-establish the wait from persisted state
+reason: "OpenCode's runtime holds no wait channel — it has no platform-provided session id (issue #9292), no hook channel (issue anomalyco/opencode#8619), and no shared build layer to inspect an observable through, so a wait held here would be unobservable and could not be re-attached"
+alternative: "Invoke the observable's own bounded-wait verb synchronously in-turn (build-server-client wait, ci checks wait), or checkpoint and re-dispatch to re-establish the wait from persisted state"
 ```
 
 ---
@@ -1156,18 +1149,16 @@ Verify platform integration.
 status: success
 operation: health-check
 checks_run[4]:
-- permissions
-- display
-- mcp-diagnostics
-- hook
-
+  - permissions
+  - display
+  - mcp-diagnostics
+  - hook
 all_healthy: true
-
 results[4]{check,healthy,detail}:
-permissions	true	settings.local.json present; allow array has 12 entries
-display	true	render-title hook entry present in .claude/settings.local.json
-mcp-diagnostics	true	MCP server reachable at 127.0.0.1:64342
-hook	true	SessionStart hook entry present in .claude/settings.json
+  permissions,true,settings.local.json present; allow array has 12 entries
+  display,true,render-title hook entry present in .claude/settings.local.json
+  mcp-diagnostics,true,"MCP server reachable at 127.0.0.1:64342"
+  hook,true,SessionStart hook entry present in .claude/settings.json
 ```
 
 **Success (some checks failing)**:
@@ -1175,14 +1166,12 @@ hook	true	SessionStart hook entry present in .claude/settings.json
 status: success
 operation: health-check
 checks_run[2]:
-- permissions
-- hook
-
+  - permissions
+  - hook
 all_healthy: false
-
 results[2]{check,healthy,detail}:
-permissions	true	settings.local.json present; allow array has 12 entries
-hook	false	SessionStart hook entry missing from .claude/settings.json; run marshall-steward to install
+  permissions,true,settings.local.json present; allow array has 12 entries
+  hook,false,SessionStart hook entry missing from .claude/settings.json; run marshall-steward to install
 ```
 
 **Error**:

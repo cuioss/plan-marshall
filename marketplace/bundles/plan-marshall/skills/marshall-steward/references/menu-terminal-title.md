@@ -203,9 +203,12 @@ On **Re-run install**: proceed to Step 3 (Install), skipping the Step 2 enable
 prompt — the user has already consented to this write. Report the outcome from
 the per-event summary below; `migrated_events` names each render entry that was
 converged, and `capture_status` reports the SessionStart capture entry, which
-carries no render label. Every entry was already correct only when
-`migrated_events` is empty AND `capture_status` is `already_present` — which is
-exactly what `already_present: true` means.
+carries no render label. Read `already_present: true` for "nothing changed at all" rather than deriving
+it: it is strictly narrower than those two signals, also requiring
+`installed_events` empty and both `statusLine_status` and `env_status`
+already-present. A run that installed one missing render entry reports empty
+`migrated_events` and `capture_status: already_present` while `already_present`
+is `false`.
 
 When `display` reports `status: error` with `error: display_unhealthy`, proceed
 to Step 2. A `PreToolUse:enforcement: MISSING` line on an otherwise-successful

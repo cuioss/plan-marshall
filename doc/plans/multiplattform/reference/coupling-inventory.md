@@ -55,8 +55,9 @@ hook-event vocabulary, `statusLine`, `CLAUDE_CODE_*`, and every spelling of eith
 `project_install_hook` takes a target identifier with target-defined conflict keys rather than a
 settings-file path; the target→class registration is one adjacent block in `platform_runtime.py`
 behind a `_DEFAULT_TARGET` constant, held in lockstep with
-`marketplace_paths._DEFAULT_RUNTIME_TARGET` by test (registering a target is that block plus the
-subclass import); and `opencode_runtime.subagent_dispatch` echoes the requested agent.
+`marketplace_paths._DEFAULT_RUNTIME_TARGET` by test, and holding the subclass import too, so
+registering a target is one contiguous edit; and `opencode_runtime.subagent_dispatch` echoes the
+requested agent.
 
 **What these detections did NOT cover**, recorded so the clean result is not read wider than it is:
 they were searches for target ENUMERATION, so they say nothing about an operation whose docstring

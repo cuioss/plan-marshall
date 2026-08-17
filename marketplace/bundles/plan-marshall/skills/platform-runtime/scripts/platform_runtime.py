@@ -151,16 +151,18 @@ _bootstrap_glob_discover()
 #
 # Everything a target needs is here: its import, its ``Runtime`` subclass in
 # ``_REGISTRY``, and its extra bootstrap libraries in ``_TARGET_BOOTSTRAP_LIBS``.
-# The imports sit inside the block rather than with the module's other imports
-# for exactly that reason — splitting them would put one third of a registration
-# thirty lines away from the other two, which is how the pair drifted before.
-# Every import here is deferred until after ``_bootstrap_glob_discover()`` above
-# has put the sibling script directories on ``sys.path``, which is why they carry
-# ``noqa: E402`` and cannot move to the top of the file.
+# The imports sit inside the block rather than with the module's other imports so
+# that a registration is one contiguous edit instead of one split across thirty
+# lines. Every import here is deferred until after ``_bootstrap_glob_discover()``
+# above has put the sibling script directories on ``sys.path`` — importing
+# ``runtime_base`` before it raises ``ModuleNotFoundError`` on ``toon_parser`` —
+# which is why they carry ``noqa: E402`` and cannot move to the top of the file.
 #
-# ``runtime_base`` is imported alongside them because it is one import group and
-# the linter keeps it that way; it is the shared base contract, not a target, so
-# a new target never touches that line.
+# ``runtime_base`` is grouped with them for proximity, not necessity: it is the
+# shared base contract rather than a target, and a new target never touches that
+# line. Splitting it out is possible (a comment line ends an isort group), and is
+# a fair change to make; it is kept here only so the deferred imports read as one
+# block.
 #
 # The two dicts are declared adjacently so they cannot drift unnoticed, and a
 # lockstep test asserts their key sets stay equal.

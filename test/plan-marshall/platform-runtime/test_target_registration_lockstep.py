@@ -60,12 +60,17 @@ def test_default_bundle_cache_roots_match_what_the_default_target_resolves() -> 
 
     Both sides derive a home directory, and they derive it DIFFERENTLY: the
     constant uses ``resolve_home()``, which exists to survive ``Path.home()``
-    raising in a container with no ``HOME``; the op calls ``Path.home()`` raw and
-    is swallowed by ``_invoke_layout_op``'s ``except Exception``. In that
-    environment the op is genuinely unreachable while production degrades
-    correctly to this same constant, so the comparison is skipped rather than
-    failed -- a red here would report an environment, not a defect. The
-    asymmetry itself is recorded as residue in this plan's run report.
+    raising in a container with no ``HOME``; the op calls ``Path.home()`` raw.
+    Production degrades correctly there -- ``_invoke_layout_op`` swallows the
+    failure and the caller falls back to this same constant -- so a red here
+    would report an environment, not a defect, and the guard below skips instead.
+
+    The guard is a courtesy, not a defence: ``claude_runtime`` calls
+    ``Path.home()`` at MODULE level, so in that environment this file fails to
+    IMPORT and every test in it errors during collection before any guard runs.
+    Closing that properly means routing the runtimes' home resolution through
+    ``resolve_home()``; it is pre-existing, out of this plan's surface, and
+    recorded as residue in the run report.
     """
     try:
         pathlib.Path.home()
@@ -83,10 +88,10 @@ def test_default_bundle_cache_roots_match_what_the_default_target_resolves() -> 
 def test_every_registered_target_resolves_a_bundle_cache_root() -> None:
     """Both layout ops resolve for every registered target, not just the default one.
 
-    ``layout_bundle_cache_root`` is reached by no other test on any target but the
-    default, so a target whose implementation of it raised would be caught
-    nowhere. Quantifies over the live registry so a later target is covered
-    without anyone remembering.
+    The sibling constant test covers only the default target, so this one
+    quantifies over the live registry -- a later target is covered without anyone
+    remembering, and a target whose implementation raised is caught here rather
+    than only wherever else it happens to be exercised.
     """
     for target in platform_runtime._REGISTRY:
         roots = marketplace_paths._invoke_layout_op(target, "layout_bundle_cache_root")
@@ -97,12 +102,18 @@ def test_every_registered_target_resolves_a_bundle_cache_root() -> None:
 def test_layout_op_resolves_each_registered_target_distinctly() -> None:
     """Every registered target resolves through the router's registry to its own roots.
 
-    This is the only test that drives ``_invoke_layout_op`` unpatched, and it
-    quantifies over the live ``_REGISTRY`` rather than a name list, so a target
-    added later is covered without anyone remembering. Asserting the roots are
-    pairwise DISTINCT is what makes it non-vacuous: a registry lookup that
-    collapsed every target onto one runtime would still return roots, and only
-    the distinctness catches it.
+    Every test in this file drives ``_invoke_layout_op`` unpatched -- elsewhere
+    in the suite it is patched out at every call site -- and this one quantifies
+    over the live ``_REGISTRY`` rather than a name list, so a target added later
+    is covered without anyone remembering. Asserting the roots are pairwise
+    DISTINCT is what makes it non-vacuous: a registry lookup that collapsed every
+    target onto one runtime would still return roots, and only the distinctness
+    catches it.
+
+    Its one fragility, accepted deliberately: a future target that legitimately
+    discovers in the same roots as an existing one turns this red with no defect
+    present. It fires visibly at target-add time, which is the right moment to
+    replace distinctness with a per-target assertion.
     """
     resolved = {
         target: marketplace_paths._invoke_layout_op(target)
