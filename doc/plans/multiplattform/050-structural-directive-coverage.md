@@ -32,7 +32,7 @@ sibling of `Skill:`, used across the bundles (~130 occurrences; re-derive) — i
 `assert_source_vocabulary_mapped` and emits verbatim to every non-verbatim target. Beyond the
 directive, several bundle files carry **normative** Claude tool invocations the registered idiom
 rewrites cannot reach: a full `AskUserQuestion:` YAML call block (the Claude parameter model as
-workflow), byte-identical bare escalation lines in six ext-triage standards, "using the Write
+workflow), byte-identical bare escalation lines in seven ext-triage standards, "using the Write
 tool" steps, literal `Read(file_path=…)` call syntax, a `CLAUDE.md`-as-authority citation, and a
 README slash-invocation form outside the body-transform path. The registry is
 `doc/plans/multiplattform/reference/marketplace-audit.md` §M1–§M2.

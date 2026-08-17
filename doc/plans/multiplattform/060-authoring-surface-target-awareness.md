@@ -94,7 +94,8 @@ and no pm-plugin-development file resolves or names the Claude layout outside th
 
 ## Expected surface
 
-- `marketplace/bundles/pm-plugin-development/**` (the M3/M4-named skills and scripts)
+- `marketplace/bundles/pm-plugin-development/**` (the M3/M4-named skills and scripts) **except**
+  `skills/ext-triage-plugin/standards/pr-comment-disposition.md` — plan `050`'s
 - `test/pm-plugin-development/**`
 - `marketplace/bundles/plan-marshall/skills/platform-runtime/**` only if D4/D5's runtime queries
   need a schema addition — recorded, made minimally
