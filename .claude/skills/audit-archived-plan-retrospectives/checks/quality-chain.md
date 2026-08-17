@@ -63,13 +63,20 @@ so the raw pending column mixes two things that must not be added together:
 | Half | What it is | What would make it zero |
 |------|-----------|-------------------------|
 | **actionable** | A defect-shaped finding nobody closed — real chain debt. | Resolving the findings. |
-| **structural** | A knowledge-type finding (`tip` / `insight` / `best-practice` / `improvement`). Filed to be read, never to be closed; no action resolves one. | **Nothing.** |
+| **structural** | A knowledge-type finding (`tip` / `insight` / `best-practice` / `improvement`). Filed to be read, not closed by defect-fixing work. | **Not the backlog work the actionable half measures.** Promotion (`manage-findings promote`) or an explicit disposition (`resolve --to accepted`) does empty it — neither is defect-fixing, and neither is what a chain-debt count is asking about. |
 
 Only the actionable half is counted as a genuine signal. Counting the structural
-half made the pending population one no action could empty — and a pending count
-that cannot reach zero is not a backlog, it is a mislabelled population. That is
-worse than a false zero: a false zero invites a check, while a large permanent
-backlog invites resignation.
+half made the pending population one that no amount of DEFECT-FIXING could empty
+— and a chain-debt count that the chain's own work cannot drive to zero is not a
+backlog, it is a mislabelled population. That is worse than a false zero: a false
+zero invites a check, while a large permanent backlog invites resignation.
+
+Be precise about the claim: the structural half is not *unreachable*, it is not
+reachable **by the work the count purports to measure**. `promote_finding` carries
+no type restriction and `resolve_finding` accepts any type, so promoting the
+knowledge findings or dispositioning them empties this half outright. Neither is
+the backlog work an actionable-pending figure is asking about, which is exactly
+why the two halves are reported apart rather than summed.
 
 The KNOWLEDGE half of the partition mirrors the fixed split already shipped at
 `plan-marshall/scripts/_invariants.py` — the four types its comment names as never

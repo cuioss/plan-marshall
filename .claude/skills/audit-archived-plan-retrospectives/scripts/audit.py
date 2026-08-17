@@ -1231,8 +1231,10 @@ def collect_inputs(plan_dir: Path) -> PlanInputs:
     inputs.change_type = metadata.get("change_type")
 
     # Recipe / lesson provenance rides on EITHER of two metadata fields, and both
-    # are read here. `plan_source` is seeded by phase-1-init (the raw lesson id for
-    # a lesson-derived plan, the literal `"recipe"` for a recipe-routed one).
+    # are read here. `plan_source` is seeded by phase-1-init: the raw lesson id for
+    # a code-shaped lesson-derived plan, and the literal `"recipe"` only on Step
+    # 5c-lesson's doc-shaped branch (which also sets `recipe_key`). A plan sourced
+    # from a recipe skips Step 5c entirely and writes no `plan_source` at all.
     #
     # `recipe_key` can be written WITHOUT `plan_source`, which is what made reading
     # only `plan_source` a structural gap rather than a redundancy. Per
@@ -3394,12 +3396,12 @@ _QC_BOT_RE = re.compile(r"gemini|copilot|bot|automated", re.IGNORECASE)
 #: four as actionable — so a pending `bug` is chain debt here and does not block
 #: the gate there.
 #:
-#: None of those five reintroduces a floor, but by different routes and not all by
-#: promotion: `bug` / `improvement` / `anti-pattern` / `triage` are the promotable
-#: lesson types, while `arch-constraint` is documented non-promotable
-#: (`manage-findings/standards/jsonl-format.md`) and leaves the pending column by
-#: triage disposition. What they share is that SOME action moves them, which is
-#: the only property this partition needs.
+#: None of the five reintroduces a floor, but by different routes: `bug`,
+#: `anti-pattern` and `triage` are promotable lesson types; `arch-constraint` is
+#: documented non-promotable (`manage-findings/standards/jsonl-format.md`) and
+#: leaves by triage disposition; `pr-comment-overflow` is closed by the loop-back
+#: it signals. What they share is that SOME action moves them, which is the only
+#: property this partition needs.
 _QC_STRUCTURAL_PENDING_TYPES = frozenset(
     {"tip", "insight", "best-practice", "improvement"}
 )
@@ -5272,6 +5274,15 @@ def _extract_per_check_genuine(blocks: list[str]) -> dict[str, int]:
     the tiers are summed, so a multi-tier check contributes its total like any
     other rather than contributing nothing.
 
+    ⚠ For a multi-tier block the sum spans DIFFERENT populations — `quality-chain`
+    adds flagged plans to genuine findings — so the result is a count of genuine
+    ROWS the check emitted, not a count of any one thing. That is the right
+    quantity for the two consumers here, both of which ask only "was anything
+    genuine?": the retire-on-quiet streak and the suspect-zero census. It is NOT a
+    comparable magnitude, and the `genuine__{check}` summary metric it feeds is
+    diffed across runs on that basis — read a change in it as "the check's output
+    changed", never as "N more of some thing".
+
     Reading only the bare spelling had two consequences, and the second is the
     reason this is a total rather than a special case. `quality-chain` never
     reached the retire-on-quiet substrate at all — and the suspect-zero census
@@ -5451,10 +5462,12 @@ def _examined_population(block: str, corpus_size: int) -> int:
        `DELIVERY_COST_CHECKS`, which run over the shipping partition.
     3. The whole corpus, for a block declaring neither.
 
-    Reading the declaration first also means a check that grows a third narrowing
-    axis needs no edit here, provided it publishes its population — which is the
-    only durable arrangement, since an enumeration of exclusion keys is one new
-    axis away from being wrong.
+    Reading the declaration first also means a check narrowing on ANY axis needs no
+    edit here, provided it publishes its population. Several already do beyond the
+    two named above — `token-economics` drops a plan with no parseable
+    `metrics.toon`, `quality-chain` one with no findings directory — and that is
+    the point: an enumeration of exclusion keys is one new axis away from being
+    wrong, so the declaration is read instead of the axes being counted.
     """
     declared = _PLANS_IN_CORPUS_RE.search(block)
     if declared is not None:
@@ -5476,10 +5489,10 @@ def _classify_zero(block: str, genuine_count: int | None, corpus_size: int) -> s
     * `starved` — the check examined no plans, so it could not have fired. The
       zero is a property of this run's inputs, not of the check. This is the class
       whose zero is one un-stubbed sibling away from being non-zero.
-    * `no_count` — the block published no `genuine_signal_count` line, so this
-      census never READ a count for it. `quality-chain` is such a block today: it
-      emits `plan_genuine_signal_count` and `finding_genuine_signal_count` and no
-      bare one.
+    * `no_count` — the block published no genuine count in EITHER spelling (bare
+      or per-tier), so this census never READ one for it. Defensive: no registered
+      check is in this state today, and a test asserts none reaches it on a real
+      sweep. A check landing here has stopped stating its own result.
     * `disciplinary` — a non-empty examined population and nothing genuine. The
       only class in which a zero is a real (if provisional) statement about the
       corpus.
@@ -6001,6 +6014,26 @@ def emit_global_log_block(result: dict[str, Any]) -> str:
         signals, lambda r: r["kind"] != "dominant-cost-caller"
     )
 
+    # No global-log directory means no substrate was read, so every count below
+    # would be a zero nothing supports. The check already knew this and published
+    # it as `logs_present: false` beside a `genuine_signal_count: 0` — and the
+    # suspect-zero census then read the zero and reported `disciplinary`,
+    # asserting a non-empty population had been examined. Declaring `unmeasured`
+    # is the same contract D3 gave merge-window-accounting, and the plan's Goal
+    # states it for every check, not for one: a check either can fire, or says
+    # `unmeasured` instead of a number that reads as health.
+    if not result["logs_present"]:
+        return "\n".join(
+            [
+                "check: global-log-analysis",
+                "status: unmeasured",
+                "logs_present: false",
+                "unmeasured_reason: no global-log directory found — the corpus is "
+                "SILENT about operational signals, which is not the same as having "
+                "none",
+            ]
+        ) + "\n"
+
     level_summary = ";".join(
         f"{lvl}={cnt}" for lvl, cnt in sorted(result["level_counts"].items())
     )
@@ -6219,9 +6252,10 @@ def emit_quality_chain_block(result: dict[str, Any]) -> str:
         f"pending_actionable: {result['corpus_actionable_pending']}",
         f"pending_structural: {result['corpus_structural_pending']}",
         "pending_structural_note: knowledge-type findings (tip/insight/"
-        "best-practice/improvement) are seeded pending and no action resolves "
-        "them — excluded from the genuine count because nothing could make that "
-        "part of the count zero",
+        "best-practice/improvement) are seeded pending and no DEFECT-FIXING work "
+        "moves them, so they are excluded from the genuine count. What would zero "
+        "this half is promotion or an explicit disposition (manage-findings "
+        "promote / resolve), never the backlog work the actionable half measures",
     ]
 
     # 1. Corpus mechanism×resolution matrix.

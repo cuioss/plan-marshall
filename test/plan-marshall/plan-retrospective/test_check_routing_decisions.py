@@ -302,6 +302,31 @@ class TestResolveRemovalCauses:
         causes = _crd.resolve_removal_causes([LANE_RESOLUTION_PREFIXED_LINE])
         assert causes == {'sonar-roundtrip': 'lane_resolution'}
 
+    def test_archived_legacy_aggregate_line_still_resolves_its_cause(self):
+        """An ARCHIVED log written under the retired aggregate emitter.
+
+        This shape is transcribed literally on purpose: no live emitter produces
+        it any more, so there is no writer to render it from. Archived decision
+        logs are immutable history, and dropping the pattern would leave every
+        pre-change archive resolving NO cause for its posture-cutoff drops —
+        falling through to predicate re-evaluation and producing exactly the false
+        `mis_prune` this check exists to end.
+        """
+        legacy = (
+            '[2026-04-17T10:00:00Z] [INFO] [aaaaaa] '
+            '(plan-marshall:manage-execution-manifest:compose) lane_resolution — '
+            "execution_profile=minimal, dropped ['sonar-roundtrip', 'plan-retrospective'] "
+            'from phase_6.steps (tier above posture cutoff)'
+        )
+        causes = _crd.resolve_removal_causes([legacy])
+
+        assert causes['sonar-roundtrip'] == 'posture_cutoff_legacy_aggregate'
+        assert causes['plan-retrospective'] == 'posture_cutoff_legacy_aggregate'
+
+    def test_the_legacy_line_is_the_only_list_repr_producer(self):
+        """Pins why `_parse_step_tokens`'s list branch is still reachable."""
+        assert _crd._parse_step_tokens("['a', 'b']") == ['a', 'b']
+
     def test_unknown_future_gate_in_the_shared_shape_is_still_a_cause(self):
         """Gate-agnostic by construction — a new composer gate needs no edit here.
 

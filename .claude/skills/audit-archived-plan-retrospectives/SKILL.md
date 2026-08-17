@@ -217,7 +217,7 @@ half only reads and acts on the surfaced signals, it never recomputes them.
   | `zero_class` | Meaning | Is the zero evidence about the corpus? |
   |---|---|---|
   | `structural` | The check declared `status: unmeasured` — it could not substantiate a verdict. | **No.** Fix the check's inputs or its producer. |
-  | `starved` | The check examined no plans (an empty corpus, or a shipping partition that excluded every one). | **No.** A property of the run's inputs, not of the check. |
+  | `starved` | The check examined no plans. Any narrowing reaches this: an empty corpus, a shipping partition that excluded every plan, or the check's own declared `plans_in_corpus: 0` (a full-corpus check can narrow too — `quality-chain` drops a plan with no findings directory, `token-economics` one with no parseable metrics). | **No.** A property of the run's inputs, not of the check. |
   | `no_count` | The block published no `genuine_signal_count` line, so the census read no count for it. | **No.** Absence of a reading, not a measured zero. |
   | `disciplinary` | A non-empty examined population and nothing genuine. | **Yes** — but only that the corpus was clean, never that the check is *able* to fire. |
   | `no_block` | The check emitted no block at all on this sweep. | **No.** A detector that silently stopped emitting is the completest form of this failure. |

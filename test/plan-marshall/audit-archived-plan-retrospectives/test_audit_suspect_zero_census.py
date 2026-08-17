@@ -21,6 +21,28 @@ from pathlib import Path
 
 from _audit_fixtures import audit, minimal_corpus
 
+
+def _shipping_corpus(repo_root: Path) -> list:
+    """A one-plan corpus whose plan SHIPS but carries no exploration counters.
+
+    `minimal_corpus`'s plan records no `modified_files`, so it fails
+    `_plan_shipped` and every delivery-cost check excludes it — which starves
+    those checks by the shipping route and masks the `plans_in_corpus` axis. A
+    non-empty `modified_files` makes the plan ship, so the shipping exclusion is
+    zero and a check that still reports `plans_in_corpus: 0` did so by its OWN
+    narrowing.
+    """
+    plan_dir = repo_root / ".plan" / "local" / "archived-plans" / "shipping-plan"
+    plan_dir.mkdir(parents=True)
+    (plan_dir / "references.json").write_text(
+        '{"scope_estimate": "surgical", "modified_files": ["src/a.py"]}',
+        encoding="utf-8",
+    )
+    (plan_dir / "status.json").write_text(
+        '{"metadata": {"change_type": "bug_fix"}}', encoding="utf-8"
+    )
+    return [audit.collect_inputs(plan_dir)]
+
 _UNMEASURED_BLOCK = (
     "check: merge-window-accounting\nstatus: unmeasured\nunmeasured_reason: no substrate\n"
 )
@@ -295,24 +317,41 @@ class TestCensusEndToEnd:
     def test_a_check_narrowing_its_own_population_to_zero_is_starved(
         self, tmp_path: Path
     ):
-        """Pins the call ORDER `_examined_population` silently depends on.
+        """A SHIPPING plan that a check narrows out on its own axis.
 
-        The population is read off the emitted block, so the census must run after
-        the blocks are built and annotated. Move it earlier and every
-        population-narrowing check regresses to `disciplinary` — a starved zero
-        reported as evidence — with a green suite otherwise. This test fails on
-        that reordering because it drives the real `run_checks`.
+        The corpus must ship, and this is the whole point of the fixture. On a
+        non-shipping corpus `exploration-share` is starved via the
+        shipping-exclusion route, so the row reads `starved` whether or not
+        `plans_in_corpus` is read at all — an assertion that cannot fail is not a
+        guard. A shipping plan with no exploration counters isolates the
+        `plans_in_corpus` axis: the shipping exclusion is zero, and only the
+        check's own declared population makes it starved.
+
+        The verdict is asserted POSITIVELY. A negative-only assertion
+        (`disciplinary not in row`) also passes on a regression to `no_count` or
+        `fired`, which is no verdict at all.
         """
-        inputs = minimal_corpus(tmp_path)
+        inputs = _shipping_corpus(tmp_path)
         output = audit.run_checks(inputs, list(audit.CHECK_NAMES), tmp_path)
 
         census = output.split("check: suspect-zero-census", 1)[1]
-        # `exploration-share` narrows on its own axis (plans with no counters) and
-        # the minimal corpus supplies none, so its examined population is zero.
         row = next(
             ln for ln in census.splitlines() if ln.strip().startswith("exploration-share,")
         )
-        assert audit._ZERO_DISCIPLINARY not in row
+        assert f",{audit._ZERO_STARVED}," in row
+
+    def test_the_shipping_fixture_really_ships(self, tmp_path: Path):
+        """Non-vacuity control for the test above.
+
+        If the plan stopped shipping, the assertion would pass via the exclusion
+        route and stop testing `plans_in_corpus` — silently. This pins the
+        precondition that makes the test above discriminating.
+        """
+        inputs = _shipping_corpus(tmp_path)
+        shipping, excluded = audit._partition_shipping(inputs)
+
+        assert [i.plan_id for i in shipping] == ["shipping-plan"]
+        assert excluded == []
 
 
 class TestCensusBlock:

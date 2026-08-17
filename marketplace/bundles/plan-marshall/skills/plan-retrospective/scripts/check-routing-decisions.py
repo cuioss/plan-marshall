@@ -141,6 +141,27 @@ _DROPPED_RECORD_RE = dropped_record_pattern()
 
 _REMOVAL_CAUSE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
+        # LEGACY — the RETIRED aggregate `lane_resolution` shape, kept for
+        # ARCHIVED decision logs only. The composer stopped emitting this when it
+        # moved to one line per dropped step, and the live shape is handled by the
+        # shared subtraction-record pattern above.
+        #
+        # It is retained because this script reads archived plans
+        # (`resolve_plan_dir(mode='archived', ...)`) and an archived log is
+        # immutable history: dropping the pattern would leave every pre-change
+        # archive resolving NO cause for its posture-cutoff drops, falling through
+        # to predicate re-evaluation and producing exactly the false `mis_prune`
+        # this deliverable exists to end — a regression introduced by the fix, on
+        # the corpus the fix was meant to make readable. It is also the only
+        # pattern that renders a Python list repr, so it is what keeps
+        # `_parse_step_tokens`'s list branch reachable.
+        'posture_cutoff_legacy_aggregate',
+        re.compile(
+            r'lane_resolution\s+—\s+execution_profile=[^,]+,\s+dropped\s+(?P<steps>.+?)'
+            r'\s+from\s+phase_6\.steps\s+\(tier above posture cutoff\)'
+        ),
+    ),
+    (
         'unresolved_ask_provider_drop',
         re.compile(
             r'unresolved_ask_provider_drop\s+—\s+dropped\s+(?P<steps>.+?)'
@@ -184,13 +205,18 @@ def _parse_step_tokens(raw: str) -> list[str]:
     Every CURRENT emitter names one step per line, so the live path is a single
     bare (or ``default:``/``project:``-prefixed) step reference.
 
-    The Python-list-repr form (``['a', 'b']``) is retired: ``lane_resolution``
-    rendered it while it emitted one aggregate line per compose, and it now reports
-    one line per dropped step through the shared subtraction-record shape, whose
-    ``\\S+`` capture could not match a list repr in any case. Parsing it is kept so
-    an ARCHIVED decision log written under the old emitter still resolves its
-    causes — archived logs are immutable history, and this reader is the only thing
-    that can still read them.
+    The Python-list-repr form (``['a', 'b']``) is retired on the WRITING side:
+    ``lane_resolution`` rendered it while it emitted one aggregate line per
+    compose, and it now reports one line per dropped step through the shared
+    subtraction-record shape, whose ``\\S+`` capture could not match a list repr in
+    any case.
+
+    The branch is still reachable, and by exactly one route: the
+    ``posture_cutoff_legacy_aggregate`` pattern in ``_REMOVAL_CAUSE_PATTERNS``,
+    which matches that retired line in ARCHIVED decision logs. Archived logs are
+    immutable history and this reader is the only thing that can still read them,
+    so removing either the pattern or this branch would make every pre-change
+    archive resolve no cause for its posture-cutoff drops.
     """
     text = raw.strip()
     if text.startswith('[') and text.endswith(']'):

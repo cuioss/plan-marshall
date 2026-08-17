@@ -115,7 +115,9 @@ The plan forbids fixing from the report text and requires each claim be confirme
 
 `git diff --name-only origin/main...HEAD -- '*.py'` is **non-empty** (5 Python files: `audit.py`, `_decision_line_shapes.py`, `_manifest_decide.py`, `manage-execution-manifest.py`, `check-routing-decisions.py`, plus 8 test modules), so the full gate ran.
 
-`./pw verify` → **`=== verify: SUCCESS ===`**, **20,510 passed, 14 skipped, 0 failed** (444 s). All three sub-steps clean: quality-gate (`ruff` all checks passed, `mypy` success over 411 production files, SPDX passed), test-compile (`mypy` over 761 test files), module-tests.
+`./pw verify` → **`=== verify: SUCCESS ===`**, **20,532 passed, 14 skipped, 0 failed** (384 s). All three sub-steps clean: quality-gate (`ruff` all checks passed, `mypy` success over 411 production files, SPDX passed), test-compile (`mypy` over the test tree), module-tests.
+
+This figure is the FINAL one, re-derived after the last verification round's fixes landed. Earlier drafts of this report carried the pre-fix total (20,510 / 444 s), which the verification rounds added tests to and therefore invalidated; a build-gate figure that predates the commits it reports as landed is exactly the moving-figure defect this run kept finding elsewhere, so it is re-derived at the moment of the claim rather than carried forward.
 
 A per-commit `./pw quality-gate` ran before every commit touching `*.py`. Two caught real defects before they landed: an `F402` where a loop variable shadowed the `dataclasses.field` import, and a `mypy` narrowing conflict where a rebound name collided (which also surfaced a parameter shadowing the new `quiet_streaks` function).
 

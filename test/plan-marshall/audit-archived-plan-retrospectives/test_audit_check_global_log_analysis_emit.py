@@ -105,15 +105,40 @@ class TestEmitGlobalLogBlock:
         # the `run` failure is flagged; the `exists` probe is not
         assert 'error_count: 1' in block
 
-    def test_empty_result_renders_zero_signal_block(self, tmp_path: Path):
-        # no logs at all
+    def test_absent_logs_report_unmeasured_not_a_zero_signal_block(self, tmp_path: Path):
+        """No log directory means no substrate was read, so no count is published.
+
+        This block previously rendered `genuine_signal_count: 0` beside
+        `logs_present: false` — a zero that reads as health from a corpus that
+        said nothing. The suspect-zero census then read that zero and reported
+        `disciplinary`, asserting a non-empty population had been examined.
+        """
         result = audit.cross_global_log_analysis(tmp_path)
 
         block = audit.emit_global_log_block(result)
 
-        # well-formed block with zero rows and zero genuine signals
-        assert 'genuine_signal_count: 0' in block
+        assert 'status: unmeasured' in block
         assert 'logs_present: false' in block
+        assert 'unmeasured_reason:' in block
+        # The counts a reader would take as a verdict are ABSENT, not zeroed.
+        assert 'genuine_signal_count:' not in block
+        assert 'error_count:' not in block
+        assert 'rows[' not in block
+
+    def test_present_logs_with_no_signals_are_a_measured_zero(self, tmp_path: Path):
+        """The discriminating half — substrate read, genuinely nothing to flag."""
+        _write_log(
+            tmp_path,
+            'work-2026-06-01.log',
+            [_line('2026-06-01T10:00:00Z', 'INFO', 'an unremarkable line')],
+        )
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        block = audit.emit_global_log_block(result)
+
+        assert 'status: success' in block
+        assert 'logs_present: true' in block
+        assert 'genuine_signal_count: 0' in block
         assert 'rows[0]{kind,detail,attributed_plans,severity}:' in block
 
     def test_ad_hoc_attribution_when_no_enclosing_window(self, tmp_path: Path):
