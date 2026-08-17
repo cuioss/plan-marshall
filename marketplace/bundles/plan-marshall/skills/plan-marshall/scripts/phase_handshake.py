@@ -124,10 +124,12 @@ def main() -> int:
     if args.command == 'verify' and getattr(args, 'strict', False):
         if result.get('status') == 'drift':
             return 1
-        # worktree_unresolved (metadata→disk) and
+        # worktree_unresolved (metadata→disk),
         # main_checkout_dirtied_during_plan (layer-D filesystem leak into
-        # the main checkout during a worktree-routed plan) are both
-        # phase-boundary refusals. Under --strict they MUST surface as a
+        # the main checkout during a worktree-routed plan) and
+        # worktree_sha_equals_main_sha (a worktree-backed plan whose
+        # main-scoped and worktree-scoped commits cannot be told apart) are
+        # all phase-boundary refusals. Under --strict they MUST surface as a
         # non-zero exit so calling tooling that swallows TOON output still
         # sees the failure (mirrors the drift contract). Both share the same
         # severity: the operator must repair the disagreement (or revert the
@@ -135,6 +137,7 @@ def main() -> int:
         if result.get('error') in (
             'worktree_unresolved',
             'main_checkout_dirtied_during_plan',
+            'worktree_sha_equals_main_sha',
         ):
             return 1
     if result.get('status') == 'error':

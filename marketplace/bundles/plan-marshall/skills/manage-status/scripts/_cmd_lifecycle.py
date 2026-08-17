@@ -48,6 +48,7 @@ VERIFY_REFUSAL_ERRORS = frozenset({
     'worktree_metadata_drift',
     'main_checkout_dirtied_during_plan',
     'worktree_dirty_at_boundary',
+    'worktree_sha_equals_main_sha',
 })
 
 

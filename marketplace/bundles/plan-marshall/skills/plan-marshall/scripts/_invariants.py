@@ -27,7 +27,11 @@ from _git_helpers import git_dirty_count, git_dirty_files, git_head
 from _plan_state_exemption import partition_plan_state_exemption
 from constants import QGATE_PHASES
 from file_ops import get_base_dir, get_marshal_path
-from marketplace_paths import find_marketplace_path
+from marketplace_paths import (
+    base_dir_override_active,
+    find_marketplace_path,
+    main_checkout_root,
+)
 from toon_parser import parse_toon
 
 
@@ -207,6 +211,53 @@ class MainCheckoutDirtiedDuringPlan(Exception):
         )
 
 
+class WorktreeShaEqualsMainSha(Exception):
+    """Raised by :func:`capture_all` when a worktree-backed plan's ``main_sha``
+    equals its ``worktree_sha``.
+
+    The row disproves itself with no external reference. Two columns exist
+    precisely because they describe two different trees; a worktree-backed plan
+    whose main commit equals its worktree commit is therefore reporting one tree
+    under two names. That is a **capture bug, not a valid row**, so
+    ``cmd_capture`` surfaces a structured error and refuses to persist rather
+    than writing a record whose ``main_sha`` provably never reached main.
+
+    ``same_tree`` carries the diagnosis the operator needs, derived from the two
+    resolved paths rather than from the values:
+
+    - ``True`` — both columns were read from the SAME directory, so the
+      main-scoped resolution regressed to the worktree (the defect
+      :func:`_main_repo_root` exists to prevent). Fix the resolution.
+    - ``False`` — the columns were read from two distinct trees that genuinely
+      hold the same commit. The reachable cause is a worktree-backed plan whose
+      feature branch carries no commit yet, so its HEAD is still the commit it
+      branched from. The refusal stands (a ``main_sha``/``worktree_sha`` pair
+      that cannot be told apart carries no signal either way), and the remedy is
+      to commit the branch's work before the boundary.
+
+    A plan genuinely running on main captures no ``worktree_sha`` at all
+    (``_worktree_in_use`` is false), so an equal pair is impossible there and
+    this refusal cannot fire — the assertion is one-sided by construction and
+    never blocks an on-main run.
+    """
+
+    def __init__(self, phase: str, sha: str, *, same_tree: bool) -> None:
+        self.phase = phase
+        self.sha = sha
+        self.same_tree = same_tree
+        cause = (
+            'both columns resolved to the SAME tree — the main-scoped '
+            'resolution regressed to the worktree'
+            if same_tree
+            else 'the two trees are distinct but hold the same commit — the '
+            'feature branch most likely carries no commit yet'
+        )
+        super().__init__(
+            f'phase {phase}: worktree-backed plan captured main_sha == '
+            f'worktree_sha ({sha}); {cause}'
+        )
+
+
 class TaskGraphInvalid(Exception):
     """Raised by the ``task_graph_valid`` invariant capture when the plan's
     task dependency graph has a cycle or a dangling reference (a
@@ -264,13 +315,22 @@ CaptureFn = Callable[[str, dict[str, Any], str], Any]
 # --- helpers --------------------------------------------------------------
 
 
-def _repo_root() -> Path:
-    """Main git checkout root inferred from the plan-marshall base directory.
+def _current_repo_root() -> Path:
+    """The CURRENT checkout root, resolved by the uniform cwd rule (ADR-002).
 
-    ``get_base_dir()`` resolves to ``<root>/.plan/local`` in production, so the
-    parent chain `.plan/local → .plan → root` identifies the main checkout.
-    In tests, ``PLAN_BASE_DIR`` may point somewhere else; in that case we fall
-    back to the current working directory.
+    ``get_base_dir()`` resolves to ``<root>/.plan/local``, so the parent chain
+    ``.plan/local → .plan → root`` identifies the checkout the working directory
+    is standing in. In tests, ``PLAN_BASE_DIR`` may point somewhere else; in
+    that case we fall back to the current working directory.
+
+    This follows the pinned worktree at phase-5+ **by design** — that is what
+    every cwd-relative consumer wants (the worktree-resident executor and the
+    plan state moved in at phase-5 start; see ``file_ops.get_executor_path``).
+
+    ⛔ It is therefore the WRONG resolver for a ``main_``-named capture: under a
+    pinned worktree it returns the worktree, so a main-scoped column would
+    silently record a feature-branch commit. Those captures use
+    :func:`_main_repo_root` instead.
     """
     try:
         base = get_base_dir()
@@ -279,6 +339,43 @@ def _repo_root() -> Path:
     if base.name == 'local' and base.parent.name == '.plan':
         return base.parent.parent
     return Path.cwd()
+
+
+def _main_repo_root() -> Path | None:
+    """The MAIN checkout root — the tree the ``main_*`` columns claim to describe.
+
+    Distinct from :func:`_current_repo_root`, which is cwd-relative and follows
+    the pinned worktree at phase-5+. A column named for main MUST be read from
+    main, so this resolver is cwd-independent.
+
+    Precedence mirrors ``marketplace_paths.resolve_main_anchored_path``, the
+    single sanctioned main-anchored exception (ADR-002):
+
+    1. **Base-dir override** (``PLAN_BASE_DIR`` / ``set_base_dir()``) — the
+       override directory stands in for the checkout's ``.plan/local``, and an
+       override-based fixture has exactly one checkout, so main and current
+       coincide: delegate to :func:`_current_repo_root`.
+    2. **Production** — ``git rev-parse --git-common-dir`` points at main's
+       ``.git`` even when invoked from a linked worktree; its parent is the main
+       checkout root.
+
+    Returns:
+        The main checkout root, or ``None`` when it cannot be resolved (not a
+        git repository, or git is unavailable).
+
+    ⛔ The ``None`` return is deliberate and MUST NOT be softened into a
+    cwd fallback. An unresolvable main checkout is *unknown*, and a
+    main-scoped column whose value is unknown is left EMPTY (the registry's
+    documented "not applicable" contract) rather than filled with whichever
+    tree the process happens to be standing in. Falling back to cwd is exactly
+    the mis-resolution this resolver exists to end.
+    """
+    if base_dir_override_active():
+        return _current_repo_root()
+    try:
+        return main_checkout_root()
+    except RuntimeError:
+        return None
 
 
 # Phases at and after which the worktree is materialized on disk (phase-5
@@ -333,7 +430,7 @@ def _always(_plan_id: str, _metadata: dict[str, Any]) -> bool:
 
 def _run_script(args: list[str]) -> str | None:
     """Invoke ``execute-script.py`` with ``args`` and return stdout on success."""
-    repo = _repo_root()
+    repo = _current_repo_root()
     executor = repo / '.plan' / 'execute-script.py'
     if not executor.exists():
         return None
@@ -449,11 +546,28 @@ def _read_manifest_steps(plan_id: str, phase: str) -> set[str] | None:
 
 
 def _capture_main_sha(_plan_id: str, _metadata: dict[str, Any], _phase: str) -> Any:
-    return git_head(_repo_root())
+    """HEAD SHA of the MAIN checkout, cwd-independent.
+
+    Read via :func:`_main_repo_root` — never the cwd-relative resolver, which
+    under a pinned worktree would record the feature-branch commit in a column
+    named for main. Returns ``None`` (column left empty) when the main checkout
+    cannot be resolved, matching the registry's "not applicable" contract.
+    """
+    root = _main_repo_root()
+    if root is None:
+        return None
+    return git_head(root)
 
 
 def _capture_main_dirty(_plan_id: str, _metadata: dict[str, Any], _phase: str) -> Any:
-    return git_dirty_count(_repo_root())
+    """Porcelain dirty-path count of the MAIN checkout, cwd-independent.
+
+    Same resolution contract as :func:`_capture_main_sha`.
+    """
+    root = _main_repo_root()
+    if root is None:
+        return None
+    return git_dirty_count(root)
 
 
 def _filter_main_dirty_paths(paths: list[str], tree: str | Path) -> list[str]:
@@ -493,9 +607,10 @@ def _capture_main_dirty_files(_plan_id: str, _metadata: dict[str, Any], _phase: 
     is comparison-based and needs the persisted baseline row, which the
     capture-time signature does not expose).
 
-    Returns ``None`` when the dirty-file probe fails (not a git repository
-    or git invocation error) so the calling capture's "not applicable"
-    contract leaves the column empty in stored rows. Otherwise returns the
+    Returns ``None`` when the MAIN checkout cannot be resolved
+    (:func:`_main_repo_root`) or when the dirty-file probe against it fails
+    (not a git repository or git invocation error), so the calling capture's
+    "not applicable" contract leaves the column empty in stored rows. Otherwise returns the
     sorted, exemption-filtered list — the ``.plan/`` exemption drops only
     UNTRACKED plan state and retains a dirtied *tracked* ``.plan/`` file
     (``marshal.json``, a descriptor) as a real leak (see
@@ -513,7 +628,9 @@ def _capture_main_dirty_files(_plan_id: str, _metadata: dict[str, Any], _phase: 
     ``workflow-integration-git/standards/worktree-handling.md`` § layer D
     for the operator-facing recovery loop.
     """
-    repo = _repo_root()
+    repo = _main_repo_root()
+    if repo is None:
+        return None
     raw = git_dirty_files(repo)
     if raw is None:
         return None
@@ -1641,6 +1758,41 @@ def is_invariant_blocking_at_phase(invariant_name: str, phase: str) -> bool:
     return True
 
 
+def _assert_main_differs_from_worktree(
+    captured: dict[str, Any],
+    metadata: dict[str, Any],
+    phase: str,
+) -> None:
+    """Refuse a self-contradictory row before it is persisted.
+
+    Fires only when BOTH ``main_sha`` and ``worktree_sha`` were captured — which
+    is exactly "this plan is worktree-backed with a resolvable worktree", since
+    ``worktree_sha`` is gated on ``_worktree_in_use``. A plan genuinely running
+    on main captures no ``worktree_sha``, so it is never reached.
+
+    The two values must differ: they name two different trees. The resolved
+    paths are compared as well, so the raised exception can tell a regressed
+    main-scoped resolution (same tree) from two distinct trees that happen to
+    hold the same commit — see :class:`WorktreeShaEqualsMainSha`.
+
+    Raises:
+        WorktreeShaEqualsMainSha: when the two captured commits are equal.
+    """
+    main_sha = captured.get('main_sha')
+    worktree_sha = captured.get('worktree_sha')
+    if not main_sha or not worktree_sha or main_sha != worktree_sha:
+        return
+    main_root = _main_repo_root()
+    worktree_path = metadata.get('worktree_path')
+    same_tree = False
+    if main_root is not None and worktree_path:
+        try:
+            same_tree = main_root.resolve() == Path(str(worktree_path)).resolve()
+        except OSError:
+            same_tree = False
+    raise WorktreeShaEqualsMainSha(phase, str(main_sha), same_tree=same_tree)
+
+
 def capture_all(plan_id: str, metadata: dict[str, Any], phase: str) -> dict[str, Any]:
     """Run every applicable invariant and return name -> captured value.
 
@@ -1655,4 +1807,5 @@ def capture_all(plan_id: str, metadata: dict[str, Any], phase: str) -> dict[str,
         if value is None:
             continue
         captured[name] = value
+    _assert_main_differs_from_worktree(captured, metadata, phase)
     return captured

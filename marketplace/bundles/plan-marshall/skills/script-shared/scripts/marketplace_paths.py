@@ -397,6 +397,23 @@ def _override_is_set() -> bool:
     return getattr(file_ops, '_BASE_DIR_OVERRIDE', None) is not None
 
 
+def base_dir_override_active() -> bool:
+    """Return whether a base-dir override is installed by env var or by test hook.
+
+    The single named predicate for "the caller has redirected plan-marshall's
+    runtime-state root", covering both spellings: the ``PLAN_BASE_DIR``
+    environment variable and ``file_ops.set_base_dir()``. Every main-anchored
+    resolver honours the override branch first, so they all ask this one
+    question rather than re-spelling the disjunction — the resolved override
+    directory stands in for the main checkout's ``.plan/local``.
+
+    Returns:
+        ``True`` when ``PLAN_BASE_DIR`` is set to a non-empty value or a
+        ``set_base_dir()`` override is installed; ``False`` otherwise.
+    """
+    return bool(os.environ.get('PLAN_BASE_DIR')) or _override_is_set()
+
+
 def _main_checkout_root() -> Path:
     """Return the MAIN checkout root via ``git rev-parse --git-common-dir``.
 
@@ -522,7 +539,7 @@ def resolve_main_anchored_path(subpath: str | Path) -> Path:
     #    an override or PLAN_BASE_DIR, that directory stands in for the
     #    main-checkout .plan/local, so the subpath lives directly under it. The
     #    file_ops import is deferred — see _override_is_set's docstring.
-    if os.environ.get('PLAN_BASE_DIR') or _override_is_set():
+    if base_dir_override_active():
         import file_ops
 
         return file_ops.get_base_dir() / subpath
@@ -572,7 +589,7 @@ def main_anchored_store_owns_bundle(bundle: str) -> bool:
     if not bundle or bundle in ('.', '..') or '/' in bundle or '\\' in bundle:
         return False
 
-    if os.environ.get('PLAN_BASE_DIR') or _override_is_set():
+    if base_dir_override_active():
         return True
 
     main_root = _main_checkout_root()

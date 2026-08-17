@@ -132,17 +132,18 @@ def test_canonical_inputs_dont_trigger_invalid_field(subcommand, tmp_path):
 
     Isolation note: ``capture`` fans out to ~10 invariant-capture
     subprocesses (``_invariants.capture_all`` → ``manage-*`` via the
-    executor, plus ``git`` on the main checkout). ``_repo_root()`` and
-    ``git_main_checkout_root()`` both fall back to the *process cwd* when
-    ``PLAN_BASE_DIR`` does not resolve to the canonical ``.../​.plan/local``
-    shape — which is exactly the case here (the env points at ``tmp_path``).
+    executor, plus ``git`` on the main checkout). ``_current_repo_root()``
+    falls back to the *process cwd* when ``PLAN_BASE_DIR`` does not resolve to
+    the canonical ``.../​.plan/local`` shape — which is exactly the case here
+    (the env points at ``tmp_path``) — and ``_main_repo_root()`` delegates to it
+    because a set ``PLAN_BASE_DIR`` is an active base-dir override.
     Without pinning cwd, those subprocesses run ``git status --porcelain``
     and resolve ``<repo>/.plan/execute-script.py`` against the REAL repo
     working tree, so under ``-n auto`` they observe transient state mutated
     by concurrent workers (a known recurring real-tree-leak signature) and
     the aggregate capture becomes non-deterministic. Running with
-    ``cwd=tmp_path`` (a non-git, isolated dir) makes ``git_main_checkout_root``
-    return ``None`` so the executor/git fan-out short-circuits cleanly to
+    ``cwd=tmp_path`` (a non-git, isolated dir) leaves the git probes with no
+    repository to read, so the executor/git fan-out short-circuits cleanly to
     "not applicable" — the identifier validators still run at PARSE time
     (the only behaviour this test asserts), so coverage is unchanged while
     the contention source is removed.
