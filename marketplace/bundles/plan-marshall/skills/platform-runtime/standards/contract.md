@@ -1,6 +1,6 @@
 # Platform Runtime TOON Contract
 
-Per-operation TOON schemas for all 24 `platform-runtime` operations. Every operation returns one of three status variants: `success`, `error`, or `no-op`. Parser: `from toon_parser import parse_toon, serialize_toon` from `plan-marshall:ref-toon-format`.
+Per-operation TOON schemas for all 24 `platform-runtime` operations. Almost every operation returns one of three status variants: `success`, `error`, or `no-op`. The single exception is `session render-title` on a target that renders the title itself — it owns stdout and returns the empty string, documented in its own section below. Parser: `from toon_parser import parse_toon, serialize_toon` from `plan-marshall:ref-toon-format`.
 
 **Invocation pattern**:
 ```bash
@@ -120,6 +120,15 @@ Two independent install modes, neither of which disturbs the other's configurati
 
 **Claude's settings-file resolution** is internal to that implementation, not part of this contract: `claude` resolves through `_claude_project_settings_path()` for the default mode (`.claude/settings.json` when present, else `.claude/settings.local.json`) and pins `.claude/settings.local.json` for `--enforcement`. That implementation additionally honours an absolute path ending in `.json` as a test/recovery override; it is Claude-internal, no other target need offer it, and any other value (a relative path, an unknown identifier) is rejected with `unknown_target` rather than silently creating a stray file.
 
+The terminal-title path ALWAYS emits every key below — the three event lists and the three `*_status` fields are never omitted, so a zero-length list is a measured "none of these", not an absent field. Per-element disposition vocabularies differ, and each is assigned in `claude_runtime._install_terminal_title_hooks`:
+
+| Field | Values it can take |
+|---|---|
+| `capture_status` | `installed`, `migrated`, `already_present` |
+| `statusLine_status`, `env_status` | `installed`, `already_present`, `already_present_other`, `overwritten` |
+| `installed_events`, `already_present_events`, `migrated_events` | the render-event labels falling in each bucket |
+| `enforcement_status` (`--enforcement` path) | `installed`, `migrated`, `already_present` |
+
 **Success (Claude — hook installed)**:
 ```toon
 status: success
@@ -128,6 +137,12 @@ target: claude
 settings_path: /repo/.claude/settings.local.json
 hook_installed: true
 already_present: false
+installed_events[9]: SessionStart,SessionStart:clear,UserPromptSubmit,Notification,Stop,PreToolUse:AskUserQuestion,PreToolUse:Bash,PostToolUse:AskUserQuestion,PostToolUse:Bash
+already_present_events[0]:
+migrated_events[0]:
+capture_status: installed
+statusLine_status: installed
+env_status: installed
 ```
 
 **Success (Claude — hook already present and already correct)**:
@@ -138,6 +153,12 @@ target: claude
 settings_path: /repo/.claude/settings.local.json
 hook_installed: true
 already_present: true
+installed_events[0]:
+already_present_events[9]: SessionStart,SessionStart:clear,UserPromptSubmit,Notification,Stop,PreToolUse:AskUserQuestion,PreToolUse:Bash,PostToolUse:AskUserQuestion,PostToolUse:Bash
+migrated_events[0]:
+capture_status: already_present
+statusLine_status: already_present
+env_status: already_present
 ```
 
 **Success (Claude — hook already present, stale `timeout` converged)**:
@@ -148,6 +169,12 @@ target: claude
 settings_path: /repo/.claude/settings.local.json
 hook_installed: true
 already_present: false
+installed_events[0]:
+already_present_events[0]:
+migrated_events[9]: SessionStart,SessionStart:clear,UserPromptSubmit,Notification,Stop,PreToolUse:AskUserQuestion,PreToolUse:Bash,PostToolUse:AskUserQuestion,PostToolUse:Bash
+capture_status: migrated
+statusLine_status: already_present
+env_status: already_present
 ```
 
 **Success (Claude — `--enforcement`, entry installed)**:

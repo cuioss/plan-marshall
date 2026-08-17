@@ -52,16 +52,22 @@ reason: OpenCode has no plugin-driven terminal-title hook (issue anomalyco/openc
 alternative: Use OpenCode's built-in TUI status surface for plan visibility
 ```
 
-On Claude Code, `session render-title` can also return `no-op` when a precondition is unmet:
+A target that RENDERS the title itself does not answer this way when a
+precondition is unmet — and it is the one operation that does not. It owns
+stdout, so it returns the empty string on every path and reports its outcome on
+a side channel instead; on Claude that is an `outcome:` row written to stderr
+(`outcome: no_session_id` for the case above). There is no `no-op` TOON on
+stdout to read, which is why a caller cannot distinguish rendered, nothing-to-
+render, and render-failed from the return value. See `contract.md`
+§ `session render-title`.
 
-```toon
-status: no-op
-operation: session render-title
-reason: session capture has not run; CLAUDE_CODE_SESSION_ID is unset
-alternative: run marshall-steward to install the SessionStart hook
-```
+The `no-op` block above is therefore what a target that DECLINES the operation
+returns, and the distinction matters: declining is the general policy this
+document describes, while owning stdout is one operation's documented exception
+to it.
 
-In all `no-op` cases the calling skill continues and the terminal title is simply absent.
+In every `no-op` case the calling skill continues and the terminal title is
+simply absent.
 
 ### `metrics capture` when session data is missing
 

@@ -60,11 +60,12 @@ subclass import); and `opencode_runtime.subagent_dispatch` echoes the requested 
 
 **What these detections did NOT cover**, recorded so the clean result is not read wider than it is:
 they were searches for target ENUMERATION, so they say nothing about an operation whose docstring
-never enumerated one. Several `Runtime` operations still document `Returns: … (success or error)`
-with no decline branch — `project_initial_setup`, both `layout_*` ops, and `health_check` — which
-leaves a target that cannot implement them no documented way to say so. That is a contract-shape
-gap rather than a Claude coupling, so it belongs to no row here; it is registered as residue in
-plan `010`'s run report for a later plan to scope.
+never enumerated one. Four `Runtime` operations still document no way to decline — `project_initial_setup`
+and `health_check` state `Returns: … (success or error)`, while `layout_skill_roots` and
+`layout_bundle_cache_root` state no status vocabulary at all — which leaves a target that cannot
+implement them nothing to point at when it says so. That is a contract-shape gap rather than a
+Claude coupling, so it belongs to no row here; plan `010`'s run report records it as residue for a
+later plan to scope.
 
 ## B. Claude literals and formats in general scripts
 

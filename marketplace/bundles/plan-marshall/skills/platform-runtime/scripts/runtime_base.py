@@ -200,10 +200,10 @@ class Runtime(ABC):
             converged onto the current shape, already correct, preserved because
             an existing value conflicted and no ``overwrite`` key authorised
             replacing it, or replaced because one did. Not every element admits
-            every disposition, and the exact set each one reports is the target's
-            to define — ``standards/contract.md`` carries them. The payload also
-            carries ``already_present`` — True only when the call changed nothing
-            at all.
+            every disposition — the set each one reports is the target's to
+            define, and each target documents its own alongside the code that
+            assigns it. The payload also carries ``already_present`` — True only
+            when the call changed nothing at all.
         """
 
     # ------------------------------------------------------------------
@@ -214,12 +214,13 @@ class Runtime(ABC):
     def layout_skill_roots(self) -> str:
         """Resolve the project-local-skill discovery root(s) for this target.
 
-        Returns the ordered list of directory paths (relative to a project
-        root, or ``~``-anchored for user-global roots) where ``project:``
-        skills — finalize-steps, recipes, verify-steps, domain-attachable
-        skills — are discovered on this target. Callers resolve each returned
-        root against the relevant base directory and probe in list order
-        (first match wins).
+        Returns the ordered list of directory paths where ``project:`` skills —
+        finalize-steps, recipes, verify-steps, domain-attachable skills — are
+        discovered on this target. They are typically project-relative or
+        ``~``-anchored, but a target whose own configuration override designates
+        a root passes that root through as given, so a caller must assume
+        neither. Callers resolve each returned root against the relevant base
+        directory and probe in list order (first match wins).
 
         A target with one such root returns a single-element list; a target that
         discovers skills across several returns them all, in the order its own
@@ -512,9 +513,10 @@ class Runtime(ABC):
             permissions: List of permission patterns to write.
 
         Returns:
-            Serialized TOON string (success, error, or no-op). A target with no
-            permission model of its own to write declines here like any other
-            operation, rather than reporting a write it did not perform.
+            Serialized TOON string (success, error, or no-op). A target whose
+            permission model this operation cannot be expressed against declines
+            here like any other operation, rather than reporting an outcome it
+            did not reach.
         """
 
     @abstractmethod
@@ -531,9 +533,10 @@ class Runtime(ABC):
                 ``"missing-steps"`` is in checks).
 
         Returns:
-            Serialized TOON string (success, error, or no-op). A target with no
-            permission model of its own to write declines here like any other
-            operation, rather than reporting a write it did not perform.
+            Serialized TOON string (success, error, or no-op). A target whose
+            permission model this operation cannot be expressed against declines
+            here like any other operation, rather than reporting an outcome it
+            did not reach.
         """
 
     @abstractmethod
@@ -555,9 +558,10 @@ class Runtime(ABC):
             dry_run: When ``True``, preview changes without applying.
 
         Returns:
-            Serialized TOON string (success, error, or no-op). A target with no
-            permission model of its own to write declines here like any other
-            operation, rather than reporting a write it did not perform.
+            Serialized TOON string (success, error, or no-op). A target whose
+            permission model this operation cannot be expressed against declines
+            here like any other operation, rather than reporting an outcome it
+            did not reach.
         """
 
     @abstractmethod
@@ -572,9 +576,10 @@ class Runtime(ABC):
             dry_run: When ``True``, preview changes without applying.
 
         Returns:
-            Serialized TOON string (success, error, or no-op). A target with no
-            permission model of its own to write declines here like any other
-            operation, rather than reporting a write it did not perform.
+            Serialized TOON string (success, error, or no-op). A target whose
+            permission model this operation cannot be expressed against declines
+            here like any other operation, rather than reporting an outcome it
+            did not reach.
         """
 
     @abstractmethod
@@ -589,9 +594,10 @@ class Runtime(ABC):
             dry_run: When ``True``, preview changes without applying.
 
         Returns:
-            Serialized TOON string (success, error, or no-op). A target with no
-            permission model of its own to write declines here like any other
-            operation, rather than reporting a write it did not perform.
+            Serialized TOON string (success, error, or no-op). A target whose
+            permission model this operation cannot be expressed against declines
+            here like any other operation, rather than reporting an outcome it
+            did not reach.
         """
 
     @abstractmethod
@@ -602,9 +608,10 @@ class Runtime(ABC):
             scope: ``"global"``, ``"project"``, or ``"both"``.
 
         Returns:
-            Serialized TOON string (success, error, or no-op). A target with no
-            permission model of its own to write declines here like any other
-            operation, rather than reporting a write it did not perform.
+            Serialized TOON string (success, error, or no-op). A target whose
+            permission model this operation cannot be expressed against declines
+            here like any other operation, rather than reporting an outcome it
+            did not reach.
         """
 
     @abstractmethod
@@ -624,9 +631,10 @@ class Runtime(ABC):
             dry_run: When ``True``, preview changes without applying.
 
         Returns:
-            Serialized TOON string (success, error, or no-op). A target with no
-            permission model of its own to write declines here like any other
-            operation, rather than reporting a write it did not perform.
+            Serialized TOON string (success, error, or no-op). A target whose
+            permission model this operation cannot be expressed against declines
+            here like any other operation, rather than reporting an outcome it
+            did not reach.
         """
 
     # ------------------------------------------------------------------

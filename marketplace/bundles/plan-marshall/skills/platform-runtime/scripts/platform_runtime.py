@@ -146,24 +146,24 @@ def _bootstrap_glob_discover(target: str | None = None) -> Path | None:
 _bootstrap_glob_discover()
 
 # ---------------------------------------------------------------------------
-# Imports — deferred until after sys.path bootstrap above.
-# ---------------------------------------------------------------------------
-from claude_runtime import ClaudeRuntime  # noqa: E402
-from opencode_runtime import OpenCodeRuntime  # noqa: E402
-from runtime_base import Runtime, toon_error  # noqa: E402
-
-# ---------------------------------------------------------------------------
-# Target registration block — the ONE place a runtime target is registered.
+# Target registration block — the ONE place a runtime target is registered, and
+# the only part of this module a new target edits.
 #
-# Registering a target is THREE edits in this module: its ``Runtime`` subclass in
-# ``_REGISTRY``, its extra bootstrap libraries in ``_TARGET_BOOTSTRAP_LIBS``, and
-# an import of that subclass. The two dicts are declared adjacently so the pair
-# cannot drift unnoticed, and a lockstep test asserts their key sets stay equal.
+# Everything a target needs is here: its import, its ``Runtime`` subclass in
+# ``_REGISTRY``, and its extra bootstrap libraries in ``_TARGET_BOOTSTRAP_LIBS``.
+# The imports sit inside the block rather than with the module's other imports
+# for exactly that reason — splitting them would put one third of a registration
+# thirty lines away from the other two, which is how the pair drifted before.
+# Every import here is deferred until after ``_bootstrap_glob_discover()`` above
+# has put the sibling script directories on ``sys.path``, which is why they carry
+# ``noqa: E402`` and cannot move to the top of the file.
 #
-# The import is written with the other runtime imports above by convention, not
-# by necessity — everything from ``_bootstrap_glob_discover()`` down is past the
-# ``sys.path`` setup, this block included, so the import would work here too.
-# Keeping the imports together is the only reason they sit where they do.
+# ``runtime_base`` is imported alongside them because it is one import group and
+# the linter keeps it that way; it is the shared base contract, not a target, so
+# a new target never touches that line.
+#
+# The two dicts are declared adjacently so they cannot drift unnoticed, and a
+# lockstep test asserts their key sets stay equal.
 #
 # ``_DEFAULT_TARGET`` is the single fallback identifier: every argparse default
 # and every "no target resolved" fallback in this module reads it rather than
@@ -171,6 +171,10 @@ from runtime_base import Runtime, toon_error  # noqa: E402
 # ``script-shared/scripts/marketplace_paths.py`` is held equal to this one by
 # the same lockstep test.
 # ---------------------------------------------------------------------------
+
+from claude_runtime import ClaudeRuntime  # noqa: E402
+from opencode_runtime import OpenCodeRuntime  # noqa: E402
+from runtime_base import Runtime, toon_error  # noqa: E402
 
 _DEFAULT_TARGET = "claude"
 
@@ -734,13 +738,15 @@ def main(argv: list[str] | None = None) -> int:
     # Dispatch to the runtime implementation.
     # ------------------------------------------------------------------
     result = _dispatch(runtime, operation, remaining)
-    # An empty string is the already-emitted sentinel from ``session render-title``
-    # on a target that renders the title itself: the runtime has written whatever
-    # its channel required directly to stdout (or written nothing at all), and the
-    # caller MUST NOT append a trailing newline that would render as an empty row
-    # under the prompt. It is not specific to one output mode — every render path
-    # returns it. Every TOON return path produces a non-empty string, so the
-    # truthiness check is sufficient.
+    # An empty string is the stdout-is-final signal from ``session render-title``
+    # on a target that renders the title itself. It carries NO outcome: the render
+    # may have written its bytes, had nothing to write, or FAILED to write, and all
+    # three return "". So this branch means only "the runtime owns stdout here" —
+    # never "the title was emitted". A target that renders names its real outcome on
+    # a side channel (the Claude runtime writes an ``outcome:`` row to stderr).
+    # Whatever happened, the caller MUST NOT append a trailing newline that would
+    # render as an empty row under the prompt. Every TOON return path produces a
+    # non-empty string, so the truthiness check is sufficient.
     if result:
         print(result)
     return 0
