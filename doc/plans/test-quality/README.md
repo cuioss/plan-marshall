@@ -305,12 +305,13 @@ it, and where a run cannot finish, **report what was not reached rather than thi
 | `120` | repository tooling only — the checker and its tests. It **reads** every plan document and the test tree and writes neither | anything; it shares no surface with any plan in the epic |
 | `110` | the tree's skip sites, which **cross** several slices — `test/sync-plugin-cache/`, `test/pm-plugin-development/`, `test/marketplace/` and scattered others — plus `test/conftest.py`'s session preflight and skip guard | nothing running against those directories; see § "The collision matrix" for `090` |
 
-**`090`, `100` and `110` were added after the epic's executed half**, each from something four runs
-recorded and none could act on: `090` owns the production and harness defects every reduction plan is
+**`090`, `100`, `110` and `120` were added after the epic's executed half**, each from something the
+executed runs recorded and none could act on: `090` owns the production and harness defects every reduction plan is
 forbidden to fix, `100` owns the module-budget split none of them reached, and `110` owns the two run
 conditions none of them measured. `090` should land before `070` and `080` start; `100` takes their
 slices only after they land; `110` is best run before all three, because they are what it exists to
-watch.
+watch. **`120` should land earliest of all** — it checks the documents every other plan is executed
+from, and eight verification rounds established that nothing else does.
 
 **`010` and `020` are blocking.** The reduction plans consume the harness `020` builds and the style
 `010` writes; run either reduction wave before them and it will invent its own harness, which is the
@@ -359,7 +360,8 @@ three automated reviews all reached the same conclusion: an ownership set held i
 derivation and no check, drifts — and three successive attempts to fix that by restructuring the prose
 each reproduced the drift inside their own commit. **Treat every row as a lead**: before acting on it,
 read the two plans' own Expected surfaces and confirm the shared path is still shared. The residue
-entry § "What the executed half left open" records the missing derivation as open work with no owner.
+**Plan `120` computes this table from the plans' own Expected surfaces and fails when this document
+disagrees with it**; until it lands, every row here is a lead.
 
 **How to use it.** Before starting, find your plan in either column. For every row that names it,
 confirm no open PR and no in-flight branch exists for the other party — and **halt and report** rather
@@ -453,6 +455,7 @@ shapes names the owning plan rather than only the defect:
 | A test that skips, or a change that makes the suite slower | `110` |
 | A promotion candidate for the shared harness — a helper three or more slices would want | `090`, as a proposal in the report first |
 | Anything inside the run's own slice | the run itself |
+| A document in this epic disagreeing with another about ownership, collisions or the partition | `120` — and once it lands, that disagreement is a red build rather than a finding |
 
 Two items remain **unowned by design**, both recorded rather than assigned because each needs a
 decision this epic does not carry: populating the `identifier-validator-corpus` registry, which is a
