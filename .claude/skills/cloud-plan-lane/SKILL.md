@@ -577,15 +577,16 @@ Give it, at minimum:
 - **the stop question**, asked directly: *does anything you found remain that condition A or B forbids
   leaving open?* — with A and B quoted to it, and every survivor still open from earlier rounds listed
   for re-checking. Its answer is what ends the loop on the verifier exit (§ "When the loop stops"; the
-  other exit is the exhausted budget), so it is asked of the verifier here rather than decided by the
+  other exit is a spent budget no operator extended), so it is asked of the verifier here rather than decided by the
   author afterwards.
 
 Then:
 
 - **Findings that are real** → fix them, then re-dispatch. A verification pass that found a defect
   has not finished — unless conditions **A** and **B** permit that finding to be left open, or the
-  round budget is spent, in which case everything **A** forbids is still **fixed**, B's survivors are
-  characterised, and the loop ends there (§ "When the loop stops", at the end of this step).
+  round budget is spent with no operator extending it, in which case everything **A** forbids is still
+  **fixed**, B's survivors are characterised, and the loop ends there (§ "When the loop stops", at the
+  end of this step).
 - **Findings you reject** → record the finding *and the reason for rejecting it* in the report. A
   dismissed finding is still evidence.
 - Every finding — fixed, rejected-with-reason, deferred to a named follow-up, or left open as a
@@ -827,8 +828,10 @@ corrections long after the artefact under review has stopped improving.
 
 - **(i) the verifier answers that nothing remains** that A or B forbids leaving open, on the evidence
   required below; or
-- **(ii) the round budget is exhausted** — the hard terminator, because (i) is not guaranteed to be
-  reachable.
+- **(ii) the round budget is exhausted** and no operator extends it — the hard terminator, because
+  (i) is not guaranteed to be reachable. A reachable operator is asked at that boundary and may grant
+  another five rounds; the loop ends here only once the answer is "stop", or once there is nobody to
+  ask — the budget rule and its headless carve-out are stated later in this section.
 
 Either way, **A and B govern what may be left open**. Call them **A** and **B** (§ Step 8's merge gate
 has its own numbered conditions; these are not those).
@@ -881,23 +884,53 @@ answer; the run still owns the act of stopping on it, and must not launder the o
 open" are different claims. Writing the first is the same unmeasurable-rendered-as-measured defect
 this lane exists to catch, applied to the lane's own process.
 
-**A round budget, declared before the first dispatch.** The plan states it where it has one; otherwise
-the run does, **up front** — before it knows what the rounds will say, because a number chosen at the
-moment of wanting to stop is not a budget. Exhausting it is a **STOP CONDITION**, and what follows is
-its stated **autonomous fallback**.
+**The round budget is FIVE, unless the plan sets another.** It is not the run's to choose. The earlier
+rule — declare your own, up front — still handed the number to the party motivated to stop, and "up
+front" only stops a run picking the number at the moment it wants to quit; it does nothing about a run
+that picks two. Five is the default because it is where the one run that was correctly assessed as
+finished landed: its rounds 3–5 found nothing against the code and everything against its own report,
+which is the signal that the artefact has stopped improving. The twelve-round run is the reason the
+number alone is not enough — it kept finding real defects in its own fixes, so a fixed ceiling with no
+way to extend it would have stopped that run mid-repair. Hence a default plus a checkpoint, rather
+than either alone.
 
-When it is exhausted the run still **fixes everything A forbids**, then stops with B's survivors
-characterised and disclosed per instance. Nothing false ships because the rounds ran out. `Outcome`
-keeps its ordinary meaning — a verdict on the **deliverables** (§ Report), not on the loop — so a run
-whose deliverables are complete records `completed` and discloses its survivors, exactly as one that
-exited on a verifier's "nothing left" would.
+Exhausting the budget is a **STOP CONDITION**. What happens next depends on whether anyone can be
+asked.
 
-A run that wants more rounds than it declared MAY ask a reachable operator — never must. Where the
-**plan** named the budget, that is § "Rules that outrank convenience" operating as written, since the
-permission it grants is conditioned on *a plan* naming the STOP CONDITION. Where the **run** declared
-the budget, no plan named one, so that section does not reach the case and the permission is granted
-here, on the same terms. The budget, the round that ended the loop, the verifier's last answer, and
-every survivor go in the report either way.
+**With a reachable operator, ask at the boundary — do not stop, and do not continue, silently.**
+Report where the loop stands and put the choice to the operator via `AskUserQuestion`:
+
+- how many rounds have run, and what the last one found;
+- whether the findings are getting **narrower** (about the run's own report and plan documents) or are
+  merely fewer — the distinction that says whether more rounds would buy anything;
+- every survivor still open, with its (a) proof or (b) bound;
+- the question itself: **another five rounds, or stop here?**
+
+A granted extension is another five on identical terms — the same boundary question again when it
+runs out, the same fallback if the operator has since become unreachable. Record the question, the
+answer, and every extension in the report: a conversation event is not a committed artifact, so the
+report is its only durable trace.
+
+⛔ **A headless run does NOT ask, and MUST NOT block waiting for an answer.** A cron-fired run, or a
+dispatched leaf with no operator to reach, takes the autonomous fallback below the moment the budget
+is spent.
+
+This carve-out is what makes the budget safe to enforce at all, and it must not be "simplified" away
+by a later editor who reads the ask as unconditional. An unconditional ask turns every unattended run
+into one that stalls forever at round five — strictly worse than stopping with survivors disclosed,
+because a stalled run delivers nothing and discloses nothing. Escalation is the reachable case's
+**obligation** and the headless case's **impossibility**; the headless path always remains a complete,
+unblocked outcome.
+
+**The autonomous fallback** — taken when the budget is spent and no operator extends it, whether
+because none is reachable or because the operator said stop. The run still **fixes everything A
+forbids**, then stops with B's survivors characterised and disclosed per instance. Nothing false ships
+because the rounds ran out. `Outcome` keeps its ordinary meaning — a verdict on the **deliverables**
+(§ Report), not on the loop — so a run whose deliverables are complete records `completed` and
+discloses its survivors, exactly as one that exited on a verifier's "nothing left" would.
+
+The budget, every extension and who granted it, the round that ended the loop, the verifier's last
+answer, and every survivor go in the report either way.
 
 ⭐ **A stopped loop is not defect-free code, and the report must not blur them.** In the five-round run
 above the loop was correctly assessed as finished — and an external reviewer then found **two real
@@ -1332,7 +1365,7 @@ that its artifact exists on disk:
 | 4 Per-commit gate | Every commit touching `*.py` was preceded by a clean quality gate — a `total_issues: 0` / empty `errors[]` executor log, or the direct `./pw` tools each reporting clean (`ruff`/`mypy`/SPDX passed) |
 | 4 Pushed | No unpushed commit remains (`git status -sb` reports no `ahead`) |
 | 5 Build gate | Report states the git-derived Python-change verdict and the build outcome |
-| 6 Verification sub-agent | Findings and dispositions in the report; **which of the two exits ended the loop**, the **round budget declared up front**, and the round that stopped it. On the verifier exit: **the verifier's own last answer** — never the author's verdict — and the **evidence stronger than a read** it rests on, named. On the budget exit: that fact, with everything A forbids **fixed** regardless and what closing each remaining B survivor would take. Either way: each survivor — and each behavioural finding left `deferred` — listed individually with its (a) proof or (b) bound and confirmation it was **re-put to the verifier** in the stopping round; whether the late rounds' findings were **narrower and not merely fewer**; the **residue to assume remains**; and `Outcome` still reporting the deliverables, not the loop (§ Step 6, "When the loop stops") |
+| 6 Verification sub-agent | Findings and dispositions in the report; **which of the two exits ended the loop**, the **budget that applied** (five, or the plan's) with **every extension and who granted it**, and the round that stopped it. Where the budget ran out with an operator reachable, that the boundary question was **put to them** and what they answered; where it ran out headless, that fact and the fallback taken. On the verifier exit: **the verifier's own last answer** — never the author's verdict — and the **evidence stronger than a read** it rests on, named. On the budget exit: that fact, with everything A forbids **fixed** regardless and what closing each remaining B survivor would take. Either way: each survivor — and each behavioural finding left `deferred` — listed individually with its (a) proof or (b) bound and confirmation it was **re-put to the verifier** in the stopping round; whether the late rounds' findings were **narrower and not merely fewer**; the **residue to assume remains**; and `Outcome` still reporting the deliverables, not the loop (§ Step 6, "When the loop stops") |
 | 7 PR cycle | PR exists; every comment dispositioned in the report; the participation table carries a verdict **and** a `Reopens?` value per reviewer, and every `silent` verdict records what its recovery check found. An `unreadable` verdict means condition 2 is NOT established — the row is reported as **not done**, whatever the merge outcome |
 | 8 Merge gate | Conditions 1–3 met and auto-merge armed. Either `state: MERGED` was confirmed after arming, **or** the session could not self-wake to watch the queue (§ Cloud session affordances) and delegated the landing to the orchestrator's collect — both are completed, neither is partial (§ Step 8). The merge commit is recorded to the operator, not in the pre-merge report |
 | 8 Bridge | No **status or bookkeeping** write landed under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan's directory was touched; a **declared-deliverable** edit to a shared lane doc (e.g. `cloud-bridge.md`, `README.md`, the plan template) is permitted — and the report carries the PR number and per-deliverable outcome the orchestrator will collect from |
@@ -1423,8 +1456,10 @@ section states what was checked to reach it.
 
 Then the stop record (§ Step 6, "When the loop stops"):
 
-- **which of the two exits ended the loop** — the verifier's answer or the exhausted budget — the
-  round budget declared before the first dispatch, and which round stopped it;
+- **which of the two exits ended the loop** — the verifier's answer, or a spent budget no operator
+  extended — the budget that applied (five, or the plan's), every extension granted and by whom, and
+  which round stopped it. A budget exhausted with a reachable operator records the boundary question
+  and its answer; one exhausted headless records that there was nobody to ask;
 - on the **verifier exit**: **the verifier's own last answer**, since the run does not assert the stop
   on its own authority, and **the evidence stronger than a read** that answer rests on — the
   differential run, fuzz sweep, mutation campaign or branch enumeration, named;
@@ -1437,9 +1472,10 @@ Then the stop record (§ Step 6, "When the loop stops"):
 - **what residue to assume remains** — the deliverables should be read as still carrying defects of
   the kind the last round found, and the report says so rather than implying the last round exhausted
   them;
-- on the **budget exit**: that the rounds ran out — with everything A forbids fixed regardless, and
-  what closing each remaining B survivor would take. `Outcome` is unaffected either way: it reports
-  the deliverables, not the loop.
+- on the **budget exit**: that the rounds ran out and were not extended — naming which case it was,
+  an operator who answered "stop" or no operator to ask — with everything A forbids fixed regardless,
+  and what closing each remaining B survivor would take. `Outcome` is unaffected either way: it
+  reports the deliverables, not the loop.
 
 A run that fixed everything says so, and has no survivor rows.
 
@@ -1504,4 +1540,10 @@ A finding is recorded **per instance**, not bundled: three occurrences of one de
   is its only durable trace. A **headless** run, or a **dispatched leaf** that cannot reach the operator
   at all, takes the plan's stated autonomous fallback. Escalation is a permitted option for the reachable case, **never** a requirement — so the
   headless path always remains a complete, unblocked outcome.
+
+  **The verification loop's round budget is the one place this is an obligation rather than an option**
+  (§ Step 6, "When the loop stops"): a reachable operator IS asked when the budget runs out, because
+  the alternative is a run silently deciding for itself how much verification is enough. The headless
+  half is unchanged and non-negotiable — no operator to reach means the autonomous fallback, never a
+  wait.
 - **Never write outside the repository** — this lane has no business in `.plan/` or `~/.claude/`.
