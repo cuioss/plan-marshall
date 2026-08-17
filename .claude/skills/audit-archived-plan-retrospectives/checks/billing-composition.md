@@ -32,9 +32,12 @@ re-derived from the raw per-phase fields.
 | `work/metrics-dispatch-boundaries-{phase}.toon` | the `total_tokens` and four context-load columns, summed per phase | the same-population reconciliation (see below) |
 
 **The ledger's four context-load columns read four ways.** A cell is MEASURED (a
-nonzero integer), UNMEASURED (the literal `unmeasured`, or a column a legacy
-five-column row does not have), UNRECOGNISED (any other shape), or a literal `0`,
-whose reading the provenance gate below decides. Only measured cells are summed,
+nonzero integer, or a literal `0` in a row the gate below can date), UNMEASURED
+(the literal `unmeasured`, or a column a legacy five-column row does not have),
+UNRECOGNISED (any other shape), or UNDATABLE (a literal `0` in a row the gate
+cannot date — the state `data-format.md` names `indeterminate`, which this reader
+expresses as the field's absence rather than per column, because it sums instead
+of emitting per-row states). Only measured cells are summed,
 and a field NO row measured is OMITTED from the per-phase ledger totals rather
 than returned as `0` — the same absent-is-not-zero rule the per-phase reader
 already applies. An unmeasured or unrecognised cell therefore contributes nothing

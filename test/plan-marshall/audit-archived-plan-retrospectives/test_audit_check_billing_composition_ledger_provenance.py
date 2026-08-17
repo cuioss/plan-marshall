@@ -12,6 +12,7 @@ behaviour around it lives in
 
 from pathlib import Path
 
+import pytest
 from _audit_fixtures import _EXECUTE_PHASE, audit
 
 # The canonical nine-column dispatch-boundary ledger header
@@ -129,22 +130,30 @@ class TestDispatchBoundaryZeroProvenance:
         assert totals['cache_read_input_tokens'] == 0
         assert totals['cache_creation_input_tokens'] == 0
 
-    def test_a_fingerprinted_row_does_not_date_its_neighbour(self, tmp_path: Path):
+    @pytest.mark.parametrize('dated_first', [False, True], ids=['undated-first', 'dated-first'])
+    def test_a_fingerprinted_row_does_not_date_its_neighbour(
+        self, tmp_path: Path, dated_first: bool
+    ):
         """The gate is per ROW, never per file: one dated row dates only itself.
 
         A file-level fingerprint would let one current-writer row promote every
         other row's undatable `0` to a measurement. Here the fingerprinted row
         contributes its own measurement while the fingerprint-free row's zeros
-        contribute nothing — so `output_tokens` carries 7, not 7 summed with a
-        zero this reader cannot date.
+        contribute nothing.
+
+        BOTH row orders are driven, and the `dated-first` arm is the one that
+        does the work: a file-level flag that accumulates across rows is still
+        unset when an undated row is read FIRST, so an undated-first arm alone
+        passes under exactly the defect this test names. Reversing the order
+        makes the leak observable — the undated row's `input_tokens` would be
+        promoted to a measured `0` by its neighbour's fingerprint.
         """
+        dated = '2026-05-08T14:24:11Z,clean_exit_queue_empty,200,3,2000,unmeasured,7,0,0'
+        undated = '2026-05-08T14:23:11Z,clean_exit_queue_empty,100,2,1000,0,0,0,0'
         path = self._ledger(
             tmp_path,
             'mixed-rows',
-            [
-                '2026-05-08T14:23:11Z,clean_exit_queue_empty,100,2,1000,0,0,0,0',
-                '2026-05-08T14:24:11Z,clean_exit_queue_empty,200,3,2000,unmeasured,7,0,0',
-            ],
+            [dated, undated] if dated_first else [undated, dated],
         )
 
         totals = audit._parse_dispatch_boundary_totals(path)
@@ -155,8 +164,32 @@ class TestDispatchBoundaryZeroProvenance:
         # nothing to them.
         assert totals['cache_read_input_tokens'] == 0
         assert totals['cache_creation_input_tokens'] == 0
-        # Never measured on the dated row, and undatable on the other.
+        # Unmeasured on the dated row, undatable on the other: neither row makes
+        # it a measurement, in either order.
         assert 'input_tokens' not in totals
+
+    def test_a_negative_context_load_value_dates_the_row(self, tmp_path: Path):
+        """The gate turns on `!= 0`, so a negative cell dates the row and sums.
+
+        Pinned because the gate's predicate is a comparison against zero rather
+        than a positivity test, and because the sibling reader
+        (`analyze-logs.py` `_parse_dispatch_boundary_file`) makes the same
+        choice — a divergence here would put the two readers back into
+        disagreement about the same bytes.
+        """
+        path = self._ledger(
+            tmp_path,
+            'negative',
+            ['2026-05-08T14:23:11Z,clean_exit_queue_empty,100,2,1000,-5,0,0,0'],
+        )
+
+        totals = audit._parse_dispatch_boundary_totals(path)
+
+        assert totals['input_tokens'] == -5
+        # The negative dated the row, so its sibling zeros are measured zeros.
+        assert totals['output_tokens'] == 0
+        assert totals['cache_read_input_tokens'] == 0
+        assert totals['cache_creation_input_tokens'] == 0
 
     def test_unrecognised_cell_is_not_a_fingerprint(self, tmp_path: Path):
         """A cell this reader could not parse dates nothing.

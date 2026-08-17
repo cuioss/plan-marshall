@@ -813,13 +813,17 @@ def test_unmeasured_fixture_reads_three_ways_in_the_retrospective_reader():
     assert rows[2]['unrecognised_columns'] == []
 
 
-def test_unmeasured_fixture_reads_three_ways_in_the_audit_ledger_reader():
+def test_unmeasured_fixture_separates_measured_zeros_from_unmeasured_in_the_audit_ledger_reader():
     """The same file, through the `.claude` audit skill's independent reader.
 
     The two readers hand-mirror the same `data-format.md` contract from separate
     trees — one of them in a tree the architecture inventory does not crawl — so
     they are exercised against the SAME artifact here rather than each against
     its own.
+
+    Every row of this fixture carries an `unmeasured` token, so every row is
+    datable and the reader's fourth state (an UNDATABLE literal `0`) does not
+    arise here — `undatable/` is the fixture that exercises it.
     """
     totals = audit._parse_dispatch_boundary_totals(_UNMEASURED_FIXTURE)
 
