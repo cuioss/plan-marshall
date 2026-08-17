@@ -27,9 +27,11 @@
 > contract, and the `plugin-doctor` invocation this plan measures with. The landed skills are the
 > authority where they and the README disagree.
 >
-> **This plan has no blocking dependency on `030`–`080`,** and it is the one plan in the epic that
-> *may* edit `marketplace/bundles/**` and `test/conftest.py`. It should land **before** `070` and
-> `080` start, because three of its deliverables are what unblocks their **B6** and **B7** work.
+> **This plan has no blocking dependency on `030`–`080`,** and it is the only plan in the epic that
+> may edit `marketplace/bundles/**`. It **shares** `test/conftest.py` with plan `110` — the two own
+> different parts of that file and must not run concurrently against it; see § "The three surfaces
+> this plan shares". It should land **before** `070` and `080` start, because three of its
+> deliverables are what unblocks their **B6** and **B7** work.
 
 ## Problem
 
@@ -47,10 +49,12 @@ front of the two largest deliverables the epic has left.
 own parser through one of two seams — a published builder, or interception at `main()`'s
 `parse_args`. A script that publishes neither raises `ParserSeamNotFound`, which is the correct
 failure but leaves the call site unconvertible. Plan `060` probed every such site in its slice and
-recorded 27 blocked on production modules that expose no seam at all — `script-shared`'s build CLI
-(`_build_cli.py`, `_build_execute_factory.py`) and `manage-providers`' module-level entry points
-(`_list_providers.py`, `_cred_*.py`) — with its own report stating that *"a published `build_parser()`
-would unblock all 14"* for the first group. **B6** is not a preference: `test/conftest.py`'s own
+recorded 27 blocked on production modules that expose no seam at all — **15** in `script-shared`'s
+build CLI (`_build_cli.py`, `_build_execute_factory.py`) and **12** in `manage-providers`'
+module-level entry points (`_list_providers.py`, `_cred_*.py`) — with its own report stating that a
+published `build_parser()` would unblock all 15 of the first group. (That report's finding row says
+"14"; the same report records the subtotal corrected to 15 in a later commit, so the corrected figure
+is the one carried here.) **B6** is not a preference: `test/conftest.py`'s own
 `parse_ns` docstring explains that a hand-built namespace *"carries only the attributes its author
 remembered"*, which is the defect the rule exists to remove.
 
@@ -65,8 +69,11 @@ files the loader cannot reach.
 **The third.** `load_script_module` registers the module it builds in `sys.modules` under the script
 stem. A test that loads a module *by file* therefore displaces the object other directories import
 *by name*, and the displaced holder fails on `importlib.reload` depending on collection order. Plan
-`060` found this as a live reverse-order failure, fixed four sites, and left three latent with **no
-guard of any kind** — the invariant is real and nothing in the tree asserts it.
+`060` found this as a live reverse-order failure and fixed it; converted six registrations its own
+preamble sweep had introduced back to plain imports; fixed two further pre-existing collisions with
+real blast radius (`extension_discovery`, plain-imported by 15 other modules, and `_providers_core` by
+3); and left **three** latent, with **no guard of any kind**. Those three are safe only because no
+test imports their names plainly today, which is a property of the tree rather than an invariant.
 
 **And the rules the epic measures itself with have gaps of their own.** The
 `test-docstring-historical-prose` matchers require `deliverable D<n>` and `PR #<n>`, so the live
@@ -82,10 +89,17 @@ that exists to catch dead links.
 The surface the reduction plans may not touch no longer blocks them. Every `parse_ns` call site that
 is blocked on a missing parser seam is unblocked by publishing that seam; the shared loader can
 address a skill file wherever it lives and cannot silently displace a shared registration; the
-citation rules match the spellings that actually occur in this tree; and the one rule whose
-flip-to-`error` condition is already met is enforced rather than advisory.
+citation rules match the spellings that actually occur in this tree; and the severity ladder's
+position is a measured, reported fact rather than an assumption.
 
 ## Deliverables
+
+**Six code deliverables and a report, with a declared cut.** That is more than the two-to-three a
+cloud run completes — the epic README § "How much one run does" carries the measurement — so the
+ordering is not decorative. **D1–D3 are the blocking half**: they are what `070` and `080` are waiting
+on, and a run that finishes them and reports D4–D6 as not done has delivered what the epic needs
+first. D4–D6 are independent of each other and of the blocking half; a second run takes them. **Report
+what was not reached rather than thinning what was.**
 
 1. **D1 — Publish a parser seam on every production module that blocks a `parse_ns` conversion.**
    Add a module-level `build_parser()` (the name `test/conftest.py`'s `PARSER_BUILDER_NAMES` already
@@ -108,17 +122,22 @@ flip-to-`error` condition is already met is enforced rather than advisory.
    cannot be applied. Take exactly one of the two and state in the report which, and why the other
    was rejected. Both halves are inside this plan's surface, so this is a decision the run makes from
    evidence rather than a proposal it records.
-   *Done when:* the two `test-module-preamble-boilerplate` findings plan `060`'s third run identified
-   as structurally unfixable are either fixable by the documented remedy or no longer reported, the
-   whole-tree count for that rule is re-derived before and after, and no finding that was a true
-   positive stopped being reported.
+   **There are three instances, not two.** Plan `060`'s third run identified two in its own slice;
+   `test/pm-code-intelligence/` carries a third of the same shape, which is why that directory's
+   assignment to plan `080` explicitly routes its one open finding here. Re-derive the set rather than
+   taking any of these three counts on trust.
+   *Done when:* every `test-module-preamble-boilerplate` finding whose file loads a skill-root
+   `extension.py` — the two in plan `060`'s slice **and** the one in `test/pm-code-intelligence/` — is
+   either fixable by the documented remedy or no longer reported, the whole-tree count for that rule
+   is re-derived before and after, and no finding that was a true positive stopped being reported.
 
 3. **D3 — Make a shared-registration collision impossible to introduce silently.** Give
    `load_script_module` a way not to publish into `sys.modules` (or to publish under a caller-chosen
    name that cannot collide), and add a guard test that fails when a module loaded by file registers
-   a name another test module imports plainly. Plan `060` fixed four such collisions by hand and left
-   three latent; its own report states the remaining three are safe only because *"no test imports
-   [those names] plainly"*, which is a property of today's tree rather than an invariant.
+   a name another test module imports plainly. Plan `060` fixed every collision it could reach by hand
+   — the live reverse-order failure, six its own preamble sweep had introduced, and two pre-existing
+   ones with real blast radius — and left **three** latent, safe only because no test imports those
+   names plainly today, which is a property of the tree rather than an invariant.
    *Done when:* the guard exists, it **fails** when one of the three latent registrations is given a
    plain importer (demonstrate this by adding the importer, watching it go red, and removing it), and
    the reverse-directory-order arm of the suite still passes.
@@ -146,17 +165,7 @@ flip-to-`error` condition is already met is enforced rather than advisory.
    its sample size, and the rule is either given the same literal-span exemption or left unchanged
    with the measurement as the stated reason.
 
-6. **D6 — Flip the one rule whose condition is met, and state where the other three stand.** Plan
-   `010` shipped four `test-conventions` rules at `severity: warning` and proposed flipping each to
-   `error` independently once its own whole-tree count reaches zero.
-   `test-helper-module-misnamed` was already at zero when `010` landed and is at zero today — **both
-   are leads, re-derive both.** Flip that one rule to `error`. For the other three, report the
-   re-derived count rather than flipping.
-   *Done when:* `test-helper-module-misnamed` is `severity: error`, the whole-tree
-   `test-conventions` sweep still passes, and the report carries the current count for all four rules
-   beside `010`'s baseline so the ladder's remaining distance is visible.
-
-7. **D7 — Stop `test/conftest.py` naming a helper by a path that is about to move.** The
+6. **D6 — Stop `test/conftest.py` naming a helper by a path that is about to move.** The
    `_routing_namespaces` docstring names `test/plan-marshall/build_test_helpers.py` **by path**, as
    part of its explanation of why the daemon-routing fixture patches closure `__globals__`. Plan
    `070` renames that file and may not edit `conftest.py`, so the docstring goes stale the moment
@@ -168,11 +177,22 @@ flip-to-`error` condition is already met is enforced rather than advisory.
    survive verbatim in substance, and `grep -rn 'build_test_helpers' test/conftest.py` returns
    nothing.
 
-8. **D8 — Report the measured deltas.** Per-rule whole-tree `test-conventions` counts before and
-   after; the re-derived `ParserSeamNotFound` module list with the call-site count each entry
-   unblocks; the D4 and D5 false-positive samples with their sizes; the four-rule severity ladder
-   table; and the collected test count before and after.
-   *Done when:* the report carries every figure with the command that produced it.
+7. **D7 — Report the measured deltas, and where the severity ladder stands.** Per-rule whole-tree
+   `test-conventions` counts before and after; the re-derived `ParserSeamNotFound` module list with
+   the call-site count each entry unblocks; the D4 and D5 false-positive samples with their sizes;
+   and the collected test count before and after.
+
+   **Plus the severity ladder, which is a measurement here and not a flip.** Plan `010` shipped four
+   `test-conventions` rules at `severity: warning` and proposed flipping each to `error`
+   independently once its own whole-tree count reached zero.
+   **`test-helper-module-misnamed` has already been flipped** — it ships at `severity: error` today,
+   landed by PR #1250, and `_analyze_test_conventions.py`'s own module docstring records why. So this
+   deliverable **reports** the ladder rather than acting on it: re-derive each of the four counts, set
+   them beside `010`'s baseline, and state which rules have reached zero. **If — and only if — a rule
+   other than the already-flipped one is at zero, flip it too**, and say so; on the counts measured at
+   authoring time none is, and the campaign that changes that is plan `100`.
+   *Done when:* the report carries every figure with the command that produced it, and the four-rule
+   ladder table states each rule's current severity, its current count, and `010`'s baseline.
 
 ## Out of scope
 
@@ -198,23 +218,42 @@ flip-to-`error` condition is already met is enforced rather than advisory.
 
 Exactly these, and nothing else:
 
-- `test/conftest.py` — D2, D3, D7 (and the guard test D3 adds, placed per the tree's convention for
+- `test/conftest.py` — D2, D3, D6 (and the guard test D3 adds, placed per the tree's convention for
   a root-level meta-test, alongside `test_conftest_discipline.py`)
 - `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py`
   — D2 (if the exemption half is chosen), D4
 - `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/` — the
   `no-lesson-id-in-skill-prose` analyzer, D5
 - `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md`
-  and the rule-catalog / rule-provenance documents the four rules' provenance contract binds — D4,
-  D5, D6
+  and the rule-catalog / rule-provenance documents the four rules' provenance contract binds — D4
+  and D5
 - `marketplace/bundles/plan-marshall/skills/script-shared/scripts/` — D1, the build-CLI modules a
   blocked call site names
 - `marketplace/bundles/plan-marshall/skills/manage-providers/scripts/` — D1, the module-level entry
   points a blocked call site names
 - `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` and their fixture
-  directories — the tests for the rule changes D4, D5 and D6 make
+  directories — the tests for the rule changes D4 and D5 make. ⚠️ **Owned by plan `010`**; see the
+  carve-out below
 - `test/plan-marshall/script-shared/`, `test/plan-marshall/manage-providers/` — only where a D1
-  production change requires its own test
+  production change requires its own test. ⚠️ **Owned by plan `060`'s slice**, which plan `100`
+  re-enters; see the carve-out below
+
+### The three surfaces this plan shares, and the carve-out that governs them
+
+This plan's production changes need tests, and the tests for them live in directories other plans own.
+That is a declared overlap, not an oversight, and it is bounded:
+
+| Shared path | Owner | What this plan may do |
+|---|---|---|
+| `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` + fixtures | plan `010` | **Add or amend only the cases that exercise the rule changes D4 and D5 make.** `010` has landed and is not running, so the risk is a later re-entry, not a concurrent one |
+| `test/plan-marshall/script-shared/`, `test/plan-marshall/manage-providers/` | plan `060`'s slice — landed; plan `100` re-enters it as campaign run 3 | **Add only a test that a D1 production change requires.** Do not refactor, reduce, or split anything there |
+| `test/conftest.py` | shared with plan `110`, which adds a session preflight (its D2) and a skip guard (its D5) | **This plan owns the loader mechanics** — `load_script_module`, `get_scripts_dir`, the registration behaviour, the `_routing_namespaces` docstring. `110` owns the preflight and the skip guard. The two must **not** run concurrently against this file |
+
+⛔ **Check before starting, and halt on a live collision.** These are ownership overlaps that are safe
+only while the other plan is not in flight. Confirm no open PR or in-flight branch exists for `100`
+campaign run 3, or for `110`, before touching the second or third row. If one does, **halt and report
+it** rather than editing a file two plans own — the epic's partition exists precisely because a
+concurrent edit to a shared file is the collision nobody notices until both land.
 
 ## Claim labels
 
@@ -226,9 +265,12 @@ Exactly these, and nothing else:
 | `load_script_module` registers under the script stem, and three registrations remain that would displace a shared object if any test imported them plainly | OBSERVED (the mechanism) / HYPOTHESIS (the count) | `test/conftest.py`'s `load_script_module`; `doc/plans/test-quality/060-…/report-03.md` § F11/H4. Re-derive the collision set before building the guard |
 | `_PLAN_DELIVERABLE_ID_RE` requires `deliverable D<n>` and `_PR_REFERENCE_RE` requires `PR #<n>`, so `Deliverable 2` and a bare `#849` are unmatched | OBSERVED | `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py` — the two regexes and `_HISTORICAL_PROSE_PATTERNS` |
 | Both unmatched spellings occur in this repository's own test prose | OBSERVED | `doc/plans/test-quality/050-…/report-02.md` § Residue, "Rule 7's matchers miss two live spellings" |
-| `test-helper-module-misnamed` is at zero whole-tree, so its flip-to-`error` condition is met | HYPOTHESIS — **gating for D6** | Re-run the `test-conventions` sweep from `doc/plans/test-quality/README.md` § "Running the plugin-doctor test-conventions scope" over `test/` and read the rule's finding count. **A non-zero count means D6 does not flip it** — report the count and say so |
+| `test-helper-module-misnamed` already ships at `severity: error`, so its flip is done rather than owed | OBSERVED | `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py` — its `RuleDescriptor` for that rule, and the module docstring recording the transition. An earlier draft of this plan wrote the flip as an outstanding action; the tree refutes that |
+| None of the other three rules is at zero, so none is flippable yet | HYPOTHESIS — **gating for D7's ladder** | Re-run the `test-conventions` sweep from `doc/plans/test-quality/README.md` § "Running the plugin-doctor test-conventions scope" over `test/` and read each rule's finding count. **A rule at zero is flipped and said so; a rule above zero is reported, not flipped** |
 | `test/conftest.py`'s `_routing_namespaces` docstring names `test/plan-marshall/build_test_helpers.py` by path | OBSERVED | `test/conftest.py` — `_routing_namespaces`; surfaced by `grep -rln 'build_test_helpers' test` |
-| No plan in `030`–`080` owns any file in this plan's Expected surface | HYPOTHESIS — **asserted absence; it is this plan's entire justification** | Read the **Out of scope** and **Expected surface** sections of `030`–`080` and confirm each excludes `marketplace/bundles/**` and `test/conftest.py`. If any plan claims one of these files, this plan's surface overlaps a sibling's: **halt and report it** rather than editing a file two plans own |
+| No plan in `030`–`080` claims any file under `marketplace/bundles/**` — the surface this plan's production deliverables change | HYPOTHESIS — **asserted absence; it is this plan's entire justification** | Read the **Out of scope** section of each of `030`–`080` and confirm every one excludes `marketplace/bundles/**`. If any plan claims a file there, this plan's production surface overlaps a sibling's: **halt and report it** |
+| This plan's **test** surface overlaps three paths other plans own, and each overlap is declared rather than asserted away | OBSERVED | § "The three surfaces this plan shares" above, cross-checked against `010`'s and `060`'s Expected surfaces and `110`'s. **This is not an absence claim** — an earlier draft wrote it as one and was refuted by the tree, which would have halted the run on a defect the plan itself created |
+| No run is in flight against `100` campaign run 3 (plan `060`'s slice) or against plan `110` | HYPOTHESIS — **gating and halting; check before touching the shared test paths** | An open PR or an in-flight branch for either. Unresolvable → treat as a collision and halt |
 
 ## Verification
 
@@ -281,6 +323,8 @@ check that would have established the unavailability actually returned.
   under `doc/plans/test-quality/`, all of which are git-tracked and readable from your clone. No
   `.plan/` path is a source for this plan; the epic is standalone and has no orchestrator ledger, so
   **do not go looking for one.**
-* **D6 is a gate change, so treat its blast radius seriously.** A rule at `error` fails the build for
-  every subsequent plan in this repository. The flip is licensed only by a re-derived zero, and the
-  gating claim above says what to do when the count is not zero.
+* **D7's ladder is a gate decision, so treat its blast radius seriously.** A rule at `error` fails
+  the build for every subsequent plan in this repository. A flip is licensed only by a re-derived
+  zero, and on the counts measured at authoring time no rule other than the already-flipped
+  `test-helper-module-misnamed` qualifies. Plan `100` is the campaign that changes that for
+  `test-module-line-budget`.

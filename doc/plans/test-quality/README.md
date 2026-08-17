@@ -214,9 +214,16 @@ measurement that is reported rather than targeted.
    (`--durations`) alongside, so a regression can be attributed and not merely noticed.
 5. **The line delta is measured and reported.** Not targeted. See below.
 
-Conditions 3 and 4 were added after the epic's executed half, and plan `110` builds the instruments
-and the exception list they rely on. Until it lands, a run states the two figures and names how it
-took them.
+Conditions 3 and 4 were added after the epic's executed half, and plan `110` builds the instruments,
+the exact commands and the exception list they rely on. Until it lands, a run states the two figures
+and names how it took them.
+
+⛔ **These five conditions supersede the three-part done-when written into plans `030`–`060`.** Those
+four plans landed carrying *"the three-part done-when — all three must hold"* with a percentage line
+floor as its third gate. **A run re-entering a landed plan holds the five conditions above, not that
+plan's three**, and in particular does not treat its line floor as a gate — § "Why there is no line
+floor" is why. The landed plan files each carry a pointer to this section; where one of them and this
+section disagree, this section governs and the run reports the disagreement.
 
 ### Why there is no line floor
 
@@ -237,9 +244,12 @@ is decisive:
 
 **Three of the six floors exceed the slice's entire comment-and-docstring volume**, so deleting every
 last one would still fall short. Every figure is a lead — re-derive before acting — and the
-populations differ: the `030` and `050` line and prose figures were measured at `main` *after* those
-plans landed, `040`'s and `060`'s come from their own reports' pre-change baselines, and `070`'s and
-`080`'s were measured before they start. The conclusion does not depend on that precision.
+populations differ. The `030`, `050`, `070` and `080` figures were measured at `main` — the first two
+*after* those plans landed, the last two before they start. `040`'s line total is its own report's
+pre-change baseline. `060`'s is its report's **post**-change total over the **fifteen** directories it
+worked (its plan's fourteen plus `test/pm-code-intelligence/`, which this brief now assigns to `080`),
+so the `060` and `080` rows overlap by that directory's ~260 lines. The conclusion does not depend on
+any of that: re-measured at `main` today, 25% of `060`'s slice is still larger than all of its prose.
 
 A floor that can only be met by deleting prose collides head-on with **B3**, which says the
 *rationale* stays and only the *citation* goes — and plan `040`'s cold read found four of ten
@@ -255,8 +265,9 @@ assert it**, and any plan that deletes an assertion to hit a line target has fai
 ### How much one run does
 
 Across the epic's executed half, a cloud run completed roughly **two to three code deliverables**.
-Every one of `030`–`060` left its fourth and fifth deliverables unstarted, and three of the four
-needed a second or third run to close what the first recorded. That is the planning unit, not a
+Read from the four reports' own verdict tables: `030` left D2 and D3 unstarted, `040` left D2, D3, D4
+and half of D5, `050` left D4 unstarted with D2, D3 and D5 partial, and `060` left D2 unstarted with
+D3 and D4 partial. Three of the four needed a second or third run to close what the first recorded. That is the planning unit, not a
 disappointment: a plan carrying six code deliverables is a plan whose tail does not happen. Author to
 it, and where a run cannot finish, **report what was not reached rather than thinning what was**.
 
@@ -280,9 +291,9 @@ it, and where a run cannot finish, **report what was not reached rather than thi
 | `010` | `marketplace/bundles/pm-dev-python/skills/pytest-testing/**`, `marketplace/bundles/plan-marshall/skills/persona-module-tester/**`, `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/**`, `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py`, `test/pm-plugin-development/plugin-doctor/fixtures/test_conventions/rule*/`, `test/pm-plugin-development/plugin-doctor/test_doctor_marketplace_commands.py` (the `cmd_test_conventions` cases only), `test/pm-plugin-development/plugin-doctor/_fixtures.py` | `020` only |
 | `020` | `test/conftest.py`, `test/_shared/**`, `test/README.md`, and the ≤10 modules it converts as proof-of-use | `010` only |
 | `030`–`080` | one disjoint slice of `test/` each, listed in the plan | each other, once `010` **and** `020` have landed |
-| `090` | `marketplace/bundles/**` (the doctor analyzers, `script-shared`, `manage-providers`) and `test/conftest.py` — **the only plan in the epic that may edit either** | anything; its surface is what every reduction plan excludes |
+| `090` | `marketplace/bundles/**` (the doctor analyzers, `script-shared`, `manage-providers`) — **the only plan in the epic that may edit it** — plus `test/conftest.py`'s loader mechanics, and the tests for its own production changes | any reduction plan; **not** `110` (both edit `test/conftest.py`) and **not** `100`'s run against `060`'s slice |
 | `100` | one reduction slice per run, `test_*.py` only | nothing running against the same slice |
-| `110` | the tree's skip sites, which **cross** several slices — `test/sync-plugin-cache/`, `test/pm-plugin-development/`, `test/marketplace/` and scattered others | nothing running against those directories |
+| `110` | the tree's skip sites, which **cross** several slices — `test/sync-plugin-cache/`, `test/pm-plugin-development/`, `test/marketplace/` and scattered others — plus `test/conftest.py`'s session preflight and skip guard | nothing running against those directories, and **not** `090` |
 
 **`090`, `100` and `110` were added after the epic's executed half**, each from something four runs
 recorded and none could act on: `090` owns the production and harness defects every reduction plan is
@@ -323,7 +334,7 @@ as a **gating, halting derivation**, run before its first deliverable:
 
    | Excluded entry | Why |
    |---|---|
-   | `test/conftest.py` | Plan `020`'s, and plan `090`'s after it — the shared harness, consumed read-only by every reduction plan |
+   | `test/conftest.py` | Plan `020`'s, then shared by `090` (loader mechanics) and `110` (session preflight, skip guard) — those two must not run concurrently against it. Consumed read-only by every reduction plan |
    | `test/_shared/**` | Plan `020`'s, same reason |
    | `test/README.md` | Plan `020`'s D4 deliverable; not a `.py` file |
    | `test/test_shared_harness.py` | Plan `020`'s D5 deliverable, created by its landing commit |
@@ -397,13 +408,15 @@ taken from the report that recorded it; re-derive before acting.**
 
 | Plan | Still open in its own slice | Now owned elsewhere |
 |---|---|---|
-| `030` config and manifest | D3 arrange-into-fixtures, unstarted — the `monkeypatch.setattr`-to-`@pytest.fixture` ratio is untouched, and its `parse_ns` exception list is **empty by non-attempt, not by finding none**. D1's body-shape residue needs re-specifying before anyone attempts it | 39 over-budget modules → `100`; the shared-registration guard its reviewer asked for → `090` § D3 |
-| `040` delivery pipeline | D2 fixture corpus, unstarted. D3 subprocess-layer collapse, **not performed at all** — its gating survey ran and licensed no collapse, so ~124 `run_script` sites remain unpaired. D5's `parse_ns` half unstarted against ~391 `Namespace(` sites. A `fixtures/ci-wait/README.md` carrying a plan slug, a lesson id and a dated line | ~56 over-budget modules → `100`; the ~92 prose citations in shapes the rule does not match → `090` § D4 |
-| `050` plan state and records | D2's remaining namespace builders; D3's five directories with no fixture module; D5's parametrization half, unstarted. Three findings its second run rejected as new scope with reasons recorded | ~58 over-budget modules → `100` |
-| `060` runtime and script substrate | D4 parametrization beyond one family — ~223 families at ≥80% skeleton similarity, each needing a read because the set includes matched control pairs that must **not** collapse. D4's required cold read, never performed. The randomised hermeticity arm, unrun | ~50 over-budget modules → `100`, with the bound that exactly one class exceeds the budget alone; 3 latent `sys.modules` registrations → `090` § D3; 2 structurally-unfixable preambles → `090` § D2; 27 seam-blocked `parse_ns` sites → `090` § D1 |
+| `030` config and manifest (39 over budget) | D3 arrange-into-fixtures, unstarted — the `monkeypatch.setattr`-to-`@pytest.fixture` ratio is untouched, and its `parse_ns` exception list is **empty by non-attempt, not by finding none**. D1's body-shape residue needs re-specifying before anyone attempts it | Its over-budget modules → `100`; the shared-registration guard its reviewer asked for → `090` § D3 |
+| `040` delivery pipeline (55 over budget) | D2 fixture corpus, unstarted. D3 subprocess-layer collapse, **not performed at all** — its gating survey ran and licensed no collapse, so ~124 `run_script` sites remain unpaired. D5's `parse_ns` half unstarted against ~391 `Namespace(` sites. A `fixtures/ci-wait/README.md` carrying a plan slug, a lesson id and a dated line | Its over-budget modules → `100`; the ~92 prose citations in shapes the rule does not match → `090` § D4 |
+| `050` plan state and records (60 over budget) | D2's remaining namespace builders; D3's five directories with no fixture module; D5's parametrization half, unstarted. Three findings its second run rejected as new scope with reasons recorded | Its over-budget modules → `100` |
+| `060` runtime and script substrate (53 over budget) | D4 parametrization beyond one family — ~223 families at ≥80% skeleton similarity, each needing a read because the set includes matched control pairs that must **not** collapse. D4's required cold read, never performed. The randomised hermeticity arm, unrun | Its over-budget modules → `100`, with the bound that exactly one class exceeds the budget alone; 3 latent `sys.modules` registrations → `090` § D3; 2 structurally-unfixable preambles → `090` § D2; 27 seam-blocked `parse_ns` sites → `090` § D1 |
 
 A follow-up run against a landed plan re-enters it exactly as `030`, `050` and `060` already did — a
-new report ordinal in the same plan directory, the plan itself unchanged. What it must not do is
-treat an unstarted deliverable as satisfied: `030`'s own report says it plainest, that an empty
+new report ordinal in the same plan directory, and the plan's deliverables unchanged. Its
+**Verification** section is the one part that has moved: each of the four now opens with a pointer to
+the five conditions above, because the line floor each was written with is retired. What a follow-up
+run must not do is treat an unstarted deliverable as satisfied: `030`'s own report says it plainest, that an empty
 exception list produced by not attempting the sweep *"tells the operator nothing"* and must not be
 read as a clean result.

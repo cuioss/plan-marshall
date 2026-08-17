@@ -47,8 +47,9 @@ the tell: nothing in the epic looked at them.
 The mechanism is a population of **environment-conditional guards** spread across the tree.
 `grep`-derived at authoring time: roughly 60 skip sites under `test/`, in about fourteen distinct
 stated reasons, concentrated in `test/sync-plugin-cache/` (~32 sites, gated on `git` and `rsync` being
-on `PATH`) and `test/pm-plugin-development/` (~12, gated on "real marketplace not available" and "real
-executor not present"). Both figures are leads.
+on `PATH`) and `test/pm-plugin-development/` (~12 — of which about seven are gated on "real marketplace not
+available", three on "real executor not present", and two on `pyright-langserver`, which is a
+different class and is treated as one below). Both figures are leads.
 
 They fall into kinds that need opposite treatment, and lumping them together is why nobody has fixed
 them:
@@ -62,21 +63,24 @@ them:
   "`marketplace/bundles` not available in this checkout" gate roughly a dozen tests. This repository
   **is** the marketplace; the condition is defensive code written for a consumer checkout, inside a
   suite that only ever runs here.
-* **Guards on something genuinely absent in CI.** `pyright-langserver` gates a whole module through a
-  `pytestmark`, plus two further sites. Installing it is a third-party dependency decision, which is a
-  user-approval step a cloud run may not take.
+* **Guards on something genuinely absent.** `pyright-langserver` gates a whole module through a
+  `pytestmark`, plus two further sites; `pytest-randomly` is absent too, which is why plan `060`'s
+  randomised hermeticity arm has gone unrun across three runs. Installing either is a third-party
+  dependency decision, which is a user-approval step a cloud run may not take.
 * **Guards on a genuinely variable platform.** Windows symlink semantics and `/proc` availability.
   These are legitimate and are not a defect — but nothing today distinguishes them from the three
   kinds above, so nothing stops the population growing.
 * **An inverted guard.** One test skips when *an MCP server is reachable*, so it runs on a developer
   machine and silently does not run where one happens to be listening.
 
-**And nothing measures how long the suite takes.** The epic's three-part done-when covers collected
-count, coverage, and lines — not duration. Re-derived for this plan from GitHub Actions' own timings
+**And nothing measured how long the suite takes.** Until the epic re-scoping run that authored this
+plan, the epic's done-when covered collected count, coverage and lines — not duration, and not skips.
+The README now states both as conditions; what neither has is an instrument, which is this plan's
+subject. Re-derived for this plan from GitHub Actions' own timings
 for the `Run verification` step of `verify / verify` on `main` (the only instrument that is
 comparable across runs, because it is the same job on the same runner class): **781 s** at
-`7de3084`, **786 s** at `24271bc` — the commit immediately before the epic's first plan landed —
-and **788 s** at `7cadb98`, the last test-quality PR to land. So across the epic's entire executed
+`7de3084`, **786 s** at `24271bc` — two commits before plan `020` landed, and the nearest
+pre-epic measurement of a full build — and **788 s** at `7cadb98`, the last test-quality PR to land. So across the epic's entire executed
 half the suite cost **about two seconds more**, while the collected count rose by roughly 1.3%.
 **There is no regression to fix.** Every one of those figures is a lead: re-derive them, and note that
 the whole-workflow duration is a far noisier instrument than the step — same-day runs on `main` range
@@ -142,31 +146,40 @@ than found later.
    it.
 
 5. **D5 — Bound the exceptions, and guard the boundary.** Two kinds legitimately remain: *genuinely
-   variable platform* (Windows symlink semantics, `/proc`) and *genuinely absent dependency*
-   (`pyright-langserver`). Record them as a **named, enumerated exception list**, and add a guard test
-   that fails when a skip appears outside it. For the absent dependency, do both halves: **record a
-   proposal** to add it to `[dependency-groups].dev` — a third-party dependency is a user-approval
-   step and this run has no operator, so the run proposes and does not decide — **and** cover the
-   contract in-process with a stub or fake so the behaviour is tested even while the binary is absent.
+   variable platform* (Windows symlink semantics, `/proc`) and *genuinely absent dependency*. Record
+   them as a **named, enumerated exception list**, and add a guard test that fails when a skip appears
+   outside it.
+
+   **The absent-dependency class has two members, not one.** `pyright-langserver` gates a module and
+   two further sites. And **`pytest-randomly` is absent too** — plan `060` recorded its slice's
+   randomised hermeticity arm as unrun for exactly that reason across all three of its runs, and no
+   plan could close it because adding the dependency is a user-approval step. Treat both the same way,
+   and do both halves for each: **record a proposal** to add it to `[dependency-groups].dev` — a
+   third-party dependency is a user-approval step and this run has no operator, so the run proposes
+   and does not decide — **and** cover the contract another way meanwhile, with a stub or fake for the
+   language server, and with a **reverse-order** run for hermeticity, which needs no plugin at all and
+   is what plan `060` actually used to find a live order-dependent failure.
    Fix the inverted guard here too: a test that skips when something is *reachable* is isolated from
    the ambient environment, not gated on it.
    *Done when:* the exception list exists and is enumerated, the guard fails when a skip is introduced
-   outside it (demonstrate by adding one, watching it go red, and removing it), the dependency proposal
-   is recorded with the call sites it would unblock, and the inverted guard no longer consults the
-   ambient environment.
+   outside it (demonstrate by adding one, watching it go red, and removing it), a dependency proposal
+   is recorded for **each** absent dependency with the call sites it would unblock, the whole-tree
+   reverse-order arm has been run and its result recorded, and the inverted guard no longer consults
+   the ambient environment.
 
-6. **D6 — Instrument the suite's duration, and make it a run condition.** Add the two figures — total
-   skipped and wall-clock — to what a reduction run records, by amending
-   `doc/plans/test-quality/README.md` § "What a reduction run must hold" (this plan's one edit outside
-   `test/`, declared here as a deliverable). State the instrument precisely enough that two runs
-   produce comparable numbers: **the same command, the same scope, and the population named** — a
-   whole-tree `pytest` wall-clock is not comparable to a `./pw verify` total, which also runs the
-   quality gate and the test-compile step, and neither is comparable to a figure from a different
-   machine.
-   Add a slowest-tests capture (`--durations`) to the recorded evidence, so a regression can be
-   attributed rather than merely detected.
-   *Done when:* the README states both conditions with the exact command for each, the report carries
-   this run's own before/after figures for both, and the slowest-tests capture is recorded.
+6. **D6 — Give the two run conditions an exact command.** `doc/plans/test-quality/README.md` § "What
+   a reduction run must hold" **already states** conditions 3 (skipped count) and 4 (wall-clock) — they
+   were added by the epic re-scoping run that authored this plan. What that section does **not** carry
+   is a literal command for either, and without one two runs produce figures that are not comparable:
+   the section says the population must be named and warns that a `pytest` wall-clock is not a
+   `./pw verify` total, but it leaves each run to invent the invocation.
+   Supply the command, for both conditions, in that section — **this plan's one edit outside `test/`**,
+   declared here as a deliverable. Include the slowest-tests capture (`--durations`) so a regression
+   can be attributed rather than merely detected. Do **not** restate the conditions themselves; they
+   are already there, and a second statement of them is a second thing to drift.
+   *Done when:* § "What a reduction run must hold" carries a literal, runnable command for condition 3
+   and one for condition 4, the report carries this run's own before/after figures for both, and the
+   slowest-tests capture is recorded.
 
 7. **D7 — Report the measured deltas.** Skipped count before and after, whole-tree; the classified
    skip inventory with one row per site; the wall-clock before and after with its population named;
@@ -194,7 +207,11 @@ than found later.
 ## Expected surface
 
 - `test/conftest.py` — D2's session-scoped preflight, and D5's guard, if the tree's conventions put
-  them there rather than in a root-level meta-test module
+  them there rather than in a root-level meta-test module. ⚠️ **Shared with plan `090`**, which owns
+  this file's loader mechanics (`load_script_module`, `get_scripts_dir`, the registration behaviour,
+  the `_routing_namespaces` docstring). This plan owns the preflight and the skip guard and touches
+  nothing else in the file. **The two must not run concurrently against it** — check for an open PR or
+  in-flight branch for `090` before starting, and halt on a live collision
 - `test/test_conftest_discipline.py` or a sibling root-level meta-test — D5's exception guard, placed
   per the convention that module already sets
 - `test/sync-plugin-cache/` — D2, the largest concentration of tool guards
@@ -225,18 +242,19 @@ against `test/sync-plugin-cache/`, `test/pm-plugin-development/` or `test/market
 | A `skipif` on `git` or `rsync` never fires in an environment that can run this build | HYPOTHESIS — **it is D2's entire justification, and it is an asserted absence** | Check both tools resolve on `PATH` in the CI image *and* in this session, and confirm the live skip report (D1) contains no `git`/`rsync` reason. If it does, D2's premise is refuted: those tests **are** silently not running, which strengthens the deliverable rather than cancelling it — report which |
 | This repository always contains `marketplace/bundles/`, so a guard on its absence cannot fire here | OBSERVED | the directory itself, in the clone |
 | `.plan/execute-script.py` is generated and git-ignored, so it is absent in a fresh clone | OBSERVED | `.gitignore`; `CLAUDE.md` § "Standalone Plan Lane", which states that `.plan/` state exists only on the machine that created it |
-| The `Run verification` step on `main` took 781 s / 786 s / 788 s at `7de3084` / `24271bc` / `7cadb98`, so the epic's executed half cost ~2 s | HYPOTHESIS — **it is this plan's reason for building an instrument rather than hunting a regression** | GitHub Actions job steps for the `verify / verify` job of the `Python Verify` workflow at those three commits on `main`. Re-derive; if the re-derivation shows a material regression instead, **say so** — the deliverable set does not change, but D7 reports a regression rather than its absence |
+| The `Run verification` step on `main` took 781 s / 786 s / 788 s at `7de3084` / `24271bc` / `7cadb98`, so the epic's executed half cost ~2 s | HYPOTHESIS — **it is this plan's reason for building an instrument rather than hunting a regression** | ⚠️ **This artifact is NOT git-reachable**, which every other claim in this table is: it lives in the GitHub Actions API (job steps of the `verify / verify` job of the `Python Verify` workflow, at those three commits on `main`). The three commits themselves are in your clone and can be confirmed in the stated order; the timings need the API. The figures are also restated in `doc/plans/test-quality/report-authoring-02.md`, which **is** git-tracked — read that as the recorded measurement, and the API as the way to re-derive it. If the API is unreachable, report the re-derivation **unavailable** rather than substituting a local run, whose population is not comparable. Either way the deliverable set is unchanged: D7 reports a regression or its absence, whichever the measurement says |
 | `parse_ns` re-executes the script module on every call | OBSERVED | `test/conftest.py` — `parse_ns`, its docstring's "Cost:" paragraph |
 | Slices `070` and `080` carry ~502 and ~222 hand-built `Namespace(` constructions and 1 and 0 `parse_ns` uses | HYPOTHESIS | `grep -c 'Namespace('` and `grep -c 'parse_ns('` over each plan's Expected surface. Leads — re-derive |
-| No reduction plan is running against this plan's directories | HYPOTHESIS — **gating and halting; check before D2** | The presence of an open PR or an in-flight branch for `070`, `080` or `100`. Unresolvable → treat as a collision and halt |
+| No reduction plan is running against this plan's directories, and plan `090` is not in flight against `test/conftest.py` | HYPOTHESIS — **gating and halting; check before D2** | The presence of an open PR or an in-flight branch for `070`, `080`, `100` or `090`. Unresolvable → treat as a collision and halt |
 
 ## Verification
 
 **Three conditions, all of which must hold.**
 
-1. **Collected test count increases, and never decreases.** This plan converts skips into runs, so the
-   *collected* count is unchanged while the *passed* count rises. Record both, plus the skipped count,
-   before and after.
+1. **Collected test count does not decrease, and the passed count rises.** A skipped test is still a
+   *collected* test, so this plan leaves the collected count unchanged while moving tests out of the
+   skipped column and into the passed one. Record all three counts — collected, passed, skipped —
+   before and after; the pair that must move is passed-up and skipped-down.
 2. **Coverage does not decrease** for the bundle paths the un-skipped tests exercise — and it should
    **rise**, because tests that were not running now are. Record before/after and the command; a
    coverage figure that does not move where a formerly-skipped test now runs means the test is not

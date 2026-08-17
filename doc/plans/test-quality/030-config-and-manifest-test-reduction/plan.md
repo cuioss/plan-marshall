@@ -194,6 +194,18 @@ Exactly these directories under `test/plan-marshall/`, and nothing else:
 
 ## Verification
 
+> ⛔ **SUPERSEDED IN PART — read this before the three conditions below.** This plan landed carrying a
+> three-part done-when whose third part is a **30% line floor**. That floor is **retired**, and so is
+> every other per-slice floor in this epic: four executed plans returned between 0.52% and 2.56%
+> against floors of 20–30%, and three of the six floors turned out to exceed their slice's entire
+> comment-and-docstring volume. A run re-entering this plan holds the **five conditions** in
+> `doc/plans/test-quality/README.md` § "What a reduction run must hold" — collected count, coverage,
+> skipped count, wall-clock, and a line delta that is **measured and reported, never targeted**.
+> Where that section and the text below disagree, **that section governs and the run reports the
+> disagreement**. Everything else below — the per-deliverable checks, the cold read, the executable
+> gate — stands unchanged.
+
+
 **The three-part done-when. All three must hold; the third alone is not success.**
 
 1. **Collected test count does not decrease.** Capture pytest's collected-item count for the slice

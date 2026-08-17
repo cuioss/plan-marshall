@@ -234,7 +234,7 @@ check rather than against a reviewer's memory.
      the count.
 
      **This is the whole-tree list, and two later plans refine halves of it.** Plan `060` § D5 derives
-     the candidates in the runtime and script-substrate slice; plan `080` § D5 derives them in the
+     the candidates in the runtime and script-substrate slice; plan `080` § D4 derives them in the
      generator slice. Both run after this one and both seed from the same three examples. State that
      relationship in the report and fix the table's column set here, so the operator receives one list
      refined twice rather than three lists with no stated relationship.

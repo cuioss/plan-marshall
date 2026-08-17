@@ -141,7 +141,7 @@ Work the slice **largest module first**.
    a starting point, **not** the list. Derive the list; do not copy it.
    **Two sibling plans derive halves of the same list; coordinate rather than duplicate.** Plan `010`
    § D6 derives the whole-tree candidate list and lands **before** this plan — read its report and
-   refine that list rather than starting from zero. Plan `080` § D5 derives the generator slice's
+   refine that list rather than starting from zero. Plan `080` § D4 derives the generator slice's
    candidates and may run concurrently with this one. Use the column set plan `010` fixed, and state
    in the report which rows are refinements of `010`'s and which are new, so the operator receives one
    list refined twice rather than three unrelated tables.
@@ -202,6 +202,18 @@ rename, because plan `070` owns both of its importers (see the note under D3).
 | Plans `010` and `020` have landed and their surfaces are present in this clone | HYPOTHESIS — **gating; this plan cannot start without it** | `grep -n 'def parse_ns' test/conftest.py`; the module-budget section of `persona-module-tester/standards/testing-methodology.md`. Absent → stop and report blocked. |
 
 ## Verification
+
+> ⛔ **SUPERSEDED IN PART — read this before the three conditions below.** This plan landed carrying a
+> three-part done-when whose third part is a **25% line floor**. That floor is **retired**, and so is
+> every other per-slice floor in this epic: four executed plans returned between 0.52% and 2.56%
+> against floors of 20–30%, and three of the six floors turned out to exceed their slice's entire
+> comment-and-docstring volume. A run re-entering this plan holds the **five conditions** in
+> `doc/plans/test-quality/README.md` § "What a reduction run must hold" — collected count, coverage,
+> skipped count, wall-clock, and a line delta that is **measured and reported, never targeted**.
+> Where that section and the text below disagree, **that section governs and the run reports the
+> disagreement**. Everything else below — the per-deliverable checks, the cold read, the executable
+> gate — stands unchanged.
+
 
 **The three-part done-when. All three must hold; the third alone is not success.**
 
