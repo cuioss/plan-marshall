@@ -577,7 +577,9 @@ Then:
 - Every finding — fixed, rejected-with-reason, deferred to a named follow-up, or left open as a
   **survivor** — goes in the run report (§ Report). A *deferred* finding is real and unfixed here;
   a *survivor* is one the run argues needs no fixing at all (§ "When the loop stops"). Neither is
-  available to a finding condition **A** governs: a false statement is fixed, not deferred.
+  available to a finding condition **A** governs: a false statement is fixed, not deferred. And
+  **B reaches a deferred behavioural finding too** — deferring it is still leaving it open, so it
+  carries the same (a) proof or (b) bound a survivor carries, or it is fixed here.
 
 **A fix is a change, so it gets the same beyond-diff sweep the original change got.** The sweep above
 is written against the diff under review; by the second round the diff under review is largely the
@@ -661,8 +663,8 @@ because a docstring that explains **why** is trusted more than one that repeats 
 exactly why an unverified rationale is worse than none: it is the sentence a later reader believes
 instead of checking. Prefer no rationale to an unchecked one.
 
-The two obligations below are part of that same per-round sweep, not a separate pass done once at
-the end. Both are checked **before every re-dispatch and again before the merge gate**.
+The obligations below are part of that same per-round sweep, not a separate pass done once at the
+end. Each is checked **before every re-dispatch and again before the merge gate**.
 
 **The run report is part of that surface.** A findings table recording a disposition the artifacts
 contradict — a row saying "fixed at all four sites" when one still carries the old claim — is the same
@@ -761,13 +763,17 @@ vacuous test satisfies (a) trivially, since it cannot change what the code does 
 vacuous test is precisely the defect that hides a real one. **A finding that changes code behaviour
 resets the loop too, absent (a) or (b)** — fix it and re-dispatch. Characterisation is the only thing
 that lets one stay open, and being small is not characterisation. Survivors are listed individually;
-a bulk mention is not a disclosure. **A finding that is both a false statement and a behavioural defect is governed
-by A** — it is fixed, not characterised.
+a bulk mention is not a disclosure. **A finding that is both a false statement and a behavioural
+defect is governed by A** — it is fixed, not characterised.
 
 **Exit (i) requires evidence stronger than another read.** A verifier's "nothing remains" rests on
 something that could have come back different: a differential run against the merge base, a fuzz
 sweep, a mutation test that proves a new guard non-vacuous, an exhaustive enumeration of a function's
-return branches. *"Three agents read it and found nothing"* is not that. Where the late rounds'
+return branches — or, where the deliverable is prose, opening every cross-reference onto the section
+it names and re-deriving every figure from its source, each of which returns a verdict rather than an
+impression. A skill is behavioural prose reviewed as code (§ Step 7), so exit (i) is reachable for a
+prose deliverable; what it is not reachable by is another read.
+*"Three agents read it and found nothing"* is not that. Where the late rounds'
 findings are not merely fewer but **narrower** — about the run's own report and plan documents rather
 than the shipped change — say so, as the observation it is.
 
