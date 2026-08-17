@@ -532,7 +532,8 @@ Give it, at minimum:
   docs the diff never opened. **Sweep the changed value's consumers by kind, not by a single
   phrasing.** One value is restated in several distinct forms — a prose restatement, a schema field or
   its placeholder, a worked example, a cross-document reference, a test fixture or stub that hardcodes
-  the value — and a sweep that greps for the way the primary claim happens to be phrased finds the
+  the value, a prose-bearing string literal in production code — and a sweep that greps for the way the
+  primary claim happens to be phrased finds the
   restatement that reads like it and silently misses the rest. An observed run's single value change (a
   `SKILL.md`-only path widened to a `SKILL.md`-plus-`standards/*.md` set) had three stale consumers of
   three different kinds — an echo-field enumeration, a check description, and a schema placeholder — and
