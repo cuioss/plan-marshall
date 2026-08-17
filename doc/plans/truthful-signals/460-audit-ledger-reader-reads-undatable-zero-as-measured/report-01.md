@@ -114,22 +114,24 @@ became inaccurate; it did not, so the standard is left alone.
 
 ### D3 — regression tests
 
-Five tests in a new module
-`test_audit_check_billing_composition_ledger_provenance.py` (`TestDispatchBoundaryZeroProvenance`),
-plus two cross-reader tests in `test_record_model_representability.py`, plus a new shared fixture.
+The gate's own tests live in a new module
+`test_audit_check_billing_composition_ledger_provenance.py` (`TestDispatchBoundaryZeroProvenance`,
+7 collected cases from 6 test functions — one is parametrized over two row orders), joined by two
+cross-reader tests in `test_record_model_representability.py` and a new shared fixture.
 
 The new module exists because appending the cluster to
-`test_audit_check_billing_composition_reconstruction.py` carried it to 408 lines, past the 400-line
-module budget. Splitting by behaviour cluster into `test_{unit}_{cluster}.py` is what that standard
-prescribes and what this suite already does for `billing-composition` (`_emit`, `_reconstruction`,
-`_scoping`, `_under_counts`). The two modules are 253 and 178 lines, and the same 32 tests pass before
-and after the split.
+`test_audit_check_billing_composition_reconstruction.py` carried it past the 400-line module budget.
+Splitting by behaviour cluster into `test_{unit}_{cluster}.py` is what that standard prescribes and
+what this suite already does for `billing-composition` (`_emit`, `_reconstruction`, `_scoping`,
+`_under_counts`). The two modules now stand at 211 and 259 lines.
 
 | Test | Direction | Pre-fix |
 |---|---|---|
 | `test_fingerprint_free_all_zero_ledger_omits_the_context_columns` | the fix | **RED** |
-| `test_a_fingerprinted_row_does_not_date_its_neighbour` | per-row scope | **RED** |
+| `test_a_fingerprinted_row_does_not_date_its_neighbour[undated-first]` | per-row scope | **RED** |
+| `test_a_fingerprinted_row_does_not_date_its_neighbour[dated-first]` | per-row scope | **RED** |
 | `test_unrecognised_cell_is_not_a_fingerprint` | an unparseable cell dates nothing | **RED** |
+| `test_a_negative_context_load_value_dates_the_row` | the gate turns on `!= 0`, not positivity | green (added in round 2) |
 | `test_nonzero_fingerprint_keeps_sibling_measured_zeros` | negative control | green (see below) |
 | `test_unmeasured_token_fingerprint_keeps_sibling_measured_zeros` | negative control | green (see below) |
 | `test_undatable_fixture_carries_no_post_token_fingerprint` | fixture premise, asserted on bytes | green by construction |
@@ -141,12 +143,23 @@ first; that is unattainable for these two by construction, because the pre-fix r
 those zeros — the controls exist to stop an **over-correction**, and pre-fix code is not over-corrected.
 This report states that plainly rather than reporting three-of-three red. They were instead verified
 non-vacuous against a deliberate over-correction mutant (`if False:` in place of `if datable:`, so every
-zero is treated as undatable). Under that mutant **both controls fail** — as do the new
+zero is treated as undatable). Under that mutant **both controls fail** — as do
 `test_a_fingerprinted_row_does_not_date_its_neighbour` and two PRE-EXISTING tests that already pinned
 the measured-zero direction: `test_unmeasured_cells_are_omitted_while_measured_zeros_are_kept` and the
-cross-reader `test_unmeasured_fixture_reads_three_ways_in_the_audit_ledger_reader` (five failures in
-all). Mutant reverted; it was never committed. This is the stronger check of the two available: it proves the controls kill the failure
-mode they exist for, which red-against-pre-fix would not have shown.
+cross-reader test over the `unmeasured/` fixture. Mutant reverted; it was never committed. This is the
+stronger check of the two available: it proves the controls kill the failure mode they exist for, which
+red-against-pre-fix would not have shown.
+
+⛔ **The per-row test was RED pre-fix and still did not pin the property it claimed** — the round-1
+verification refuted it, and the correction is the most valuable thing this run produced. Its docstring
+asserted *"the gate is per ROW, never per file"*, but its fingerprint-free row was written **first**, so
+a file-level flag that accumulates across rows is still unset when that row is read. Under a
+hoist-`datable`-out-of-the-row-loop mutant, all five gate tests and both cross-reader tests passed. The
+test now drives **both** row orders; the `dated-first` arm is the one that does the work, and it kills
+that mutant (the undated row's `input_tokens` is promoted to a measured `0` by its neighbour's
+fingerprint) while `undated-first` still passes under it — the finding itself, restated as a test.
+Red-against-pre-fix is therefore *not* sufficient evidence that a test pins its stated invariant, and
+this row is the counterexample.
 
 **The cross-reader pinning the plan preferred.** A new read-only fixture
 `test/plan-marshall/plan-retrospective/fixtures/dispatch-loop-replay/undatable/work/metrics-dispatch-boundaries-5-execute.toon`
@@ -164,28 +177,72 @@ observed rather than argued.
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD` reports `*.py` changes in `audit.py`,
+`git diff --name-only origin/main...HEAD` reports `*.py` changes in `audit.py`, the new
+`test_audit_check_billing_composition_ledger_provenance.py`,
 `test_audit_check_billing_composition_reconstruction.py`, and
 `test_record_model_representability.py` — **Python changed, so the gate took its full path.** (Named
 rather than counted: this report is itself in the diff, so any total would go stale as it is written.)
 The tree was confirmed clean (`git status --porcelain` empty) before the diff was taken, so the diff
 sees all the work.
 
-`UV_HTTP_TIMEOUT=600 ./pw verify` → **`=== verify: SUCCESS ===`**, `20470 passed, 14 skipped` in
-417.56 s, over all six dimensions (mypy production 410 files, ruff, SPDX, plugin-doctor marketplace-wide,
-mypy test 761 files, whole-tree pytest). Read from the streamed tool output, not the exit code.
+The gate was run **twice**, and only the second run governs. The first (`20470 passed, 14 skipped`,
+417.56 s, at commit `2ccec2c`) predated the round-2 test corrections, so it is recorded as history and
+not as the gate. The authoritative run is at the final HEAD:
 
-The per-commit gate ran before the implementation commit as the contract requires: `./pw quality-gate`
+`UV_HTTP_TIMEOUT=600 ./pw verify` → **`=== verify: SUCCESS ===`**, **`20472 passed, 14 skipped`** in
+498.37 s, over all six dimensions (mypy production 410 files, ruff, SPDX, plugin-doctor
+marketplace-wide, mypy test 761 files, whole-tree pytest). Read from the streamed tool output, not the
+exit code. The `+2` against the earlier run is the parametrize arm and the negative-value test round 2
+added.
+
+That second run also caught a real defect the first could not have: round 2's `import pytest` broke
+ruff's `I001` import ordering, so `./pw verify` reported `verify: quality-gate failed`. It was fixed to
+match the ordering this suite already uses (`from pathlib`, blank line, `import pytest`, then the
+`_audit_fixtures` import with no separating blank line — the convention in
+`test_audit_check_global_log_analysis_cost_rollup.py`) and the gate re-run green. **A failing gate is
+recorded here rather than smoothed over**: the run's first `./pw verify` of round 2 was red.
+
+The per-commit gate ran before each `*.py`-touching commit as the contract requires: `./pw quality-gate`
 reported `Success: no issues found in 410 source files` (mypy), `All checks passed!` (ruff),
 `SPDX-header check passed`, and `issues[0]` (plugin-doctor). The plan-directory commit needed no gate —
 it is a `git mv` with no content change.
 
-**No lockfile churn:** `git status --porcelain` was empty after the build, and every commit staged its
+**No lockfile churn:** `git status --porcelain` was empty after each build, and every commit staged its
 deliverable paths explicitly (never `git add -A`).
 
 ## Findings
 
-_(pending — verification sub-agent, CI, and PR review)_
+One row per instance. Source is the round-1 or round-2 pre-PR verification sub-agent unless stated.
+
+### Round 1 — dispatched against commit `70d88ce`
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| R1-H1 | Sub-agent (round 1) | `test_a_fingerprinted_row_does_not_date_its_neighbour` asserts "the gate is per ROW, never per file" but cannot observe the difference: its fingerprint-free row is written FIRST, so an accumulating file-level flag is still unset when that row is read. Under a hoist-`datable` mutant all five gate tests and both cross-reader tests passed. | **Fixed** — parametrized over both row orders; I rebuilt the mutant and confirmed `dated-first` fails under it while `undated-first` passes. Commit `85848a8`. |
+| R1-M1 | Sub-agent (round 1) | `test_unmeasured_fixture_reads_three_ways_in_the_audit_ledger_reader` names a state count this change made false. | **Fixed, but not as proposed** — the agent proposed `_reads_four_ways_`; that would be false too, because every row of the `unmeasured/` fixture carries a token and the fourth state never arises in it. Renamed to `test_unmeasured_fixture_separates_measured_zeros_from_unmeasured_in_the_audit_ledger_reader`, which names the invariant it actually pins, plus a docstring note that the fourth state is exercised by the `undatable/` fixture instead. |
+| R1-M2 | Sub-agent (round 1) | `test_unmeasured_cells_are_omitted_while_measured_zeros_are_kept`'s docstring opens "The three-way cell read, at the ledger reader" — made false by this change; the test now passes for a reason its docstring no longer states (its row carries both fingerprint forms). | **Fixed** — docstring renamed to the invariant and extended to say the row is datable and why. |
+| R1-M3 | Sub-agent (round 1) | `data-format.md:899` § *Restating surfaces* describes the audit-side surface as "the hand-copied `_BC_LEDGER_COLUMNS` tuple"; `audit.py` now restates the whole cell read and the gate, and `checks/billing-composition.md` restates them while appearing in no lock-step list. | **Rejected for this plan, recorded as residue.** The count "four surfaces" in that paragraph is **mirrored** in `analyze-logs.py:987` ("names FOUR surfaces… the other three are…"), which the plan puts explicitly out of scope. Widening only `data-format.md` would make that mirror false — introducing precisely the stale-restatement defect this plan removes — and widening both violates the plan's boundary. Verified by reading both. See Residue. |
+| R1-M4 | Sub-agent (round 1) | Report named `test_audit_check_billing_composition_reconstruction.py` as a diff member after the split had made it byte-identical to main; and the recorded `./pw verify` predated the split. | **Fixed** — build-gate section rewritten against the final diff, with both runs recorded and only the second treated as the gate. (The file is in the diff again, for the unrelated R1-M2 docstring fix.) |
+| R1-L1 | Sub-agent (round 1) | Two further "three ways" test names, `test_record_model_representability.py:455` and `:783`, both describing the RETROSPECTIVE reader. | **Deferred, deliberately.** Made false by plan 420, not by this diff, on a surface this plan scopes out. The line drawn: this run corrects what *this change* made false and records the rest. Recorded in Residue. |
+| R1-L2 | Sub-agent (round 1) | The two readers still disagree on three malformed-input classes, because `audit.py` resolves context columns **by name from the declared header** while `analyze-logs.py` resolves **positionally at index 5–8**: a 5-column header with 9-cell rows; a malformed `total_tokens` beside a nonzero context cell; a missing `rows[]{…}:` header line. A reordered header also transposes values between the two. | **Rejected for this plan, recorded as residue.** Pre-existing, not introduced here, and outside the fingerprint gate — the plan's requirement ("the two readers stop disagreeing") is met *for the gate*. Fixing it means touching the out-of-scope reader. See Residue. |
+| R1-L3 | Sub-agent (round 1) | Untested edges the change introduces or leaves open: a negative context-load integer dates the row and is summed; a header omitting or reordering a context column; whitespace-padded cells. | **Partly fixed** — added `test_a_negative_context_load_value_dates_the_row`, which pins the `!= 0` predicate and notes the sibling reader makes the same choice. Header-omission and whitespace left untested and recorded in Residue. |
+| R1-L4 | Sub-agent (round 1) | Vocabulary drift: `data-format.md` names the fourth state `indeterminate`, `audit.py` names it `UNDATABLE`, and the check doc's "four ways" lead-in listed three states plus a deferral. | **Fixed** — the check doc now names UNDATABLE as a state and cross-references the `indeterminate` spelling, explaining why this reader expresses it as absence. |
+
+### Findings the run produced on itself, before dispatching
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| S-1 | Own beyond-diff sweep | `checks/billing-composition.md` restated the three-way claim in two different consumer kinds (a prose paragraph and a reading-rules bullet), in a file the diff would never have opened. | **Fixed** in the implementation commit `2ccec2c`. |
+| S-2 | Own sweep | `test_record_model_representability.py`'s module docstring opened "Two fixture-backed companions", which the new `undatable/` fixture made stale. | **Fixed** — rewritten to name the fixtures rather than count them. |
+| S-3 | Own analysis | The `CHECK_ERA["billing-composition"]` stamp (`#1086`) could plausibly need bumping, since this change alters how the check's reader interprets archived ledgers. | **Deliberately not bumped**, following the explicit `lane-lever-effectiveness` precedent in the same map: bumping asserts that pre-boundary rows read as era-expected and post-boundary rows as regressions, and the D0 differential refutes that — every archived plan's emitted figures are byte-identical across this change. Pinned unchanged by `test_audit_check_inventory_consistency.py:100`. |
+
+### CI
+
+_(pending — recorded after the PR's checks report.)_
+
+### PR review
+
+_(pending — recorded after the review surfaces are read.)_
 
 ## Reviewer participation
 
