@@ -6658,8 +6658,13 @@ _BC_LEDGER_MIN_COLUMNS = 5
 # architecture inventory does not crawl.
 _BC_LEDGER_UNMEASURED_TOKEN = "unmeasured"
 
-# The ledger columns that can carry the unmeasured token. The legacy five keep a
-# numeric default, so a non-int there stays the old degrade-to-0 case.
+# The four appended context-load columns: the ones that can carry the unmeasured
+# token, and — the same set, for the same reason — the ONLY ones the literal-`0`
+# provenance gate in `_parse_dispatch_boundary_totals` applies to. Both follow
+# from the same fact: these columns postdate the token, so a value in one of them
+# can be undatable, while the legacy five keep a numeric default and a non-int
+# there stays the old degrade-to-0 case. Membership here is what makes a row's
+# fingerprint computable, so widening this set widens the gate.
 _BC_LEDGER_UNMEASURABLE_FIELDS: frozenset[str] = frozenset(_BC_LEDGER_COLUMNS[5:])
 
 _BC_LEDGER_HEADER_RE = re.compile(r"^rows\[\d*\]\{(?P<columns>[^}]*)\}:")
