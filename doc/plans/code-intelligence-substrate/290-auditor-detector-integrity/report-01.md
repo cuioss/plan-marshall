@@ -208,6 +208,28 @@ Round 3 ran `./pw verify` at HEAD (green), confirmed every round-2 fix real and 
 | X10 | LOW | `_examined_population`'s docstring said "a third narrowing axis"; four are live | **Fixed** — the mechanism was right, the count was not |
 | X11 | LOW | `collect_inputs`'s D2 comment contradicted itself about when `plan_source="recipe"` is written | **Fixed** |
 
+### Verification sub-agent, round 4
+
+Round 4 ran `./pw verify` (green), confirmed every round-3 fix real — mutation-testing the rewritten guard itself, which now fails under the blinding the round-2 version survived — and returned **thirteen** findings, four of them outside prose.
+
+| # | Severity | Finding | Disposition |
+|---|---|---|---|
+| Y1 | MEDIUM-HIGH | **The false `disciplinary` survived one filesystem state away.** X2's guard probed the log DIRECTORY, not the substrate, so a present-but-empty directory still published `total_log_lines: 0` and `genuine_signal_count: 0`. Reachable through this tool's own `--dormate-global-logs`, which relocates completed logs out of a directory it leaves in place | **Fixed.** A `logs_readable` probe gates the branch, mirroring what `_merge_window_log_files` already did |
+| Y2 | MEDIUM | **The D3 contract has three surfaces and X2 applied one.** The withheld zero was still persisted into `summary_metrics` (cross-run-diffed — the harm that suppression's own comment describes) and still rendered `global_errors=0` in a synthesis coupling | **Fixed** — both remaining surfaces |
+| Y3 | MEDIUM | **Two sibling checks had the identical defect, unexamined by four rounds.** `recurring-pattern-detector` and `preference-pattern-detector` narrow on the same predicate as `quality-chain` and published no population | **Fixed.** Both declare `plans_in_corpus`; emission is conditional so an absent key reads as undeclared, never zero. The new test asserts the property across the whole census rather than per check |
+| Y4 | LOW-MEDIUM | A round-3 test pinned neither property its name claimed — mutation-confirmed to pass with the legacy pattern removed | **Fixed.** It now asserts the coupling: exactly one pattern produces a list-repr capture, and the shared shape cannot |
+| Y5 | MEDIUM (prose) | The refuted "no action resolves a knowledge finding" claim survived at four code sites and one report site while corrected at two | **Fixed** — all sites swept together |
+| Y6 | LOW-MEDIUM | `resolve --to accepted` names a flag that does not exist (`--resolution`, under `allow_abbrev=False`) | **Fixed** |
+| Y7 | LOW-MEDIUM | "The three mechanisms below" stood above four entries, at three sites — an enumeration this run had already fixed once | **Fixed** at all three, and now **named rather than counted** |
+| Y8 | LOW-MEDIUM | `collect_inputs` said a recipe-routed plan "skips Step 5c entirely"; it skips Step 5c-**lesson** | **Fixed** |
+| Y9 | LOW | SKILL.md cited `token-economics` as a full-corpus check; it is delivery-cost | **Fixed** |
+| Y10 | LOW | The widened `no_count` claim landed at one of three sites — including not at the text the census actually **prints** | **Fixed** |
+| Y11 | LOW | `checks/global-log-analysis.md` documented a block shape the fix made unreachable, with no `unmeasured` state — W12's gap reintroduced | **Fixed** |
+| Y12 | LOW | The report's § Cost still carried the superseded build figure that § Build gate had corrected | **Fixed** |
+| Y13 | LOW | The report misattributed one of five items in its headline lesson | **Fixed** |
+
+⛔ **Round 4's diagnosis is the run's second real lesson, and it supersedes a naive reading of the first.** Each round's fix was sound *where it landed* and applied at **fewer sites than the claim it corrected spans** — 1 of 3 surfaces, 2 of 7 statements, 1 of 4 enumerations, 1 of 3. The remedy is not another prose pass but a **sweep-and-count discipline**: before declaring a claim corrected, enumerate every site that states it and correct them in one commit. Round 5 was given that as its acceptance criterion.
+
 ⭐ **The pattern round 3 named, and it is the most useful thing this run learned.** Across all three rounds, each round's *fix* was sound and each round's *accompanying prose* introduced a new false mechanism claim — X5, X7, X9 and X10 are all text the round-2 fixes wrote; X11's site was written by the original D2 commit and last rewritten by the round-1 fix, so it is the same class by a different author. The rounds were not converging on the code; they were converging on the explanations. Round 4 was therefore scoped to round 3's own instruction: accept no new explanatory clause that does not name and confirm the symbol making it true.
 
 **What round 2 could not verify**, recorded rather than assumed: the historical claim that the retired aggregate emission wrote one `lane_resolution` line per compose (repo history is effectively squashed, so it is plausible and harmless but unverified from this clone); the audit corpus, which the plan declares unreachable and forbids looking for; and C5, the unlocated 100%-firing warning, which it did not re-derive and on which it has no evidence either way.
