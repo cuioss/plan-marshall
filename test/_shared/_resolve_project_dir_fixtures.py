@@ -70,12 +70,19 @@ MAIN_CHECKOUT_ROOT = '/tmp/test-main-checkout'
 # =============================================================================
 
 
-def _derived_worktree_query(use_worktree: bool, worktree_path: str) -> tuple[str, str]:
+def worktree_query_result(use_worktree: bool, worktree_path: str = '') -> tuple[str, str]:
     """Build a ``_query_worktree_path`` return value from persisted metadata.
 
     Routes through the production state machine so every stub in the suite
     speaks the same three-state vocabulary the producer publishes, and none can
     encode a state pairing the producer never emits.
+
+    Public because the seam is stubbed two ways across the suite: most modules
+    go through the context managers below, but several patch
+    ``file_ops._query_worktree_path`` directly with their own
+    ``monkeypatch.setattr`` / ``patch.object`` call. Those sites call this
+    helper for their return value instead of writing a tuple by hand, so the
+    derivation has one home no matter which stubbing style a module uses.
     """
     from file_ops import derive_worktree_state
 
@@ -123,7 +130,7 @@ def patch_query_worktree_path(use_worktree: bool, worktree_path: str | None = No
         worktree_path = CANONICAL_WORKTREE if use_worktree else ''
     with patch(
         'file_ops._query_worktree_path',
-        return_value=_derived_worktree_query(use_worktree, worktree_path),
+        return_value=worktree_query_result(use_worktree, worktree_path),
     ) as mock:
         yield mock
 
@@ -162,7 +169,7 @@ def patch_query_worktree_path_map(mapping: dict[str, Any]):
         outcome = mapping[plan_id]
         if isinstance(outcome, Exception):
             raise outcome
-        return _derived_worktree_query(outcome[0], outcome[1])
+        return worktree_query_result(outcome[0], outcome[1])
 
     with patch('file_ops._query_worktree_path', side_effect=_resolve) as mock:
         yield mock
@@ -193,7 +200,7 @@ def patch_worktree_faces(
     with (
         patch(
             'file_ops._query_worktree_path',
-            return_value=_derived_worktree_query(use_worktree, worktree_path),
+            return_value=worktree_query_result(use_worktree, worktree_path),
         ) as path_mock,
         patch('file_ops._query_worktree_branch', return_value=worktree_branch) as branch_mock,
     ):

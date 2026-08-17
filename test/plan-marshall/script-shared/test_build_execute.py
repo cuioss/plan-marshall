@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 from _build_execute import MIN_TIMEOUT, CaptureStrategy, execute_direct_base
+from _resolve_project_dir_fixtures import worktree_query_result
 from marketplace_paths import NO_PLAN_SENTINEL
 
 
@@ -971,7 +972,7 @@ def test_execute_direct_base_honours_resolved_worktree_path(monkeypatch):
     # Patch the manage-status shell-out seam, which now lives in file_ops —
     # resolve_project_dir delegates the worktree face to resolve_plan_context.
     monkeypatch.setattr(
-        _resolver_core, '_query_worktree_path', lambda _pid: (True, '/tmp/wt-resolved')
+        _resolver_core, '_query_worktree_path', lambda _pid: worktree_query_result(True, '/tmp/wt-resolved')
     )
     resolved = resolve_project_dir('task-routing-canonical', '.', default='.')
     assert resolved.endswith('wt-resolved')

@@ -405,13 +405,16 @@ class TestResolveBranchAndPathViaResolver:
         )
         assert 'metadata is corrupt' in error['message']
 
-    def test_empty_persisted_worktree_path_is_a_resolution_failure(self) -> None:
-        """``use_worktree=true`` with an empty persisted path is operational too.
+    def test_unmaterialized_worktree_is_classified_as_such(self) -> None:
+        """``use_worktree=true`` with no persisted path is a STATE, not a failure.
 
-        The resolver raises for this case rather than returning an empty path,
-        so it lands in the SAME arm as a corrupt-metadata failure — and must
-        carry the same non-``plan_not_found`` classification. Pinning it here
-        keeps the two causes from drifting apart into different error types.
+        The producer publishes this as ``worktree_state: pending`` under
+        ``status: success`` — a plan that opted into a worktree phase-5-execute
+        has not created yet. It must therefore reach the classification that
+        says exactly that, rather than the operational-failure arm it shared
+        with corrupt metadata while the resolver raised for it. Pinning the
+        distinction here keeps a normal pre-materialization reading from being
+        reported to the caller as a broken resolver.
         """
         args = Namespace(plan_id='fp-empty-path', project_dir=None, branch=None)
 
@@ -421,7 +424,7 @@ class TestResolveBranchAndPathViaResolver:
         assert branch is None
         assert path is None
         assert error is not None
-        assert error['error_type'] == 'worktree_resolution_failed'
+        assert error['error_type'] == 'worktree_not_materialized'
 
     def test_no_plan_sentinel_is_refused_by_the_worktree_verb(self) -> None:
         """``NO_PLAN`` has no dedicated worktree, so this verb refuses it.

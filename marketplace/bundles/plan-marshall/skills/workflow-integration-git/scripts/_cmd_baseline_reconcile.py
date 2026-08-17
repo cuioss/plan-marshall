@@ -48,45 +48,64 @@ def _worktree_target(plan_id: str, override: str | None) -> tuple[str | None, st
     actual resolution, and maps the outcome onto Step 3d's skip-reason
     vocabulary.
 
-    Returns ``(path, skip_reason_or_None)``. The skip reason is
-    populated when the plan declares ``use_worktree==false`` or when
-    status.json is missing/unparseable — both are documented skip
-    conditions in Step 3d's activation guard.
+    Returns ``(path, skip_reason_or_None)``. The skip reason is populated when
+    the plan runs against the main checkout, when its worktree has not been
+    materialized yet, or when status.json is missing/unparseable — all
+    documented skip conditions in Step 3d's activation guard.
 
     Resolution routes through the single plan-context resolver rather than
-    hand-reading ``status.metadata``. The skip-reason vocabulary is unchanged
-    and is derived structurally, not by matching the resolver's error text:
-    a failure to resolve the worktree PRESENCE is ``status_not_found``, while a
-    plan that declares a worktree but resolves no path is
-    ``worktree_path_missing``.
+    hand-reading ``status.metadata``, and the skip reason is selected by the
+    resolver's published ``worktree_state`` rather than by the boolean
+    ``has_worktree`` face. The distinction is the whole point of the reason
+    string: ``has_worktree`` is false for a plan with no worktree AND for one
+    whose worktree does not exist yet, so reading it alone would report a
+    pre-materialization plan as ``main_checkout_flow`` — telling the operator
+    the plan runs against the main checkout when in fact it is bound to a
+    worktree nobody has created. Each state gets the reason that is true of it:
+
+    * ``disabled`` → ``main_checkout_flow``
+    * ``pending`` → ``worktree_not_materialized`` (the same vocabulary
+      ``_cmd_force_push`` uses for this state)
+    * ``materialized`` → the path, subject to the directory guard below
+
+    A resolver failure is ``status_not_found``, and a payload whose declared
+    ``materialized`` path resolves to nothing is ``worktree_path_missing``.
     """
     if override:
         return override, None
 
     try:
-        from file_ops import WorktreeResolutionError, resolve_plan_context
+        from file_ops import (
+            WORKTREE_STATE_DISABLED,
+            WORKTREE_STATE_PENDING,
+            WorktreeResolutionError,
+            resolve_plan_context,
+        )
     except ImportError:
         return None, 'status_module_unavailable'
 
     try:
         context = resolve_plan_context(plan_id, ensure=False)
-        if not context.has_worktree:
-            return None, 'main_checkout_flow'
+        worktree_state = context.worktree_state
     except WorktreeResolutionError:
         return None, 'status_not_found'
+
+    if worktree_state == WORKTREE_STATE_DISABLED:
+        return None, 'main_checkout_flow'
+    if worktree_state == WORKTREE_STATE_PENDING:
+        return None, 'worktree_not_materialized'
 
     try:
         worktree_path = context.worktree_path
     except WorktreeResolutionError:
         return None, 'worktree_path_missing'
 
-    # An EMPTY persisted worktree_path never reaches this guard: the resolver
-    # raises WorktreeResolutionError for use_worktree=true with an empty path,
-    # and the except above already maps that case to 'worktree_path_missing'.
-    # What stays reachable here is a NON-EMPTY path that is not a directory —
-    # a worktree that was removed or relocated after the path was persisted —
-    # which would otherwise be handed to ``git -C <stale-path>`` as a bogus
-    # target.
+    # Reachable for a NON-EMPTY path that is not a directory — a worktree
+    # removed or relocated after its path was persisted — which would otherwise
+    # be handed to ``git -C <stale-path>`` as a bogus target. An empty path
+    # cannot arrive here: the producer publishes ``materialized`` only with a
+    # non-empty path, and a self-contradictory payload is caught by the
+    # ``worktree_path_missing`` arm above.
     if not Path(worktree_path).is_dir():
         return None, 'worktree_path_not_a_directory'
 

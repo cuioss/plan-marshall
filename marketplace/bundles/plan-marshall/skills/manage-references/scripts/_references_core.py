@@ -188,7 +188,10 @@ def resolve_live_worktree(plan_id: str | None) -> Path | None:
     ``has_worktree`` is the gate rather than a truthiness test on the resolved
     path: the resolver's ``worktree_path`` falls back to the main checkout for a
     plan that is not worktree-bound, so gating on the path would hand callers a
-    main-checkout footprint where they previously got "no worktree".
+    main-checkout footprint where they previously got "no worktree". That face
+    answers "is a worktree materialized right now", so a plan whose worktree
+    phase-5-execute has not created yet is answered ``None`` — correct here,
+    because a worktree that does not exist carries no footprint to read.
 
     Args:
         plan_id: The live plan identifier, or ``None`` for an ARCHIVED plan. An
@@ -197,8 +200,8 @@ def resolve_live_worktree(plan_id: str | None) -> Path | None:
             with ``None`` and the caller falls through to its next tier.
 
     Returns:
-        The worktree directory, or ``None`` when the plan binds no worktree, the
-        resolution fails, or the resolved path is not a directory.
+        The worktree directory, or ``None`` when no worktree is materialized for
+        the plan, the resolution fails, or the resolved path is not a directory.
     """
     if not plan_id:
         return None

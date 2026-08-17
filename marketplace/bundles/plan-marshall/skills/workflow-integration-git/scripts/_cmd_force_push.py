@@ -70,12 +70,18 @@ def _resolve_branch_and_path(args) -> tuple[str | None, Path | None, dict | None
             plan_branch = context.worktree_branch
         except WorktreeResolutionError as exc:
             # NOT 'plan_not_found': this arm wraps BOTH the context resolution
-            # and the three worktree-face property accesses, so it fires for an
-            # unavailable executor, a subprocess timeout or non-zero exit,
-            # corrupt metadata, and the use_worktree=true-with-empty-path case —
-            # none of which means the plan is missing. Reporting a resolver
-            # failure as a missing plan sends the caller looking in the wrong
-            # place, so the operational cause gets its own error_type.
+            # and the worktree-face property accesses, so it fires for an
+            # unavailable executor, a subprocess timeout or non-zero exit, and a
+            # payload carrying no recognised worktree_state — none of which
+            # means the plan is missing. Reporting a resolver failure as a
+            # missing plan sends the caller looking in the wrong place, so the
+            # operational cause gets its own error_type.
+            #
+            # A plan whose worktree is merely not materialized YET does NOT land
+            # here. That is a normal pre-phase-5 reading the resolver reports as
+            # a state rather than an error, and it falls through to the
+            # worktree_not_materialized classification below, which says what is
+            # actually true of it.
             return None, None, {
                 'status': 'error',
                 'operation': 'force-push-with-lease',
