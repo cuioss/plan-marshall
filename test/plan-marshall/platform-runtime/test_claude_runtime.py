@@ -4,7 +4,7 @@
 
 Covers every method defined by the Runtime ABC:
   1.  project_initial_setup       — creates dirs, writes marshal.json, installs hook
-  2.  session_capture             — reads $CLAUDE_CODE_SESSION_ID, stores via manage-status
+  2.  session_capture             — reads $CLAUDE_CODE_SESSION_ID, appends via manage-status
   3.  session_render_title        — resolves session → plan → OSC emit
   4.  session_push_title_token    — binds the session and persists the token state for
       the next render event (icon optional); it performs no terminal write of its own

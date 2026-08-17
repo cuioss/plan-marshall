@@ -247,9 +247,11 @@ class Runtime(ABC):
     def session_capture(self, plan_id: str) -> str:
         """Read and persist the current platform session identifier.
 
-        On Claude: reads ``$CLAUDE_CODE_SESSION_ID`` and stores it via
-        ``manage-status``.  Returns ``error`` with code
-        ``hook_not_configured`` when the env var is absent.
+        On Claude: reads ``$CLAUDE_CODE_SESSION_ID`` and APPENDS it to the
+        plan's ``status.metadata.session_ids`` list via ``manage-status``, so a
+        plan spanning several sessions keeps every identity rather than only the
+        newest.  Returns ``error`` with code ``hook_not_configured`` when the env
+        var is absent.
 
         On OpenCode: returns ``no-op`` because the platform does not expose a
         session id to the shell environment.
