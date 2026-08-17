@@ -4382,13 +4382,23 @@ def check_input_integrity(inputs: PlanInputs) -> dict[str, Any]:
         and phase_tokens.get(ph, 0) == 0
         and ph not in explained_phases
     ]
-    # execute_blind is a GENUINE (accidental) blind: 5-execute recorded zero
-    # tokens with no end_time-presence marker to explain it. A marker-explained
-    # zero-token execute is an explained gap (bucket `partial`), not `blind`.
+    # execute_blind is a GENUINE (accidental) blind: the 5-execute phase carries no
+    # usable token figure and no end_time-presence marker explains why. A
+    # marker-explained gap is an explained one (bucket `partial`), not `blind`.
+    #
+    # ABSENT counts as blind, and that is the load-bearing half. The predecessor
+    # tested `phase_tokens.get(_II_EXECUTE_PHASE, None) == 0`, which is False for an
+    # absent phase (`None == 0`), so the guard's precondition was the presence of
+    # the very record whose absence it exists to detect — vacuous at exactly the
+    # value it was written to catch. The consequence was an INVERTED severity: a
+    # plan recording `5-execute` at zero tokens graded `blind`, while a plan whose
+    # metrics.toon has no 5-execute section at all — strictly less recorded — graded
+    # only `partial`. Absence is never better-recorded than a recorded zero, so it
+    # can never grade milder.
     execute_marker_explained = _II_EXECUTE_PHASE in explained_phases
-    execute_blind = (
-        phase_tokens.get(_II_EXECUTE_PHASE, None) == 0 and not execute_marker_explained
-    )
+    execute_absent = _II_EXECUTE_PHASE not in recorded_phases
+    execute_recorded_zero = phase_tokens.get(_II_EXECUTE_PHASE, None) == 0
+    execute_blind = (execute_absent or execute_recorded_zero) and not execute_marker_explained
     metrics_blind = ";".join(blind_phases)
 
     # incomplete_lifecycle — no 5-execute OR no 6-finalize section recorded.
