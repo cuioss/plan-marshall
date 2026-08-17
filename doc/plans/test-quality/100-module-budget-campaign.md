@@ -279,13 +279,16 @@ weaker check, and record what the check that would have established the unavaila
 * **Sequencing against the rest of the epic.** Rows 1–4 have no dependency and may start
   immediately. `070` and `080` must land before this campaign takes their slices — rows 5 and 6 of
   the table above.
-  ⛔ **Collisions are halting, and this plan states none of them.** The set lives in
-  `doc/plans/test-quality/README.md` § "The collision matrix"; the *Depends on* column of the table
-  above carries a **reference** to it per run, never a copy. **Before starting a run, look this
-  campaign up in the matrix; if it names a party, confirm no open PR and no in-flight branch exists
-  for it, and halt and report rather than editing files two plans own.** An earlier draft enumerated
-  the colliding runs here and in that column, the two disagreed, and the run the column licensed was
-  one the matrix forbade.
+  ⛔ **Collisions are halting, and this plan states none of them — not here, and not in any column of
+  the table above.** The set lives in `doc/plans/test-quality/README.md` § "The collision matrix", and
+  nowhere else. The table above answers a different question: its *Ordering prerequisite* column says
+  what must have **landed** before a run may start, which never tells you who may be running
+  **concurrently**. **Before starting a run, look this campaign up in the matrix; if it names a party,
+  confirm no open PR and no in-flight branch exists for it, and halt and report rather than editing
+  files two plans own.** An earlier draft enumerated the colliding runs both here and in that column,
+  the two disagreed, and the run the column licensed was one the matrix forbade; a later draft replaced
+  the copies with per-row references, and those references then went stale when the column was renamed.
+  Carrying neither is what finally removed the failure mode.
 * **When every slice is done, one thing follows.** `test-module-line-budget` reaches zero and its
   flip to `severity: error` becomes available. That flip belongs to plan `090` § D7's ladder, not
   here — this plan produces the condition, it does not take the gate decision.

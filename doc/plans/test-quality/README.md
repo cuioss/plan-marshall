@@ -302,8 +302,8 @@ it, and where a run cannot finish, **report what was not reached rather than thi
 | `030`–`080` | one disjoint slice of `test/` each, listed in the plan | each other, once `010` **and** `020` have landed |
 | `090` | `marketplace/bundles/**` (the doctor analyzers, `script-shared`, `manage-providers`) — **the only plan in the epic that may edit it** — plus `test/conftest.py`'s loader mechanics, and the tests for its own production changes | see § "The collision matrix" — it is the authoritative set, and this cell deliberately does not restate it |
 | `100` | one reduction slice per run, `test_*.py` only — plus a seventh run for the one over-budget module plan `010` owns, which no reduction slice covers | nothing running against the same slice; and see § "The collision matrix" for the runs that additionally collide with `090` |
-| `120` | repository tooling only — the checker and its tests. It **reads** every plan document and the test tree and writes neither | anything; it shares no surface with any plan in the epic |
-| `110` | the tree's skip sites, which **cross** several slices — `test/sync-plugin-cache/`, `test/pm-plugin-development/`, `test/marketplace/` and scattered others — plus `test/conftest.py`'s session preflight and skip guard | nothing running against those directories; see § "The collision matrix" for `090` |
+| `110` | the tree's skip sites, which **cross** several slices — `test/sync-plugin-cache/`, `test/pm-plugin-development/`, `test/marketplace/` and scattered others — plus `test/conftest.py`'s session preflight and skip guard | see § "The collision matrix" — it is the authoritative set, and this cell deliberately does not restate it |
+| `120` | repository tooling — the checker, placed per `pm-plugin-development:plugin-script-architecture` (which may put it under `marketplace/bundles/**`); its tests under `test/`, because `pyproject.toml` collects nowhere else; D3's baseline and gate configuration; and one row in § "The partition, and how a run re-derives it" registering that test location. It **modifies** no existing plan document and no existing test module | see § "The collision matrix" — it is the authoritative set, and this cell deliberately does not restate it |
 
 **`090`, `100`, `110` and `120` were added after the epic's executed half**, each from something the
 executed runs recorded and none could act on: `090` owns the production and harness defects every reduction plan is
@@ -311,7 +311,7 @@ forbidden to fix, `100` owns the module-budget split none of them reached, and `
 conditions none of them measured. `090` should land before `070` and `080` start; `100` takes their
 slices only after they land; `110` is best run before all three, because they are what it exists to
 watch. **`120` should land earliest of all** — it checks the documents every other plan is executed
-from, and eight verification rounds established that nothing else does.
+from, and nine verification rounds established that nothing else does.
 
 **`010` and `020` are blocking.** The reduction plans consume the harness `020` builds and the style
 `010` writes; run either reduction wave before them and it will invent its own harness, which is the
@@ -344,10 +344,11 @@ instead.**
 | `090` | `100` run 6 | `plugin-doctor/test_analyze_lesson_id_in_skill_prose.py` — `080`'s | Same module as row 1: `090` § D5 amends its cases, run 6 splits it (1,020 lines, over budget) |
 | `090` | `100` run 7 | `plugin-doctor/test_test_conventions_rule*.py` — `010`'s | `090` § D4 amends the rule whose tests live in `rule6.py`; run 7 splits that same module |
 | `110` | `040` | `phase-6-finalize/`, `workflow-integration-git/`, `workflow-integration-github/` — `040`'s | `110` D1–D5 rewrite skip sites in all three |
-| `110` | `060` | `lsp-client/`, `platform-runtime/` — `060`'s | `110` D5's in-process stub and D1's scattered sites are written there |
+| `110` | `060` | `lsp-client/`, `platform-runtime/`, `tools-file-ops/` — `060`'s | `110` D5's in-process stub and D1's scattered sites are written there; `110`'s Expected surface names all three |
 | `110` | `070` | `build-server/` — `070`'s | `110` records that skip as a platform exception; it does not write it, so this is the weakest row in the table — but the file is shared |
 | `110` | `080` | `test/sync-plugin-cache/`, `test/pm-plugin-development/`, `test/marketplace/` — `080`'s | Most of the tree's skip sites are inside `080`'s slice |
 | `110` | `100` | whichever slice `100` is running | `110`'s skip sites cross every slice, so any campaign run may meet them |
+| `120` | `090` | `marketplace/bundles/**` — `090`'s, exclusively | `120`'s checker is a script, and `pm-plugin-development:plugin-script-architecture` places skill scripts under `marketplace/bundles/{b}/skills/{s}/scripts/`. If `120` lands its script there it enters the one tree `090` owns alone; if the standard admits a non-bundle location, this row is inert and `120`'s report says so |
 
 ⚠️ **This table is about CONCURRENT EDITING, not about ordering.** Blocking dependencies — `010` and
 `020` before every reduction plan, `090` before `070` and `080`'s **B6**/**B7** halves, `070`/`080`
@@ -355,18 +356,20 @@ before `100`'s runs 5 and 6 — are stated in § "The plans, and what may run at
 each plan's own blocking-dependency note. A pair absent from this table may run at the same time **if
 its ordering constraints are met**; the two questions are separate.
 
-⛔ **This table is hand-maintained and nothing derives or checks it — plan `120` is the fix.** Eight verification rounds and
-three automated reviews all reached the same conclusion: an ownership set held in prose, with no
-derivation and no check, drifts — and three successive attempts to fix that by restructuring the prose
-each reproduced the drift inside their own commit. **Treat every row as a lead**: before acting on it,
-read the two plans' own Expected surfaces and confirm the shared path is still shared. The residue
-**Plan `120` computes this table from the plans' own Expected surfaces and fails when this document
-disagrees with it**; until it lands, every row here is a lead.
+⛔ **This table is hand-maintained and nothing derives or checks it — plan `120` is the fix.** Nine
+verification rounds, and **two** substantive automated reviews, reached the same conclusion: an
+ownership set held in prose, with no derivation and no check, drifts. Three successive attempts to fix
+that by restructuring the prose each failed — the first two by leaving a site the next round found,
+the third by contradicting its own new table **inside the commit that added it**. **Treat every row as
+a lead**: before acting on it, read the two plans' own Expected surfaces and confirm the shared path is
+still shared. **Plan `120` computes this table from the plans' own Expected surfaces and fails when
+this document disagrees with it**; until it lands, every row here is a lead.
 
 **How to use it.** Before starting, find your plan in either column. For every row that names it,
 confirm no open PR and no in-flight branch exists for the other party — and **halt and report** rather
-than editing a file two plans own. `100` states the applicable row per campaign run in its own slice
-table's *Depends on* column, as a reference to this table rather than as a restatement of it.
+than editing a file two plans own. `100`'s slice table carries no collision column at all — its
+*Ordering prerequisite* column states what must have **landed** first, which is a different question;
+for who may run **at the same time**, every campaign run reads this table.
 
 ## The partition, and how a run re-derives it
 

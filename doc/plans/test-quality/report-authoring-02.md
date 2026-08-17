@@ -277,7 +277,7 @@ is corroboration from a different method, not a duplicate pass.
 | 88 | **CR** · The report calls the diff "behavioural prose" in one place and "neither prose nor bookkeeping" in another, and Proposal 1 depends on the distinction | **Fixed** — the distinction is now stated as **executable plan text** versus inert documentation prose, in both places |
 | 89 | **CR** · "Add the mandatory first-instruction block" to `070` and `080` | **Rejected with reason, and replied on the thread.** Both plans carry the block at line 1, byte-identical to `doc/plans/_template/plan.md` — re-verified in five rounds. The comment anchors on lines 334/356, which are the closing bullets of each plan's Notes section, so the finding appears to be an anchoring artefact rather than a missing block |
 
-### Round 6 — 20 findings, all fixed. Three were introduced by round 5's fixes
+### Round 6 — 20 findings, all fixed. **Six** were introduced by round 5's fixes — counted by provenance, which is the count the series table and finding #103 both carry
 
 | # | Finding | Disposition |
 |---|---|---|
@@ -322,27 +322,27 @@ this round applied.
 
 | # | Finding | Disposition |
 |---|---|---|
-| 90 | V7 · **`100`'s own slice table still licensed campaign run 6 alongside `090`.** Round 6 rewrote `100`'s Notes to point at the matrix and never swept the *Depends on* column 90 lines above — the column a run actually reads when it picks a slice. `100` went from consistently-wrong to internally contradictory | **Fixed structurally** — every row of that column now carries a **reference** to the matrix rather than a copy, so the table cannot say something the matrix does not |
-| 91 | V7 · `090`'s carve-out restated a collision two lines above the block declaring nothing is restated | **Fixed** — the row states ownership only |
-| 92 | V7 · `090`'s carve-out row 1 **denied** a collision the matrix asserts ("`010` has landed … the risk is a later re-entry, not a concurrent one") while `100` run 7 can start at any time and splits the very module `090` § D4 amends | **Fixed** — the row no longer judges scheduling |
-| 93 | V7 · **The "ONE place … none restates it" claim was false the moment round 6 wrote it** — `110`, `080` and the README's own later subsections all still enumerated, and three collisions (`110`↔`070`, `110`↔`080`, `110`↔`100`) were absent from the matrix entirely | **Fixed** — see the note below |
-| 94 | V7 · The README's plan graph said `090` "runs any time", 32 lines above the matrix — the exact wording round 4's #48 was filed against, surviving in a different file | **Fixed** |
-| 95 | V7 · Round 6's fix for the exclusion-count reached the four landed plans and **missed `070` and `080`** — the two unstarted plans that will actually execute the gate — and what those two said ("which four sibling runs have already corrected") is refuted by this report's own analysis | **Fixed** in both, and the false reassurance replaced |
-| 96 | V7 · **"the last round finding eight of ten" was STILL in the file** — recorded fixed in rounds 5 and 6. **The fourth consecutive round with a fix recorded as landed and not written**, and the finding that named the pattern was itself an instance of it | **Fixed at its actual site**, located by grep rather than by matching the sentence a previous round assumed it was in |
-| 97 | V7 · Proposal 2's series stale in three ways — missing round 6, carrying the superseded round-5 figure, and "two rounds" where the report says three | **Fixed** |
-| 98 | V7 · The PR description's aggregates stale; row 109 recorded them fixed | **Fixed** — re-derived, and the description now states the series without freezing a total |
-| 99 | V7 · "Three rounds have engaged condition B" followed by an enumeration of two | **Fixed** — each engaging round is now named rather than counted |
-| 100 | V7 · Proposal 1's document enumeration omitted `010/plan.md` and its "eight records" parenthetical named seven | **Fixed** |
-| 101 | V7 · Row 107 claimed the `PYTHONPATH` finding was answered "on the thread"; it is an outside-diff comment with no thread | **Fixed** — the claim is narrowed to the README, with why no thread exists |
-| 102 | V7 · The findings legend was a round stale, and defined an **S** source no row uses | **Fixed** — the legend is now round-agnostic |
-| 103 | V7 · The self-inflicted table stopped at round 5, and round 6 counted itself by the row-based rule its own #97 reports as unreliable | **Fixed** — rounds 6 and 7 added, round 6 recounted by provenance (6, not 3) |
-| 104 | V7 · "Every comment is dispositioned: one review with no findings, and **two refusal notices**" contradicted by the participation table eight lines above, which records `coderabbitai` as `reviewed` with nine findings | **Fixed** |
-| 105 | V7 · The quoted `coderabbitai` body was stale again — a different countdown, a different head | **Fixed** by removing the verbatim quote: the report now says to read it live and why |
-| 106 | V7 · **`090` § D3 would create a new root-level `test/*.py` module the partition assigns to nobody** — the `pm-code-intelligence` defect, created deliberately | **Fixed** — D3 now requires the guard be placed inside an owned surface, with the reason |
-| 107 | V7 · `090`'s Notes still counted how many deliverables consumers "cite", after the column was deleted for counting citations | **Fixed** |
-| 108 | V7 · Inserting the matrix as an `###` swallowed the entire partition contract into a section named for something else | **Fixed** — the matrix is its own `##`, and the partition contract has its heading back |
-| 109 | V7 · Pointers named § "The collision matrix"; the heading carried a trailing subtitle, so they resolved by prefix only | **Fixed** — the heading is exactly what the pointers name |
-| 110 | V7 · The matrix was `090`-scoped prose claiming epic-wide authority, and its closing "everything else may run concurrently" licensed `080` ∥ `110`, which both plans forbid | **Fixed** — the matrix is now epic-wide and complete, and its closing sentence is true |
+| 110 | V7 · **`100`'s own slice table still licensed campaign run 6 alongside `090`.** Round 6 rewrote `100`'s Notes to point at the matrix and never swept the *Depends on* column 90 lines above — the column a run actually reads when it picks a slice. `100` went from consistently-wrong to internally contradictory | **Fixed structurally** — every row of that column now carries a **reference** to the matrix rather than a copy, so the table cannot say something the matrix does not |
+| 111 | V7 · `090`'s carve-out restated a collision two lines above the block declaring nothing is restated | **Fixed** — the row states ownership only |
+| 112 | V7 · `090`'s carve-out row 1 **denied** a collision the matrix asserts ("`010` has landed … the risk is a later re-entry, not a concurrent one") while `100` run 7 can start at any time and splits the very module `090` § D4 amends | **Fixed** — the row no longer judges scheduling |
+| 113 | V7 · **The "ONE place … none restates it" claim was false the moment round 6 wrote it** — `110`, `080` and the README's own later subsections all still enumerated, and three collisions (`110`↔`070`, `110`↔`080`, `110`↔`100`) were absent from the matrix entirely | **Fixed** — see the note below |
+| 114 | V7 · The README's plan graph said `090` "runs any time", 32 lines above the matrix — the exact wording round 4's #48 was filed against, surviving in a different file | **Fixed** |
+| 115 | V7 · Round 6's fix for the exclusion-count reached the four landed plans and **missed `070` and `080`** — the two unstarted plans that will actually execute the gate — and what those two said ("which four sibling runs have already corrected") is refuted by this report's own analysis | **Fixed** in both, and the false reassurance replaced |
+| 116 | V7 · **"the last round finding eight of ten" was STILL in the file** — recorded fixed in rounds 5 and 6. **The fourth consecutive round with a fix recorded as landed and not written**, and the finding that named the pattern was itself an instance of it | **Fixed at its actual site**, located by grep rather than by matching the sentence a previous round assumed it was in |
+| 117 | V7 · Proposal 2's series stale in three ways — missing round 6, carrying the superseded round-5 figure, and "two rounds" where the report says three | **Fixed** |
+| 118 | V7 · The PR description's aggregates stale; row 109 recorded them fixed | **Fixed** — re-derived, and the description now states the series without freezing a total |
+| 119 | V7 · "Three rounds have engaged condition B" followed by an enumeration of two | **Fixed** — each engaging round is now named rather than counted |
+| 120 | V7 · Proposal 1's document enumeration omitted `010/plan.md` and its "eight records" parenthetical named seven | **Fixed** |
+| 121 | V7 · Row 107 claimed the `PYTHONPATH` finding was answered "on the thread"; it is an outside-diff comment with no thread | **Fixed** — the claim is narrowed to the README, with why no thread exists |
+| 122 | V7 · The findings legend was a round stale, and defined an **S** source no row uses | **Fixed** — the legend is now round-agnostic |
+| 123 | V7 · The self-inflicted table stopped at round 5, and round 6 counted itself by the row-based rule its own #97 reports as unreliable | **Fixed** — rounds 6 and 7 added, round 6 recounted by provenance (6, not 3) |
+| 124 | V7 · "Every comment is dispositioned: one review with no findings, and **two refusal notices**" contradicted by the participation table eight lines above, which records `coderabbitai` as `reviewed` with nine findings | **Fixed** |
+| 125 | V7 · The quoted `coderabbitai` body was stale again — a different countdown, a different head | **Fixed** by removing the verbatim quote: the report now says to read it live and why |
+| 126 | V7 · **`090` § D3 would create a new root-level `test/*.py` module the partition assigns to nobody** — the `pm-code-intelligence` defect, created deliberately | **Fixed** — D3 now requires the guard be placed inside an owned surface, with the reason |
+| 127 | V7 · `090`'s Notes still counted how many deliverables consumers "cite", after the column was deleted for counting citations | **Fixed** |
+| 128 | V7 · Inserting the matrix as an `###` swallowed the entire partition contract into a section named for something else | **Fixed** — the matrix is its own `##`, and the partition contract has its heading back |
+| 129 | V7 · Pointers named § "The collision matrix"; the heading carried a trailing subtitle, so they resolved by prefix only | **Fixed** — the heading is exactly what the pointers name |
+| 130 | V7 · The matrix was `090`-scoped prose claiming epic-wide authority, and its closing "everything else may run concurrently" licensed `080` ∥ `110`, which both plans forbid | **Fixed** — the matrix is now epic-wide and complete, and its closing sentence is true |
 
 ⭐ **Round 7's diagnosis, and why the approach changed again.** Round 6 declared one table
 authoritative while leaving five enumerations live — so, as round 7 put it, *"the class was never
@@ -363,49 +363,90 @@ them: the column now states ordering only and defers collisions entirely, the ma
 pair, and the surviving enumerations are gone. **That is the third structural remedy in three rounds,
 and the honest reading is in § "The stop record": the class is not closed.**
 
-### Round 8 — 18 findings, plus 4 from a second `coderabbitai` review. All fixed. The budget ends here
+### Round 8 — 14 findings, plus 4 from a second `coderabbitai` review — 18 rows. All fixed. The operator's first budget ends here
 
 | # | Finding | Disposition |
 |---|---|---|
-| 111 | V8 · **All seven rows of `100`'s new reference column contradicted the matrix** — matrix row 10 names `110` against every campaign run, so "Collisions: none in the matrix" was false on four rows and incomplete on three. Round 7's fix for a contradictory column produced a contradictory column | **Fixed** — the column states **ordering only** and defers collisions entirely; a summary of another table is what kept drifting |
-| 112 | V8 · `100` claimed "nothing is concurrent with them" five lines above the table, and 100 lines above the block saying this plan states no collisions | **Fixed** |
-| 113 | V8 · `080`'s Notes pointed at a restatement **the same commit deleted**, and called `110` its "one live collision risk" where the matrix names two parties | **Fixed** |
-| 114 | V8 · `010`'s "there is no collision with plan `080` … sequential, not concurrent" — the same scheduling judgement round 7 removed from `090`, surviving in another file | **Fixed** — it states ordering and defers the rest |
-| 115 | V8 · **The matrix was incomplete: `110` ↔ `040` and `110` ↔ `060` were missing** — and the row it did carry (`110` ↔ `070`) is the one directory `110` explicitly does not write. Its closing "everything not in this table may run concurrently" was therefore false | **Fixed** — both rows added, the false closing sentence removed, and the ordering-versus-collision distinction stated so blocking dependencies are not read as absent collisions |
-| 116 | V8 · **Thirteen partition pointers named a section that no longer holds the partition.** Round 7 split the README and swept none of the dependents; the target is the *halting* gate | **Fixed** in all six plan files |
-| 117 | V8 · `090`'s **Expected surface instructed exactly the placement its own D3 forbids** — a new root-level meta-test — so a run reading the section that governs what it may edit would recreate the defect D3 names | **Fixed** |
-| 118 | V8 · `090`'s consumer table asserted `100` depends on D3; `100` carries no such note and preserves registration names by hand | **Fixed** — stated as this plan's claim about `100`, not `100`'s about this plan |
-| 119 | V8 · Round 7's #107 rewrite left a broken sentence at `090`'s Notes | **Fixed** — independently flagged by `coderabbitai` in the same hour |
-| 120 | V8 · **Proposal 2's series was unwritten across rounds 5, 6 and 7** — recorded fixed each time. The proposal whose whole argument is "a run watching only the finding count stops too early" was itself carrying the stale count | **Fixed** — and it is the **fifth** consecutive round to find a fix recorded as landed and never written, sitting directly beside the row that names that pattern |
-| 121 | V8 · The PR description's aggregates stale after two rounds recorded them re-derived | **Fixed** |
-| 122 | V8 · The round-7 ⭐ note's three central claims — the grep returns only the matrix, the matrix is complete, the table cannot disagree — **all three false when written** | **Fixed**, and the note now records that they were |
-| 123 | V8 · "nine real findings" contradicted by the report's own disposition of one as an anchoring artefact | **Fixed** |
-| 124 | V8 · The legend still defined an **S** source no row uses | **Fixed** |
-| 125 | **CR** · Derive the cross-file dependency, collision and ownership sets from their authoritative definitions rather than mirroring them | **Accepted as the correct diagnosis and recorded as open work** — see § Residue. It is the third review in a row to file it, and it agrees with round 8's own verdict. This run cannot ship it: an executable check is production code and needs its own plan |
-| 126 | **CR** · "the three latent registrations" is a snapshot, not an invariant — a guard quantified over three names reproduces the n−1-of-n failure | **Fixed** — `090` § D3's guard now enumerates the registrations the loader actually creates |
-| 127 | **CR** · **`090`'s halting check requires evidence no mechanism produces** — the sibling-collision machinery reads plan records and file overlap, not open PRs | **Fixed** — the check is declared manual, its evidence defined (search the open PRs, record what was found), and "unavailable" named as the honest outcome when the PR list cannot be reached |
-| 128 | **CR** · Incomplete sentence at `090:363` | **Fixed** with #119 |
+| 131 | V8 · **All seven rows of `100`'s new reference column contradicted the matrix** — matrix row 10 names `110` against every campaign run, so "Collisions: none in the matrix" was false on four rows and incomplete on three. Round 7's fix for a contradictory column produced a contradictory column | **Fixed** — the column states **ordering only** and defers collisions entirely; a summary of another table is what kept drifting |
+| 132 | V8 · `100` claimed "nothing is concurrent with them" five lines above the table, and 100 lines above the block saying this plan states no collisions | **Fixed** |
+| 133 | V8 · `080`'s Notes pointed at a restatement **the same commit deleted**, and called `110` its "one live collision risk" where the matrix names two parties | **Fixed** |
+| 134 | V8 · `010`'s "there is no collision with plan `080` … sequential, not concurrent" — the same scheduling judgement round 7 removed from `090`, surviving in another file | **Fixed** — it states ordering and defers the rest |
+| 135 | V8 · **The matrix was incomplete: `110` ↔ `040` and `110` ↔ `060` were missing** — and the row it did carry (`110` ↔ `070`) is the one directory `110` explicitly does not write. Its closing "everything not in this table may run concurrently" was therefore false | **Fixed** — both rows added, the false closing sentence removed, and the ordering-versus-collision distinction stated so blocking dependencies are not read as absent collisions |
+| 136 | V8 · **Thirteen partition pointers named a section that no longer holds the partition.** Round 7 split the README and swept none of the dependents; the target is the *halting* gate | **Fixed** in all six plan files |
+| 137 | V8 · `090`'s **Expected surface instructed exactly the placement its own D3 forbids** — a new root-level meta-test — so a run reading the section that governs what it may edit would recreate the defect D3 names | **Fixed** |
+| 138 | V8 · `090`'s consumer table asserted `100` depends on D3; `100` carries no such note and preserves registration names by hand | **Fixed** — stated as this plan's claim about `100`, not `100`'s about this plan |
+| 139 | V8 · Round 7's #127 rewrite left a broken sentence at `090`'s Notes | **Fixed** — independently flagged by `coderabbitai` in the same hour |
+| 140 | V8 · **Proposal 2's series was unwritten across rounds 5, 6 and 7** — recorded fixed each time. The proposal whose whole argument is "a run watching only the finding count stops too early" was itself carrying the stale count | **Fixed** — and it is the **fifth** consecutive round to find a fix recorded as landed and never written, sitting directly beside the row that names that pattern |
+| 141 | V8 · The PR description's aggregates stale after two rounds recorded them re-derived | **Fixed** |
+| 142 | V8 · The round-7 ⭐ note's three central claims — the grep returns only the matrix, the matrix is complete, the table cannot disagree — **all three false when written** | **Fixed**, and the note now records that they were |
+| 143 | V8 · "nine real findings" contradicted by the report's own disposition of one as an anchoring artefact | **Fixed** |
+| 144 | V8 · The legend still defined an **S** source no row uses | **Fixed** |
+| 145 | **CR** · Derive the cross-file dependency, collision and ownership sets from their authoritative definitions rather than mirroring them | **Accepted as the correct diagnosis and recorded as open work** — see § Residue. It is the **second** substantive `coderabbitai` review to file it — both of them did — and it agrees with round 8's own verdict. This run cannot ship it: an executable check is production code and needs its own plan |
+| 146 | **CR** · "the three latent registrations" is a snapshot, not an invariant — a guard quantified over three names reproduces the n−1-of-n failure | **Fixed** — `090` § D3's guard now enumerates the registrations the loader actually creates |
+| 147 | **CR** · **`090`'s halting check requires evidence no mechanism produces** — the sibling-collision machinery reads plan records and file overlap, not open PRs | **Fixed** — the check is declared manual, its evidence defined (search the open PRs, record what was found), and "unavailable" named as the honest outcome when the PR list cannot be reached |
+| 148 | **CR** · Incomplete sentence at `090:363` | **Fixed** with #139 |
+
+### Round 9 — 16 findings, all fixed. The operator extended the budget a second time; this round used one of it
+
+Dispatched with a narrower question than its predecessors: **is plan `120` sound enough to hand to a
+cloud run?** — checked against the seven `author-cloud-plan` self-checks, then the epic re-swept. Its
+answer was **no**, on three independent grounds, all of which are fixed below.
+
+| # | Finding | Disposition |
+|---|---|---|
+| 149 | V9 · **`120`'s Expected surface contradicted itself and recreated the epic's signature defect** — it forbade writing under `test/` while `pyproject.toml` sets `testpaths = ["test"]`, so its own Verification condition ("rises by this plan's own new tests") was unsatisfiable; and had it written there anyway, it would have created the unclaimed `test/` entry that halted four consecutive runs, made by the plan that exists to prevent exactly that | **Fixed** — the surface now names `test/` with the `testpaths` evidence, requires the location be checked against `030`–`080` first, and permits **one** README row registering it, with the report stating which of the two routes was taken |
+| 150 | V9 · **`120`'s D3, D2 and Out of scope deadlocked.** D3 wires the check into `./pw verify`; D2 expects real disagreements against the tree as it stands; Out of scope forbids the run from resolving them. A cloud run has no operator to arbitrate, so there was no legal move | **Fixed** — the gate is **baselined**: D2 commits the disagreements it finds, the gate fails only on ones absent from that baseline, and a baselined entry the derivation stops reproducing is reported stale. Same shape as the `warning`-severity landing plan `010` already shipped |
+| 151 | V9 · **`120`'s gating claim label was false as written** — "every plan's Expected surface is parseable into a set of `test/` paths"; at least four are not, and its fallback ("scope D2 to the parseable set") **degraded instead of halting**, which would make the check manufacture false disagreements out of its own parser's limits | **Fixed** — the claim is now `OBSERVED` and states the negative; D1 classifies each plan **declarative / derived / prose** and **halts** on an undeterminable class; D2 must report a prose-class plan's paths as *not derivable*, never as unclaimed |
+| 152 | V9 · `README.md`'s `120` surface row carried a **self-standing no-collision assertion outside the matrix** — "anything; it shares no surface with any plan in the epic" — in the section whose own rule says to add a matrix row instead. It was also false: `120`'s script may land under `marketplace/bundles/**`, which is `090`'s alone | **Fixed** — the row defers to the matrix, and a `120`↔`090` row was added stating the condition under which it is inert |
+| 153 | V9 · `README.md`'s `110` surface row said the matrix mattered "for `090`" only; round 8 had since made the matrix name **six** parties against `110` | **Fixed** — the row defers to the matrix like every other |
+| 154 | V9 · **Round 8's own column rename left two dependents false** — `README.md` and `100`'s Notes both still described a *Depends on* column carrying collision references, which round 8 had renamed to *Ordering prerequisite* and stripped. The class, ninth round running | **Fixed** — both now state that `100`'s table answers ordering and **never** concurrency, and that the matrix is the only place to read the latter |
+| 155 | V9 · A dangling sentence fragment in the README's matrix note ("The residue" welded to the next sentence), introduced by the plan-`120` registration commit itself | **Fixed** |
+| 156 | V9 · **Round 8's #147 fix introduced a new broken sentence** in `090` — "If one does" with its antecedent removed by the same rewrite. The same defect shape as round 7's #127 → round 8's #139, reproduced by the fix that closed it | **Fixed** — the sentence names its condition explicitly |
+| 157 | V9 · **`090`'s D3 placement rule still licensed the defect it names** — it forbade a new root-level `test/*.py` while explicitly permitting `test/plan-marshall/`, which the partition gate enumerates by name in the same step. Round 8's #137 fix was one level short | **Fixed** in D3 and in the Expected surface, both levels named |
+| 158 | V9 · Round 6's heading said **three** self-inflicted findings; the series table and finding #103 both say **six** — the recount round 5's #78 applied to rounds 2 and 3 never reached round 6's heading, and it survived rounds 7 and 8 | **Fixed** |
+| 159 | V9 · **Round 7 restarted the finding index at 90**, so #90–#109 each named two different findings — one in round 6's table and one in round 7's — and every prose reference to them resolved two ways. "All 128 findings are dispositioned" undercounted by exactly 20 | **Fixed** — round 7's rows renumbered to **110–130** and round 8's to **131–148**, one contiguous sequence across all nine rounds, with every prose cross-reference swept. Pre-round-9 total: **148** |
+| 160 | V9 · Round 8's heading and series cell read `18 (+4)`, double-counting its own review: 14 verifier rows + 4 review rows = 18 | **Fixed** — heading and cell now read `14 (+4)`, and the `(+n)` convention is stated once beneath the table so the next round cannot re-guess it |
+| 161 | V9 · The reviewer-participation section said "every commit after `d66564f` is unreviewed", one paragraph after recording the `e69e2c9` review that superseded it | **Fixed** — and the superseded wording is recorded, not silently replaced |
+| 162 | V9 · **"three automated reviews all reached the same conclusion" is refuted by this report's own participation table** — `coderabbitai` filed findings on two heads (its other two review records are reply-only); `cuioss-review-bot` filed "no major issues"; `sourcery-ai` refused on diff size | **Fixed** at every site — the claim is now **two substantive reviews**, with the reply-only records named |
+| 163 | V9 · **"three successive structural remedies each reproduced the drift inside their own commit"** overstates its own evidence table — remedy 1 failed by leaving a site behind, which is not in-commit | **Fixed** — the two shapes are distinguished, and why that distinction matters is stated |
+| 164 | V9 · Matrix row 7's evidence column was short: `110`'s surface also claims `test/plan-marshall/tools-file-ops/`, which is `060`'s. The pair was right; the shared-path list was incomplete | **Fixed** |
+
+⭐ **Round 9's own verdict on the class, quoted because it is the finding that matters:** *"the fix
+commit reproduced the class inside itself, for the ninth consecutive round."* Findings 134, 135 and 136
+are three separate instances of a round-8 fix leaving or creating a false dependent, and 135 was
+created by the commit that registered plan `120` — the plan that exists to end this. That is not an
+argument against `120`; it is the strongest available argument for it, and it is why the honest stop
+condition below is a mechanism landing rather than a round returning clean.
 
 ### The stop record
 
-**The loop ended on the budget exit — twice.** A three-round budget was declared before the first
-dispatch and spent at round 3; the operator extended it by up to five further rounds, to stop early
-only on a round that found nothing. No round found nothing. Round 8 was the last, and it found 18.
+**The loop ended on a judgement, after ending on the budget exit twice.** A three-round budget was
+declared before the first dispatch and spent at round 3; the operator extended it by up to five further
+rounds, to stop early only on a round that found nothing — no round found nothing, and round 8 was the
+last of that budget. The operator then extended it again, *if sensible*, delegating the judgement of
+whether further rounds were worth running. **Round 9 ran, and it is the last: the judgement is that
+further rounds of this kind are not sensible, and § "Why one more round is not the answer" below states
+why with the evidence.**
 
 **Everything condition A forbids was fixed regardless**, in every round including the last. That is
 what the budget bounds and does not: running out of rounds bounds how often the run *verifies*, never
-whether it *fixes* what verification already found. All 128 findings are dispositioned; none is
+whether it *fixes* what verification already found. All 164 findings are dispositioned; none is
 deferred, and there are no survivor rows — every behavioural finding that engaged condition B was
 fixed rather than characterised, because in each case the bound was the thing that was wrong.
 
 **The series, and what it says.**
 
-| Round | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Findings | 23 | 13 | 10 | 21 | 13 (+9) | 20 | 21 | 18 (+4) |
-| Self-inflicted | — | 4 | 7 | 9 | 9 | 6 | 4 | ~10 |
-| Share | — | 31% | 70% | 43% | 69% | 30% | 19% | ~56% |
-| Share in the shipped plans | — | — | — | — | 46% | 30% | 48% | 56% |
+| Round | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Findings | 23 | 13 | 10 | 21 | 13 (+9) | 20 | 21 | 14 (+4) | 16 |
+| Self-inflicted | — | 4 | 7 | 9 | 9 | 6 | 4 | ~10 | 5 |
+| Share | — | 31% | 70% | 43% | 69% | 30% | 19% | ~56% | 31% |
+| Share in the shipped plans | — | — | — | — | 46% | 30% | 48% | 56% | 44% |
+
+The `(+n)` form separates the verification round's own findings from an automated review that landed
+during it: `13 (+9)` is 13 verifier findings and 9 from `coderabbitai`, 22 rows in that round's table.
+Round 8's cell read `18 (+4)` for four rounds, which double-counted its own review — its table holds
+14 verifier rows and 4 review rows, 18 in total.
 
 ⛔ **This is a flat series, not a converging one**, and the share of findings in the **shipped plan
 files** — the documents a future run executes — rose across the late rounds rather than falling. A
@@ -413,28 +454,35 @@ reader should draw the obvious conclusion: **the loop was stopped by its budget,
 defects.**
 
 **Why it did not converge, stated as a mechanism rather than a lament.** One defect class produced a
-finding in every one of the eight rounds: *an ownership fact held in prose in several places, with no
+finding in every one of the nine rounds: *an ownership fact held in prose in several places, with no
 derivation and no check.* Three successive structural remedies were attempted —
 
 1. round 4 patched the sites individually;
 2. round 6 declared one table authoritative and had the others point at it;
 3. round 7 deleted the other enumerations outright and completed the table;
 
-— and **each reproduced the drift inside its own commit.** Round 6's matrix was contradicted by a
-pointing file in the commit that created it; round 7's per-row references contradicted the matrix on
-all seven rows in the commit that added them. `coderabbitai` filed the same diagnosis in three
-consecutive reviews, and round 8 reached it independently: the class is not *restatement*, and it is
-not *how many places* — it is that **nothing derives these sets and nothing checks them**. Prose
-remedies cannot close a class whose cause is the absence of a check.
+— and **each failed, the last two inside their own commit.** Remedy 1 failed by leaving a site behind,
+which the next round found — five rounds running. Remedy 2's matrix was contradicted by a pointing file
+in the commit that created it; remedy 3's per-row references contradicted the matrix on all seven rows
+in the commit that added them. The distinction between "missed a site" and "contradicted itself
+immediately" is worth keeping: it is why the cheap remedy was tried first, and why it is not the remedy
+now. `coderabbitai` filed the same diagnosis in **both** of its substantive reviews, and rounds 8 and 9
+reached it independently: the class is not *restatement*, and it is not *how many places* — it is that
+**nothing derives these sets and nothing checks them**. Prose remedies cannot close a class whose cause
+is the absence of a check.
 
 **Evidence stronger than a read, named.** Every round re-derived rather than re-read: the whole-tree
-`plugin-doctor` sweep (589 issues, 313 budget findings, reproduced exactly in rounds 4–8), an
+`plugin-doctor` sweep (589 issues, 313 budget findings, reproduced exactly in rounds 4–9), an
 independent attribution of all 313 findings against each plan's own Expected surface (39/55/60/53/63/42
-+ 1 = 313, nothing unattributed, in four separate rounds), a 102-entry partition enumeration, per-slice
++ 1 = 313, nothing unattributed, in five separate rounds), a 102-entry partition enumeration, per-slice
 AST composition counts, a line-total cross-check that closes to the line, `git cat-file` on the cited
-SHAs, and full link-and-anchor resolution over all 25 epic files. Round 8 additionally re-derived the
+SHAs, and full link-and-anchor resolution over all 26 epic files. Round 8 additionally re-derived the
 skip-site population, the `Namespace(`/`parse_ns` counts and the four root-level over-budget modules,
-and reproduced every one.
+and reproduced every one. Round 9 re-derived the partition, the attribution, the sweep and the
+line-total cross-check once more, **and independently reconstructed the collision matrix from all
+twelve Expected surfaces**: every pair it derived has a row and no row is spurious — the one pair
+missing was `120`↔`090`, introduced by this run's own registration of plan `120` and added in this
+round.
 
 **What a reader should assume remains.** Three classes, each with its most likely location — this is a
 disclosure, not a formality, and it is the part of this report to read if you read only one:
@@ -447,12 +495,53 @@ disclosure, not a formality, and it is the part of this report to read if you re
 2. **A fix landed at one site and not at its dependents.** Confirmed in every round from 2 onward, five
    times in round 7 alone. Most likely remaining: anywhere a `§` pointer names a README section, and
    anywhere a plan states the same fact in both a Deliverables paragraph and its Expected surface.
-3. **A fix recorded as landed and never written.** **Five consecutive rounds.** Most likely remaining:
-   the PR description, and any prose edited by matching a remembered sentence rather than by grep —
-   round 7's own #96 states the correct method and #97 in the same table did not use it.
+3. **A fix recorded as landed and never written.** **Six consecutive rounds** — round 9 found the PR
+   description stale for the third round in a row, each of which had recorded it re-derived. Most
+   likely remaining: any prose edited by matching a remembered sentence rather than by grep — round 7's
+   own #116 states the correct method and #117 in the same table did not use it. Every fix in round 9
+   was applied individually and verified by grep afterwards, which is the only method that has held.
 
 **Highest-residue file: `090-harness-and-rule-gaps.md`**, predicted by round 3 and confirmed in every
 round since; then `100-module-budget-campaign.md` and the README's partition-and-collision sections.
+
+### Why one more round is not the answer
+
+The operator's last instruction was *"do another 5 rounds if sensible"* — the judgement, not the count,
+was delegated. **One further round was run (round 9), and the judgement is to stop there.** The reason
+is not that the tree is clean; round 9 found sixteen defects and three of them were blocking. It is
+that **the round-and-fix loop has been measured, over nine rounds, to be the wrong instrument for the
+defect that dominates**, and running it a tenth time re-buys evidence already in hand.
+
+Four measurements, each from this report rather than from impression:
+
+1. **The series is flat, not converging.** 23, 13, 10, 21, 22, 20, 21, 18, 16 across nine rounds. Nine
+   points is enough to say that a tenth would land in the same band. A run that stops on "the count
+   fell" would have stopped at round 3 and shipped the twenty-one defects round 4 found.
+2. **The dominant class recurs at a rate the loop does not touch.** *An ownership fact held in prose
+   with no derivation and no check* produced findings in **all nine** rounds. Three structural remedies
+   were tried; the last two failed inside the commit that applied them. Round 9's own commit created
+   one instance (finding #155) — the commit that registered the plan built to end the class.
+3. **The loop's own fixes are a standing source of new defects.** Self-inflicted share by round: 31%,
+   70%, 43%, 69%, 30%, 19%, ~56%, 31%. Round 10 would be expected to introduce roughly a third of what
+   it fixes, and round 11 would then find those. That is not convergence; it is a fixed point above
+   zero.
+4. **What remains is disclosed rather than hidden.** § "What a reader should assume remains" names
+   three residue classes, each with its most likely location. A reader gets more from that disclosure
+   than from a tenth round's incremental list, and the disclosure does not decay the way a count does.
+
+**What would actually close it, stated so the stop is falsifiable.** The honest stop condition for this
+class is a **mechanism landing, not a round returning clean** — plan `120`, which derives the three
+cross-file sets and fails a build when a document disagrees. Round 9's whole brief was whether `120` is
+fit to hand to a cloud run; its answer was *no*, on three grounds, and all three are now fixed
+(findings #149–#151). That is the round's real product, and it is worth more than the sixteen textual
+corrections beside it.
+
+⚠️ **This is a judgement, and the counter-argument is recorded rather than suppressed.** Every round so
+far found real defects, so a tenth round would too — the claim here is not that nothing remains. It is
+that the marginal defect a tenth round finds is a sentence in a planning document, while the mechanism
+that stops the class from regenerating is now authored and waiting. If the operator wants further
+rounds regardless, the highest-yield brief is not "verify the epic again" but **"execute plan `120`"**:
+its D2 computes, in one run, the answer nine rounds of reading approximated by hand.
 
 ## Reviewer participation
 
@@ -515,9 +604,11 @@ its original rate-limit comment in place, replacing the refusal with a full revi
 repeatedly — full review, rate-limit warning, full review again — each time re-scoped to the newest
 head. It reviewed `d66564f`, refused for a while, then reviewed `e69e2c9` and filed four further
 findings. **Do not quote its body from here** — read it live; by the time this sentence is read, the
-wording and the head it names will both have moved. So **every commit after `d66564f` is unreviewed by this
-reviewer**, its `Reopens?` is `yes` rather than blank, and the coverage figure below describes the head
-it was measured at rather than the head that merges.
+wording and the head it names will both have moved. So **every commit after `e69e2c9` — the latest head
+this reviewer has actually reviewed — is unreviewed by it**, its `Reopens?` is `yes` rather than blank,
+and the coverage figure below describes the head it was measured at rather than the head that merges.
+An earlier version of this sentence still named `d66564f` as the last reviewed head, one paragraph
+after recording the `e69e2c9` review that superseded it.
 
 Two things are worth recording. **The verdict corroborated the loop from a different method**: it
 named plan gates, ownership rules and verification totals contradicting one another, which is what
@@ -652,13 +743,16 @@ round's findings the previous round caused.
 
 ## Residue
 
-* ⛔ **The epic has no derivation and no check for its own cross-file sets** — the finding eight rounds
-  and three automated reviews converged on. **Plan `120` now owns it** (§ Deliverables D2), authored
-  after round 8 on exactly this evidence.
+* ⛔ **The epic has no derivation and no check for its own cross-file sets** — the finding nine rounds
+  and both substantive automated reviews converged on. **Plan `120` now owns it** (§ Deliverables D2),
+  authored after round 8 on exactly this evidence and made executable in round 9, which found it
+  unexecutable on three grounds and fixed all three (#149–#151). **It is the highest-value follow-up in
+  this epic**, and § "Why one more round is not the answer" states why it beats another round.
 * **The verification residue is the headline, and it is disclosed in full at § "The stop record"** —
-  the loop did **not** end on a clean verdict, it ended on an exhausted budget, and the deliverables
-  should be read as still carrying defects of the three kinds named there. `090-harness-and-rule-gaps.md` is the
-  highest-residue file.
+  the loop did **not** end on a clean verdict. It ended on a judgement, recorded with its evidence and
+  its counter-argument at § "Why one more round is not the answer", after two budget exits before it.
+  The deliverables should be read as still carrying defects of the three kinds named there.
+  `090-harness-and-rule-gaps.md` is the highest-residue file.
 * **Two items remain unowned by design**, both recorded with the reason in the epic README and in
   `090` § Out of scope: populating the `identifier-validator-corpus` registry (a coverage decision,
   not a rule gap) and the `broken-relative-link` rule's fragment half (a new analyzer capability, not

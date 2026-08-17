@@ -158,12 +158,16 @@ reach rather than thinning what it did**.
 3. **D3 — Make a shared-registration collision impossible to introduce silently.** Give
    `load_script_module` a way not to publish into `sys.modules` (or to publish under a caller-chosen
    name that cannot collide), and add a guard test that fails when a module loaded by file registers
-   a name another test module imports plainly. **Place that guard beside the file it guards**, in
-   `test/plan-marshall/` or in this plan's own declared surface — **not** as a new root-level
-   `test/*.py` module. The partition's gating derivation enumerates every top-level entry under
-   `test/` by name, and `080`'s Expected surface lists the two existing root-level modules by
-   filename rather than by glob, so a third one halts the next reduction run on a file nobody
-   claims — which is the `pm-code-intelligence` defect, created deliberately. Plan `060` fixed every collision it could reach by hand
+   a name another test module imports plainly. **Place that guard inside an existing directory this
+   plan's Expected surface already claims** — **not** as a new module at the root of `test/`, and
+   **not** at the root of `test/plan-marshall/` either. The partition's gating derivation enumerates
+   both of those levels by name — "every top-level entry under `test/`" **and** "every file at the root
+   of `test/plan-marshall/`" (`README.md` § "The partition, and how a run re-derives it", step 1) — and
+   `080`'s Expected surface lists the existing root-level modules by filename rather than by glob. A
+   new file at either level halts the next reduction run on a file nobody claims, which is the
+   `pm-code-intelligence` defect, created deliberately. An earlier draft of this rule forbade only the
+   `test/` root and explicitly permitted `test/plan-marshall/`, which licensed exactly the defect the
+   sentence after it names. Plan `060` fixed every collision it could reach by hand
    — the live reverse-order failure, six its own preamble sweep had introduced, and two pre-existing
    ones with real blast radius — and left **three** latent, safe only because no test imports those
    names plainly today, which is a property of the tree rather than an invariant.
@@ -254,7 +258,8 @@ reach rather than thinning what it did**.
 Exactly these, and nothing else:
 
 - `test/conftest.py` — D2, D3, D6. **D3's guard test goes inside an owned surface**, per D3's own
-  instruction — never as a new root-level `test/*.py` module, which the partition assigns to nobody
+  instruction — never as a new module at the root of `test/` **or** at the root of
+  `test/plan-marshall/`, both of which the partition enumerates by name and assigns to nobody
 - `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py`
   — D2 (if the exemption half is chosen), D4
 - `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/` — the
@@ -298,10 +303,10 @@ overlap, none of which sees a cloud run's open PR. So the check is **manual and 
 recorded in the run report**: for each party the matrix names against `090`, search the repository's
 open pull requests for one whose head branch or title names that plan, and record what you found —
 the PR number and its state, or the fact that none exists. A run that cannot reach the PR list reports
-the check **unavailable** rather than assuming clear. Do this before touching any row of the table
-above. If one does, **halt and report
-it** rather than editing a file two plans own — the epic's partition exists precisely because a
-concurrent edit to a shared file is the collision nobody notices until both land.
+the check **unavailable** rather than assuming clear. Do this before touching any file the matrix
+names as shared. If an open PR or in-flight branch exists for a party the matrix names against `090`,
+**halt and report it** rather than editing a file two plans own — the epic's partition exists precisely
+because a concurrent edit to a shared file is the collision nobody notices until both land.
 
 ## Claim labels
 
