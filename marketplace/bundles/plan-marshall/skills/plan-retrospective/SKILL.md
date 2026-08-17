@@ -175,23 +175,25 @@ Parse `bundle_path` from the TOON output.
 
 For each aspect below, produce a TOON fragment on disk at `work/fragment-{aspect}.toon` (live mode) or the tmp equivalent (archived mode), then register it via `collect-fragments add`. Fragments are persisted to disk so that `compile-report` in Step 4 can consume them from a single bundle file assembled by `collect-fragments`.
 
-| Order | Aspect | Script(s) | Reference |
-|-------|--------|-----------|-----------|
-| 1 | Artifact consistency | `check-artifact-consistency` | `references/artifact-consistency.md` |
-| 2 | Log analysis | `analyze-logs` | `references/log-analysis.md` |
-| 3 | Invariant outcomes | `summarize-invariants` | `references/invariant-check-summary.md` |
-| 4 | Plan efficiency | (LLM on metrics.md + logs) | `references/plan-efficiency.md` |
-| 5 | Request-result alignment | (LLM on request.md + solution_outline.md + logs) | `references/request-result-alignment.md` |
-| 6 | LLM-to-script opportunities | (LLM on logs + scripts) | `references/llm-to-script-opportunities.md` |
-| 7 | Logging gap analysis | (LLM on references + logs) | `references/logging-gap-analysis.md` |
-| 8 | Script failure analysis | `script-failure-analysis` | `references/script-failure-analysis.md` |
-| 9 | Permission prompt analysis | (LLM on description or session) | `references/permission-prompt-analysis.md` |
-| 10 | Direct gh/glab usage (Surfaces A+B: plan logs + plan diff) | `direct-gh-glab-usage` | `references/direct-gh-glab-usage.md` |
-| 11 | Execution-context dispatch audit (deterministic facts: shape / three-state coverage / channel completeness) | `check-dispatch-audit` | `standards/execution-context-dispatch-audit.md` |
-| 12 | Manifest decisions (conditional) | `check-manifest-consistency` | `standards/manifest-crosscheck.md` |
-| 13 | Routing decisions (conditional) | `check-routing-decisions` | `references/routing-decision-verification.md` |
-| 14 | Chat history (conditional) | (LLM on session transcript) | `references/chat-history-analysis.md` |
-| 15 | Lessons proposal | (LLM on compiled fragments) | `references/lessons-proposal.md` |
+**Key** is the canonical registry key — the exact literal `collect-fragments add --aspect` validates against, and the one `compile-report` looks the fragment up under. It is NOT the aspect's prose name and NOT its reference-document basename: three rows differ from their reference basename (`invariant-summary`, `manifest-decisions`, `routing-decisions`), so a key guessed from either column is rejected on first attempt. The keys are declared in [`scripts/retro_sections.py`](scripts/retro_sections.py) (`SECTION_SPEC`) — that module is the source of truth, this column restates it, and `test/plan-marshall/plan-retrospective/test_registered_aspects_render.py` fails when the two disagree, so the restatement cannot drift. Read a key from here to save the lookup; settle any dispute at the registry.
+
+| Order | Aspect | Key | Script(s) | Reference |
+|-------|--------|-----|-----------|-----------|
+| 1 | Artifact consistency | `artifact-consistency` | `check-artifact-consistency` | `references/artifact-consistency.md` |
+| 2 | Log analysis | `log-analysis` | `analyze-logs` | `references/log-analysis.md` |
+| 3 | Invariant outcomes | `invariant-summary` | `summarize-invariants` | `references/invariant-check-summary.md` |
+| 4 | Plan efficiency | `plan-efficiency` | (LLM on metrics.md + logs) | `references/plan-efficiency.md` |
+| 5 | Request-result alignment | `request-result-alignment` | (LLM on request.md + solution_outline.md + logs) | `references/request-result-alignment.md` |
+| 6 | LLM-to-script opportunities | `llm-to-script-opportunities` | (LLM on logs + scripts) | `references/llm-to-script-opportunities.md` |
+| 7 | Logging gap analysis | `logging-gap-analysis` | (LLM on references + logs) | `references/logging-gap-analysis.md` |
+| 8 | Script failure analysis | `script-failure-analysis` | `script-failure-analysis` | `references/script-failure-analysis.md` |
+| 9 | Permission prompt analysis | `permission-prompt-analysis` | (LLM on description or session) | `references/permission-prompt-analysis.md` |
+| 10 | Direct gh/glab usage (Surfaces A+B: plan logs + plan diff) | `direct-gh-glab-usage` | `direct-gh-glab-usage` | `references/direct-gh-glab-usage.md` |
+| 11 | Execution-context dispatch audit (deterministic facts: shape / three-state coverage / channel completeness) | `execution-context-dispatch-audit` | `check-dispatch-audit` | `standards/execution-context-dispatch-audit.md` |
+| 12 | Manifest decisions (conditional) | `manifest-decisions` | `check-manifest-consistency` | `standards/manifest-crosscheck.md` |
+| 13 | Routing decisions (conditional) | `routing-decisions` | `check-routing-decisions` | `references/routing-decision-verification.md` |
+| 14 | Chat history (conditional) | `chat-history-analysis` | (LLM on session transcript) | `references/chat-history-analysis.md` |
+| 15 | Lessons proposal | `lessons-proposal` | (LLM on compiled fragments) | `references/lessons-proposal.md` |
 
 The Execution-context dispatch audit (aspect 11) is a **deterministic** aspect: the `check-dispatch-audit` script consumes the `[DISPATCH]` work-log lines emitted by every dispatch site per [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) — the authoritative source for the line shape — and emits three fact blocks, each publishing the size of the population it evaluated so a zero is legible. `shape_violation` pairs the decision-log `effort resolve-target` records (Surface B, the resolve/intent side) against the `[DISPATCH]` work-log lines (Surface A, the observable side); when Surface B is empty it reports `not_evaluated` with its reason rather than a bare `0`. `dispatch_coverage` classifies each terminal finalize step (`status.metadata.phase_steps["6-finalize"]`) by its **token record** — the second, independent evidence source — into `dispatched` / `ran_inline` / `no_evidence`, and reports a step token-proven to have dispatched with no `[DISPATCH]` line as `missing_dispatch_emission` (an instrumentation finding against the DISPATCHER), never as a discipline finding against the step. `channel_completeness` publishes the dispatch-line count against the completion count and downgrades the audit's own `confidence` when the channel is sparse. The reference doc `standards/execution-context-dispatch-audit.md` guides the LLM's *judgement* of these facts; the script never judges. Report readers tracing a finding back to its evidence land in `dispatch-logging.md` § "Emission contract" for the canonical log-line format.
 
