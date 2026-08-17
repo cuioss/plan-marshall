@@ -4,8 +4,9 @@
 
 ``collect_inputs`` resolves the Row 2 recipe signal from EITHER
 ``status.metadata.plan_source`` or ``status.metadata.recipe_key``. Reading only
-``plan_source`` made Row 2 structurally unreachable for every plan routed through
-the ``manage-lessons auto-suggest`` path, which writes ``recipe_key`` alone.
+``plan_source`` made Row 2 structurally unreachable for every plan routed by
+phase-1-init Step 5c-recipe-match, whose auto-route and operator-selection legs
+both persist ``recipe_key`` alone and write no ``plan_source``.
 
 The precedence and the field set mirror the live composer's
 ``_manifest_decide._read_recipe_source``, so the audit's counterfactual and the
@@ -34,9 +35,9 @@ def _plan_with_metadata(repo_root: Path, metadata: str) -> audit.PlanInputs:
 def test_recipe_key_metadata_field_populates_recipe_key(tmp_path):
     """A plan carrying ONLY ``recipe_key`` resolves the recipe signal.
 
-    The auto-suggest auto-route path writes this field and never writes
-    ``plan_source``, so this is the case the previous one-directional read
-    dropped on the floor.
+    Step 5c-recipe-match's auto-route and operator-selection legs write this
+    field and no ``plan_source``, so this is the case the previous
+    one-directional read dropped on the floor.
     """
     inputs = _plan_with_metadata(tmp_path, '"recipe_key": "recipe-lesson-cleanup"')
     assert inputs.recipe_key == "recipe-lesson-cleanup"

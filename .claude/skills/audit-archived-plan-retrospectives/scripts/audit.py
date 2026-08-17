@@ -1232,19 +1232,27 @@ def collect_inputs(plan_dir: Path) -> PlanInputs:
 
     # Recipe / lesson provenance rides on EITHER of two metadata fields, and both
     # are read here. `plan_source` is seeded by phase-1-init (the raw lesson id for
-    # a lesson-derived plan, the literal `"recipe"` for a recipe-routed one);
-    # `recipe_key` is written separately by phase-1-init Step 5c when
-    # `manage-lessons auto-suggest` clears the auto-accept floor. The two are NOT
-    # synonyms and neither implies the other, so reading only `plan_source` made
-    # Row 2 (`recipe`) unreachable for every plan routed through the auto-suggest
-    # path — the row could never fire, whatever the corpus contained.
+    # a lesson-derived plan, the literal `"recipe"` for a recipe-routed one).
+    #
+    # `recipe_key` can be written WITHOUT `plan_source`, which is what made reading
+    # only `plan_source` a structural gap rather than a redundancy. Per
+    # `phase-1-init/SKILL.md` Step 5c-recipe-match, both its auto-route leg
+    # (confidence >= `auto_route_recipe_threshold`) and its operator-selection leg
+    # persist `status.metadata.recipe_key` alone and write no `plan_source` at all.
+    # Row 2 (`recipe`) was therefore unreachable for every plan routed either way —
+    # it could not fire, whatever the corpus contained. (Step 5c-LESSON, the
+    # `auto-suggest` leg, sets BOTH `plan_source=recipe` and
+    # `recipe_key=lesson_cleanup`, so that path was always reachable; it is not the
+    # gap.)
     #
     # The field order mirrors the canonical resolver this check must agree with,
     # `manage-execution-manifest/scripts/_manifest_decide.py::_read_recipe_source`
     # (`for field in ('plan_source', 'recipe_key')`), so the audit's re-derivation
     # of Row 2 and the composer's live decision read the same inputs in the same
     # precedence. A change to that resolver's field set obliges the same change
-    # here.
+    # here. (`cmd_compose`'s explicit `--recipe-key` argument still outranks the
+    # resolver at the call site, so the agreement is on the metadata read, not on
+    # the composer's final value.)
     for provenance_field in ("plan_source", "recipe_key"):
         value = metadata.get(provenance_field)
         if isinstance(value, str) and value.strip():
@@ -3358,20 +3366,31 @@ _QC_BOT_RE = re.compile(r"gemini|copilot|bot|automated", re.IGNORECASE)
 #: Finding types that are PENDING BY CONSTRUCTION — the knowledge partition.
 #:
 #: `manage-findings.add_finding` seeds EVERY record with `resolution: 'pending'`,
-#: and nothing ever resolves a knowledge finding: a `tip` is a suggestion, an
-#: `insight` is an observation, a `best-practice` is a note. They are filed to be
-#: read, not to be closed. Counting them as unresolved chain debt made the pending
-#: population one no action could empty — and a pending count that cannot reach
-#: zero is not a backlog, it is a mislabelled population. It is worse than a false
-#: zero: a false zero invites a check, while a large permanent backlog invites
-#: resignation.
+#: and no DISPOSITION ever moves a knowledge finding off it: a `tip` is a
+#: suggestion, an `insight` an observation, a `best-practice` a note. They are
+#: filed to be read, not to be closed. Counting them as unresolved chain debt made
+#: the pending population one no action could empty — and a pending count that
+#: cannot reach zero is not a backlog, it is a mislabelled population. It is worse
+#: than a false zero: a false zero invites a check, while a large permanent
+#: backlog invites resignation.
 #:
-#: The membership mirrors the FIXED actionable-vs-knowledge partition already
-#: shipped at `plan-marshall/scripts/_invariants.py` (`_ACTIONABLE_FINDING_TYPES`
-#: and the knowledge types its comment names as never counted), which is the
-#: blocking gate's own rule. The two are the same question — "would an action
-#: resolve this?" — asked by two consumers, so they answer it the same way. A
-#: change to that partition obliges the same change here.
+#: ⚠ PROMOTION is the one route out, and it is not a disposition. A promoted
+#: record buckets to `lesson` (`_qc_resolution` short-circuits on `promoted`), so
+#: it is not in the pending column at all and cannot be structural — which is why
+#: `_qc_structural_pending` takes the computed bucket rather than re-reading
+#: `resolution`. `promote_finding` sets `promoted`/`promoted_to` and never touches
+#: `resolution`, so the seeded `pending` survives on the record and a second
+#: reading of that field would disagree with the first.
+#:
+#: The KNOWLEDGE half of this set is exactly the four types
+#: `plan-marshall/scripts/_invariants.py` names as never counted by the blocking
+#: gate — that half is a deliberate mirror, and a change to it obliges the same
+#: change here. The two partitions are NOT otherwise equivalent: `_invariants.py`
+#: leaves `bug`, `anti-pattern` and `triage` in neither of its sets, while this
+#: check treats every type outside the four as actionable. Those three leave the
+#: pending column by promotion rather than by disposition, so they do not
+#: reintroduce a floor — but the mirror is one-directional and is claimed only
+#: for the knowledge half.
 _QC_STRUCTURAL_PENDING_TYPES = frozenset(
     {"tip", "insight", "best-practice", "improvement"}
 )
@@ -3382,19 +3401,31 @@ _QC_STRUCTURAL_PENDING_FILES = frozenset(
 )
 
 
-def _qc_structural_pending(obj: dict[str, Any], fname: str) -> bool:
+def _qc_structural_pending(obj: dict[str, Any], fname: str, resolution: str) -> bool:
     """Is this finding pending BY CONSTRUCTION rather than as chain debt?
 
-    True for a knowledge-type finding — read from the record's own `type` field
-    when it carries one, else from the per-type JSONL filename it was stored
-    under. Both routes are needed: the per-type file layout is the normal case,
-    and a record that names its own type is authoritative when the two disagree.
+    `resolution` MUST be this record's `_qc_resolution` bucket. The structural
+    count is a SUBSET of the `pending` column, and a subset derived by a second,
+    independent reading of the record is not a subset at all — it is a different
+    population that merely resembles one. Taking the bucket as an argument makes
+    the containment hold by construction rather than by two derivations happening
+    to agree.
 
-    A finding already carrying a real disposition is never structural, whatever
-    its type: an operator who resolved a `tip` has made it a resolved finding, and
-    this predicate must not overrule the record.
+    They did not agree. `_qc_resolution` short-circuits `promoted` to `lesson`, so
+    a promoted `tip` leaves the pending column; a predicate that re-read
+    `resolution` (still the seeded `pending`) counted that same record structural,
+    and `actionable = pending − structural` went NEGATIVE. Worse than the
+    underflow: one promoted tip cancelled one genuinely pending `build-error`, so
+    real chain debt was published as `pending_actionable: 0` — a false zero
+    manufactured inside the deliverable written to end false zeroes.
+
+    Given a record that IS in the pending column: true for a knowledge type, read
+    from the record's own `type` when it carries one, else from the per-type JSONL
+    filename it was stored under. Both routes are needed — the per-type layout is
+    the normal case, and a record naming its own type is authoritative when the
+    two disagree.
     """
-    if str(obj.get("resolution") or "").strip().lower() not in {"", "pending", "none"}:
+    if resolution != "pending":
         return False
     declared = str(obj.get("type") or "").strip().lower()
     if declared:
@@ -3550,7 +3581,7 @@ def _collect_quality_chain(all_inputs: list[PlanInputs]) -> list[_QualityChainPl
             for obj in read_jsonl(jsonl):
                 mech = _qc_mechanism(jsonl.name, obj)
                 res = _qc_resolution(obj)
-                structural = _qc_structural_pending(obj, jsonl.name)
+                structural = _qc_structural_pending(obj, jsonl.name, res)
                 matrix[mech][res] += 1
                 mech_total[mech] += 1
                 if structural:
@@ -5353,36 +5384,74 @@ def _retire_on_quiet_proposals(
 _ZERO_STRUCTURAL = "structural"
 _ZERO_STARVED = "starved"
 _ZERO_DISCIPLINARY = "disciplinary"
+_ZERO_NO_COUNT = "no_count"
 _ZERO_NONE = "fired"
 
 _UNMEASURED_STATUS_RE = re.compile(r"^status:\s*unmeasured\s*$", re.MULTILINE)
+_EXCLUDED_NON_SHIPPING_RE = re.compile(
+    r"^plans_excluded_non_shipping:\s*(\d+)\s*$", re.MULTILINE
+)
 
 
-def _classify_zero(block: str, genuine_count: int, corpus_size: int) -> str:
+def _examined_population(block: str, corpus_size: int) -> int:
+    """The plan count this check actually examined, not the corpus it ran under.
+
+    The two differ for every `DELIVERY_COST_CHECKS` member: those run over the
+    SHIPPING partition, and `_annotate_exclusions` stamps how many plans were
+    excluded into the block. Classifying on the raw corpus size would call a check
+    that examined nothing `disciplinary` — asserting "a non-empty corpus was
+    examined" of a check that saw no plan at all, which is a starved zero reported
+    as evidence and precisely the distinction this census exists to draw.
+
+    A block carrying no exclusion line examined the whole corpus.
+    """
+    excluded = _EXCLUDED_NON_SHIPPING_RE.search(block)
+    if excluded is None:
+        return corpus_size
+    return max(0, corpus_size - int(excluded.group(1)))
+
+
+def _classify_zero(block: str, genuine_count: int | None, corpus_size: int) -> str:
     """Classify one check's zero — or report that it fired.
 
-    The three classes answer "is this zero evidence about the corpus?":
+    The classes answer "is this zero evidence about the corpus?":
 
     * `structural` — the check DECLARED it could not substantiate a verdict
       (`status: unmeasured`). Its zero says nothing about the corpus, and it says
       so itself. The remedy is to the check's inputs or to its producer.
-    * `starved` — the corpus supplied no plans at all, so no check could have
-      fired. The zero is a property of this run's inputs, not of the check. This
-      is the class whose zero is one un-stubbed sibling away from being non-zero.
-    * `disciplinary` — a non-empty corpus was examined and nothing was genuine.
-      The only class in which a zero is a real (if provisional) statement about
-      the corpus.
+    * `starved` — the check examined no plans, so it could not have fired. The
+      zero is a property of this run's inputs, not of the check. This is the class
+      whose zero is one un-stubbed sibling away from being non-zero.
+    * `no_count` — the block published no `genuine_signal_count` line, so this
+      census never READ a count for it. `quality-chain` is such a block today: it
+      emits `plan_genuine_signal_count` and `finding_genuine_signal_count` and no
+      bare one.
+    * `disciplinary` — a non-empty examined population and nothing genuine. The
+      only class in which a zero is a real (if provisional) statement about the
+      corpus.
 
     A check that produced any genuine signal is `fired` and is not a suspect.
 
-    The classes are derived from signals every block already carries, so no
-    emitter needs to opt in and none can drift out of the census by omission.
+    ⛔ `genuine_count` is `None` — never `0` — when no count was read, and the
+    distinction is the whole point. Defaulting an unread count to `0` and then
+    reporting `disciplinary` would have this census assert "a non-empty corpus was
+    examined and nothing was genuine" on the strength of a default, which is the
+    unsubstantiated-clean-verdict defect it was built to surface, committed by the
+    instrument itself.
     """
-    if genuine_count > 0:
+    if genuine_count is not None and genuine_count > 0:
         return _ZERO_NONE
+    # `structural` outranks `no_count`, and the order is load-bearing. An
+    # `unmeasured` block withholds its `genuine_signal_count` DELIBERATELY — that
+    # withholding is how an unmeasured check stays out of the retire-on-quiet
+    # streak — so its absent count is a consequence of the declaration, not an
+    # independent fact. Classifying it `no_count` would report the symptom and
+    # discard the reason the block already gave.
     if _UNMEASURED_STATUS_RE.search(block):
         return _ZERO_STRUCTURAL
-    if corpus_size == 0:
+    if genuine_count is None:
+        return _ZERO_NO_COUNT
+    if _examined_population(block, corpus_size) == 0:
         return _ZERO_STARVED
     return _ZERO_DISCIPLINARY
 
@@ -5424,12 +5493,15 @@ def suspect_zero_census(
                 }
             )
             continue
-        genuine = per_check_genuine.get(check, 0)
+        # `.get(check)` — NOT `.get(check, 0)`. An unread count must reach
+        # `_classify_zero` as None so it is reported as such rather than
+        # classified as a measured zero.
+        genuine = per_check_genuine.get(check)
         zero_class = _classify_zero(check_block, genuine, corpus_size)
         rows.append(
             {
                 "check": check,
-                "genuine_signal_count": genuine,
+                "genuine_signal_count": "" if genuine is None else genuine,
                 "zero_class": zero_class,
                 "quiet_run_count": streaks.get(check, 0),
                 "suspect": str(zero_class != _ZERO_NONE).lower(),
@@ -5443,10 +5515,13 @@ _ZERO_READINGS = {
     _ZERO_NONE: "the check produced a genuine signal — not a suspect",
     _ZERO_STRUCTURAL: "the check declared it could not measure — this zero is "
     "NOT evidence the corpus is clean; fix the inputs or the producer",
-    _ZERO_STARVED: "the corpus supplied no plans — no check could have fired, so "
+    _ZERO_STARVED: "the check examined no plans — it could not have fired, so "
     "this zero is a property of the run's inputs, not of the check",
-    _ZERO_DISCIPLINARY: "a non-empty corpus was examined and nothing was genuine "
-    "— a real but provisional statement about the corpus, not proof the check can fire",
+    _ZERO_NO_COUNT: "the block published no genuine_signal_count line, so this "
+    "census read no count for it — the zero shown is absence of a reading, NOT a "
+    "measured zero",
+    _ZERO_DISCIPLINARY: "a non-empty examined population and nothing genuine — a "
+    "real but provisional statement about the corpus, not proof the check can fire",
 }
 
 
@@ -5470,6 +5545,7 @@ def emit_suspect_zero_census_block(rows: list[dict[str, Any]], corpus_size: int)
         f"structural_count: {class_counts[_ZERO_STRUCTURAL]}",
         f"starved_count: {class_counts[_ZERO_STARVED]}",
         f"disciplinary_count: {class_counts[_ZERO_DISCIPLINARY]}",
+        f"no_count_count: {class_counts[_ZERO_NO_COUNT]}",
         f"no_block_count: {class_counts['no_block']}",
         "census_note: a zero is not a clean verdict. A structural or starved zero "
         "is not evidence about the corpus at all; a disciplinary zero is evidence "
@@ -7775,8 +7851,10 @@ def _finalize_flow_genuine(row: dict[str, Any]) -> bool:
 # Accounts for the #849 widened merge-mutex + FIFO admission-queue window (fair
 # merge ordering / the parallelism enabler). The deterministic signal is the
 # best-effort `[LOCK] (merge:{event}) {lock_id}` lifecycle lines the merge-lock
-# primitive appends to the main-anchored global logs (`.plan/local/logs/`), each
-# carrying a following indented `waiting_count:` field (the FIFO queue depth). The
+# primitive appends to its main-anchored log — `.plan/logs/`, NOT the
+# `.plan/local/logs/` the other global-log checks read; see `_LOCK_LOG_ROOTS`
+# below for why both are scanned. Each line carries a following indented
+# `waiting_count:` field (the FIFO queue depth). The
 # `{lock_id}` is the plan_id, so the corpus lines bucket per plan. Events:
 # `acquired` / `released` / `blocked` (a non-front plan waiting behind the FIFO
 # front) / `reclaimed`.
@@ -8491,6 +8569,14 @@ def cross_check_synthesis(all_results: dict[str, Any]) -> dict[str, Any]:
     )
     i_plans = sorted(contended_plans & (i_ci_rerun_plans | i_finalize_heavy_plans))
     i_fired = bool(i_plans)
+    # The merge-window half of this coupling can be UNMEASURED (no `[LOCK]`
+    # lifecycle substrate). The non-fired detail below reports
+    # `contended_plans=N`, and an unmeasured run would render that as `0` —
+    # indistinguishable from a measured zero, in the block the LLM body reads for
+    # the completeness gate. Carrying the flag through is what stops this coupling
+    # from re-manufacturing downstream the false zero the check itself now refuses
+    # to publish.
+    i_measured = merge_window.get("measured", True) if isinstance(merge_window, dict) else True
     rows.append(
         {
             "coupling": "merge_window_ci_rerun",
@@ -8499,7 +8585,13 @@ def cross_check_synthesis(all_results: dict[str, Any]) -> dict[str, Any]:
                 f"{len(i_plans)} plan(s) with merge_contention AND ci_rerun OR "
                 f"finalize_heavy: {';'.join(i_plans)}"
                 if i_fired
-                else f"contended_plans={len(contended_plans)};ci_rerun_plans={len(i_ci_rerun_plans)};finalize_heavy_plans={len(i_finalize_heavy_plans)}"
+                else (
+                    "contended_plans=unmeasured (no [LOCK] lifecycle substrate — NOT a "
+                    f"measured zero);ci_rerun_plans={len(i_ci_rerun_plans)};"
+                    f"finalize_heavy_plans={len(i_finalize_heavy_plans)}"
+                    if not i_measured
+                    else f"contended_plans={len(contended_plans)};ci_rerun_plans={len(i_ci_rerun_plans)};finalize_heavy_plans={len(i_finalize_heavy_plans)}"
+                )
             ),
             "caveat": (
                 "merge-queue contention co-occurring with a CI re-run / heavy finalize "

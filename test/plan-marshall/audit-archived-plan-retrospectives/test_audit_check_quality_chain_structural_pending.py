@@ -3,9 +3,13 @@
 """``quality-chain`` pending partition — backlog versus mislabelled population.
 
 ``manage-findings.add_finding`` seeds EVERY record with ``resolution: 'pending'``,
-and nothing ever resolves a knowledge finding: a ``tip`` is a suggestion, an
+and no DISPOSITION moves a knowledge finding off it: a ``tip`` is a suggestion, an
 ``insight`` an observation, a ``best-practice`` a note. Counting them as
 unresolved chain debt made the pending population one no action could empty.
+
+PROMOTION is the one route out and is not a disposition, which is why the
+structural predicate takes the computed resolution bucket rather than re-reading
+the record's ``resolution`` field — see ``TestPromotedRecordsAreNotStructural``.
 
 The property under test is the one that makes the count meaningful: a detector
 reporting a count must be able to say what would make that count zero. For the
@@ -13,8 +17,9 @@ actionable half that answer is "resolve the findings"; for the structural half
 there is no answer, so it is reported in its own bucket instead of inflating the
 genuine signal.
 
-The membership mirrors the fixed actionable-vs-knowledge partition already
-shipped at ``plan-marshall/scripts/_invariants.py``.
+The KNOWLEDGE half of the membership mirrors the fixed partition already shipped
+at ``plan-marshall/scripts/_invariants.py``; the mirror is claimed for that half
+only.
 """
 
 import json
@@ -55,21 +60,21 @@ class TestStructuralPendingPredicate:
     def test_knowledge_types_are_structurally_pending(self):
         for finding_type in ("tip", "insight", "best-practice", "improvement"):
             obj = _seeded(type=finding_type)
-            assert audit._qc_structural_pending(obj, f"{finding_type}.jsonl") is True
+            assert audit._qc_structural_pending(obj, f"{finding_type}.jsonl", "pending") is True
 
     def test_actionable_types_are_not_structurally_pending(self):
         for finding_type in ("build-error", "test-failure", "lint-issue", "pr-comment"):
             obj = _seeded(type=finding_type)
-            assert audit._qc_structural_pending(obj, f"{finding_type}.jsonl") is False
+            assert audit._qc_structural_pending(obj, f"{finding_type}.jsonl", "pending") is False
 
     def test_filename_carries_the_type_when_the_record_omits_it(self):
         """The per-type JSONL layout is the normal route; a record need not repeat it."""
-        assert audit._qc_structural_pending(_seeded(), "tip.jsonl") is True
-        assert audit._qc_structural_pending(_seeded(), "build-error.jsonl") is False
+        assert audit._qc_structural_pending(_seeded(), "tip.jsonl", "pending") is True
+        assert audit._qc_structural_pending(_seeded(), "build-error.jsonl", "pending") is False
 
     def test_a_declared_type_overrules_the_filename(self):
         obj = _seeded(type="build-error")
-        assert audit._qc_structural_pending(obj, "tip.jsonl") is False
+        assert audit._qc_structural_pending(obj, "tip.jsonl", "pending") is False
 
     def test_a_resolved_knowledge_finding_is_not_structural(self):
         """An operator who dispositioned a tip has made it a resolved finding.
@@ -78,7 +83,91 @@ class TestStructuralPendingPredicate:
         disposition on the strength of the type alone.
         """
         obj = _seeded(type="tip", resolution="accepted")
-        assert audit._qc_structural_pending(obj, "tip.jsonl") is False
+        bucket = audit._qc_resolution(obj)
+        assert bucket == "accepted"
+        assert audit._qc_structural_pending(obj, "tip.jsonl", bucket) is False
+
+
+class TestPromotedRecordsAreNotStructural:
+    """The containment boundary: structural ⊆ pending, by construction.
+
+    `promote_finding` sets `promoted`/`promoted_to` and NEVER touches
+    `resolution`, so a promoted knowledge finding still carries the seeded
+    `pending` on the record while `_qc_resolution` buckets it to `lesson`. Any
+    predicate that re-read `resolution` would count it structural while it sits
+    outside the pending column, and `actionable = pending − structural` would
+    underflow.
+    """
+
+    def test_a_promoted_tip_leaves_the_pending_column(self):
+        obj = _seeded(type="tip", promoted=True, promoted_to="architecture")
+        assert audit._qc_resolution(obj) == "lesson"
+
+    def test_a_promoted_tip_is_not_structural(self):
+        obj = _seeded(type="tip", promoted=True, promoted_to="architecture")
+        bucket = audit._qc_resolution(obj)
+        assert audit._qc_structural_pending(obj, "tip.jsonl", bucket) is False
+
+    def test_actionable_pending_never_goes_negative(self, tmp_path: Path):
+        """A promoted tip alone: pending_total 0, and actionable must not be -1."""
+        inputs = _plan_with_findings(
+            tmp_path,
+            "plan-promoted",
+            {"tip.jsonl": [_seeded(type="tip", promoted=True, promoted_to="architecture")]},
+        )
+        result = audit.cross_quality_chain([inputs])
+
+        assert result["corpus_pending"] == 0
+        assert result["corpus_structural_pending"] == 0
+        assert result["corpus_actionable_pending"] == 0
+
+    def test_a_promoted_tip_cannot_cancel_real_chain_debt(self, tmp_path: Path):
+        """The severe case: a promoted tip must not zero out a pending build-error.
+
+        Under a second, independent reading of `resolution` this corpus published
+        `pending_actionable: 0` while a genuinely pending `build-error` was
+        present — a false zero manufactured inside the deliverable written to end
+        false zeroes.
+        """
+        inputs = _plan_with_findings(
+            tmp_path,
+            "plan-cancel",
+            {
+                "tip.jsonl": [
+                    _seeded(type="tip", promoted=True, promoted_to="architecture"),
+                    _seeded(type="tip"),
+                ],
+                "build-error.jsonl": [_seeded(type="build-error")],
+            },
+        )
+        result = audit.cross_quality_chain([inputs])
+
+        assert result["corpus_pending"] == 2
+        assert result["corpus_structural_pending"] == 1
+        assert result["corpus_actionable_pending"] == 1
+
+    def test_the_split_stays_exhaustive_with_promoted_records_present(
+        self, tmp_path: Path
+    ):
+        inputs = _plan_with_findings(
+            tmp_path,
+            "plan-exhaustive",
+            {
+                "tip.jsonl": [
+                    _seeded(type="tip", promoted=True, promoted_to="architecture"),
+                    _seeded(type="tip"),
+                ],
+                "insight.jsonl": [_seeded(type="insight", promoted=True)],
+                "build-error.jsonl": [_seeded(type="build-error"), _seeded(type="build-error")],
+            },
+        )
+        result = audit.cross_quality_chain([inputs])
+
+        assert (
+            result["corpus_actionable_pending"] + result["corpus_structural_pending"]
+            == result["corpus_pending"]
+        )
+        assert result["corpus_actionable_pending"] >= 0
 
 
 class TestGenuineSignalExcludesStructuralPending:

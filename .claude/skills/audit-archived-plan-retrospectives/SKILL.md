@@ -217,10 +217,22 @@ half only reads and acts on the surfaced signals, it never recomputes them.
   | `zero_class` | Meaning | Is the zero evidence about the corpus? |
   |---|---|---|
   | `structural` | The check declared `status: unmeasured` — it could not substantiate a verdict. | **No.** Fix the check's inputs or its producer. |
-  | `starved` | The corpus supplied no plans, so no check could have fired. | **No.** A property of the run's inputs, not of the check. |
-  | `disciplinary` | A non-empty corpus was examined and nothing was genuine. | **Yes** — but only that the corpus was clean, never that the check is *able* to fire. |
+  | `starved` | The check examined no plans (an empty corpus, or a shipping partition that excluded every one). | **No.** A property of the run's inputs, not of the check. |
+  | `no_count` | The block published no `genuine_signal_count` line, so the census read no count for it. | **No.** Absence of a reading, not a measured zero. |
+  | `disciplinary` | A non-empty examined population and nothing genuine. | **Yes** — but only that the corpus was clean, never that the check is *able* to fire. |
   | `no_block` | The check emitted no block at all on this sweep. | **No.** A detector that silently stopped emitting is the completest form of this failure. |
   | `fired` | The check produced a genuine signal. Not a suspect. | — |
+
+  `structural` outranks the rest: an `unmeasured` block withholds its count *by
+  design* (that withholding is how it stays out of the retire-on-quiet streak), so
+  its absent count is a consequence of the declaration, not an independent fact.
+
+  ⛔ **The census does not census itself.** `suspect-zero-census` and
+  `retire-on-quiet` are meta blocks and are not in `CHECK_NAMES`, so the class
+  guard's own permanent zero is the one class it cannot report. That is the
+  detector-inside-its-own-population failure mode, standing unresolved in the
+  instrument built to surface it — recorded here rather than left silent, because
+  an instrument whose blind spot is undocumented is read as having none.
 
   The census is **the inverse reading of retire-on-quiet**, computed from the same
   streak derivation (`quiet_streaks`) so the two can never disagree about the

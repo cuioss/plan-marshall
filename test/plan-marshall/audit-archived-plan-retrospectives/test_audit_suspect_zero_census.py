@@ -65,6 +65,20 @@ class TestZeroClassification:
             == audit._ZERO_STRUCTURAL
         )
 
+    def test_structural_outranks_no_count(self):
+        """An unmeasured block withholds its count BY DESIGN.
+
+        The withholding is how an unmeasured check stays out of the
+        retire-on-quiet streak, so the absent count is a consequence of the
+        declaration rather than an independent fact. Reporting `no_count` here
+        would surface the symptom and discard the reason the block already gave —
+        and `merge-window-accounting` is exactly this shape on a real sweep.
+        """
+        assert (
+            audit._classify_zero(_UNMEASURED_BLOCK, None, corpus_size=5)
+            == audit._ZERO_STRUCTURAL
+        )
+
 
 class TestCensusRows:
     def test_every_registered_check_gets_a_row(self):
@@ -129,6 +143,102 @@ class TestQuietStreaks:
 
     def test_a_nonzero_first_run_yields_no_streak(self):
         assert audit.quiet_streaks([{"metrics": 1}, {"metrics": 0}])["metrics"] == 0
+
+
+class TestNoCountAndExaminedPopulation:
+    """The two ways a `disciplinary` verdict can be asserted without grounds."""
+
+    def test_an_unread_count_is_no_count_not_disciplinary(self):
+        """`None` means "no count was read" and must never render as a measured 0.
+
+        `quality-chain` is such a block today: it emits
+        `plan_genuine_signal_count` and `finding_genuine_signal_count` and no bare
+        one, so `_GENUINE_COUNT_RE` records nothing for it. Defaulting that to 0
+        and reporting `disciplinary` would have the census assert "a non-empty
+        corpus was examined and nothing was genuine" on the strength of a default.
+        """
+        assert (
+            audit._classify_zero(_MEASURED_ZERO_BLOCK, None, corpus_size=5)
+            == audit._ZERO_NO_COUNT
+        )
+
+    def test_quality_chain_is_classified_no_count_on_a_real_sweep(self, tmp_path: Path):
+        """End-to-end: the block genuinely publishes no bare genuine_signal_count."""
+        inputs = minimal_corpus(tmp_path)
+        output = audit.run_checks(inputs, list(audit.CHECK_NAMES), tmp_path)
+
+        row = next(
+            ln for ln in output.splitlines() if ln.strip().startswith("quality-chain,")
+        )
+        assert audit._ZERO_NO_COUNT in row
+        assert audit._ZERO_DISCIPLINARY not in row
+
+    def test_a_check_that_examined_no_plans_is_starved_not_disciplinary(self):
+        """A delivery-cost check whose shipping partition excluded every plan.
+
+        The corpus is non-empty, but this check saw nothing — so "a non-empty
+        corpus was examined" is false of it. `_annotate_exclusions` stamps the
+        count that makes the distinction available.
+        """
+        block = (
+            "check: token-economics\nstatus: success\n"
+            "plans_excluded_non_shipping: 5\n"
+            "genuine_signal_count: 0\nrows[0]{a}:\n"
+        )
+        assert audit._classify_zero(block, 0, corpus_size=5) == audit._ZERO_STARVED
+
+    def test_a_partially_excluded_check_is_still_disciplinary(self):
+        """The discriminating half — exclusion alone does not mean starved."""
+        block = (
+            "check: token-economics\nstatus: success\n"
+            "plans_excluded_non_shipping: 2\n"
+            "genuine_signal_count: 0\nrows[3]{a}:\n"
+        )
+        assert audit._classify_zero(block, 0, corpus_size=5) == audit._ZERO_DISCIPLINARY
+
+    def test_examined_population_defaults_to_the_whole_corpus(self):
+        """A block with no exclusion line examined every plan."""
+        assert audit._examined_population(_MEASURED_ZERO_BLOCK, 7) == 7
+
+    def test_examined_population_never_goes_negative(self):
+        block = "check: x\nplans_excluded_non_shipping: 9\n"
+        assert audit._examined_population(block, 5) == 0
+
+
+class TestCensusEndToEnd:
+    """Joins the real emitter to the real classification.
+
+    Building the block by hand and asserting on it is the shape the plan calls
+    out for D3 — a suite that synthesises its own marker cannot see the emitter
+    drift away from it. These assertions run a real sweep.
+    """
+
+    def test_a_starved_detector_is_structural_on_a_real_sweep(self, tmp_path: Path):
+        """`merge-window-accounting` has no `[LOCK]` substrate in this corpus."""
+        inputs = minimal_corpus(tmp_path)
+        output = audit.run_checks(inputs, list(audit.CHECK_NAMES), tmp_path)
+
+        row = next(
+            ln
+            for ln in output.splitlines()
+            if ln.strip().startswith("merge-window-accounting,")
+        )
+        assert audit._ZERO_STRUCTURAL in row
+        assert ",true," in row
+
+    def test_a_measuring_check_over_the_same_sweep_is_classified_differently(
+        self, tmp_path: Path
+    ):
+        """The discriminator — without it this would pass on an all-structural census."""
+        inputs = minimal_corpus(tmp_path)
+        output = audit.run_checks(inputs, list(audit.CHECK_NAMES), tmp_path)
+
+        row = next(
+            ln
+            for ln in output.splitlines()
+            if ln.strip().startswith("dispatch-topology,")
+        )
+        assert audit._ZERO_STRUCTURAL not in row
 
 
 class TestCensusBlock:

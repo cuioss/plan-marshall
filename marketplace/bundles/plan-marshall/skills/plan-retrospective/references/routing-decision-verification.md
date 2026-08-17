@@ -19,7 +19,7 @@ The predicate definitions (the closed `prunable_when` vocabulary, the class→de
 | `mis_prune_checks[]` | one per prunable step: `pass` (step ran / predicate still holds), `skip` (footprint unresolvable — no `--diff-file` **and** the shared whole-chain resolver recovered none — or a recorded non-predicate removal cause), `inconclusive` (removal cause unestablishable), or **`fail`** (predicate now false — a mis-prune). Every row also carries `removal_cause` — see [Removal cause precedes predicate re-evaluation](#removal-cause-precedes-predicate-re-evaluation) |
 | `footprint_source` | how the realized footprint was obtained: `diff_file` (explicit `--diff-file`), `resolved` (recovered through the shared resolver), or `unresolved` (no tier answered → the mis-prune checks skip) |
 | `cost_preview` | `predicted_tokens` (init preview) vs `actual_tokens` (`execution_log` sum) and the signed `delta_tokens` / `delta_pct` |
-| `recompose_divergence` | the `lane_resolution` decision-log entry count (init + phase-4 re-compose) |
+| `recompose_divergence` | the `lane_resolution` decision-log **line** count. ⚠ Despite the field name this is NOT a recompose count: the composer emits one line per dropped step plus one per lane warning, so the number rises with the size of a single compose's subtraction, not with the number of composes. Read it as "how much lane subtraction was recorded", never as "how many times the manifest was recomposed" |
 | `recorded_lane_decisions[]` | the raw `lane_resolution` decision-log lines |
 | `llm_judgement_required` | always `true` — the marker that the OVER/UNDER verdict is the LLM's, not the script's |
 

@@ -36,7 +36,8 @@ Facts emitted:
   * ``cost_preview`` — predicted (init preview) vs actual (``execution_log``)
     token totals and the delta, feeding the §4.6a recalibration loop.
   * ``kept_step_yield`` — finding count as the adversarial-step yield proxy.
-  * ``recompose_divergence`` — the lane_resolution decision-log entry count.
+  * ``recompose_divergence`` — the lane_resolution decision-log LINE count. Not a
+    recompose count despite the name; see :func:`lane_resolution_view`.
 
 Inputs (all present at retrospective time): ``execution.toon`` (manifest +
 ``execution_log``), ``status.json`` (posture, ``planning_lane``), the
@@ -198,12 +199,16 @@ def resolve_removal_causes(decision_lines: list[str]) -> dict[str, str]:
     earliest recorded cause.
 
     Two families are read. The shared subtraction-record shape
-    (``_DROPPED_RECORD_RE``, rendered by the composer's
-    ``_log_dropped_records``) is matched first and contributes the emitting gate's
-    own name as the cause — ``lane_resolution``, ``decision_matrix``,
-    ``security_class_inactive``, ``commit_push_disabled``, and any gate added to
-    that family later. The mechanisms in ``_REMOVAL_CAUSE_PATTERNS`` render their
-    own line shapes and are matched individually.
+    (``_DROPPED_RECORD_RE``, rendered by the composer's ``_log_dropped_records``)
+    is matched first and contributes the emitting gate's own name as the cause:
+    EVERY gate that reports through that helper, whatever it is called and
+    whenever it was added. The family is deliberately not enumerated here —
+    enumerating it is what left ``decision_matrix`` unrecognised, and any list
+    written now would be one composer change away from being wrong again. Read the
+    live membership off ``_log_dropped_records``'s call sites when you need it.
+
+    The mechanisms in ``_REMOVAL_CAUSE_PATTERNS`` render their own line shapes and
+    are matched individually.
     """
     causes: dict[str, str] = {}
     for line in decision_lines:
@@ -287,6 +292,22 @@ def lane_resolution_view(decision_lines: list[str]) -> list[str]:
     ``recorded_lane_decisions`` fields. Widening the underlying loader must not
     change what those two fields count, so the filter lives here rather than in
     the loader.
+
+    ⚠ **This is a count of LINES, not of composes.** Under the retired aggregate
+    emission the composer wrote one ``lane_resolution`` line per compose, so the
+    line count WAS the recompose count and the field name was accurate. The
+    composer now emits one line per dropped step plus one per lane warning
+    (``manage-execution-manifest.py``, ``_log_dropped_records`` /
+    ``lane_resolution warning``), so this count is drops-plus-warnings and rises
+    with the SIZE of a single compose's subtraction rather than with the number of
+    composes. It is the same emitter change that broke the ``posture_cutoff``
+    removal-cause pattern, reaching a second consumer in this file.
+
+    The count is left as-is rather than re-derived: reconstructing a compose count
+    from the current lines needs a per-compose delimiter the emitter does not
+    provide. What is fixed here is the CLAIM — the reader is told what the number
+    counts, so it is not read as a recompose count. Deriving a real recompose
+    signal needs an emitter change and belongs with the composer.
     """
     return [line for line in decision_lines if _LANE_DECISION_RE.search(line)]
 
