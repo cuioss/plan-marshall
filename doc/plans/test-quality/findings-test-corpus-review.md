@@ -1,8 +1,9 @@
 # Findings — Python test-corpus review
 
 The analysis the `test-quality` epic was scoped from. This document is the **evidence**; the epic's
-[`README.md`](README.md) is the scoping brief that turns it into rules, and the eight numbered plans
-are the remediation. Where a finding names a rule (**B1**–**B10**) or a slice, those are defined
+[`README.md`](README.md) is the scoping brief that turns it into rules, and the numbered plans beside
+it are the remediation — eight when this review was written, and more since, as the epic's executed
+half surfaced work no plan owned. Where a finding names a rule (**B1**–**B10**) or a slice, those are defined
 there and are not restated here.
 
 Every figure is a **lead, not a fact** — measured on one clone at one moment, with the command that

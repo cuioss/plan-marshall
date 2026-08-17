@@ -170,7 +170,7 @@ names as over budget, plus the `_{domain}_fixtures.py` files D2 creates or exten
 
 **Slice order, and why.** Take the four landed slices first — their reduction plans have landed and
 their split residue is unowned, so nothing is concurrent with them — then the two whose reduction plan
-must land first:
+must land first, and finally the one module that belongs to a landed plan no reduction slice covers:
 
 | Run | Slice | Over-budget modules (lead — re-derive) | Depends on |
 |---|---|---:|---|
@@ -179,13 +179,22 @@ must land first:
 | 3 | `060`'s — runtime and script substrate | 53 | nothing; `060` landed |
 | 4 | `030`'s — config and manifest | 39 | nothing; `030` landed |
 | 5 | `070`'s — architecture and orchestration | 63 | plan `070` landed |
-| 6 | `080`'s — plugin development and generator | 43 | plan `080` landed |
+| 6 | `080`'s — plugin development and generator | 42 | plan `080` landed |
+| 7 | plan `010`'s rule-test modules — `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` | 1 | nothing; `010` landed |
 
 Each slice's exact directory list is the **Expected surface** of the reduction plan that owns it,
 read from that plan's own file — not restated here, because a restated list is a second thing to
 drift. **That includes the root-level `test/plan-marshall/*.py` modules**: four of them are over
 budget, and each is named by filename in the Expected surface of `040` or `050`, so each belongs to
-that slice. The counts above include them. They are called out because a root-level file is exactly
+that slice. The counts above include them.
+
+**Row 7 exists because the six slices do not cover the tree.** Plan `080`'s Expected surface excludes
+every module matched by `plugin-doctor/test_test_conventions_rule*.py`, which the epic README assigns
+to plan `010` — and one of those modules is over budget. `010` has landed, so nothing else would ever
+take it, and the campaign's own goal (the rule reaching zero) is unreachable without it. An earlier
+draft of this plan counted it into `080` and asserted a distribution that did not reconcile; D1's
+halting derivation is what surfaces that class of error, and it would have halted on this plan's own
+table. They are called out because a root-level file is exactly
 the category a slice boundary is most likely to mis-assign — an earlier draft of this plan held them
 out as a separate bucket, which made its own totals disagree with the plans it cites.
 
@@ -194,7 +203,7 @@ out as a separate bucket, which made its own totals disagree with the plans it c
 | Claim | Label | Confirm/refute artifact |
 |---|---|---|
 | `test-module-line-budget` fires on a `test_*.py` over 400 lines, and the budget is stated at `persona-module-tester/standards/testing-methodology.md` § "Module Budget: 400 lines" | OBSERVED | that standards file; `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py` |
-| The whole-tree count is 313, distributed 39 / 55 / 60 / 53 / 63 / 43 across `030` / `040` / `050` / `060` / `070` / `080`, summing exactly to 313 with no residual bucket | HYPOTHESIS — **gating for D1; it sizes every run** | Re-run the sweep from `doc/plans/test-quality/README.md` § "Running the plugin-doctor test-conventions scope" over `test/` and group the findings by slice, attributing each root-level `test/plan-marshall/*.py` module to the plan whose Expected surface names it. **If your grouping does not sum to the whole-tree total with every module attributed, the grouping is wrong — say so rather than reporting a residual bucket.** An earlier draft of this plan carried a distribution that did not reconcile |
+| The whole-tree count is 313, distributed 39 / 55 / 60 / 53 / 63 / 42 across `030` / `040` / `050` / `060` / `070` / `080`, plus **1** in plan `010`'s rule-test modules, summing exactly to 313 with no residual bucket | HYPOTHESIS — **gating for D1; it sizes every run** | Re-run the sweep from `doc/plans/test-quality/README.md` § "Running the plugin-doctor test-conventions scope" over `test/` and group the findings by slice, attributing each root-level `test/plan-marshall/*.py` module to the plan whose Expected surface names it. **If your grouping does not sum to the whole-tree total with every module attributed, the grouping is wrong — say so rather than reporting a residual bucket.** An earlier draft of this plan carried a distribution that did not reconcile |
 | Plan `010` landed the rule over a tree carrying 315 violations and proposed flipping it to `error` at zero | OBSERVED | `doc/plans/test-quality/010-test-authoring-standards-and-enforcement/report-01.md` § "Proposal 2 — Flipping the four D5 rules to `error`" |
 | None of `030`–`060` reached its split deliverable | OBSERVED | the four landed reports' own Deliverables tables and § Residue |
 | Splitting is line-neutral to slightly positive | HYPOTHESIS — **it is this plan's reason for refusing a line target** | Measure the slice's line total before and after in D5. If a run finds a materially negative delta, say so: the claim is refuted and the report is where that lands |
@@ -257,7 +266,7 @@ weaker check, and record what the check that would have established the unavaila
   run at any time. `070` and `080` must land before this campaign takes their slices — rows 5 and 6
   of the table above. Rows 1–4 have no dependency and may start immediately.
 * **When every slice is done, one thing follows.** `test-module-line-budget` reaches zero and its
-  flip to `severity: error` becomes available. That flip belongs to plan `090` § D6's ladder, not
+  flip to `severity: error` becomes available. That flip belongs to plan `090` § D7's ladder, not
   here — this plan produces the condition, it does not take the gate decision.
 * **No `.plan/` path is a source for this plan.** The epic is standalone and has no orchestrator
   ledger, so **do not go looking for one**; every artifact this plan cites is git-tracked.

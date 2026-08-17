@@ -29,9 +29,9 @@
 >
 > **This plan has no blocking dependency on `030`–`080`,** and it is the only plan in the epic that
 > may edit `marketplace/bundles/**`. It **shares** `test/conftest.py` with plan `110` — the two own
-> different parts of that file and must not run concurrently against it; see § "The three surfaces
-> this plan shares". It should land **before** `070` and `080` start, because three of its
-> deliverables are what unblocks their **B6** and **B7** work.
+> different parts of that file and must not run concurrently against it; see § "The surfaces this plan
+> shares". It should land **before** `070` and `080` start, because D1 and D2 are what unblocks their
+> **B6** and **B7** work.
 
 ## Problem
 
@@ -96,10 +96,12 @@ position is a measured, reported fact rather than an assumption.
 
 **Six code deliverables and a report, with a declared cut.** That is more than the two-to-three a
 cloud run completes — the epic README § "How much one run does" carries the measurement — so the
-ordering is not decorative. **D1–D3 are the blocking half**: they are what `070` and `080` are waiting
-on, and a run that finishes them and reports D4–D6 as not done has delivered what the epic needs
-first. D4–D6 are independent of each other and of the blocking half; a second run takes them. **Report
-what was not reached rather than thinning what was.**
+ordering is not decorative. **D1 and D2 are the blocking half**: they are the two `070` and `080` cite
+by name, D1 for their **B6** conversions and D2 for the preamble shapes their **B7** work hits. A run
+that finishes those two and reports the rest as not done has delivered what the epic needs first.
+D3–D6 are independent of each other and of the blocking half — D3 in particular protects plan `100`'s
+campaign rather than `070` or `080` — so a second run takes them. **Report what was not reached rather
+than thinning what was.**
 
 1. **D1 — Publish a parser seam on every production module that blocks a `parse_ns` conversion.**
    Add a module-level `build_parser()` (the name `test/conftest.py`'s `PARSER_BUILDER_NAMES` already
@@ -122,14 +124,16 @@ what was not reached rather than thinning what was.**
    cannot be applied. Take exactly one of the two and state in the report which, and why the other
    was rejected. Both halves are inside this plan's surface, so this is a decision the run makes from
    evidence rather than a proposal it records.
-   **There are three instances, not two.** Plan `060`'s third run identified two in its own slice;
-   `test/pm-code-intelligence/` carries a third of the same shape, which is why that directory's
-   assignment to plan `080` explicitly routes its one open finding here. Re-derive the set rather than
-   taking any of these three counts on trust.
+   **There are two instances, and one of them is `test/pm-code-intelligence/`'s.** Plan `060`'s third
+   run reported "two that remain" over the **fifteen** directories it worked — its plan's fourteen plus
+   `test/pm-code-intelligence/`, which an operator decision had pulled into that run's scope — so its
+   two already include the one this epic now assigns to plan `080`. Re-derive the set rather than
+   taking the count on trust: an earlier draft of this plan read those as three by counting the
+   `pm-code-intelligence` finding twice.
    *Done when:* every `test-module-preamble-boilerplate` finding whose file loads a skill-root
-   `extension.py` — the two in plan `060`'s slice **and** the one in `test/pm-code-intelligence/` — is
-   either fixable by the documented remedy or no longer reported, the whole-tree count for that rule
-   is re-derived before and after, and no finding that was a true positive stopped being reported.
+   `extension.py` is either fixable by the documented remedy or no longer reported, the whole-tree
+   count for that rule is re-derived before and after, and no finding that was a true positive stopped
+   being reported.
 
 3. **D3 — Make a shared-registration collision impossible to introduce silently.** Give
    `load_script_module` a way not to publish into `sys.modules` (or to publish under a caller-chosen
@@ -238,20 +242,21 @@ Exactly these, and nothing else:
   production change requires its own test. ⚠️ **Owned by plan `060`'s slice**, which plan `100`
   re-enters; see the carve-out below
 
-### The three surfaces this plan shares, and the carve-out that governs them
+### The surfaces this plan shares, and the carve-out that governs them
 
 This plan's production changes need tests, and the tests for them live in directories other plans own.
 That is a declared overlap, not an oversight, and it is bounded:
 
 | Shared path | Owner | What this plan may do |
 |---|---|---|
-| `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` + fixtures | plan `010` | **Add or amend only the cases that exercise the rule changes D4 and D5 make.** `010` has landed and is not running, so the risk is a later re-entry, not a concurrent one |
+| `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py` + fixtures | plan `010` | **Add or amend only the cases that exercise the rule change D4 makes.** `010` has landed and is not running, so the risk is a later re-entry, not a concurrent one |
+| `test/pm-plugin-development/plugin-doctor/test_analyze_lesson_id_in_skill_prose.py` | plan `080` — everything under `pm-plugin-development/` except the `rule*` glob | **Add or amend only the cases that exercise the rule change D5 makes.** D5 amends `no-lesson-id-in-skill-prose`, which is not a `test-conventions` rule, so its tests do not live with the four that are |
 | `test/plan-marshall/script-shared/`, `test/plan-marshall/manage-providers/` | plan `060`'s slice — landed; plan `100` re-enters it as campaign run 3 | **Add only a test that a D1 production change requires.** Do not refactor, reduce, or split anything there |
 | `test/conftest.py` | shared with plan `110`, which adds a session preflight (its D2) and a skip guard (its D5) | **This plan owns the loader mechanics** — `load_script_module`, `get_scripts_dir`, the registration behaviour, the `_routing_namespaces` docstring. `110` owns the preflight and the skip guard. The two must **not** run concurrently against this file |
 
 ⛔ **Check before starting, and halt on a live collision.** These are ownership overlaps that are safe
-only while the other plan is not in flight. Confirm no open PR or in-flight branch exists for `100`
-campaign run 3, or for `110`, before touching the second or third row. If one does, **halt and report
+only while the other plan is not in flight. Confirm no open PR or in-flight branch exists for `080`,
+for `100` campaign run 3, or for `110`, before touching any row but the first. If one does, **halt and report
 it** rather than editing a file two plans own — the epic's partition exists precisely because a
 concurrent edit to a shared file is the collision nobody notices until both land.
 
@@ -269,7 +274,7 @@ concurrent edit to a shared file is the collision nobody notices until both land
 | None of the other three rules is at zero, so none is flippable yet | HYPOTHESIS — **gating for D7's ladder** | Re-run the `test-conventions` sweep from `doc/plans/test-quality/README.md` § "Running the plugin-doctor test-conventions scope" over `test/` and read each rule's finding count. **A rule at zero is flipped and said so; a rule above zero is reported, not flipped** |
 | `test/conftest.py`'s `_routing_namespaces` docstring names `test/plan-marshall/build_test_helpers.py` by path | OBSERVED | `test/conftest.py` — `_routing_namespaces`; surfaced by `grep -rln 'build_test_helpers' test` |
 | No plan in `030`–`080` claims any file under `marketplace/bundles/**` — the surface this plan's production deliverables change | HYPOTHESIS — **asserted absence; it is this plan's entire justification** | Read the **Out of scope** section of each of `030`–`080` and confirm every one excludes `marketplace/bundles/**`. If any plan claims a file there, this plan's production surface overlaps a sibling's: **halt and report it** |
-| This plan's **test** surface overlaps three paths other plans own, and each overlap is declared rather than asserted away | OBSERVED | § "The three surfaces this plan shares" above, cross-checked against `010`'s and `060`'s Expected surfaces and `110`'s. **This is not an absence claim** — an earlier draft wrote it as one and was refuted by the tree, which would have halted the run on a defect the plan itself created |
+| This plan's **test** surface overlaps paths other plans own, and each overlap is declared rather than asserted away | OBSERVED | § "The surfaces this plan shares" above, cross-checked against `060`'s, `080`'s and `110`'s Expected surfaces and — for the `rule*` glob, which `010`'s own Expected surface does **not** state — the epic README's `010` row. **This is not an absence claim** — an earlier draft wrote it as one and was refuted by the tree, which would have halted the run on a defect the plan itself created |
 | No run is in flight against `100` campaign run 3 (plan `060`'s slice) or against plan `110` | HYPOTHESIS — **gating and halting; check before touching the shared test paths** | An open PR or an in-flight branch for either. Unresolvable → treat as a collision and halt |
 
 ## Verification

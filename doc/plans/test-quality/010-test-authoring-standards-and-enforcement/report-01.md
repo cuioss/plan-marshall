@@ -376,7 +376,7 @@ Highest-value subset, by contract kind:
 
 **Relationship to the later plans, stated as the plan requires.** This is the **whole-tree** list; two
 later plans refine disjoint halves of it. Plan `060` § D5 derives the candidates in the runtime and
-script-substrate slice; plan `080` § D5 derives them in the generator slice. Both run after this plan and
+script-substrate slice; plan `080` § D4 derives them in the generator slice. Both run after this plan and
 both seed from the same three examples. The operator therefore receives **one list refined twice**, not
 three unrelated lists: this table is the superset, and `060`/`080` narrow it to their own surfaces. The
 column set is fixed here (call site / contract kind) so the two refinements are diffable against it.
@@ -523,7 +523,7 @@ revise anything above, and where a figure is restated it is re-derived here rath
 
 | Item from this report | Disposition |
 |---|---|
-| § D6 Proposal 2 — flip the four `test-conventions` rules to `error`, per-rule, once each count reaches zero | **Owner assigned: plan `090` § D6.** The ladder is that deliverable. `test-helper-module-misnamed` is re-derived at **0** whole-tree today, so the flip condition this report identified still holds and `090` takes it |
+| § D6 Proposal 2 — flip the four `test-conventions` rules to `error`, per-rule, once each count reaches zero | **Already done, not owed.** `test-helper-module-misnamed` ships at `severity: error` today, flipped by PR #1250 — the same PR that closed this report's `pm-dev-java` residue. Plan `090` § D7 therefore *reports* the ladder rather than acting on it: it re-derives each of the four counts and flips any rule that has since reached zero. None other has |
 | § D6 Proposal 2 — the other three counts (315 / 370 / 254 at landing) | **Re-derived whole-tree: `test-module-line-budget` 313, `test-module-preamble-boilerplate` 179, `test-docstring-historical-prose` 81.** Two of the three moved substantially; the budget moved by two modules across four reduction plans, which is what plan `100` was created to close |
 | § D6 Proposal 1 — the whole-tree property-based-testing candidate list (107 functions across 53 modules) | **Consumed as intended.** Plan `080` § D4 anchors on it by path and states which of its rows refine this list. Plan `060` § D5 landed its own slice's refinement. The `hypothesis` dependency remains a standing proposal — no run may take it |
 | Finding 4 — `identifier-validator-corpus`'s registry is empty, so the rule is a permanent no-op | **Recorded as unowned by design**, in the epic README § "Where a recorded finding goes" and in plan `090` § Out of scope, each with the reason: populating it is a coverage decision about which production validators the corpus should cover, not a rule gap. Re-derived: the rule still reports 0 findings tree-wide |

@@ -104,7 +104,7 @@ done; those two carry this slice's whole convergence argument.
    because `test/conftest.py`'s `_neutralize_daemon_routing` fixture depends on that fact and works
    around it by patching closure `__globals__`. If the consolidation lets the re-registration be
    avoided altogether, **do not take that decision here**: it changes behaviour `conftest.py` reasons
-   about, `conftest.py` is owned by plans `020` and `090`, and a concurrent change to both is exactly
+   about, `conftest.py` is owned by plan `020`, and shared after it by `090` (loader mechanics) and `110` (session preflight, skip guard), and a concurrent change to both is exactly
    the collision this epic's partition exists to prevent. Record it as a proposal.
    **Rename `test/plan-marshall/discovery_test_helpers.py` to `_discovery_fixtures.py` in the same
    deliverable.** It is the second unprefixed root-level helper, invisible to the same doctor rule for
@@ -115,7 +115,7 @@ done; those two carry this slice's whole convergence argument.
 
    **The one reference outside this plan's surface is handled by plan `090`, not by you.**
    `test/conftest.py` names `build_test_helpers.py` **by path** in the `_routing_namespaces`
-   docstring, and plan `090` § D7 rewrites that docstring to identify the helper by role so the rename
+   docstring, and plan `090` § D6 rewrites that docstring to identify the helper by role so the rename
    cannot invalidate it. **Check, do not assume:** run `grep -rn 'build_test_helpers' test/conftest.py`
    before renaming. Empty → `090` has landed and there is nothing to do. Non-empty → `090` has not
    landed; do **not** edit `conftest.py`, and **record the stale reference as a proposal in the
@@ -193,8 +193,8 @@ done; those two carry this slice's whole convergence argument.
   campaign across all six slices, and takes this slice **after** this plan lands — D1's consolidation
   changes which modules are over budget, so splitting first would be work done twice. This plan
   therefore **reports** its over-budget count (a lead: 63 modules) and does not act on it.
-* **`test/conftest.py` and `test/_shared/**`.** Owned by plans `020` and `090` and consumed read-only
-  here. Excluded because sibling reduction plans run concurrently against the same harness. This
+* **`test/conftest.py` and `test/_shared/**`.** Owned by plan `020`, and shared after it by `090`
+  (loader mechanics) and `110` (session preflight, skip guard); consumed read-only here. Excluded because sibling reduction plans run concurrently against the same harness. This
   constraint bites hardest in this plan: D1 touches the exact seam `conftest.py`'s
   `_neutralize_daemon_routing` fixture reasons about. Changing the fixture is a **proposal**, never an
   edit.
@@ -210,6 +210,11 @@ done; those two carry this slice's whole convergence argument.
   module **into or out of** that directory: the carve-out is resolved from the collected node's own
   path, so a relocation silently changes whether the fixture engages — and a module that loses the
   carve-out keeps passing while its assertions become tautologies.
+* **Deriving a sweep's file list from a convenient tree walk rather than from this plan's Expected
+  surface.** Excluded because plan `060`'s third run ran exactly that and touched 37 modules owned by
+  concurrently-running siblings, catching it only by diffing the changed set against its own surface
+  before committing. Any mechanical sweep this plan runs derives its file list from the Expected
+  surface above, and the changed set is checked against it after every edit.
 * **Deleting a test because it looks redundant.** Excluded because "redundant" is the judgement a line
   target corrupts. The six build implementations asserting the same contract are six genuine
   implementations of it, not five duplicates — D4 parametrizes them, it does not thin them.
@@ -243,7 +248,7 @@ the two root-level helper renames, and nothing else:
 | Loading `_build_execute_factory` through `load_script_module` re-registers it in `sys.modules`, and `conftest.py`'s `_neutralize_daemon_routing` works around that by patching closure `__globals__` dicts | OBSERVED | `test/conftest.py`'s `_routing_namespaces` docstring, which states both facts and why patching a module object is silently partial |
 | `test/plan-marshall/build-server/` is carved out of `_neutralize_daemon_routing` **by location** | OBSERVED | `test/conftest.py`'s `_DAEMON_ROUTING_CARVE_OUT` constant and the fixture that reads it |
 | The six `build-*` directories stage the extension contract independently rather than through a shared surface | HYPOTHESIS — **gating for D1 and D4** | Read the module preamble of one module per `build-*` directory and record which staging each uses. If they already share a surface, D1 is a rename plus a docstring change and D4's parametrization is the whole deliverable — say so. |
-| `build_test_helpers` is imported by exactly four `build-*` directories (`build-gradle`, `build-maven`, `build-npm`, `build-pyproject`) and by nothing outside this slice | OBSERVED | `grep -rln 'build_test_helpers' test` — note `test/conftest.py` names it **by path in a docstring**, which the same grep surfaces and which plan `090` § D7 owns |
+| `build_test_helpers` is imported by exactly four `build-*` directories (`build-gradle`, `build-maven`, `build-npm`, `build-pyproject`) and by nothing outside this slice | OBSERVED | `grep -rln 'build_test_helpers' test` — note `test/conftest.py` names it **by path in a docstring**, which the same grep surfaces and which plan `090` § D6 owns |
 | `discovery_test_helpers` is imported only by `build-npm/test_npm_discover.py` and `build-gradle/test_gradle_discover_modules.py`, both in this slice | OBSERVED | `grep -rln 'discovery_test_helpers' test` |
 | The phase and lifecycle directories each stage a plan directory by hand and **none shares that staging with another** | HYPOTHESIS — **asserted absence, the higher-risk half; it is D2's entire justification** | Read the staging preamble of one module per directory in the D2 group and record which helper, if any, each uses. If two already share one, D2 is an extension of that surface rather than a new one — say so rather than building a second. |
 | The slice carries ~502 `Namespace(` constructions against ~1 `parse_ns` call | HYPOTHESIS — **it sizes D3** | `grep -c 'Namespace('` and `grep -c 'parse_ns('` over the Expected surface. Leads — re-derive |

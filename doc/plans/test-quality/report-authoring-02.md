@@ -33,7 +33,7 @@ here with what each was derived from.
 
 | # | Deliverable | Commit | State |
 |---|---|---|---|
-| D1 | Analyse all nine landed reports across plans `010`–`060` | — | Done — § "What the reports say" |
+| D1 | Analyse all ten landed reports across plans `010`–`060` | — | Done — § "What the reports say" |
 | D2 | Three new plans for work no plan owned: `090`, `100`, `110` | `d1fdb3e` | Done |
 | D3 | Re-scope the two unstarted plans `070` and `080` | `0acc98e` | Done |
 | D4 | Reconcile the epic brief `README.md` with what four runs measured | `8389fb9` | Done |
@@ -57,8 +57,9 @@ compliance.**
 
 ## What the reports say
 
-Nine reports were read in full: `010` run 01, `020` run 01, `030` runs 01–02, `040` run 01, `050`
-runs 01–02, `060` runs 01–03, plus the epic's own `report-authoring-01.md`.
+Ten reports were read in full: `010` run 01, `020` run 01, `030` runs 01–02, `040` run 01, `050`
+runs 01–02, `060` runs 01–03 — plus the epic's own `report-authoring-01.md`, which is not one of the
+ten.
 
 ### Answer 1 — yes, the remaining plans need adapting, and the evidence is unanimous
 
@@ -93,14 +94,15 @@ README's exclusion list was also short by two entries the whole time.
 **And a recorded finding had nowhere to go.** Every reduction plan is correctly forbidden from editing
 `marketplace/bundles/**` and `test/conftest.py`, and correctly records what it finds there instead.
 Nothing owned the records. `060` measured 27 `parse_ns` conversions blocked on production modules that
-publish no parser seam and wrote that *"a published `build_parser()` would unblock all 14"* of one
-group — and no plan could publish one.
+publish no parser seam and wrote that a published `build_parser()` would unblock all fifteen of one
+group — and no plan could publish one. (That report's finding row says "14"; the same report corrects
+the subtotal to 15 two sections later.)
 
 ### Answer 2 — yes, three additional plans, each from something the reports could not act on
 
 | Plan | What it owns | Derived from |
 |---|---|---|
-| `090` harness and rule gaps | The production and harness surface every reduction plan excludes: parser seams, the loader that cannot address a skill-root `extension.py`, the `sys.modules` registration with no guard, the citation matchers that miss two live spellings, the severity flip whose condition is met | `020` #15, `030` run-02 F7, `050` run-02 residue, `060` run-02 G3/G4 and run-03 H4/H6, `010` D6 proposal 2 |
+| `090` harness and rule gaps | The production and harness surface every reduction plan excludes: parser seams, the loader that cannot address a skill-root `extension.py`, the `sys.modules` registration with no guard, the citation matchers that miss two live spellings, and the severity ladder — reported rather than flipped, since verification found the one eligible flip already landed | `020` #15, `030` run-02 F7, `050` run-02 residue, `060` run-02 G3/G4 and run-03 H4/H6, `010` D6 proposal 2 |
 | `100` module-budget campaign | All 313 over-budget modules, one slice per run, measured against the budget and never against a line target | The 315 → 313 measurement, and four reports each recording their split deliverable unstarted |
 | `110` every test runs, no slowdown | The two run conditions nobody measured — the skipped count and the suite's wall-clock — plus the instruments and the bounded exception list they need | The operator's added question, and the constant `14 skipped` in every landed build-gate section |
 
@@ -124,15 +126,15 @@ the `verify / verify` job on `main` — the same job, the same runner class, the
 | Commit on `main` | Position | `Run verification` |
 |---|---|---:|
 | `7de3084` | pre-epic (2026-08-14) | **781 s** |
-| `24271bc` | the commit immediately before `020`/`010` landed | **786 s** |
+| `24271bc` | two commits before `020` landed — the nearest pre-epic full build | **786 s** |
 | `7cadb98` | after every test-quality PR had landed | **788 s** |
-| `d1c1533` | later still, after two non-epic PRs | 812 s |
+| `d1c3153` | later still, after three non-epic PRs | 812 s |
 
 **The epic's entire executed half cost about two seconds**, while the collected count rose roughly
 20,066 → 20,330 (+1.3%). There is no regression to investigate or fix. Two caveats, both stated
 because the figures are otherwise easy to over-read: the *whole-workflow* duration is a far noisier
 instrument (same-day `main` runs range about 9–27 minutes), so the step is what to compare; and the
-+26 s at `d1c1533` follows two later non-epic PRs, so it is not the epic's.
++26 s at `d1c3153` follows three later non-epic PRs, so it is not the epic's.
 
 What is missing is the instrument, and the risk is ahead rather than behind. `test/conftest.py`'s
 `parse_ns` docstring states its own cost — it *"re-executes the script module on every call"* — and

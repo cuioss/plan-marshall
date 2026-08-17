@@ -324,7 +324,7 @@ as a **gating, halting derivation**, run before its first deliverable:
 
 1. List every directory under `test/plan-marshall/*/`, **every file at the root of
    `test/plan-marshall/`**, and every top-level entry under `test/` **other than `plan-marshall/`
-   itself** — that one is decomposed by the first two clauses, so listing it as well would report it
+   itself** — skipping `__pycache__`, which is git-ignored and absent from a fresh clone — — that one is decomposed by the first two clauses, so listing it as well would report it
    unclaimed and halt on a non-defect. The root-level files are not an afterthought either: they are
    exactly the category a slice boundary is most likely to mis-assign, since they sit in one plan's
    tree while being imported from another's.

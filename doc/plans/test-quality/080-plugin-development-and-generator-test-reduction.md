@@ -197,15 +197,18 @@ and reports the rest as not done has done the valuable half.
 * **Splitting any module over the 400-line budget.** Excluded because plan `100` owns the budget
   campaign across all six slices, and takes this slice **after** this plan lands — D1's scaffold
   conversion is what brings several of these modules under budget without a split at all, so splitting
-  first would be work done twice. This plan therefore **reports** its over-budget count (a lead: 43
-  modules) and does not act on it.
+  first would be work done twice. This plan therefore **reports** its over-budget count (a lead: 42
+  modules) and does not act on it. A forty-third over-budget module sits in this directory tree —
+  `plugin-doctor/test_test_conventions_rule6.py` — but it is matched by the `rule*` glob the bullet
+  above excludes, so it is plan `010`'s and not this plan's. Plan `100` § Expected surface owns it as
+  a seventh campaign item; do not count it here and do not split it.
 * **`test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py`.** Owned by plan `010`,
   which ships the tests for the doctor rules it added. Excluded because that is the one file path where
   the two plans' surfaces meet — and because plan `090` may amend those same rules, which would make a
   concurrent edit here a three-way collision. Match the glob against the tree; do not assume which
   numbers exist.
-* **`test/conftest.py` and `test/_shared/**`.** Owned by plans `020` and `090` and consumed read-only
-  here. Excluded because sibling reduction plans run concurrently against the same harness. Note that
+* **`test/conftest.py` and `test/_shared/**`.** Owned by plan `020`, and shared after it by `090`
+  (loader mechanics) and `110` (session preflight, skip guard); consumed read-only here. Excluded because sibling reduction plans run concurrently against the same harness. Note that
   `test/conftest.py`'s `collect_ignore` list names real-tree smoke modules in this slice — **do not
   move or rename those modules**, because their paths are hard-coded in a file this plan may not edit.
   A move that needs a `collect_ignore` update is a **proposal**, not a change.
@@ -217,6 +220,11 @@ and reports the rest as not done has done the valuable half.
 * **Adding `hypothesis` or writing a property-based test.** Excluded because it is a third-party
   dependency and adding one is a user-approval step with no operator present. D4 produces the
   evidence; plan `010` § D6 carries the standing proposal.
+* **Deriving a sweep's file list from a convenient tree walk rather than from this plan's Expected
+  surface.** Excluded because plan `060`'s third run ran exactly that and touched 37 modules owned by
+  concurrently-running siblings, catching it only by diffing the changed set against its own surface
+  before committing. Any mechanical sweep this plan runs derives its file list from the Expected
+  surface above, and the changed set is checked against it after every edit.
 * **Growing `EXEMPT_RULE_IDS` to keep the suite-coverage meta-test green.** Excluded explicitly
   because it is the single most available wrong move in this slice: it converts a real coverage loss
   into a passing build, and the docstring of the module it lives in is the only thing that would say
