@@ -1,0 +1,5 @@
+plan_id: dispatch-loop-replay-undatable
+phase: 5-execute
+rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,input_tokens,output_tokens,cache_read_input_tokens,cache_creation_input_tokens}:
+2026-03-02T09:00:00Z,clean_exit_queue_empty,90000,45,100000,0,0,0,0
+2026-03-02T09:05:00Z,clean_exit_queue_empty,70000,30,80000,0,0,0,0

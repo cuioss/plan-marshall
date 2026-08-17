@@ -207,12 +207,18 @@ class TestBillingCompositionReconciliation:
     def test_unmeasured_cells_are_omitted_while_measured_zeros_are_kept(
         self, tmp_path: Path
     ):
-        """The three-way cell read, at the ledger reader.
+        """A measured zero and an unmeasured column stay distinguishable.
 
         One row measures zero on `input_tokens` and declines to measure
         `cache_read_input_tokens`. The measured zero must appear in the totals as
         `0` while the unmeasured column stays absent — collapsing the two would
         put a number no dispatch reported into the reconciliation maximum.
+
+        The row carries BOTH post-token fingerprints (an `unmeasured` token and a
+        nonzero cell), so it is datable and its `input_tokens` zero is a genuine
+        measured zero rather than an undatable one. See
+        `test_audit_check_billing_composition_ledger_provenance.py` for the gate
+        that decides which.
         """
         body = (
             'plan_id: mixed\n'
