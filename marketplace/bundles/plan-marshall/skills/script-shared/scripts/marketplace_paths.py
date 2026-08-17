@@ -267,8 +267,10 @@ def get_bundle_cache_roots() -> tuple[str, ...]:
     ``~``-anchored user-global skill roots (OpenCode has no separate plugin
     cache). Falls back to the Claude default when no runtime is resolvable.
 
-    The returned roots are absolute (``~``-expanded) paths; callers probe in
-    list order (first existing match wins).
+    Callers probe the returned roots in list order (first existing match wins),
+    expanding ``~`` in each. They are normally absolute, but a target whose own
+    configuration override designates a root passes that root through as given,
+    so a caller must not assume absoluteness.
     """
     global _BUNDLE_CACHE_ROOTS_CACHE
     if _BUNDLE_CACHE_ROOTS_CACHE is not None:

@@ -155,17 +155,15 @@ from runtime_base import Runtime, toon_error  # noqa: E402
 # ---------------------------------------------------------------------------
 # Target registration block — the ONE place a runtime target is registered.
 #
-# Registering a target is an edit to this block: add its ``Runtime`` subclass to
-# ``_REGISTRY`` and its extra bootstrap libraries to ``_TARGET_BOOTSTRAP_LIBS``.
-# The two dicts are declared adjacently so the pair cannot drift unnoticed, and a
-# lockstep test asserts their key sets stay equal.
+# Registering a target is THREE edits in this module: its ``Runtime`` subclass in
+# ``_REGISTRY``, its extra bootstrap libraries in ``_TARGET_BOOTSTRAP_LIBS``, and
+# an import of that subclass. The two dicts are declared adjacently so the pair
+# cannot drift unnoticed, and a lockstep test asserts their key sets stay equal.
 #
-# Registering a target is THREE edits in this module, not two: the two dict
-# entries below, plus an import of the subclass. The import is written with the
-# other runtime imports above by convention, not by necessity — everything from
-# ``_bootstrap_glob_discover()`` down is past the ``sys.path`` setup, this block
-# included, so the import would work here too. Keeping the imports together is
-# the only reason they sit where they do.
+# The import is written with the other runtime imports above by convention, not
+# by necessity — everything from ``_bootstrap_glob_discover()`` down is past the
+# ``sys.path`` setup, this block included, so the import would work here too.
+# Keeping the imports together is the only reason they sit where they do.
 #
 # ``_DEFAULT_TARGET`` is the single fallback identifier: every argparse default
 # and every "no target resolved" fallback in this module reads it rather than
@@ -736,12 +734,13 @@ def main(argv: list[str] | None = None) -> int:
     # Dispatch to the runtime implementation.
     # ------------------------------------------------------------------
     result = _dispatch(runtime, operation, remaining)
-    # An empty-string return is the statusLine-mode sentinel: the runtime
-    # already wrote the verbatim statusLine content to stdout (or wrote
-    # nothing on the noop branches), and the caller MUST NOT append a
-    # trailing newline that would render as an empty row under the prompt.
-    # Every TOON return path produces a non-empty string, so the truthiness
-    # check is sufficient.
+    # An empty string is the already-emitted sentinel from ``session render-title``
+    # on a target that renders the title itself: the runtime has written whatever
+    # its channel required directly to stdout (or written nothing at all), and the
+    # caller MUST NOT append a trailing newline that would render as an empty row
+    # under the prompt. It is not specific to one output mode — every render path
+    # returns it. Every TOON return path produces a non-empty string, so the
+    # truthiness check is sufficient.
     if result:
         print(result)
     return 0

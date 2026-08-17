@@ -103,9 +103,10 @@ class Runtime(ABC):
     ``toon_success``, ``toon_error``, and ``toon_noop`` helpers from this module
     to build responses; never format TOON strings manually. The one documented
     exception is :meth:`session_render_title`: a target that renders the title
-    itself writes it to stdout and returns ``""`` as the already-emitted
-    sentinel, so the caller appends nothing. A target that declines that
-    operation returns an ordinary no-op TOON like any other.
+    itself returns ``""`` on every path — written, nothing to write, or write
+    failed alike — so the caller appends nothing and cannot read the outcome off
+    the return value. A target that declines that operation returns an ordinary
+    no-op TOON like any other.
 
     **The per-operation wire schemas live in ``standards/contract.md``.** This
     module states each operation's INTENT and its decline conditions; that
@@ -195,12 +196,14 @@ class Runtime(ABC):
 
         Returns:
             Serialized TOON string (success, error, or no-op). A success payload
-            reports, per element the target manages, which of four dispositions
-            it reached: installed, converged onto the current shape, already
-            correct, or left alone because an existing value conflicted and no
-            ``overwrite`` key authorised replacing it. The payload also carries
-            ``already_present`` — True only when the call changed nothing at all.
-            Which elements those are is target-defined.
+            reports, per element the target manages, what became of it: installed,
+            converged onto the current shape, already correct, preserved because
+            an existing value conflicted and no ``overwrite`` key authorised
+            replacing it, or replaced because one did. Not every element admits
+            every disposition, and the exact set each one reports is the target's
+            to define — ``standards/contract.md`` carries them. The payload also
+            carries ``already_present`` — True only when the call changed nothing
+            at all.
         """
 
     # ------------------------------------------------------------------
@@ -299,12 +302,17 @@ class Runtime(ABC):
                 one it lacks.
 
         Returns:
-            The empty string from a target that renders the title itself: it has
-            already written the title to stdout, and its no-op branches write
-            nothing and still return ``""``, so the caller appends nothing either
-            way. A target that declines the operation returns an ordinary no-op
-            TOON instead. This is the class docstring's one documented exception
-            to the return-TOON rule.
+            The empty string from a target that renders the title itself — on
+            EVERY path. It has already written the title to stdout, or it had
+            nothing to write, or the write FAILED: all three return ``""``, so
+            the caller appends nothing and, critically, cannot tell the three
+            apart from the return value. A target that renders must therefore
+            name its outcome on a channel of its own (the reference
+            implementation writes it to stderr), because a failed paint is
+            otherwise indistinguishable from a successful one. A target that
+            declines the operation returns an ordinary no-op TOON instead. This
+            is the class docstring's one documented exception to the return-TOON
+            rule.
         """
 
     @abstractmethod
@@ -504,7 +512,9 @@ class Runtime(ABC):
             permissions: List of permission patterns to write.
 
         Returns:
-            Serialized TOON string (success or error).
+            Serialized TOON string (success, error, or no-op). A target with no
+            permission model of its own to write declines here like any other
+            operation, rather than reporting a write it did not perform.
         """
 
     @abstractmethod
@@ -521,7 +531,9 @@ class Runtime(ABC):
                 ``"missing-steps"`` is in checks).
 
         Returns:
-            Serialized TOON string (success or error).
+            Serialized TOON string (success, error, or no-op). A target with no
+            permission model of its own to write declines here like any other
+            operation, rather than reporting a write it did not perform.
         """
 
     @abstractmethod
@@ -543,7 +555,9 @@ class Runtime(ABC):
             dry_run: When ``True``, preview changes without applying.
 
         Returns:
-            Serialized TOON string (success or error).
+            Serialized TOON string (success, error, or no-op). A target with no
+            permission model of its own to write declines here like any other
+            operation, rather than reporting a write it did not perform.
         """
 
     @abstractmethod
@@ -558,7 +572,9 @@ class Runtime(ABC):
             dry_run: When ``True``, preview changes without applying.
 
         Returns:
-            Serialized TOON string (success or error).
+            Serialized TOON string (success, error, or no-op). A target with no
+            permission model of its own to write declines here like any other
+            operation, rather than reporting a write it did not perform.
         """
 
     @abstractmethod
@@ -573,7 +589,9 @@ class Runtime(ABC):
             dry_run: When ``True``, preview changes without applying.
 
         Returns:
-            Serialized TOON string (success or error).
+            Serialized TOON string (success, error, or no-op). A target with no
+            permission model of its own to write declines here like any other
+            operation, rather than reporting a write it did not perform.
         """
 
     @abstractmethod
@@ -584,7 +602,9 @@ class Runtime(ABC):
             scope: ``"global"``, ``"project"``, or ``"both"``.
 
         Returns:
-            Serialized TOON string (success or error).
+            Serialized TOON string (success, error, or no-op). A target with no
+            permission model of its own to write declines here like any other
+            operation, rather than reporting a write it did not perform.
         """
 
     @abstractmethod
@@ -604,7 +624,9 @@ class Runtime(ABC):
             dry_run: When ``True``, preview changes without applying.
 
         Returns:
-            Serialized TOON string (success or error).
+            Serialized TOON string (success, error, or no-op). A target with no
+            permission model of its own to write declines here like any other
+            operation, rather than reporting a write it did not perform.
         """
 
     # ------------------------------------------------------------------

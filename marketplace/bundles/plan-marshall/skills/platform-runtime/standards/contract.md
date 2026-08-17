@@ -557,45 +557,37 @@ message: settings file is malformed JSON; refusing to overwrite
 
 Resolve session → plan, read the title state from `status.json` (live first,
 archived fallback), compose via the pure `manage-terminal-title` composer, and
-emit the result. Hook mode emits a JSON envelope (`terminalSequence` for every
-event, plus a gated web/desktop `sessionTitle`); statusLine mode (`--statusline`)
-emits plain `{icon} {glyph} {body}` text. All session → plan resolution is
-internal; the only argument is the optional mode flag.
+emit the result. All session → plan resolution is internal; the only argument is
+the optional mode flag, which selects the target's persistent status-readout
+channel over its event-driven one.
 
-**Arguments**: `--statusline` _(optional — selects statusLine output mode instead of the hook JSON envelope)_
+**Arguments**: `--statusline` _(optional — selects the target's persistent status-readout channel; on Claude that is statusLine mode, plain `{icon} {glyph} {body}` text, instead of the hook JSON envelope)_
 
-**Success (Claude)**:
+**This operation is the one exception to the return-a-TOON rule**, and its stdout
+contract is why. A target that renders the title itself writes exactly the bytes
+its host parser consumes to stdout and **returns the empty string** — on every
+path, success and no-op alike — so the router appends nothing. There is therefore
+no success TOON and no no-op TOON on stdout for such a target, and a caller
+cannot read the outcome from the return value at all.
+
+Because `""` alone cannot distinguish *painted*, *nothing to paint*, and *the
+paint failed*, a rendering target names its outcome on a side channel. Claude
+writes one `outcome:` row to **stderr** per render, never to stdout:
+
 ```toon
 status: success
 operation: session render-title
+outcome: hook_envelope_written
 plan_id: my-plan
-title_body: pm:execute:implement-feature
-emitted: true
 ```
 
-**No-op (Claude — session not captured)**:
-```toon
-status: no-op
-operation: session render-title
-reason: $CLAUDE_CODE_SESSION_ID is unset; session capture has not run
-alternative: run marshall-steward to install the SessionStart hook, then re-enter the plan phase
-```
+`outcome` is drawn from a closed set — including `write_failed`, the case where
+the system believed it painted and did not, which is named rather than swallowed
+precisely because it is indistinguishable from success everywhere else. The full
+vocabulary lives with the implementation (`_claude_runtime_impl.session_render_title`).
 
-**No-op (Claude — no active plan)**:
-```toon
-status: no-op
-operation: session render-title
-reason: no active plan registered for this session
-alternative: start a plan phase so manage-status can register the session
-```
-
-**No-op (Claude — no title state)**:
-```toon
-status: no-op
-operation: session render-title
-reason: no plan-title to render; status.json has an empty or missing current_phase
-alternative: the title will resume on the next mutation that writes current_phase to status.json
-```
+A target that **declines** the operation is unaffected by any of this: it returns
+an ordinary no-op TOON on stdout like every other declined operation.
 
 **No-op (OpenCode)**:
 ```toon

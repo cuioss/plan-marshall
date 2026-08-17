@@ -49,13 +49,22 @@ a reader unable to tell a category that was checked and found clear from a categ
 
 ## A. Runtime contract shape (`platform-runtime`)
 
-No open entries. Re-derived clean: the `Runtime` ABC states every operation as target-neutral intent
-plus its no-op fallback (a case-sensitive search for `On Claude` / `On OpenCode` over
-`runtime_base.py` returns nothing, as does one for the Claude hook-event vocabulary, `statusLine`,
-and `CLAUDE_CODE_*`); `project_install_hook` takes a target identifier with target-defined conflict
-keys rather than a settings-file path; target registration is one block in `platform_runtime.py`
-behind a `_DEFAULT_TARGET` constant, held in lockstep with `marketplace_paths._DEFAULT_RUNTIME_TARGET`
-by test; and `opencode_runtime.subagent_dispatch` echoes the requested agent.
+No open entries. Each row's own detection was re-derived clean: a case-sensitive search for
+`On Claude` / `On OpenCode` over `runtime_base.py` returns nothing, as does one for the Claude
+hook-event vocabulary, `statusLine`, `CLAUDE_CODE_*`, and every spelling of either target name;
+`project_install_hook` takes a target identifier with target-defined conflict keys rather than a
+settings-file path; the target→class registration is one adjacent block in `platform_runtime.py`
+behind a `_DEFAULT_TARGET` constant, held in lockstep with
+`marketplace_paths._DEFAULT_RUNTIME_TARGET` by test (registering a target is that block plus the
+subclass import); and `opencode_runtime.subagent_dispatch` echoes the requested agent.
+
+**What these detections did NOT cover**, recorded so the clean result is not read wider than it is:
+they were searches for target ENUMERATION, so they say nothing about an operation whose docstring
+never enumerated one. Several `Runtime` operations still document `Returns: … (success or error)`
+with no decline branch — `project_initial_setup`, both `layout_*` ops, and `health_check` — which
+leaves a target that cannot implement them no documented way to say so. That is a contract-shape
+gap rather than a Claude coupling, so it belongs to no row here; it is registered as residue in
+plan `010`'s run report for a later plan to scope.
 
 ## B. Claude literals and formats in general scripts
 
