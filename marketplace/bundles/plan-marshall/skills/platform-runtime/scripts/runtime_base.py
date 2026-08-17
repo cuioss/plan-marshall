@@ -195,8 +195,10 @@ class Runtime(ABC):
 
         Returns:
             Serialized TOON string (success, error, or no-op). A success payload
-            reports, per element the target manages, whether that element was
-            installed, converged, or already correct, and carries
+            reports, per element the target manages, which of four dispositions
+            it reached: installed, converged onto the current shape, already
+            correct, or left alone because an existing value conflicted and no
+            ``overwrite`` key authorised replacing it. The payload also carries
             ``already_present`` — True only when the call changed nothing at all.
             Which elements those are is target-defined.
         """
@@ -241,18 +243,19 @@ class Runtime(ABC):
 
         A target that keeps a dedicated cache directory returns it. A target
         whose deployed bundles instead live among its project-local-skill roots
-        returns the subset of those roots that are user-global — deployed bundles
-        are shared across checkouts, so a root anchored inside one project cannot
-        hold them. Either way the caller probes the returned list in order, first
-        match wins, and every entry is an absolute path.
+        returns the ones that can actually hold them — deployed bundles are shared
+        across checkouts, so a root anchored inside a single project cannot — plus
+        any root the target's own configuration override designates. Either way
+        the caller probes the returned list in order, first match wins.
 
         The result does not change for the lifetime of a process (the target
         is fixed by ``marshal.json``), so callers memoise it per process.
 
         Returns:
             Serialized TOON string carrying ``roots[N]`` — the ordered list of
-            deployed-bundle cache roots for the active target (``~``-anchored
-            absolute paths). The list may carry one root or several.
+            deployed-bundle cache roots for the active target. The list may
+            carry one root or several; callers ``~``-expand each entry before
+            probing it.
         """
 
     # ------------------------------------------------------------------
@@ -296,7 +299,12 @@ class Runtime(ABC):
                 one it lacks.
 
         Returns:
-            Serialized TOON string (success or no-op).
+            The empty string from a target that renders the title itself: it has
+            already written the title to stdout, and its no-op branches write
+            nothing and still return ``""``, so the caller appends nothing either
+            way. A target that declines the operation returns an ordinary no-op
+            TOON instead. This is the class docstring's one documented exception
+            to the return-TOON rule.
         """
 
     @abstractmethod
@@ -725,7 +733,7 @@ class Runtime(ABC):
         records and any subagent records it keeps — normalizes every usage and
         tool-call record it recognises, and writes the per-phase JSON. When such a
         target cannot locate a transcript for *session_id* it returns ``no-op``
-        with code ``transcript_not_found``.
+        carrying ``transcript_not_found`` as its ``reason``.
 
         A target that exposes no transcript at all returns that same
         ``transcript_not_found`` no-op: it writes no bucket, and its counters are

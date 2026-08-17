@@ -10,7 +10,11 @@ lookups at one target while the router dispatched another — silently, since bo
 modules stay internally consistent. These tests are the coupling.
 """
 
-import marketplace_paths  # noqa: I001
+import pathlib  # noqa: I001
+
+import pytest
+
+import marketplace_paths
 import platform_runtime
 
 
@@ -52,13 +56,42 @@ def test_default_skill_roots_match_what_the_default_target_resolves() -> None:
 
 
 def test_default_bundle_cache_roots_match_what_the_default_target_resolves() -> None:
-    """The hardcoded bundle-cache fallback equals what the default target's op returns."""
+    """The hardcoded bundle-cache fallback equals what the default target's op returns.
+
+    Both sides derive a home directory, and they derive it DIFFERENTLY: the
+    constant uses ``resolve_home()``, which exists to survive ``Path.home()``
+    raising in a container with no ``HOME``; the op calls ``Path.home()`` raw and
+    is swallowed by ``_invoke_layout_op``'s ``except Exception``. In that
+    environment the op is genuinely unreachable while production degrades
+    correctly to this same constant, so the comparison is skipped rather than
+    failed -- a red here would report an environment, not a defect. The
+    asymmetry itself is recorded as residue in this plan's run report.
+    """
+    try:
+        pathlib.Path.home()
+    except RuntimeError:  # pragma: no cover - depends on the ambient environment
+        pytest.skip("no resolvable home directory; the op's raw Path.home() cannot run")
+
     resolved = marketplace_paths._invoke_layout_op(
         marketplace_paths._DEFAULT_RUNTIME_TARGET, "layout_bundle_cache_root"
     )
 
     assert resolved is not None, "the layout op must be reachable from the checkout"
     assert resolved == marketplace_paths._DEFAULT_BUNDLE_CACHE_ROOTS
+
+
+def test_every_registered_target_resolves_a_bundle_cache_root() -> None:
+    """Both layout ops resolve for every registered target, not just the default one.
+
+    ``layout_bundle_cache_root`` is reached by no other test on any target but the
+    default, so a target whose implementation of it raised would be caught
+    nowhere. Quantifies over the live registry so a later target is covered
+    without anyone remembering.
+    """
+    for target in platform_runtime._REGISTRY:
+        roots = marketplace_paths._invoke_layout_op(target, "layout_bundle_cache_root")
+
+        assert roots, f"{target}: layout_bundle_cache_root resolved nothing ({roots!r})"
 
 
 def test_layout_op_resolves_each_registered_target_distinctly() -> None:

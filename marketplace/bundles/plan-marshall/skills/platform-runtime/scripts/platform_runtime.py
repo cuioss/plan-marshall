@@ -160,10 +160,12 @@ from runtime_base import Runtime, toon_error  # noqa: E402
 # The two dicts are declared adjacently so the pair cannot drift unnoticed, and a
 # lockstep test asserts their key sets stay equal.
 #
-# One edit falls OUTSIDE this block and is unavoidable: the subclass has to be
-# imported above, alongside the other runtime imports, before its name can be
-# bound here. That import cannot move into this block, because the imports must
-# follow the bootstrap that puts them on ``sys.path``.
+# Registering a target is THREE edits in this module, not two: the two dict
+# entries below, plus an import of the subclass. The import is written with the
+# other runtime imports above by convention, not by necessity — everything from
+# ``_bootstrap_glob_discover()`` down is past the ``sys.path`` setup, this block
+# included, so the import would work here too. Keeping the imports together is
+# the only reason they sit where they do.
 #
 # ``_DEFAULT_TARGET`` is the single fallback identifier: every argparse default
 # and every "no target resolved" fallback in this module reads it rather than
@@ -285,8 +287,8 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
                        help="Platform target identifier, as in marshal.json runtime.target")
         p.add_argument("--overwrite", action="append", default=[], metavar="KEY",
                        help="Conflict key this call may overwrite instead of preserving and "
-                            "reporting (repeatable; the key set is target-defined, and an "
-                            "unrecognised key is rejected)")
+                            "reporting (repeatable; the key set is target-defined, and a "
+                            "target that defines one rejects a key outside it)")
         p.add_argument("--enforcement", action="store_true",
                        help="Wire the target's tool-invocation enforcement integration instead "
                             "of its session/display one")
@@ -330,7 +332,9 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     if operation == "session render-title":
         p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session render-title")
         p.add_argument("--statusline", action="store_true",
-                       help="Emit plain text (statusLine mode) instead of the JSON envelope")
+                       help="Emit the title as plain text on the target's persistent "
+                            "status-readout channel, instead of the structured envelope "
+                            "its event-driven channel expects")
         ns = p.parse_args(remaining)
         return runtime.session_render_title(statusline=ns.statusline)
 

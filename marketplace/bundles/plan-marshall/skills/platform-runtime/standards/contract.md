@@ -114,7 +114,7 @@ Two independent install modes, neither of which disturbs the other's configurati
 
 - `--target <target-id>` (required) — the platform target identifier, as in `marshal.json`'s `runtime.target`.
 - `--enforcement` (optional) — select the enforcement mode described above.
-- `--overwrite <key>` (optional, repeatable) — authorise overwriting the named conflict. A pre-existing configuration value that differs from the one the integration wants is preserved by default and reported as `already_present_other`, so the caller can prompt; naming its key here overwrites it instead and reports `overwritten`. **The key set is target-defined** — the router does not validate it, and an unrecognised key is rejected by the target with `unknown_overwrite_key` rather than silently ignored, so a typo can never read as "do not overwrite". Claude's keys are `statusline` and `env-disable`.
+- `--overwrite <key>` (optional, repeatable) — authorise overwriting the named conflict. A pre-existing configuration value that differs from the one the integration wants is preserved by default and reported as `already_present_other`, so the caller can prompt; naming its key here overwrites it instead and reports `overwritten`. **The key set is target-defined** — the router does not validate it, and a target that defines a key set rejects a key outside it with `unknown_overwrite_key` rather than silently ignoring it, so a typo can never read as "do not overwrite". A target that declines the operation outright defines no keys and reaches no key check; its `no-op` answers every argument. Claude's keys are `statusline` and `env-disable`.
 
 `target` echoes the argument as passed; `settings_path` is the file the call actually resolved and wrote.
 

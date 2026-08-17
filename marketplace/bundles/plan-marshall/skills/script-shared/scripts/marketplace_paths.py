@@ -221,8 +221,9 @@ def _invoke_layout_op(target: str, method_name: str = 'layout_skill_roots') -> t
         # module's own default, nothing else. Resolving the default runtime here
         # yields the same roots that default carries (pinned by the lockstep
         # test), so the two paths agree on the ANSWER while differing in how they
-        # reach it. ``_DEFAULT_TARGET`` is the router's fallback only for the
-        # distinct case of a marshal.json that omits ``runtime.target``.
+        # reach it. The router reads ``_DEFAULT_TARGET`` in its OWN fallback
+        # situations — an omitted ``--target``, and a marshal.json that is absent
+        # or carries no ``runtime.target`` — none of which is this one.
         runtime: Any = _make_runtime(target) or _make_runtime(_DEFAULT_RUNTIME_TARGET)
         parsed = parse_toon(getattr(runtime, method_name)())
     except Exception:
