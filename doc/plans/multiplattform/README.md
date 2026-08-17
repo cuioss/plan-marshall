@@ -39,7 +39,7 @@ is a **lead** — re-derive from the named source before acting on it.
 | Body rewrites are data + one shared engine, fail-closed: `directive_rewrites`, `slash_rewrites`, and four registered idioms in `body_idiom_rewrites` (`AskUserQuestion` → rewrite, `Task:` → preserve, `Skill: <entry>` → source_fix, `Monitor` → source_fix) | `marketplace/targets/opencode/mapping.json`; `marketplace/targets/body_transform_engine.py` |
 | The level→model tables are single-sourced: the OpenCode variant emitter imports `LEVEL_TABLE`/`ALIAS_GATED_EFFORTS` from the Claude emitter and resolves aliases through `mapping.json::model_map`, with lockstep tests on both sides | `marketplace/targets/claude/variant_emitter.py`; `marketplace/targets/opencode/variant_emitter.py`; `test/marketplace/targets/*/test_level_table_lockstep.py` |
 | Metrics are normalized at the runtime boundary: `claude_runtime` owns transcript layout, parsing, and cache weights; `manage-metrics` consumes `{input, output, cache_read, cache_creation, total}` and never parses a transcript | `platform-runtime/scripts/claude_runtime.py`; `manage-metrics/scripts/manage-metrics.py` |
-| Layout resolution is a runtime op with memoised helpers (`get_project_skill_roots()`, `get_bundle_cache_roots()`), routed through by config, manifest, steward, extension, doctor, and inventory resolvers | `script-shared/scripts/marketplace_paths.py` and its consumers |
+| Layout resolution is a runtime op with memoised helpers (`get_project_skill_roots()`, `get_bundle_cache_roots()`); the config, manifest, steward, and inventory-discovery resolvers route through them. Extension discovery routes its cache roots through but not its implementor scan, and several plugin-doctor analyzers keep inline anchors — both open, registered in the [coupling inventory](reference/coupling-inventory.md) §B (the implementor scan is plan `030`'s D4) | `script-shared/scripts/marketplace_paths.py` and its consumers |
 | OpenCode declines what it cannot do honestly: permission ops and automatic metrics capture return `no-op` with `reason` + `alternative`, never fabricated success | `platform-runtime/scripts/opencode_runtime.py`; `platform-runtime/standards/no-op-policy.md` |
 | CI gates OpenCode generation on every relevant PR, and the distribution matrix publishes both `dist-claude` and `dist-opencode` (branches) plus `claude/`- and `opencode/`-prefixed dist tags from one source tag | `.github/workflows/opencode-generate-check.yml`; `.github/workflows/claude-distribute.yml` |
 | The terminal-title composer is target-neutral (process-state enum in, glyphs single-sourced); the Claude event→state mapping lives in `claude_runtime` | `manage-terminal-title/scripts/manage_terminal_title.py`; `manage-locks/scripts/merge_lock.py` |
@@ -64,16 +64,17 @@ install, an operator decision, or an unvalidated behaviour.
 ## The plans, and what may run at the same time
 
 ```text
-010 runtime seam neutrality ──→ 030 claude-literal residuals   (shared surface: claude_runtime)
-020 target-scoped components ─┐
-040 sync-opencode inner loop ─┴─ independent of everything
+010 runtime seam neutrality ─┬─ sequential, either order ─┬─ 030 claude-literal residuals
+                             └─ (shared: claude_runtime) ─┘
+020 target-scoped components ── independent of everything
+040 sync-opencode inner loop ── independent of everything
 ```
 
 | Plan | Surface | May run concurrently with |
 |---|---|---|
-| `010` | `platform-runtime/scripts/**` (ABC, router, both runtimes), `script-shared/scripts/marketplace_paths.py`, `test/plan-marshall/platform-runtime/**`, `test/plan-marshall/script-shared/**` | `020`, `040` |
+| `010` | `platform-runtime/scripts/**` (ABC, router, both runtimes), `script-shared/scripts/marketplace_paths.py`, `test/plan-marshall/platform-runtime/**`, `test/plan-marshall/script-shared/**`, conditionally `platform-runtime/standards/contract.md` and the `project install-hook` caller invocations its D1 parameter change reaches | `020`, `040` |
 | `020` | `marketplace/targets/**`, `plan-marshall/commands/tools-fix-intellij-diagnostics.md`, `pm-plugin-development` (plugin-doctor + frontmatter standards), `test/marketplace/targets/**`, `test/pm-plugin-development/plugin-doctor/**` | `010`, `030`, `040` |
-| `030` | permission/providers/extension/inventory/retrospective scripts named in its Expected surface, plus `platform-runtime/scripts/claude_runtime.py` + `_claude_runtime_impl.py`, and their `test/` subtrees | `020`, `040` |
+| `030` | permission/providers/extension/inventory/retrospective scripts named in its Expected surface, plus `platform-runtime/scripts/claude_runtime.py` + `_claude_runtime_impl.py` (and conditionally `platform-runtime/standards/contract.md`), and their `test/` subtrees | `020`, `040` |
 | `040` | `.claude/skills/sync-opencode/**`, `test/sync-opencode/**`, `doc/developer/marketplace-build.adoc`, `doc/developer/distribution.adoc` | `010`, `020`, `030` |
 
 **`010` and `030` must not run concurrently.** Both edit `claude_runtime.py` /

@@ -20,7 +20,8 @@
 # The Runtime contract is target-opaque and registered in one place per side
 
 **Epic:** multiplattform (standalone — no orchestrator ledger; scoping brief in
-[`README.md`](README.md), evidence in [`reference/`](reference/))
+`doc/plans/multiplattform/README.md`, evidence in `doc/plans/multiplattform/reference/` — full
+paths, because the lane moves this plan one directory deeper and relative links would dangle)
 **Branch prefix:** chore — refactoring of the runtime abstraction, no new capability
 
 ## Problem
@@ -29,19 +30,22 @@ The `Runtime` ABC (`marketplace/bundles/plan-marshall/skills/platform-runtime/sc
 is the contract a new target implements, and four seams in it encode the Claude target instead of
 stating target-neutral intent:
 
-1. **`project_install_hook` is a target-shaped interface.** Its docstring specifies the Claude
+1. **`project_install_hook` is a target-shaped contract.** Its ABC docstring specifies the Claude
    hook-event vocabulary (`SessionStart`, `UserPromptSubmit`, `Notification`, `Stop`,
    `PreToolUse:AskUserQuestion`, `PreToolUse:Bash`, `PostToolUse:*`), the `statusLine` command, and
-   `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE`; its `target` parameter is a settings-file path
-   (`.claude/settings.local.json`), and `overwrite_statusline` / `overwrite_env_disable` are named
-   for Claude mechanisms. A third target can only no-op the whole thing, because the contract itself
-   describes Claude's wiring rather than an intent it could realise its own way.
-2. **Five ABC docstrings enumerate targets.** `layout_skill_roots`, `layout_bundle_cache_root`,
-   `session_capture`, `metrics_capture`, and `metrics_normalized_tokens` each read
-   "On Claude: … On OpenCode: …", and `subagent_dispatch` names both targets inline ("`Task:` on
-   Claude, `task` on OpenCode"). A third implementer has no slot, and every new target grows the
-   enumeration — the exact anti-pattern [principles §6](reference/principles.md) forbids in a
-   contract.
+   `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE`, and it types `target` as a settings-file path
+   (`.claude/settings.local.json`), with `overwrite_statusline` / `overwrite_env_disable` named for
+   Claude mechanisms. The canonical *invocation* is already semantic (`project install-hook
+   --target claude`, with the Claude implementation resolving its own settings path; an absolute
+   path is a test/recovery escape hatch) — the coupling is the contract text and the path-typed
+   parameter shape, which describe Claude's wiring rather than an intent a third target could
+   realise its own way.
+2. **The ABC docstrings enumerate targets.** The layout, session, and metrics operation docstrings
+   read "On Claude: … On OpenCode: …", and `subagent_dispatch` names both targets inline
+   ("`Task:` on Claude, `task` on OpenCode"). The hit list, not any count, is the work list —
+   re-derive it by searching `runtime_base.py` for `On Claude`. A third implementer has no slot,
+   and every new target grows the enumeration — the exact anti-pattern
+   `doc/plans/multiplattform/reference/principles.md` §6 forbids in a contract.
 3. **Registration is scattered.** `platform_runtime.py` holds two separate per-target dicts
    (`_REGISTRY` and `_TARGET_BOOTSTRAP_LIBS`), three `default="claude"` argparse defaults, and a
    bare `target = "claude"` fallback, with no `_DEFAULT_TARGET` constant;
@@ -63,19 +67,19 @@ caller's level selection.
 
 1. **D1 — Target-opaque install op** — `project_install_hook`'s ABC contract states intent only
    ("wire this target's session/display integration into its own configuration, or decline via
-   no-op") plus the no-op fallback. The Claude hook-event vocabulary, the `statusLine` command, the
-   `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` env var, and settings-file-path resolution move entirely
-   into `claude_runtime` / `_claude_runtime_impl`; the `target` parameter no longer carries a
-   settings-file path across the boundary (Claude resolves its own path from the op's semantic
-   scope). The operation's wire name stays `project install-hook` — the coupling is the vocabulary
-   and the path parameter, not the word "hook", and keeping the name avoids a caller sweep.
+   no-op") plus the no-op fallback; the Claude hook-event vocabulary, the `statusLine` command, and
+   the `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` env var appear only in `claude_runtime` /
+   `_claude_runtime_impl`; the `target` parameter stops being typed as a settings-file path (the
+   escape-hatch semantics either become a target-opaque override or move behind the Claude
+   implementation). The operation's wire name stays `project install-hook` — the coupling is the
+   vocabulary and the path typing, not the word "hook", and keeping the name avoids a caller sweep.
    *Done when:* `runtime_base.py` contains no Claude hook-event name, no `CLAUDE_CODE_*` string,
    and no settings-file path in `project_install_hook`'s signature or docstring; existing Claude
    install behaviour is pinned by tests that pass unchanged in effect (updated only for the new
    parameter shape); the OpenCode implementation declines honestly per the no-op policy.
-2. **D2 — Target-neutral ABC docstrings** — the five enumerating docstrings and the
-   `subagent_dispatch` inline mention are rewritten as intent + no-op fallback; the per-target
-   behaviour notes move to the concrete `*_runtime` classes.
+2. **D2 — Target-neutral ABC docstrings** — every enumerating docstring (the re-derived hit list
+   from the Problem) and the `subagent_dispatch` inline mention are rewritten as intent + no-op
+   fallback; the per-target behaviour notes move to the concrete `*_runtime` classes.
    *Done when:* a case-sensitive search for `On Claude` and `On OpenCode` over `runtime_base.py`
    returns zero hits, the concrete runtimes carry the displaced notes, and `./pw verify` passes.
 3. **D3 — Registration consolidated** — `platform_runtime.py` declares one `_DEFAULT_TARGET`
@@ -103,8 +107,9 @@ caller's level selection.
   (`standards/contract.md`) it does not need.
 - **The `targets:` frontmatter mechanism and the Claude-literal script residuals** — owned by plans
   `020` and `030`; pulling them in here would break the epic's surface partition.
-- **Migrating existing waiting call sites onto `wait_for`** — deliberate follow-up work recorded in
-  the coupling inventory's confirmed-clean boundary; not a seam-shape defect.
+- **Migrating existing waiting call sites onto `wait_for`** — deliberate follow-up work recorded
+  in `doc/plans/multiplattform/reference/coupling-inventory.md` § "Deliberate non-migrations"; not
+  a seam-shape defect.
 
 ## Expected surface
 
@@ -126,8 +131,8 @@ caller's level selection.
 
 | Claim | Label | Confirm/refute artifact |
 |---|---|---|
-| `project_install_hook`'s docstring names Claude hook events, `statusLine`, `CLAUDE_CODE_DISABLE_TERMINAL_TITLE`, and takes a settings-file path as `target` | OBSERVED | `runtime_base.py` — `project_install_hook`; re-read before acting |
-| Exactly five ABC docstrings enumerate "On Claude/On OpenCode", plus `subagent_dispatch` inline | OBSERVED, count is a lead | re-derive by searching `runtime_base.py` for `On Claude` — fix every hit, whatever the count |
+| `project_install_hook`'s docstring names Claude hook events, `statusLine`, `CLAUDE_CODE_DISABLE_TERMINAL_TITLE`, and types `target` as a settings-file path; the canonical steward invocation is already semantic (`--target claude`, path resolved inside the implementation) | OBSERVED | `runtime_base.py` — `project_install_hook`; `_claude_runtime_impl.py` — its implementation; re-read before acting |
+| The set of "On Claude/On OpenCode"-enumerating ABC docstrings spans the layout, session, and metrics operations, plus `subagent_dispatch` inline | OBSERVED, membership is a lead | re-derive by searching `runtime_base.py` for `On Claude` — fix every hit, whatever the set |
 | `platform_runtime.py` has no `_DEFAULT_TARGET`; `"claude"` defaults sit at three argparse sites plus one bare fallback | OBSERVED, count is a lead | re-derive by searching `platform_runtime.py` for `"claude"` |
 | `marketplace_paths.py` carries its own repeated `'claude'` fallback returns | OBSERVED | `marketplace_paths.py` — the layout-op fallback helpers; re-derive by search |
 | `opencode_runtime.subagent_dispatch` hardcodes `execution-context-level-3`; the Claude side passes `agent` through | OBSERVED | `opencode_runtime.py` — `subagent_dispatch`; `_claude_runtime_impl.py` — `subagent_dispatch` |

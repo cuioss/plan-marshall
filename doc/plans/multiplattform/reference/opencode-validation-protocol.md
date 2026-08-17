@@ -175,7 +175,8 @@ Remediation if FAIL: serialize the fan-out on OpenCode and document the limitati
 ### 2.5 Instruction following
 
 OpenCode loads `AGENTS.md` once and may lose it on compaction; Anthropic models in OpenCode may
-ignore the `instructions` array. Complex multi-step workflows degrade if instructions are lost.
+ignore the `instructions` array (upstream OpenCode issue #8892). Complex multi-step workflows
+degrade if instructions are lost.
 
 | Check | Pass criterion |
 |-------|----------------|

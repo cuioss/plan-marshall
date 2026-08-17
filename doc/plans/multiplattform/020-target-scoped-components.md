@@ -20,12 +20,13 @@
 # Components can declare the targets they ship to
 
 **Epic:** multiplattform (standalone — no orchestrator ledger; scoping brief in
-[`README.md`](README.md), evidence in [`reference/`](reference/))
+`doc/plans/multiplattform/README.md`, evidence in `doc/plans/multiplattform/reference/` — full
+paths, because the lane moves this plan one directory deeper and relative links would dangle)
 **Branch prefix:** feature — a new build-pipeline capability
 
 ## Problem
 
-The placement model ([principles §6](reference/principles.md)) names a fourth home for
+The placement model (`doc/plans/multiplattform/reference/principles.md` §6) names a fourth home for
 capabilities that exist only on some targets: a `targets:` frontmatter filter that makes the
 component simply *absent* on non-matching targets, instead of shipping everywhere or forcing a
 runtime no-op onto targets where the capability has no analog. **No such mechanism exists.**
@@ -71,15 +72,15 @@ targets", so the normal case is untouched.
    `pm-plugin-development` frontmatter standards where component authors look.
    *Done when:* the doctor passes on D3's declaration, a doctor test covers an invalid value, and
    the standards document states the field's semantics (absent ⇒ all targets) and its admission
-   test per [principles §6](reference/principles.md).
+   test per `doc/plans/multiplattform/reference/principles.md` §6.
 
 ## Out of scope
 
 - **The `marshall-steward` terminal-title wizard split** — the other confirmed Claude-only
   capability is spread across several steward surfaces and needs a skill split before it can be
   scoped; bundling a multi-surface split into the mechanism plan would double its size and risk.
-  It stays in the [coupling inventory](reference/coupling-inventory.md) §D until the mechanism has
-  proven itself on the simple consumer.
+  It stays in `doc/plans/multiplattform/reference/coupling-inventory.md` §D until the mechanism
+  has proven itself on the simple consumer.
 - **Scoping reference files** (`hook-authoring-guide.md`, `permission-prompt-analysis.md`) —
   references are files inside a skill, not components with their own frontmatter, so they need a
   file-level mechanism this plan does not build; excluded so D1 stays a frontmatter-level

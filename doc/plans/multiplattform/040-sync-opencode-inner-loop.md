@@ -20,7 +20,8 @@
 # A developer can deploy the generated OpenCode tree in one command
 
 **Epic:** multiplattform (standalone — no orchestrator ledger; scoping brief in
-[`README.md`](README.md), evidence in [`reference/`](reference/))
+`doc/plans/multiplattform/README.md`, evidence in `doc/plans/multiplattform/reference/` — full
+paths, because the lane moves this plan one directory deeper and relative links would dangle)
 **Branch prefix:** feature — a new developer-workflow capability
 
 ## Problem
@@ -68,8 +69,8 @@ live OpenCode install; and the distribution documentation states the publish mat
    `OPENCODE_CONFIG_DIR` at a plural-renamed staging copy, noting that a committed project-local
    `.opencode/` shadows the env-var directory and that the env var cannot point at the singular
    `target/opencode/` directly; (c) a marketplace-install path exercises distribution, not rapid
-   iteration, and is unverified until the
-   [validation protocol](reference/opencode-validation-protocol.md) runs.
+   iteration, and is unverified until the validation protocol
+   (`doc/plans/multiplattform/reference/opencode-validation-protocol.md`) runs.
    *Done when:* the section exists, cross-references rather than duplicates the generator
    documentation, and every claim in it is exercisable without a live OpenCode session or is
    explicitly marked validation-gated.
@@ -85,8 +86,9 @@ live OpenCode install; and the distribution documentation states the publish mat
 
 - **Running against a live OpenCode install** — this run has no OpenCode installation and no
   operator; D2's temp-directory tests are the verifiable substitute, and the live confirmation
-  belongs to the [validation protocol](reference/opencode-validation-protocol.md). Excluded so the
-  plan cannot stall on an environment it cannot have.
+  belongs to the validation protocol
+  (`doc/plans/multiplattform/reference/opencode-validation-protocol.md`). Excluded so the plan
+  cannot stall on an environment it cannot have.
 - **Shipping `sync-opencode` in a marketplace bundle** — consumer projects never generate OpenCode
   output; shipping it would put a meta-project tool in every install. Revisit only if live
   validation surfaces a consumer-side need.
@@ -107,7 +109,8 @@ live OpenCode install; and the distribution documentation states the publish mat
 | Claim | Label | Confirm/refute artifact |
 |---|---|---|
 | No `sync-opencode` skill or `sync_opencode.py` exists anywhere in the tree | OBSERVED (asserted absence — the high-risk kind) | re-derive before building: search the whole tree; a hit refutes the premise and HALTS the plan for re-scoping |
-| The generator emits singular `skill/`/`agent/`/`command/`; OpenCode discovers plural directories | OBSERVED (emitter side) | `marketplace/targets/opencode/emitter.py` — the output-directory names; the plural discovery side is restated in the [validation protocol](reference/opencode-validation-protocol.md) § 1.2 |
+| The generator emits singular `skill/`/`agent/`/`command/` directories | OBSERVED | `marketplace/targets/opencode/emitter.py` — the output-directory names |
+| OpenCode discovers plural `skills/`/`agents/`/`commands/` directories | HYPOTHESIS (external-product fact — no clone artifact can settle it) | the validation protocol's live discovery check (`doc/plans/multiplattform/reference/opencode-validation-protocol.md` § 1.2); D1's `--target-dir` flag keeps the rename correctable if the layout assumption is refuted, and the run states the assumption in its report rather than as fact |
 | `sync-plugin-cache` is the shape to mirror (project-local skill, sync engine, bundle filtering) | OBSERVED | `.claude/skills/sync-plugin-cache/SKILL.md` and `scripts/sync.py` |
 | Project-local skill tests live under `test/{skill-name}/` | OBSERVED | `test/sync-plugin-cache/` exists |
 | `claude-distribute.yml` carries an `opencode` matrix entry (`dist-opencode`, tag prefix `opencode`) | OBSERVED | `.github/workflows/claude-distribute.yml` — the `strategy.matrix` block; re-read at run time for D4 |
@@ -123,6 +126,11 @@ live OpenCode install; and the distribution documentation states the publish mat
 - The pre-PR verification sub-agent re-reads D3/D4's documentation claims against the workflow
   and generator files they describe — documentation that restates another file's facts is the
   consumer-kind most likely to drift here.
+- **Cold read (caveat check):** the sub-agent reads D3's deploy-options text cold and answers,
+  without the plan in context: where does OpenCode look for skills when `OPENCODE_CONFIG_DIR` is
+  set and a committed project-local `.opencode/` also exists, and can the env var point at
+  `target/opencode/` directly? Any answer other than "the project-local directory shadows the env
+  var" / "no — the layout is singular there" means the wording failed.
 
 ## Notes
 
@@ -130,6 +138,6 @@ live OpenCode install; and the distribution documentation states the publish mat
   generated output (`target/opencode/`), never `marketplace/bundles/` directly.
 - Namespacing is `{bundle}-{skill}` with no consecutive `--`; the rename maps directory *kind*
   (singular→plural), never component names.
-- The [validation protocol](reference/opencode-validation-protocol.md) § 1.2 consumes this skill
-  as its deploy step once it lands; until then it documents the manual fallback this plan
-  retires.
+- The validation protocol (`doc/plans/multiplattform/reference/opencode-validation-protocol.md`
+  § 1.2) consumes this skill as its deploy step once it lands; until then it documents the manual
+  fallback.

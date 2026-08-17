@@ -20,14 +20,16 @@
 # No general script renders Claude permission grammar or hardcodes the `.claude/` layout
 
 **Epic:** multiplattform (standalone — no orchestrator ledger; scoping brief in
-[`README.md`](README.md), evidence in [`reference/`](reference/))
+`doc/plans/multiplattform/README.md`, evidence in `doc/plans/multiplattform/reference/` — full
+paths, because the lane moves this plan one directory deeper and relative links would dangle)
 **Branch prefix:** chore — closing coupling residue in existing scripts, no new capability
 
 ## Problem
 
 The permission tooling, credential protection, extension discovery, and two bookkeeping scripts
-still carry live Claude literals outside the sanctioned homes — the residue the
-[coupling inventory](reference/coupling-inventory.md) §B registers:
+still carry live Claude literals outside the sanctioned homes — the residue
+`doc/plans/multiplattform/reference/coupling-inventory.md` §B registers (this plan draws the five
+clusters below; the inventory holds further §B entries not scoped here):
 
 - `tools-permission-fix/scripts/permission_fix.py` — `DEFAULT_PERMISSIONS` carries the literal
   permission string `Read(~/.claude/plugins/cache/**)`; the Claude permission grammar is rendered
@@ -92,8 +94,8 @@ intent, consume resolved values, and behave identically on the Claude target.
 
 - **The OpenCode permission backend** — the honest `no-op` the OpenCode runtime returns for
   permission ops is correct per the no-op policy; implementing a real backend is validation-gated
-  work ([validation protocol](reference/opencode-validation-protocol.md)), and building it here
-  would be speculation about an unvalidated runtime.
+  work (`doc/plans/multiplattform/reference/opencode-validation-protocol.md`), and building it
+  here would be speculation about an unvalidated runtime.
 - **The permission-grammar knowledge in `permission_doctor.py`'s analysis rules and the
   permission standards documents** — the doctor *analyzes* Claude settings as its subject matter;
   relocating analysis rules is rule-pack work of a different kind than closing live render/resolve
@@ -111,6 +113,8 @@ intent, consume resolved values, and behave identically on the Claude target.
 - `marketplace/bundles/plan-marshall/skills/manage-providers/scripts/_cred_ensure_denied.py` — D3
 - `marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/claude_runtime.py`,
   `_claude_runtime_impl.py` — D1/D3 rendering moves in
+- `marketplace/bundles/plan-marshall/skills/platform-runtime/standards/contract.md` — only if
+  D1/D3 need a minimal schema addition (the claim table's hypothesis); otherwise untouched
 - `marketplace/bundles/plan-marshall/skills/extension-api/scripts/extension_discovery.py` — D4
 - `marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/scripts/scan-marketplace-inventory.py` — D5
 - `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/check-manifest-consistency.py`,
@@ -146,5 +150,6 @@ intent, consume resolved values, and behave identically on the Claude target.
   files, so the two plans must not run concurrently — see the epic README's concurrency table.
 - D2's false module docstring is itself a defect to fix, not just collateral: a stated delegation
   that does not exist is the stale-claim class this repository's standards exist to prevent.
-- The doctor/standards knowledge excluded above is registered in the
-  [coupling inventory](reference/coupling-inventory.md) so it is not lost by the exclusion.
+- The doctor/standards knowledge excluded above is registered in
+  `doc/plans/multiplattform/reference/coupling-inventory.md` §B (permission-grammar analysis
+  rules and standards) so it is not lost by the exclusion.

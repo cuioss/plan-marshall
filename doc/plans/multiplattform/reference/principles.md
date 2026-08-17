@@ -122,6 +122,19 @@ The two contracts are `Runtime` (runtime behaviour + layout resolution,
 `marketplace/targets/base.py`). Both are registry-dispatched; the data file is the target's
 `mapping.json`.
 
+Concretely, adding target `X` is exactly:
+
+1. `platform-runtime/scripts/x_runtime.py` — subclass `Runtime`, implement each operation or
+   decline via `no-op`; declare X's layout roots inside it.
+2. `marketplace/targets/x/` — subclass `TargetBase`, plus a single `mapping.json` declaring X's
+   `tool_permissions`, `model_map`, and body-transform rules (`directive_rewrites`,
+   `slash_rewrites`, `body_idiom_rewrites`); the shared `body_transform_engine` applies that
+   data, so X writes no transform code.
+3. Register X once on each side (the runtime registry in `platform_runtime.py`, the build
+   `TARGET_REGISTRY`).
+
+Nothing else: no general skill body, no shared script, and no other target may need editing.
+
 Anti-patterns (a new target must never require these):
 
 - **Target enumeration in core or contracts** — no `if target == "claude"/"opencode"` in a
