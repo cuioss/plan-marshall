@@ -233,6 +233,15 @@ Exactly these paths, and nothing else:
   `test/finalize-step-sync-plugin-cache/`
 - `test/pm-dev-frontend/`, `test/pm-dev-frontend-cui/`, `test/pm-dev-java/`, `test/pm-dev-java-cui/`,
   `test/pm-dev-oci/`, `test/pm-dev-python/`, `test/pm-documents/`, `test/default/`
+- `test/pm-code-intelligence/` — **newly assigned to this plan.** It was added to the tree after the
+  epic was authored, belonged to no plan, and **four consecutive sibling runs each halted on it**,
+  escalated, and were told to proceed; the disposition was about each run rather than about the
+  partition, so the next run halted again. It is a `pm-*` bundle test directory, which is the shape
+  this plan already owns. It is one module of ~260 lines, within budget, so the work it brings is
+  D3's preamble half and nothing else — and **that one finding is not fixable here**: the module
+  loads a bundle skill's root-level `extension.py`, which `conftest.load_script_module` cannot
+  address, so the remedy the rule's own message names does not apply. **Record it against plan
+  `090` § D2 and move on** rather than working around it.
 - `test/test_runner_falsifiability.py`, `test/test_conftest_discipline.py`
 
 ⚠️ **Plan `110` also edits inside this surface** — `test/sync-plugin-cache/`,
