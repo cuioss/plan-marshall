@@ -106,7 +106,11 @@ def valid_aspect_keys() -> set[str]:
 #   block's counts were taken over.
 # * ``counts`` — the populated count block ``direct-gh-glab-usage.py`` emits
 #   beside an empty ``findings`` list, whose ``total`` / ``by_surface`` entries
-#   name what was counted.
+#   name what was counted. It is also a documented member of the fragment schema
+#   every DOMAIN-contributed aspect follows (``extension-api/standards/
+#   ext-point-retrospective.md`` names the shape as ``status``, ``aspect``,
+#   ``counts``, ``findings[]``), so an extension aspect that honours its own
+#   contract is attributed by construction.
 #
 # A fragment is read through this set by ``compile-report.unattributed_zero_sections``.
 ZERO_ATTRIBUTION_FIELDS: tuple[str, ...] = (
