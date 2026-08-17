@@ -156,14 +156,27 @@ discipline inverted into something stronger: no fixture in that population can e
 the producer cannot emit, and a future change to the state machine reaches all of them without an
 edit.
 
-**Stated exclusions** — three modules stub the seam directly rather than through the shared helper,
+**Stated exclusions** — some modules stub the seam directly rather than through the shared helper,
 and each is handled individually rather than left out:
 
 | Module | Why it bypasses the shared helper | Disposition |
 |---|---|---|
 | `tools-file-ops/test_plan_context_resolver.py` | It tests the resolver itself, so routing through a helper that calls the resolver's own deriver would be circular. | Rewritten: its local stub takes the state directly, and the endorsing test is replaced. |
 | `manage-solution-outline/test_get_module_context.py` | It stubs one layer lower — the subprocess boundary — deliberately, to keep the real parser in play. | Its payload builder now derives the `worktree_state` line through the production function. |
-| `tools-integration-ci`, `workflow-integration-github`, `workflow-integration-gitlab`, `script-shared/test_build_execute.py` | Inline `lambda _pid: (True, '/tmp/…')` stubs. | **Left as-is, deliberately.** Each supplies a non-empty path, which the state machine maps to `materialized` — the same tuple they already returned in the old shape's truthy position. They are not misleading and they are not stale; converting them would be churn without a defect. This is an exclusion with a reason, which is what D5 requires — not an unstated omission. |
+| `script-shared` (`test_build_cli`, `test_build_execute`, `test_build_shared`), `tools-integration-ci`, `workflow-integration-github` (two modules), `workflow-integration-gitlab`, `workflow-pr-doctor` | Inline `monkeypatch.setattr` / `patch.object` stubs, each writing its own return tuple. | **Converted.** Every one now calls the shared `worktree_query_result`, which is public for exactly this reason: the seam is stubbed two ways across the suite, and the derivation must have one home regardless of style. |
+| `script-shared/test_extension_base.py` | Writes `status.json` directly rather than stubbing the seam at all. | **Converted.** Its fixtures wrote a `worktree_path` with no `use_worktree` — a shape `manage-status` never produces. They now carry the pair the resolver actually reads. |
+
+⛔ **This section previously recorded the opposite disposition for the inline-stub row, and it was
+wrong.** It read: *"Left as-is, deliberately. Each supplies a non-empty path, which the state machine
+maps to `materialized` — the same tuple they already returned … converting them would be churn without
+a defect."* The first clause is true of the *path*; the claim silently carried it to the *first*
+element, which those stubs return as the boolean `True`, not the string `materialized`. Every one of
+them therefore routed its consumer to the checkout root instead of the stubbed worktree. `./pw verify`
+failed on 12 tests and named them.
+
+The defect worth recording is not the wrong disposition — it is that a **plausible rationale was
+written for an exclusion that had not been tested**. Nothing in this contract catches that: the
+sentence contradicted no document, so no sweep could find it. Only running the thing did. See F16.
 
 ## Findings
 
@@ -186,8 +199,19 @@ Every finding, its source, and its disposition. One row per instance.
 | F13 | Own measurement | The `disabled`-plan footprint widening made a manifest test read this run's own working tree, and can drop `pre-push-quality-gate`. | **Reverted and split out.** See D4 above; carried to the successor spec. |
 | F14 | Own review of a draft test file | `test_qgate_keyword_drift_reads_prose.py` was written with a placeholder class whose two methods asserted `Path() is not None` — vacuous tests that would have passed against any implementation. | **Fixed** before the file was committed; the class was removed. |
 | F15 | Own process | I used a `for` loop in a single Bash call, violating the repository's no-shell-constructs rule. | **Recorded, not undone** — the edit it performed was correct and independently verified. Subsequent multi-file edits went through a single `python3 - <<PY` heredoc instead. |
+| F16 | `./pw verify` | Nine inline seam stubs returned `(True, path)` — a boolean where the seam now yields the published state — so every consumer they routed fell back to the checkout root. **12 tests failed.** | **Fixed.** All nine now call the shared `worktree_query_result`, which derives through the production state machine. |
+| F17 | `./pw verify` | `test_extension_base`'s footprint fixtures wrote a `worktree_path` with no `use_worktree` flag — a `status.json` shape `manage-status` never writes. Pre-fix the resolver read the path alone, so the fixture passed on a shape production cannot produce. | **Fixed.** The fixtures carry the pair the resolver reads. |
+| F18 | `./pw verify` | `test_build_cli` asserted an unmaterialized worktree "is a corrupt-state error" — the fourth characterization test found pinning the defect, in a fourth bundle. | **Fixed.** It asserts the documented checkout fallback. |
+| F19 | Own report review, after F16 | **My own run report carried an invented rationale.** It recorded the inline stubs as a deliberate exclusion "because the state machine maps them to `materialized`" — true of the path, false of the boolean first element the stubs actually return. The reasoning was never run. | **Fixed**, and disclosed in § The characterization corpus rather than quietly overwritten. |
 
 **Rejected findings:** none. No finding surfaced in this run was dismissed.
+
+⭐ **The pattern across F1–F3, F18 and F17 is one defect class, not five instances of carelessness.**
+Four separate bundles each carried a green test asserting that a normal pre-materialization reading is
+an error, and a fifth carried a fixture encoding a metadata shape the producer cannot emit. Each was
+written by someone reading the consumer's behaviour and pinning it faithfully — which is exactly what
+a characterization test is for, and exactly why an under-enumerated one converts a latent bug into a
+certified feature. None of them could have been found by reading the code they guard.
 
 ## Verification
 
