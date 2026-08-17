@@ -86,6 +86,7 @@ Within this lane only, these hard rules are superseded — the tooling they mand
 | Temp files under `.plan/temp/` | The system temp dir (`$TMPDIR`) — never the repository, never `.plan/` |
 | Structured queries first | Not applicable — `architecture` requires the executor; Glob/Grep/Read are used instead |
 | Triage findings via manage-findings + ext-triage | Findings recorded per instance in the run report |
+| Bash: one command per call / no shell constructs | Ordinary shell use, including loops, `&&`/`;`, and heredocs. The rule is the documented basis for the PreToolUse hook's **R1** family, and that hook's context gate fires only inside a plan context — an `execution-context` sub-agent, or a cwd under `.plan/local/worktrees/` — neither of which a lane run has. It is also installed machine-locally into `.claude/settings.local.json`, which a fresh clone does not carry. The rule therefore neither binds nor is enforceable here, and honouring it costs many extra tool calls for nothing |
 
 Two further obligations stated elsewhere in this document do not apply in the lane. **Plugin Cache Sync** is inert there: `/sync-plugin-cache` is a machine-local build step that reads the git-ignored `target/` tree and writes `~/.claude/`, neither of which a fresh clone has or the lane may touch. A lane plan that edits `marketplace/bundles/` therefore **neither performs a sync nor records one as owed** — the merged bundle source is authoritative, and whether a local developer refreshes their own cache is a local-developer concern, not a debt the cloud run tracks. And **No shell file operations** binds with one clarification: `git mv` and `mkdir -p` are permitted for the plan-directory step, since that rule's target is reading and searching file content, which still goes through Read/Glob/Grep.
 
@@ -95,7 +96,7 @@ One narrow documentation-standards exemption applies: a lane **run report** (`do
 
 Because the VM's filesystem does not survive a reclaim, the git remote is the lane's only durable storage: the branch is pushed on creation and after every commit, not once at PR time.
 
-Every other rule — the rest of the documentation standards, the one-command-per-Bash-call discipline — binds in this lane exactly as elsewhere. This carve-out is scoped to `doc/plans/` execution and to nothing else; ordinary work in this repository, including work done in a cloud session that is not executing a `doc/plans/` plan, follows the hard rules unchanged.
+Every other rule — the rest of the documentation standards, and **No shell file operations**, whose remedy (the Read/Glob/Grep tools) is fully available in a cloud session — binds in this lane exactly as elsewhere. This carve-out is scoped to `doc/plans/` execution and to nothing else; ordinary work in this repository, including work done in a cloud session that is not executing a `doc/plans/` plan, follows the hard rules unchanged.
 
 ## Documentation Standards
 
