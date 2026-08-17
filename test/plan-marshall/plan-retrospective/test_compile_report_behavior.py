@@ -339,6 +339,34 @@ class TestZeroReportingSectionNamesItsCheckedSet:
         assert 'Script Failure Analysis' not in written
         assert flagged == ['Direct gh/glab Usage']
 
+    def test_a_fallback_rendered_aspect_is_probed_too(self):
+        # A domain-contributed aspect has no SECTION_SPEC row — build_document
+        # renders it through the generic fallback. Probing only the registry rows
+        # would exclude every such aspect, and those are the newest and least
+        # conventional producers, so they are the population MOST likely to
+        # report a bare zero.
+        fragments = {'_meta': {'mode': 'live'}, 'wrapper-tangle': {'status': 'success', 'findings': []}}
+        written, flagged = self._doc(fragments)
+        assert 'Wrapper Tangle' in written, 'precondition: the fallback must render it'
+        assert 'Wrapper Tangle' in flagged
+
+    def test_a_fallback_rendered_aspect_clears_the_flag_when_attributed(self):
+        fragments = {
+            '_meta': {'mode': 'live'},
+            'wrapper-tangle': {'status': 'success', 'findings': [], 'evaluated_population': 12},
+        }
+        written, flagged = self._doc(fragments)
+        assert 'Wrapper Tangle' in written
+        assert 'Wrapper Tangle' not in flagged
+
+    def test_a_spec_row_wins_over_a_fallback_key_synthesizing_the_same_heading(self):
+        # `_heading_to_fragment_key` mirrors build_document, whose fallback loop
+        # skips keys that already carry a static row. Pinning the precedence so a
+        # later edit cannot silently repoint a heading at the wrong fragment.
+        mapping = _cr._heading_to_fragment_key({'artifact-consistency': {}, 'wrapper-tangle': {}})
+        assert mapping['Artifact Consistency'] == 'artifact-consistency'
+        assert mapping['Wrapper Tangle'] == 'wrapper-tangle'
+
     def test_probe_bites_only_on_the_defect_it_names(self):
         # Mutation check: the SAME fragment with its attribution restored must
         # stop being flagged. A probe that flagged both (or neither) would be

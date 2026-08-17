@@ -239,6 +239,31 @@ def _names_checked_set(fragment: Any) -> bool:
     return False
 
 
+def _heading_to_fragment_key(fragments: dict[str, Any]) -> dict[str, str]:
+    """Return the heading→fragment-key map ``build_document`` renders under.
+
+    Covers BOTH render paths, because ``build_document`` writes sections through
+    both: the static ``SECTION_SPEC`` rows, and the generic fallback that emits a
+    registered-but-unlisted aspect (a domain-contributed key such as
+    ``wrapper-tangle``) under a heading synthesized from its key. A map built
+    from ``SECTION_SPEC`` alone would silently exclude every fallback-rendered
+    aspect from any probe over the written set — and those are the newest and
+    least conventional producers, so excluding them omits exactly the population
+    most likely to be non-conforming.
+
+    A ``SECTION_SPEC`` heading wins over a fallback key that synthesizes the same
+    heading, mirroring ``build_document``, whose fallback loop skips every key
+    already carrying a static row.
+    """
+    mapping = {heading: fragment_key for heading, fragment_key, _trigger in SECTION_SPEC}
+    spec_keys = set(mapping.values())
+    for aspect_key in sorted(fragments):
+        if aspect_key.startswith('_') or aspect_key in spec_keys:
+            continue
+        mapping.setdefault(_heading_from_aspect_key(aspect_key), aspect_key)
+    return mapping
+
+
 def unattributed_zero_sections(written: list[str], fragments: dict[str, Any]) -> list[str]:
     """Return the written sections whose zero cannot be told from *could not look*.
 
@@ -251,20 +276,28 @@ def unattributed_zero_sections(written: list[str], fragments: dict[str, Any]) ->
     report lost) an unattributed zero loses nothing, so it does not raise the
     run's status. Conflating the two would blur a content-loss signal with an
     ambiguity signal, which is the class of defect this partition exists to
-    surface. Returned in ``SECTION_SPEC`` order.
+    surface.
+
+    The population is every WRITTEN section — both render paths (see
+    :func:`_heading_to_fragment_key`) — walked in document order, deduplicated.
+    A section the document does not carry reported nothing, so it cannot leave a
+    zero ambiguous.
 
     Args:
-        written: Headings the document actually carries.
+        written: Headings the document actually carries, in document order.
         fragments: The fragment bundle the document was built from.
 
     Returns:
         The subset of ``written`` whose fragment reports zero without naming
         what it checked.
     """
-    written_set = set(written)
+    mapping = _heading_to_fragment_key(fragments)
     result: list[str] = []
-    for heading, fragment_key, _trigger in SECTION_SPEC:
-        if heading not in written_set:
+    for heading in written:
+        if heading in result:
+            continue
+        fragment_key = mapping.get(heading)
+        if fragment_key is None:
             continue
         fragment = fragments.get(fragment_key)
         if _reports_zero(fragment) and not _names_checked_set(fragment):
