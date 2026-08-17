@@ -1,6 +1,6 @@
 # Run report — 460-audit-ledger-reader-reads-undatable-zero-as-measured (run 01)
 
-**Date (UTC):** 2026-08-16    **Branch:** `claude/audit-ledger-undatable-zero-ef7sl5`    **PR:** TBD    **Outcome:** TBD
+**Date (UTC):** 2026-08-16    **Branch:** `claude/audit-ledger-undatable-zero-ef7sl5`    **PR:** [#1278](https://github.com/cuioss/plan-marshall/pull/1278)    **Outcome:** completed
 
 ## Skills loaded
 
@@ -104,14 +104,22 @@ paragraph opening "**The ledger's four context-load columns read three ways.**" 
 contributes-nothing cases. Both corrected. This is a sibling surface inside the same skill that the
 diff would otherwise never have opened.
 
-**`data-format.md` was deliberately NOT edited**, per the plan's out-of-scope condition. Its line 893
-reads: *"The `plan-retrospective` reader (`_parse_dispatch_boundary_file`) implements this row-level
-provenance gate. A reader that does not recover provenance still performs the cell read above, but
-reads an undatable `0` as a measured zero."* Both sentences remain **true** after this change — the
-first is an existence claim about the retrospective reader, the second a general conditional about the
-class of readers that do not recover provenance. Neither asserts that `audit.py` is in that class. The
-plan permits a note naming `audit.py` as a second provenance-recovering reader *only if* the wording
-became inaccurate; it did not, so the standard is left alone.
+**`data-format.md`'s PROVENANCE WORDING was deliberately not changed**, per the plan's out-of-scope
+condition — though the file *is* edited by this PR, in its lock-step list (see R2-3; the two are
+different paragraphs and this run reached opposite conclusions about them, for different reasons).
+
+The untouched paragraph is line 893: *"The `plan-retrospective` reader (`_parse_dispatch_boundary_file`)
+implements this row-level provenance gate. A reader that does not recover provenance still performs the
+cell read above, but reads an undatable `0` as a measured zero."* Both sentences remain **true** after
+this change — the first is an existence claim about the retrospective reader, the second a general
+conditional about the class of readers that do not recover provenance. Neither asserts that `audit.py`
+is in that class, so neither became inaccurate, and the plan's carve-out therefore does not license
+editing them.
+
+The paragraph that *was* edited is line 899, the lock-step obligation list, whose description of the
+audit-side surface **did** become inaccurate: it named only a constants tuple, leaving a future edit to
+§ *Provenance of a measured zero* with no pointer to the gate this change added. That is the carve-out's
+condition met, and the edit is count-preserving for the reason R2-3 records.
 
 ### D3 — regression tests
 
@@ -258,15 +266,63 @@ era-stamp reasoning and the ruff-convention citation.
 
 ### CI
 
-_(pending — recorded after the PR's checks report.)_
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| CI-1 | GitHub Actions on PR #1278 | None. `verify / gate`, `generate-check`, `dependency-review`, and `review / review` all concluded `success`; `verify / verify` is the long required job. | **Nothing to fix.** State at the time of arming is recorded under Merge gate. |
 
 ### PR review
 
-_(pending — recorded after the review surfaces are read.)_
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| PR-1 | `cuioss-review-bot` (issue-comment surface, PR Reviewer Guide) | "Deferred zero fields omitted from output": claims `totals` is a `defaultdict(int)`, so a deferred-zero key is never inserted, and the return comprehension over `totals.items()` therefore drops datable zeros instead of emitting them as `0`. | **Rejected — the premise is false, and refuted by passing tests.** `audit.py:6773` builds `totals` with `dict.fromkeys(_BC_LEDGER_FIELDS, 0)`, not a `defaultdict`: every field key exists at `0` from construction, so `+= 0` being skipped cannot remove a key. `measured` is the sole gate on presence. The predicted behaviour is directly covered by `test_nonzero_fingerprint_keeps_sibling_measured_zeros` and `test_unmeasured_token_fingerprint_keeps_sibling_measured_zeros`, both of which assert a datable zero is present as `0` and would raise `KeyError` under the described defect; both pass. Replied on the thread with the citation and the test run. No change made. |
+
+| PR-2 | `coderabbitai` (inline review thread, Major) | "Replace the manual provenance-schema copies with an enforced contract": four surfaces restate the ledger schema, the check doc is in no list, and no mechanism derives them from the standard or detects all drift. Proposes build-generating the schema, a machine-checked surface inventory, and deriving the test's column literal. | **Rejected for this plan; replied on the thread.** Three of the four remedies conflict with deliberate documented choices: the hand-mirror is architectural (`analyze-logs.py:977-996` states the readers run in different processes and cannot import the writer's constants; `audit.py` is outside the marketplace tree entirely), and deriving the test's column literal would make the test **unable to falsify a drift** — the repo's own standard says *"exact literal where the literal IS the contract"*. The fourth (registering the check doc) is already residue, with its blocker stated. The underlying risk is real and worth its own cross-bundle plan; it is far outside a one-reader fix. |
+| PR-3 | `coderabbitai` (inline review thread, Minor) | The report says `data-format.md` "was deliberately NOT edited" while this PR *does* edit its lock-step section, which the report itself records elsewhere. | **Accepted and fixed.** A genuine self-contradiction: the sentence was true when round 1 wrote it, and round 2's R2-3 edited line 899 without revisiting it. The paragraph now separates line 893 (provenance wording — not changed, and why) from line 899 (lock-step list — changed, and why). |
+
+Worth recording that PR-1 is the direction the change is *designed* not to break: the two negative
+controls exist precisely to catch an over-correction that drops datable zeros, and they were verified
+non-vacuous against a mutant that does exactly that. The reviewer named a real failure mode; the suite
+already guards it.
+
+⛔ **PR-3 is the sharpest finding of the whole run, and no internal check caught it.** It is the same
+defect class this plan exists to remove — a claim made false by a later change, at a site the fix did
+not touch — reproduced **in the run's own record**. Both verification rounds missed it because a
+verification sub-agent reads the code; the contradiction lived entirely between two paragraphs of the
+report. The contract already names this ("the run report is part of that surface… re-read your own
+dispositions against the artifacts"), and this run still walked past it twice. It took an external
+reviewer to see it.
 
 ## Reviewer participation
 
-_(pending)_
+Population derived from configuration, not transcribed: the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc
+(`coderabbit.md`, `pr-agent.md`, `sourcery.md`), cross-named by `.github/workflows/pr-agent.yml`.
+**M = 3.** Each verdict is read from the stored comment **bodies** across all three surfaces
+(`get_comments`, `get_reviews`, `get_review_comments`), never from a check-run state.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
+|---|---|---|---|
+| `cuioss-review-bot` | `reviewed` | — | Published a *PR Reviewer Guide* against the diff on the issue-comment surface, carrying one finding ("Deferred zero fields omitted from output") plus "PR contains tests" and "No security concerns identified". Dispositioned as PR-1 above. |
+| `sourcery-ai` | `rate-limited` | `yes` | Review-summary body: *"you have reached your weekly rate limit of 500000 diff characters. Please try again later or upgrade…"* — a **weekly cumulative** quota, not a per-diff size ceiling, so it clears with the week; the notice names no clearing time. Its `Sourcery review` check-run concluded `skipped`, which is **not** the evidence — the body is. |
+| `coderabbitai` | `reviewed` | — | Published a review-summary body ("Actionable comments posted: 2") plus **two inline review-thread comments** — PR-2 and PR-3 above. Its review-summary body also notes *"up to 1 review per rolling hour; 0 remain after this review"*, i.e. it is exhausted **after** reviewing, which is not a refusal. |
+
+**Coverage: 2 of 3 `reviewed`.** One reviewer (`sourcery-ai`) was rate-limited; the § Step 8 shortfall
+disclosure is recorded in the Merge gate section below.
+
+⚠ **`coderabbitai` was deliberately NOT recorded early.** For several minutes its only body was the
+auto-generated *"Currently processing new changes in this PR"* note, with no review summary and no
+inline threads — neither `reviewed` nor a refusal. It was carried as in-flight and re-read, rather than
+written down as `silent`, which would have been exactly the false verdict this table exists to prevent:
+it went on to file the run's most valuable finding (PR-3).
+
+⚠ **A check-run state is not a verdict, and this PR shows why twice.** `Sourcery review` concluded
+`skipped` while its body carried a quota refusal; CodeRabbit posts no check at all yet filed two
+actionable comments. Both verdicts here come from bodies.
+
+⚠ **Reading only the conversation surface would have missed both CodeRabbit findings.** Its review
+summary lives under `get_reviews` and its two findings under `get_review_comments`; `get_comments`
+carried only the processing note. A run that stopped at the conversation view would have asserted "all
+comments handled" against one bot finding while two — including the report contradiction — sat unread.
 
 ## Cost
 
@@ -281,13 +337,127 @@ _(pending)_
   orchestrator-plus-agent dispatch tree under plan-marshall's per-task billing boundary. This run has no
   such boundary — it is one interactive session — so no parity figure is offered.
 
+## Merge gate
+
+State read back from the PR, never inferred from the command that produced it.
+
+**Condition 1 — required contexts.** `mergeable_state: blocked` at the time of writing, from
+`pull_request_read method: get` (the MCP payload names this field `mergeable_state`, lowercase — there
+is no `mergeStateStatus` key on this path). The blocker is derived from *required ∩ non-green*, not
+from whichever pending status is loudest: `verify / verify` is `in_progress`, and it is the long
+required job. Everything else has concluded: `verify / gate`, `generate-check`,
+`dependency-review / dependency-review`, and `review / review` all `success`; `Sourcery review` and
+`auto-merge` `skipped` (both **non-required** — disclosed, never held for).
+
+⚠ **Armed with the required check still in flight, deliberately.** Committing this report re-triggers
+`verify` by construction — the report must land *in this PR* (condition 3), and the branch locks the
+instant it queues — so the required check is necessarily `in_progress` on the report SHA at arm time.
+§ Step 8's carve-out covers exactly this: on a merge-queue repository the queue admits a PR only when
+the ruleset's required contexts pass and re-verifies on `merge_group`, so arming defers the
+required-green gate to the queue rather than merging anything red.
+
+**Condition 2 — every comment handled.** Three findings across three surfaces, all dispositioned and
+all answered on the thread: PR-1 (rejected, premise refuted by citation and a test run), PR-2
+(rejected for this plan, with the three conflicting remedies named), PR-3 (**accepted and fixed** — the
+report's own self-contradiction). No open, unaddressed comment.
+
+**Condition 3 — the report is this PR's last pre-merge commit**, committed before arming.
+
+**Condition 4 — review-coverage shortfall, DISCLOSED (not a gate).**
+
+> Review coverage: **2 of 3** — `cuioss-review-bot` reviewed; `coderabbitai` reviewed (2 actionable
+> comments); `sourcery-ai` **rate-limited on a weekly 500 000 diff-character quota, reopens: yes**
+> (a cumulative weekly limit, not a per-diff ceiling — it clears with the week, though the notice names
+> no time). Merging on 2-of-3.
+
+The shortfall changes what this run **says**, never whether it merges. Arming proceeded exactly as full
+coverage would.
+
+**Landing.** Recorded to the operator from the PR merge event, not embedded here — the squash SHA does
+not exist until after this commit is written.
+
 ## Contract check (Step 9)
 
-_(pending)_
+**GitHub access path:** the GitHub MCP server (the cloud path). No `gh` CLI is present in this session.
+**Branch form:** harness-assigned (`claude/audit-ledger-undatable-zero-ef7sl5`), kept as-is per § Step 2;
+this run created no branch.
+**Plugin cache sync:** not performed and **not owed** — a machine-local build step a cloud run never
+records as debt (§ Scope and precedence).
+
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | **Done** | Named in *Skills loaded*; all obtained by bundle path, none unavailable |
+| 2 Branch | **Done** | On `origin`; harness-assigned name kept. Pushed as the run's first action, before any edit — the tree was verified clean first |
+| 3 Plan directory | **Done** | `doc/plans/truthful-signals/460-…/plan.md` exists and opens with the first-instruction block (re-checked against the moved file at Step 9, not assumed from Step 3) |
+| 4 Implement | **Done** | 9 commits, every one carrying the `Co-Authored-By: Claude` trailer (verified by `git log --format=%(trailers:…)`, not by recollection); D0–D3 all addressed |
+| 4 Per-commit gate | **Done** | Each `*.py`-touching commit preceded by `./pw quality-gate` reporting `Success: no issues found in 410 source files`, `All checks passed!`, `SPDX-header check passed`, `issues[0]`. The plan-directory commit is a `git mv` and needed none |
+| 4 Pushed | **Done** | `git status -sb` reports no `ahead`; every commit pushed immediately |
+| 5 Build gate | **Done** | Git-derived `*.py` verdict and both runs recorded, with the second named authoritative — including the round-2 run that went **red** on ruff `I001` and was fixed |
+| 6 Verification sub-agent | **Done, stopped by judgement** | Two rounds; 9 round-1 and 6 round-2 findings, each with a disposition. See the disclosure below |
+| 7 PR cycle | **Done** | PR #1278; all three comment surfaces read (`get_comments`, `get_reviews`, `get_review_comments` — the last empty); the one finding dispositioned and answered on the thread; participation table carries a verdict and a `Reopens?` value per reviewer |
+| 8 Merge gate | See *Merge gate* | Conditions 1–3 and the condition-4 disclosure recorded there |
+| 8 Bridge | **Done** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan's directory touched. The one edit outside the plan directory that is not a deliverable file (`data-format.md`) is a **declared-deliverable** lock-step correction, not a record |
+| 9 This check | **Done** | This table |
+| 9 What have we learned | **Done** | One change proposed to the operator below |
+
+⛔ **The verification loop was STOPPED BY JUDGEMENT at round 2, not run to a clean round.** Disclosed
+per § Step 6 rather than reported as convergence. The four conditions were met: no round-2 finding
+changed code behaviour, a test's meaning, or a deliverable's verdict (all six were prose, a docstring, a
+documentation pointer, and the report); the code was verified by something stronger than another read
+(a differential run of the whole check against a pre-fix reader, plus four mutants — pre-fix,
+over-correction, file-level fingerprint, and positivity — each with an identified unique kill); and the
+findings both declined and narrowed to the run's own prose. **This document should be assumed to still
+contain prose residue of the kind round 2 found** — an explanatory clause asserting a mechanism that
+holds in the case at hand but does not generalise.
+
+**Tree claims re-verified at Step 9, not carried from when they were written.** `.plan/` now holds
+`execute-script.py`, `local`, `marshal.json`, `project-architecture`, and `temp` — the build gate
+created several of these during the run. Nothing in this report claims otherwise; the entry is here
+because the contract requires filesystem claims to be re-read at the end rather than trusted, and this
+tree did change under the run.
 
 ## What have we learned (Step 9)
 
-_(pending)_
+**One change is proposed, and it is NOT self-approved or shipped here.** Per § Step 9 it is presented to
+the operator with this run's evidence; on approval it ships as a separate `chore/` PR touching only the
+skill, never folded into this plan's PR.
+
+**Proposal — red-against-pre-fix is not evidence that a test pins its stated invariant.**
+
+*Evidence from this run.* `test_a_fingerprinted_row_does_not_date_its_neighbour` was written to pin the
+gate's per-row scope, its docstring asserting *"the gate is per ROW, never per file"*. It **was** red
+against the pre-fix reader, so it cleared the plan's "seen red first" bar and this run recorded it as a
+pinned direction. Round 1 of the verification sub-agent refuted that: under a file-level-fingerprint
+mutant (`datable` hoisted out of the row loop so it accumulates), the test **passed** — along with every
+other gate test — because its fingerprint-free row was written first, so the accumulating flag was still
+unset when that row was read. The test detected the *old* defect and was blind to the *named* one. That
+is not a slip in this one test; it is a structural gap: red-against-pre-fix proves a test discriminates
+the pre-fix behaviour, which is a different claim from "this test would fail if the invariant its
+docstring names were violated". The two coincide only when the docstring claims exactly "not the old
+behaviour".
+
+*Concrete proposed edit* — in `§ Step 6`, alongside the existing per-round obligations:
+
+> **A test whose docstring names a MECHANISM or a SCOPE is verified against a mutant of that mechanism,
+> not only against pre-fix code.** "Seen red first" establishes that the test discriminates the
+> behaviour being replaced; it establishes nothing about a stronger claim the docstring makes — "per
+> row, never per file", "fails closed", "per column, independently". Those are different propositions,
+> and a test can satisfy the first while being blind to the second, most often because its fixture
+> orders the inputs so the claimed failure mode cannot arise. So: name the mutant the docstring implies,
+> build it, and confirm the test fails under it. Where a mutant is impractical, say in the report that
+> the claim rests on inspection.
+
+*Why the contract does not already cover this.* § Step 6 names mutation testing only as a **convergence
+condition** ("a mutation test that proves a new guard non-vacuous") — a property of the *round*, not an
+obligation on each mechanism-claiming test. And the neighbouring rule about untested additions covers a
+field with *no* test, not a test that exists, is red-first, and still does not pin its claim. This run
+produced the missing case.
+
+**Not proposed, but worth recording: two contract rules earned their place this run.** The
+*invented-rationale* rule caught R2-1 — a clause this run wrote to explain a fix, asserting a mechanism
+that holds only in the all-undatable case, with the run's own test as the counterexample. And the
+*enumeration-is-a-figure* rule caught S-2, a "Two fixture-backed companions" lead-in the new fixture
+made stale. Neither needs changing.
 
 ## Residue
 
