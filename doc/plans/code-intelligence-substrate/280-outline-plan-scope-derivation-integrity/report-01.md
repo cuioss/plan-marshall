@@ -1,7 +1,7 @@
 # Run report — 280-outline-plan-scope-derivation-integrity (run 01)
 
 **Date (UTC):** 2026-08-17    **Branch:** `claude/code-intelligence-substrate-scope-qgljp1`
-**PR:** _pending_    **Outcome:** completed
+**PR:** [#1283](https://github.com/cuioss/plan-marshall/pull/1283)    **Outcome:** completed
 
 ## Skills loaded
 
@@ -58,18 +58,30 @@ Commits `5433d73` (implementation), `df1099c` (tests).
 
 | Clause | State |
 |---|---|
-| A read-only reference file must not flip a bucket | **Done.** `_plan_parsing.deliverable_write_set` names the authoritative write-set (`intent != read`). The `module_testing` check reads it. The `<!-- bucket: X -->` comment is extracted by `extract_declared_bucket`, carried on the deliverable record as `declared_bucket`, and adjudicated against the write-set in **both** directions by `_check_declared_bucket`. |
+| A read-only reference file must not flip a bucket | **Done.** `_plan_parsing.deliverable_write_set` names the authoritative write-set (`intent != read`). The `module_testing` check reads it. The `<!-- bucket: X -->` comment is extracted by `extract_declared_bucket`, carried on the deliverable record as `declared_bucket`, and adjudicated against the write-set by `_check_declared_bucket` — in the one direction that layer can prove; see the scope decision below. |
 | A change type must be composed across deliverables | **Dropped — closed at HEAD.** See D0 row 5. |
 | A drift check must read the analysis prose | **Done.** `_load_deliverables` now returns a `number → prose` map built from `split_deliverable_blocks`, and `_build_haystack` folds it in. |
 
-**Scope decision inside D1, disclosed rather than absorbed.** `_check_declared_bucket` adjudicates
-the **documentation axis only** — `documentation_only` versus everything else. The remaining five
-buckets separate production from test from config, which is a build-system-owned judgement
-(`BuildExtensionBase.classify_paths`) and not adjudicable from paths alone at this layer. Approximating
-it here would install a second, weaker classifier competing with the aggregator — the defect the check
-exists to catch. The documentation axis is the one the read-only-reference flip actually bites on, and
-it is owner-less (`_manifest_core._is_documentation_path`), which is why it is delegated rather than
-restated.
+**Scope decision inside D1, disclosed rather than absorbed — and corrected once.**
+`_check_declared_bucket` adjudicates **one** contradiction: a non-`documentation_only` bucket over a
+write-set in which every path is documentation by suffix. That direction is *provable* at this layer,
+because stage 1 of `_classify_paths_via_extensions` splits doc paths out before any build extension
+runs, so no other role can be claimed and the aggregator's bucket is necessarily
+`documentation_only`. It is also exactly the shape a read-only reference produces.
+
+The converse — a `documentation_only` bucket over a write-set containing a non-doc path — is **not**
+adjudicated, because it is not decidable here: infrastructure config collapses to
+`documentation_only` (the `config` role is excluded from the plan-wide collapse), a template takes
+the role of what it renders into, and a build extension may itself claim a path as `config`.
+
+⛔ **The first version of this check DID adjudicate that converse, and it was wrong** — it rejected
+three real shapes the aggregator resolves to `documentation_only`, as an *error*, which blocked the
+phase-3 gate on outlines whose bucket was exactly what the classifier mandates. Its docstring
+compounded this by asserting `documentation_only` is "the only bucket checkable without the build
+extensions", which is false — two further owner-less predicates in the same module need no extension
+either. A check written to prevent a second, weaker classifier competing with the aggregator had
+become one. Found by the verification sub-agent (F21, F22), confirmed by executing the aggregator on
+each shape, and fixed.
 
 The `module` field named in D1's headline was **not** changed. Module derivation was not confirmed
 defective at HEAD, and the plan's claim-label table marks only the archetype as observed, not that
@@ -323,11 +335,87 @@ _To be completed from the PR's three comment surfaces before the merge gate._
 
 ## Contract check (Step 9)
 
-_To be completed as the final pre-merge commit._
+Re-read against what actually happened, confirming both that each step ran and that its artifact
+exists.
+
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | **Done** | Named in § Skills loaded, with the route each was obtained by and the reason each conditional one was or was not loaded. |
+| 2 Branch | **Done** | `claude/code-intelligence-substrate-scope-qgljp1` exists on `origin`. **Harness-assigned form, kept as-is** per the contract — this run created no branch, so the closed prefix set does not govern it. It was pushed before the first edit, and `git ls-remote` was checked rather than assumed. |
+| 3 Plan directory | **Done** | `doc/plans/code-intelligence-substrate/280-outline-plan-scope-derivation-integrity/plan.md` exists, moved with `git mv` (`R100`, history preserved, `{NNN}` prefix intact), and **opens with the first-instruction block** — re-checked against the moved file, not assumed from the source. |
+| 4 Implement | **Done** | Six commits, every one carrying the `Co-Authored-By: Claude` trailer and no "Generated with Claude Code" footer — verified by reading the trailers back out of the log. Deliverables addressed per § Deliverables. |
+| 4 Per-commit gate | **Done** | Every `*.py`-touching commit was preceded by a clean `./pw quality-gate`, read from the tools' own lines (`ruff … All checks passed!`, `mypy … Success: no issues found in 410 source files`, `SPDX-header check passed`) because the direct-`./pw` path emits no TOON log. The two gate-exempt points were Step 2's initial push and Step 3's `git mv`. |
+| 4 Pushed | **Done** | Pushed after every commit; `git status -sb` reports no `ahead`. This mattered: **the container was reclaimed and restarted mid-run.** The work survived only because it was on the remote. |
+| 5 Build gate | **Done** | § Build gate records the git-derived `*.py` verdict (non-empty ⇒ full gate) and the outcome, including that the **first `./pw verify` failed** with 12 named failures while the wrapper exited 0. |
+| 6 Verification sub-agent | **Done** | § Verification records the dispatch, its 12 findings (F20–F32), the disposition of each — all accepted — and, explicitly, that the loop was **stopped by judgement after one round** rather than run to a clean round. |
+| 7 PR cycle | **Done for creation; the comment cycle is in progress at the time of writing** | PR [#1283](https://github.com/cuioss/plan-marshall/pull/1283). No `skip-bot-review`: the diff touches `*.py` and `marketplace/bundles/**`, and a skill is code. Reviewer participation is recorded in § Reviewer participation from all three comment surfaces. |
+| 8 Merge gate | **See § Reviewer participation and the operator disclosure** | Conditions 1–3 assessed there. |
+| 8 Bridge | **Done** | Only three paths under `doc/plans/` changed, all of them deliverables: this plan's own `plan.md` (moved) and `report-01.md`, plus the arm-A successor spec the split mandated. **No status file, no ledger, no other plan's directory.** Verified with `git diff --name-status origin/main...HEAD -- doc/plans`. |
+| 9 This check | **Done** | This table. |
+| 9 What have we learned | **Done** | Below. |
+
+**Plugin cache sync:** not performed and **not owed**. `/sync-plugin-cache` reads the git-ignored
+`target/` tree and writes `~/.claude/`; a cloud run has neither and may touch neither. The merged
+bundle source is authoritative.
+
+**Re-verified tree claims.** The `.plan/` directory in this container is *not* the pristine clone
+state: the build gate created `.plan/execute-script.py`, `.plan/temp/` and `.plan/local/`. That is
+noted because it is a filesystem claim no gate can catch — the suite stays green while a sentence
+about the tree goes false. Nothing in this report asserts a `.plan/` shape, so there was nothing to
+correct; the check was still made rather than skipped.
+
+**GitHub access path:** the **GitHub MCP server**. There is no `gh` CLI in this session.
 
 ## What have we learned (Step 9)
 
-_To be completed as the final pre-merge commit._
+**One contract change is proposed, and this run produced the evidence for it.**
+
+### Proposal: the beyond-diff sweep must name *un-runnable* rationales as its own failure mode
+
+**What happened.** The contract's § Step 6 already warns that "a rationale you *wrote* is a claim
+about code you may not have read", and it is right. This run committed that defect **twice**, and
+neither instance was caught by any sweep:
+
+1. **In the run report (F19).** I justified leaving nine test stubs unconverted with: *"each supplies
+   a non-empty path, which the state machine maps to `materialized` — the same tuple they already
+   returned."* True of the path; false of the boolean first element the stubs actually return. Caught
+   only by `./pw verify` failing 12 tests.
+2. **In shipped code (F22), inside the check written to prevent exactly this class.**
+   `_DOCUMENTATION_ONLY_BUCKET`'s comment asserted it "is the **only** bucket whose claim is
+   checkable without the build extensions". Two further owner-less predicates in the same module need
+   no extension either. The docstring one line below correctly warned that approximating the
+   aggregator "would be a second, weaker classifier competing with the aggregator, which is the
+   defect this check exists to catch" — and the function was one. Caught only by the verification
+   sub-agent.
+
+**Why the existing rule did not catch either.** The contract's remedy is *"name the file and symbol
+that makes it true and confirm it there, or delete the clause"*. Both of my clauses named a
+**mechanism I had already read** — the state machine, the doc predicate. Confirming them "at the
+site" felt done, because the site existed and said something compatible. What neither clause had was
+an **execution**: nobody ran `derive_worktree_state` on the stub's actual arguments, and nobody ran
+`_classify_paths_via_extensions` on a config-only write-set. The moment either was executed, the
+claim collapsed.
+
+**The concrete proposed edit**, to § Step 6, appended to the "A rationale you *wrote*" block:
+
+> ⭐ **If the clause asserts what a function RETURNS, run the function.** Reading the callee and
+> finding it compatible is not confirmation — it is the same act that produced the claim. A rationale
+> of the form "X maps to Y", "this shape resolves to Z", "that predicate covers W" is a prediction
+> about an executable, and the tree can settle it in one call. Execute it on the *actual* argument
+> the clause is about, not on a representative one: both defects this rule comes from were claims
+> that held for the value the author had in mind and failed for the value the code passes.
+
+**Why it is worth a rule rather than a note.** The two instances are one contract-run apart and sit
+at opposite ends of the trust scale — a disposition table nobody would re-derive, and a docstring
+inside the guard for this very class. Both were cheap to falsify (one function call) and expensive to
+find (a full build; a dispatched sub-agent). And the second shows the failure survives *knowing about
+it*: the sentence violating the rule was three lines from the sentence stating it.
+
+⛔ **Not self-approved.** Presented to the operator for a decision. On approval it ships as a
+**separate** PR on its own `chore/` branch, touching only the skill, with no `skip-bot-review` —
+a skill is code. It is deliberately kept out of this plan's PR: two changes with different review
+audiences in one diff means neither gets read properly, and it would couple a contract amendment to
+whether this plan lands.
 
 ## Residue
 
