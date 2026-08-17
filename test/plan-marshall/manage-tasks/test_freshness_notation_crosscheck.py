@@ -149,7 +149,8 @@ def _run(plan_context, monkeypatch, tmp_path, entries, plan_id) -> dict:
     monkeypatch.setattr(_freshness_mod, 'compute_worktree_sha', lambda _root: _CURRENT_SHA)
     ledger_path = _write_ledger(tmp_path, entries)
     monkeypatch.setattr(_freshness_mod, 'resolve_ledger_path', lambda: ledger_path)
-    return cmd_pre_commit_verify_freshness(Namespace(plan_id=plan_id))
+    result: dict = cmd_pre_commit_verify_freshness(Namespace(plan_id=plan_id))
+    return result
 
 
 @pytest.fixture(autouse=True)
