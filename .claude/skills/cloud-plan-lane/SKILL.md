@@ -589,6 +589,46 @@ mechanism it renamed — and sweep each one's restatements the same way: by **co
 each kind a changed value can take — prose, docs, tests, `*.py` fixtures and stubs — and sweeping for
 each in turn, per the sub-agent instruction above), exactly as you did for the original change.
 
+### Sweep-and-count: a claim is corrected at every site or it is not corrected
+
+⛔ **Before recording a finding as fixed, enumerate every site that states the claim, and correct them
+in one commit.** Not the site the finding named — *every* site. The enumeration is the work; the edit
+is the easy part.
+
+This is not the beyond-diff sweep restated. That one asks *"what did my change make false
+elsewhere?"* — it hunts for **collateral**. This one asks *"where else is the thing I just corrected
+also asserted?"* — it hunts for **the same claim, unfixed**. A run can perform the first perfectly and
+still leave the corrected claim standing in four other places, because those places were never false
+in a new way; they were false all along, and only one of them was pointed at.
+
+⭐ **A fix applied at n−1 of n sites is why a corrected claim keeps reappearing round after round.**
+One run's verification loop measured it directly:
+
+| Round | Findings | Of which were a prior round's fix applied at too few sites |
+|---|---|---|
+| 3 | 11 | 5 |
+| 4 | 13 | 5 — 1-of-3 surfaces, 2-of-7 statements, 1-of-4 enumerations, 1-of-3 |
+| 5 | 6 | 3 |
+| 6 | 4 | 1 |
+
+Its round-4 verifier diagnosed the pattern in one line: *"each round's fix was sound where it landed
+but applied at fewer sites than the claim it corrected spans."* Two rounds later the same run
+corrected a claim **two lines from where the previous round's sweep had stopped**, inside the very
+comments that round had edited.
+
+The mechanical form, and it is cheap:
+
+- **Grep for the claim before fixing any instance of it.** Its distinctive phrase, the value it names,
+  the symbol it cites — then fix the whole set together.
+- **A contract has surfaces, not a site.** When a fix implements a contract another surface already
+  implements, enumerate that contract's surfaces and check each. One run's `unmeasured` contract had
+  three (withhold the counts, suppress the summary metric, flag the downstream coupling); the fix
+  applied one, and a later round found the withheld zero still being persisted and still rendering
+  downstream.
+- **Prefer naming to counting, and never write a count you have not just re-derived.** "The three
+  mechanisms below" stood above four entries at three separate sites in one run — an enumeration that
+  run had already fixed once.
+
 **Sweep the previous round's fixes as a first-class surface, not only the original change.** A
 "round" here is one iteration of this step's dispatch → fix → re-dispatch loop, within a single run —
 not a prior PR and not a previous execution of the plan. By round N the highest-risk text is what
@@ -607,6 +647,42 @@ young, unreviewed, and not yet on anyone's list of consumers to grep for. So bef
   error survived until the round after that. That same round's commit message had already made "with a
   regression test that would have caught it" its stated standard, and then did not apply it to the field
   it was itself adding.
+
+### A guard must not derive its expectation from the code it guards
+
+⛔ **A test written to close a verification finding is itself unverified until it has been shown to
+FAIL against the defect it names.** Write it, then break the code the way the finding describes, and
+watch it go red. If it stays green, it is not a guard — it is a second copy of the implementation
+wearing a test's name, and recording the finding as closed on its strength is a false clean signal.
+
+The failure has a specific and recurring shape: **the guard computes its expectation with the very
+function whose blind spot it exists to detect.** Both sides then agree by construction, and the
+contradiction is invisible to the assertion. One run wrote a census guard whose expectation came from
+the production population-reader; a check publishing its population under a name that reader did not
+recognise was judged to have a full population by *both* the code and the test, so the block saying
+`0` and the census saying "a non-empty population was examined" never contradicted each other in the
+suite. The fix was to share the *key set* with production while reading the block *independently* —
+sharing what must not drift, deriving separately what must be checked.
+
+⭐ **Two more shapes from the same run, all three written by a run that had just been told about
+vacuous guards, in a plan whose entire subject was detectors that cannot fire:**
+
+| Shape | How it passed anyway |
+|---|---|
+| The fixture reached the asserted state by a **different route** than the one the test named — a non-shipping plan starved the check via the shipping exclusion, not the axis under test | Mutating the axis under test changed nothing |
+| The assertion was **negative-only** (`X not in row`) | A regression to any *third* value also satisfied it |
+| The test asserted a **splitter** while its name claimed a **coupling** — it called the parser directly instead of proving any pattern could reach it | Deleting the only pattern that reaches that branch left it green |
+
+So, before recording a finding closed:
+
+- **Mutation-test the new guard against the defect the finding names.** Not against a plausible
+  neighbouring defect — that one.
+- **Assert the verdict positively.** `assert x == expected`, never only `assert wrong not in x`.
+- **Check the fixture reaches the state by the route the test claims**, and pin that precondition with
+  its own assertion where a second route exists.
+- **Quantify over the registry, not over a name list.** A guard looping three hard-coded names
+  reproduces the n−1-of-n failure above by construction; one looping the live registry covers a
+  member added later without anyone remembering.
 
 ⛔ **This is not the paragraph above it restated, and reading it as one is how the defect survives.**
 That one says *sweep what your fix made false elsewhere in the tree*; this one says *the fix's own new
@@ -930,6 +1006,29 @@ assign exactly one verdict:
 | `reviewed` | The author published a review artifact **against the diff** — an inline thread comment, or a review/issue-comment body carrying findings (or an explicit "nothing to report" over the diff). |
 | `rate-limited` | The author published **only a refusal/quota notice** in place of a review (e.g. "Review limit reached", "reached your weekly rate limit of … diff characters"). It engaged but did not review this diff. |
 | `silent` | The author published **nothing at all** — no review, no notice. Before recording it, run the recovery check below; an unexplained silence is recorded as such only once that check has been made. |
+| `unreadable` | The surface that would carry this author's body **errored**. Not a statement about the author at all — a statement about the run's access. |
+
+⛔ **An unreadable surface is not an empty one, and `silent` MUST NOT be used for it.** `silent` claims
+a reviewer published nothing; a run whose read failed cannot make that claim, and recording it as
+`silent` manufactures a clean signal out of a tool failure — which is the precise defect this lane
+exists to prevent, committed at its own merge gate.
+
+This is not hypothetical. One run found `pull_request_read` `get_comments` and `get_reviews` returning
+**HTTP 404 on every attempt for hours**, while `get_review_comments` on the same PR read cleanly and
+returned a genuine empty set — so the failure was per-surface, not an outage, and the clean inline read
+was trustworthy where the other two were not.
+
+**Take a positive control before believing any absence.** In that run the PR payload's own
+`comments: 2` (from `pull_request_read` `method: get`) proved bodies existed that the run had never
+read. A count from a surface you *can* read is the cheapest control available; take it, and record what
+it says.
+
+⭐ **`unreadable` blocks merge-gate condition 2, where `rate-limited` and `silent` do not.** The
+shortfall verdicts say a reviewer did not review — condition 2 is about whether every *comment* was
+handled, and a reviewer who filed none leaves nothing to handle. An unreadable surface is different in
+kind: comments may exist and be unhandled, and the run cannot show otherwise. So condition 2 is **not
+established**, and a run that merges anyway is proceeding on an operator's instruction, not on a
+satisfied gate. Report it that way — "overridden", never "met".
 
 A check-run state is never a verdict: a green check can conclude having published nothing, and a
 reviewer that posts no check at all would read as absent on every run. The verdict comes from the
@@ -1219,7 +1318,7 @@ that its artifact exists on disk:
 | 4 Pushed | No unpushed commit remains (`git status -sb` reports no `ahead`) |
 | 5 Build gate | Report states the git-derived Python-change verdict and the build outcome |
 | 6 Verification sub-agent | Findings and dispositions in the report; **which of the two exits ended the loop**, the **round budget declared up front**, and the round that stopped it. On the verifier exit: **the verifier's own last answer** — never the author's verdict — and the **evidence stronger than a read** it rests on, named. On the budget exit: that fact, with everything A forbids **fixed** regardless and what closing each remaining B survivor would take. Either way: each survivor — and each behavioural finding left `deferred` — listed individually with its (a) proof or (b) bound and confirmation it was **re-put to the verifier** in the stopping round; whether the late rounds' findings were **narrower and not merely fewer**; the **residue to assume remains**; and `Outcome` still reporting the deliverables, not the loop (§ Step 6, "When the loop stops") |
-| 7 PR cycle | PR exists; every comment dispositioned in the report; the participation table carries a verdict **and** a `Reopens?` value per reviewer, and every `silent` verdict records what its recovery check found |
+| 7 PR cycle | PR exists; every comment dispositioned in the report; the participation table carries a verdict **and** a `Reopens?` value per reviewer, and every `silent` verdict records what its recovery check found. An `unreadable` verdict means condition 2 is NOT established — the row is reported as **not done**, whatever the merge outcome |
 | 8 Merge gate | Conditions 1–3 met and auto-merge armed. Either `state: MERGED` was confirmed after arming, **or** the session could not self-wake to watch the queue (§ Cloud session affordances) and delegated the landing to the orchestrator's collect — both are completed, neither is partial (§ Step 8). The merge commit is recorded to the operator, not in the pre-merge report |
 | 8 Bridge | No **status or bookkeeping** write landed under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan's directory was touched; a **declared-deliverable** edit to a shared lane doc (e.g. `cloud-bridge.md`, `README.md`, the plan template) is permitted — and the report carries the PR number and per-deliverable outcome the orchestrator will collect from |
 | 9 This check | Its result appended to the report |
@@ -1336,13 +1435,15 @@ cross-named by `.github/workflows/pr-agent.yml` — never a list transcribed her
 reviewer, each verdict derived from the stored comment bodies (§ Step 7), never from a check state or
 a summary:
 
-| Reviewer (`author_login`) | Verdict (`reviewed` / `rate-limited` / `silent`) | Reopens? (`yes` / `no` / `unknown`, blank when `reviewed`) | Body evidence / reason |
+| Reviewer (`author_login`) | Verdict (`reviewed` / `rate-limited` / `silent` / `unreadable`) | Reopens? (`yes` / `no` / `unknown`, blank when `reviewed`) | Body evidence / reason — for `unreadable`, the surface and the error, plus whatever positive control was taken |
 |---|---|---|---|
 | … | … | … | … |
 
 State the coverage as N-of-M, and whether the § Step 8 shortfall disclosure fired and what it said.
 Where a `silent` verdict triggered the recovery check (§ Step 7), record what the check found and
-whether the reviewer was recovered.
+whether the reviewer was recovered. Where a verdict is `unreadable`, state plainly that merge-gate
+condition 2 was **not established** and say whether the merge proceeded anyway on an operator
+instruction — an overridden gate is reported as overridden, never as met.
 
 ## Cost
 What the run cost, each figure carrying its **population** — a bare number that merely looks
