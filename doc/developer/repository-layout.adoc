@@ -71,12 +71,12 @@ Pytest tests for marketplace scripts. Mirrors the `marketplace/bundles/{bundle}/
 
 == `doc/`
 
-The documentation tree you are reading. Three audience-segmented areas plus a resources directory and an out-of-scope refactor archive:
+The documentation tree you are reading. Three audience-segmented areas plus the plan queue and a resources directory:
 
 * `doc/concepts/` — conceptual overviews (Component Model, Planning Workflow, Skill Handling, Execution Context, Effort and Models, Build Management, Security, Audit Trail).
 * `doc/user/` — operator-facing guides (Installation, Getting Started, Commands, Configuration, Efforts, Terminal Title).
 * `doc/developer/` — contributor-facing guides (this page, Build, Marketplace Build, Distribution, Testing, Workflow Verification).
-* `doc/refactor/` — historical refactor plans. Out of active scope; do not edit unless explicitly part of one of those plans.
+* `doc/plans/` — git-tracked plans for the standalone cloud lane; see `doc/plans/README.md` for the layout and run contract.
 * `doc/resources/` — static assets (currently the README hero image).
 
 == `.plan/` (partially tracked)
