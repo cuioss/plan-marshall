@@ -679,7 +679,7 @@ alternative: Use OpenCode's built-in TUI status surface for plan visibility
 
 Bind the running session to `--plan-id` (last-driven-wins) so `session render-title` and `session resolve-plan` resolve the session to that plan. The caller's own `active-plan` cache slot is written unconditionally — no protect-active, no stale-slot reclaim, no plan-dir-exists check — so a session that switches to drive a different live plan rebinds cleanly. No-op on OpenCode (no platform-provided session id).
 
-**Arguments**: `--plan-id <id>` (required), `--session-id <id>` (optional — falls back to `$CLAUDE_CODE_SESSION_ID`)
+**Arguments**: `--plan-id <id>` (required), `--session-id <id>` (optional — falls back to whatever session identifier the active target exposes; on Claude that is `$CLAUDE_CODE_SESSION_ID`, and a target that exposes none returns `no-op`)
 
 **Success (Claude — slot bound)**:
 ```toon
@@ -704,7 +704,7 @@ alternative: Use OpenCode's built-in TUI status surface for plan visibility
 
 Read the running session's bound plan id — the read side of `session bind`. `session render-title` resolves the session→plan binding through the same read path. No-op on OpenCode (no platform-provided session id).
 
-**Arguments**: `--session-id <id>` (optional — falls back to `$CLAUDE_CODE_SESSION_ID`)
+**Arguments**: `--session-id <id>` (optional — falls back to whatever session identifier the active target exposes; on Claude that is `$CLAUDE_CODE_SESSION_ID`, and a target that exposes none returns `no-op`)
 
 **Success (Claude — bound)**:
 ```toon
