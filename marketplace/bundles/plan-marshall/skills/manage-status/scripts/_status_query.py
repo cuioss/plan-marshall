@@ -210,8 +210,10 @@ def _cmd_metadata_append(args: argparse.Namespace) -> dict[str, Any]:
     - field absent      → the field becomes ``[value]``
     - field is a list   → ``value`` is appended, unless already present (append
       is idempotent, so a re-run of the same capture does not grow the list)
-    - field is NOT a list → ``metadata_field_not_a_list`` error, and NOTHING is
-      written. The value is not coerced into a list: silently rewriting a
+    - field is NOT a list → ``metadata_field_not_a_list`` error, and the document
+      is left BYTE-IDENTICAL (``rmw_json`` commits unconditionally, so the
+      mutator returns the state it was handed, untouched — including
+      ``updated``). The value is not coerced into a list: silently rewriting a
       caller's scalar into a container is a type change made on a guess, and a
       field genuinely migrating to a list should be renamed so its plurality is
       visible to every reader.

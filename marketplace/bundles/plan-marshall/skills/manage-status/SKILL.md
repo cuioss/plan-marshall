@@ -284,7 +284,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
 
 Use this for any identity a plan can legitimately hold more than one of — the session identity (`session_ids`) is the canonical case, since every resume adds a session rather than correcting the previous one. A scalar field modelling such an identity does not merely lose precision, it is DESTRUCTIVE: the field has one slot, so the second writer overwrites the first, and the surviving value is well-formed enough that no consumer downstream can tell.
 
-Semantics: an absent field becomes `[value]`; an existing list gains `value` unless it is already present (so a repeated capture is idempotent); a field already holding a NON-list returns `error: metadata_field_not_a_list` and **writes nothing** — the scalar is never silently coerced into a container. The read-modify-write runs inside the same `rmw_json` critical section every other `status.json` writer commits through, so a concurrent append cannot be lost.
+Semantics: an absent field becomes `[value]`; an existing list gains `value` unless it is already present (so a repeated capture is idempotent); a field already holding a NON-list returns `error: metadata_field_not_a_list` and leaves the document **byte-identical** — the scalar is never silently coerced into a container. The read-modify-write runs inside the same `rmw_json` critical section every other `status.json` writer commits through, so a concurrent append cannot be lost.
 
 **Get metadata**:
 ```bash

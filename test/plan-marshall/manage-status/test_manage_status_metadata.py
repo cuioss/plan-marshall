@@ -13,6 +13,7 @@ from conftest import load_script_module
 
 _lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_status_cmd_lifecycle')
 _query = load_script_module('plan-marshall', 'manage-status', '_status_query.py', '_status_cmd_query')
+_core = load_script_module('plan-marshall', 'manage-status', '_status_core.py', '_status_cmd_core')
 
 cmd_create = _lifecycle.cmd_create
 cmd_get_context = _query.cmd_get_context
@@ -255,18 +256,27 @@ def test_metadata_append_order_is_capture_order(plan_context):
     assert _get('append-order', 'session_ids')['value'] == ['a', 'b', 'c']
 
 
-def test_metadata_append_refuses_a_non_list_field_and_writes_nothing(plan_context):
-    """A scalar is never silently coerced into a container."""
+def test_metadata_append_refuses_a_non_list_field_and_leaves_the_document_identical(plan_context):
+    """A scalar is never silently coerced into a container.
+
+    Asserts BYTE-identity rather than just the field's value: ``rmw_json``
+    commits unconditionally, so "the error path changed nothing" is a claim about
+    the whole document — including the ``updated`` stamp — not only the field the
+    caller named.
+    """
     _new_plan('append-scalar')
     cmd_metadata(
         Namespace(plan_id='append-scalar', set=True, get=False, append=False,
                   field='change_type', value='feature')
     )
+    status_path = _core.get_status_path('append-scalar')
+    before = status_path.read_bytes()
+
     result = _append('append-scalar', 'change_type', 'bug_fix')
 
     assert result['status'] == 'error'
     assert result['error'] == 'metadata_field_not_a_list'
-    # Nothing was written: the original scalar is intact.
+    assert status_path.read_bytes() == before
     assert _get('append-scalar', 'change_type')['value'] == 'feature'
 
 
