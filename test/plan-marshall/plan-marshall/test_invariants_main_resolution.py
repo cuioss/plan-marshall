@@ -6,7 +6,8 @@
 A column named for main must be read from main. ``_current_repo_root`` is
 cwd-relative by design (ADR-002) and follows the worktree the working directory
 is pinned to from phase-5 onward, so the main-scoped captures resolve through
-``_main_repo_root`` instead. This suite pins that split at three levels:
+``_main_repo_root`` instead. This suite pins that split at the resolver and at
+the captures:
 
 * **the resolver** — ``_main_repo_root`` against a REAL linked worktree with cwd
   pinned into it, plus the override and not-a-repo branches. The resolver is
@@ -14,9 +15,12 @@ is pinned to from phase-5 onward, so the main-scoped captures resolve through
   capture that could pass for the wrong reason.
 * **the captures** — ``_capture_main_sha`` records main's HEAD while
   ``_capture_worktree_sha`` records the worktree's, so the two columns of one
-  row describe two different trees.
-The capture-time refusal that rejects a worktree-backed row whose two commits
-are equal lives in the sibling ``test_invariants_worktree_sha_refusal.py``.
+  row describe two different trees. One capture is asserted the other way round
+  too: a real worktree whose branch carries no commit must be captured, not
+  refused.
+
+The capture-time refusal — which fires on the same-tree READ, not on equal
+commits — lives in the sibling ``test_invariants_main_capture_refusal.py``.
 
 The final test closes the loop onto the consumer: the retrospective
 summariser's ``detect_drift`` must see no ``main_sha`` movement across the
@@ -167,21 +171,22 @@ def test_main_repo_root_honours_base_dir_override(
 
 
 def test_main_repo_root_returns_none_outside_a_git_repository(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, production_resolution: None
+    outside_repo_dir: Path, monkeypatch: pytest.MonkeyPatch, production_resolution: None
 ) -> None:
     """Unresolvable main → ``None``, never a silent fall back to cwd.
 
     A cwd fallback is exactly the mis-resolution the resolver exists to end, so
     "unknown" must stay unknown and leave the column empty.
+
+    Uses ``outside_repo_dir`` rather than ``tmp_path``: ``build.py`` pins
+    pytest's ``--basetemp`` under the repo's own ``.plan/temp/``, so a
+    ``tmp_path`` subdirectory is INSIDE this git worktree and ``git rev-parse``
+    still resolves from it — the ``chdir`` would be inert and the test would
+    prove only that the stub raises. The fixture allocates under ``$TMPDIR``,
+    so the cwd genuinely has no repository above it and the real resolver is
+    exercised alongside the stub.
     """
-    outside = tmp_path / 'not-a-repo'
-    outside.mkdir()
-    monkeypatch.chdir(outside)
-    monkeypatch.setattr(
-        inv,
-        'main_checkout_root',
-        lambda: (_ for _ in ()).throw(RuntimeError('not a repo')),
-    )
+    monkeypatch.chdir(outside_repo_dir)
 
     assert inv._main_repo_root() is None
 

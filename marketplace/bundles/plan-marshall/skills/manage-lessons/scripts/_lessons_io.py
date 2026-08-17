@@ -95,7 +95,7 @@ def resolve_lesson_store(subpath: str | Path = DIR_LESSONS) -> LessonStore:
     guaranteed; it is now one shared predicate, so the resolver's condition and
     this provenance label cannot drift apart by construction. The agreement
     stays pinned behaviourally by
-    ``test_lesson_store_resolution_fail_open.TestOverridePredicateMirroring``,
+    ``test_lesson_store_resolution_fail_open.TestOverridePredicateAgreement``,
     which asserts the two sites branch together under each form of the
     condition — worth keeping, because sharing the predicate does not by itself
     prove this site reads it the same way round.

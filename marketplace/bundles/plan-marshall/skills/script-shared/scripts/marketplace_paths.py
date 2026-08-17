@@ -390,7 +390,7 @@ def _override_is_set() -> bool:
 
     The ``import file_ops`` is deferred (in-function) on purpose:
     ``marketplace_paths`` is imported BY ``file_ops``, so a module-top import
-    here would create a circular import. Mirrors ``merge_lock._override_is_set``.
+    here would create a circular import.
     """
     import file_ops
 

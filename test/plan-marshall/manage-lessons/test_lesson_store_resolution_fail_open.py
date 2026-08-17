@@ -69,7 +69,7 @@ def _write_plan_status(plan_dir, current_phase: str, phase_status: str, plan_sou
     )
 
 
-class TestOverridePredicateMirroring:
+class TestOverridePredicateAgreement:
     """The override predicate agrees across its sites.
 
     ``_lessons_io.resolve_lesson_store`` decides ``override`` vs

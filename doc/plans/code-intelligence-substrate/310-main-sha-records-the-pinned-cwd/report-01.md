@@ -184,26 +184,45 @@ false minutes later. The load-bearing fact is narrower and stable — **`.plan/l
 not tidied away.
 
 **The documented rule shipped** in `plan-retrospective/references/invariant-check-summary.md`, beside
-the existing `main_sha`-drift severity rule that is the interpretation site. It states that a
-`main_sha` drift entry whose `to_phase` is `5-execute` is a **known capture artifact** on a pre-fix
-worktree-backed plan, never evidence that main moved and never a finding — and that drift at any
-*other* boundary of the same plan is unaffected, because the planning rows ran with cwd on main.
+the existing `main_sha`-drift severity rule that is the interpretation site. It went through two
+corrections, both from verification, and the second reversed the first's central claim:
 
-Two properties make the rule usable without the corpus:
+- **Round 1 (F10)** removed two universals the tree contradicts — that the artifact always appears at
+  `4-plan → 5-execute`, and that other boundaries are therefore correct. `workflow/execution.md`
+  re-anchors cwd into the worktree in its Step 0 preflight and *then* **upserts** the `4-plan` row, so
+  a cross-session re-entry moves the false entry back a boundary. The rule stopped keying on the
+  boundary and keyed on the row instead.
+- **Round 2 (F13)** then refuted the row-level rule as written. It claimed the fingerprint
+  (`main_sha == worktree_sha`) beside a drift entry *proves* the artifact, on the reasoning that the
+  benign commit-less-branch case "writes the same value at every boundary and therefore emits no
+  drift entry". **Both halves are false, shown by execution**: `main_sha` is main's HEAD *at each
+  boundary*, and main moves whenever a sibling plan merges — so a commit-less-branch plan does emit a
+  genuine drift entry with the fingerprint present. The rule was therefore telling a retrospective to
+  discard the exact signal `main_sha` exists to carry.
 
-- **Self-identifying.** An affected row is recognisable from the row alone: `main_sha == worktree_sha`
-  means the two columns describe one tree, which is only possible under the pre-fix resolution. No
-  fix date, no plan metadata, no archived reference is needed.
-- **Not open-ended.** A post-fix row cannot carry the artifact, because such a row is now refused at
-  capture time (D3). A drift entry at that boundary on a post-fix row is a real signal.
+**The shipped rule now states what the corpus can and cannot settle.** The fingerprint marks a row as
+**ambiguous** — its `main_sha` is either the mislabelled feature-branch HEAD or a legitimately equal
+commit — and the stored rows carry nothing that separates the two. The discriminator is **branch
+containment**: a recorded `main_sha` that never reached main is the artifact and its drift entry is
+false; one that is on main means the row is sound and the entry is a real signal. A post-fix row needs
+no check at all, because `main_sha` is read main-anchored.
 
-Interpretive only — stored rows are not rewritten.
+⚠ **What the refusal does NOT do, stated plainly because the earlier draft implied otherwise.** Post-fix,
+`_main_repo_root()` resolves via `git rev-parse --git-common-dir` while `worktree_path` is
+`<main>/.plan/local/worktrees/{plan}`, and no production site sets `PLAN_BASE_DIR` or calls
+`set_base_dir()`. The two therefore cannot compare equal in production, so **`main_capture_read_the_worktree`
+is unreachable except under a D2 regression or corrupt `worktree_path` metadata.** It is a regression
+backstop, not the thing that keeps post-fix rows clean — the fixed resolver is. The earlier draft's
+"a post-fix row cannot carry the artifact, because such a row is now refused at capture time" claimed
+the opposite and was refuted by execution (such a row is *permitted*).
 
 ### D5 — tests, each verified to fail against the defect it names
 
 Two new modules (split at 400 lines by behaviour cluster per the pytest module budget):
-`test/plan-marshall/plan-marshall/test_invariants_main_resolution.py` (9 tests) and
-`test_invariants_worktree_sha_refusal.py` (6 tests). 15 total.
+`test/plan-marshall/plan-marshall/test_invariants_main_resolution.py` (**10** tests) and
+`test_invariants_main_capture_refusal.py` (**9** tests). **19** total. (The first draft said 9 + 6 =
+15 and named the refusal module by its pre-rename filename; both were left behind when round 1 added
+tests and renamed the module.)
 
 ⛔ **A guard is not a guard until it has been seen to fail.** Every test was mutation-tested against
 the specific defect it names, not against a plausible neighbour. **Population: all 19 tests in the two
@@ -221,14 +240,22 @@ its four "green" figures counted only one module:
 | `M7` — main_sha None-guard removed | **1** | 18 |
 | `M8` — main_dirty_files None-guard removed | **1** | 18 |
 | `M9` — error code absent from the strict exit list | **1** | 18 |
-| `M10` — refusal made two-sided (fires on any captured main_sha) | **6** | 13 |
-| `M11` — strict verify exits 1 unconditionally | **1** | 18 |
+| `M10` — strict verify exits 1 unconditionally | **1** | 18 |
+| `M11` — refusal ignores the worktree gate entirely | **1** | 18 |
 
 **Union of the red sets: 19 of 19.** Derived by set union over the recorded per-mutation red lists,
-not asserted — the first draft of this report claimed full coverage when the union was 11, and the
-two tests that survived every mutation then were both **negative controls**, which is exactly the
-class a red-set union is needed to notice. `M10` and `M11` were added to reach them: each inverts the
-guard the control exists to hold (a two-sided refusal, an unconditional non-zero exit).
+not asserted — an earlier draft claimed full coverage when the union was 11, and the two tests that
+survived every mutation then were both **negative controls**, which is exactly the class a red-set
+union is needed to notice. `M10` and `M11` were added to reach them, each inverting the guard
+its control exists to hold.
+
+⚠ **The previous draft carried a twelfth row whose figures were wrong (6 red), and round 2 caught
+it.** That run's mutation *also* rewrote the exception payload, so two refusal tests reddened on their
+payload assertions rather than on the two-sidedness the row's label named — the figures described a
+different mutation from the one written down. Re-measured as the **pure** same-tree-gate removal it
+turned out to be `M3` exactly, so the duplicate row is gone; `M11` was added because neither variant
+reaches the no-worktree-path control. Every other row was independently re-measured by round 2 and
+matched to the figure.
 
 All mutations were applied to the *shipped* code and reverted; `git status` is clean.
 
@@ -247,7 +274,8 @@ The plan's three named cases:
   `test_capture_main_dirty_reads_main_not_the_pinned_worktree` dirties **only** the worktree, so a
   non-zero `main_dirty` could only mean the wrong tree was read — settling the plan's
   companion-dirty-flag hypothesis by execution.
-- **(b)** the six refusal-direction tests listed under D3, plus the two strict-exit tests.
+- **(b)** the refusal module's nine tests — the six direction/verb tests listed under D3, the
+  `VERIFY_REFUSAL_ERRORS` membership test, and the strict-exit pair with its negative control.
 - **(c)** `test_summariser_sees_no_main_sha_drift_across_the_execute_boundary` — the rows are built
   by the **real capture** at both boundaries (cwd on main for the `4-plan` row, pinned to the
   worktree for the `5-execute` row) and then fed to the summariser's `detect_drift`. Hand-feeding
@@ -320,6 +348,48 @@ from a source-text grep into a test that drives `main()` and reads `SystemExit.c
 control. One observation was a **verified negative and is recorded as such**: adding a second
 main-anchored resolver does **not** violate `cwd-policy.md`'s single-sanctioned-resolver assertion,
 which is scoped to `.plan/`-path resolution for plan-scoped state.
+
+### Round 2 — 7 findings, all fixed. No behavioural defect in the shipped code survived
+
+The round re-ran all eleven mutations from its own snapshots, rebuilt the real-repo probes, drove
+`_assert_main_capture_read_main` over 12 path shapes, ran `detect_drift` on capture-derived rows, and
+took an AST closure over `capture_all`'s raise set. **Every finding is a false statement (condition
+A); none is behavioural.** Two are instances of round-1 findings marked "Fixed" that had been fixed at
+fewer sites than the claim spanned — the n−1-of-n pattern.
+
+| # | Source / site | Finding | Disposition |
+|---|---|---|---|
+| F13 | `invariant-check-summary.md` (the D4 deliverable) | The rule's load-bearing premise — the commit-less-branch case "writes the same value at every boundary and therefore emits **no** drift entry" — is **false**. `main_sha` is main's HEAD at each boundary, and main moves when a sibling merges. Executed counter-example: a commit-less-branch plan emitting a genuine `4-plan → 5-execute` drift entry **with the fingerprint present**, reproduced on both sides of the fix. The rule therefore instructed retrospectives to discard a true "main moved mid-plan" signal. | **Fixed** — rewritten around **branch containment** as the only evidence that separates the two cases; the fingerprint now marks a row *ambiguous* rather than convicting it |
+| F14 | `_invariants.py` `_capture_main_sha`, `_capture_main_dirty` | Both still opened with "**cwd-independent**" — the exact claim round 1's F2 refuted and fixed in `_main_repo_root`, whose docstring three functions above now says outright "It is NOT cwd-independent in general". The file contradicted itself. Refuted again by execution under a flat override. | **Fixed** at both sites — restated as **worktree-invariant**, with the caveat named rather than cross-referenced away. Recorded as an n−1-of-n miss: F2 was fixed at 1 of 3 sites |
+| F15 | `report-01.md` D4 section, 3 claims | Still described the **pre-round-1** rule ("`to_phase` is `5-execute`", "other boundaries unaffected") and the **pre-narrowing** refusal ("only possible under the pre-fix resolution", "such a row is now refused at capture time"). The last is refuted by execution — such a row is *permitted*. | **Fixed** — section rewritten to record both corrections and what each reversed, plus the candour gap below |
+| — | (same section) | The report never said the refusal is **unreachable in production** except under a D2 regression, while "Not open-ended" implied the opposite. | **Fixed** — stated plainly, with the reason (`git-common-dir` vs `<main>/.plan/local/worktrees/…` can never compare equal, and no production site sets an override) |
+| F16 | `report-01.md` D5 header | "`test_invariants_main_resolution.py` (9 tests) and `test_invariants_worktree_sha_refusal.py` (6 tests). 15 total." — the module name was retired in round 1 and the counts are **10 / 9 / 19**; the next paragraph already said 19. | **Fixed** — re-derived by collection |
+| F17 | `report-01.md` mutation matrix | The `M10` row's figures (6 red) described a **different mutation** than its label: that run's variant also rewrote the exception payload, so two refusal tests reddened on payload assertions rather than on two-sidedness. Round 2 re-measured every row from its own snapshots; the other ten matched exactly. | **Fixed** — re-measured as the pure same-tree-gate removal, which turned out to be `M3` exactly, so the duplicate row is gone. A genuinely new mutation (`M11`) was added because neither variant reaches the no-worktree-path control. Union still **19 of 19**, now over 11 distinct mutations |
+| F18 | `test_invariants_main_resolution.py` module docstring | Named the deleted module `test_invariants_worktree_sha_refusal.py` **and** described the retired equality-only trigger — the last surviving tree reference to either. An enumeration lead-in ("three levels") also stood over two bullets. | **Fixed** — module renamed in the reference, trigger restated, the count replaced by naming the two levels |
+| F19 | `test_invariants_main_resolution.py` `test_main_repo_root_returns_none_outside_a_git_repository` | The test's stated premise was false under the project's own harness: `build.py` pins `--basetemp` inside the repo, so a `tmp_path` subdirectory is **inside** this git worktree and the `chdir` was inert — only the stub produced the `None`. `conftest.py` ships an `outside_repo_dir` fixture whose docstring warns of exactly this trap. | **Fixed** — switched to `outside_repo_dir` and the stub **dropped**, so the real resolver is now exercised against a genuinely repo-less cwd |
+
+**Lower-value observations, dispositioned:** `marketplace_paths.py` cited `merge_lock._override_is_set`,
+which no longer exists — **fixed** (pre-existing, but false, and in a file this change touches).
+`TestOverridePredicateMirroring` was misnamed once its two sites came to share one predicate —
+**renamed** to `TestOverridePredicateAgreement`, with the `_lessons_io` reference updated. The report's
+D5(b) accounted for 8 tests where the refusal module holds 9 — **fixed**. One observation is
+**accepted, not fixed**: `_main_repo_root()` now shells out to git and is called 4× per `capture_all`
+(three captures plus the assertion) where the old resolver was pure. That is four `git rev-parse`
+invocations at a phase boundary whose captures already fan out ~10 subprocesses through `_run_script`;
+memoising would add cross-call state to a module that has none. Recorded as a declared characteristic.
+
+**Round 2 confirmed by execution, and these are recorded so the negatives are distinguishable from
+unchecked items:** the F12 fix (real commit-less worktree → captured, not refused); the refusal still
+firing for the real defect; the narrowing having **no hole** for symlinked, trailing-slash, `..`-bearing
+or `.plan/local/worktrees/`-shaped paths (`Path.resolve()` normalises all of them), with the single
+miss being a *relative* path in the false-negative direction the docstring already claims; both
+mechanism claims in the `_main_repo_root` docstring; the "both early returns unreachable by
+construction" claim; the `phase-5-execute` Step 2.5 ordering; all four named readers of
+`base_dir_override_active` and the absence of a fifth hand-spelled disjunction; the `capture_all`
+`Raises:` set being exactly the five reachable exceptions (AST closure); the shared-envelope claim;
+that `--override` provides **no** escape hatch, identically to the four sibling capture-time refusals;
+that `findings-check` is unaffected; and that `VERIFY_REFUSAL_ERRORS` is enumerated in exactly two
+places, both updated.
 
 ## Reviewer participation
 

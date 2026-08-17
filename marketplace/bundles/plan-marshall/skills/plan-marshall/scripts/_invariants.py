@@ -565,12 +565,17 @@ def _read_manifest_steps(plan_id: str, phase: str) -> set[str] | None:
 
 
 def _capture_main_sha(_plan_id: str, _metadata: dict[str, Any], _phase: str) -> Any:
-    """HEAD SHA of the MAIN checkout, cwd-independent.
+    """HEAD SHA of the MAIN checkout, read worktree-invariantly.
 
     Read via :func:`_main_repo_root` — never the cwd-relative resolver, which
     under a pinned worktree would record the feature-branch commit in a column
     named for main. Returns ``None`` (column left empty) when the main checkout
     cannot be resolved, matching the registry's "not applicable" contract.
+
+    ⚠ **Worktree-invariant, not cwd-independent** — see :func:`_main_repo_root`
+    for which branch has which property. The value is stable across main and
+    every linked worktree of one repository, which is what this column needs;
+    it is not stable across repositories or under a flat base-dir override.
     """
     root = _main_repo_root()
     if root is None:
@@ -579,9 +584,10 @@ def _capture_main_sha(_plan_id: str, _metadata: dict[str, Any], _phase: str) -> 
 
 
 def _capture_main_dirty(_plan_id: str, _metadata: dict[str, Any], _phase: str) -> Any:
-    """Porcelain dirty-path count of the MAIN checkout, cwd-independent.
+    """Porcelain dirty-path count of the MAIN checkout, read worktree-invariantly.
 
-    Same resolution contract as :func:`_capture_main_sha`.
+    Same resolution contract — and the same worktree-invariant-not-cwd-independent
+    caveat — as :func:`_capture_main_sha`.
     """
     root = _main_repo_root()
     if root is None:
