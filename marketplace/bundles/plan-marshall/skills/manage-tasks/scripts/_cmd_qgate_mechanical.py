@@ -30,6 +30,7 @@ from _findings_core import QGATE_PERSIST_OK, add_qgate_finding
 from _plan_parsing import (
     extract_deliverables,
     parse_document_sections,
+    split_deliverable_blocks,
 )
 from _tasks_core import get_all_tasks, get_tasks_dir
 from constants import FILE_SOLUTION_OUTLINE
@@ -98,29 +99,49 @@ def _emit_finding(
     return 1 if status == 'success' else 0
 
 
-def _load_deliverables(plan_id: str) -> tuple[list[dict[str, Any]], bool]:
-    """Read solution_outline.md and extract deliverables.
+def _load_deliverables(plan_id: str) -> tuple[list[dict[str, Any]], dict[int, str], bool]:
+    """Read solution_outline.md and extract deliverables plus their raw prose.
 
-    Returns ``(deliverables, parseable)`` — ``parseable`` is False when the
-    outline is missing or its Deliverables section can't be located, in
-    which case the caller flips ``ambiguous=true`` so the LLM dispatch
-    re-evaluates rather than the mechanical script declaring victory.
+    Returns ``(deliverables, prose_by_number, parseable)`` — ``parseable`` is
+    False when the outline is missing or its Deliverables section can't be
+    located, in which case the caller flips ``ambiguous=true`` so the LLM
+    dispatch re-evaluates rather than the mechanical script declaring victory.
+
+    ``prose_by_number`` maps a deliverable number to its VERBATIM block body.
+    It is returned alongside the structured records rather than folded into
+    them: ``extract_deliverables``' output is emitted wholesale by
+    ``manage-solution-outline list-deliverables``, so attaching every
+    deliverable's full text to it would put the entire outline into a payload
+    whose readers want the structured fields.
     """
     outline_path = get_plan_dir(plan_id) / FILE_SOLUTION_OUTLINE
     if not outline_path.exists():
-        return [], False
+        return [], {}, False
     try:
         content = outline_path.read_text(encoding='utf-8')
     except OSError:
-        return [], False
+        return [], {}, False
     sections = parse_document_sections(content)
     deliverables_section = sections.get('deliverables')
     if not isinstance(deliverables_section, str) or not deliverables_section.strip():
-        return [], False
+        return [], {}, False
     try:
-        return extract_deliverables(deliverables_section), True
+        deliverables = extract_deliverables(deliverables_section)
+        prose_by_number = {
+            int(block['number']): str(block['content'])
+            for block in split_deliverable_blocks(deliverables_section)
+        }
     except (ValueError, AttributeError):
-        return [], False
+        return [], {}, False
+    if not deliverables:
+        # A Deliverables section that exists but carries no `### N. Title`
+        # heading yields an empty list, and every check downstream then passes
+        # vacuously over it — coverage finds nothing uncovered, keyword-drift
+        # finds no drift — while `ambiguous` stays False and tells the
+        # orchestrator the mechanical pass was authoritative. An outline nobody
+        # could parse must reach the LLM dispatch, not a clean bill of health.
+        return [], {}, False
+    return deliverables, prose_by_number, True
 
 
 def _check_coverage(
@@ -393,10 +414,32 @@ def _check_files_exist(
     return failed, emitted
 
 
-def _build_haystack(deliverable: dict[str, Any]) -> str:
-    """Concatenate a deliverable's fields into one plain-text haystack.
+def _build_haystack(deliverable: dict[str, Any], prose: str = '') -> str:
+    """Concatenate a deliverable's fields AND its prose into one haystack.
 
-    Mirrors the existing Step 9 keyword-drift recipe in phase-4-plan/SKILL.md.
+    Mirrors the Step 9 keyword-drift recipe in phase-4-plan/SKILL.md.
+
+    ``prose`` is the deliverable's verbatim block body. It is part of the
+    haystack because the check asks whether a task description says something
+    the deliverable does not, and a deliverable says things in prose — the
+    intent gloss, the change-per-file narrative, the success criteria — not only
+    in its structured fields. Reading the structured fields alone made every
+    keyword that appears solely in that prose look like drift, so a task
+    faithfully quoting its own deliverable was flagged for saying what the
+    deliverable said.
+
+    This is also what puts the check on the same footing as its sibling: the
+    structural-token-drift recipe already reads the whole deliverable body, so
+    the narrower field set here was the two checks disagreeing about what "the
+    deliverable" means.
+
+    Args:
+        deliverable: A record from ``extract_deliverables``.
+        prose: The deliverable's raw block body. Defaults to empty so a caller
+            with no prose to hand still gets the structured-field haystack.
+
+    Returns:
+        The concatenated plain-text haystack.
     """
     parts: list[str] = []
     title = deliverable.get('title')
@@ -416,6 +459,8 @@ def _build_haystack(deliverable: dict[str, Any]) -> str:
     if isinstance(verification, dict):
         for value in verification.values():
             parts.append(str(value))
+    if prose:
+        parts.append(prose)
     return ' '.join(parts)
 
 
@@ -423,6 +468,7 @@ def _check_keyword_drift(
     plan_id: str,
     tasks: list[dict[str, Any]],
     deliverables: list[dict[str, Any]],
+    prose_by_number: dict[int, str],
     persist_failures: list[dict[str, str]],
     emit: bool,
 ) -> tuple[int, int]:
@@ -450,7 +496,7 @@ def _check_keyword_drift(
             continue
         haystack = haystack_cache.get(d_num)
         if haystack is None:
-            haystack = _build_haystack(deliverable)
+            haystack = _build_haystack(deliverable, prose_by_number.get(d_num, ''))
             haystack_cache[d_num] = haystack
         for keyword, pattern in patterns:
             if pattern.search(description) and not pattern.search(haystack):
@@ -557,7 +603,7 @@ def cmd_qgate_mechanical(args) -> dict[str, Any]:
 
     task_dir = get_tasks_dir(plan_id)
     all_tasks = [task for _path, task in get_all_tasks(task_dir)]
-    deliverables, parseable = _load_deliverables(plan_id)
+    deliverables, prose_by_number, parseable = _load_deliverables(plan_id)
 
     findings_emitted = 0
     checks: dict[str, dict[str, int]] = {}
@@ -587,7 +633,7 @@ def cmd_qgate_mechanical(args) -> dict[str, Any]:
     checks['files_exist'] = {'failed': files_failed}
 
     keyword_failed, e = _check_keyword_drift(
-        plan_id, all_tasks, deliverables, persist_failures, emit=emit
+        plan_id, all_tasks, deliverables, prose_by_number, persist_failures, emit=emit
     )
     findings_emitted += e
     checks['keyword_drift'] = {'failed': keyword_failed}

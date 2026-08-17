@@ -298,16 +298,18 @@ def test_unresolvable_plan_skips_as_status_not_found(plan_context, monkeypatch):
     assert result['reason'] == 'status_not_found'
 
 
-def test_empty_persisted_worktree_path_skips_as_worktree_path_missing(plan_context):
-    """An EMPTY persisted path is classified upstream, as ``worktree_path_missing``.
+def test_unmaterialized_worktree_skips_as_not_materialized(plan_context):
+    """A worktree opted into but not yet created gets its OWN skip reason.
 
-    ``PlanContext._resolve_worktree_face`` raises ``WorktreeResolutionError``
-    when ``use_worktree=true`` and the persisted path is empty, so
-    ``_worktree_target``'s ``except`` arm claims this case before the directory
-    guard below it can run. Pinning the reason here is what keeps the guard from
-    re-acquiring a dead ``not worktree_path`` half: a predicate that also tried
-    to classify emptiness would be advertising a verdict this test proves is
-    unreachable.
+    The producer publishes this state as ``worktree_state: pending``. Both it
+    and a plan with no worktree at all read ``has_worktree`` false, so a reason
+    selected from that boolean would report this plan as
+    ``main_checkout_flow`` — telling the operator it runs against the main
+    checkout when it is in fact bound to a worktree nobody has created yet.
+
+    The paired case (``test_main_checkout_flow_skips``) changes only the
+    worktree state and gets the other reason, so this arm is carried by the
+    discriminator rather than by a reason that stopped varying.
     """
     plan_context.plan_dir_for('br-empty-worktree')
     args = Namespace(
@@ -321,9 +323,9 @@ def test_empty_persisted_worktree_path_skips_as_worktree_path_missing(plan_conte
         result = cmd_baseline_reconcile(args)
 
     assert result['status'] == 'skipped'
-    assert result['reason'] == 'worktree_path_missing', (
-        'the empty persisted worktree_path was classified by the directory '
-        'guard rather than by the resolver error it actually raises'
+    assert result['reason'] == 'worktree_not_materialized', (
+        'a pending worktree was reported as a main-checkout plan, losing the '
+        'distinction between "no worktree" and "no worktree YET"'
     )
 
 

@@ -11,6 +11,7 @@ from contextlib import redirect_stdout
 from unittest.mock import MagicMock, patch
 
 import pytest
+from _resolve_project_dir_fixtures import worktree_query_result
 
 from conftest import get_script_path, run_script
 
@@ -837,7 +838,7 @@ def test_main_plan_id_resolves_via_manage_status(clean_project_dir, capture_run)
     with patch.object(
         _resolver_core,
         '_query_worktree_path',
-        return_value=(True, '/tmp/wt-pr-doctor'),
+        return_value=worktree_query_result(True, '/tmp/wt-pr-doctor'),
     ):
         _run_main_with_argv(argv)
 
@@ -883,7 +884,7 @@ def test_main_plan_id_use_worktree_false_falls_back_to_main_checkout(clean_proje
     ]
 
     with (
-        patch.object(_resolver_core, '_query_worktree_path', return_value=(False, '')),
+        patch.object(_resolver_core, '_query_worktree_path', return_value=worktree_query_result(False)),
         patch.object(_resolver_core, 'cwd_checkout_root', return_value='/tmp/main-stub'),
     ):
         _run_main_with_argv(argv)

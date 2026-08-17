@@ -545,7 +545,7 @@ canonical_command: quality-gate
 ```toon
 status: success
 decision: unknown
-reason: plan footprint unresolvable — worktree not yet materialised
+reason: plan footprint unresolvable — no materialized worktree carries evidence of what this plan changed
 ```
 
 The decision logic itself lives in the build-system-owned `should_execute_build` helper in `script-shared`; `build-decision` is a thin wrapper exposing it through the `manage-config` command surface (the home that already owns the `build_map` seed and footprint-matching logic the decision reuses).
@@ -1426,7 +1426,7 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config build-
   [--command COMMAND] --plan-id PLAN_ID
 ```
 
-Returns a `build` / `not_necessary` / `unknown` verdict for `PLAN_ID`'s live footprint. `--audit-plan-id` is accepted as an alias for `--plan-id`. Thin wrapper over `extension_base.should_execute_build` — a pure function of the `build.map` globs ∩ the live plan footprint; on `not_necessary` and `unknown` it carries a populated `reason`, on `build` no `reason`. `unknown` means the footprint could not be resolved at all (the worktree is not yet materialised) and is forwarded verbatim — the wrapper never collapses it into `not_necessary`.
+Returns a `build` / `not_necessary` / `unknown` verdict for `PLAN_ID`'s live footprint. `--audit-plan-id` is accepted as an alias for `--plan-id`. Thin wrapper over `extension_base.should_execute_build` — a pure function of the `build.map` globs ∩ the live plan footprint; on `not_necessary` and `unknown` it carries a populated `reason`, on `build` no `reason`. `unknown` means the footprint could not be resolved at all — no materialized worktree carries evidence of what the plan changed, whether because the plan's worktree is `pending` (phase-5-execute has not created it yet) or `disabled` (it never will) — and is forwarded verbatim; the wrapper never collapses it into `not_necessary`.
 
 `--command` is **optional** and is an echo-only label: it never enters the predicate, so the verdict is identical with and without it for a given footprint. Omit it for the command-free plan-wide verdict (`{decision, reason}` with no `canonical_command` key); supply it to have the label echoed back. Picking an arbitrary representative command to stand in for a plan-wide answer is a retired anti-pattern.
 

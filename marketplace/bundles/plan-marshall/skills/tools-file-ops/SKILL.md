@@ -144,11 +144,23 @@ Import `file_ops` module in Python scripts that write to `.plan/` directories:
 **15. PlanContext (dataclass)**
 - **Purpose**: The resolved plan context returned by `resolve_plan_context`
 - **Fields**: `plan_id` (str), `plan_dir` (`Path`, computed eagerly — a pure path join), `is_sentinel` (bool)
-- **Lazy properties**: `worktree_path` (str — the working-tree root; the persisted worktree path when `use_worktree` is true, else the main checkout), `has_worktree` (bool — whether a DEDICATED worktree was materialized; ask this, never infer "no worktree" from a path indistinguishable from a legitimate main-checkout binding), `worktree_branch` (str — the persisted feature branch, `''` when none is recorded)
-- **Note**: the three worktree faces are resolved on FIRST ACCESS, not at construction. The laziness is load-bearing: `get_plan_dir` delegates to this struct at every call site, so an eager worktree face would put a subprocess behind every plan-path computation — including inside `manage-status`, the producer of that very command
+- **Lazy properties**: `worktree_state` (str — the producer's published discriminator, one of `disabled` / `pending` / `materialized`; branch on this when the three states route differently), `worktree_path` (str — the working-tree root; the persisted path when `worktree_state` is `materialized`, else the main checkout, because that is the tree a `disabled` or not-yet-created `pending` worktree's plan actually works in), `has_worktree` (bool — whether a DEDICATED worktree is materialized RIGHT NOW; ask this, never infer "no worktree" from a path indistinguishable from a legitimate main-checkout binding), `worktree_branch` (str — the persisted feature branch, `''` when none is recorded)
+- **Note**: the worktree faces are resolved on FIRST ACCESS, not at construction. The laziness is load-bearing: `get_plan_dir` delegates to this struct at every call site, so an eager worktree face would put a subprocess behind every plan-path computation — including inside `manage-status`, the producer of that very command
 - **Raises**: `WorktreeResolutionError` when a worktree face cannot be resolved for a real plan id (the `get-worktree-path` payload was non-success, or the executor could not be located)
 
-**16. cwd_checkout_root()**
+**16. derive_worktree_state(metadata)**
+- **Purpose**: The SINGLE owner of the worktree contract's three-state machine. The producer (`manage-status get-worktree-path`) publishes its `worktree_state` from this function, and a consumer that reads `status.json` metadata directly rather than shelling out calls it instead of re-implementing the rule
+- **Input**: `metadata` (the plan's `status.metadata` mapping, or any non-mapping value — treated as absent metadata)
+- **Output**: `tuple[str, str]` — `(worktree_state, worktree_path)`, the state one of `disabled` / `pending` / `materialized` (`VALID_WORKTREE_STATES`). The path is `''` for every state but `materialized`
+- **Note**: re-deriving the state from the primitive `use_worktree` / `worktree_path` fields cannot tell a plan that will NEVER have a worktree from one whose worktree does not exist YET, and those route differently. Both ends of the pair are guarded — the flag through `is_truthy_metadata`, the path stripped before it is tested
+
+**17. is_truthy_metadata(value)**
+- **Purpose**: The single owner of boolean coercion for `status.json` metadata fields. Metadata reaches readers as a real `bool` from `json.load` and historically as a string through TOON, so a bare `bool()` reads the string `'false'` as True
+- **Input**: `value` (Any) — the raw metadata value
+- **Output**: `bool`
+- **Note**: `_handshake_commands._is_truthy_metadata` delegates here. Two readers of one metadata field disagreeing about what `'false'` means is the drift a single owner removes
+
+**18. cwd_checkout_root()**
 - **Purpose**: Return the checkout root as an absolute path string, resolved cwd-relatively per the uniform cwd rule (ADR-002) — the nearest ancestor of cwd containing `.plan/local`
 - **Input**: None
 - **Output**: `str` — falls back to cwd when the caller operates outside any resolvable plan root

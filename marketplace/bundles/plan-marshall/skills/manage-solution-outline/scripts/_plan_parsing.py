@@ -20,6 +20,22 @@ import os
 import re
 from typing import Any
 
+from constants import STEP_INTENT_READ
+
+#: The ``<!-- bucket: X -->`` audit-trail comment recorded on the
+#: ``**Profiles:**`` line. Owned here because ``_extract_profiles`` reads the
+#: same line and must keep ignoring the comment while this pattern reads it.
+#:
+#: **Anchored to that line**, not free-floating over the deliverable body. The
+#: body is prose an author writes, so a bucket-shaped comment appearing anywhere
+#: in it — quoting this convention, or documenting a bucket in an example —
+#: would otherwise be read as the deliverable's own declared bucket and could
+#: fail validation against a write-set it was never describing.
+_BUCKET_COMMENT_PATTERN = re.compile(
+    r'^\*\*Profiles:\*\*[^\n]*?<!--\s*bucket:\s*([a-z_]+)\s*-->',
+    re.IGNORECASE | re.MULTILINE,
+)
+
 _HEADER_VIRTUAL_FIELDS = ('plan_id', 'source', 'source_id', 'created')
 _HEADER_FIELD_PATTERN = re.compile(
     rf'^({"|".join(re.escape(f) for f in _HEADER_VIRTUAL_FIELDS)}):\s*(.*)$',
@@ -230,7 +246,8 @@ def extract_deliverables(deliverables_section: str) -> list[dict[str, Any]]:
     """Extract full deliverable information from Deliverables section.
 
     Parses `### N. Title` headings and extracts structured information
-    including metadata, profiles, affected files, and verification.
+    including metadata, profiles, affected files, the declared file-type
+    bucket, and verification.
 
     Args:
         deliverables_section: The Deliverables section content
@@ -260,6 +277,7 @@ def extract_deliverables(deliverables_section: str) -> list[dict[str, Any]]:
                 'metadata': metadata,
                 'profiles': profiles,
                 'affected_files': affected_files,
+                'declared_bucket': extract_declared_bucket(content),
                 'verification': verification,
                 'has_success_criteria': has_success_criteria,
             }
@@ -353,6 +371,65 @@ def _extract_affected_files(content: str) -> list[dict[str, Any]]:
             files.append({'path': file_path, 'intent': intent})
 
     return files
+
+
+def deliverable_write_set(deliverable: dict[str, Any]) -> list[str]:
+    """Return the paths a deliverable declares it will MODIFY.
+
+    The authoritative write-set: every ``affected_files`` entry whose declared
+    intent is not :data:`constants.STEP_INTENT_READ`. A ``read`` entry names a
+    file the deliverable consults and leaves untouched, so it belongs to the
+    deliverable's *reading* surface and to no part of its change footprint.
+
+    Every classification derived from a deliverable's file list — its file-type
+    bucket, whether it warrants a testing profile, what a build must cover —
+    is a statement about what CHANGES, and must therefore be computed from this
+    set rather than from ``affected_files`` wholesale. Computing it from the
+    wholesale list lets a single read-only reference flip a classification: one
+    consulted test file makes a deliverable look test-bearing, one consulted
+    ``.py`` makes a documentation-only deliverable look like code.
+
+    An entry with no intent marker at all is counted as a write. The marker is
+    mandatory and its absence is already a validation error, so the missing
+    intent is reported as the error it is rather than silently subtracting the
+    path from the change footprint — an unmarked entry must never be quieter
+    than a marked one.
+
+    Args:
+        deliverable: A record from :func:`extract_deliverables`.
+
+    Returns:
+        The declared write paths, in document order.
+    """
+    write_set: list[str] = []
+    for entry in deliverable.get('affected_files', []):
+        if not isinstance(entry, dict):
+            continue
+        if entry.get('intent') == STEP_INTENT_READ:
+            continue
+        path = entry.get('path')
+        if isinstance(path, str) and path:
+            write_set.append(path)
+    return write_set
+
+
+def extract_declared_bucket(content: str) -> str | None:
+    """Extract the ``<!-- bucket: X -->`` comment from a deliverable's body.
+
+    The comment rides on the ``**Profiles:**`` line and records the file-type
+    bucket the author resolved. :func:`_extract_profiles` deliberately reads only
+    the bullet list beneath that line, so the recorded bucket was parsed by
+    nobody and could never be checked against the files it claims to describe.
+
+    Args:
+        content: A deliverable block body.
+
+    Returns:
+        The declared bucket string, or ``None`` when no bucket comment is
+        present.
+    """
+    match = _BUCKET_COMMENT_PATTERN.search(content)
+    return match.group(1) if match else None
 
 
 def _extract_verification(content: str) -> dict[str, str]:

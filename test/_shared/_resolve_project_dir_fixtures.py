@@ -7,11 +7,13 @@ Re-used by every Bucket B / plan-context test suite that exercises the
 contract — the consumer set grows as scripts migrate onto the shared
 resolver, so it is deliberately not enumerated here.
 
-The six contract states tested across those suites are:
+The contract states tested across those suites are:
 
-* ``--plan-id X`` only, ``use_worktree=true`` → resolves to the
+* ``--plan-id X`` only, worktree ``materialized`` → resolves to the
   persisted worktree path.
-* ``--plan-id X`` only, ``use_worktree=false`` → falls back to the
+* ``--plan-id X`` only, worktree ``pending`` (opted into, not yet created
+  by phase-5-execute) → falls back to the cwd-relative checkout root.
+* ``--plan-id X`` only, worktree ``disabled`` → falls back to the
   cwd-relative checkout root (``file_ops.cwd_checkout_root``).
 * ``--plan-id NO_PLAN`` (the sentinel state) → resolves to the
   main-checkout / cwd checkout root with NO worktree lookup. The
@@ -68,6 +70,27 @@ MAIN_CHECKOUT_ROOT = '/tmp/test-main-checkout'
 # =============================================================================
 
 
+def worktree_query_result(use_worktree: bool, worktree_path: str = '') -> tuple[str, str]:
+    """Build a ``_query_worktree_path`` return value from persisted metadata.
+
+    Routes through the production state machine so every stub in the suite
+    speaks the same three-state vocabulary the producer publishes, and none can
+    encode a state pairing the producer never emits.
+
+    Public because the seam is stubbed two ways across the suite: most modules
+    go through the context managers below, but several patch
+    ``file_ops._query_worktree_path`` directly with their own
+    ``monkeypatch.setattr`` / ``patch.object`` call. Those sites call this
+    helper for their return value instead of writing a tuple by hand, so the
+    derivation has one home no matter which stubbing style a module uses.
+    """
+    from file_ops import derive_worktree_state
+
+    return derive_worktree_state(
+        {'use_worktree': use_worktree, 'worktree_path': worktree_path}
+    )
+
+
 @contextmanager
 def patch_query_worktree_path(use_worktree: bool, worktree_path: str | None = None):
     """Patch ``file_ops._query_worktree_path`` deterministically.
@@ -84,11 +107,20 @@ def patch_query_worktree_path(use_worktree: bool, worktree_path: str | None = No
     chain (``resolve_project_dir`` → ``resolve_plan_context`` →
     ``PlanContext.worktree_path``) executing for real rather than mocked out.
 
+    The seam yields the producer's published ``worktree_state`` discriminator,
+    so the arguments here name the persisted METADATA and the returned state is
+    derived from it by :func:`file_ops.derive_worktree_state` — the same
+    function ``manage-status get-worktree-path`` publishes its own state from.
+    Deriving rather than hand-encoding is what keeps a fixture from expressing a
+    pairing the producer can never emit (``materialized`` with no path), and it
+    means a change to the state machine reaches every stub at once.
+
     Args:
-        use_worktree: The ``use_worktree`` flag the patched helper returns.
+        use_worktree: The persisted ``use_worktree`` flag being modelled.
         worktree_path: The persisted worktree path. Defaults to
             ``CANONICAL_WORKTREE`` when ``use_worktree`` is True, empty
-            string otherwise (matching the real script's contract).
+            string otherwise (matching the real script's contract). Pass ``''``
+            with ``use_worktree=True`` to model the ``pending`` state.
 
     Yields:
         The ``MagicMock`` instance — tests can assert call counts when
@@ -98,7 +130,7 @@ def patch_query_worktree_path(use_worktree: bool, worktree_path: str | None = No
         worktree_path = CANONICAL_WORKTREE if use_worktree else ''
     with patch(
         'file_ops._query_worktree_path',
-        return_value=(use_worktree, worktree_path),
+        return_value=worktree_query_result(use_worktree, worktree_path),
     ) as mock:
         yield mock
 
@@ -114,9 +146,11 @@ def patch_query_worktree_path_map(mapping: dict[str, Any]):
     The single-value :func:`patch_query_worktree_path` cannot express a verb
     that resolves several plans in one call — ``worktree-list`` walks the whole
     plan census and must see a different verdict per plan. Each mapping value is
-    either a ``(use_worktree, worktree_path)`` tuple or an ``Exception``
-    INSTANCE, which is raised for that plan id (modelling an unresolvable plan
-    alongside resolvable ones in the same run).
+    either a ``(use_worktree, worktree_path)`` metadata tuple — derived to the
+    published state exactly as :func:`patch_query_worktree_path` derives its
+    single value — or an ``Exception`` INSTANCE, which is raised for that plan
+    id (modelling an unresolvable plan alongside resolvable ones in the same
+    run).
 
     An unmapped plan id raises ``AssertionError`` rather than silently
     defaulting: a resolution the test did not anticipate is a fact worth
@@ -135,7 +169,7 @@ def patch_query_worktree_path_map(mapping: dict[str, Any]):
         outcome = mapping[plan_id]
         if isinstance(outcome, Exception):
             raise outcome
-        return outcome
+        return worktree_query_result(outcome[0], outcome[1])
 
     with patch('file_ops._query_worktree_path', side_effect=_resolve) as mock:
         yield mock
@@ -149,8 +183,8 @@ def patch_worktree_faces(
 ):
     """Patch BOTH worktree faces of the single ``get-worktree-path`` channel.
 
-    ``PlanContext`` exposes the path/presence faces
-    (``worktree_path`` / ``has_worktree``, backed by
+    ``PlanContext`` exposes the state/path/presence faces
+    (``worktree_state`` / ``worktree_path`` / ``has_worktree``, all backed by
     ``file_ops._query_worktree_path``) and the branch face
     (``worktree_branch``, backed by ``file_ops._query_worktree_branch``) over
     two SEPARATE seams, so a consumer that needs only one pays for only one.
@@ -166,7 +200,7 @@ def patch_worktree_faces(
     with (
         patch(
             'file_ops._query_worktree_path',
-            return_value=(use_worktree, worktree_path),
+            return_value=worktree_query_result(use_worktree, worktree_path),
         ) as path_mock,
         patch('file_ops._query_worktree_branch', return_value=worktree_branch) as branch_mock,
     ):
@@ -178,7 +212,8 @@ def patch_main_checkout_root(path: str = MAIN_CHECKOUT_ROOT):
     """Patch the cwd-relative checkout-root resolver deterministically.
 
     Avoids dependence on the real checkout layout of the test runner. Used in
-    the "neither flag" and ``use_worktree=false`` branches of the contract.
+    the "neither flag" branch and every branch that falls back to the checkout
+    root — ``worktree_state`` of ``disabled`` or ``pending``, and the sentinel.
 
     BOTH bindings of ``cwd_checkout_root`` are patched, because there are two
     distinct call sites reached by two different lookups:
@@ -187,8 +222,8 @@ def patch_main_checkout_root(path: str = MAIN_CHECKOUT_ROOT):
       bound into that module's namespace by ``from file_ops import ...``, so
       patching ``file_ops`` alone would NOT affect it.
     * ``file_ops.cwd_checkout_root`` — reached through the module global inside
-      ``PlanContext._resolve_worktree_face`` on the ``use_worktree=false`` and
-      sentinel branches.
+      ``PlanContext._resolve_worktree_face`` on every non-``materialized``
+      branch (``disabled``, ``pending``) and on the sentinel branch.
 
     Patching only one of the two leaves the other resolving for real, which is
     exactly the kind of half-patched fixture that makes a test pass for the

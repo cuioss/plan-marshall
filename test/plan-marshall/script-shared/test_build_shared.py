@@ -7,6 +7,7 @@ import os
 import sys
 
 import pytest
+from _resolve_project_dir_fixtures import worktree_query_result
 
 from conftest import get_scripts_dir
 
@@ -142,7 +143,7 @@ class TestCwdCheckoutRoot:
         delegation chain from ``resolve_project_dir`` through
         ``resolve_plan_context`` runs for real.
         """
-        monkeypatch.setattr(file_ops, '_query_worktree_path', lambda _pid: (False, ''))
+        monkeypatch.setattr(file_ops, '_query_worktree_path', lambda _pid: worktree_query_result(False))
         monkeypatch.setattr(file_ops, 'cwd_checkout_root', lambda: '/tmp/cwd-relative-root')
         resolved = _resolve_project_dir.resolve_project_dir('some-plan', '.', default='.')
         assert resolved == '/tmp/cwd-relative-root'
@@ -150,7 +151,7 @@ class TestCwdCheckoutRoot:
     def test_plan_id_use_worktree_true_returns_absolute_worktree_path(self, monkeypatch):
         """--plan-id with use_worktree=true returns the persisted worktree path."""
         monkeypatch.setattr(
-            file_ops, '_query_worktree_path', lambda _pid: (True, '/tmp/wt-shared-resolved')
+            file_ops, '_query_worktree_path', lambda _pid: worktree_query_result(True, '/tmp/wt-shared-resolved')
         )
         resolved = _resolve_project_dir.resolve_project_dir('some-plan', '.', default='.')
         assert resolved == '/tmp/wt-shared-resolved'

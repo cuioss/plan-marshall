@@ -17,10 +17,12 @@ Two-state contract (per script):
   ``mutually_exclusive_args``. The caller must pick exactly one routing
   source.
 * ``--plan-id X`` only — resolve via ``manage-status get-worktree-path``.
-  When ``use_worktree`` is true, return the persisted ``worktree_path``.
-  When ``use_worktree`` is false (or metadata absent), fall back to the
-  plan root resolved cwd-relatively (the nearest ancestor of cwd
-  containing ``.plan/local``; ADR-002 uniform cwd rule).
+  The published ``worktree_state`` discriminator decides: ``materialized``
+  returns the persisted ``worktree_path``; ``pending`` (a worktree opted
+  into but not yet created by phase-5-execute) and ``disabled`` (no
+  worktree at all) both fall back to the plan root resolved cwd-relatively
+  (the nearest ancestor of cwd containing ``.plan/local``; ADR-002 uniform
+  cwd rule).
 * ``--plan-id NO_PLAN`` — the plan-less sentinel is NOT a routing source.
   It resolves exactly like the neither-flag branch (the main-checkout
   root, with no ``get-worktree-path`` lookup) and it is not counted as
@@ -78,10 +80,12 @@ def resolve_project_dir(
 
     Args:
         plan_id: Optional plan identifier. When set to a REAL plan id the
-            worktree path is looked up via ``manage-status
-            get-worktree-path``. The ``NO_PLAN`` sentinel is treated as
-            absent — it is not a routing source, so it neither triggers
-            the lookup nor participates in the mutual-exclusion check.
+            working tree is looked up via ``manage-status
+            get-worktree-path`` and selected by that command's published
+            ``worktree_state`` discriminator. The ``NO_PLAN`` sentinel is
+            treated as absent — it is not a routing source, so it neither
+            triggers the lookup nor participates in the mutual-exclusion
+            check.
         project_dir: Optional explicit project directory override.
             Returned verbatim when set (and ``plan_id`` is not a real
             plan id).
@@ -98,8 +102,11 @@ def resolve_project_dir(
     Raises:
         MutuallyExclusiveArgsError: when both ``plan_id`` and a
             non-default ``project_dir`` are set.
-        WorktreeResolutionError: when ``plan_id`` resolution fails
-            (manage-status error, missing worktree metadata, etc.).
+        WorktreeResolutionError: when ``plan_id`` resolution fails —
+            manage-status could not be invoked or returned a non-success
+            payload, or the payload carried no recognised
+            ``worktree_state``. Absent worktree metadata is NOT a failure:
+            it resolves to ``disabled`` and yields the checkout root.
     """
     project_dir_supplied = project_dir is not None and project_dir != default
     # The sentinel is excluded HERE rather than only inside the branch below:

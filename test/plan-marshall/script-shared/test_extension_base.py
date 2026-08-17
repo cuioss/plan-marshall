@@ -1061,7 +1061,15 @@ def real_footprint_resolver(monkeypatch):
 
 
 def _write_status(plan_dir, metadata):
-    """Write a status.json carrying ``metadata`` into ``plan_dir``."""
+    """Write a status.json carrying ``metadata`` into ``plan_dir``.
+
+    Callers pass the worktree metadata a worktree-BOUND plan actually carries:
+    ``use_worktree`` alongside ``worktree_path``. Writing a path without the
+    flag would model a status.json shape ``manage-status`` never produces — the
+    flag is what distinguishes a plan bound to a worktree from one that runs
+    against the main checkout, and the resolver reads the pair, not the path
+    alone.
+    """
     (plan_dir / 'status.json').write_text(json.dumps({'metadata': metadata}))
 
 
@@ -1109,7 +1117,7 @@ def test_resolve_plan_footprint_unresolvable_when_worktree_path_absent(
     whose changes simply did not exist yet.
     """
     # Arrange — metadata present, worktree_path not yet written.
-    _write_status(plan_context.plan_dir_for('no-worktree'), {'worktree_path': ''})
+    _write_status(plan_context.plan_dir_for('no-worktree'), {'use_worktree': True, 'worktree_path': ''})
 
     # Act / Assert
     assert extension_base._resolve_plan_footprint('no-worktree') is None
@@ -1121,7 +1129,7 @@ def test_resolve_plan_footprint_unresolvable_when_worktree_path_is_not_a_dir(
     """A ``worktree_path`` that does not resolve to a directory is ``None``."""
     # Arrange
     missing = tmp_path / 'gone'
-    _write_status(plan_context.plan_dir_for('stale-worktree'), {'worktree_path': str(missing)})
+    _write_status(plan_context.plan_dir_for('stale-worktree'), {'use_worktree': True, 'worktree_path': str(missing)})
 
     # Act / Assert
     assert extension_base._resolve_plan_footprint('stale-worktree') is None
@@ -1138,7 +1146,7 @@ def test_resolve_plan_footprint_unresolvable_when_the_diff_walk_raises(
     # Arrange — a real directory so the is_dir() guard passes, then fail the walk.
     worktree = tmp_path / 'wt'
     worktree.mkdir()
-    _write_status(plan_context.plan_dir_for('raising-diff'), {'worktree_path': str(worktree)})
+    _write_status(plan_context.plan_dir_for('raising-diff'), {'use_worktree': True, 'worktree_path': str(worktree)})
 
     import _references_core
 
@@ -1164,7 +1172,7 @@ def test_resolve_plan_footprint_returns_empty_list_when_resolvable_and_clean(
     # Arrange
     worktree = tmp_path / 'wt'
     worktree.mkdir()
-    _write_status(plan_context.plan_dir_for('clean-worktree'), {'worktree_path': str(worktree)})
+    _write_status(plan_context.plan_dir_for('clean-worktree'), {'use_worktree': True, 'worktree_path': str(worktree)})
 
     import _references_core
 
@@ -1185,7 +1193,7 @@ def test_resolve_plan_footprint_returns_sorted_paths_when_resolvable(
     # Arrange
     worktree = tmp_path / 'wt'
     worktree.mkdir()
-    _write_status(plan_context.plan_dir_for('dirty-worktree'), {'worktree_path': str(worktree)})
+    _write_status(plan_context.plan_dir_for('dirty-worktree'), {'use_worktree': True, 'worktree_path': str(worktree)})
 
     import _references_core
 

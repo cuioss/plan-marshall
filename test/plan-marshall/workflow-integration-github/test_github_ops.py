@@ -10,6 +10,7 @@ import argparse
 
 import github_ops
 from _ci_wait_contract import _ok_auth
+from _resolve_project_dir_fixtures import worktree_query_result
 
 # The post-merge corroboration re-read ``cmd_pr_merge`` issues. It is
 # distinguished from an ordinary ``pr view`` by its ``--json`` field list, so
@@ -1143,7 +1144,7 @@ def test_main_routes_plan_id_via_extract_routing_args(monkeypatch):
     # Patch the manage-status shell-out seam, which lives in file_ops —
     # resolve_project_dir delegates the worktree face to resolve_plan_context.
     monkeypatch.setattr(
-        _resolver_core, '_query_worktree_path', lambda _pid: (True, '/tmp/wt-resolved')
+        _resolver_core, '_query_worktree_path', lambda _pid: worktree_query_result(True, '/tmp/wt-resolved')
     )
     # Stub gh CLI invocations so we don't actually shell out.
     captured_cwds: list = []

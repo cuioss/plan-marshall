@@ -1031,12 +1031,13 @@ def _resolve_worktree_path_for_plan(plan_id: str) -> tuple[Path | None, dict | N
         }
 
     # Still reachable despite the has_worktree check above: that check caches
-    # the (use_worktree, worktree_path) query, so no SECOND query happens here —
-    # but PlanContext._resolve_worktree_face raises on its own when
-    # use_worktree is true and the persisted worktree_path is EMPTY. The
-    # message must therefore be the exception's own text: "No worktree
-    # configured" is provably false at this point (has_worktree just returned
-    # true), and would send the caller looking for the wrong defect.
+    # the (worktree_state, worktree_path) query, so no SECOND query happens
+    # here — but PlanContext._resolve_worktree_face raises on its own for a
+    # self-contradictory payload, one published as worktree_state=materialized
+    # with an EMPTY path. The message must therefore be the exception's own
+    # text: "No worktree configured" is provably false at this point
+    # (has_worktree just returned true, so the state IS materialized), and
+    # would send the caller looking for the wrong defect.
     try:
         return Path(context.worktree_path), None
     except WorktreeResolutionError as exc:
