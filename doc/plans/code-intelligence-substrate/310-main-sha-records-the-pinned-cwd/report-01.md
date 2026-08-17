@@ -207,14 +207,24 @@ containment**: a recorded `main_sha` that never reached main is the artifact and
 false; one that is on main means the row is sound and the entry is a real signal. A post-fix row needs
 no check at all, because `main_sha` is read main-anchored.
 
-⚠ **What the refusal does NOT do, stated plainly because the earlier draft implied otherwise.** Post-fix,
-`_main_repo_root()` resolves via `git rev-parse --git-common-dir` while `worktree_path` is
-`<main>/.plan/local/worktrees/{plan}`, and no production site sets `PLAN_BASE_DIR` or calls
-`set_base_dir()`. The two therefore cannot compare equal in production, so **`main_capture_read_the_worktree`
-is unreachable except under a D2 regression or corrupt `worktree_path` metadata.** It is a regression
-backstop, not the thing that keeps post-fix rows clean — the fixed resolver is. The earlier draft's
-"a post-fix row cannot carry the artifact, because such a row is now refused at capture time" claimed
-the opposite and was refuted by execution (such a row is *permitted*).
+⚠ **When the refusal actually fires, stated plainly because two earlier drafts got it wrong in opposite
+directions.** In the **default** configuration it does not: `_main_repo_root()` resolves via
+`git rev-parse --git-common-dir` while `worktree_path` is `<main>/.plan/local/worktrees/{plan}`
+(`file_ops.get_worktree_root`), and no code calls `set_base_dir()` outside its own definition — so the
+two cannot compare equal, and the refusal is reached only under a D2 regression or corrupt
+`worktree_path` metadata. **But `PLAN_BASE_DIR` is a documented *user* override** (`file_ops.py`
+"tests, user override"; `bootstrap_plugin` help text; the `manage-logging` env table), and with one
+active the resolver follows the working directory and the refusal genuinely fires. So it is a live
+guard for a real if unusual configuration, not dead code awaiting a regression — round 3 corrected the
+previous draft's "unreachable in production" on exactly that point.
+
+⛔ **And under that same override the refusal can MISS.** With an override active and the cwd in a
+**subdirectory** of the worktree, `_main_repo_root()` returns that subdirectory, which is not equal to
+`worktree_path` — so a mislabelled row persists un-refused. Round 3 demonstrated it by execution. This
+is why the shipped D4 rule no longer says a post-fix row needs no check: it says a post-fix row is
+sound *unless an override was in play*. The earlier draft's "a post-fix row cannot carry the artifact,
+because such a row is now refused at capture time" was wrong twice over — such a row is permitted when
+the trees are distinct, and can be mislabelled-and-permitted under an override.
 
 ### D5 — tests, each verified to fail against the defect it names
 
@@ -274,8 +284,16 @@ The plan's three named cases:
   `test_capture_main_dirty_reads_main_not_the_pinned_worktree` dirties **only** the worktree, so a
   non-zero `main_dirty` could only mean the wrong tree was read — settling the plan's
   companion-dirty-flag hypothesis by execution.
-- **(b)** the refusal module's nine tests — the six direction/verb tests listed under D3, the
-  `VERIFY_REFUSAL_ERRORS` membership test, and the strict-exit pair with its negative control.
+- **(b)** the refusal module's nine tests: five direction/verb tests
+  (`test_refuses_when_both_columns_resolved_to_the_same_tree`,
+  `test_permits_equal_shas_when_the_two_trees_are_distinct`,
+  `test_permits_equal_shas_for_a_plan_with_no_worktree_path`,
+  `test_cmd_capture_returns_structured_refusal_and_writes_no_row`,
+  `test_cmd_verify_returns_the_same_refusal_rather_than_raising`), the gate-predicate test
+  (`test_the_gate_is_the_persisted_path_not_the_use_worktree_flag`), the `VERIFY_REFUSAL_ERRORS`
+  membership test, and the strict-exit pair (positive plus negative control). D3's sixth listed test,
+  `test_a_commit_less_feature_branch_is_captured_not_refused`, lives in the **resolution** module
+  because it needs that module's real-repo fixtures — so it is counted there, not here.
 - **(c)** `test_summariser_sees_no_main_sha_drift_across_the_execute_boundary` — the rows are built
   by the **real capture** at both boundaries (cwd on main for the `4-plan` row, pinned to the
   worktree for the `5-execute` row) and then fed to the summariser's `detect_drift`. Hand-feeding
@@ -390,6 +408,56 @@ construction" claim; the `phase-5-execute` Step 2.5 ordering; all four named rea
 that `--override` provides **no** escape hatch, identically to the four sibling capture-time refusals;
 that `findings-check` is unaffected; and that `VERIFY_REFUSAL_ERRORS` is enumerated in exactly two
 places, both updated.
+
+### Round 3 — 9 findings, all fixed. Exit-evidence campaigns all clean on the shipped Python
+
+The round ran four campaigns of the kind that can come back different: exhaustive branch enumeration
+under branch-coverage over all 570 tests in the owning directory, a differential run of `origin/main`'s
+`_invariants.py` against HEAD's across five conditions, a 4000-pair fuzz sweep over the path
+comparison, and a targeted mutation. **All four came back clean on the code.** Every one of the nine
+findings is a false statement (condition A); none is behavioural.
+
+| # | Source / site | Finding | Disposition |
+|---|---|---|---|
+| F20 | `invariant-check-summary.md` (the D4 deliverable) | ⛔ **Round 2's branch-containment discriminator returns the INVERTED verdict at the moment the rule is read.** `plan-retrospective` is a `post_run_review` step (`order: 995`) that runs **after the merge gate**, and the default PR merge strategy is a **merge commit** (`ci_base.py`, `--strategy` default `merge`) — which makes every feature-branch commit an ancestor of main. So a mislabelled `main_sha` reads as "on main" and containment reports *sound* for exactly the rows it was meant to convict. Executed both cases before and after a real `merge --no-ff`. Rebase/fast-forward merges break it too; only squash preserves the distinction, and that is not the default. | **Fixed** — the discriminator is **withdrawn**. The rule now reports such an entry as **unverifiable**, names all three failed discriminators (boundary, stored columns, containment) with the reason each fails, and states plainly that what would settle it — the row's capture era relative to the fix — is not in the corpus |
+| F21 | same file | "A post-fix row needs no containment check … main's HEAD **whatever the working directory**" is false. Executed: with a base-dir override active and cwd in a worktree **subdirectory**, `_main_repo_root()` returns that subdirectory, so it is unequal to `worktree_path`, the refusal does **not** fire, and a mislabelled row persists with the fingerprint. | **Fixed** — the universal is replaced by "sound *unless an override was in play*", with the subdirectory mechanism named |
+| F22 | `test_phase_handshake_validators.py` (docstring **this plan rewrote**) | "`cwd=tmp_path` (a non-git, isolated dir) leaves the git probes with **no repository to read**" — both halves false: `build.py` pins `--basetemp` inside the repo, so the probes read this worktree and `main_sha` captured the real HEAD. **Third instance of the trap** F19 named; round 2 fixed the sibling module and left this one. | **Fixed** — the note now says only the executor fan-out is isolated, not the git reads, and why that suffices for a parse-time test |
+| F23 | `test_invariants_main_resolution.py` | Round 2's own F19 fix dropped the `main_checkout_root` stub and left the docstring saying the resolver is "exercised **alongside the stub**". | **Fixed** — the docstring now describes the real `git rev-parse` failure path, which is what produces the `None` |
+| F24 | `report-01.md` D5(b) | The decomposition named the wrong six tests: one of D3's six lives in the *resolution* module, and the refusal module's gate-predicate test was unaccounted for. The total reached 9 only because the mis-attribution and the omission cancelled. Round 2 fixed this row's count without fixing its claim. | **Fixed** — every test named explicitly, with the cross-module one attributed to where it lives and why |
+| F25 | `report-01.md` | "No production site sets `PLAN_BASE_DIR` … the refusal is **unreachable** in production except under a D2 regression" — over-strong. `PLAN_BASE_DIR` is a documented **user** override, and under one the refusal genuinely fires. | **Fixed** — restated: not reachable in the *default* configuration, a live guard under an override. The `set_base_dir()` and `worktree_path` conjuncts were verified and hold |
+| F26 | `phase-handshake.md` | "the row disproves itself **with no external reference**" — pre-narrowing wording. The check consults `_main_repo_root()` (a live git probe) and `metadata.worktree_path`, neither a row column. It also contradicted the D4 rule two files away, which says the stored rows carry nothing that distinguishes the cases. | **Fixed** — now states that the refusal is available at capture time and **not** to a later reader of the row, with the xref to the retrospective rule |
+| F27 | `invariant-check-summary.md` | The severity line's parenthetical "(the worktree should isolate the plan from main)" contradicted the bullet added directly below it, and `phase-handshake.md` § Blocking classification. | **Fixed** — replaced with what `main_sha` drift actually means (the integration target moved), plus the xref |
+| F28 | `_invariants.py` ×3 | "raises `TaskGraphInvalid` so **`cmd_capture` refuses**" — there is no handler and no `task_graph_invalid` error code, so it escapes as `internal_error`. The same defect shape as F1, on the fifth member of the `Raises:` set this plan added. Pre-existing (confirmed absent at `origin/main` too). | **Fixed at all three sites** — the *outcome* claim was true (no row persisted, boundary blocked) and is kept; the *mechanism* is corrected, and the lost structured diagnosis is named. The missing handler is carried as declared residue, with its bound |
+
+**Exit-evidence campaigns, with verdicts:**
+
+- **Branch enumeration.** `_main_repo_root`: 3 return paths, **all reached by a named test**, no missing
+  branches. `_assert_main_capture_read_main`: 8 paths, 6 reached; the two misses are the guards the
+  docstring already calls unreachable-by-construction, and the round independently confirmed both by
+  argument. The one unclaimed miss (`except OSError`) was probed — 5000-char and 2000-segment paths
+  resolve fine, and the input that does raise (`\x00`) raises `ValueError` in `git_head` *earlier* in
+  the registry loop, so no new crash path exists.
+- **Differential run vs the merge base**, five conditions: **exactly one behaviour changed** — cwd in a
+  linked worktree, where all three `main_*` columns now read main instead of the worktree. That is D2's
+  fix, and it lands on all three columns rather than `main_sha` alone. Every other condition (cwd on
+  main, flat override on main, flat override in a worktree, outside any repo) is byte-identical to the
+  base. `capture_all` cross-field: base persists an equal pair from the worktree, HEAD persists a
+  differing one.
+- **Fuzz sweep**: 14 deterministic same-tree shapes (trailing `/`, `//`, `/.`, `..`-bearing, symlink
+  alias, `subdir/..`) all refuse; 8 different-tree shapes give no false positive; **4000 random path
+  pairs, 0 mismatches** against `Path.resolve()`-equality.
+- **Mutation**: making the resolver's `except RuntimeError` fall back to `_current_repo_root()` reddens
+  **exactly** the one test round 2 rewrote — so dropping its stub left it non-vacuous. It is also
+  fail-loud rather than fail-silent: forcing `TMPDIR` inside the repo produces an explicit
+  `AssertionError` rather than a pass.
+
+**Are the late rounds' findings narrower? Partly, and the report says so rather than claiming
+convergence.** They have moved from code to prose — round 3 found no behavioural defect in the shipped
+Python, and its four campaigns are the strongest evidence this run has produced. But the D4 deliverable
+*is* prose, and F20 inverted its verdict at the only moment it is read; that is not a narrow finding.
+The recurring shape across rounds 2 and 3 is **n−1-of-n**: a claim corrected where the finding pointed
+and left standing elsewhere (F14, F22, F24, F26, F27 are all instances). Round 3's verifier judged that
+pattern to be relocating rather than converging, and that judgement is recorded here as it was given.
 
 ## Reviewer participation
 

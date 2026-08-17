@@ -293,7 +293,7 @@ When the main checkout cannot be resolved at all (not a git repository, git unav
 
 ### `main_capture_read_the_worktree` capture-time error
 
-`main_sha` and `worktree_sha` describe two different trees. When they hold the same commit **and** both resolved to the same directory, one tree is being reported under two names — the row disproves itself with no external reference. `capture_all` raises `MainCaptureReadTheWorktree` and `cmd_capture` returns a structured error payload **without writing a row**:
+`main_sha` and `worktree_sha` describe two different trees. When they hold the same commit **and** both resolved to the same directory, one tree is being reported under two names. ⚠ The equal pair alone is not that evidence: the check compares the two *resolved paths*, which are live inputs (`_main_repo_root()` and `metadata.worktree_path`) and not row columns — so this refusal is available at capture time and **not** to a later reader of the stored row, for whom the equal pair is merely ambiguous (see `plan-marshall:plan-retrospective` → `references/invariant-check-summary.md`). `capture_all` raises `MainCaptureReadTheWorktree` and `cmd_capture` returns a structured error payload **without writing a row**:
 
 ```toon
 status: error

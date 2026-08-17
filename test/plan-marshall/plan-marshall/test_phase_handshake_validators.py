@@ -137,14 +137,20 @@ def test_canonical_inputs_dont_trigger_invalid_field(subcommand, tmp_path):
     the canonical ``.../​.plan/local`` shape — which is exactly the case here
     (the env points at ``tmp_path``) — and ``_main_repo_root()`` delegates to it
     because a set ``PLAN_BASE_DIR`` is an active base-dir override.
-    Without pinning cwd, those subprocesses run ``git status --porcelain``
-    and resolve ``<repo>/.plan/execute-script.py`` against the REAL repo
-    working tree, so under ``-n auto`` they observe transient state mutated
-    by concurrent workers (a known recurring real-tree-leak signature) and
-    the aggregate capture becomes non-deterministic. Running with
-    ``cwd=tmp_path`` (a non-git, isolated dir) leaves the git probes with no
-    repository to read, so the executor/git fan-out short-circuits cleanly to
-    "not applicable" — the identifier validators still run at PARSE time
+    Without pinning cwd, those subprocesses resolve
+    ``<repo>/.plan/execute-script.py`` against the REAL repo working tree, so
+    under ``-n auto`` they observe transient state mutated by concurrent workers
+    (a known recurring real-tree-leak signature) and the aggregate capture
+    becomes non-deterministic. Running with ``cwd=tmp_path`` moves the executor
+    lookup off that path, so the fan-out short-circuits to "not applicable".
+
+    ⚠ ``tmp_path`` is NOT outside the repository: ``build.py`` pins pytest's
+    ``--basetemp`` under the repo's own ``.plan/temp/``, so the git probes still
+    resolve this worktree and ``main_sha`` still captures the real HEAD. Only the
+    executor fan-out is isolated here, not the git reads — which is sufficient
+    for this test, whose assertions concern PARSE-time validation only. A test
+    that genuinely needs a repo-less cwd uses the ``outside_repo_dir`` fixture
+    instead. The identifier validators still run at PARSE time
     (the only behaviour this test asserts), so coverage is unchanged while
     the contention source is removed.
     """

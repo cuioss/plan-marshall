@@ -266,9 +266,14 @@ class TaskGraphInvalid(Exception):
 
     Shaped like :class:`PhaseStepsIncomplete`: the constructor formats a
     descriptive message and keeps the structured fields (``cycle``,
-    ``dangling``) as attributes so callers can surface a structured error
+    ``dangling``) as attributes so a caller can surface a structured error
     payload and refuse to persist the handshake row — thereby blocking the
     phase transition on a broken task graph.
+
+    ⚠ **No caller currently does.** ``cmd_capture`` handles its four sibling
+    capture-time exceptions and not this one, so the attributes are carried but
+    never rendered; see :func:`_capture_task_graph_valid` for what reaches the
+    operator instead.
     """
 
     def __init__(
@@ -944,8 +949,17 @@ def _capture_task_graph_valid(plan_id: str, _metadata: dict[str, Any], _phase: s
     matching the pattern used by the other hash invariants. An empty task
     list yields the zero-edge hash (stable, non-raising).
 
-    On failure raises :class:`TaskGraphInvalid` so ``cmd_capture`` refuses
-    to persist the handshake row and blocks the phase transition.
+    On failure raises :class:`TaskGraphInvalid`, which leaves no handshake row
+    persisted and blocks the phase transition.
+
+    ⚠ **Unlike its four sibling capture-time exceptions, this one has no handler
+    in ``cmd_capture``**, so it is not converted into a structured
+    ``status: error`` payload with its ``cycle`` / ``dangling`` fields — it
+    propagates out of the verb and ``file_ops.safe_main`` renders it as
+    ``error: internal_error`` with exit 1. The boundary still fails closed (that
+    part of the outcome is unchanged), but the operator loses the structured
+    diagnosis. Pre-existing; noted here so the mechanism is not mistaken for the
+    handled path the siblings take.
 
     Returns ``None`` if the tasks cannot be loaded (e.g. executor missing
     during a unit-test harness that doesn't provide the plan directory).
@@ -1850,7 +1864,8 @@ def capture_all(plan_id: str, metadata: dict[str, Any], phase: str) -> dict[str,
         BlockingFindingsPresent: when an actionable finding is pending at a
             boundary that blocks on findings.
         TaskGraphInvalid: when the task graph carries a cycle or a dangling
-            reference.
+            reference. Unhandled by ``cmd_capture`` — see
+            :func:`_capture_task_graph_valid`.
         PrTitleMissing: when ``metadata.pr_title`` is absent from ``2-refine``
             onward.
         MainCaptureReadTheWorktree: when the ``main_*`` columns were read from

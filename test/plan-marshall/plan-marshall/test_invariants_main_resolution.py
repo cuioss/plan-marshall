@@ -183,8 +183,9 @@ def test_main_repo_root_returns_none_outside_a_git_repository(
     ``tmp_path`` subdirectory is INSIDE this git worktree and ``git rev-parse``
     still resolves from it — the ``chdir`` would be inert and the test would
     prove only that the stub raises. The fixture allocates under ``$TMPDIR``,
-    so the cwd genuinely has no repository above it and the real resolver is
-    exercised alongside the stub.
+    so the cwd genuinely has no repository above it and the real
+    ``git rev-parse`` failure path is what produces the ``None`` — no stub is
+    involved.
     """
     monkeypatch.chdir(outside_repo_dir)
 
