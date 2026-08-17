@@ -156,8 +156,7 @@ diff, so the gate's verdict is taken over committed work only.
 
 Recorded per instance across the verification rounds, against a budget declared **before the first
 dispatch** and later extended by the operator. **The per-round headings carry the totals; no aggregate
-is stated here**, because two drafts froze one and neither survived the next round. Sources: **Vn** = the independent pre-PR verification sub-agent, round *n*; **CR** = the `coderabbitai` PR review;
-**S** = self-caught while fixing.
+is stated here**, because two drafts froze one and neither survived the next round. Sources: **Vn** = the independent pre-PR verification sub-agent, round *n*; **CR** = a `coderabbitai` PR review.
 
 ### Round 1 — 23 findings: 22 fixed, 1 accepted as a labelled lead
 
@@ -653,9 +652,12 @@ round's findings the previous round caused.
 
 ## Residue
 
+* ⛔ **The epic has no derivation and no check for its own cross-file sets** — the finding eight rounds
+  and three automated reviews converged on. **Plan `120` now owns it** (§ Deliverables D2), authored
+  after round 8 on exactly this evidence.
 * **The verification residue is the headline, and it is disclosed in full at § "The stop record"** —
-  the loop did **not** end on a clean verdict, and the deliverables should be read as still carrying
-  defects of the kinds named there. `090-harness-and-rule-gaps.md` is the
+  the loop did **not** end on a clean verdict, it ended on an exhausted budget, and the deliverables
+  should be read as still carrying defects of the three kinds named there. `090-harness-and-rule-gaps.md` is the
   highest-residue file.
 * **Two items remain unowned by design**, both recorded with the reason in the epic README and in
   `090` § Out of scope: populating the `identifier-validator-corpus` registry (a coverage decision,

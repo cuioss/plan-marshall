@@ -291,6 +291,8 @@ it, and where a run cannot finish, **report what was not reached rather than thi
 090 harness & rule gaps ──→ unblocks the B6/B7 halves of 070 and 080 (see the collision matrix)
 100 module-budget campaign ──→ one slice per run; takes 070's and 080's slices after they land
 110 every test runs, no slowdown ──→ builds the instruments conditions 3 and 4 rely on
+120 derive the cross-file sets ──→ computes the partition, the matrix and the attribution, and
+                                   fails when a document disagrees; land it early
 ```
 
 | Plan | Surface | May run concurrently with |
@@ -300,6 +302,7 @@ it, and where a run cannot finish, **report what was not reached rather than thi
 | `030`–`080` | one disjoint slice of `test/` each, listed in the plan | each other, once `010` **and** `020` have landed |
 | `090` | `marketplace/bundles/**` (the doctor analyzers, `script-shared`, `manage-providers`) — **the only plan in the epic that may edit it** — plus `test/conftest.py`'s loader mechanics, and the tests for its own production changes | see § "The collision matrix" — it is the authoritative set, and this cell deliberately does not restate it |
 | `100` | one reduction slice per run, `test_*.py` only — plus a seventh run for the one over-budget module plan `010` owns, which no reduction slice covers | nothing running against the same slice; and see § "The collision matrix" for the runs that additionally collide with `090` |
+| `120` | repository tooling only — the checker and its tests. It **reads** every plan document and the test tree and writes neither | anything; it shares no surface with any plan in the epic |
 | `110` | the tree's skip sites, which **cross** several slices — `test/sync-plugin-cache/`, `test/pm-plugin-development/`, `test/marketplace/` and scattered others — plus `test/conftest.py`'s session preflight and skip guard | nothing running against those directories; see § "The collision matrix" for `090` |
 
 **`090`, `100` and `110` were added after the epic's executed half**, each from something four runs
@@ -351,7 +354,7 @@ before `100`'s runs 5 and 6 — are stated in § "The plans, and what may run at
 each plan's own blocking-dependency note. A pair absent from this table may run at the same time **if
 its ordering constraints are met**; the two questions are separate.
 
-⛔ **This table is hand-maintained and nothing derives or checks it.** Eight verification rounds and
+⛔ **This table is hand-maintained and nothing derives or checks it — plan `120` is the fix.** Eight verification rounds and
 three automated reviews all reached the same conclusion: an ownership set held in prose, with no
 derivation and no check, drifts — and three successive attempts to fix that by restructuring the prose
 each reproduced the drift inside their own commit. **Treat every row as a lead**: before acting on it,
