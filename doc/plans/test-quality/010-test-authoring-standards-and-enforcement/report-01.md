@@ -514,3 +514,20 @@ observed, not proposing an edit.
 * **Sequencing** — this plan and `020` are the epic's two blocking plans. `030`–`080` may start once both
   have landed on `main`. Plan `080` renames `test/pm-plugin-development/plugin-doctor/_fixtures.py` and
   will inherit it carrying four test-conventions entries, as its D1 anticipates.
+
+## Disposition update (2026-08-17) — appended by the epic re-scoping run
+
+Appended after this run closed, by the run that read every landed report in this epic and re-scoped
+the remaining plans. It records **what happened next** to items this report left open; it does not
+revise anything above, and where a figure is restated it is re-derived here rather than copied.
+
+| Item from this report | Disposition |
+|---|---|
+| § D6 Proposal 2 — flip the four `test-conventions` rules to `error`, per-rule, once each count reaches zero | **Owner assigned: plan `090` § D6.** The ladder is that deliverable. `test-helper-module-misnamed` is re-derived at **0** whole-tree today, so the flip condition this report identified still holds and `090` takes it |
+| § D6 Proposal 2 — the other three counts (315 / 370 / 254 at landing) | **Re-derived whole-tree: `test-module-line-budget` 313, `test-module-preamble-boilerplate` 179, `test-docstring-historical-prose` 81.** Two of the three moved substantially; the budget moved by two modules across four reduction plans, which is what plan `100` was created to close |
+| § D6 Proposal 1 — the whole-tree property-based-testing candidate list (107 functions across 53 modules) | **Consumed as intended.** Plan `080` § D4 anchors on it by path and states which of its rows refine this list. Plan `060` § D5 landed its own slice's refinement. The `hypothesis` dependency remains a standing proposal — no run may take it |
+| Finding 4 — `identifier-validator-corpus`'s registry is empty, so the rule is a permanent no-op | **Recorded as unowned by design**, in the epic README § "Where a recorded finding goes" and in plan `090` § Out of scope, each with the reason: populating it is a coverage decision about which production validators the corpus should cover, not a rule gap. Re-derived: the rule still reports 0 findings tree-wide |
+| Finding 21 — `rule-catalog.md`'s dead anchor, and the `broken-relative-link` rule checking a link's file half but not its fragment | **Recorded as unowned by design**, same two places. The fragment half is a new analyzer capability rather than a widening, which is why `090` excludes it explicitly rather than silently |
+| Finding 5 — the three pre-existing `test-conventions` rules have no `rule-catalog.md` rows | **Still open and still unowned.** No plan in the epic claims it; recorded here so the omission stays visible |
+| § Residue — `pm-dev-java` carries the retired `~200 lines` figure and the unscoped generated-data phrasing | **Closed**, by PR #1250 (`chore(test-quality): close the residue plan 010 recorded`). Verified by this run: `grep -rn '200 lines' marketplace/bundles/pm-dev-java/` and the generated-data grep both return nothing |
+| § Residue — `uv.lock` out of sync with `pyproject.toml` on `main` | Not re-checked by this run; outside its surface and unrelated to the epic |

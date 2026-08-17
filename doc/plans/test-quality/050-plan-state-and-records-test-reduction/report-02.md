@@ -461,3 +461,19 @@ Two further items recorded for a future plan, neither actionable within this run
 - **Rule 7's matchers miss two live spellings** — `Deliverable 2` (it requires `deliverable D<n>`) and
   a bare `#849` (it requires `PR #<n>`). Both appeared in this repository's own test prose. Widening
   the matchers is a change that needs its own false-positive measurement first.
+
+## Disposition update (2026-08-17) — appended by the epic re-scoping run
+
+Appended after this run closed, by the run that read every landed report in this epic and re-scoped
+the remaining plans. It covers the residue of **both** runs of plan `050` and does not revise anything
+above.
+
+| Item from run 01 or run 02 | Disposition |
+|---|---|
+| Run 02 § Residue — rule 7's matchers miss `Deliverable 2` and a bare `#849`, and widening needs its own false-positive measurement first | **Owner assigned: plan `090` § D4.** Both spellings are named there, and the deliverable requires the measurement this report said must come first — the false-positive rate reported with its sample size, taken by a cold reader rather than asserted by the author |
+| Run 02 § Residue — `no-lesson-id-in-skill-prose` carries rule 7's old citation-versus-datum gap over `marketplace/bundles/**` | **Owner assigned: plan `090` § D5**, on exactly the terms this report set: measure the false-positive rate over bundle prose first, then either apply the same literal-span exemption or leave the rule unchanged with the measurement as the stated reason |
+| Run 01 § Residue — the `parse_ns` re-execution cost, and the per-subcommand adapter layer three or more slices will want | **Routed to plan `090`**, which owns `test/conftest.py` in this epic; the promotion is a proposal a run records, not a change a reduction plan makes. The cost itself is now a stated hazard in plans `070` and `080`, and plan `110` adds the wall-clock condition that would catch it |
+| D4 — 59 modules over the 400-line budget, unstarted (58 after run 02 split `test_audit.py`) | **Owner assigned: plan `100`.** Re-derived for this slice today: ~58. This plan's D1 decomposition is also `100`'s worked example — including the part that went wrong, the 162 lost comments, which is why `100` § D4 requires diffing comments as their own dimension |
+| Run 01 § "What have we learned" — the deletion-site proposal, and run 02's whole-repository-grep-for-a-removed-path proposal | **Both landed in the lane contract.** `.claude/skills/cloud-plan-lane/SKILL.md` now carries the sweep-and-count discipline, the guard-independence rule, and the removed-path sweep. This report's evidence is what bought them |
+| D2's remaining namespace builders; D3's five directories with no fixture module; D5's parametrization half, unstarted | **Still open in this plan's slice, and indexed** in the epic README § "What the executed half left open" |
+| Run 02 § Findings 12–14 — the three CodeRabbit items rejected as new scope, each with its reason | **Still open and still unowned**, exactly as recorded. Two are test-coverage additions in this slice; the third (`_cmd_step.py` persisting `task_start_sha`) is a `manage-tasks` production change outside every plan in this epic |

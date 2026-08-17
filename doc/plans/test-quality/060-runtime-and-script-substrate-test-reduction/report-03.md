@@ -238,3 +238,22 @@ hermeticity arm; D4's cold read.
    owner; this run did not re-claim it.
 8. **Per-slice line floors** (run 01 F5) and the **cloud-plan-lane amendment** (run 01 § What have we
    learned) — both with the operator.
+
+## Disposition update (2026-08-17) — appended by the epic re-scoping run
+
+Appended after these runs closed, by the run that read every landed report in this epic and re-scoped
+the remaining plans. It covers the residue of **all three** runs of plan `060` and does not revise
+anything above.
+
+| Item from run 01, 02 or 03 | Disposition |
+|---|---|
+| Run 01 § F5 — the 25% floor is unreachable for this slice; set per-slice floors from each slice's own composition | **Acted on, epic-wide, and further than proposed.** Every percentage floor is retired rather than re-derived: the epic README § "Why there is no line floor" carries the arithmetic for all six slices, and this slice is one of the three whose floor exceeded its entire comment-and-docstring volume. This report's measurement — mean test 11.7 lines, already inside **B2**, with every remaining lever summing to ~10.7% — is part of what settled it |
+| Run 01 § F7 and run 03 § Residue 7 — `test/pm-code-intelligence/` is claimed by no plan; run 01's claim was "a decision about *this run*, not a durable partition fix" | **Closed, durably.** It is assigned to plan `080`'s slice and named in `080`'s Expected surface, with the reason recorded in the epic README's exclusion table. Four consecutive runs each halted on it and were told to proceed, because each disposition was about that run; this one is about the partition |
+| Run 03 § H4 — three `sys.modules` registrations remain, latent because no test imports those names plainly, and no guard exists | **Owner assigned: plan `090` § D3**, which must demonstrate the guard **failing** by giving one of those three a plain importer and watching it go red — a detector that has never been observed detecting is not a guard |
+| Run 03 § H6 — two preamble findings are unfixable by the remedy their own rule names, because a bundle `extension.py` is not under `scripts/` | **Owner assigned: plan `090` § D2**, on exactly the fork this report proposed: widen the helper, or exempt the shape — and state which was taken and why the other was rejected |
+| Run 02 § Residue — 27 of the 29 `parse_ns` exceptions are blocked on production modules with no parser seam; "a published `build_parser()` would unblock all 14" | **Owner assigned: plan `090` § D1**, which publishes a seam on every module a re-derived `ParserSeamNotFound` collection names. It is why `090` should land before `070` and `080` start: those two slices carry roughly 502 and 222 hand-built namespaces and would hit the same wall |
+| Run 03 § "D2 — still open, with a new finding" — 53 modules over budget, of which class-boundary splitting reaches 52; exactly one class (663 lines) exceeds the budget alone | **Owner assigned: plan `100`.** The bound is carried into that plan verbatim as the kind of fact a later run should have before it starts. Re-derived for this slice today: ~50 over budget |
+| Run 01 § F6 and run 03 § Residue 6 — D4's required cold read, never performed; and D4 parametrization, ~223 families at ≥80% similarity | **Still open in this plan's slice, and indexed** in the epic README § "What the executed half left open", including the caveat that the similarity set contains matched control pairs which must **not** be collapsed |
+| Run 03 § Residue 5 — the randomised hermeticity arm, unrun because `pytest-randomly` is absent | **Routed to plan `110` § D5**, which owns the genuinely-absent-dependency shape: it records the dependency proposal (a third-party dependency is a user-approval step no run may take) and covers the contract another way meanwhile |
+| Run 01 § "What have we learned" — generalise the positive-control rule to every "unavailable" claim | **Landed in the lane contract**, which now carries the unreadable-versus-empty distinction and the positive-control discipline. This run's false "`pytest-xdist` unavailable" is what bought it |
+| Run 03 § "A scope violation, caught and reverted" — a sweep's file glob reached 37 modules outside the plan's surface | **Carried forward as a stated hazard**: plan `100` § D2 and both re-scoped reduction plans require a sweep's glob to be derived from the plan's Expected surface, and `100` takes one slice per run partly so the surface stays small enough to check |

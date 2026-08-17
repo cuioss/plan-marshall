@@ -387,3 +387,23 @@ decision this epic does not carry: populating the `identifier-validator-corpus` 
 coverage decision about which production validators the corpus should cover; and the
 `broken-relative-link` rule validating a link's file half but not its fragment, which is a new
 analyzer capability rather than a widening. Plan `090` § Out of scope states both and why.
+
+### What the executed half left open
+
+`030`–`060` have landed. Each left deliverables unreached and recorded them in its own report's
+§ Residue, which is the authoritative account — this index exists so a follow-up run can be
+commissioned without reading six reports first, not to replace them. **Every figure here is a lead
+taken from the report that recorded it; re-derive before acting.**
+
+| Plan | Still open in its own slice | Now owned elsewhere |
+|---|---|---|
+| `030` config and manifest | D3 arrange-into-fixtures, unstarted — the `monkeypatch.setattr`-to-`@pytest.fixture` ratio is untouched, and its `parse_ns` exception list is **empty by non-attempt, not by finding none**. D1's body-shape residue needs re-specifying before anyone attempts it | 39 over-budget modules → `100`; the shared-registration guard its reviewer asked for → `090` § D3 |
+| `040` delivery pipeline | D2 fixture corpus, unstarted. D3 subprocess-layer collapse, **not performed at all** — its gating survey ran and licensed no collapse, so ~124 `run_script` sites remain unpaired. D5's `parse_ns` half unstarted against ~391 `Namespace(` sites. A `fixtures/ci-wait/README.md` carrying a plan slug, a lesson id and a dated line | ~56 over-budget modules → `100`; the ~92 prose citations in shapes the rule does not match → `090` § D4 |
+| `050` plan state and records | D2's remaining namespace builders; D3's five directories with no fixture module; D5's parametrization half, unstarted. Three findings its second run rejected as new scope with reasons recorded | ~58 over-budget modules → `100` |
+| `060` runtime and script substrate | D4 parametrization beyond one family — ~223 families at ≥80% skeleton similarity, each needing a read because the set includes matched control pairs that must **not** collapse. D4's required cold read, never performed. The randomised hermeticity arm, unrun | ~50 over-budget modules → `100`, with the bound that exactly one class exceeds the budget alone; 3 latent `sys.modules` registrations → `090` § D3; 2 structurally-unfixable preambles → `090` § D2; 27 seam-blocked `parse_ns` sites → `090` § D1 |
+
+A follow-up run against a landed plan re-enters it exactly as `030`, `050` and `060` already did — a
+new report ordinal in the same plan directory, the plan itself unchanged. What it must not do is
+treat an unstarted deliverable as satisfied: `030`'s own report says it plainest, that an empty
+exception list produced by not attempting the sweep *"tells the operator nothing"* and must not be
+read as a clean result.
