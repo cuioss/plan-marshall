@@ -118,5 +118,6 @@ and no live code path outside the sanctioned homes constructs a Claude layout.
 ## Notes
 
 - Shares plan-marshall bundle surfaces with `030` (permission scripts) and `010`
-  (platform-runtime): run after both; concurrent with `040` only. Evidence:
-  `reference/marketplace-audit.md` §M5–§M9.
+  (platform-runtime): run after both; concurrent with `040` and `050`, not with `060` (both
+  conditionally touch platform-runtime docs). Evidence:
+  `doc/plans/multiplattform/reference/marketplace-audit.md` §M5–§M9.

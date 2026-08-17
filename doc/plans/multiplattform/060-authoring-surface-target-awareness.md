@@ -118,6 +118,8 @@ and no pm-plugin-development file resolves or names the Claude layout outside th
 
 ## Notes
 
-- Not concurrent with `020` (plugin-doctor surface) or `030` (`scan-marketplace-inventory.py`
-  sits beside `_dep_index.py`); concurrent with `040`; `010` should land first so D3's default
-  consumes its single source. Evidence: `reference/marketplace-audit.md` §M3–§M4.
+- Not concurrent with `020` (plugin-doctor surface), `030` (`scan-marketplace-inventory.py`
+  sits beside `_dep_index.py`), or `070` (both conditionally touch platform-runtime docs);
+  concurrent with `040` and `050` (the `ext-triage-plugin` disposition standard is `050`'s,
+  excluded here); `010` lands first so D3's default consumes its single source. Evidence:
+  `doc/plans/multiplattform/reference/marketplace-audit.md` §M3–§M4.

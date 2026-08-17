@@ -54,12 +54,13 @@ audited bundle file instructs a Claude tool invocation outside the registered id
    Claude argument schema.
    *Done when:* no `AskUserQuestion:`-keyed block with `header`/`options`/`multiSelect` remains
    in the file; the step's decision content is preserved.
-3. **D3 — ext-triage escalation lines neutralized** — in all six `pr-comment-disposition.md`
-   files (re-derive the set) the bare ESCALATE-row and flow-branch lines name the act
-   ("escalate to the operator"), keeping the one backticked `AskUserQuestion` as the
-   registered-idiom carrier; the six files stay byte-identical to each other.
-   *Done when:* a diff across the six files shows identical content and only the backticked
-   occurrence of the tool name remains in each.
+3. **D3 — ext-triage escalation lines neutralized** — in every ext-triage
+   `pr-comment-disposition.md` (seven skills including `ext-triage-plugin` in
+   pm-plugin-development — re-derive the set) the bare ESCALATE-row and flow-branch lines name
+   the act ("escalate to the operator"), keeping the one backticked `AskUserQuestion` as the
+   registered-idiom carrier; the escalation blocks stay byte-identical across the files.
+   *Done when:* the escalation blocks hash identically across the re-derived file set and only
+   the backticked occurrence of the tool name remains in each.
 4. **D4 — Remaining normative tool-prose sites** — the M2-listed sites (Write-tool steps in
    `recipe-cui-logging-enforce` and the three pm-documents recipes, `link-verification.md` call
    syntax and blocks, the `testing-pytest.md` `CLAUDE.md` citation, the `pm-dev-java-cui/README.md`
@@ -82,7 +83,9 @@ audited bundle file instructs a Claude tool invocation outside the registered id
 - `marketplace/targets/body_transform_engine.py`, `marketplace/targets/opencode/mapping.json`,
   `marketplace/targets/opencode/transforms.md`, `test/marketplace/targets/**` — D1
 - The M2-named bundle files across pm-dev-java, pm-dev-java-cui, pm-dev-python, pm-dev-oci,
-  pm-dev-frontend, pm-documents, pm-requirements — D2–D4
+  pm-dev-frontend, pm-documents, pm-requirements, plus the single
+  `pm-plugin-development/skills/ext-triage-plugin/standards/pr-comment-disposition.md` (carved
+  out of plan `060`'s surface so D3's byte-identical set stays whole) — D2–D4
 
 ## Claim labels
 
@@ -90,7 +93,7 @@ audited bundle file instructs a Claude tool invocation outside the registered id
 |---|---|---|
 | `STRUCTURAL_VOCABULARY` holds only `skill_directive` and `slash_command` | OBSERVED | `body_transform_engine.py` — re-read before building |
 | The `Read:` directive class spans ~130 occurrences repo-wide | OBSERVED, count is a lead | re-derive by full-line regex before D1; the hit list is the work list |
-| The six ext-triage escalation blocks are byte-identical | OBSERVED | the six files — re-hash before editing |
+| The ext-triage escalation blocks are byte-identical across the seven skills | OBSERVED, set is a lead | the files — re-derive the set and re-hash the blocks before editing |
 | The `AskUserQuestion:` YAML block is unreachable by every existing transform | OBSERVED | `manage-maven-profiles/SKILL.md` + the engine's matchers |
 | No further normative call-schema block exists in the bundles | HYPOTHESIS | sweep for fenced blocks keyed by a Claude tool name; extra hits are reported and folded into D4 |
 
@@ -104,7 +107,8 @@ audited bundle file instructs a Claude tool invocation outside the registered id
 
 ## Notes
 
-- Shares `marketplace/targets/**` with plan `020` — not concurrent with it. Not concurrent with
-  `050`-overlapping surfaces in `060` (none: `060` is pm-plugin-development-only) — see the epic
-  README concurrency table.
+- Shares `marketplace/targets/**` with plan `020` — not concurrent with it. Concurrent with
+  `060`: the one pm-plugin-development file this plan touches (`ext-triage-plugin`'s
+  disposition standard) is explicitly carved out of `060`'s surface — see the epic README
+  concurrency table.
 - Evidence registry: `doc/plans/multiplattform/reference/marketplace-audit.md` §M1–§M2.

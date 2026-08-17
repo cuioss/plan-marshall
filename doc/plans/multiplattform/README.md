@@ -81,9 +81,9 @@ Plan `060` also runs after `010` (its default-target fix consumes `010`'s single
 | `020` | `marketplace/targets/**`, `plan-marshall/commands/tools-fix-intellij-diagnostics.md`, `pm-plugin-development` (plugin-doctor + frontmatter standards), `test/marketplace/targets/**`, `test/pm-plugin-development/plugin-doctor/**` | `010`, `030`, `040` |
 | `030` | permission/providers/extension/inventory/retrospective scripts named in its Expected surface, plus `platform-runtime/scripts/claude_runtime.py` + `_claude_runtime_impl.py` (and conditionally `platform-runtime/standards/contract.md`), and their `test/` subtrees | `020`, `040` |
 | `040` | `.claude/skills/sync-opencode/**`, `test/sync-opencode/**`, `doc/developer/marketplace-build.adoc`, `doc/developer/distribution.adoc` | every other plan |
-| `050` | `marketplace/targets/**` (engine + opencode mapping), the §M2-named bundle files across six pm-* bundles, `test/marketplace/targets/**` | `010`, `030`, `040`, `060`, `070` — not `020` (shared `marketplace/targets`) |
-| `060` | `marketplace/bundles/pm-plugin-development/**`, `test/pm-plugin-development/**` | `040`, `050` (file-disjoint by M-cluster), `070` — not `020` (plugin-doctor) or `030` (inventory scripts); after `010` (default-target source) |
-| `070` | `marketplace/bundles/plan-marshall/**` prose + the M5 code sites, `test/plan-marshall/**`, platform-runtime docs | `040` only; runs after `010` and `030` |
+| `050` | `marketplace/targets/**` (engine + opencode mapping), the §M2-named bundle files across seven bundles incl. the single `ext-triage-plugin` disposition standard carved out of `060`, `test/marketplace/targets/**` | `010`, `030`, `040`, `060`, `070` — not `020` (shared `marketplace/targets`) |
+| `060` | `marketplace/bundles/pm-plugin-development/**` **except** `skills/ext-triage-plugin/standards/pr-comment-disposition.md` (plan `050`'s), `test/pm-plugin-development/**`, conditionally `platform-runtime/standards/contract.md` | `040`, `050` — not `020` (plugin-doctor), `030` (inventory scripts), or `070` (both conditionally touch platform-runtime docs); after `010` (default-target source) |
+| `070` | `marketplace/bundles/plan-marshall/**` prose + the M5 code sites, `test/plan-marshall/**`, platform-runtime docs | `040`, `050` — not `060`; runs after `010` and `030` |
 
 **`010` and `030` must not run concurrently.** Both edit `claude_runtime.py` /
 `_claude_runtime_impl.py` — `010` moves the install-op vocabulary in, `030` moves permission

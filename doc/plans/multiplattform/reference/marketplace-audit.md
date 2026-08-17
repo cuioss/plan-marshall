@@ -18,10 +18,11 @@ build-target data (`directive_rewrites.read_directive` + engine matcher). **Draw
 
 ## M2 — Normative tool-invocation prose beyond the registered idioms
 
-- The ext-triage `pr-comment-disposition.md` escalation lines, byte-identical across **six**
-  bundles (`ext-triage-python`/`-java`/`-js`/`-oci`/`-docs`/`-reqs`): of three `AskUserQuestion`
-  occurrences per file only the backticked one is reachable by `rewrite_inline_code`; the
-  ESCALATE-row "AskUserQuestion call" and the flow-branch line are bare normative instruction.
+- The ext-triage `pr-comment-disposition.md` escalation lines, byte-identical across **seven**
+  skills (`ext-triage-python`/`-java`/`-js`/`-oci`/`-docs`/`-reqs`/`-plugin` — the set is a lead,
+  re-derive): of four `AskUserQuestion` occurrences on three lines per file only the backticked
+  one is reachable by `rewrite_inline_code`; the ESCALATE-row "AskUserQuestion call" and the
+  flow-branch line are bare normative instruction.
 - `pm-dev-java/skills/manage-maven-profiles/SKILL.md` § Step 2 — a full `AskUserQuestion:` YAML
   call block (`question`/`header`/`options[].label/.description`/`multiSelect`): the Claude
   parameter model as workflow, unreachable by every transform.
@@ -159,7 +160,8 @@ Home: platform-runtime (route/query) + prose-neutralize. **Drawn by `070`.**
   deliberate-non-migration candidate (data-migration cost).
 
 Home: platform-runtime for the facts (ceiling/session/channel), prose-neutralize for rationale.
-**Drawn by `070`.**
+**Drawn by `070`, except the enforcement-hook wizard split — a §M11 candidate with no drawing
+plan (plan `070` fixes only its `--settings` literals).**
 
 ## M7 — effort/model table restated outside the build-target single source
 
