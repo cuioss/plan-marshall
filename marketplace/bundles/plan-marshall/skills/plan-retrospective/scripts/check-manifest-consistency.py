@@ -18,7 +18,7 @@ Usage:
     python3 check-manifest-consistency.py run --plan-id EXAMPLE-PLAN --mode live
     python3 check-manifest-consistency.py run --archived-plan-path /abs --mode archived
     python3 check-manifest-consistency.py run --plan-id EXAMPLE-PLAN --mode live \\
-        --diff-file /abs/path/to/diff.txt   # for tests / offline runs
+        --diff-file work/footprint.txt      # plan-relative, or an absolute path
 """
 
 from __future__ import annotations
@@ -30,6 +30,17 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from _footprint_classification import (
+    CATEGORY_CONFIG,
+    CATEGORY_REPORT,
+    CATEGORY_RUNTIME_STATE,
+    classify_footprint,
+    is_docs_path,
+    load_oracle_routes,
+    oracle_available,
+)
+from _footprint_resolver import resolve_diff_file_path
+from _step_key_canonical import canonicalize_step_key
 from file_ops import base_path, output_toon, safe_main
 from input_validation import (
     add_plan_id_arg,
@@ -44,14 +55,25 @@ KNOWN_MANIFEST_VERSION = 1
 MANIFEST_FILENAME = 'execution.toon'
 DECISION_LOG_RELPATH = ('logs', 'decision.log')
 
-# Paths whose changes are bookkeeping side-effects of phase-6-finalize, not
-# implementation work. Filtered before evaluating any rule.
-_BOOKKEEPING_PREFIXES = ('.plan/', '.claude/')
-_REPORT_NAME_RE = re.compile(r'(^|/)quality-verification-report(-audit-[^/]+)?\.md$')
+# The categories :func:`filter_bookkeeping` drops before any rule is evaluated —
+# bookkeeping side-effects of phase-6-finalize rather than implementation work.
+# The membership decision itself is the ORACLE'S (``build.map`` in marshal.json),
+# routed through ``_footprint_classification``; this tuple only says which of the
+# oracle's answers this consumer treats as droppable.
+#
+# ``unclassified`` is deliberately ABSENT. A path no declared route covers is one
+# the oracle has no opinion about, and dropping it would put a private guess back
+# in charge of exactly the question this filter was getting wrong — silently, and
+# with the oracle's authority borrowed for it. An unrouted path is therefore
+# RETAINED and counted, which can only widen what a rule examines.
+_DROPPED_CATEGORIES = (CATEGORY_RUNTIME_STATE, CATEGORY_REPORT, CATEGORY_CONFIG)
 
-# Docs-only path classifier (Rule M1).
-_DOCS_SUFFIXES = ('.md', '.adoc')
-_DOCS_DIR_TOKENS = ('/references/', '/templates/')
+# Canonical-verify step-id prefix (Rule M3). The composer emits every built-in
+# verify step as ``default:verify:{canonical}``, boundary-normalized to the bare
+# ``verify:{canonical}`` form — never as a bare ``{canonical}``. Comparing a
+# manifest's verification_steps against an unprefixed name is what made M3
+# unreachable on every composer-produced manifest.
+_CANONICAL_VERIFY_PREFIX = 'verify:'
 
 # Test-file classifier (Rule M3).
 _TEST_DIR_TOKENS = ('/test/', '/tests/')
@@ -140,18 +162,21 @@ def load_decision_log_entries(plan_dir: Path) -> list[str]:
     return matches
 
 
-def load_diff_files(diff_file: str | None, base_ref: str | None) -> tuple[list[str], str]:
+def load_diff_files(diff_file: str | None, base_ref: str | None, plan_dir: Path) -> tuple[list[str], str]:
     """Return ``(file_paths, base_label)`` from either a pre-saved diff file or git.
 
-    When ``--diff-file`` is provided (typical in tests), read it directly. Otherwise
-    invoke ``git diff {base}...HEAD --name-only`` and treat any failure as
-    "no diff available" rather than aborting — the manifest cross-check is a
-    best-effort retrospective signal, not a build-blocking gate.
+    When ``--diff-file`` is provided, read it directly. A RELATIVE argument is
+    resolved against the plan directory first and the cwd second
+    (:func:`resolve_diff_file_path`), so the plan-relative form the capture pattern
+    documents resolves to the same file an absolute path names — and a
+    supplied-but-unresolvable path raises rather than degrading to an empty diff.
+
+    Without ``--diff-file``, invoke ``git diff {base}...HEAD --name-only`` and treat
+    any failure as "no diff available" rather than aborting — the manifest
+    cross-check is a best-effort retrospective signal, not a build-blocking gate.
     """
     if diff_file:
-        path = Path(diff_file)
-        if not path.exists():
-            raise ValueError(f'Diff file does not exist: {diff_file}')
+        path = resolve_diff_file_path(diff_file, plan_dir)
         try:
             raw = path.read_text(encoding='utf-8')
         except OSError as e:
@@ -191,36 +216,61 @@ def _split_diff_lines(raw: str) -> list[str]:
 # =============================================================================
 
 
-def filter_bookkeeping(files: list[str]) -> tuple[list[str], list[str]]:
-    """Return ``(kept, dropped)`` lists.
+def filter_bookkeeping(files: list[str]) -> tuple[list[str], list[str], dict[str, Any]]:
+    """Return ``(kept, dropped, reduction)`` — the footprint partitioned by the oracle.
 
-    A path is dropped when:
-    - it begins with a bookkeeping prefix (``.plan/``, ``.claude/``), OR
-    - its filename matches the ``quality-verification-report`` pattern.
+    A path is dropped when its ``_footprint_classification`` category is one of
+    :data:`_DROPPED_CATEGORIES`: the genuinely-runtime ``.plan/`` state directory,
+    the plan's own quality-verification report, or a path the ORACLE routes with
+    role ``config``. Everything else is kept — production and test (the oracle's
+    implementation roles), documentation, and any path no declared route covers.
+
+    This replaces a private ``('.plan/', '.claude/')`` prefix tuple that
+    contradicted the project's own ``build.map``, which routes the project-local
+    skill tree as ``production``. The filter was discarding production source as
+    bookkeeping and every downstream rule then evaluated the remainder.
+
+    Args:
+        files: The supplied footprint, one repo-relative path per entry.
+
+    Returns:
+        ``(kept, dropped, reduction)``. ``reduction`` carries the per-category
+        counts, whether the oracle answered at all, and the ``majority_discarded``
+        flag :func:`apply_input_reduction` uses to refuse a bare clean pass.
     """
+    routes = load_oracle_routes()
+    buckets = classify_footprint(files, routes)
+
     kept: list[str] = []
     dropped: list[str] = []
     for path in files:
-        if any(path.startswith(prefix) for prefix in _BOOKKEEPING_PREFIXES):
-            dropped.append(path)
-            continue
-        if _REPORT_NAME_RE.search(path):
-            dropped.append(path)
-            continue
-        kept.append(path)
-    return kept, dropped
+        target = dropped if _category_of(path, buckets) in _DROPPED_CATEGORIES else kept
+        target.append(path)
+
+    reduction = {
+        'oracle_available': oracle_available(routes),
+        'supplied': len(files),
+        'kept': len(kept),
+        'dropped': len(dropped),
+        # Every category key is present even at zero, so a reader cannot mistake
+        # an absent key for a measured zero.
+        'by_category': {category: len(paths) for category, paths in buckets.items()},
+        'majority_discarded': len(dropped) > len(kept),
+    }
+    return kept, dropped, reduction
+
+
+def _category_of(path: str, buckets: dict[str, list[str]]) -> str:
+    """Return the category bucket ``path`` was filed under."""
+    for category, paths in buckets.items():
+        if path in paths:
+            return category
+    raise ValueError(f'path not classified: {path!r}')
 
 
 # =============================================================================
 # Path classifiers
 # =============================================================================
-
-
-def is_docs_path(path: str) -> bool:
-    """A path counts as docs when it ends with .md/.adoc OR sits under references/ / templates/."""
-    if path.endswith(_DOCS_SUFFIXES):
-        return True
-    return any(token in f'/{path}' for token in _DOCS_DIR_TOKENS)
 
 
 def is_test_path(path: str) -> bool:
@@ -315,15 +365,43 @@ def evaluate_early_terminate(
     return _make_check('early_terminate_diff', 'fail', finding['message']), finding
 
 
+def normalize_verification_step(step: str) -> str:
+    """Return the bare canonical name a ``verification_steps`` entry denotes.
+
+    Strips the optional ``default:`` prefix (via the shared
+    :func:`canonicalize_step_key`) and then the canonical-verify ``verify:``
+    prefix, so ``default:verify:module-tests``, ``verify:module-tests`` and a bare
+    ``module-tests`` all resolve to ``module-tests``.
+
+    The composer emits the ``verify:``-prefixed form and never the bare one, so a
+    rule that compares against an unprefixed name without this normalization can
+    never fire on a composer-produced manifest. The bare form is still accepted
+    because archived manifests and hand-built fixtures carry it.
+    """
+    bare = canonicalize_step_key(step)
+    if bare.startswith(_CANONICAL_VERIFY_PREFIX):
+        return bare[len(_CANONICAL_VERIFY_PREFIX) :]
+    return bare
+
+
 def evaluate_tests_only(
     manifest: dict[str, Any], filtered_files: list[str]
 ) -> tuple[dict[str, str], dict[str, Any] | None]:
-    """Rule M3: verification_steps == ['module-tests'] → tests-only diff (or docs)."""
+    """Rule M3: verification_steps denotes module-tests only → tests-only diff (or docs).
+
+    The manifest signal is compared on the NORMALIZED step names
+    (:func:`normalize_verification_step`), because the composer emits every
+    built-in verify step as ``verify:{canonical}``. Comparing the raw list against
+    a bare ``['module-tests']`` made this rule unreachable on every manifest the
+    composer produces.
+    """
     phase_5 = manifest.get('phase_5', {}) if isinstance(manifest.get('phase_5'), dict) else {}
     steps = phase_5.get('verification_steps', [])
-    if not isinstance(steps, list) or steps != ['module-tests']:
+    if not isinstance(steps, list) or [normalize_verification_step(str(s)) for s in steps] != ['module-tests']:
         return _make_check(
-            'tests_only_diff', 'skip', 'rule M3 not applicable — verification_steps != ["module-tests"]'
+            'tests_only_diff',
+            'skip',
+            'rule M3 not applicable — verification_steps does not denote module-tests only',
         ), None
 
     culprits = sorted(p for p in filtered_files if not is_test_path(p) and not is_docs_path(p))
@@ -385,6 +463,79 @@ def evaluate_branch_cleanup(
 
 
 # =============================================================================
+# Input-reduction reporting (D2)
+# =============================================================================
+
+#: The check status a diff-fed rule takes when it would otherwise emit a bare
+#: clean pass over a majority-discarded footprint. Distinct from ``skip`` (the
+#: rule did not apply) and from ``pass`` (the rule applied and was satisfied):
+#: ``indeterminate`` says the rule applied but saw too little of the supplied
+#: input for its verdict to mean anything.
+STATUS_INDETERMINATE = 'indeterminate'
+
+#: The checks evaluated against the FILTERED footprint. Only these are subject to
+#: the reduction report — ``manifest_version_recognized`` reads the manifest body
+#: alone, so no amount of diff filtering affects its verdict.
+_DIFF_FED_CHECKS = frozenset(
+    {'docs_only_diff', 'early_terminate_diff', 'tests_only_diff', 'branch_cleanup_changes'}
+)
+
+
+def apply_input_reduction(checks: list[dict[str, str]], reduction: dict[str, Any]) -> list[dict[str, str]]:
+    """Annotate — and where required downgrade — every diff-fed check.
+
+    Two obligations, both discharged here so no rule evaluator can forget one:
+
+    - **Every** diff-fed check that ran against a reduced input set has the
+      reduction appended to its message, so the count the rule actually saw is
+      visible beside its verdict rather than buried in the ``diff`` block.
+    - A check that would otherwise emit a bare clean ``pass`` while the MAJORITY of
+      the supplied footprint was discarded becomes
+      :data:`STATUS_INDETERMINATE` instead. A clean pass over a small fraction of
+      the real input is an unsubstantiated verdict, and it reads in every
+      downstream summary exactly like a substantiated one — which is how a real
+      run reported ``passed: 2, failed: 0, findings: 0`` over a phantom one-file
+      footprint whose discarded remainder was the whole subject of the plan.
+
+    A ``fail`` is never downgraded: a violation found in the surviving fraction is
+    still a violation, and a reduced input can only have hidden more of them. A
+    ``skip`` is never downgraded either — the rule did not apply, which the
+    filtering did not decide.
+
+    Args:
+        checks: The evaluated checks, mutated copies of which are returned.
+        reduction: The block :func:`filter_bookkeeping` produced.
+
+    Returns:
+        The checks, with diff-fed entries annotated and possibly downgraded.
+    """
+    dropped = reduction['dropped']
+    if not dropped:
+        return checks
+
+    note = (
+        f'{dropped} of {reduction["supplied"]} supplied paths were filtered as '
+        f'bookkeeping before evaluation'
+    )
+    if not reduction['oracle_available']:
+        note += ' (build_map oracle unavailable — only runtime-state paths were classifiable)'
+
+    annotated: list[dict[str, str]] = []
+    for check in checks:
+        if check['name'] not in _DIFF_FED_CHECKS or check['status'] == 'skip':
+            annotated.append(check)
+            continue
+        updated = dict(check)
+        if check['status'] == 'pass' and reduction['majority_discarded']:
+            updated['status'] = STATUS_INDETERMINATE
+            updated['message'] = f'{check["message"]} — VERDICT WITHHELD: {note}'
+        else:
+            updated['message'] = f'{check["message"]} ({note})'
+        annotated.append(updated)
+    return annotated
+
+
+# =============================================================================
 # Orchestration
 # =============================================================================
 
@@ -410,12 +561,12 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             'reason': f'{MANIFEST_FILENAME} not found',
             'checks': [],
             'findings': [],
-            'summary': {'passed': 0, 'failed': 0, 'skipped': 0, 'findings': 0},
+            'summary': {'passed': 0, 'failed': 0, 'skipped': 0, 'indeterminate': 0, 'findings': 0},
         }
 
     decision_entries = load_decision_log_entries(plan_dir)
-    raw_files, base_label = load_diff_files(args.diff_file, args.base_ref)
-    kept_files, dropped_files = filter_bookkeeping(raw_files)
+    raw_files, base_label = load_diff_files(args.diff_file, args.base_ref, plan_dir)
+    kept_files, dropped_files, reduction = filter_bookkeeping(raw_files)
 
     checks: list[dict[str, str]] = []
     findings: list[dict[str, Any]] = []
@@ -452,10 +603,15 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     if cleanup_finding is not None:
         findings.append(cleanup_finding)
 
+    # Applied AFTER every evaluator so no rule can emit a bare clean pass over a
+    # majority-discarded footprint, and so the reduction is reported exactly once.
+    checks = apply_input_reduction(checks, reduction)
+
     summary = {
         'passed': sum(1 for c in checks if c['status'] == 'pass'),
         'failed': sum(1 for c in checks if c['status'] == 'fail'),
         'skipped': sum(1 for c in checks if c['status'] == 'skip'),
+        'indeterminate': sum(1 for c in checks if c['status'] == STATUS_INDETERMINATE),
         'findings': len(findings),
     }
 
@@ -476,6 +632,12 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             'files_total': len(raw_files),
             'files_filtered': len(dropped_files),
             'files_kept': len(kept_files),
+            # The reduction the rules were subject to, published beside the counts
+            # so a reader can see WHICH categories were discarded and whether the
+            # oracle answered at all — never only that some number was dropped.
+            'filtered_by_category': reduction['by_category'],
+            'oracle_available': reduction['oracle_available'],
+            'majority_discarded': reduction['majority_discarded'],
         },
         'checks': checks,
         'findings': findings,
@@ -506,7 +668,11 @@ def main() -> int:
     run_parser.add_argument(
         '--diff-file',
         default=None,
-        help='Pre-saved diff (one path per line). Bypasses the git invocation. Used in tests.',
+        help=(
+            'Pre-saved diff (one path per line). Bypasses the git invocation. A relative '
+            'path is resolved against the plan directory first and the cwd second; a '
+            'supplied path that resolves to nothing is an error, never an empty diff.'
+        ),
     )
     run_parser.add_argument(
         '--base-ref',

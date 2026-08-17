@@ -90,7 +90,9 @@ def _manifest_default() -> str:
             'plan_id': 'manifest-plan',
             'phase_5': {
                 'early_terminate': False,
-                'verification_steps': ['quality-gate', 'module-tests'],
+                # The composer's real shape: every built-in verify step is a
+                # canonical-verify id, boundary-normalized to ``verify:{canonical}``.
+                'verification_steps': ['verify:quality-gate', 'verify:module-tests'],
             },
             'phase_6': {
                 'steps': ['push', 'create-pr', 'branch-cleanup'],
@@ -138,7 +140,9 @@ def _manifest_tests_only() -> str:
             'plan_id': 'manifest-plan',
             'phase_5': {
                 'early_terminate': False,
-                'verification_steps': ['module-tests'],
+                # ``verify:``-prefixed, as the composer emits it — a fixture carrying
+                # the bare form drives rule M3 with a shape production never sees.
+                'verification_steps': ['verify:module-tests'],
             },
             'phase_6': {
                 'steps': ['push', 'create-pr'],
@@ -303,7 +307,6 @@ class TestEarlyTerminateRule:
             tmp_path,
             [
                 '.plan/local/lessons-learned/foo.md',
-                '.claude/settings.local.json',
                 'docs/quality-verification-report.md',
             ],
         )
@@ -318,11 +321,41 @@ class TestEarlyTerminateRule:
             str(diff),
         )
         data = result.toon()
-        # All three diff entries should be filtered out as bookkeeping.
-        assert int(data['diff']['files_filtered']) == 3
+        # Both entries are bookkeeping the filter can substantiate: the
+        # genuinely-runtime ``.plan/`` state directory (in no build map, so
+        # hardcoded) and the plan's own quality-verification report.
+        assert int(data['diff']['files_filtered']) == 2
         check = _check_by_name(data['checks'], 'early_terminate_diff')
         assert check is not None
-        assert check['status'] == 'pass'
+        # Every supplied path was filtered, so the rule saw nothing: its clean
+        # pass is withheld rather than emitted bare (D2).
+        assert check['status'] == 'indeterminate'
+        assert 'VERDICT WITHHELD' in check['message']
+
+    def test_unrouted_dotfile_path_is_retained_not_assumed_bookkeeping(self, tmp_path, monkeypatch):
+        """A ``.claude/`` path the build map does not route is RETAINED.
+
+        The filter used to drop the whole ``.claude/`` tree on a private prefix
+        tuple, which discarded this project's own production source (``build.map``
+        routes ``.claude/skills/*.py`` as ``production``). The corrected filter
+        drops only what it can substantiate, so a path the oracle has no opinion
+        about is kept and counted rather than silently assumed unimportant.
+        """
+        plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_early_terminate())
+        diff = _write_diff(tmp_path, ['.plan/local/lessons-learned/foo.md', '.claude/settings.local.json'])
+        result = run_script(
+            MANIFEST_SCRIPT,
+            'run',
+            '--plan-id',
+            plan_id,
+            '--mode',
+            'live',
+            '--diff-file',
+            str(diff),
+        )
+        data = result.toon()
+        assert int(data['diff']['files_kept']) == 1
+        assert int(data['diff']['filtered_by_category']['unclassified']) == 1
 
     def test_fail_when_implementation_files_present(self, tmp_path, monkeypatch):
         plan_id, _ = _setup_plan_with_manifest(tmp_path, monkeypatch, manifest_body=_manifest_early_terminate())

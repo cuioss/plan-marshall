@@ -576,18 +576,44 @@ class TestManifestAbsent:
 
 
 class TestLoadDiffFiles:
-    def test_absent_argument_yields_empty(self):
-        assert _crd.load_diff_files(None) == []
+    """An ABSENT ``--diff-file`` and a SUPPLIED-but-unresolvable one are different.
 
-    def test_missing_file_yields_empty(self, tmp_path):
-        assert _crd.load_diff_files(str(tmp_path / 'nope.txt')) == []
+    The absent case yields an empty list so the caller can recover the footprint
+    through the shared whole-chain resolver. A supplied path that resolves to
+    nothing RAISES: reporting it as an empty diff gave a could-not-look the same
+    token as a nothing-to-look-at, and that token degrades to a benign-reading
+    ``skip`` in every downstream summary.
+    """
 
-    def test_unreadable_file_yields_empty(self, tmp_path):
+    def test_absent_argument_yields_empty(self, tmp_path):
+        assert _crd.load_diff_files(None, tmp_path) == []
+
+    def test_missing_file_raises_rather_than_reporting_an_empty_diff(self, tmp_path):
+        with pytest.raises(ValueError, match='Diff file does not exist'):
+            _crd.load_diff_files(str(tmp_path / 'nope.txt'), tmp_path)
+
+    def test_unreadable_file_raises(self, tmp_path):
         target = tmp_path / 'diff.txt'
         target.mkdir()
-        assert _crd.load_diff_files(str(target)) == []
+        with pytest.raises(ValueError, match='could not be read'):
+            _crd.load_diff_files(str(target), tmp_path)
 
     def test_blank_lines_dropped(self, tmp_path):
         path = tmp_path / 'diff.txt'
         path.write_text('a.py\n\n  b.py  \n', encoding='utf-8')
-        assert _crd.load_diff_files(str(path)) == ['a.py', 'b.py']
+        assert _crd.load_diff_files(str(path), tmp_path) == ['a.py', 'b.py']
+
+    def test_relative_argument_resolves_against_the_plan_directory(self, tmp_path):
+        """The documented ``--diff-file work/footprint.txt`` form, resolved."""
+        work = tmp_path / 'work'
+        work.mkdir()
+        (work / 'footprint.txt').write_text('a.py\n', encoding='utf-8')
+        assert _crd.load_diff_files('work/footprint.txt', tmp_path) == ['a.py']
+
+    def test_relative_argument_falls_back_to_cwd(self, tmp_path, monkeypatch):
+        """A cwd-relative argument that predates the plan-relative form still works."""
+        (tmp_path / 'cwd-diff.txt').write_text('b.py\n', encoding='utf-8')
+        monkeypatch.chdir(tmp_path)
+        plan_dir = tmp_path / 'plan'
+        plan_dir.mkdir()
+        assert _crd.load_diff_files('cwd-diff.txt', plan_dir) == ['b.py']

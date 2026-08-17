@@ -57,6 +57,51 @@ from _references_core import (
 FOOTPRINT_UNRESOLVED = None
 
 
+def resolve_diff_file_path(diff_file: str, plan_dir: Path) -> Path:
+    """Resolve an explicit ``--diff-file`` argument to an existing file, or raise.
+
+    An absolute path is used verbatim. A RELATIVE path is resolved against the
+    plan directory first and the process cwd second, and the first candidate that
+    exists wins. Plan-relative comes first because that is the form the capture
+    pattern documents (``--diff-file work/footprint.txt``, where ``work/`` is a
+    plan-directory subdirectory) and the form the sibling ``collect-fragments add
+    --fragment-file`` flag has always accepted in the same workflow.
+
+    **A supplied-but-unresolvable path raises.** It is never reported as an absent
+    one. The two were previously indistinguishable: an unresolvable ``--diff-file``
+    returned the same empty list as no ``--diff-file`` at all, so the documented
+    plan-relative invocation degraded to a ``skip`` reading *"no realized
+    footprint"* while the identical file passed as an absolute path found a real
+    violation. A could-not-look must not carry the same token as a
+    nothing-to-look-at, least of all when that token reads benign in every
+    downstream summary.
+
+    Args:
+        diff_file: The ``--diff-file`` argument as supplied.
+        plan_dir: The resolved plan directory a relative argument is resolved against.
+
+    Returns:
+        The existing file the argument names.
+
+    Raises:
+        ValueError: When no candidate exists, naming every candidate tried.
+    """
+    raw = Path(diff_file)
+    if raw.is_absolute():
+        if raw.exists():
+            return raw
+        raise ValueError(f'Diff file does not exist: {diff_file}')
+    candidates = [plan_dir / raw, Path.cwd() / raw]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    tried = ', '.join(str(c) for c in candidates)
+    raise ValueError(
+        f'Diff file does not exist: {diff_file} — a relative --diff-file is resolved '
+        f'against the plan directory first and the cwd second; tried: {tried}'
+    )
+
+
 def footprint_resolved(footprint: set[str] | None) -> TypeGuard[set[str]]:
     """The ONE named predicate callers use to read a footprint's resolution state.
 

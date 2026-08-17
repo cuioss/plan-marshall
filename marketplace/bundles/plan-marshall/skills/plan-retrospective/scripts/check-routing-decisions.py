@@ -54,7 +54,13 @@ from pathlib import Path
 from typing import Any
 
 from _decision_line_shapes import dropped_record_pattern
-from _footprint_resolver import footprint_resolved, resolve_footprint
+from _footprint_classification import (
+    CATEGORY_PRODUCTION,
+    CATEGORY_UNCLASSIFIED,
+    classify_path,
+    load_oracle_routes,
+)
+from _footprint_resolver import footprint_resolved, resolve_diff_file_path, resolve_footprint
 from file_ops import base_path, output_toon, safe_main
 from input_validation import (
     add_plan_id_arg,
@@ -66,14 +72,21 @@ MANIFEST_FILENAME = 'execution.toon'
 STATUS_FILENAME = 'status.json'
 DECISION_LOG_RELPATH = ('logs', 'decision.log')
 
-# Bookkeeping path prefixes filtered out of the realized footprint before any
-# predicate re-evaluation (mirrors check-manifest-consistency).
-_BOOKKEEPING_PREFIXES = ('.plan/', '.claude/')
-_DOCS_SUFFIXES = ('.md', '.adoc')
-_TEST_DIR_TOKENS = ('test/', '/test/', 'tests/', '/tests/')
-_TEST_NAME_RE = re.compile(
-    r'(^|/)(test_[^/]+\.py|[^/]+_test\.py|[^/]+Test\.java|[^/]+\.test\.js|[^/]+\.spec\.js)$'
-)
+# The categories that make a realized footprint count as having touched
+# production code. The classification itself is the ORACLE'S (``build.map`` in
+# marshal.json), routed through the ``_footprint_classification`` module this
+# check now SHARES with ``check-manifest-consistency`` — the two used to carry
+# byte-identical private prefix tuples declaring the project-local skill tree to
+# be bookkeeping, which the project's own build map routes as ``production``.
+#
+# ``unclassified`` counts as production, and that is fail-closed rather than
+# sloppy: a path no declared route covers might be production, and the verdict
+# this feeds is a mis-prune FAIL — a step pruned as ``no_code_delta`` when code
+# did change. Answering "not production" for a path nobody could classify would
+# turn an unknown into an exoneration. It also preserves the pre-oracle behaviour
+# for unrouted paths, which counted as production by falling through every
+# private test.
+_PRODUCTION_CATEGORIES = frozenset({CATEGORY_PRODUCTION, CATEGORY_UNCLASSIFIED})
 
 # Prunable steps whose absence from the final phase_6.steps is re-checked against
 # the realized footprint. Each maps to its ``prunable_when`` predicate id — the
@@ -354,44 +367,43 @@ def lane_resolution_view(decision_lines: list[str]) -> list[str]:
     return [line for line in decision_lines if _LANE_DECISION_RE.search(line)]
 
 
-def load_diff_files(diff_file: str | None) -> list[str]:
+def load_diff_files(diff_file: str | None, plan_dir: Path) -> list[str]:
     """Return the realized footprint path list from a pre-saved diff file.
 
-    ``--diff-file`` carries one path per line (the end-of-execute diff). Absent or
-    unreadable → an empty list here; the caller (``cmd_run``) then recovers the
-    footprint through the shared whole-chain resolver, and only a STILL-unresolvable
-    footprint degrades the predicate re-evaluation to a skip (never a false positive).
+    ``--diff-file`` carries one path per line (the end-of-execute diff). ABSENT →
+    an empty list here, and the caller (``cmd_run``) then recovers the footprint
+    through the shared whole-chain resolver; only a still-unresolvable footprint
+    degrades the predicate re-evaluation to a skip (never a false positive).
+
+    A SUPPLIED path is a different case and is treated as one. It is resolved
+    plan-relative first and cwd-relative second (:func:`resolve_diff_file_path`),
+    matching both the documented capture pattern (``--diff-file
+    work/footprint.txt``) and the sibling ``collect-fragments add --fragment-file``
+    flag in the same workflow — and if no candidate exists it RAISES. Returning an
+    empty list there would report a could-not-look with the same token as a
+    nothing-to-look-at, and that token reads benign in every downstream summary:
+    the documented invocation silently degraded to a skip while the identical file
+    passed as an absolute path found a real violation.
     """
     if not diff_file:
         return []
-    path = Path(diff_file)
-    if not path.exists():
-        return []
+    path = resolve_diff_file_path(diff_file, plan_dir)
     try:
         return [line.strip() for line in path.read_text(encoding='utf-8').splitlines() if line.strip()]
-    except OSError:
-        return []
-
-
-def _is_bookkeeping(path: str) -> bool:
-    return any(path.startswith(prefix) for prefix in _BOOKKEEPING_PREFIXES)
-
-
-def _is_docs(path: str) -> bool:
-    return path.endswith(_DOCS_SUFFIXES)
-
-
-def _is_test(path: str) -> bool:
-    return any(token in path for token in _TEST_DIR_TOKENS) or bool(_TEST_NAME_RE.search(path))
+    except OSError as e:
+        raise ValueError(f'Diff file could not be read: {diff_file}: {e}') from e
 
 
 def footprint_has_production(files: list[str]) -> bool:
-    """Return True when the realized footprint touched non-doc, non-test production code."""
-    for path in files:
-        if _is_bookkeeping(path) or _is_docs(path) or _is_test(path):
-            continue
-        return True
-    return False
+    """Return True when the realized footprint touched production code.
+
+    The per-path verdict comes from the declared ``build.map`` oracle via
+    :func:`classify_path`; a path falls in :data:`_PRODUCTION_CATEGORIES` when the
+    oracle routes it ``production`` or when no declared route covers it at all
+    (see that constant for why an unclassifiable path counts).
+    """
+    routes = load_oracle_routes()
+    return any(classify_path(path, routes) in _PRODUCTION_CATEGORIES for path in files)
 
 
 def sum_execution_log_tokens(manifest: dict[str, Any]) -> int:
@@ -580,7 +592,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     # check (check-artifact-consistency) and this mis-prune check recover together off
     # the same resolution. An unresolvable footprint yields have_footprint=False → the
     # mis-prune checks SKIP (the negative control), never a fabricated fail.
-    footprint = load_diff_files(args.diff_file)
+    footprint = load_diff_files(args.diff_file, plan_dir)
     if footprint:
         footprint_source = 'diff_file'
         have_footprint = True
@@ -653,9 +665,12 @@ def main() -> int:
         '--diff-file',
         default=None,
         help=(
-            'Pre-saved realized footprint (one path per line). When absent, the footprint '
-            'is recovered through the shared resolver (realized-footprint capture -> '
-            'merge-commit -> legacy key). Drives the prune-predicate re-evaluation.'
+            'Pre-saved realized footprint (one path per line). A relative path is '
+            'resolved against the plan directory first and the cwd second; a supplied '
+            'path that resolves to nothing is an error, never an empty footprint. When '
+            'ABSENT, the footprint is recovered through the shared resolver '
+            '(realized-footprint capture -> merge-commit -> legacy key). Drives the '
+            'prune-predicate re-evaluation.'
         ),
     )
     run_parser.set_defaults(func=cmd_run)

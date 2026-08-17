@@ -17,11 +17,25 @@ The predicate definitions (the closed `prunable_when` vocabulary, the class→de
 | `posture` | the chosen `execution_profile` (`minimal` / `standard` / `full`) |
 | `planning_lane` | the resolved `light` / `deep` planning lane |
 | `mis_prune_checks[]` | one per prunable step: `pass` (step ran / predicate still holds), `skip` (footprint unresolvable — no `--diff-file` **and** the shared whole-chain resolver recovered none — or a recorded non-predicate removal cause), `inconclusive` (removal cause unestablishable), or **`fail`** (predicate now false — a mis-prune). Every row also carries `removal_cause` — see [Removal cause precedes predicate re-evaluation](#removal-cause-precedes-predicate-re-evaluation) |
-| `footprint_source` | how the realized footprint was obtained: `diff_file` (explicit `--diff-file`), `resolved` (recovered through the shared resolver), or `unresolved` (no tier answered → the mis-prune checks skip) |
+| `footprint_source` | how the realized footprint was obtained: `diff_file` (explicit `--diff-file`), `resolved` (recovered through the shared resolver), or `unresolved` (no tier answered → the mis-prune checks skip). A **supplied** `--diff-file` never yields `unresolved`: see [A supplied `--diff-file` resolves or raises](#a-supplied---diff-file-resolves-or-raises) |
 | `cost_preview` | `predicted_tokens` (init preview) vs `actual_tokens` (`execution_log` sum) and the signed `delta_tokens` / `delta_pct` |
 | `recompose_divergence` | the `lane_resolution` decision-log **line** count. ⚠ Despite the field name this is NOT a recompose count: the composer emits one line per dropped step plus one per lane warning, so the number rises with the size of a single compose's subtraction, not with the number of composes. Read it as "how much lane subtraction was recorded", never as "how many times the manifest was recomposed" |
 | `recorded_lane_decisions[]` | the raw `lane_resolution` decision-log lines |
 | `llm_judgement_required` | always `true` — the marker that the OVER/UNDER verdict is the LLM's, not the script's |
+
+## A supplied `--diff-file` resolves or raises
+
+An **absent** `--diff-file` and a **supplied but unresolvable** one are different states and are reported differently.
+
+Absent, the script recovers the footprint through the shared whole-chain resolver, and only a still-unresolvable footprint degrades the mis-prune checks to `skip`. Supplied, the argument is resolved against the plan directory first and the process cwd second — so the plan-relative form the capture pattern documents (`--diff-file work/footprint.txt`, matching the sibling `collect-fragments add --fragment-file` flag in the same workflow) names the same file an absolute path does. If no candidate exists the script **raises**, naming every candidate it tried.
+
+It must not return an empty footprint there. Doing so gave a could-not-look the same token as a nothing-to-look-at, and that token degrades to a `skip` that reads benign in every downstream summary: the documented plan-relative invocation silently reported *"footprint unresolvable"* while the identical file passed as an absolute path found a real mis-prune. The two invocations now produce the same verdict, which is the property to hold onto.
+
+## The realized footprint's production verdict comes from the build map
+
+`footprint_has_production` — the input to every `no_code_delta` re-evaluation — classifies each path through `build.map` in marshal.json, the declared file-to-build oracle, via the `_footprint_classification` module this check **shares** with `check-manifest-consistency.py`. The two previously carried byte-identical private prefix tuples declaring the whole project-local skill tree to be bookkeeping, which this project's own build map routes as `production`.
+
+A path counts as production when the oracle routes it `production`, **or when no declared route covers it at all**. The second half is fail-closed rather than sloppy: the verdict this feeds is a mis-prune `fail` — a step pruned as `no_code_delta` when code did change — so answering "not production" for a path nobody could classify would turn an unknown into an exoneration.
 
 ## Removal cause precedes predicate re-evaluation
 
@@ -35,7 +49,7 @@ The script consults the recorded decision log FIRST and re-evaluates a predicate
 
 | Absent step's state | Verdict | `removal_cause` |
 |---------------------|---------|-----------------|
-| Footprint unresolvable (no `--diff-file` and the shared resolver recovered none) | `skip` | `not_evaluated` |
+| Footprint unresolvable (no `--diff-file` **supplied** and the shared resolver recovered none) | `skip` | `not_evaluated` |
 | Named by a recorded non-predicate mechanism | `skip` | the mechanism token |
 | Decision log absent or unreadable | `inconclusive` | `unestablishable` |
 | Readable log names no cause, predicate now false | `fail` | `predicate_evaluated` |
