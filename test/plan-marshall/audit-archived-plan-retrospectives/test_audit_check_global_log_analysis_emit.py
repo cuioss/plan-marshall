@@ -11,7 +11,14 @@ from _audit_fixtures import (
     _write_log,
     _write_metrics_window,
     audit,
+    minimal_corpus,
 )
+
+
+def _latest_report_metrics(repo_root: Path) -> dict:
+    """Parse the summary-metric header of the report `run_checks` just persisted."""
+    reports = sorted((repo_root / audit.AUDIT_REPORTS_REL).glob('*.toon'))
+    return audit._parse_report_summary_metrics(reports[-1])
 
 
 class TestEmitGlobalLogBlock:
@@ -161,6 +168,47 @@ class TestEmitGlobalLogBlock:
         assert 'logs_present: true' in block
         assert 'genuine_signal_count: 0' in block
         assert 'rows[0]{kind,detail,attributed_plans,severity}:' in block
+
+    def test_unreadable_log_file_is_not_readable_substrate(self, tmp_path: Path):
+        """A file that EXISTS is not a file that was READ.
+
+        The read loop swallows `OSError` per file, and a file whose lines match no
+        grammar contributes nothing, so file-existence alone re-opened every
+        surface the unmeasured branch closes.
+        """
+        _write_log(tmp_path, 'work-2026-06-01.log', ['not a parseable log line at all'])
+
+        result = audit.cross_global_log_analysis(tmp_path)
+
+        assert result['logs_present'] is True
+        assert result['logs_readable'] is False
+        assert 'status: unmeasured' in audit.emit_global_log_block(result)
+
+    def test_unmeasured_run_withholds_the_summary_metrics(self, tmp_path: Path):
+        """Surface (b) of the contract: nothing unsupported reaches the cross-run diff.
+
+        `_report_diff_block` cannot tell a persisted 0 from a real one after the
+        fact, so an unmeasured run must persist neither.
+        """
+        inputs = minimal_corpus(tmp_path)
+        audit.run_checks(inputs, ['global-log-analysis'], tmp_path)
+        report = _latest_report_metrics(tmp_path)
+
+        assert 'global-log-analysis_errors' not in report
+        assert 'global-log-analysis_fixture_leaks' not in report
+
+    def test_measured_run_does_persist_the_summary_metrics(self, tmp_path: Path):
+        """The discriminator — suppression must not silence a real zero."""
+        _write_log(
+            tmp_path,
+            'work-2026-06-01.log',
+            [_line('2026-06-01T10:00:00Z', 'INFO', 'an unremarkable line')],
+        )
+        inputs = minimal_corpus(tmp_path)
+        audit.run_checks(inputs, ['global-log-analysis'], tmp_path)
+        report = _latest_report_metrics(tmp_path)
+
+        assert report['global-log-analysis_errors'] == 0
 
     def test_ad_hoc_attribution_when_no_enclosing_window(self, tmp_path: Path):
         # an error line with no plan window covering it

@@ -17,9 +17,42 @@ would report the same thing for a check whose predicate cannot fire and a check
 that is doing its job over a clean corpus.
 """
 
+import re
 from pathlib import Path
 
 from _audit_fixtures import audit, minimal_corpus
+
+#: Population-declaring scalars whose value is a count of plans the check
+#: EXAMINED. Deliberately not the exclusion-flavoured keys
+#: (`plans_excluded_*`), where 0 means the opposite — nothing was excluded, so
+#: the population is full — nor `plans_scanned` (the corpus-wide total, not any
+#: one check's narrowing).
+_EXAMINED_POPULATION_KEYS = (
+    "plans_in_corpus",
+    "plans_in_series",
+    "plans_measured",
+    "plans_with_merge_events",
+)
+
+_EMPTY_POPULATION_RE = re.compile(
+    rf"^(?:{'|'.join(_EXAMINED_POPULATION_KEYS)}):\s*0\s*$", re.MULTILINE
+)
+
+
+def _declares_empty_population(block: str) -> bool:
+    """Does this block state, under ANY of its own names, that it examined nothing?
+
+    Read with a test-local key list rather than through
+    `audit._examined_population`, and that is the point. Deriving the expectation
+    from the same function the code under test uses makes the assertion
+    tautological: a check that publishes its population under a name that function
+    does not read would be judged to have a FULL population by both sides, and the
+    contradiction — block says zero, census says "a non-empty examined population"
+    — would be invisible. That is exactly the defect this test exists to catch, and
+    an earlier version of it, written against `_examined_population`, passed
+    against the broken code.
+    """
+    return bool(_EMPTY_POPULATION_RE.search(block))
 
 
 def _shipping_corpus(repo_root: Path) -> list:
@@ -295,30 +328,43 @@ class TestCensusEndToEnd:
     def test_no_registered_check_reports_disciplinary_over_an_empty_population(
         self, tmp_path: Path
     ):
-        """The whole-census form of the claim each individual fix restates.
+        """No check may claim a population its own block says it did not have.
 
         A `disciplinary` row asserts "a non-empty examined population and nothing
-        genuine". On a corpus where every plan is bare, no check examined
-        anything, so no row may make that claim — whatever route each check
-        narrowed by. Asserting it across the WHOLE census rather than per check is
-        the point: three separate rounds each fixed one check and left siblings
-        with the identical predicate unexamined.
+        genuine". That is legitimate for a check that examined the whole corpus
+        and found nothing, and FALSE for one whose own block declares an empty
+        population — the block and the census then contradict each other one line
+        apart.
+
+        ⭐ The loop is over `CHECK_NAMES`, deliberately, and that is the whole
+        value of this test. Five verification rounds each found this same defect
+        in a check the previous round had not looked at, because every fix was
+        scoped to the sites someone had thought to enumerate: first one check,
+        then its two siblings sharing a predicate, then two more that narrowed on
+        different axes entirely. A hard-coded name list reproduces that failure by
+        construction. Quantifying over the registry means a check added later —
+        or one that starts narrowing later — is covered without anyone
+        remembering to add it here.
         """
         inputs = _shipping_corpus(tmp_path)
         output = audit.run_checks(inputs, list(audit.CHECK_NAMES), tmp_path)
-
+        blocks = {
+            name: output.split(f"check: {name}\n", 1)[1].split("\ncheck: ", 1)[0]
+            for name in audit.CHECK_NAMES
+        }
         census = output.split("check: suspect-zero-census", 1)[1]
-        # Findings-driven checks: the shipping plan files none, so each examined
-        # nothing and must not claim otherwise.
-        for check in (
-            "quality-chain",
-            "recurring-pattern-detector",
-            "preference-pattern-detector",
-        ):
+
+        offenders = []
+        for check in audit.CHECK_NAMES:
             row = next(
                 ln for ln in census.splitlines() if ln.strip().startswith(f"{check},")
             )
-            assert f",{audit._ZERO_DISCIPLINARY}," not in row, check
+            if f",{audit._ZERO_DISCIPLINARY}," not in row:
+                continue
+            if _declares_empty_population(blocks[check]):
+                offenders.append(check)
+
+        assert offenders == []
 
     def test_no_registered_check_is_classified_no_count_on_a_real_sweep(
         self, tmp_path: Path

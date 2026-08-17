@@ -2452,6 +2452,11 @@ def cross_token_trend(all_inputs: list[PlanInputs]) -> dict[str, Any]:
             )
     return {
         "plans_in_series": len(series),
+        # The census reads `plans_in_corpus`. `plans_in_series` is the same number
+        # under a check-local name, and a population published under a name the
+        # census does not read is, to the census, no population at all — it falls
+        # back to the whole corpus and calls a starved zero `disciplinary`.
+        "plans_in_corpus": len(series),
         "regression": regression,
         "rows": series,
     }
@@ -2915,7 +2920,12 @@ def cross_global_log_analysis(repo_root: Path) -> dict[str, Any]:
         # branch gates on — the same distinction `_merge_window_log_files` draws
         # between a scanned root and a `lock-*.log` that was actually there.
         "logs_present": logs_dir.is_dir(),
-        "logs_readable": substrate_present,
+        # A file that EXISTS is not a file that was READ: the read loop swallows
+        # `OSError` per file, and a file whose lines match no grammar contributes
+        # nothing. Requiring a parsed line keeps an unreadable or unparseable log
+        # from re-opening every surface the unmeasured branch closes — the same
+        # pairing `_merge_window_log_files` uses (`substrate_present or bool(rows)`).
+        "logs_readable": substrate_present and total_lines > 0,
         "plan_windows_derived": len(windows),
         "total_log_lines": total_lines,
         "total_script_seconds": round(total_seconds, 1),
@@ -3589,8 +3599,9 @@ class _QualityChainPlan:
     # Count of this plan's findings that are pending BY CONSTRUCTION (knowledge
     # types no defect-fixing work resolves). Reported in its own bucket, not removed
     # from the matrix: the matrix stays a faithful census of what was filed, and
-    # this names how much of its `pending` column no backlog work could ever
-    # clear. Subtracting them silently would trade one untrue number for another.
+    # this names how much of its `pending` column the backlog work an actionable
+    # count measures could never clear. Subtracting them silently would trade one
+    # untrue number for another.
     structural_pending: int = 0
 
 
@@ -3751,7 +3762,9 @@ def cross_quality_chain(all_inputs: list[PlanInputs]) -> dict[str, Any]:
     # The corpus `pending` column, split into the part an action could clear and
     # the part it could not. Reported as two numbers rather than one net figure
     # so the read-out can answer "what would make this zero?" for each: the
-    # actionable half by resolving the findings, the structural half never.
+    # actionable half by resolving the findings, the structural half only by
+    # promotion or an explicit disposition — never by the backlog work the
+    # actionable figure measures.
     corpus_structural_pending = sum(p.structural_pending for p in plans)
     corpus_pending = sum(corpus[mech]["pending"] for mech in _QC_MECHANISMS)
     return {
@@ -5940,6 +5953,13 @@ def emit_trend_block(result: dict[str, Any]) -> str:
         "check: token-efficiency-trend",
         "status: success",
         f"plans_in_series: {result['plans_in_series']}",
+        # Absent key reads as UNDECLARED, never as a zero — see
+        # `emit_recurring_block`.
+        *(
+            [f"plans_in_corpus: {result['plans_in_corpus']}"]
+            if "plans_in_corpus" in result
+            else []
+        ),
         f"regression: {_cell(result['regression'])}",
         f"genuine_signal_count: {genuine_signal_count}",
         f"rows[{len(rows)}]{{plan_id,phases,total_tokens,tokens_per_phase,severity}}:",
@@ -6083,6 +6103,7 @@ def emit_global_log_block(result: dict[str, Any]) -> str:
         "check: global-log-analysis",
         "status: success",
         f"logs_present: {str(result['logs_present']).lower()}",
+        f"logs_readable: {str(result['logs_readable']).lower()}",
         f"plan_windows_derived: {result['plan_windows_derived']}",
         f"total_log_lines: {result['total_log_lines']}",
         f"total_script_seconds: {result['total_script_seconds']}",
@@ -8323,6 +8344,8 @@ def cross_lane_lever_effectiveness(all_inputs: list[PlanInputs]) -> dict[str, An
     }
     corpus = {
         "plans_measured": sum(1 for r in rows if int(r["total_tokens"]) > 0),
+        # Published under the key the census reads — see `cross_token_trend`.
+        "plans_in_corpus": sum(1 for r in rows if int(r["total_tokens"]) > 0),
         "recipe_routed_count": sum(1 for r in rows if r["recipe_routed"] == "true"),
         "light_lane_fires": sum(1 for r in rows if r["lane"] == "light"),
         "minimal_posture_chosen": sum(1 for r in rows if r["posture"] == "minimal"),
@@ -8344,6 +8367,7 @@ def emit_lane_lever_effectiveness_block(result: dict[str, Any]) -> str:
         "check: lane-lever-effectiveness",
         "status: success",
         f"plans_measured: {corpus['plans_measured']}",
+        f"plans_in_corpus: {corpus['plans_in_corpus']}",
         f"recipe_routed: {corpus['recipe_routed_count']}",
         f"light_lane_fires: {corpus['light_lane_fires']}",
         f"minimal_posture_chosen: {corpus['minimal_posture_chosen']}",
@@ -9011,7 +9035,13 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
         all_results["token-efficiency-trend"] = result
         if "token-efficiency-trend" in selected:
             blocks.append(emit_trend_block(result))
-            summary_metrics["token-efficiency-trend_regression"] = bool(result["regression"])
+            # Published only over a non-empty examined population: a regression
+            # verdict derived from zero plans is a figure no data supports, and
+            # `_report_diff_block` cannot tell it from a real one afterwards.
+            if result["plans_in_corpus"] > 0:
+                summary_metrics["token-efficiency-trend_regression"] = bool(
+                    result["regression"]
+                )
 
     if "global-log-analysis" in selected or synth_needed:
         log_result = cross_global_log_analysis(repo_root)
@@ -9187,9 +9217,11 @@ def run_checks(all_inputs: list[PlanInputs], selected: list[str], repo_root: Pat
         all_results["lane-lever-effectiveness"] = lle_result
         if "lane-lever-effectiveness" in selected:
             blocks.append(emit_lane_lever_effectiveness_block(lle_result))
-            summary_metrics["lane-lever-effectiveness_checkpoint_over"] = lle_result[
-                "corpus"
-            ]["checkpoint_over_count"]
+            # Gated on a measured population — see the token-trend metric above.
+            if lle_result["corpus"]["plans_in_corpus"] > 0:
+                summary_metrics["lane-lever-effectiveness_checkpoint_over"] = lle_result[
+                    "corpus"
+                ]["checkpoint_over_count"]
 
     # exploration-share is a standalone cross-plan check (not consumed by
     # synthesis), so it is gated only on explicit selection.
