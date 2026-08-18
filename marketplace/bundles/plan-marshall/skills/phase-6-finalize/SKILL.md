@@ -194,13 +194,17 @@ Skill: {step_reference}
 
 **DISPATCHED external steps** (e.g., `project:finalize-step-plugin-doctor`) do NOT use the `Skill:` template above —
 they dispatch under `Task: execution-context-{level}` with the step's own SKILL.md
-as the `workflow` prompt-body field. Their input contract is the 5-field
-prompt-body shape (`name`, `plan_id`, `skills[]`, `workflow`, `WORKTREE`) plus any
-workflow-specific runtime inputs (`--iteration`, `producer`, whitelisted
-`--session-id`) and any step-specific fields the step declares in its
-`requires_prompt_fields` frontmatter (see [`../extension-api/standards/ext-point-finalize-step.md`](../extension-api/standards/ext-point-finalize-step.md)
-§ "Step-specific prompt-body fields"). See the Execute Step Pipeline step § "DISPATCHED project/skill step" for the
-dispatch shape.
+as the `workflow` prompt-body field. Their input contract is the **exempt set** —
+the 5-field prompt-body shape (`name`, `plan_id`, `skills[]`, `workflow`,
+`WORKTREE`), the optional 6th-field extension `caller_phase`, and the
+dispatcher-supplied runtime inputs `iteration`, `producer` and whitelisted
+`session_id` — plus any step-specific fields the step declares in its
+`requires_prompt_fields` frontmatter. Every one of those declared fields is
+carried by the generic template's declared-field slot unless the step keeps a
+dispatch body of its own. The exempt set is defined once, in
+[`../extension-api/standards/ext-point-finalize-step.md`](../extension-api/standards/ext-point-finalize-step.md)
+§ "Step-specific prompt-body fields"; do not restate its membership here. See the
+Execute Step Pipeline step § "DISPATCHED project/skill step" for the dispatch shape.
 
 In both cases the step body can access the plan's context via manage-* scripts (references, status, config).
 
@@ -642,7 +646,7 @@ Task: plan-marshall:{target}
     WORKTREE: {worktree_path}
 ```
 
-The 5-field prompt-body contract (`name`, `plan_id`, `skills[]`, `workflow`, `WORKTREE`) is documented in [`plan-marshall:extension-api/standards/ext-point-execution-context-workflow`](../extension-api/standards/ext-point-execution-context-workflow.md); those five are a **floor, not a ceiling**. A step that declares step-specific required prompt-body fields in its `requires_prompt_fields` frontmatter (see [`../extension-api/standards/ext-point-finalize-step.md`](../extension-api/standards/ext-point-finalize-step.md) § "Step-specific prompt-body fields") carries each of them in the `<…>` slot above, and the dispatcher MUST forward every declared field. Do NOT hard-code any one step's field into this generic template — that leaves the class open; a step's extras live in its own dispatch body, gated to its own `requires_prompt_fields` declaration. The declaration↔carriage agreement is enforced in both directions by `test/plan-marshall/phase-6-finalize/test_step_prompt_fields_contract.py`. The variant resolution (canonical no-suffix for `inherit`/empty level; `execution-context-{level}` otherwise) lives in [`plan-marshall:plan-marshall/standards/effort-variants.md`](../plan-marshall/standards/effort-variants.md).
+The 5-field prompt-body contract (`name`, `plan_id`, `skills[]`, `workflow`, `WORKTREE`) is documented in [`plan-marshall:extension-api/standards/ext-point-execution-context-workflow`](../extension-api/standards/ext-point-execution-context-workflow.md); those five are a **floor, not a ceiling**. A step that declares step-specific required prompt-body fields in its `requires_prompt_fields` frontmatter (see [`../extension-api/standards/ext-point-finalize-step.md`](../extension-api/standards/ext-point-finalize-step.md) § "Step-specific prompt-body fields") carries each of them in the `<…>` slot above, and the dispatcher MUST forward every declared field. Do NOT hard-code any one step's field into this generic template — that leaves the class open; the slot is generic and is filled from whatever the dispatched step declares. The declaration is enforced against three surfaces — the step's own dispatch body where it has one, and its input table for every step — by `test/plan-marshall/phase-6-finalize/test_step_prompt_fields_contract.py`. The variant resolution (canonical no-suffix for `inherit`/empty level; `execution-context-{level}` otherwise) lives in [`plan-marshall:plan-marshall/standards/effort-variants.md`](../plan-marshall/standards/effort-variants.md).
 
 **Inline-only built-in steps** — membership is every step classified under [`standards/dispatch-inline-split.md`](standards/dispatch-inline-split.md) § "Inline steps", the single source of truth; that roster also carries each step's own inline rationale (user interaction, sequential dependency, or a bounded polling primitive that fits comfortably under the host platform's per-call Bash ceiling). Do NOT re-list the membership here. The notes below add only the dispatcher-local sequencing detail the roster does not carry:
 - `record-metrics` is the last token-accounting step — it runs after all token-consuming steps and before the read-only `print-phase-breakdown`/`archive-plan` tail, on the still-live plan directory.
