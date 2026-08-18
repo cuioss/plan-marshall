@@ -158,8 +158,15 @@ def resolve_merge_commit_footprint(plan_dir: Path, refs: dict[str, Any]) -> set[
 
     Uses ``git -C {plan_dir} diff --name-only {sha}^1 {sha}``. ``plan_dir`` is inside
     the repository (``.plan/archived-plans/…`` sits under the repo root even though
-    ``.plan/`` is git-ignored), so ``git -C`` resolves the enclosing repo and the
-    landed commit in its history.
+    it is git-ignored), so ``git -C`` resolves the enclosing repo and the landed
+    commit in its history.
+
+    ⚠ The ignored thing is that sub-path, not ``.plan/`` as a whole: a number of
+    files under ``.plan/`` ARE tracked (``marshal.json``, every
+    ``project-architecture/**/enriched.json``), which is why ``script-shared``'s
+    ``_plan_state_exemption`` exists. The conclusion here is unaffected — an
+    ignored path still resolves its enclosing repo — but the blanket form of the
+    claim is false and must not be restated.
 
     Any git failure — the SHA is absent (a shallow clone that never fetched it),
     ``plan_dir`` is not inside a repository, or a non-zero exit — returns ``None`` so
