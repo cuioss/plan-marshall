@@ -698,6 +698,11 @@ count in this run produced three different answers.
 | F31 | round 3 | `rule-catalog.md` and `doctor-test-conventions.md` say the preamble rule has "One known-legitimate occurrence"; D1 created a second | **proposal** — `marketplace/bundles/**` is out of scope |
 | F32 | round 3 | Four conversions turned a non-registering load into a registering one; two were undisclosed | **survivor, characterised** — see below |
 | F33 | round 3 | The order-dependency candidate class | **survivor, characterised** — see § "Condition 4" |
+| F34 | PR review (`coderabbitai`) | `phase-1-init` docstring claimed `{resolved_base_branch}` is threaded through all three branches and carries the write; the test asserted neither. Introduced by **this run's B3 rewrite**, which turned a historical note into an unchecked present-tense claim | **fixed** (`fb4e439`) — `SKILL.md` read first to confirm the claim true, then both the placeholder and `--value {resolved_base_branch}` asserted |
+| F35 | PR review (`coderabbitai`) | The report's residual `spec_from_file_location` count was internally inconsistent — 8 modules in one place, "9 sites in 9 modules" in another, above a table listing ten | **fixed** (`fb4e439`) — the tree says **10 sites across 9 modules**; `test_pyproject_build.py` holds two, now called out |
+| F36 | PR review (`coderabbitai`) | The build-gate section said 53 of **55** changed files with two non-Python; § Scope and the contract check both said 56 with three | **fixed** (`fb4e439`) — 56/three is right; `doc/developer/testing.adoc` joined via the beyond-diff sweep |
+| F37 | PR review (`coderabbitai`) | `CANONICAL_SUBDIRS` hardcoded as an expected population | **rejected-with-reason** — pre-existing on `origin/main`, outside D1–D5; recorded in § Residue, reason posted on the thread |
+| F38 | PR review (`coderabbitai`) | `REAL_LESSON_IDS` hardcoded while its docstring claims inventory provenance | **rejected-with-reason** — pre-existing, heavy lift, outside D1–D5; recorded in § Residue with the coupling caveat, reason posted on the thread |
 
 ### Survivors, each re-put to the verifier in the stopping round
 
@@ -739,10 +744,16 @@ an unread surface.
 | Reviewer (`author_login`) | Verdict | Reopens? | Body evidence |
 |---|---|---|---|
 | `cuioss-review-bot` | **`reviewed`** | — | Published a "PR Reviewer Guide" over the diff: *"PR contains tests"*, *"No security concerns identified"*, *"No major issues detected"*. An explicit nothing-to-report over the diff, which the contract counts as reviewed |
-| `coderabbitai` | **`rate-limited`** | **yes** | *"Review limit reached … you've reached your PR review limit, so we couldn't start this review. **Next review available in: 57 minutes**"*. ⚠️ Its FIRST attempt did not hit the limit — it was **aborted by this run's own push**: *"Review failed — The head commit changed during the review from `3c6b9e7` to `96debb3`."* The retry then hit the quota. **The abort is not counted as coverage** |
+| `coderabbitai` | **`reviewed`** (after re-request) | — | Its first attempt was **aborted by this run's own push** (*"Review failed — The head commit changed during the review from `3c6b9e7` to `96debb3`"*), and the retry hit the quota (*"Next review available in: 57 minutes"*). The run **waited out the window and re-requested** with the registry's declared `trigger_comment`, rather than banking the abort as coverage. The re-review completed against a stable head and posted **5 actionable comments** |
 | `sourcery-ai` | **`rate-limited`** | **no** | *"Sorry @cuioss-oliver, your pull request is larger than the review limit of **150000 diff characters**"* — a property of this 56-file diff, not of the clock. Waiting cannot clear it; only a smaller PR would |
 
-**Coverage: 1 of 3.**
+**Coverage: 2 of 3** — after re-requesting. It was 1 of 3 at the first pass.
+
+⭐ **The re-request was the right call and is worth recording as such:** CodeRabbit's re-review produced
+**five actionable findings, three of them real defects this run had introduced or left** — including one
+(`phase-1-init`) that is precisely the "prose asserts more than the code checks" class the three
+verification rounds existed to catch, reaching a claim the **B3 rewrite itself created**. Banking the
+aborted attempt as coverage would have shipped all three.
 
 ⭐ This PR is the exact case the `Reopens?` column exists for: **two reviewers refused at the same
 moment for opposite reasons** — one on a countdown that clears, one on a size ceiling that never will.
@@ -867,6 +878,8 @@ plan's diff, because the two have different review audiences.
 | 62 modules over the 400-line budget in this slice | `100` |
 | ⚠️ `plugin-doctor` `references/rule-catalog.md` (line 623) and `standards/doctor-test-conventions.md` (line 185) both say the `test-module-preamble-boilerplate` rule has **"One known-legitimate occurrence"** — `test/conftest.py`'s own `load_script_module`. D1 created a **second**: `_build_extension_fixtures.load_build_extension`, which the doctor now reports and which is deliberate. Both statements are now incomplete. `marketplace/bundles/**` is out of scope for this plan, so this is a **proposal**, not an edit | `090` (the only plan that may edit that tree) |
 | The ~20 surviving citations in shapes the `test-docstring-historical-prose` rule cannot match (§ D4) — the string-literal and `TASK-n`/`D2`-in-prose forms | this plan, on a follow-up run |
+| ⚠️ **`build-pyproject/test_dynamic_mypypath.py` — `CANONICAL_SUBDIRS` is a hardcoded set used as the expected population.** If `collect_script_dirs()` or `build.py._compute_mypypath()` changes the canonical set, the tests stay green while silently skipping a new or removed directory. Raised by `coderabbitai` on PR #1290; **pre-existing on `origin/main`** — this run changed only the module docstring. Declined here as outside D1–D5, with the reason posted on the thread | this plan, on a follow-up run |
+| ⚠️ **`plan-doctor/_doctor_fixtures.py` — `REAL_LESSON_IDS` is a hardcoded tuple** while the docstring directly above it says the IDs come from the production `manage-lessons list` inventory. The prose diagnoses the exact defect the file then commits: it warns that hand-typed IDs drift and produce silent green tests. Raised by `coderabbitai`; **pre-existing on `origin/main`** — this run changed only the docstring, and the "copy-pasted from production" comment was already there. Declined here as outside D1–D5 (and labelled a heavy lift by the reviewer), with the reason posted on the thread. ⚠️ A follow-up must note that deriving from the live inventory trades a stale-fixture risk for a **coupling** risk — the suite would then depend on the machine's lessons store being non-empty, which is why the non-vacuity guard is load-bearing rather than optional | this plan, on a follow-up run |
 
 ### The four non-registering → registering conversions, and their bound
 
