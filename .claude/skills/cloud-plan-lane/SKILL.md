@@ -189,8 +189,29 @@ not abandoned).
 
 **Resolve it in favour of both: carry the work onto the branch this session is bound to.**
 
+⛔ **Establish the precondition BEFORE resetting anything.** `checkout -B` force-moves an existing
+local branch, and the assigned branch may already carry commits — its own, or a previous attempt's.
+Resetting it discards them silently, which is the exact work-loss failure this contract exists to
+prevent, committed by the step written to prevent it. Check first:
+
 ```bash
 git fetch origin main {previous-branch}
+git ls-remote --heads origin {assigned-branch}
+git log --oneline origin/main..{assigned-branch}     # empty ⇒ safe to reset
+```
+
+Then act on what you found:
+
+- **The assigned branch has no unique commits** (the ordinary case — a fresh session's branch sits at
+  `main`): reset it and rebase.
+- **It has unique commits**: do **not** reset. They are unpushed or unreviewed work belonging to this
+  session; rebase the previous branch's commits **on top of** them, or stop and report the run
+  **blocked**, naming both sets. Never choose silently between two lines of real work.
+- **It already exists on `origin` with commits**: the push below will be rejected as a non-fast-forward.
+  That rejection is information, not an obstacle to force past — resolve it as the case above, and do
+  not reach for `--force` to make the symptom go away.
+
+```bash
 git checkout -B {assigned-branch} origin/{previous-branch}
 git rebase origin/main
 git push -u origin {assigned-branch}
@@ -202,12 +223,29 @@ session's harness cannot find after a VM reclaim. A fast-forward often is not av
 refuses. **Leave the previous branch on `origin` untouched**; it costs nothing and is the only copy of
 the pre-rebase history.
 
-⛔ **A rebase falsifies every commit SHA the earlier run's documents quote, and that is a condition-A
-defect the run itself manufactured.** A prior `report-NN.md` naming commits `a1b2c3d`… now names
-commits on no branch under review. Rewrite each quoted SHA to its rebased counterpart as part of this
-step, and say in the new run's report that you did — do not leave a reader to discover that the
-report's own citations resolve to nothing. Match old to new by commit **subject**, in order
-(`git log --format="%h %s"` on each branch), never by position alone.
+⛔ **A rebase changes the SHA of every commit it REPLAYS, and any document quoting one then cites a
+commit on no branch under review — a condition-A defect the run manufactured by following this very
+step.** Scope that precisely rather than overstating it: the replayed set is what the branch carries
+and `main` does not. A SHA already reachable from `origin/main` keeps its object id and stays valid,
+so **rewrite only references you have proven stale** — checking each with
+`git cat-file -e {sha}` against the current branch, or `git merge-base --is-ancestor {sha} HEAD`.
+
+**Pair old to new by patch content, not by subject.** Subjects repeat, conflict resolution edits them,
+and a rebase can drop or squash a commit, so subject-and-order matching is a guess dressed as a method:
+
+```bash
+git range-diff origin/main...{previous-branch} origin/main...{assigned-branch}
+```
+
+Its output pairs each old commit with its replayed counterpart and marks any that were dropped or
+changed — a commit with no counterpart must be reported, never silently remapped to a neighbour.
+
+**Two surfaces hold quoted SHAs and they are not equally fixable.** Run documents (`report-NN.md`,
+`actual-state.md`) and the **PR description** are editable — correct them here, and say in the new
+run's report that you did. **Commit messages are not**, short of another history rewrite; a stale SHA
+in an already-written commit message is therefore accepted and disclosed, not chased. The practical
+consequence is forward-looking: **do not quote a same-branch SHA in a commit message** on a branch that
+may still be rebased.
 
 Record in the report which arrival this run was.
 
@@ -1461,7 +1499,7 @@ that its artifact exists on disk:
 | 4 Per-commit gate | Every commit touching `*.py` was preceded by a clean quality gate — a `total_issues: 0` / empty `errors[]` executor log, or the direct `./pw` tools each reporting clean (`ruff`/`mypy`/SPDX passed) |
 | 4 Pushed | No unpushed commit remains (`git status -sb` reports no `ahead`) |
 | 5 Build gate | Report states the git-derived Python-change verdict and the build outcome |
-| 6 Verification sub-agent | Findings and dispositions in the report; **which of the two exits ended the loop**, the **budget that applied** (five, or the plan's) with **every extension and who granted it**, and the round that stopped it. Where the budget ran out with an operator reachable, that the boundary question was **put to them** and what they answered; where it ran out headless, that fact and the fallback taken. On the verifier exit: **the verifier's own last answer** — never the author's verdict — and the **evidence stronger than a read** it rests on, named. On the budget exit: that fact, with everything A forbids **fixed** regardless and what closing each remaining B survivor would take. Either way: each survivor — and each behavioural finding left `deferred` — listed individually with its (a) proof or (b) bound and confirmation it was **re-put to the verifier** in the stopping round; whether the late rounds' findings were **narrower and not merely fewer**; the **residue to assume remains**; and `Outcome` still reporting the deliverables, not the loop (§ Step 6, "When the loop stops") |
+| 6 Verification sub-agent | Findings and dispositions in the report; **which of the two exits ended the loop** — named with the same `verifier-clear` / `budget-exhausted` token the report header carries, plus the `non-converging` qualifier where it applies (§ Report) — the **budget that applied** (five, or the plan's) with **every extension and who granted it**, and the round that stopped it. Where the budget ran out with an operator reachable, that the boundary question was **put to them** and what they answered; where it ran out headless, that fact and the fallback taken. On the verifier exit: **the verifier's own last answer** — never the author's verdict — and the **evidence stronger than a read** it rests on, named. On the budget exit: that fact, with everything A forbids **fixed** regardless and what closing each remaining B survivor would take. Either way: each survivor — and each behavioural finding left `deferred` — listed individually with its (a) proof or (b) bound and confirmation it was **re-put to the verifier** in the stopping round; whether the late rounds' findings were **narrower and not merely fewer**; the **residue to assume remains**; and `Outcome` still reporting the deliverables, not the loop (§ Step 6, "When the loop stops") |
 | 7 PR cycle | PR exists; every comment dispositioned in the report; the participation table carries a verdict **and** a `Reopens?` value per reviewer, and every `silent` verdict records what its recovery check found. An `unreadable` verdict means condition 2 is NOT established — the row is reported as **not done**, whatever the merge outcome |
 | 8 Merge gate | Conditions 1–3 met and auto-merge armed. Either `state: MERGED` was confirmed after arming, **or** the session could not self-wake to watch the queue (§ Cloud session affordances) and delegated the landing to the orchestrator's collect — both are completed, neither is partial (§ Step 8). The merge commit is recorded to the operator, not in the pre-merge report |
 | 8 Bridge | No **status or bookkeeping** write landed under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan's directory was touched; a **declared-deliverable** edit to a shared lane doc (e.g. `cloud-bridge.md`, `README.md`, the plan template) is permitted — and the report carries the PR number and per-deliverable outcome the orchestrator will collect from |
@@ -1545,8 +1583,20 @@ Required content:
 
 **Date (UTC):** …    **Branch:** …    **PR:** …    **Outcome:** completed | partial | blocked
 
-> **Verification loop exit:** `verifier-clear` | `budget-exhausted` — and when the late rounds' findings
-> did not narrow, **`non-converging`** alongside it.
+> **Verification loop exit:** `{exit}` [`, non-converging`]
+
+**The schema is a primary exit plus an optional qualifier — not a three-value enum.** `{exit}` is
+exactly one of **`verifier-clear`** or **`budget-exhausted`**, because § Step 6 defines exactly two
+ways the loop ends. **`non-converging`** is a *qualifier* appended to either, and it is appended
+whenever the late rounds' findings were not narrower — which § Step 6 already requires the stop record
+to state. It is a qualifier rather than a third exit because it answers a different question: the exit
+says *what stopped the loop*, the qualifier says *whether the loop was still finding things when it
+stopped*. Both combinations are real — a budget can run out on a converging loop, and a verifier can
+answer "nothing remains" on a loop whose previous round was still finding defects.
+
+Write it exactly as `**Verification loop exit:** budget-exhausted, non-converging` or
+`**Verification loop exit:** verifier-clear`. Use these same two tokens and this same qualifier in the
+§ Step 6 stop record and the § Step 9 contract-check row; do not paraphrase them into other wording.
 
 ## Skills loaded
 …
@@ -1565,7 +1615,8 @@ section states what was checked to reach it.
 
 Then the stop record (§ Step 6, "When the loop stops"):
 
-- **which of the two exits ended the loop** — the verifier's answer, or a spent budget no operator
+- **which of the two exits ended the loop**, named with the header's own token (`verifier-clear` or
+  `budget-exhausted`, plus `non-converging` where it applies) — the verifier's answer, or a spent budget no operator
   extended — the budget that applied (five, or the plan's), every extension granted and by whom, and
   which round stopped it. A budget exhausted with a reachable operator records the boundary question
   and its answer; one exhausted headless records that there was nobody to ask;
