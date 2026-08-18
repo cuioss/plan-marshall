@@ -533,6 +533,30 @@ measure of what happened.
   present in the three directories that stage a plan directory at all, and the other six stage none.
 
 
+## Scope
+
+55 files changed at the point the PR opened, **plus one** added by the beyond-diff sweep:
+
+* **53 `*.py` under `test/plan-marshall/`**, every one inside the plan's Expected surface. Checked
+  mechanically: the changed set minus the Expected-surface directories, the four named root modules,
+  and this plan's own directory is **empty**.
+* **`doc/plans/test-quality/070-…/plan.md`** (moved into its directory) and **`report-01.md`**.
+* **`doc/developer/testing.adoc`** — ⚠️ **outside the Expected surface, and deliberately so.** The
+  beyond-diff sweep found it naming `build_test_helpers.run_coverage_report_case` in a sentence
+  describing the tree's *current* plumbing; D1's rename made that false. It is live developer
+  documentation rather than a dated record, so the lane contract's condition A applies — a false
+  statement is fixed wherever it lives — and the plan's Out-of-scope list does not reach it (it names
+  `marketplace/bundles/**`, `test/conftest.py`, `test/_shared/**`, and test directories belonging to
+  sibling plans; this is none of those). Recorded here rather than folded silently into the count.
+
+**No `marketplace/bundles/**` file, no `test/conftest.py`, no `test/_shared/**`, and no test directory
+belonging to a concurrently-running sibling plan is touched.**
+
+The other eleven repository references to the two retired names were each read and left alone, with
+the reason: `060`'s and `070`'s plan documents and `090`'s plan describe the rename itself or disclaim
+ownership of it; `findings-test-corpus-review.md` and `report-authoring-01.md` are dated records; and
+`test/conftest.py` line 1128 is plan `090` § D6's, recorded as a proposal below.
+
 ## Build gate
 
 **Verdict: Python changed, so the build ran.** `git diff --name-only origin/main...HEAD -- '*.py'`
