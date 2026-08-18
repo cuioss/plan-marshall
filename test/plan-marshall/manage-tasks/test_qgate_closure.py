@@ -534,15 +534,28 @@ def test_a_declared_glob_escaping_the_repo_is_unmeasured_not_empty():
     The precondition is asserted rather than assumed: the pattern must resolve
     to a directory that is BOTH outside the repository and populated, or the
     test would pass for the uninteresting reason that there was nothing out
-    there to find either way. ``PROJECT_ROOT`` is three levels below ``/``, so
-    ``../../../etc`` is ``/etc``.
+    there to find either way.
+
+    ⛔ **The number of ``..`` segments is DERIVED from ``PROJECT_ROOT``, never
+    hard-coded.** How deep the checkout sits below ``/`` is a property of the
+    environment, not of the code under test: a developer checkout at
+    ``/home/user/plan-marshall`` is three levels down, a GitHub Actions checkout
+    at ``/home/runner/work/plan-marshall/plan-marshall`` is five. An earlier
+    version wrote ``../../../etc`` and asserted it resolved to ``/etc``, with a
+    docstring claiming ``PROJECT_ROOT`` "is three levels below /". That was true
+    only where it was written: CI resolved the same pattern to
+    ``/home/runner/etc``, the precondition failed, and the suite was green on one
+    machine and red on every other. Deriving the depth makes the precondition
+    hold wherever the checkout lives.
 
     Left unnormalised, ``Path.glob`` walks out of the repository and returns
     nothing, so a scope nothing examined reports a clean zero — the very defect
     this module reports on outlines, committed by the module itself.
     """
-    escape = '../../../etc/*.conf'
-    outside = (PROJECT_ROOT / '../../../etc').resolve()
+    # parts[0] is '/', so the remaining count is the depth to climb to reach it.
+    up = '/'.join(['..'] * (len(PROJECT_ROOT.resolve().parts) - 1))
+    escape = f'{up}/etc/*.conf'
+    outside = (PROJECT_ROOT / f'{up}/etc').resolve()
     assert outside == Path('/etc'), 'precondition: the pattern must leave the repo'
     assert list(outside.glob('*.conf')), 'precondition: the escape target must be populated'
 

@@ -228,6 +228,37 @@ diff's added lines, which contain none of them — so this branch did not make t
 recorded as residue rather than widened into this diff. They are a behavioural hardening opportunity,
 not a false statement, so condition **A** does not reach them.
 
+### F-CI1 — a test that was green on one machine and red on every other
+
+| Source | Finding | Disposition |
+|---|---|---|
+| CI `verify / verify` on PR #1295 | `test_qgate_closure.py::test_a_declared_glob_escaping_the_repo_is_unmeasured_not_empty` hard-coded `../../../etc` as its repo-escaping pattern and asserted the result equals `/etc`. That holds only where the checkout sits exactly three levels below `/`. CI's checkout is at `/home/runner/work/plan-marshall/plan-marshall`, where the same pattern resolves to `/home/runner/etc`, so the **precondition assertion** failed: `assert PosixPath('/home/runner/etc') == PosixPath('/etc')`. | **Fixed.** The `..` count is now derived from `len(PROJECT_ROOT.resolve().parts) - 1`. |
+
+⛔ **The local build gate could not have caught this, and neither could any verification round.** The
+author's checkout is at `/home/user/plan-marshall` — three levels down — so `./pw verify` was
+**genuinely green here** at the same commit CI rejected (`20847 passed, 14 skipped`,
+`=== verify: SUCCESS ===`). The defect is not "a test that fails"; it is **a test whose precondition
+encodes a property of the machine it was written on**, and such a test is green by construction
+wherever it is authored.
+
+⭐ **It is also an invented rationale of exactly the kind § Stop record warns about, in its most
+deceptive form: the docstring stated the false premise as a fact** — *"`PROJECT_ROOT` is three levels
+below `/`, so `../../../etc` is `/etc`"*. A reader checking the test against its docstring would find
+them in perfect agreement, because both were derived from the same unexamined assumption. Four
+verification rounds read this file; the rule that would have caught it — *if the clause asserts what a
+value resolves to, RUN it on the actual argument* — was applied to function returns and not to a path
+computation.
+
+**Verified by derivation rather than by re-running**, because the machine that must confirm the fix is
+the one that cannot reproduce the bug. The corrected expression was evaluated against four checkout
+shapes — the author's, **CI's exact path**, a one-level root, and a six-level root — and resolves to
+`/etc` in every one.
+
+**Sweep-and-count.** Every other absolute-path use in the diff's test modules was checked: the two
+remaining `/etc` references (lines 342, 378) pass `/etc/*.conf` as an **absolute** pattern to exercise
+the absolute-path rejection, and carry no dependency on checkout depth. No other test in the diff
+encodes a filesystem-shape assumption.
+
 ### B — behavioural findings
 
 | # | Finding | Disposition |
