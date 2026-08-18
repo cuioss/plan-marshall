@@ -742,6 +742,65 @@ _Verdicts, each derived from the stored comment bodies across all three surfaces
   total, which counts an orchestrator-plus-agent dispatch tree under plan-marshall's own per-task
   billing boundary. This run has no such boundary and no ledger, so no comparison is offered.
 
+## Contract check (Step 9)
+
+Re-read against what actually happened, confirming both that the step ran and that its artifact exists.
+
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | **done** — named in § Skills loaded, including the two recorded as *not separately read* with the reason |
+| 2 Branch | **done** — harness-assigned `claude/architecture-orchestration-test-reduction-iuthfe`, kept as-is, published to `origin` **before the first edit** (it was absent from the remote on arrival) |
+| 3 Plan directory | **done** — `doc/plans/test-quality/070-…/plan.md` exists via `git mv` (a pure `R100` rename), and opens with the first-instruction block, which was present and needed no repair |
+| 4 Implement | **done** — deliverables dispositioned; every commit carries the `Co-Authored-By` trailer and no "Generated with" footer |
+| 4 Per-commit gate | **done** — every commit touching `*.py` was preceded by a clean `./pw quality-gate` (`ruff … All checks passed!`, `mypy … Success`, `SPDX-header check passed`), read from the tools' own output rather than the exit code |
+| 4 Pushed | **done** — pushed after every commit; no unpushed commit remains |
+| 5 Build gate | **done** — git-derived verdict: 53 of 56 changed files are `*.py`, so the build ran. Full `./pw verify` green: 20,791 passed, 14 skipped. It **failed first** on `test-compile`, which is recorded rather than smoothed over |
+| 6 Verification sub-agent | **done** — three rounds, budget of 3 declared up front, **ended on the budget exit** with round 3's stop answer YES; everything condition A forbids fixed, condition B's item characterised. Findings and the stop record are in § Findings |
+| 7 PR cycle | **in progress** — PR [#1290](https://github.com/cuioss/plan-marshall/pull/1290); participation table below |
+| 8 Merge gate | pending |
+| 8 Bridge | **done** — no status or bookkeeping write landed under `doc/plans/` outside this plan's own directory; no ledger, no status file, no other plan's directory touched |
+| 9 This check | **done** — this table |
+| 9 What have we learned | below |
+
+**Tree claims re-verified at the moment of writing** (they are not covered by the diff sweeps, and this
+run's own build gate mutates the tree they describe): the working tree is clean apart from tracked
+edits; the `base-wt` worktree created for the `origin/main` comparisons was removed and `git worktree
+list` shows only the main checkout; no file was written outside the repository except under `$TMPDIR`.
+
+**GitHub access path:** the **GitHub MCP server** — the expected cloud path. No `gh` CLI is present.
+
+**Branch form:** harness-assigned, kept. **No `/sync-plugin-cache` is owed** — it is a machine-local
+build step reading the git-ignored `target/` and writing `~/.claude/`, which a cloud run neither
+performs nor records as debt.
+
+## What have we learned (Step 9)
+
+**One contract change is proposed, and this run produced the evidence for it.**
+
+⛔ **The lane contract's § Step 6 tells a run to sweep "prose-bearing string literals in production
+code" — argparse `help=`, error-message templates, operator-facing messages. This run was bitten by
+the same consumer kind in TEST code, which that sentence does not name.** Round 3 found three lesson
+ids surviving in **pytest assertion-message string literals** in a file whose *prose* citation this
+run had already stripped, leaving the module asserting an id it no longer explained. A documentation
+sweep never opened the string; the doctor rule's patterns never scan literals; and the code sweep read
+it as an argument, not a sentence.
+
+The failure mode is identical to the production case the contract already names — prose that reads as
+documentation and lives as code — and the assertion message is if anything *more* operator-facing,
+because it is what a developer sees when the test fails. The proposal is a one-clause widening:
+
+> …and **prose-bearing string literals in production code** — an argparse `help=` / `description=` /
+> `epilog=`, an error-message or log-line template, an operator-facing message assembled in code **, or
+> a test's own assertion message, which a maintainer reads at exactly the moment the test fails**.
+
+**Evidence from this run:** commit `5e6ae7e`, `test/plan-marshall/execute-task/test_skill_profile_resolve_commands.py`
+lines 52, 65 and 133 — three citations that survived a sweep which had already corrected the same file's
+docstring, and which were found only because an independent verifier grepped the literals.
+
+Per the contract this is **presented to the operator, not self-approved**, and if accepted ships as a
+separate `chore/` PR touching only `.claude/skills/cloud-plan-lane/SKILL.md` — never folded into this
+plan's diff, because the two have different review audiences.
+
 ## Residue
 
 **Deliverable work left open:**
