@@ -727,8 +727,42 @@ carries no `author_login` block of its own and is the contract, not a registry e
 The PR was opened **without** `skip-bot-review`: the diff is 53 `*.py` files under `test/`, which is
 code, so it keeps its review.
 
-_Verdicts, each derived from the stored comment bodies across all three surfaces
-(`get_comments`, `get_reviews`, `get_review_comments`), recorded below as they arrive._
+**All three surfaces were read** — `get_comments` (issue comments), `get_reviews` (review-summary
+bodies) and `get_review_comments` (inline threads). No one of them subsumes the others; the
+review-summary surface is where Sourcery's refusal lives and it appears on neither of the other two.
+The inline surface returned a genuine empty set (`totalCount: 0`), and the PR payload's own
+`comments: 2` corroborates that the surfaces that did return content were read, so no absence here is
+an unread surface.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence |
+|---|---|---|---|
+| `cuioss-review-bot` | **`reviewed`** | — | Published a "PR Reviewer Guide" over the diff: *"PR contains tests"*, *"No security concerns identified"*, *"No major issues detected"*. An explicit nothing-to-report over the diff, which the contract counts as reviewed |
+| `coderabbitai` | **`rate-limited`** | **yes** | *"Review limit reached … you've reached your PR review limit, so we couldn't start this review. **Next review available in: 57 minutes**"*. ⚠️ Its FIRST attempt did not hit the limit — it was **aborted by this run's own push**: *"Review failed — The head commit changed during the review from `3c6b9e7` to `96debb3`."* The retry then hit the quota. **The abort is not counted as coverage** |
+| `sourcery-ai` | **`rate-limited`** | **no** | *"Sorry @cuioss-oliver, your pull request is larger than the review limit of **150000 diff characters**"* — a property of this 56-file diff, not of the clock. Waiting cannot clear it; only a smaller PR would |
+
+**Coverage: 1 of 3.**
+
+⭐ This PR is the exact case the `Reopens?` column exists for: **two reviewers refused at the same
+moment for opposite reasons** — one on a countdown that clears, one on a size ceiling that never will.
+A verdict column alone would have rendered them identically and told a reader nothing about which was
+worth re-requesting.
+
+**The abort was this run's own doing**, and is recorded as such rather than as a bot failure: the
+per-commit push cadence that durability requires (§ Step 4) changed the head while CodeRabbit was
+mid-review. The contract resolves that tension on the commit side — batch commits, never delay a push
+— and this run batched less tightly than it could have, which is a fair criticism of it.
+
+**§ Step 8 condition 4 disclosure, stated before arming:** *Review coverage: 1 of 3 —
+`cuioss-review-bot` reviewed with no major issues; `coderabbitai` rate-limited, reopens in ~57 minutes,
+its first attempt aborted by this run's own push; `sourcery-ai` rate-limited on a 150,000-diff-character
+size ceiling, does not reopen.* Per the contract this **discloses**, it does not block: rate limits are
+routine and outside this run's control, and blocking on them would strand a landing behind a bot's
+quota.
+
+**Merge-gate condition 2 (every comment handled) is established, not overridden.** No surface was
+`unreadable`; the two shortfalls are `rate-limited`, which means those reviewers filed no comments,
+leaving nothing unhandled. The only substantive reviewer comment received — `cuioss-review-bot`'s —
+reports no issues and needs no fix or reply.
 
 ## Cost
 
