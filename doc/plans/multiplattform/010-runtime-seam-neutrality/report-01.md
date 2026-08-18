@@ -263,12 +263,34 @@ and had already hidden a defect.
 - **`_claude_runtime_impl.py:50` hardcodes `"valid targets are: claude, opencode"`** inside the
   Claude runtime while the router derives the same message from `_REGISTRY`. A target enumeration in
   a concrete runtime — small, but exactly this epic's subject.
+- **`platform-runtime/SKILL.md` carries D2's coupling one file over.** Nine of the op table's 24 rows
+  end in "no-op on OpenCode", two parenthesise Claude-specific behaviour, and the frontmatter names
+  both targets. D2's declared surface was `runtime_base.py`, so the report's D2 claim ("the ABC
+  docstrings are target-opaque") stays true and bounded — but a reader of the *skill* still gets the
+  target-coupled version of the same 24 operations. Derived while resolving the `origin/main` merge,
+  which edited one of those nine rows. Added to the inventory's §C rather than fixed here: fixing it
+  is a nine-row rewrite plus a no-op-surfacing decision, which is a plan, not a merge resolution.
 
 ## Reviewer participation
 
-_The PR is opened as the final step of this run; reviewer verdicts are recorded against it there, per
-the population derived from `automatic-review/standards/{bot_kind}.md` (`coderabbitai`,
-`cuioss-review-bot`, `sourcery-ai`)._
+PR [#1291](https://github.com/cuioss/plan-marshall/pull/1291). Population derived from
+`automatic-review/standards/{bot_kind}.md` (`coderabbitai`, `cuioss-review-bot`, `sourcery-ai`).
+
+| Reviewer | Verdict | Reopens? |
+|---|---|---|
+| `coderabbitai` | **rate-limited** — posted a limit notice instead of a review ("You've used all 1 included review currently available under your plan"), naming a 17-minute reset. | yes |
+| `sourcery-ai` | **declined on size** — "your pull request is larger than the review limit of 150000 diff characters". Measured: `git diff origin/main...HEAD \| wc -c` = **160 040**, over the limit by ~7%. | no |
+| `cuioss-review-bot` | **did not run** — no review, no comment, no check on this PR. | n/a |
+
+Two of the three reviewers therefore contributed **no findings at all**, and this is a coverage gap
+rather than a clean bill. Recorded honestly here because a silent reviewer and an approving reviewer
+are indistinguishable in the PR UI, and only one of them is evidence.
+
+The `sourcery-ai` refusal is **structural, not transient**: the diff is over its hard limit and every
+subsequent commit (the `origin/main` merge, the fixes below) only grows it, so there is no state of
+this PR that Sourcery would review. Splitting the PR to get under the limit was not done — the two
+largest contributors are the run report (348 lines, a lane-mandated record that cannot be dropped)
+and `contract.md` (165/110, the deliverable itself). Dropping neither is possible; the gap stands.
 
 ## Cost
 
