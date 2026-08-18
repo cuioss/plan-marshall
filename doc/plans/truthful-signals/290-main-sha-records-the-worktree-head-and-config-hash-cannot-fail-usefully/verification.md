@@ -169,7 +169,7 @@ test files. Specifically:
 
 | Residue declared in report-01.md | Status in today's tree |
 |---|---|
-| Checkout-context stability of `config_hash` (worktree-vs-main resolution of `marshal.json`), deferred to plan 310 | **Still open.** `get_marshal_path` → `get_tracked_config_dir` (`file_ops.py:1274-1292`) is still cwd-relative; `7612c3a7` (plan 310) changed `_invariants.py`, `_handshake_commands.py` and `marketplace_paths.py` but not `file_ops.get_tracked_config_dir`. Correctly declared as out of scope here, so not a gap against this plan |
+| Checkout-context stability of `config_hash` (worktree-vs-main resolution of `marshal.json`), deferred to plan 310 | **Closed by plan 310 with an explicit no-work verdict** (corrected during adversarial review — an earlier draft of this row read "Still open", which mistook an unchanged line of code for an unanswered question). The code fact stands: `get_marshal_path` → `get_tracked_config_dir` (`file_ops.py:1274-1292`) is still cwd-relative, and `7612c3a7` changed `_invariants.py`, `_handshake_commands.py` and `marketplace_paths.py` but not `file_ops.get_tracked_config_dir`. But plan 310 **took up the hand-off and adjudicated it**: `doc/plans/code-intelligence-substrate/310-…/report-01.md:46-52` — "`config_hash` deserves a named verdict because the predecessor plan (`truthful-signals/290-…`) explicitly deferred its 'whole-checkout stability' here. **Verdict: not a member of this population.** Its name makes no main claim, and its cwd-relative `marshal.json` read is the ADR-002 rule rather than a mislabel" — restated at `:690-694` as "No work is owed on it." Out of scope here either way, so not a gap against this plan |
 | `.plan/` path-exemption hole in the dirty-path filter (record, do not fix) | **Closed by later work.** `_invariants.py:618-657` now drops a `.plan/` path only when it is *not* git-tracked; landed as `77fd1156` (PR #1217, "exempt on trackedness, not path prefix") |
 | Wrong-commit-recorded-confidently instance in baseline reconciliation | Not re-examined — out of this plan's surface and cited, not merged, as the plan directed |
 
@@ -187,7 +187,126 @@ test files. Specifically:
 - **New false-positive surface from widening the hash.** The fix hashes the whole `plan` section
   rather than one phase's subtree, so any mid-run write anywhere under `plan.*` (e.g. `plan.effort`,
   `plan.phase-6-finalize.steps`) now drifts a `blocking_at_every_boundary` invariant where
-  previously only a same-phase write did. The writers I checked (`manage-config effort
-  apply-preset`, `steps-sort`) are reachable only from the `marshall-steward` configuration wizard,
-  not from a plan run, so I found no concrete mid-run writer — but I did not trace every caller, so
-  this is recorded as unverified rather than cleared.
+  previously only a same-phase write did. **Re-swept during adversarial review with a broader
+  pattern** than the original caller trace: every `config['plan']` writer in the `manage-config`
+  scripts was enumerated (`_cmd_effort.py:737`/`:779`/`:902`, `_cmd_finalize_steps.py:127`/`:336`,
+  `_cmd_quality_phases.py:343`–`:525`, `_cmd_skill_domains.py:931`, `_cmd_steps_sort.py:83`), then
+  every documented invocation of the verbs that reach them (`plan phase-N set` / `set-steps` /
+  `add-step` / `remove-step` / `set-max-iterations` / `set-step` / `set-domain-step`, `effort`,
+  `finalize-steps`, `steps-sort`, `sync-defaults`) was located across `marketplace/bundles/`. Every
+  hit is in `manage-config`'s own `SKILL.md` / `standards/`, or in `marshall-steward`
+  (`references/menu-configuration.md`, `wizard-flow.md`, `upgrade-flow.md`) — the configuration
+  wizard, not a plan run. **No phase workflow (`phase-1-init` … `phase-6-finalize`) and no
+  `plan-orchestrator` surface writes under `plan.*`.** Coverage caveat, stated so the negative is
+  honest: this sweep covers *documented* invocations under `marketplace/bundles/`; a caller
+  constructing the command dynamically in Python would not appear in it. Downgraded from "unverified"
+  to "swept, no mid-run writer found, with the sweep's coverage named" — not to "cleared".
+
+## Adversarial review
+
+**Reviewed by:** an independent agent that did not write this document.
+
+**Checked.** Every gap (G1–G4), every clean-pass row, both "swept, clean" claims, and every stated
+figure. By these means:
+
+- **Functions executed, not read.** The **pre-fix** `_capture_config_hash` body was reconstructed
+  verbatim from `git show b2982e75` and run in-process against this repository's real
+  `.plan/execute-script.py` and `.plan/marshal.json`. It returned three *distinct, non-`None`*
+  values — `1-init` → `93acf2ec06e7525e`, `5-execute` → `c7935ba60629440a`, `6-finalize` →
+  `be9e8282403378dc` — against the shipped body's `1c86cdcf6ffad590` at all three. This settles the
+  D0 refutation by execution of the disputed function itself, not by execution of the CLI it calls.
+- **CLI re-run.** `plan phase-5-execute get --audit-plan-id …` through the executor → **exit 0**,
+  TOON payload; the same call direct against `manage-config.py` with the full marketplace
+  `PYTHONPATH` → **exit 2, "unrecognized arguments: --audit-plan-id"**. Divergence reproduced.
+- **Mechanism confirmed at its own source, and at the run's commit.**
+  `extract_audit_plan_id` (`execute-script.py.template:1221-1253`, call site `:1417`) strips the
+  flag unconditionally for every notation; the identical code is present at `b2982e75^`
+  (`git show b2982e75^:…template | grep -n audit-plan-id` → `:11`, `:793`, `:1245`, `:1416`,
+  `:1488`), so it held during the run.
+- **Mutations (3).** Each preceded by `git diff --quiet -- <path>` (exit 0), each file byte-copied to
+  the scratchpad first and restored from those bytes, never via git; `git diff --quiet` exit 0 after
+  each restore. (1) `_invariants.py:1537` re-scoped to `…get('plan',{}).get(f'phase-{_phase}',{})` →
+  `test_capture_config_hash_stable_across_phases` RED with `assert '1d5a717211d94465' ==
+  '845f280d404d3099'`, **reproducing this document's recorded values exactly**. (2)
+  `summarize-invariants.py:275` with `'config_hash'` added to `excluded` →
+  `TestDetectDrift::test_config_hash_change_is_drift` RED, 30 others green. (3) **New:**
+  `_invariants.py:1535-1536` (the non-dict guard) deleted → `test_invariants_behavior.py` +
+  `test_lifecycle_handshake_e2e.py` + `test_invariants.py` = **168 passed**, proving G2's gap by
+  mutation rather than by grep.
+- **Every figure re-derived.** `test_invariants_behavior.py` → **47 passed**; `-k config_hash` →
+  **5 passed, 42 deselected**; the three-file set → **77 passed** (124 total, as stated).
+  `_capture_config_hash` at `:1495`; docstring defect-(2) at `:1514-1518`; "fail-closed" at
+  `:1524-1526`; non-dict guard at `:1535-1536`; `_hash_dict(config.get('plan',{}))` at `:1537`;
+  `_run_script` `:467-487`; `capture_all` `:1868-1897` with the `None`-skip at `:1893-1894`;
+  `INVARIANTS` `:1665`; blocking map `:1774`; classification comment `:1710-1715` (pre-fix
+  `:1502-1507`); `_diffs` `:467-512` with the `''`-skip at `:495-498`; `detect_drift` `:267`,
+  `excluded` `:275` (contents confirmed, `config_hash` absent); `argparse_surface.py:213-215`;
+  `--audit-plan-id` at `manage-config.py:389` (`build-decision`) and `:420` (`sync-defaults`),
+  identical at `b2982e75`. Landed diff = **8 paths** (rename counted once). No source file changed
+  between `a2fd69ee` and today's HEAD (`git diff --name-only` returns only `doc/plans/` files), so
+  every line number above is current.
+- **Both "swept, clean" claims re-run with broader patterns.** (a) The stale-prose sweep was
+  re-run not on `config_hash` but on the *phrasings of the false claim* —
+  `never fired at all|signal that never fired|does not accept|noun does not accept|exited non-zero|unrecognized arguments`
+  across `marketplace/ test/ doc/ .claude/`. The only production carriers of the refuted claim
+  remain `_invariants.py:1515-1517` and `test_invariants_behavior.py:203-204`; every other hit is
+  unrelated. The `config_hash` sweep was also re-run and confirms `phase-handshake.md:133` and
+  `invariant-check-summary.md:17` are accurate and that `test_lifecycle_handshake_e2e.py:22`/`:108`
+  do **not** repeat the dead-capture claim. (b) The "no mid-run writer" sweep was widened from two
+  named verbs to all nine `config['plan']` writers and every documented invocation of the verbs that
+  reach them — see § What could NOT be verified for the result and its coverage caveat.
+- **Cited commits verified.** `77fd1156` = "fix(finalize): .plan/ dirty-source guards exempt on
+  trackedness, not path prefix (#1217)"; `7612c3a7` = "fix(phase-handshake): read main-scoped columns
+  from main, not the pinned cwd (#1286)", and its `--name-only` list confirms `file_ops.py` untouched.
+  Plan 310's report was read directly (`:38-52`, `:685-694`).
+- **G1's "actionably misleading" claim tested.** The cited call sites were opened:
+  `planning.md:117`/`:193`, `planning-outline.md:183`/`:342`/`:591`, `q-gate-validation.md:57` and
+  seven more in that file all pass `--audit-plan-id` to `manage-config plan phase-N get`. Tree-wide,
+  `--audit-plan-id` appears on 122 documented lines under `marketplace/`, 28 of them within three
+  lines of a `manage-config` notation. "Dozens" is supported.
+
+**NOT re-checked.** `./pw verify` totals (`19458 passed, 14 skipped`, coverage `COMPLETE`) — still
+not re-run. The GitHub/CI surface (check conclusions, comment ids, `mergeable_state`, the 1-of-3
+reviewer coverage) — not re-derived. The original `.plan/` incident record (the four hash values,
+the `main_sha` whose only containing ref was the feature branch, the emitted drift warning) —
+still unreachable, as the plan itself flagged. The `main_sha` half and the baseline-reconciliation
+sibling — out of scope by the plan's own boundary, deliberately not examined.
+
+| Item | Original claim | Verdict | Evidence |
+|---|---|---|---|
+| Verdict `implemented-with-gaps` | Rows support it | **upheld** | D0/D1/D2(a)/D2(b) are all *implemented*; every defect is documentation accuracy or one missing test. No deliverable is unimplemented, so `partially-implemented` would be wrong. The "D2 (supporting)" row is a self-added contract-test row, not a plan deliverable |
+| D0 row — "dead capture" refuted | `high`-value refutation of the report's defect #1 | **upheld, strengthened** | Refuted a second and stronger way: the pre-fix function body itself executed and returned three distinct non-`None` hashes. Reading the callee is no longer load-bearing |
+| D0 row — hand-off not triggered | No resolver touched by the fix | **upheld** | `git show --stat b2982e75` shows no `file_ops.py`/`marketplace_paths.py` change; and plan 310, which owns the resolver, independently ruled `config_hash` "not a member of this population" |
+| D1 row — clean pass | Determination recorded, nothing suppressed | **upheld** | `config_hash` present in `INVARIANTS:1665`, `blocking_at_every_boundary` at `:1774`, absent from `excluded` at `summarize-invariants.py:275` — each read at HEAD, and the last one locked by mutation 2 |
+| D2(a) row — clean pass | Passes, non-vacuous | **upheld** | Mutation 1 re-applied independently; RED with the exact hash pair this document recorded |
+| D2(b) row — clean pass | Passes, non-vacuous, anti-silencing | **upheld** | Capture-level test read (it writes two genuinely different `marshal.json` bodies — not a stub assertion); detector-level lock re-driven RED by mutation 2 |
+| D2 (supporting) row — non-dict branch untested | Grep found no test | **upheld, strengthened** | Proven by mutation instead of by grep: guard deleted, 168 tests still pass |
+| G1 | Refuted dead-capture claim shipped in docstring + test comment; `high` | **upheld** (line ref narrowed, Done-when made mechanical) | Severity `high` kept after challenge: it is not a sentence nobody acts on — it declares 28 documented, working call sites broken. `stale-statement` already carries `high` on four gaps elsewhere in this epic, so the taxonomy permits it. `test_invariants_behavior.py` ref narrowed `:203-206` → `:203-204` (`:205-206` state the *true* defect) |
+| G2 | Non-dict `marshal.json` branch advertised but untested; `medium` | **rewritten** (severity unchanged) | Gap real and now mutation-proven. Its **rationale was fabricated**: "would hash `{}`" is impossible — no non-dict JSON top level has `.get`, so the guardless capture raises `AttributeError` out of `capture_all`. Rewritten |
+| G3 | `None` return wrongly called "fail-closed"; `low` | **rewritten** (severity unchanged) | Gap real: `capture_all:1893-1894` skips, `_diffs:495-498` skips, so the *boundary* does not block. But "no diagnostic" is **false** — `config_hash` ∈ `_CORE_INVARIANTS` (`summarize-invariants.py:49-56`) and a blank column raises a severity-`error` finding (`:341-350`), test-locked at `test_summarize_invariants_behavior.py:276-292`. Narrowed to "post-hoc, not absent" |
+| G4 | `--audit-plan-id` is on `build-decision` + `sync-defaults`, not `build-map`; `low` | **upheld** | `manage-config.py:389` under `p_bd` (`build-decision`), `:420` under `p_sync` (`sync-defaults`); byte-identical at `b2982e75`; parser context read at `:375-423` |
+| G5 | *(new)* `build-decision --audit-plan-id` is unreachable through the executor; `medium` | **added** | Executed: via the executor `--audit-plan-id` → `status: error` naming that very flag; the `--plan-id` control → `status: success`. The executor strips it unconditionally, so `_cmd_build_map.py:160`'s fallback is dead and `manage-config/SKILL.md:1428`'s "accepted as an alias" is false |
+| Residue row — `config_hash` checkout stability | "Still open" | **corrected** | Plan 310 explicitly adjudicated the hand-off: "Verdict: not a member of this population … No work is owed on it" (`310-…/report-01.md:46-52`, `:690-694`). An unchanged line of code is not an unanswered question |
+| "New false-positive surface" | Recorded as unverified | **re-swept, narrowed** | All nine `config['plan']` writers enumerated and all documented invocations located: every one is `manage-config`'s own docs or `marshall-steward`. No phase workflow or orchestrator surface writes under `plan.*`. Coverage caveat named |
+
+**Documents corrected.** *gaps.md*: open items `4` → **5**; **G5 added** (new, `medium`, executed
+evidence); **G2** and **G3** rationales rewritten where they asserted an unrun mechanism; **G1**'s
+test-file line range narrowed to `:203-204`, its corroboration-from-incident-data clause labelled as
+the weaker evidence it is, and its Done-when replaced with a mechanical zero-hit grep; **G3**'s
+Done-when replaced with a grep plus a three-direction content requirement; a `## Refuted during
+adversarial review` section added recording the two refuted clauses and the one weakened one — no
+gap was refuted in whole. *verification.md*: the `config_hash`-checkout-stability residue row
+corrected from "Still open" to closed-by-verdict; the "new false-positive surface" item promoted
+from unverified to swept-with-named-coverage; this section appended. Nothing was renumbered; the
+verdict is unchanged.
+
+**Residual doubt — where a third reviewer should start.** (1) **G5's blast radius.** I confirmed
+`build-decision --audit-plan-id` fails through the executor, but I did not enumerate the consumer
+sites ADR-004 names as calling the sole build/no-build authority (`pre_push_quality_gate_inactive`,
+`pre-commit-verify-freshness`, the phase-5 verify surfaces) to see whether any passes
+`--audit-plan-id` in practice. If one does, G5 is `high`, not `medium` — a real gate failing to
+`unknown` and, per ADR-009, spuriously building. (2) **Whether the executor stripping is itself the
+defect.** `argparse_surface.py:213-215` asserts no target parser may declare `audit-plan-id`, yet
+`manage-config.py` declares it twice and `plugin-doctor` passed the tree. Something that should have
+caught this did not, and I did not look for the check. (3) **The `./pw verify` totals**, still
+carried on the report's word alone across two reviews now.

@@ -59,9 +59,9 @@ The guard is real, not vacuous.
 | # | Deliverable | Done-when condition | Implemented? | As documented? | Correct? | Complete? | Evidence (file:line / symbol / command + result) |
 |---|---|---|---|---|---|---|---|
 | D0 | GATE: attribute excess CI runs to causes; size the token side | attribution split reported with per-plan evidence; token estimate grounded | **No** (declared "could not look") | Yes — the report says so plainly | n/a | No | No archived CI-manifest corpus in `.plan/` (`ls .plan` here → `execute-script.py`, `local/`, `marshal.json`, `project-architecture/`, `temp/`; `ls .plan/local` → `logs/`, `marshall-state.toon`). Mechanism attribution only. |
-| D1 | Stop the post-green push where avoidable; verdict per step | every such step has a recorded verdict | **Yes** | Yes | Yes | Partly | `source-edit-pushability.md:120-142` § "Its post-PR CI run is intrinsic, not a defect to relocate"; the other two verdicts live only in `report-01.md` § D1. Post-PR `mutates_source` population re-derived = exactly the three named. |
+| D1 | Stop the post-green push where avoidable; verdict per step | every such step has a recorded verdict | **Yes** | Yes | Yes | Partly | `source-edit-pushability.md:120-143` § "Its post-PR CI run is intrinsic, not a defect to relocate" carries the era-stamp verdict on the standards surface; the `automatic-review`(30) and `sonar-roundtrip`(40) verdicts are recorded **only** in `report-01.md` § D1 — a committed record, so the done-when is met, but a future reader of the finalize standards will not find them there. That, not G1, is what makes this "partly". Post-PR `mutates_source` population re-derived = exactly the three named. |
 | D2 | One loop-back barrier across all finding producers | two producers' findings in one finalize yield one loop-back round | **No** (operator-descoped) | Yes — descope recorded | n/a | No | `phase-6-finalize/SKILL.md:1405` item 7b still runs ci-verify's own loop-back; item 7c (`:1491`) still unions only `pr-comment` ∪ `sonar-issue`. |
-| D3 | Fix the self-review phase mismatch | examined-nothing distinguishable from found-nothing | **No** — premise verified **refuted** | Yes | Yes (refutation checked at all four sites) | Yes | Writer at `6-finalize` (`pre-submission-self-review.md:378`, `:341-346`); `_query_pending_qgate_count_aggregated` loops `QGATE_PHASES` (`_invariants.py:1103-1164` @ landed); lessons signal gate loops all five phases (`SKILL.md:741-760` @ landed); `query_findings_unified` loops `QGATE_PHASES` (`_findings_core.py:396-408`); `audit.py:3248` globs `*.jsonl` and `_qc_mechanism` (`:3528-3542`) maps any `qgate-*` file to `self-review`. No `5-execute` reference anywhere in the self-review surfaces. |
+| D3 | Fix the self-review phase mismatch | examined-nothing distinguishable from found-nothing | **No** — premise verified **refuted** | Yes | Yes (refutation checked at all four sites) | Yes | Writer at `6-finalize` (`pre-submission-self-review.md:377` Branch B persist, `:379-388` the `qgate add --phase 6-finalize --source qgate` loop — both @ HEAD); `_query_pending_qgate_count_aggregated` loops `QGATE_PHASES` (`_invariants.py:1326` @ HEAD, `:1103-1164` @ landed); lessons signal gate loops all five phases (`SKILL.md:741-760` @ landed; `lessons-capture.md:42,88` @ HEAD); `query_findings_unified` loops `QGATE_PHASES` (`_findings_core.py:397` @ HEAD); the retrospective globs `*.jsonl` with no phase filter (`audit.py:3628` @ HEAD, `:3248` @ landed) and `_qc_mechanism` (`:3528` @ HEAD, `:3156` @ landed) maps **any** `qgate-*` filename to `self-review`. No `5-execute` reference anywhere in the self-review surfaces. |
 | D4 | Scope the self-review to what it can usefully check | scope recorded with expected cost + absolute token figure | **No** | Yes — declared undermined by D3 | n/a | No | Nothing landed on the self-review surface. |
 | D5 | Four tests, each seen red first | all four pass, each seen red first | **No** — zero tests added | (a) **misdocumented**; (b)(c)(d) as documented | (c) and (d) guards verified real | No | (a) justification cites `test_finalize_edge_ordering.py`, which derives no such invariant (see below); (b) not added; (c) `test_ci_verify.py:475,521` pre-existing, mutation-confirmed RED; (d) `test_self_review_defect_regression.py` pre-existing, 8 passed. |
 
@@ -99,8 +99,9 @@ feasibility claims also hold: all three steps declare `requires: [ci-complete]`
 query anywhere under the self-review surfaces mentions `5-execute`; the only hardcoded phase-file
 literals are `qgate-6-finalize.jsonl` inside the *writer* doc itself; every read-back site loops the
 full `QGATE_PHASES`. The `no_qgate6` flag name does contain a "6" while its computation
-(`audit.py:3322-3324`, `total_findings > 0 and self_total == 0`, with `self_total` from
-`_qc_mechanism`'s filename-prefix match) carries no phase filter — exactly as reported.
+(`audit.py:3714-3715` @ HEAD / `:3322-3324` @ landed — `total_findings > 0 and self_total == 0`,
+with `self_total` from `_qc_mechanism`'s filename-prefix match) carries no phase filter — exactly as
+reported.
 
 **D5.** No test was added, so "each verified to FAIL pre-fix" is unsatisfied for all four. (c) and
 (d) genuinely rest on real pre-existing guards — I ran both, and mutation-broke (c) to confirm it
@@ -122,20 +123,26 @@ contradictions, plus one systematic non-defect.
 2. **"The ordering invariant (era-stamp 21 < ci-verify 22) already holds and is derived by
    `test_finalize_edge_ordering.py`" (report § D5(a)).** False. That module derives exactly two
    gate-relative edge families — `mutates_source: true` ⇒ before `default:branch-cleanup`, and
-   `post_run_review: true` ⇒ after it (`test_finalize_edge_ordering.py:12-16, 52-54`) — and states
+   `post_run_review: true` ⇒ after it (`test_finalize_edge_ordering.py:12-16, 51-52`) — and states
    in its own prose that "Most finalize steps (push, create-pr, **ci-verify**, …) declare neither
-   marker" (`:187`). Its six tests (`:127,136,146,167,184,201`) contain no reference to `ci-verify`
-   and no era-stamp/ci-verify order comparison. A tree-wide sweep of `test/` for
-   `era-stamp|era_stamp` finds no ordering assertion either. The era-stamp step is covered by that
-   module only as `era-stamp(21) < branch-cleanup(70)`. See G2.
-3. **Line-number drift is not a report defect.** Nearly every citation is off by 5–200 lines against
-   HEAD (e.g. `_invariants.py:1049` → `:1246`; `pre-submission-self-review.md:334-338` → `:341-350`;
-   `test_ci_verify.py:489-490,535-536` → `:475,:521`). Re-checked against the tree the run actually
-   saw — for `pre-submission-self-review.md`, the revision **before** PR #1189 landed the same day —
-   the citations are exact (`:296` = "TWO disjoint verdicts", `:334-338` = the `qgate add` block;
-   `_invariants.py:1049` = `_ACTIONABLE_FINDING_TYPES`; `push.md:115` = the post-PR re-push fast
-   path; `test_ci_verify.py:489-490,535-536` = the two `step_marked_done is False` asserts). Not a
-   contradiction.
+   marker" (`:186`). None of its six tests (`:127,136,146,167,184,201`) **asserts** anything about
+   `ci-verify` — that prose line is the module's only occurrence of the name — and none compares the
+   era-stamp and ci-verify orders. A tree-wide sweep of `test/` for `era-stamp|era_stamp` finds no
+   ordering assertion either. The era-stamp step is covered by that module only as
+   `era-stamp(21) < branch-cleanup(70)`. Confirmed by mutation during adversarial review: moving the
+   step to `order: 23` (past `ci-verify`) leaves all 752 tests in
+   `test/plan-marshall/phase-6-finalize/` green. See G2.
+3. **Line-number drift is not a report defect.** Nearly every citation is off by 5–400 lines against
+   HEAD (e.g. `_invariants.py:1049` → `:1246`; `pre-submission-self-review.md:334-338` → `:379-388`;
+   `test_ci_verify.py:489-490,535-536` → `:475,:521`; `push.md:115` → `:119`;
+   `audit.py:3248` → `:3628`). Re-checked against the tree the run actually saw — for
+   `pre-submission-self-review.md`, the revision **before** PR #1189 landed the same day
+   (`94bcddf2^`) — the citations are exact (`:296` = "TWO disjoint verdicts", `:334` = the
+   `qgate add` command block; `_invariants.py:1049` = `_ACTIONABLE_FINDING_TYPES`; `push.md:115` =
+   the post-PR re-push fast path; `test_ci_verify.py:489,536` = the two `step_marked_done is False`
+   asserts; `audit.py:3248` = the quality-chain `*.jsonl` glob and `:3324` = `flags.append("no_qgate6")`,
+   both exact at the landed commit). Spot-verified at `94bcddf2^` and at `2dae85c4` during
+   adversarial review. Not a contradiction.
 
 Verified with **no** contradiction found: the three-step post-PR `mutates_source` population; the
 item-7c unified barrier and its `producer=finalize-feedback` mode (`SKILL.md:1379-1421` @ landed);
@@ -195,3 +202,80 @@ that and no lever over scheduling; noted for the record, not charged against the
 - **Whether the pre-PR verification sub-agent ran twice and what it returned.** Only the report
   attests to it. Its one MEDIUM finding is corroborated indirectly: the landed note contains the
   *corrected* wording, not the overclaiming wording the report says was fixed.
+
+## Adversarial review
+
+**Reviewed by:** an independent agent that did not write this document.
+
+**Checked.** Landed-commit shape re-derived (`git diff-tree -r -M --name-status 2dae85c4` → exactly
+three paths; `--numstat` → `+24/-0` on `source-edit-pushability.md`), and `ac06e4fc` confirmed an
+ancestor of HEAD. The `mutates_source: true` population re-swept **tree-wide** with a broader pattern
+than the original (`mutates_source\s*:\s*[Tt]rue`, case-insensitive, 35 files) and then narrowed to
+frontmatter declarations (`^mutates_source:\s*true`) → exactly the seven steps listed, no eighth; all
+orders read off frontmatter (`create-pr` 20, `era-stamp` 21, `ci-verify` 22, `branch-cleanup` 70), so
+the post-PR subset is exactly three. `requires: [ci-complete]` confirmed at `ci-verify.md:8`,
+`automatic-review/SKILL.md:11`, `sonar-roundtrip.md:8`. `_ACTIONABLE_FINDING_TYPES` re-read
+(`_invariants.py:1246-1253`, six entries, `triage` absent); `FINDING_TYPES` (`constants.py:123` =
+`triage`); `QGATE_PHASES` (`constants.py:52`). The mechanism claim "an untyped `list` surfaces
+ci-verify's findings" confirmed **at the symbol**: `query_findings` builds `paths` from every
+`FINDING_TYPES` entry (`_findings_core.py:334`) and `query_findings_unified` loops `QGATE_PHASES`
+(`:397`). G1's history claim confirmed by `git show e1ae3814 -- lessons-capture.md`, whose frontmatter
+hunk is `-order: 60/+order: 991`, `-mutates_source: true/+mutates_source: false`. Both `push.md:63`
+and the whole tree re-swept for other restatements of the stale pair — `push.md:63` is the sole
+instance. Tests executed on the clean tree: `test_finalize_edge_ordering.py` (6 passed),
+`test_ci_verify.py` (55 passed), `test_self_review_defect_regression.py` (8 passed) — all three
+figures re-derive. D3's asserted **absence** re-swept independently: no `5-execute`-scoped self-review
+query exists; `lessons-capture.md:42,88` sums all five phases; `_qc_mechanism` (`audit.py:3528`) maps
+any `qgate-*` filename to `self-review` with no phase filter.
+
+**Mutation applied (the decisive new evidence).** `git diff --quiet` first, bytes saved to the
+scratchpad, `.claude/skills/finalize-step-era-stamp-fill/SKILL.md:10` changed `order: 21` →
+`order: 23` (moving era-stamp *past* `ci-verify`). `test_finalize_edge_ordering.py` stayed green and
+the entire `test/plan-marshall/phase-6-finalize/` suite stayed green (**752 passed**). Restored from
+the saved bytes; `git diff --quiet` → exit 0.
+
+**NOT re-checked.** The `.plan/`-corpus figures (58 runs / 36 plans / 61% / 16 re-ran, 27-of-39
+era-stamp incidence, the 33/22/19/1 marker counts, 709,472 tokens) — still unreachable, `.plan/local`
+holds only `logs/` and `marshall-state.toon`. The CI/PR-cycle claims (checks on head `22853c4`,
+`mergeable_state`, reviewer verdicts, auto-merge arming), the per-commit trailers, and whether the
+pre-PR sub-agent ran twice — the branch is gone, unchanged from the section above. **The D5(c)
+mutation was NOT independently re-executed**: this environment's command classifier blocked the test
+invocation while the file was mutated, so the file was restored immediately and the guard was instead
+confirmed structurally — `verify()` returns the literal `False` on both red paths
+(`ci_verify.py:691,733`), only the green path calls `mark_done_fn` (`:643`), and the tests drive the
+real `verify()` through injected stubs and assert both `result['step_marked_done'] is False`
+(`test_ci_verify.py:475`, `:521`, in `test_no_checks_files_single_ci_no_checks_finding` and
+`test_failure_files_one_finding_per_check`) **and** `len(mark_done.calls) == 0` (`:481`). The original
+document's RED result is therefore credible but is repeated here, not reproduced. I also did not
+re-open every one of the ~19 files listed under Method.
+
+| Item | Original claim | Verdict | Evidence |
+|---|---|---|---|
+| G1 | `push.md:63` names `lessons-capture` as `mutates_source: true`; it is `false` since #1080 | **upheld, Fix rewritten** | Frontmatter diff in `e1ae3814` confirms the flip; `push.md:63` confirmed sole instance tree-wide. But G1's *prescribed fix* was refuted: it offered `finalize-step-lessons-housekeeping`(4) as a replacement example, and order 4 sits **below** the `kind=build` producer `pre-push-quality-gate`(5), so it can never produce the re-stale. Fix now names `finalize-step-simplify`(8) / `finalize-step-security-audit`(9) and states the missing order-above-the-build half of the discriminator. Severity `medium` upheld — a stale contract sentence, no wrong behaviour. |
+| G2 | D5(a)'s cited test derives no era-stamp/ci-verify ordering invariant | **upheld, evidence upgraded, citations fixed** | Proven by mutation rather than by reading: era-stamp at `order: 23` leaves 752/752 green. Line refs corrected (`:52-54`→`:51-52`, `:187`→`:186`); the claim "no test *references* ci-verify" was literally false (the floor test's docstring names it) and is rewritten to "no test *asserts* anything about ci-verify". Added the load-bearing property G2 had not named: `finalize-step-era-stamp-fill/SKILL.md:127-130` states the 21<22 adjacency as design intent. Severity `high` upheld — a shipped false coverage signal that closed a required deliverable. |
+| G3 | D0, the declared GATE, was never satisfied | **upheld** | `ls .plan` / `ls .plan/local` re-run in this checkout: `logs/`, `marshall-state.toon` only — no archived corpus, so the gate cannot be opened here either. `medium` upheld (an unmet gate, not wrong behaviour); Fix names a substrate, a corroboration rule and a committed artifact, which is actionable. |
+| G4 | D2's fold and D5(b) remain unimplemented | **upheld, citation tightened** | `SKILL.md:1405` = item 7b loop-back continuation hook; item 7c is headed at `:1489` and its union statement at `:1491` covers the two wait-region producers only. `ci-verify.md:126-136` confirmed to carry the triage-CI-first rationale and the "would be wrong" phrase. `ci_verify.py:377-395` confirmed to file `type: triage`. `medium` upheld. Bundling D5(b) with D2 is **not** a split violation — the test cannot exist without the barrier. |
+| Verdict | `partially-implemented` | **upheld** | One of six deliverables delivered (D1); D0/D2/D3/D4/D5 unmet. An unimplemented deliverable rules out `implemented-with-gaps`. |
+| D5(d) clean-pass row | "already covered" by `test_self_review_defect_regression.py` | **upheld** | Row re-checked rather than accepted: the module drives the real `_detect_duplicate_claimable_keys` / `_detect_discard_without_report` over verbatim pre-fix #1067 code with matched post-fix negative controls and cross-class separation. It is detector-level, not step-level, so it cannot distinguish a phase-mismatched step — but D3's refutation removes that requirement, and the report says so. Not a G2-class false coverage claim. |
+| D5(c) clean-pass row | guard is real, mutation-confirmed | **upheld as reported, not reproduced** | See "NOT re-checked" above — structurally confirmed, mutation not re-run. |
+| Out-of-scope compliance | clean, one compliant-with-caveat | **upheld** | Three-path diff re-derived; the D1 note sits under the pre-existing `## Reference implementation` section (`source-edit-pushability.md:109`) that already named era-stamp, and changes no consumer behaviour. |
+
+**Documents corrected.** `gaps.md`: G1's *Why it matters*, *Fix* and *Done when* rewritten around the
+order-above-the-build discriminator (and a new *Which steps actually belong* derivation added); G2's
+line refs fixed, its "references ci-verify" phrasing tightened to "asserts", and the mutation result
+plus the `SKILL.md:127-130` design-property citation added; G4's *Where* citation widened to
+`:1489-1491`; a `## Refuted during adversarial review` section added recording the refuted G1 sub-claim.
+`verification.md`: D1's "Partly" re-justified against the right condition (two verdicts live only in
+the run report) instead of against G1; D3's writer citation corrected from `:341-346` (which points at
+`cohort_size`/`status` prose) to `:377` / `:379-388`; the `audit.py` citations, which silently mixed
+landed-revision and HEAD line numbers in one sentence, now carry explicit `@ HEAD` / `@ landed`
+labels; the report-accuracy drift mapping corrected (`:334-338` → `:379-388`, not `:341-350`).
+**Open items remains 4** — no gap was withdrawn and none was added.
+
+**Residual doubt.** A third reviewer should start with the **D5(c) mutation**, the one claim here that
+is repeated rather than reproduced. Second, `push.md`'s re-stale bullet deserves a wider read than G1
+gives it: this review established the discriminator has *two* conjuncts (`mutates_source: true` **and**
+`order >` the build producer), and no test derives that membership from frontmatter — the same
+shape as G2, one document over. Third, D1's Complete=Partly is a judgement call: the
+`automatic-review`/`sonar-roundtrip` verdicts are recorded only in a run report, and whether that
+satisfies "recorded" is arguable in both directions.
