@@ -202,11 +202,26 @@ this plan. It was **fixed rather than baselined**: every `parse_ns` / `load_scri
 new D1 test modules now passes `register=False`. That is the worked example of the escape, and the
 reason `parse_ns` needed the passthrough.
 
-**Coverage bound, stated rather than hidden.** 88 loader call sites pass a module name that is neither
-a literal nor a module-level constant, so the walker cannot resolve them and a collision introduced at
-one is invisible to the guard. That count is asserted from **both** sides — it may not grow (widening
-the blind spot) and it may not silently shrink (leaving the constant overstating it) — so it carries
-the same anti-rot property as the collision baseline rather than being a one-way ceiling.
+**Coverage bound, stated rather than hidden.** **90** loader call sites pass a module name the walker
+cannot resolve statically, so a collision introduced at one is invisible to the guard. That count is
+asserted from **both** sides — it may not grow (widening the blind spot) and it may not silently
+shrink (leaving the constant overstating it) — so it carries the same anti-rot property as the
+collision baseline rather than being a one-way ceiling.
+
+⛔ **The second round found a SECOND arity blind spot of the same class as the first, and worse: the
+walker resolved those sites *confidently and wrongly*** rather than leaving them unresolved. Of the 32
+loader call sites that unpack a tuple into the positional list, **24** put the star at or before the
+script position — and there index 2 is not the script. Two of them
+(`test_cmd_domain_detect.py:470`, `test_worktree_move_lifecycle.py:61`) registered the argv token
+`'--plan-id'`. Being resolved, they were counted nowhere in the then-disclosed 88. Two guards close
+it — the walker refuses to index past a leading star, and a resolved script argument must end in
+`.py` — and the disclosed count is now 90.
+
+⚠️ **Those two guards are redundant with each other on this tree**, and both the code and this record
+say so: removing either alone changes no result, because the other still rejects both sites. Only
+removing both reproduces the defect, which then reds two independent assertions. They are kept as a
+pair because they fail differently — one refuses to guess, the other refuses to believe — not because
+each is independently load-bearing.
 
 **Guard placement.** `test/plan-marshall/script-shared/test_conftest_loader_contract.py` — inside a
 directory this plan's Expected surface claims, and explicitly **not** at the root of `test/` or of
@@ -443,7 +458,7 @@ Every finding, per instance.
 | F9 | Beyond-diff sweep (D2) | Five sites restated the remedy the rule prescribes, two of them naming `load_script_module`'s `spec_from_file_location` call, which this change moved into `_exec_module_from_path` | **Fixed** in the analyzer message, its docstring, the standards doc, the rule catalog and the provenance table |
 | F10 | D5 measurement | The plan's premise that the sibling rule "still matches on shape alone" is partly wrong — markdown already carries the inline-code exemption | Recorded; D5's decision rests on the corrected picture |
 | F11 | Sequencing | The first pass read plan `070`'s branch as merged and concluded it had landed. **Refuted**: it is 16 commits ahead of `origin/main` and is open PR #1290. The check tested the shared `FETCH_HEAD` inside a loop instead of the branch's own remote-tracking ref | **Corrected**, and the claim derived from it withdrawn: `070` is still open and can still consume D1's seams |
-| F12 | D3 guard coverage | 88 loader call sites pass a non-literal, non-constant module name and are invisible to the guard | **Disclosed** and pinned from both sides with its own test |
+| F12 | D3 guard coverage | Loader call sites whose module name the walker cannot resolve statically are invisible to the guard — 88 at the time, **90** after round 2 widened the definition | **Disclosed** and pinned from both sides with its own test |
 
 Round 1 of the pre-PR verification loop returned twelve findings. Each, per instance:
 
@@ -468,7 +483,7 @@ Round 2 returned eleven false statements, one behavioural finding and one missin
 |---|---|---|
 | W1 | **`070` was asserted landed; it is open PR #1290**, 16 commits ahead of `main`. The check tested the shared `FETCH_HEAD` inside a loop rather than the branch's own remote-tracking ref | **Fixed** at both sites, the derived claim withdrawn, and the gating evidence re-taken against the current PR list |
 | W2 | **The `parse_ns`-is-most-common claim is false** — `load_script_module` 592, `parse_ns` 195, `load_skill_module` 1 — asserted at four sites, two of them prose round 1 wrote *into the guard it was repairing* | **Fixed** at all four |
-| W3 | **A second arity blind spot**: 24 call sites unpack a tuple; where the star precedes the script position the walker resolved index 2 *confidently and wrongly*, registering the argv token `'--plan-id'` at two sites — counted nowhere in the disclosed 88 | **Fixed**: two guards, bound retuned to 90, and a control that rejects any name that is a command-line token rather than the specific tokens seen |
+| W3 | **A second arity blind spot**: of the 32 call sites that unpack a tuple, 24 put the star at or before the script position, and there the walker resolved index 2 *confidently and wrongly*, registering the argv token `'--plan-id'` at two sites — counted nowhere in the then-disclosed 88 | **Fixed**: two guards, bound retuned to 90, and a control that rejects any name that is a command-line token rather than the specific tokens seen |
 | W4 | `run_config`'s blast radius stated as 2; it is **5**. The V1 fix re-derived the baseline and left the sentence three lines above it | **Fixed** |
 | W5 | "19 pre-existing conditions" after the baseline moved to 23 | **Fixed** |
 | W6 | "a 20th collision" at three sites; with a 23-name baseline it is the **24th** | **Fixed** at all three |
@@ -523,7 +538,7 @@ _Filled in as the final pre-merge commit._
 | The 15 `script-shared` `parse_ns` conversions D1 unblocks | `070` / `080` per the plan's Out of scope; `060`'s slice for its own residue |
 | The 12 `manage-providers` sites — convertible via `credentials.py`, and never seam-blocked | Same owners; the remedy is to target the CLI owner, not the private handler module |
 | **23 live `sys.modules` registration collisions**, pinned not fixed | Each owning slice; the guard prevents a 24th |
-| 88 loader call sites the guard cannot resolve statically | Any slice touching them: hoist the argument to a module-level constant |
+| **90** loader call sites the guard cannot resolve statically | Any slice touching them: hoist the argument to a module-level constant, pass a literal, or stop unpacking a tuple across the script position |
 | `test-docstring-historical-prose` at 286, `test-module-preamble-boilerplate` at 183, `test-module-line-budget` at 317 — none at zero, so no further flip is licensed | `100` for the line budget; the reduction slices for the other two |
 | `identifier-validator-corpus`'s empty registry; the `broken-relative-link` fragment gap | Out of scope by the plan; already in the epic README's residue table |
 | **36 tests fail under a SERIAL reverse-directory-order run**, identically on `origin/main` — module-level caching in `platform-runtime`, `tools-integration-ci`, `workflow-integration-github` / `-gitlab`. Green under the parallel runner | `110`, which owns run-condition instruments; the owning slices for the modules themselves |
