@@ -10,7 +10,8 @@ Usage:
     phase_handshake.py clear          --plan-id X --phase P
 
 All subcommands emit TOON to stdout. `verify` with ``--strict`` exits 1 on
-``status: drift`` so callers can gate progress at the CLI level.
+``status: drift`` and on the boundary-refusal error codes enumerated in
+main() so callers can gate progress at the CLI level.
 
 ``findings-check`` is a read-only single-invariant gate: it evaluates ONLY the
 ``pending_findings_blocking_count`` invariant (never ``phase_steps_complete``)
@@ -124,17 +125,20 @@ def main() -> int:
     if args.command == 'verify' and getattr(args, 'strict', False):
         if result.get('status') == 'drift':
             return 1
-        # worktree_unresolved (metadata→disk) and
+        # worktree_unresolved (metadata→disk),
         # main_checkout_dirtied_during_plan (layer-D filesystem leak into
-        # the main checkout during a worktree-routed plan) are both
-        # phase-boundary refusals. Under --strict they MUST surface as a
-        # non-zero exit so calling tooling that swallows TOON output still
-        # sees the failure (mirrors the drift contract). Both share the same
-        # severity: the operator must repair the disagreement (or revert the
-        # leaked main-checkout changes) before any phase advance is allowed.
+        # the main checkout during a worktree-routed plan) and
+        # main_capture_read_the_worktree (the main-scoped columns resolved to
+        # the plan's own worktree) are all phase-boundary refusals. Under
+        # --strict they MUST surface as a non-zero exit so calling tooling that
+        # swallows TOON output still sees the failure (mirrors the drift
+        # contract). They share one severity: the operator must repair the
+        # disagreement — revert the leaked main-checkout changes, or fix the
+        # mis-resolution — before any phase advance is allowed.
         if result.get('error') in (
             'worktree_unresolved',
             'main_checkout_dirtied_during_plan',
+            'main_capture_read_the_worktree',
         ):
             return 1
     if result.get('status') == 'error':

@@ -409,20 +409,28 @@ def validate_tree_completeness(project_root: str, extensions: list) -> list[str]
     return sorted(uncovered)
 
 
-def _read_build_map_globs(project_root: str | None = None) -> list[str]:
-    """Collect every non-empty ``glob`` from ``build.map`` in marshal.json.
+def read_build_map_routes(project_root: str | None = None) -> list[tuple[str, str | None]]:
+    """Collect every ``(glob, role)`` route declared in ``build.map`` in marshal.json.
 
-    The build_map at the top-level ``build.map`` is the single source of truth
-    for the file-to-build contract — every ``{glob, role, build_class}`` entry
-    across all domains names a file type the project knows how to build. This is
-    the build-decision activation gate: a build is necessary only when the live
-    footprint touches one of these globs.
+    The build_map at the top-level ``build.map`` is the single source of truth for
+    the file-to-build contract — every ``{glob, role, build_class}`` entry across
+    all domains names a file type the project knows how to build, and the ``role``
+    says WHICH kind of file it is (:data:`ROLE_PRODUCTION` / :data:`ROLE_TEST` /
+    :data:`ROLE_CONFIG`).
 
-    Returns the deduplicated list of non-empty glob strings collected from every
-    build_map entry, in first-seen order. Returns an empty list when marshal.json
-    is missing, the ``build.map`` block is absent, or no entry
-    carries a glob — :func:`should_execute_build` treats an empty list as "no
-    build registered" and returns ``not_necessary``.
+    This is the declared oracle's read side, and it is the reader every
+    role-consulting site shares. A consumer that needs the role of one path pairs
+    it with :func:`resolve_route_role`; a consumer that needs only the activation
+    globs uses :func:`_read_build_map_globs`, which is derived from this reader so
+    both see one parse of one file.
+
+    Returns the deduplicated ``(glob, role)`` pairs in first-seen order. ``role``
+    is ``None`` for an entry whose role is absent or not a recognised
+    :data:`BUILD_MAP_ROLES` member — such an entry still names a buildable glob
+    (so the activation gate keeps it) while saying nothing about the file's kind
+    (so :func:`resolve_route_role` ignores it). Returns an empty list when
+    marshal.json is missing, the ``build.map`` block is absent, or no entry
+    carries a glob.
 
     Args:
         project_root: Accepted for signature parity with
@@ -433,6 +441,9 @@ def _read_build_map_globs(project_root: str | None = None) -> list[str]:
             (in-function) so this foundational module carries no hard top-level
             dependency on another skill's scripts dir — build extensions import
             ``extension_base`` standalone.
+
+    Returns:
+        Deduplicated ``(glob, role_or_None)`` pairs in first-seen order.
     """
     del project_root  # resolved from execution context, not forwarded
     import json as _json
@@ -454,8 +465,8 @@ def _read_build_map_globs(project_root: str | None = None) -> list[str]:
     build_map = build.get('map')
     if not isinstance(build_map, dict):
         return []
-    globs: list[str] = []
-    seen: set[str] = set()
+    routes: list[tuple[str, str | None]] = []
+    seen: set[tuple[str, str | None]] = set()
     for entries in build_map.values():
         if not isinstance(entries, list):
             continue
@@ -463,9 +474,92 @@ def _read_build_map_globs(project_root: str | None = None) -> list[str]:
             if not isinstance(entry, dict):
                 continue
             glob = entry.get('glob')
-            if isinstance(glob, str) and glob and glob not in seen:
-                seen.add(glob)
-                globs.append(glob)
+            if not isinstance(glob, str) or not glob:
+                continue
+            raw_role = entry.get('role')
+            role = raw_role if isinstance(raw_role, str) and raw_role in BUILD_MAP_ROLES else None
+            pair = (glob, role)
+            if pair in seen:
+                continue
+            seen.add(pair)
+            routes.append(pair)
+    return routes
+
+
+def resolve_route_role(path: str, routes: list[tuple[str, str | None]]) -> str | None:
+    """Return the build_map role governing ``path``, or ``None`` when no route covers it.
+
+    The declared oracle's per-path lookup, paired with :func:`read_build_map_routes`
+    (read the routes once, classify many paths). Matching is delegated to
+    :func:`route_matches`, so a bare-basename route and a path-bearing route each
+    match under the regime their shape selects — the same regime the build-decision
+    activation gate and the seed-completeness validator use.
+
+    **Precedence is deliberately implementation-favouring, and it is
+    order-independent.** When several routes match one path, an implementation role
+    wins over :data:`ROLE_CONFIG`: :data:`ROLE_PRODUCTION` first, then
+    :data:`ROLE_TEST`, then :data:`ROLE_CONFIG`. A caller filtering a footprint on
+    this answer therefore keeps a contested path rather than discarding it, which
+    can only widen what a rule examines — never narrow it behind a silent
+    reclassification. Deciding by precedence rather than by first match also means
+    the answer does not depend on which domain the seed happened to write first.
+
+    ``None`` means **no declared route covers this path** — a could-not-classify,
+    not a classified-as-unimportant. A caller must not collapse the two: an
+    unrouted path is one the oracle has no opinion about, and treating that as a
+    negative verdict is how a private guess re-enters through the back door.
+
+    Args:
+        path: Repo-relative, forward-slashed candidate path.
+        routes: The ``(glob, role)`` pairs from :func:`read_build_map_routes`.
+
+    Returns:
+        ``ROLE_PRODUCTION`` / ``ROLE_TEST`` / ``ROLE_CONFIG``, or ``None`` when no
+        route with a recognised role matches ``path``.
+    """
+    matched: set[str] = set()
+    for glob, role in routes:
+        if role is None:
+            continue
+        if role in matched:
+            continue
+        if route_matches(path, glob):
+            matched.add(role)
+    for role in (ROLE_PRODUCTION, ROLE_TEST, ROLE_CONFIG):
+        if role in matched:
+            return role
+    return None
+
+
+def _read_build_map_globs(project_root: str | None = None) -> list[str]:
+    """Collect every non-empty ``glob`` from ``build.map`` in marshal.json.
+
+    The build-decision activation gate: a build is necessary only when the live
+    footprint touches one of these globs. Derived from
+    :func:`read_build_map_routes` (the single build_map reader) by projecting the
+    glob out of each route and de-duplicating, so the activation gate and the
+    role lookup can never read a different build_map.
+
+    Returns the deduplicated list of non-empty glob strings collected from every
+    build_map entry, in first-seen order — an entry whose role is missing or
+    unrecognised still contributes its glob, because it names a buildable file
+    type regardless of whether it says which kind. Returns an empty list when
+    marshal.json is missing, the ``build.map`` block is absent, or no entry
+    carries a glob — :func:`should_execute_build` treats an empty list as "no
+    build registered" and returns ``not_necessary``.
+
+    Args:
+        project_root: Forwarded to :func:`read_build_map_routes`, which resolves
+            the marshal path from the current execution context rather than from
+            this argument (signature parity with :func:`should_execute_build`).
+    """
+    globs: list[str] = []
+    seen: set[str] = set()
+    for glob, _role in read_build_map_routes(project_root):
+        if glob in seen:
+            continue
+        seen.add(glob)
+        globs.append(glob)
     return globs
 
 

@@ -541,16 +541,16 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO --message "[SKILL] (plan-marshall:plan-marshall) Loading plan-marshall:phase-6-finalize"
 ```
 
-Resolve the current Claude Code `session_id` from the plan's status metadata before dispatching the skill. The `session capture` operation (run at plan-init time by the platform-runtime `SessionStart` hook) stored it there. Pass it alongside `plan_id` so `default:record-metrics` can call `manage-metrics enrich` on the live plan directory before `default:archive-plan` moves it.
+Resolve the current Claude Code `session_id` from the plan's status metadata before dispatching the skill. The `session capture` operation (run at plan-init time by the platform-runtime `SessionStart` hook) APPENDED it to `status.metadata.session_ids` there — a list, because a plan legitimately spans several sessions and each resume adds an identity rather than replacing the previous one. Pass it alongside `plan_id` so `default:record-metrics` can call `manage-metrics enrich` on the live plan directory before `default:archive-plan` moves it.
 
 **Resolve `session_id`:**
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
-  --plan-id {plan_id} --get --field session_id
+  --plan-id {plan_id} --get --field session_ids
 ```
 
-Parse `value` from the TOON output.
+Parse `value` from the TOON output and take its **last** entry — the most recent session to capture against this plan. When `session_ids` is absent the plan's `status.json` predates the list; re-read the retired scalar `--field session_id` and use that value.
 
 **On `status: error` or empty `value`** — do NOT abort immediately. The session may still be live, so attempt exactly one late session capture before falling back to the hard-block:
 
@@ -559,11 +559,11 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
   --plan-id {plan_id}
 ```
 
-Then re-read `status.metadata.session_id`:
+Then re-read `status.metadata.session_ids`:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
-  --plan-id {plan_id} --get --field session_id
+  --plan-id {plan_id} --get --field session_ids
 ```
 
 - **Late capture succeeded** (`status: success` and `value` now populated): use the captured value as the resolved `session_id` and proceed with the dispatch below.

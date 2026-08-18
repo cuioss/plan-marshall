@@ -79,7 +79,7 @@ Scope limits:
 
 - Expected-by-construction drift on a sanctioned loop-back re-entry is the ONLY auto-resolved case. Drift WITHOUT the marker keeps the blocking behavior unchanged — the operator-facing drift protocol below applies only to unscheduled drift.
 - The marker never survives past the first guarded boundary check after the loop-back — it is consumed on that check's outcome either way (recapture on drift, plain clear on clean).
-- The worktree-resolution and dirty-boundary refusals (`VERIFY_REFUSAL_ERRORS`: `worktree_unresolved`, `worktree_metadata_drift`, `main_checkout_dirtied_during_plan`, `worktree_dirty_at_boundary`) are NEVER bypassed by the marker — only invariant drift is auto-resolved.
+- The worktree-resolution, dirty-boundary and main-capture-misresolution refusals (`VERIFY_REFUSAL_ERRORS`: `worktree_unresolved`, `worktree_metadata_drift`, `main_checkout_dirtied_during_plan`, `worktree_dirty_at_boundary`, `main_capture_read_the_worktree`) are NEVER bypassed by the marker — only invariant drift is auto-resolved.
 - A failed re-capture blocks the transition (fail closed) with the re-capture's error payload.
 
 ### `findings-check`
@@ -122,9 +122,9 @@ Defined in `_invariants.py` as `(name, applies_fn, capture_fn)` tuples. The para
 
 | Invariant | `applies_fn` | `capture_fn` | Blocking scope | Catches |
 |---|---|---|---|---|
-| `main_sha` | always | `git rev-parse HEAD` at main checkout root | `blocking_at: {5-execute}` (informational at every other boundary) | any commit change at the integration boundary |
-| `main_dirty` | always | `git status --porcelain` line count at main checkout root | `blocking_at: {5-execute}` (informational at every other boundary) | uncommitted drift at the integration boundary |
-| `main_dirty_files` | always | sorted list of dirty paths (`.plan/` filtered on git trackedness — untracked plan state dropped, a tracked `.plan/` file retained as a real leak) | `blocking_at: {1-init, 2-refine, 3-outline, 4-plan}` (informational at 5-execute and 6-finalize) | layer-D leak detection (proper-superset rule in `_check_main_dirty_drift`) |
+| `main_sha` | always | `git rev-parse HEAD` at the main checkout root ([resolved main-anchored](#main-scoped-resolution)) | `blocking_at: {5-execute}` (informational at every other boundary) | any commit change at the integration boundary |
+| `main_dirty` | always | `git status --porcelain` line count at the main checkout root ([resolved main-anchored](#main-scoped-resolution)) | `blocking_at: {5-execute}` (informational at every other boundary) | uncommitted drift at the integration boundary |
+| `main_dirty_files` | always | sorted list of dirty paths at the main checkout root ([resolved main-anchored](#main-scoped-resolution); `.plan/` filtered on git trackedness — untracked plan state dropped, a tracked `.plan/` file retained as a real leak) | `blocking_at: {1-init, 2-refine, 3-outline, 4-plan}` (informational at 5-execute and 6-finalize) | layer-D leak detection (proper-superset rule in `_check_main_dirty_drift`) |
 | `worktree_sha` | `_worktree_in_use` (delegates to `_worktree_materialized` with `phase=None` — see [Worktree applicability](#worktree-applicability)) | `git rev-parse HEAD` inside worktree | `blocking_at: {1-init, 2-refine, 3-outline, 4-plan}` (informational at 5-execute and 6-finalize) | worktree/main confusion |
 | `worktree_dirty` | same as above | `git status --porcelain` line count inside worktree | `blocking_at: {1-init, 2-refine, 3-outline, 4-plan}` (informational at 5-execute and 6-finalize) | uncommitted drift inside worktree |
 | `references_valid` | always | SHA256 of `{present, top_level_is_dict, required_field_set}` from `manage-references read` | `blocking_at_every_boundary` | references.json deleted, corrupted to non-dict, or missing a required key (`branch`, `base_branch`) |
@@ -280,6 +280,41 @@ No changes are required in `_handshake_commands.py`, `phase_handshake.py`, or an
 A single materialization predicate (`_worktree_materialized` in `_invariants.py`) decides whether the worktree is in play, and both the invariant-applicability gate (`worktree_sha` / `worktree_dirty`) and the phase-entry worktree assertion (`_resolve_worktree_assertion`) consult it, so the two surfaces can never disagree. The worktree counts as materialized when **either** `status.metadata.worktree_path` is present and non-empty (the worktree directory was created and the path persisted at phase-5 Step 2.5), **or** the active phase is one of the materialization phases (`5-execute`, `6-finalize`) — the phase term covers the transient phase-5 window between phase entry and Step 2.5's path backfill, when the path is still empty but the worktree is conceptually already in play.
 
 The invariant-applicability gate (`_worktree_in_use`) evaluates the predicate with `phase=None`, so it keys purely on the persisted `worktree_path`; the capture functions return `None` for an unpopulated path, so a pre-materialization capture records an empty column. The phase-entry assertion evaluates the predicate with the live phase, so it tolerates the empty-path window on phases 1-4 (per-plan worktree usage remains the single source of truth — the handshake never looks at global config) and fails closed from phase-5 onward.
+
+### Main-scoped resolution
+
+A column named for main is read from main. The three `main_*` captures resolve their tree through `_invariants._main_repo_root()`, whose property is **worktree-invariance**: it names the same main checkout from any tree in the repository, a linked worktree included. Under a base-dir override (`PLAN_BASE_DIR` / `set_base_dir()`) it honours the override; otherwise `git rev-parse --git-common-dir` names main's `.git` even from inside a linked worktree. Precedence has the shape `marketplace_paths.resolve_main_anchored_path` uses — override first, then git — that being the single sanctioned main-anchored exception (ADR-002).
+
+⚠ Worktree-invariance is the accurate claim, not cwd-independence: `git rev-parse` runs in the process cwd, so the resolver names whichever *repository* the process is in. Within one repository it is invariant across main and every worktree, which is exactly what these columns need.
+
+The distinction from the cwd-relative resolver is load-bearing. Every *other* resolution here is uniform cwd-relative, including `_invariants._current_repo_root()` — the resolver `_run_script` uses to reach the worktree-resident executor and the plan state moved in at phase-5 start. That one follows the pinned worktree **by design**, so a `main_*` column must not share it: from phase-5 onward the orchestrator's cwd IS the worktree, and a cwd-derived `main_sha` would silently record a feature-branch commit under a name that claims main. Reading one tree under both column names is what the [`main_capture_read_the_worktree`](#main_capture_read_the_worktree-capture-time-error) refusal catches.
+
+When the main checkout cannot be resolved at all (not a git repository, git unavailable) the resolver returns `None` and the capture leaves the column **empty** — the registry's "not applicable" contract. It never falls back to the ambient working directory: an unresolvable main checkout is *unknown*, and filling the column with whichever tree the process happens to occupy is exactly the mis-resolution the main-anchored path exists to end.
+
+### `main_capture_read_the_worktree` capture-time error
+
+`main_sha` and `worktree_sha` describe two different trees. When they hold the same commit **and** both resolved to the same directory, one tree is being reported under two names. ⚠ The equal pair alone is not that evidence: the check compares the two *resolved paths*, which are live inputs (`_main_repo_root()` and `metadata.worktree_path`) and not row columns — so this refusal is available at capture time and **not** to a later reader of the stored row, for whom the equal pair is merely ambiguous (see `plan-marshall:plan-retrospective` → `references/invariant-check-summary.md`). `capture_all` raises `MainCaptureReadTheWorktree` and `cmd_capture` returns a structured error payload **without writing a row**:
+
+```toon
+status: error
+error: main_capture_read_the_worktree
+plan_id: X
+phase: 5-execute
+sha: 3823a0dd…
+main_root: /repo/.plan/local/worktrees/my-plan
+worktree_path: /repo/.plan/local/worktrees/my-plan
+message: "phase 5-execute: the main-scoped capture read the plan worktree — main_sha == worktree_sha (3823a0dd…) and both resolved to /repo/.plan/local/worktrees/my-plan. A column named for main must be read from main; repair the main-anchored resolution (_main_repo_root) before re-entering the phase."
+```
+
+**Trigger condition:** both columns were captured — which is exactly "a `metadata.worktree_path` is persisted", since `worktree_sha` is gated on [`_worktree_in_use`](#worktree-applicability), a predicate that keys on that path and does **not** read `use_worktree` — AND they hold the same commit AND `_main_repo_root()` resolves to the same directory as `worktree_path`.
+
+⛔ **Equal commits alone are NOT the trigger.** Two *distinct* trees can legitimately hold one commit: a worktree-backed plan whose feature branch carries no commit of its own has its HEAD still on the commit it branched from. That state is produced by the shipped flow — `phase-5-execute` Step 2.5 materializes the worktree unconditionally, *before* the `early_terminate` short-circuit, so an analysis-only plan never commits on its branch — and refusing it would hard-block a legitimate boundary with no override escape. Such a row is permitted and is **correct**: its `main_sha` genuinely is main's HEAD. The refusal is keyed on the same-tree resolution, which is the defect, not on the equality, which is only its symptom.
+
+**Never fires on a plan with no worktree.** No persisted `worktree_path` means no `worktree_sha`, so there is nothing to compare.
+
+**Resolution:** repair the main-anchored resolution ([above](#main-scoped-resolution)), then re-enter the phase. The payload's `main_root` and `worktree_path` name the two directories that collapsed.
+
+`cmd_verify` returns the **same** payload from the same shared builder: `capture_all` runs the cross-field check itself, so a live re-capture that reproduces the state surfaces the refusal at the `capture_all` call rather than as a traceback. The error is in `VERIFY_REFUSAL_ERRORS`, so such a boundary refuses and is never auto-resolved by the [loop-back marker](#loop-back-auto-override-sanctioned-re-entry-drift).
 
 ### `worktree_metadata_drift` capture-time error
 

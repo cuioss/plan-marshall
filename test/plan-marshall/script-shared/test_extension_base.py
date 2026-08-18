@@ -16,8 +16,11 @@ from extension_base import (
     BuildExtensionBase,
     ExtensionBase,
     _pattern_matches_any,
+    _read_build_map_globs,
     _tracked_basenames,
     derive_globs_from_tree,
+    read_build_map_routes,
+    resolve_route_role,
     route_matches,
     should_execute_build,
     validate_tree_completeness,
@@ -1346,3 +1349,107 @@ def test_completeness_denominator_is_unaffected_by_infra_config_files(tmp_path):
     # Assert
     assert uncovered_with == uncovered_without
     assert uncovered_with == ['scripts/forgotten.py']
+
+
+# =============================================================================
+# The build_map role lookup — the declared oracle's per-path read side
+# =============================================================================
+
+
+class TestReadBuildMapRoutes:
+    """``read_build_map_routes`` is the single build_map reader both consumers share."""
+
+    @staticmethod
+    def _write_marshal(tmp_path, monkeypatch, build_map):
+        (tmp_path / 'marshal.json').write_text(
+            json.dumps({'build': {'map': build_map}}), encoding='utf-8'
+        )
+        monkeypatch.setenv('PLAN_TRACKED_CONFIG_DIR', str(tmp_path))
+
+    def test_routes_carry_the_role_alongside_the_glob(self, tmp_path, monkeypatch):
+        self._write_marshal(
+            tmp_path,
+            monkeypatch,
+            {'python': [{'glob': 'src/*.py', 'role': 'production', 'build_class': 'prod_compile'}]},
+        )
+        assert read_build_map_routes() == [('src/*.py', ROLE_PRODUCTION)]
+
+    def test_unrecognised_role_becomes_none_but_keeps_its_glob(self, tmp_path, monkeypatch):
+        """An entry with a bad role still names a buildable type, so the gate keeps it.
+
+        The activation gate asks "is this a file type the project builds"; the role
+        lookup asks "which kind is it". An entry answering only the first keeps its
+        glob and contributes no role.
+        """
+        self._write_marshal(
+            tmp_path,
+            monkeypatch,
+            {'python': [{'glob': 'src/*.py', 'role': 'documentation'}, {'glob': 'x.py'}]},
+        )
+        assert read_build_map_routes() == [('src/*.py', None), ('x.py', None)]
+        assert _read_build_map_globs() == ['src/*.py', 'x.py']
+
+    def test_activation_globs_are_derived_from_the_same_read(self, tmp_path, monkeypatch):
+        """One glob routed under two domains with two roles yields ONE activation glob."""
+        self._write_marshal(
+            tmp_path,
+            monkeypatch,
+            {
+                'python': [{'glob': 'shared/*.py', 'role': 'production'}],
+                'npm': [{'glob': 'shared/*.py', 'role': 'test'}],
+            },
+        )
+        assert read_build_map_routes() == [('shared/*.py', ROLE_PRODUCTION), ('shared/*.py', ROLE_TEST)]
+        assert _read_build_map_globs() == ['shared/*.py']
+
+    def test_absent_marshal_yields_no_routes(self, tmp_path, monkeypatch):
+        monkeypatch.setenv('PLAN_TRACKED_CONFIG_DIR', str(tmp_path / 'absent'))
+        assert read_build_map_routes() == []
+
+
+class TestResolveRouteRole:
+    """The per-path lookup, including its precedence and its ``None`` contract."""
+
+    def test_matching_route_returns_its_role(self):
+        routes = [('.claude/skills/*.py', ROLE_PRODUCTION)]
+        assert resolve_route_role('.claude/skills/a/scripts/b.py', routes) == ROLE_PRODUCTION
+
+    def test_bare_basename_route_matches_anywhere_in_the_tree(self):
+        routes = [('pyproject.toml', ROLE_CONFIG)]
+        assert resolve_route_role('nested/dir/pyproject.toml', routes) == ROLE_CONFIG
+
+    def test_unrouted_path_is_none_not_a_role(self):
+        assert resolve_route_role('doc/x.md', [('src/*.py', ROLE_PRODUCTION)]) is None
+
+    def test_role_none_routes_are_ignored_by_the_lookup(self):
+        assert resolve_route_role('src/a.py', [('src/*.py', None)]) is None
+
+    @pytest.mark.parametrize(
+        'ordered_routes',
+        [
+            [('shared/*.py', ROLE_CONFIG), ('shared/*.py', ROLE_PRODUCTION)],
+            [('shared/*.py', ROLE_PRODUCTION), ('shared/*.py', ROLE_CONFIG)],
+        ],
+    )
+    def test_production_wins_over_config_in_either_declaration_order(self, ordered_routes):
+        """Precedence, not first match — the answer cannot depend on seed order."""
+        assert resolve_route_role('shared/a.py', ordered_routes) == ROLE_PRODUCTION
+
+    @pytest.mark.parametrize(
+        'ordered_routes',
+        [
+            [('shared/*.py', ROLE_CONFIG), ('shared/*.py', ROLE_TEST)],
+            [('shared/*.py', ROLE_TEST), ('shared/*.py', ROLE_CONFIG)],
+        ],
+    )
+    def test_test_wins_over_config_in_either_declaration_order(self, ordered_routes):
+        assert resolve_route_role('shared/a.py', ordered_routes) == ROLE_TEST
+
+    def test_every_role_in_the_closed_set_is_resolvable(self):
+        """Quantified over the vocabulary, so a role added later cannot be missed."""
+        from extension_base import BUILD_MAP_ROLES
+
+        # Non-vacuity first: iterating an empty vocabulary asserts nothing.
+        assert BUILD_MAP_ROLES, 'the build-map role vocabulary is empty — this guard would pass vacuously'
+        for role in BUILD_MAP_ROLES:
+            assert resolve_route_role('a.py', [('a.py', role)]) == role

@@ -31,7 +31,7 @@ implements:
 **Execution mode**: Select a mode (finalize-step live, user-invocable live, archived) from the Input Contract, dispatch the 14 aspect references in the documented order, compile the report, then record proposals per Step 5b's orchestration branch — to the global lessons store when `orchestrated: false`, to the epic inbox as `kind: candidate-lesson` messages when `orchestrated: true` — and emit the mode-appropriate termination (mark-step-done tail for finalize-step mode only).
 
 **Prohibited actions**:
-- Never re-run invariant capture. Read `status.metadata.phase_handshake` or `status.metadata.invariants` directly — invariants are already captured by phase transitions.
+- Never re-run invariant capture. Read `{plan_dir}/handshakes.toon` directly — invariants are already captured by phase transitions.
 - Never write to archived plan directories. Archived mode writes the report next to the archived plan, but the plan state itself is read-only.
 - Never call `mark-step-done` in archived mode or user-invocable live mode — only the finalize-step mode emits the handshake tail.
 - Never call `manage-lessons add` in orchestration context (`orchestrated: true`). Step 5b routes every proposal to the epic inbox on that branch, and the `already_closed` deletion path does not run — deleting a global lesson is a corpus mutation the orchestrator owns.
@@ -175,23 +175,25 @@ Parse `bundle_path` from the TOON output.
 
 For each aspect below, produce a TOON fragment on disk at `work/fragment-{aspect}.toon` (live mode) or the tmp equivalent (archived mode), then register it via `collect-fragments add`. Fragments are persisted to disk so that `compile-report` in Step 4 can consume them from a single bundle file assembled by `collect-fragments`.
 
-| Order | Aspect | Script(s) | Reference |
-|-------|--------|-----------|-----------|
-| 1 | Artifact consistency | `check-artifact-consistency` | `references/artifact-consistency.md` |
-| 2 | Log analysis | `analyze-logs` | `references/log-analysis.md` |
-| 3 | Invariant outcomes | `summarize-invariants` | `references/invariant-check-summary.md` |
-| 4 | Plan efficiency | (LLM on metrics.md + logs) | `references/plan-efficiency.md` |
-| 5 | Request-result alignment | (LLM on request.md + solution_outline.md + logs) | `references/request-result-alignment.md` |
-| 6 | LLM-to-script opportunities | (LLM on logs + scripts) | `references/llm-to-script-opportunities.md` |
-| 7 | Logging gap analysis | (LLM on references + logs) | `references/logging-gap-analysis.md` |
-| 8 | Script failure analysis | `script-failure-analysis` | `references/script-failure-analysis.md` |
-| 9 | Permission prompt analysis | (LLM on description or session) | `references/permission-prompt-analysis.md` |
-| 10 | Direct gh/glab usage (Surfaces A+B: plan logs + plan diff) | `direct-gh-glab-usage` | `references/direct-gh-glab-usage.md` |
-| 11 | Execution-context dispatch audit (deterministic facts: shape / three-state coverage / channel completeness) | `check-dispatch-audit` | `standards/execution-context-dispatch-audit.md` |
-| 12 | Manifest decisions (conditional) | `check-manifest-consistency` | `standards/manifest-crosscheck.md` |
-| 13 | Routing decisions (conditional) | `check-routing-decisions` | `references/routing-decision-verification.md` |
-| 14 | Chat history (conditional) | (LLM on session transcript) | `references/chat-history-analysis.md` |
-| 15 | Lessons proposal | (LLM on compiled fragments) | `references/lessons-proposal.md` |
+**Key** is the canonical registry key — the exact literal `collect-fragments add --aspect` validates against, and the one `compile-report` looks the fragment up under. It is NOT the aspect's prose name and NOT its reference-document basename: three rows differ from their reference basename (`invariant-summary`, `manifest-decisions`, `routing-decisions`), so a key guessed from either column is rejected on first attempt. The keys are declared in [`scripts/retro_sections.py`](scripts/retro_sections.py) (`SECTION_SPEC`) — that module is the source of truth, this column restates it, and `test/plan-marshall/plan-retrospective/test_registered_aspects_render.py` fails when the two disagree, so the restatement cannot drift. Read a key from here to save the lookup; settle any dispute at the registry.
+
+| Order | Aspect | Key | Script(s) | Reference |
+|-------|--------|-----|-----------|-----------|
+| 1 | Artifact consistency | `artifact-consistency` | `check-artifact-consistency` | `references/artifact-consistency.md` |
+| 2 | Log analysis | `log-analysis` | `analyze-logs` | `references/log-analysis.md` |
+| 3 | Invariant outcomes | `invariant-summary` | `summarize-invariants` | `references/invariant-check-summary.md` |
+| 4 | Plan efficiency | `plan-efficiency` | (LLM on metrics.md + logs) | `references/plan-efficiency.md` |
+| 5 | Request-result alignment | `request-result-alignment` | (LLM on request.md + solution_outline.md + logs) | `references/request-result-alignment.md` |
+| 6 | LLM-to-script opportunities | `llm-to-script-opportunities` | (LLM on logs + scripts) | `references/llm-to-script-opportunities.md` |
+| 7 | Logging gap analysis | `logging-gap-analysis` | (LLM on references + logs) | `references/logging-gap-analysis.md` |
+| 8 | Script failure analysis | `script-failure-analysis` | `script-failure-analysis` | `references/script-failure-analysis.md` |
+| 9 | Permission prompt analysis | `permission-prompt-analysis` | (LLM on description or session) | `references/permission-prompt-analysis.md` |
+| 10 | Direct gh/glab usage (Surfaces A+B: plan logs + plan diff) | `direct-gh-glab-usage` | `direct-gh-glab-usage` | `references/direct-gh-glab-usage.md` |
+| 11 | Execution-context dispatch audit (deterministic facts: shape / three-state coverage / channel completeness) | `execution-context-dispatch-audit` | `check-dispatch-audit` | `standards/execution-context-dispatch-audit.md` |
+| 12 | Manifest decisions (conditional) | `manifest-decisions` | `check-manifest-consistency` | `standards/manifest-crosscheck.md` |
+| 13 | Routing decisions (conditional) | `routing-decisions` | `check-routing-decisions` | `references/routing-decision-verification.md` |
+| 14 | Chat history (conditional) | `chat-history-analysis` | (LLM on session transcript) | `references/chat-history-analysis.md` |
+| 15 | Lessons proposal | `lessons-proposal` | (LLM on compiled fragments) | `references/lessons-proposal.md` |
 
 The Execution-context dispatch audit (aspect 11) is a **deterministic** aspect: the `check-dispatch-audit` script consumes the `[DISPATCH]` work-log lines emitted by every dispatch site per [`../ref-workflow-architecture/standards/dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) — the authoritative source for the line shape — and emits three fact blocks, each publishing the size of the population it evaluated so a zero is legible. `shape_violation` pairs the decision-log `effort resolve-target` records (Surface B, the resolve/intent side) against the `[DISPATCH]` work-log lines (Surface A, the observable side); when Surface B is empty it reports `not_evaluated` with its reason rather than a bare `0`. `dispatch_coverage` classifies each terminal finalize step (`status.metadata.phase_steps["6-finalize"]`) by its **token record** — the second, independent evidence source — into `dispatched` / `ran_inline` / `no_evidence`, and reports a step token-proven to have dispatched with no `[DISPATCH]` line as `missing_dispatch_emission` (an instrumentation finding against the DISPATCHER), never as a discipline finding against the step. `channel_completeness` publishes the dispatch-line count against the completion count and downgrades the audit's own `confidence` when the channel is sparse. The reference doc `standards/execution-context-dispatch-audit.md` guides the LLM's *judgement* of these facts; the script never judges. Report readers tracing a finding back to its evidence land in `dispatch-logging.md` § "Emission contract" for the canonical log-line format.
 
@@ -304,7 +306,9 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:compile-report 
   run --plan-id {plan_id} --mode {live|archived} --fragments-file {bundle_path}
 ```
 
-The script returns the report's absolute path and a three-valued section outcome. `sections_written` names every section the report carries. `sections_omitted` is the BENIGN half of the non-emit path — the section's trigger fragment was absent or carried nothing renderable, so there was nothing to lose. `sections_dropped` is the LOUD half — a registered fragment that was present and carried payload but still did not render. When `sections_dropped` is non-empty the script returns `status: warning` (never `success`) and a `message` naming the dropped headings; the process exit code stays `0` because the report itself was written. Section order follows `references/report-structure.md`.
+The script returns the report's absolute path and a three-valued section outcome. `sections_written` names every section the report carries, and every section it names has a non-empty body — the partition invariant is *written implies non-empty*, so a section whose body would be only a placeholder is NOT written (it takes the omitted or dropped branch like any other). `sections_omitted` is the BENIGN half of the non-emit path — the section's trigger fragment was absent or carried nothing renderable, so there was nothing to lose. `sections_dropped` is the LOUD half — a registered fragment that was present and carried payload but still did not render. When `sections_dropped` is non-empty the script returns `status: warning` (never `success`) and a `message` naming the dropped headings; the process exit code stays `0` because the report itself was written. Section order follows `references/report-structure.md`.
+
+Beside that partition the script returns `sections_unattributed_zero` — the written sections that report `findings: []` without naming what they checked. It is a **reported signal, not a fourth partition member and not a gate**: those sections ARE written and DO carry a body, and nothing was lost, so the run's status is unaffected. It exists because a bare *"zero findings"* line cannot be told apart from *"this section could not look"*, and the discriminator is the checked set — either a status declaring the section could not look, or a field naming the population it examined. The two vocabularies are declared in `scripts/retro_sections.py` (`ZERO_ATTRIBUTION_FIELDS`, `ZERO_DECLARED_UNMEASURED_STATUSES`), and are deliberately **not enumerated here**: an earlier version of this sentence listed the fields and then told the reader not to restate them, and it was left naming three when the registry had grown to five.
 
 **Cleanup**: `compile-report run` auto-deletes the fragment bundle after a successful report write. On failure paths (before the report is flushed to disk), the bundle is retained so the aspect fragments remain available for debugging.
 
@@ -476,7 +480,9 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-manifest-
   [--diff-file DIFF_FILE] [--base-ref BASE_REF]
 ```
 
-`--base-ref` is required when `--diff-file` is absent.
+Supply `--base-ref` whenever `--diff-file` is absent — it is how the script obtains a diff at all. It is **not CLI-enforced**, and the behaviour when both are absent is defined rather than fatal: the script is a best-effort retrospective signal, not a build-blocking gate, so it records `base: unknown` and every diff-fed rule reports `indeterminate` instead of a clean pass. A verdict over no evidence is not a clean result, so none is emitted.
+
+`--diff-file` resolves relative paths the same way `check-routing-decisions` does — plan directory first, cwd second — and errors rather than reporting an empty diff when neither candidate exists. A supplied file that names nothing is a *resolved empty footprint*, not an absent one, and rules may pass on it.
 
 ### check-routing-decisions — run
 
@@ -486,7 +492,7 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-routing-d
   [--diff-file DIFF_FILE]
 ```
 
-`--diff-file` carries the realized footprint (one path per line) that the prune-predicate re-evaluation tests; absent → the footprint is recovered through the shared resolver (realized-footprint capture → merge-commit → legacy key), and only a still-unresolvable footprint SKIPs the mis-prune checks.
+`--diff-file` carries the realized footprint (one path per line) that the prune-predicate re-evaluation tests. A relative path is resolved against the plan directory first and the cwd second, so the `work/footprint.txt` form above resolves to the same file an absolute path names; a supplied path that resolves to nothing is an error, never an empty footprint. Absent → the footprint is recovered through the shared resolver (realized-footprint capture → merge-commit → legacy key), and only a still-unresolvable footprint SKIPs the mis-prune checks.
 
 ### check-dispatch-audit — run
 
