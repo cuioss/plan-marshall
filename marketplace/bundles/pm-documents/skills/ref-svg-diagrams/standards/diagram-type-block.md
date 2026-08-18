@@ -1,6 +1,6 @@
 # Diagram Type — Block / Data-Flow
 
-The first per-diagram-type standard. Covers multi-column block diagrams: producer / store / consumer layouts, side-by-side comparisons, and any "N labelled boxes connected by labelled arrows" structure.
+Covers multi-column block diagrams: producer / store / consumer layouts, side-by-side comparisons, and any "N labelled boxes connected by labelled arrows" structure.
 
 Reference implementation: `doc/resources/diagrams/findings-pipeline.svg`.
 
@@ -15,9 +15,9 @@ Use a block diagram when the relationship between things is **flow** (data, cont
 
 Use a different diagram type when:
 
-- The structure is a **sequence over time** → use the (future) sequence diagram type.
-- The structure is **states and transitions** → use the (future) state-machine diagram type.
-- The structure is a **DAG of dependencies** → use the (future) graph diagram type.
+- The structure is a **sequence over time** → use the sequence diagram type ([`diagram-type-sequence.md`](diagram-type-sequence.md)).
+- The structure is **states and transitions** → use the state-machine diagram type ([`diagram-type-state.md`](diagram-type-state.md)).
+- The structure is a **DAG of dependencies** → use the graph diagram type ([`diagram-type-graph.md`](diagram-type-graph.md)).
 
 ## Layout grid
 

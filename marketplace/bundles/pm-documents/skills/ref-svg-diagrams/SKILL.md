@@ -7,7 +7,7 @@ mode: knowledge
 
 # SVG Diagrams Skill
 
-Reference standards for authoring SVG technical diagrams (data-flow blocks, sequence, state, dispatch graphs) with a uniform plan-marshall visual language. Covers the visual style, how SVGs adapt to GitHub's light / dark themes when embedded in `.adoc` and `.md` pages, and how to embed them with the correct AsciiDoc macro.
+Reference standards for authoring SVG technical diagrams with a uniform plan-marshall visual language. Covers the visual style, how SVGs adapt to GitHub's light / dark themes when embedded in `.adoc` and `.md` pages, and how to embed them with the correct AsciiDoc macro. The Standards table below names every diagram type this skill covers.
 
 ## Enforcement
 
@@ -35,7 +35,7 @@ Load this skill when:
 
 - Adding a new architectural / data-flow / dispatch diagram to `doc/`.
 - Touching an existing diagram under `doc/resources/diagrams/`.
-- Authoring a sequence diagram (see [`standards/diagram-type-sequence.md`](standards/diagram-type-sequence.md)) or a state-machine diagram (the state type is a future placeholder).
+- Authoring a diagram of any type the Standards table names, following that type's standard.
 
 Do not load this skill for:
 
@@ -55,10 +55,8 @@ Do not load this skill for:
 | [`standards/diagram-type-flow.md`](standards/diagram-type-flow.md) | Flow diagram type — single- or multi-track directional movement through stages, with junctions and loops. The post-execute-shipping-flow diagram is the reference implementation. |
 | [`standards/diagram-type-stack.md`](standards/diagram-type-stack.md) | Stack diagram type — layered slabs with optional convergence on a consumer. The audit-trail-layers diagram is the reference implementation. |
 | [`standards/diagram-type-sequence.md`](standards/diagram-type-sequence.md) | Sequence diagram type — time-ordered exchanges between actors, with lifelines, request/return arrows, and activation bars. The build-dispatch-sequence diagram is the reference implementation. |
-
-Future per-diagram-type standards (placeholder — not yet authored):
-
-- `standards/diagram-type-state.md` — state machines (plan phase lifecycle, finding resolution lifecycle).
+| [`standards/diagram-type-state.md`](standards/diagram-type-state.md) | State diagram type — discrete states of one entity over time, with named transition conditions and loop-backs. The phase-lifecycle diagram is the reference implementation. This is the one type with no skeleton under `templates/`; its standard names that diagram as the starting point for a sequential-with-back-edge lifecycle, and other state topologies are authored from the standard itself. |
+| [`standards/diagram-type-deployment.md`](standards/diagram-type-deployment.md) | Deployment / topology diagram type — what runs where and what can reach it: nested enclosures (host / network / container), trust boundaries, protocol-and-port edge labels, and mounted material. Containment is what separates it from the graph type. No reference implementation in this repository. |
 
 ## Templates
 
@@ -69,8 +67,9 @@ Future per-diagram-type standards (placeholder — not yet authored):
 | [`templates/flow-diagram-skeleton.svg`](templates/flow-diagram-skeleton.svg) | `diagram-type-flow.md` | Multi-track flow scaffold — two horizontal tracks with a Y-junction, a Bézier loop, and stage waypoints. |
 | [`templates/stack-diagram-skeleton.svg`](templates/stack-diagram-skeleton.svg) | `diagram-type-stack.md` | Three-slab stack scaffold with dashed inter-slab dividers, left-region label gutter, right-region content, and a consumer node on the right with convergent connectors. |
 | [`templates/sequence-diagram-skeleton.svg`](templates/sequence-diagram-skeleton.svg) | `diagram-type-sequence.md` | Three-actor sequence scaffold — header boxes, dashed lifelines, solid request / dashed return arrows, activation bars, and a caller-suspended note. |
+| [`templates/deployment-diagram-skeleton.svg`](templates/deployment-diagram-skeleton.svg) | `diagram-type-deployment.md` | Nested-enclosure deployment scaffold — a host containing a network containing first-party and external components, with a trust boundary and its crossing glyphs, mounted-material pills, and a collapsed group. |
 
-Each starter carries the canonical `<style>` block, arrow marker, theme-neutral palette, and placeholder content shaped to the diagram type's geometry. Copy the matching template, rename, fill in.
+Each starter carries the canonical `<style>` block, arrow marker, theme-neutral palette, and placeholder content shaped to the diagram type's geometry. Copy the matching template, rename, fill in. The state type has no starter here — see its row in the Standards table.
 
 ## Workflow
 
@@ -84,7 +83,7 @@ Read [`standards/theme-handling.md`](standards/theme-handling.md) and pick one o
 
 ### Step 3 — Author the SVG
 
-Copy the matching template from `templates/`. Fill in content, sticking to the palette and typography in [`standards/visual-language.md`](standards/visual-language.md). Save under `doc/resources/diagrams/{name}.svg`.
+Copy the matching template from `templates/`. The state type has no skeleton there — [`standards/diagram-type-state.md`](standards/diagram-type-state.md) names a starting point for a sequential-with-back-edge lifecycle, and leaves other state topologies to be authored from that standard. Fill in content, sticking to the palette and typography in [`standards/visual-language.md`](standards/visual-language.md). Save under `doc/resources/diagrams/{name}.svg`.
 
 ### Step 4 — Verify the render (MANDATORY, BLOCKING)
 
@@ -127,6 +126,6 @@ Confirm the rendered HTML carries the `<img src="...svg">` reference and that th
 
 ## Related
 
-- [`templates/block-diagram-skeleton.svg`](templates/block-diagram-skeleton.svg) — starter for the first supported diagram type
+- [`templates/block-diagram-skeleton.svg`](templates/block-diagram-skeleton.svg) — starter for the block diagram type
 - `pm-documents:ref-asciidoc` — AsciiDoc syntax and formatting standards (sibling skill)
 - `pm-documents:recipe-verify-architecture-diagrams` — PlantUML-based architecture diagrams (different surface; this skill is for hand-authored SVGs in user-facing `doc/`)

@@ -1,6 +1,6 @@
 # Diagram Type — State
 
-Third per-diagram-type standard. Covers state machines and lifecycles — discrete states of one entity over time, with transitions between them. The vertical or horizontal axis carries time / control flow, not actor identity.
+Covers state machines and lifecycles — discrete states of one entity over time, with transitions between them. The vertical or horizontal axis carries time / control flow, not actor identity.
 
 Reference implementation: `doc/resources/diagrams/phase-lifecycle.svg`.
 
@@ -16,7 +16,7 @@ Use a different diagram type when:
 
 - Multiple entities interact across time → sequence diagram ([`diagram-type-sequence.md`](diagram-type-sequence.md)).
 - The structure is "X depends on Y" or "X produces Y" with no temporal axis → block diagram ([`diagram-type-block.md`](diagram-type-block.md)).
-- The structure is a fan-out tree (one node, many children) without states or transitions → graph diagram (`diagram-type-graph.md`, when authored).
+- The structure is a fan-out tree (one node, many children) without states or transitions → graph diagram ([`diagram-type-graph.md`](diagram-type-graph.md)).
 
 ## Layout
 
