@@ -27,6 +27,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from conftest import PROJECT_ROOT, load_script_module
 
 _closure = load_script_module('plan-marshall', 'manage-tasks', '_qgate_closure.py', '_qgate_closure')
@@ -872,3 +874,55 @@ def test_closure_check_runs_under_the_surgical_scope_bypass_shape(plan_context):
     result = cmd_qgate_mechanical(Namespace(plan_id='closure-bypass', no_emit=True))
 
     assert result['checks']['declared_set_closure']['failed'] == 1
+
+
+@pytest.mark.parametrize(
+    'bad_number',
+    [
+        pytest.param(None, id='none'),
+        pytest.param('', id='empty-string'),
+        pytest.param('holistic', id='non-numeric'),
+    ],
+)
+def test_a_malformed_task_number_still_emits_the_referrer_finding(bad_number):
+    """A task whose ``number`` is unusable must not take the whole Q-Gate down.
+
+    The referrer finding is built from ``task['number']``, and that access sits on
+    the path that REPORTS a closure gap. A raw ``int(task['number'])`` there raises
+    ``KeyError`` / ``TypeError`` / ``ValueError`` on exactly the input the check
+    exists to flag — so the gate would crash whenever it had a finding to emit and
+    pass whenever it had none. That is a fail-open in the checks written to prevent
+    fail-open, and it is why the number is read through ``_as_int`` here, as the
+    holistic and unmapped accounting in the same function already does.
+
+    Asserted positively — one referrer gap, naming the target — rather than merely
+    "did not raise": a regression that swallowed the gap entirely would satisfy a
+    bare no-raise assertion while losing the finding.
+    """
+    deliverable = _deliverable(1, affected=[_REAL_A])
+    task = _task(1, 1, [_REAL_B])
+    task['number'] = bad_number
+
+    gaps, population = check_declared_set_closure([task], [deliverable])
+
+    referrer = [g for g in gaps if g['kind'] == 'referrer']
+    assert len(referrer) == 1, 'the undeclared step target is still reported'
+    assert referrer[0]['file_path'] == _REAL_B
+    assert 'TASK-000' in referrer[0]['title'], 'an unusable number renders as 000, not a crash'
+    assert population['population_complete'] is True
+
+
+def test_a_missing_task_number_key_is_tolerated_on_the_finding_path():
+    """The same guard covers an ABSENT key, not only a present-but-unusable value.
+
+    ``task.get('number')`` and ``task['number']`` fail differently — the second
+    raises ``KeyError`` before any conversion happens — so the absent-key case is
+    pinned separately rather than assumed to ride along with the parametrized one.
+    """
+    deliverable = _deliverable(1, affected=[_REAL_A])
+    task = _task(1, 1, [_REAL_B])
+    del task['number']
+
+    gaps, _ = check_declared_set_closure([task], [deliverable])
+
+    assert [g['file_path'] for g in gaps if g['kind'] == 'referrer'] == [_REAL_B]

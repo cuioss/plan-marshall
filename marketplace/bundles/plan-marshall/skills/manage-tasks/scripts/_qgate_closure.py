@@ -373,16 +373,24 @@ def check_declared_set_closure(
             )
 
         for task in owned:
+            # The task number is read through :func:`_as_int` for the same reason the
+            # holistic/unmapped accounting above does: a task record whose ``number`` is
+            # absent, ``None``, or non-numeric must not take the whole mechanical Q-Gate
+            # down. A raw ``int(task['number'])`` here would raise KeyError / TypeError /
+            # ValueError on exactly the path that REPORTS a closure gap, so the check
+            # would crash precisely when it has a finding to emit and pass when it has
+            # none — a fail-open the closure checks exist to prevent.
+            task_number = _as_int(task.get('number')) or 0
             for target in compute_referrer_gaps(task, declared):
                 gaps.append(
                     {
                         'kind': 'referrer',
                         'title': (
-                            f'declared_set_closure: TASK-{int(task["number"]):03d} targets '
+                            f'declared_set_closure: TASK-{task_number:03d} targets '
                             f'{target!r}, which deliverable {number} never declares'
                         ),
                         'detail': (
-                            f'TASK-{int(task["number"]):03d} {task.get("title", "?")!r} '
+                            f'TASK-{task_number:03d} {task.get("title", "?")!r} '
                             f'declares step target {target!r}, which appears in no '
                             f'declaration of its parent deliverable {number} — not in '
                             f'Affected files, not in Files to survey, not in Files '
