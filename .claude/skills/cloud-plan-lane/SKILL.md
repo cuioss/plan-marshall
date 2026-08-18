@@ -1119,20 +1119,34 @@ review exactly as a `*.py` change does. It is prose, but it is *behavioural* pro
 every future run acts, which is precisely what a reviewer should see; do **not** treat it as
 documentation.
 
+**A plan is behavioural prose too, and is reviewed the same way.** A diff that adds or edits a
+`plan.md` — or a not-yet-moved `{NNN}-{slug}.md` — under `doc/plans/` keeps its review, for the
+identical reason a skill does: a plan is executed by a later run that has no operator to ask, so a
+wrong path, an unobservable *done when*, a contradiction between deliverables, or an invented
+rationale is a defect that run will act on. Only the *records* under `doc/plans/` are unreviewable in
+this sense — a `report-NN.md`, a `verification.md`, a `gaps.md`, an epic `README.md`.
+
 So `skip-bot-review` applies to **one** case only: a diff with **no `*.py`, no `.claude/skills/**`,
-and no `marketplace/bundles/**`** — genuinely nothing but `doc/**` prose, run reports, or ledger
-bookkeeping. This is narrower than Step 5's build skip: a skill- or bundle-only change **skips the
-local build** (the gate is `*.py`-only) yet **still gets reviewed** — build and review are different
-questions. Determine it from the same git evidence Step 5 uses, and apply the label **at creation** —
-applying it afterwards is too late, because the bots are triggered by the PR opening:
+no `marketplace/bundles/**`, and no plan file under `doc/plans/`** — genuinely nothing but `doc/**`
+prose, run reports, or ledger bookkeeping. This is narrower than Step 5's build skip: a skill-,
+bundle- or plan-only change **skips the local build** (the gate is `*.py`-only) yet **still gets
+reviewed** — build and review are different questions. Determine it from the same git evidence Step 5
+uses, and apply the label **at creation** — applying it afterwards is too late, because the bots are
+triggered by the PR opening:
 
 ```bash
 gh pr create --label skip-bot-review --fill
 ```
 
-The rule in one line: **only a PR with no `*.py`, no skill, and no bundle change gets
-`skip-bot-review`.** Anything that touches code keeps its review — and a skill is code. This
-suppresses waste, never scrutiny.
+The rule in one line: **only a PR with no `*.py`, no skill, no bundle change and no plan gets
+`skip-bot-review`.** Anything that touches code keeps its review — and a skill is code, and so is a
+plan. This suppresses waste, never scrutiny.
+
+⛔ **The label is a one-way, creation-time decision, so it is disclosed before it is applied.** It
+cannot be added later and removing it afterwards does not summon the reviewers that were never
+triggered. Where an operator is reachable, say which way the rule comes out and why *before* creating
+the PR; a run that applies it silently has made a scrutiny decision on the operator's behalf that the
+operator cannot reverse.
 
 Then work the review cycle until it is genuinely finished:
 

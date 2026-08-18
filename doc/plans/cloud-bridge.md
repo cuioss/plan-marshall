@@ -184,11 +184,14 @@ orchestrator.
 
 Steps 4–7 are one unit: if the transition fails, nothing is removed.
 
-**That commit is a pure bookkeeping diff — no `*.py`, no skill, no bundle change — so it carries
-`--label skip-bot-review` at creation.** Bot-review capacity is contended across this repository, and a
-ledger diff has nothing a reviewer can act on. The general rule (`cloud-plan-lane` § Step 7):
-`skip-bot-review` is for a diff with **no reviewable footprint** — documentation or bookkeeping only,
-never a skill, which is code and is reviewed.
+**That commit is a pure bookkeeping diff — no `*.py`, no skill, no bundle change, and no plan — so it
+carries `--label skip-bot-review` at creation.** Bot-review capacity is contended across this
+repository, and a ledger diff has nothing a reviewer can act on. The general rule (`cloud-plan-lane`
+§ Step 7): `skip-bot-review` is for a diff with **no reviewable footprint** — records and bookkeeping
+only, never a skill and never a plan, both of which are behavioural prose a later run executes, and
+so are reviewed as code. Note the asymmetry inside `doc/plans/` that this creates: a **plan** is
+reviewed, while the **records** beside it — a `report-NN.md`, a `verification.md`, a `gaps.md`, an
+epic `README.md` — are not.
 
 ## What this bridge deliberately does not do
 
