@@ -1,7 +1,7 @@
 # Run report — 090-harness-and-rule-gaps (run 01)
 
 **Date (UTC):** 2026-08-18    **Branch:** `claude/harness-rule-gaps-541rjw` (harness-assigned)
-**PR:** _pending_    **Outcome:** completed
+**PR:** [#1294](https://github.com/cuioss/plan-marshall/pull/1294)    **Outcome:** completed
 
 All six code deliverables (D1–D6) were reached, plus D7's measurements. Two of the plan's own
 gating HYPOTHESIS claims were **refuted** by re-derivation and are recorded as such below.
