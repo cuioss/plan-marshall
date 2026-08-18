@@ -728,6 +728,31 @@ so it is a genuine absence, not an unreadable surface.
 apply to any reviewer; no verdict is `unreadable`, so merge-gate condition 2 is established on read
 surfaces that all returned cleanly.
 
+### Re-request, and what it cost
+
+`coderabbitai` named a concrete 12-minute reopen, which makes a re-request productive rather than
+speculative, so the run waited out the window and posted the registry's declared `trigger_comment`
+(`@coderabbitai review`). It **accepted**: *"I will review pull request `#1296`."* — and, prompted by
+the scope note in the trigger comment, acknowledged the exclusion in its own words: *"The review does
+not cover `templates/deployment-diagram-skeleton.svg` because `**/*.svg` is excluded. A green result
+therefore does not verify SVG geometry or rendering."*
+
+⛔ **That review was then aborted by this run's own push.** A stop hook flagged an untracked file — the
+misdirected `report-01.md` described in § What have we learned — and committing and pushing the fix
+changed the head mid-review. CodeRabbit's reply updated itself to *"⚠️ Action not completed. Head
+commit changed."*
+
+This is the lane's stated tension, resolved the way the lane says to resolve it: **durability outranks
+review cleanliness, and a finished commit is never held back to spare a reviewer.** The cost is real
+and is recorded rather than hidden — one consumed review window, and a second re-request needed. The
+lane's own remedy is the one that applies: batch at the *commit* boundary, never delay the push. This
+run's fault was a fix committed on its own rather than folded into the final report commit, not the
+pushing of it.
+
+The abort is **not** counted as coverage: an aborted review is never `reviewed`. The run re-requested
+on a stable head, after the final report commit had landed, and the outcome of that second request is
+recorded in § Merge gate.
+
 ⚠ **A coverage limit worth recording even for a reviewer that does report.** CodeRabbit's notice lists
 the files it would have processed and states that `templates/deployment-diagram-skeleton.svg` **is
 excluded by its `!**/*.svg` path filter**. The SVG — the artifact carrying four of this run's own
@@ -811,4 +836,45 @@ a guard that computes its expectation with the function it guards inherits that 
 No contract change is proposed for it — the lane already forbids shell file operations, and the
 existing rule would have prevented it. The failure was mine, not the contract's.
 
+
+## Merge gate
+
+Recorded against the lane's numbered conditions. Conditions 1–3 gate the merge; condition 4 is a
+disclosure the run performs before arming, and never a block.
+
+**Condition 1 — every required context present on the head and concluded successfully.** Read from
+GitHub's own computation over the ruleset via `pull_request_read method: get` — the MCP payload names
+this field `mergeable_state`, lowercase, and omits `auto_merge`. The ruleset-config API is not
+reachable on this path, so required-ness is never inferred from the shape of the check set and no
+individual check is named here as ignorable. State at the gate is recorded below, with the blocker
+derived from (required ∩ non-green) rather than from whichever pending status was loudest.
+
+**Condition 2 — every PR comment handled.** All three surfaces were read as three separate calls, and
+the inline surface returned a clean empty set rather than an error, so the condition is **established**
+on readable evidence, not assumed. No verdict is `unreadable`.
+
+**Condition 3 — the report finalized and pushed as the last pre-merge commit.** This section is that
+commit. It lands *before* auto-merge is armed, because arming on this merge-queue repository is a
+one-way door: the instant the required checks are green the PR enters the queue and a protected-branch
+hook rejects every further push, so a report finalized after arming could never reach this PR.
+
+**Condition 4 — review-coverage shortfall, disclosed.** Stated in words before arming, carrying each
+reviewer's `Reopens?` value, because that is what tells a reader whether the gap was ever closable:
+
+> **Review coverage: 1 of 3.** `cuioss-review-bot` reviewed and reported no major issues.
+> `coderabbitai` was rate-limited on a 12-minute window, was re-requested after it cleared, accepted,
+> and had its review aborted by this run's own push; it was re-requested a second time on a stable
+> head. `sourcery-ai` is rate-limited on a **weekly** 500,000-diff-character quota that reopens on its
+> own but names no reset time, and this diff would exhaust it again regardless — so waiting for it was
+> never a path to coverage on this PR.
+>
+> ⚠ And the one reviewer that did report **does not read the skeleton**: CodeRabbit excludes
+> `**/*.svg` by configuration and said so itself. With plugin-doctor reading no SVG geometry either,
+> **no automated reviewer or gate on this PR covers the SVG at all.** Everything known about that file
+> comes from the four verification rounds and from PNGs rendered and read back on both GitHub
+> backgrounds. A reader weighing how much this PR's green means should weigh that first.
+
+This is a disclosure and not a block. Rate limits are routine and outside this run's control; blocking
+on them would strand a landing behind a bot's quota. The shortfall changes what the run **says**, never
+whether it merges.
 
