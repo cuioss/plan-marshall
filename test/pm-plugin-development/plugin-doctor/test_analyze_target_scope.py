@@ -190,6 +190,37 @@ def test_a_quoted_key_is_still_a_declaration(value):
 
 
 @pytest.mark.parametrize(
+    'value',
+    [pytest.param('"targets"', id='double-quoted'), pytest.param("'targets'", id='single-quoted')],
+)
+def test_a_quoted_key_reaches_the_rule_itself(tmp_path, value):
+    """The NET must flag it, not merely the parser underneath the net.
+
+    Asserting only the parser leaves the claim "the authoring-time net
+    missed it too" resting on an entry point no test exercises.
+    """
+    bundles = _marketplace(tmp_path)
+    _component(bundles, 'commands/quoted.md', f'{value}: [cluade]')
+
+    findings = analyze_target_scope(bundles)
+
+    assert len(findings) == 1
+    assert findings[0]['details']['unknown_targets'] == ['cluade']
+
+
+@pytest.mark.parametrize(
+    'value',
+    [pytest.param('targets"', id='trailing-quote-only'), pytest.param('"targets', id='leading-quote-only')],
+)
+def test_a_mismatched_quote_is_not_the_targets_key(tmp_path, value):
+    """A mismatched quote is a different key, so there is nothing to flag."""
+    bundles = _marketplace(tmp_path)
+    _component(bundles, 'commands/mismatched.md', f'{value}: [cluade]')
+
+    assert analyze_target_scope(bundles) == []
+
+
+@pytest.mark.parametrize(
     ('block', 'expected'),
     [
         pytest.param('targets: [claude,\n2fa: no', ['[claude', '2fa: no'], id='digit-initial-key'),

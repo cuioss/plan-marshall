@@ -199,7 +199,7 @@ user-invocable: true
 
 Skills do not use `model`, `color`, or `tools`/`allowed-tools` fields.
 
-The skill fields documented in this file — the required ones above and the optional ones below — are: `name`, `description`, `user-invocable`, `mode`, `implements`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`, `profiles`, `priming_preamble`, `composes`, `targets`.
+Skill fields named in this document, required and optional together: `name`, `description`, `user-invocable`, `mode`, `implements`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`, `profiles`, `priming_preamble`, `composes`, `targets`. Some have a field-specification block below and some are only named here; a name in this list is not a statement that the field is optional, nor that it is explained anywhere.
 
 ⛔ **That is not the whole set of frontmatter a skill may carry, and this document is not the register of it.** A field belongs to whichever contract declares it, and several are declared elsewhere: `scope:` by [`plan-marshall:ref-workflow-architecture` § manage-contract](../../../../plan-marshall/skills/ref-workflow-architecture/standards/manage-contract.md), `lane:` by [`ext-point-lane-element`](../../../../plan-marshall/skills/extension-api/standards/ext-point-lane-element.md), and a finalize-step's `order` / `default_on` / `presets` / `mutates_source` and their siblings by [`ext-point-finalize-step`](../../../../plan-marshall/skills/extension-api/standards/ext-point-finalize-step.md). Read the owning contract before concluding a field is unsupported — an enumeration here would go stale the moment a contract adds one, which is why this one does not claim to be exhaustive.
 

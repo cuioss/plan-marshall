@@ -152,9 +152,11 @@ def _join_flow_sequence(value: str, rest: list[str]) -> str:
     pattern approximates "a new key starts here" and is wrong in both
     directions — see ``component_targets._join_flow_sequence`` for what it
     misses. There, every misread is REJECTED by the build. Here the outcome
-    is weaker by design: with no ``marketplace/targets/`` tree to check names
-    against, this analyzer reports nothing at all (see the module docstring),
-    so a misread is silently ignored rather than surfaced.
+    is weaker by design: a misread yields a token no registry name matches,
+    and the unknown-name check needs a ``marketplace/targets/`` tree to run
+    at all (see the module docstring), so where that tree is absent the
+    misread is silently ignored rather than surfaced. The empty-declaration
+    check is unaffected — it needs no registry and still runs.
     """
     head = _strip_comment(value)
     if not head.startswith('[') or ']' in head:
@@ -199,6 +201,27 @@ def _collect_block_items(lines: list[str]) -> list[str]:
     return items
 
 
+def _unquote_key(key: str) -> str:
+    """Return ``key`` with a MATCHED pair of surrounding quotes removed.
+
+    ``"targets": [claude]`` is the same declaration as ``targets: [claude]``
+    to any YAML reader, and not recognising it fails OPEN — the component
+    ships everywhere with its declaration unread.
+
+    The pair must MATCH. ``str.strip`` takes a character set rather than a
+    prefix, so stripping quotes with it also turns ``targets"`` into
+    ``targets`` — and that key is NOT ``targets`` to YAML, so a component
+    that declared no scope would be silently narrowed to someone else's
+    list. That is the same defect in the opposite direction, and the one the
+    module docstring calls prohibited, so the quotes are removed only when
+    they genuinely surround the key.
+    """
+    key = key.strip()
+    if len(key) >= 2 and key[0] == key[-1] and key[0] in {'"', "'"}:
+        return key[1:-1]
+    return key
+
+
 def declared_targets(text: str) -> tuple[list[str], int] | None:
     """Return ``(tokens, line_number)`` for a top-level ``targets:`` declaration.
 
@@ -215,10 +238,7 @@ def declared_targets(text: str) -> tuple[list[str], int] | None:
         if line[:1].isspace():
             continue
         key, separator, value = line.partition(':')
-        # Unquote the key before comparing: ``"targets": [claude]`` is the same
-        # declaration as ``targets: [claude]`` to any YAML reader, and missing
-        # it fails OPEN — the component would silently ship everywhere.
-        if not separator or key.strip().strip('"').strip("'") != TARGET_SCOPE_FIELD:
+        if not separator or _unquote_key(key) != TARGET_SCOPE_FIELD:
             continue
         # +2: the opening fence occupies line 1, so block line 0 is file line 2.
         line_number = index + 2

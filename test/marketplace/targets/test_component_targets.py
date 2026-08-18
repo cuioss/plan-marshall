@@ -238,6 +238,31 @@ def test_a_quoted_key_is_still_a_declaration(tmp_path, frontmatter):
     assert read_target_scope(_component(tmp_path, frontmatter)) == {'claude'}
 
 
+# Keys that are NOT ``targets`` to a YAML reader, and so must not be read as a
+# declaration. The first fix for the quoted-key miss stripped a character SET,
+# which turned every one of these into ``targets`` — silently narrowing a
+# component that had declared no scope at all. That is the same defect in the
+# opposite direction, so the boundary is pinned from both sides.
+_NOT_THE_TARGETS_KEY = (
+    'targets": [claude]',
+    "targets': [claude]",
+    '"\'targets\'": [claude]',
+    '"targets: [claude]',
+    '""targets"": [claude]',
+    '\'targets": [claude]',
+)
+
+
+@pytest.mark.parametrize('frontmatter', [pytest.param(f, id=f) for f in _NOT_THE_TARGETS_KEY])
+def test_a_mismatched_quote_is_not_the_targets_key(tmp_path, frontmatter):
+    """Only a MATCHED pair of surrounding quotes makes it the ``targets`` key.
+
+    Each spelling here is a different key to YAML (or is not well-formed at
+    all), so the component declares no scope and must ship everywhere.
+    """
+    assert read_target_scope(_component(tmp_path, frontmatter)) is None
+
+
 def test_a_flow_continuation_may_quote_a_colon():
     """A quoted value containing a colon is ordinary YAML and must fold in.
 

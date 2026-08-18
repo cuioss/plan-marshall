@@ -36,10 +36,10 @@ The plan's claim table required re-derivation. All were re-checked against the t
 
 | Deliverable | What was done | Commit | Verification state |
 |---|---|---|---|
-| **D1 — filter mechanism** | New `marketplace/targets/component_targets.py` parses the `targets:` declaration and answers `emits_to(path, target_name)`. Both component-tree-emitting targets consult it: the Claude verbatim emitter (`excluded_emission_roots` + `is_under_any`, skipping a scoped-out file or a whole scoped-out skill directory) and its manifest generator (`plugin_json_gen` drops the same entries), and the OpenCode emitter (per-skill / per-agent / per-command skip). The governed set is derived from `TARGET_REGISTRY` filtered by each target's `emits_bundle_tree` capability — never enumerated. Absent field still means every target. | `fab9611` | `test_component_targets.py` (41 collected), `test_target_scoped_emission.py` (14 collected) |
+| **D1 — filter mechanism** | New `marketplace/targets/component_targets.py` parses the `targets:` declaration and answers `emits_to(path, target_name)`. Both component-tree-emitting targets consult it: the Claude verbatim emitter (`excluded_emission_roots` + `is_under_any`, skipping a scoped-out file or a whole scoped-out skill directory) and its manifest generator (`plugin_json_gen` drops the same entries), and the OpenCode emitter (per-skill / per-agent / per-command skip). The governed set is derived from `TARGET_REGISTRY` filtered by each target's `emits_bundle_tree` capability — never enumerated. Absent field still means every target. | `fab9611` | `test_component_targets.py`, `test_target_scoped_emission.py` — **55 and 14 collected at HEAD**. Test counts are stated at HEAD only: they have grown every round, so a count attributed to the implementing commit would name a number that commit never had |
 | **D2 — fail-closed validation** | `_validate` rejects an unknown target name, an empty list, and a list naming only non-component-tree targets. Every message names the component path and the offending value. Validation fires wherever the emission predicate is CALLED: both component-tree targets' emit paths, and the Claude target's validate-only mode (which re-walks each bundle's components for this check alone). Reading a component is not the same as validating it — a `pr-agent`-only run opens skill manifests to harvest rule text, yet never asks whether a component is in scope, because it emits no component. The doctor rule is the authoring-time net there. | `fab9611` | `test_component_targets.py` + `test_target_scoped_emission.py::test_generation_fails_*` |
 | **D3 — first consumer** | `marketplace/bundles/plan-marshall/commands/tools-fix-intellij-diagnostics.md` declares `targets: [claude]`. | `fab9611` | Asserted by generation-output listing (below) |
-| **D4 — authoring surface** | New `targets-scope-invalid` plugin-doctor rule (`_analyze_target_scope.py`), registered in `_rule_registry.py` and wired into both the quality gate and analyze mode, with rows in `rule-provenance.md` and `rule-catalog.md` and a firing positive fixture in `_fixtures.py`. The field, its semantics, its validation table, and the three-condition admission test are documented in `plugin-architecture/references/frontmatter-standards.md` § "Target Scoping". | `fab9611` | `test_analyze_target_scope.py` (27 collected); the doctor runs clean over the real tree with D3's declaration in place |
+| **D4 — authoring surface** | New `targets-scope-invalid` plugin-doctor rule (`_analyze_target_scope.py`), registered in `_rule_registry.py` and wired into both the quality gate and analyze mode, with rows in `rule-provenance.md` and `rule-catalog.md` and a firing positive fixture in `_fixtures.py`. The field, its semantics, its validation table, and the three-condition admission test are documented in `plugin-architecture/references/frontmatter-standards.md` § "Target Scoping". | `fab9611` | `test_analyze_target_scope.py` — **36 collected at HEAD** (same HEAD-only rule); the doctor runs clean over the real tree with D3's declaration in place |
 
 ### D3 generation-output listing (the plan's own "Done when" evidence)
 
@@ -69,7 +69,7 @@ rather than reported here:
 - quality-gate: `ruff … All checks passed!`, `mypy … Success: no issues found in 415 source files`,
   `SPDX-header check passed`, plugin-doctor `total_issues: 0`
 - test-compile: mypy over 775 test files, clean
-- module-tests: **21055 passed, 14 skipped** — 0 failed, 0 errors
+- module-tests: **21065 passed, 14 skipped** — 0 failed, 0 errors
 
 No lockfile churn: `git status --porcelain` was empty after the build, and every commit staged
 deliverable paths explicitly — by name, or with `git add -A --` bounded by an explicit pathspec, which
@@ -80,10 +80,12 @@ sweeps nothing outside the named paths. No commit staged the whole worktree.
 Source key: **V1**–**V6** = pre-PR verification sub-agent, rounds 1 to 6. **S** = self-found
 (mutation sweep or my own re-read).
 
-One row per finding, and a row states its own instance count where it covers more than one site (`F14–F17`
-is four; a row saying "both copies" or "both suites" is two). Round totals below count ROWS, so they
-understate instances — round 5's 19 rows are 18 condition-A instances plus survivors; round 6's 11 rows
-are 13 instances.
+One row per finding. A row states its own instance count where it spans more than one site — `F14–F17`
+covers four, and a row saying "both copies" or "both suites" covers two.
+
+**The per-round totals quoted in this report count finding LABELS, not table rows and not instances.**
+The three differ, and earlier drafts of this paragraph conflated them; no instance total is stated
+here, because every attempt to state one has been wrong. Count the rows if you need a number.
 
 ### Round 1
 
@@ -113,7 +115,7 @@ are 13 instances.
 | R2-04 | V2 | "the gate saw the whole branch" was false of HEAD: the recorded `./pw verify` predated the round-1 fix commit. | **Fixed** — the claim now names the commit its figures come from, and `./pw verify` was re-run after the round-2 commit. |
 | R2-05 | V2 | Round 1 corrected "one exception" to "two"; still short — variant emission and the excluded cache directories are also exceptions, and `claude/emitter.py`'s docstring already listed them, so the two disagreed. | **Fixed** — the list defers to the emitter rather than restating it. |
 | R2-06 | V2 | The new sentence "That list is the **closed** set of supported top-level skill fields" made a pre-existing omission load-bearing: `implements` is a supported skill field, documented fifteen lines below the list it is missing from. | **Fixed** — `implements` added to both copies of the list. |
-| R2-07 | V2 | A flow sequence spanning lines (`targets: [claude,` continued next line) was truncated to its first physical line, yielding the token `[claude`. Same class as B1; the round-1 fix reached block sequences and inline comments but not flow sequences. | **Fixed** — both parsers fold continuation lines in; pinned by three tests per suite at the time (five per suite at HEAD, after rounds 3–5 each added a fold fixture). |
+| R2-07 | V2 | A flow sequence spanning lines (`targets: [claude,` continued next line) was truncated to its first physical line, yielding the token `[claude`. Same class as B1; the round-1 fix reached block sequences and inline comments but not flow sequences. | **Fixed** — both parsers fold continuation lines in; pinned by three tests per suite at the time; seven per suite at HEAD, after rounds 3–6 each added a fold fixture. |
 | R2-08 | V2 | `component_targets._strip_comment`'s comment-vs-value guard had NO test — deleting it left the suite green, so the documented behaviour could regress silently. | **Fixed** — three parametrised cases; deleting the guard now reddens three tests. |
 | R2-09 | V2 | Same guard, same gap, in the doctor's copy — whose docstring claims it "mirrors the generator's parser so the two agree", with nothing pinning the agreement. | **Fixed** — same three cases in the doctor suite. |
 | R2-10 | V2 | M2's falsity survived verbatim in `rule-catalog.md` § Coverage boundary. | **Fixed** |
@@ -196,7 +198,7 @@ What was done instead, and what it establishes:
 | Evidence | Scope | Result |
 |---|---|---|
 | Mutation sweep, 18 mutations across both parsers, both emitters, the manifest generator and the doctor rule | Every guard the plan's D1/D2 introduced | **18/18 reddened**, no survivors, tree byte-restored and re-checked clean |
-| Mutation sweep, 4 further mutations after round 2 (`_strip_comment` guard and the flow join, each parser separately) | The round-2 additions | **4/4 reddened**. Re-derived at HEAD by round 6: the `_strip_comment` pair reddens 3 tests per suite, the flow-join pair 5, because rounds 3–5 each added a fold fixture |
+| Mutation sweep, 4 further mutations after round 2 (`_strip_comment` guard and the flow join, each parser separately) | The round-2 additions | **4/4 reddened**. Kill counts grow as fixtures are added, so they are re-measured after each round's own additions rather than before them — round 6 measured before its and mislabelled the result "at HEAD". At the commit this report is finalised on: `_strip_comment` **3 per suite**, flow-join **7 per suite** |
 | Round 4's mutation of `_TOP_LEVEL_KEY_RE` → `False` | The round-3 boundary | Reddens in both suites |
 | Round 5's mutation of `_DESCRIPTION_UNKNOWN` | The doctor's operator-facing text | Reddens |
 | **Replay against the pre-fix parser** (round 5's method, repeated here for the corrected fixture) | The two shapes R4-4 restored | Both **red before, green after** — a true red-first demonstration, obtained after the fact |
@@ -239,6 +241,29 @@ its own corpora and one of its results proves a GAP rather than confirming a cla
   disagreements, generalising round 5's 4761/0 at five times the corpus.
 - **A family-level oracle comparison across 21 declaration families** — which is what surfaced R6-02
   and the R6-03 fail-open, both invisible to any amount of reading.
+
+### Round 7
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| 7-01 | V7 | Round 6's replacement sentence claims the fourteen fields are "**documented in this file**"; four of them (`argument-hint`, `compatibility`, `disable-model-invocation`, `license`) occur exactly once in the whole file — in that list. **Sixth consecutive round of false fix-prose on this sentence.** Four instances. | **Fixed** — the sentence now claims only that the fields are *named* here, and says outright that some are named and nothing more. |
+| 7-02 | V7 | The same sentence partitions by position ("required above, optional below") and so still calls `mode` optional; `mode` is documented below and is required, enforced by the `skill-missing-mode` rule. Fixed for three required fields, left for the fourth. | **Fixed** — the partition is gone. |
+| 7-03 | V7 | The R6-10 fix overshot: "with no `marketplace/targets/` tree … this analyzer **reports nothing at all**" is refuted by its own cited module docstring, by `_scan_component` (the empty-declaration branch returns a Finding first), by `rule-catalog.md`, and by a passing test. | **Fixed** — scoped to the unknown-name check, with the empty-declaration check named as unaffected. |
+| 7-04 | V7 | **Behavioural regression introduced by round 6, in the mirror direction.** `key.strip().strip('"').strip("'")` strips a character SET, so `targets": [claude]`, `targets': [claude]` and `"'targets'": [claude]` — all different keys to YAML — were read as declarations. A component that declared **no** scope was silently narrowed to someone else's list: silent exclusion, which the module docstring calls prohibited. Two instances (both parsers). | **Fixed** — `_unquote_key` removes only a MATCHED pair. All eighteen probed spellings now agree with PyYAML, and the boundary is pinned from **both** sides in both suites (six mismatched spellings must NOT be declarations). |
+| 7-05 | V7 | The R6-05 figure went stale in the commit that stated it: round 6 measured the flow-join kill count *before* adding its own fold fixtures and labelled the result "re-derived at HEAD". 5 at `b0d454e`, 7 at `913965b`. | **Fixed** — re-measured after this round's additions (3 and 7 per suite), and the figure now states the rule that keeps it honest: measure after the round's own fixtures, not before. |
+| 7-06 | V7 | The same wrong figure at the R2-07 disposition. | **Fixed** |
+| 7-07 | V7 | Three collection counts were the values from *before* round 6's test additions, and were attributed to `fab9611`, where the real values are 24/11/16. Two of the three were wrong. | **Fixed** — stated at HEAD only (55 / 14 / 36), with the reason a commit attribution cannot work for a number that grows every round. |
+| 7-08 | V7 | The R6-08 counting convention was wrong on every figure it stated — it called label counts row counts, and its two instance totals contradicted each other and the Stop record's "13 sites". | **Fixed** — the report now states which unit the totals use (labels) and stops asserting instance totals, because every attempt to state one has been wrong. |
+| 7-09 | V7 | The Stop record still described a five-round run: round counts, the convergence series and the evidence paragraph all omitted round 6. Three instances. | **Fixed** |
+| 7-10 | V7 | The Residue said "the first four [docstring rewrites] were false of their own regex"; round 5's was accurate-but-unguarded, which is round 6's own finding. | **Fixed** |
+| 7-11 | V7 | The doctor's quoted-key pin exercised the parser only, while its docstring claimed "the authoring-time net missed it too" — an entry point no test reached. | **Fixed** — the rule's own entry point is now exercised, from both sides. |
+| 7-12 | V7 | Round 6's corpus figures (20,580 smuggle attempts; 6,768 and 16,806 PyYAML differentials; 24,046 parser-vs-parser; "21 declaration families") are **not re-derivable** — no corpus or script is persisted on the branch. | **Recorded, not fixed.** Round 7 ran its own 288-shape bracketed differential and found 0 cases of the failure mode the claim denies, consistent at ~1% of the corpus. The figures are attributed to the round that produced them and should be read as that verifier's measurement, not as a reproducible branch artifact. |
+
+**Round 7's evidence.** Four mutations re-run at HEAD in both suites; both round-6 mutations replayed
+at `b0d454e` in a throwaway worktree, independently confirming round 6's coverage-gap claim rather
+than taking it on trust; the fold-disable kill count measured at two commits; collection counts
+measured at three; an eighteen-spelling adversarial key probe across generator, doctor and PyYAML —
+which is what produced 7-04 — and a 288-shape bracketed PyYAML differential.
 
 ### Cold read (the plan's § Verification requirement)
 
@@ -288,19 +313,23 @@ five rounds; stop and hand the branch over; or narrow the loop to one named surf
 This record exists because a conversation event is not a committed artifact — the report is its only
 durable trace.
 
-**Rounds and what they found:** 12, 17, 12, 17, 19. Two further round-5 dispatches died to server-side
-API errors (one mid-response, one a 529) before doing any work; neither is counted as a round, because
-a failed dispatch produced no verification and counting it would be the "silence read as a pass"
-defect this loop exists to catch.
+**Rounds and what they found:** 12, 17, 12, 17, 19, 13, 11 — labels, per the counting note in
+§ Findings. Two further round-5 dispatches died to server-side API errors (one mid-response, one a
+529) before doing any work; neither is counted as a round, because a failed dispatch produced no
+verification and counting it would be the "silence read as a pass" defect this loop exists to catch.
 
-**Convergence: no.** Each round was asked for the shipped-change vs report split, and the answer never
-narrowed — round 3: 9/12 in the shipped change; round 4: 10/17; round 5: 9/19. Round 5's verdict:
-*"merely fewer, and barely … the share has fallen only because the report grew a Round 3 and a Round 4
-section this round — the denominator moved, not the numerator."* Two of its findings sat in the same
-docstring pair rounds 3 and 4 had each rewritten and each got wrong.
+**Convergence: partial, and only on volume.** Each round was asked for the shipped-change vs report
+split: round 3 9/12, round 4 10/17, round 5 9/19, round 6 7/13, round 7 5/11. Round 7 was the first to
+narrow on a *shrinking* denominator, and called it *"narrower, genuinely — and fewer … convergence on
+severity has not been achieved; only on volume."* That qualifier is the point: rounds 6 and 7 each
+found a **behavioural** defect the earlier rounds had missed — a fail-open quoted key, then a
+fail-closed regression in the fix for it — so falling counts are not evidence the code had stopped
+changing underneath them.
 
-**Evidence stronger than another read** — all obtained in round 5, none of which the branch previously
-carried:
+**Evidence stronger than another read.** Rounds 5, 6 and 7 each produced some; the branch carried none
+before round 5. Round 6's is the strongest in kind, because it proved a GAP rather than confirming a
+claim — two mutations that each falsify a documented clause in code while both suites stay green — and
+round 7 independently reproduced that result at two commits. Round 5's contribution:
 
 - an **exhaustive combinatorial differential** over 4761 frontmatter shapes between the two parsers:
   **0 disagreements**. The "mirrors the generator's parser so the two agree" claim, flagged in round 2
@@ -366,6 +395,7 @@ Four dispositions above defer here; this is that record.
 **What a reader should assume still remains.** Round 5's own answer, quoted because it is the most
 useful sentence in this report: *"The code is in much better shape than the prose about the code …
 the residue is documentary, and it is concentrated in exactly the sentences written to close a prior
-round."* Five rounds rewrote `_join_flow_sequence`'s docstring and the first four were false of their
-own regex. Treat any self-descriptive comment in the two parsers, and any "X is pinned in both
+round."* Six rounds rewrote `_join_flow_sequence`'s docstring: rounds 3 and 4 wrote versions that were false of
+their own regex, round 5's was accurate but had no test behind any of it, and round 6 both scoped an
+overstated sweep claim and pinned the clauses. Treat any self-descriptive comment in the two parsers, and any "X is pinned in both
 suites" claim, as needing its own check rather than trusting the sentence.

@@ -283,6 +283,27 @@ def _collect_block_items(lines: list[str]) -> list[str]:
     return items
 
 
+def _unquote_key(key: str) -> str:
+    """Return ``key`` with a MATCHED pair of surrounding quotes removed.
+
+    ``"targets": [claude]`` is the same declaration as ``targets: [claude]``
+    to any YAML reader, and not recognising it fails OPEN — the component
+    ships everywhere with its declaration unread.
+
+    The pair must MATCH. ``str.strip`` takes a character set rather than a
+    prefix, so stripping quotes with it also turns ``targets"`` into
+    ``targets`` — and that key is NOT ``targets`` to YAML, so a component
+    that declared no scope would be silently narrowed to someone else's
+    list. That is the same defect in the opposite direction, and the one the
+    module docstring calls prohibited, so the quotes are removed only when
+    they genuinely surround the key.
+    """
+    key = key.strip()
+    if len(key) >= 2 and key[0] == key[-1] and key[0] in {'"', "'"}:
+        return key[1:-1]
+    return key
+
+
 def _declared_tokens(text: str) -> list[str] | None:
     """Return the raw ``targets:`` tokens declared by ``text``, or ``None``.
 
@@ -299,10 +320,7 @@ def _declared_tokens(text: str) -> list[str] | None:
         if line[:1].isspace():
             continue
         key, separator, value = line.partition(':')
-        # Unquote the key before comparing: ``"targets": [claude]`` is the same
-        # declaration as ``targets: [claude]`` to any YAML reader, and missing
-        # it fails OPEN — the component would silently ship everywhere.
-        if not separator or key.strip().strip('"').strip("'") != TARGET_SCOPE_FIELD:
+        if not separator or _unquote_key(key) != TARGET_SCOPE_FIELD:
             continue
         value = value.strip()
         rest = lines[index + 1:]
