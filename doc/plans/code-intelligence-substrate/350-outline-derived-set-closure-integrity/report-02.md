@@ -129,6 +129,23 @@ Read from the output, not the exit code: on run 01 the wrapper exited 0 on a **f
 `git status --porcelain` was empty after the gate — the session interpreter is 3.12.3, at or above
 the project floor, so this build produced **no `uv.lock` churn** to keep out of a commit.
 
+### CI is what covers the final head — and it caught what the local gate structurally could not
+
+The required `verify / conclusion` context **failed** on head `f2a7cd9`, then **succeeded** on
+`501ce21` after the fix. That failure is recorded as **F-CI1** in § Findings, and it is the single
+most instructive result of this run:
+
+| | |
+|---|---|
+| **What failed** | One test's *precondition* assertion — `assert PosixPath('/home/runner/etc') == PosixPath('/etc')`. |
+| **Why the local gate missed it** | The test hard-coded `../../../etc` to escape the repository, which reaches `/` only from a checkout three levels down. This machine's is; CI's is five. `./pw verify` was **genuinely green here on the very commit CI rejected**. |
+| **Why no verification round caught it** | Its docstring asserted the false premise **as a fact** — *"`PROJECT_ROOT` is three levels below `/`"* — so test and docstring agreed by construction. Four rounds read the file. |
+| **How the fix was verified** | By **derivation, not by re-running**: the machine that must confirm the fix is the one that cannot reproduce the bug. The corrected expression was evaluated against four checkout shapes including CI's exact path, resolving to `/etc` in every one. |
+
+⚠ **Every earlier `verify` on this branch was cancelled by this run's own pushes**, so the failing run
+was the **first to complete**. The defect had been latent since the branch's first commit — it was not
+introduced by the reviewer fix that immediately preceded the first completed run.
+
 ⛔ **Read the gate for what it is.** The build's own coverage line says SPDX cannot evaluate file
 content, plugin-doctor cannot evaluate whether a documented claim is true, `mypy(test)` cannot
 evaluate whether a well-typed test asserts anything, and `module-tests` is silent on every input no
@@ -336,7 +353,7 @@ Every verdict below is derived from the **stored comment bodies** across all thr
 | Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
 |---|---|---|---|
 | `cuioss-review-bot` | **`reviewed`** | — | Published a "PR Reviewer Guide 🔍" issue comment against head `117d351`, carrying one actionable finding (**Unhandled Exception** on `int(task["number"])`). Fixed in `8486214` and answered on the thread — see § Findings, F-R1. |
-| `coderabbitai` | **`rate-limited`** | **yes** | Two bodies. First: *"Review limit reached … **Next review available in: 28 minutes**"*. Then, on an explicit `@coderabbitai review` re-request: *"I will review pull request #1295. ⚠️ Action not completed — Review rate limited."* A countdown, so it clears on its own. |
+| `coderabbitai` | **`rate-limited`** | **yes** | Refused across **four** opportunities. Bodies: *"Review limit reached … **Next review available in: 28 minutes**"*; then, on an explicit `@coderabbitai review`, *"I will review pull request #1295. ⚠️ Action not completed — Review rate limited."*; and a commit status on the final head `501ce21` reading `CodeRabbit — Review rate limited`. Three further pushes each re-triggered it (its own notice names pushing as an alternative trigger) and each was refused. `Reopens? yes` because the limit is a clock, not a property of the diff — but the clock did not clear within this run. |
 | `sourcery-ai` | **`rate-limited`** | **no** | *"your pull request is larger than the review limit of 150000 diff characters."* A property of **this diff's size**, not of the clock — the same request never succeeds at this size, so waiting is futile and re-requesting is not productive. |
 
 ⭐ **The two `rate-limited` verdicts are not the same fact, and only the `Reopens?` column separates
@@ -367,8 +384,11 @@ reached the report, because the bodies were re-read before this table was writte
 briefly speculated that the pr-agent workflow's fail-closed gate had a hole; it does not — the gate
 was right and the reader was wrong.
 
-**Coverage: 1 of 3 reviewed.** The § Step 8 condition-4 shortfall disclosure fires — see the merge
-gate below for its exact wording.
+**Coverage: 1 of 3 reviewed.** The § Step 8 condition-4 shortfall disclosure fires — see § Merge gate
+for its exact wording. The shortfall is **not** for want of trying: `coderabbitai` was given four
+opportunities and refused each, and `sourcery-ai`'s ceiling was unreachable at any wait. Blocking on
+either would strand the landing behind a third party's quota, which the contract names as the wrong
+direction.
 
 ## Cost
 
@@ -432,10 +452,10 @@ exists.
 | 4 Implement | **done** | Commits carry the `Co-Authored-By` trailer and no "Generated with Claude Code" footer; deliverables addressed by run 01, round-4 and reviewer fixes by run 02. |
 | 4 Per-commit gate | **done** | Both `*.py`-touching commits (`f11e8b7`, `8486214`) preceded by a `./pw quality-gate` reporting `ruff` / `mypy` / SPDX clean — § Build gate. |
 | 4 Pushed | **done** | Every commit pushed on creation; `git status -sb` reports no `ahead` at the final commit. |
-| 5 Build gate | **done** | § Build gate — git-derived Python verdict (8 production scripts, 9 test modules), full `./pw verify` SUCCESS, with the explicit note that it measured `117d351` and that CI's required `verify` covers the final head. |
-| 6 Verification sub-agent | **done** | § Findings and § Stop record — four rounds against a budget declared before the first dispatch; **exit (ii), the exhausted budget**, at round 4; round 4's own stop answer quoted; every condition-**A** finding fixed regardless of the budget; two survivors listed individually with their (b) bounds and confirmed re-put to the verifier; late rounds recorded as **not** narrower; residue to assume stated. |
+| 5 Build gate | **done** | § Build gate — git-derived Python verdict, full `./pw verify` SUCCESS locally, **and** the required CI `verify / conclusion` green after F-CI1 was fixed. Recorded with the finding that the local gate was structurally unable to catch F-CI1, so CI is what covers the final head. |
+| 6 Verification sub-agent | **done, with a stated limit** | § Findings and § Stop record — four rounds against a budget declared before the first dispatch; **exit (ii), the exhausted budget**, at round 4; round 4's own stop answer quoted; every condition-**A** finding fixed regardless of the budget; two survivors listed individually with their (b) bounds and confirmed re-put to the verifier; late rounds recorded as **not** narrower; residue to assume stated. |
 | 7 PR cycle | **done** | PR [#1295](https://github.com/cuioss/plan-marshall/pull/1295). Every comment dispositioned; § Reviewer participation carries a verdict **and** a `Reopens?` value per reviewer, derived from bodies. No `silent` verdict survives — the one provisionally recorded was this run's own misread, corrected and disclosed with its cost. No `unreadable` verdict, so condition 2 is established. |
-| 8 Merge gate | **see § Merge gate** | Conditions 1–3 met, condition 4 disclosed in words at 1-of-3. |
+| 8 Merge gate | **see § Merge gate** | Conditions 1–3 met — required context green on `501ce21`, every comment handled, this report the last pre-merge commit. Condition 4 disclosed in words at 1-of-3. |
 | 8 Bridge | **done** | One write under `doc/plans/` outside this plan's directory — a **link repair** caused by Step 3's own `git mv`, not a status or bookkeeping write; no ledger, no status file, no other plan's directory. § Bridge. This report carries the PR number and per-deliverable outcome the orchestrator collects from. |
 | 9 This check | **done** | This table. |
 | 9 What have we learned | **done** | Two proposals plus one secondary, each with evidence from this run, put to the operator and **not** self-approved; to ship as separate `chore/` PRs on approval. |
@@ -509,6 +529,28 @@ verifier's all-clear. The difference lives in a stop record a reader has to go l
 visible without reading the stop record. `Outcome` keeps its meaning (a verdict on the deliverables);
 the header simply stops hiding which exit produced it.
 
+### Proposal 3 — the build gate cannot see a test that encodes its own machine
+
+**Evidence, from this run.** F-CI1: a test whose *precondition* hard-coded the checkout's depth below
+`/`. `./pw verify` reported `=== verify: SUCCESS ===` with `20847 passed` on the exact commit CI
+rejected, because the assumption the test encoded was **true on the machine that ran the gate**. No
+number of local re-runs could have surfaced it, and four verification rounds read the file without
+catching it — its docstring stated the false premise as a fact, so test and prose agreed by
+construction.
+
+§ Step 5 tells a run to read the gate's output rather than its exit code, and § Step 6's
+invented-rationale rule says to **run** a clause that asserts what a value resolves to. Neither
+reaches this case: the gate's output was honestly green, and the clause asserting a resolution was
+about a **filesystem path**, which the rule's examples (function returns, value mappings) do not
+suggest checking.
+
+**Proposed edit:** extend § Step 6's ⭐ *"If the clause asserts what a function RETURNS, run it"* rule
+to name **environment-derived values** explicitly — a path's depth, a hostname, a user, a locale, a
+CPU count — with the sharper instruction that such a claim must be evaluated **against a second shape
+it will actually meet in CI**, not merely executed once where it was written. Executing
+`../../../etc` on the authoring machine confirms the claim; it is the *same act that produced it*, so
+it agrees by construction — exactly the failure mode that rule already warns about, one level up.
+
 ### Secondary, small
 
 § Step 6's mutation-sweep instruction tells a run to put scratch under `$TMPDIR` and says nothing
@@ -527,6 +569,7 @@ What run 02 adds or re-derives:
 | R3 (re-derived) | Sites saying the execution manifest is composed at **`phase-4-plan` Step 8b**; canonical is **Step 7b**. `actual-state.md` estimated "~14"; re-derived at the moment of this claim it is **13** — the grep returns 15, of which `phase-1-init/SKILL.md:907` names phase-1-init's *own* Step 8b and `phase-4-plan/SKILL.md:61` is correct (Step 7b composes, Step 8b is the LLM Q-Gate). | **Still residue, deliberately.** Two were corrected where this diff already touched them. The remaining 13 were false on `origin/main` before this branch existed, this change did not make them false, and **round 4 read R3 and did not raise them** as condition-A findings — the contract makes that the verifier's call, not the author's. Fixing them means editing eight further files no deliverable names, which is itself the undeclared-collateral defect § "Undeclared collateral" exists to prevent. |
 | B3 | `manage-lessons` does not read the survey pair (§ Findings). | **Open, bounded.** Next step: widen `_derive_components` to `deliverable_write_set`. |
 | B4 | A live-directory precondition in `test_qgate_closure.py` (§ Findings). | **Open, bounded.** Next step: derive the expectation from the directory rather than asserting a cap. |
+| New | Six raw `int(x['number'])` conversions in `_cmd_qgate_mechanical.py` — the same pattern `cuioss-review-bot` flagged in the new module (F-R1). | **Open, out of scope.** All six are pre-existing on `origin/main` (re-derived by grepping the diff's added lines, which contain none of them), so this branch did not make them false. They are a behavioural hardening opportunity, not a false statement, so condition **A** does not reach them. Next step: the same `_as_int` treatment. |
 | New | `doc/plans/code-intelligence-substrate/250-footprint-read-outside-its-window/report-01.md:100` restates the pre-widening coverage rule. | **Deliberately not corrected.** It is another plan's **run report** — a dated record of what that run did, not a live specification. Editing it would falsify the record rather than repair a claim. |
 
 ## Undeclared collateral, now declared
