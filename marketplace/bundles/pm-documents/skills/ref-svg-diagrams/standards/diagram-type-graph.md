@@ -17,7 +17,7 @@ Use a different diagram type when:
 
 - The relationship is **flow over stages** → `diagram-type-flow`.
 - The relationship is **side-by-side comparison** → `diagram-type-block`.
-- The relationship is **states and transitions over time** → the (future) sequence / state-machine types.
+- The relationship is **states and transitions over time** → the sequence or state-machine types ([`diagram-type-sequence.md`](diagram-type-sequence.md), [`diagram-type-state.md`](diagram-type-state.md)).
 - The relationship is **layers stacked on top of each other** → `diagram-type-stack`.
 
 ## Composition

@@ -17,7 +17,7 @@ Use a different diagram type when:
 - The structure is **side-by-side comparison without directional flow** → `diagram-type-block`.
 - The structure is **a network of structural relationships** → `diagram-type-graph`.
 - The structure is **stacked layers** with no time dimension → `diagram-type-stack`.
-- The structure is **states and transitions over time, with branching by condition** → the (future) state-machine type.
+- The structure is **states and transitions over time, with branching by condition** → the state-machine type ([`diagram-type-state.md`](diagram-type-state.md)).
 
 The block type can express a flow as a left-to-right chain of equal-weighted columns; the flow type is for when the *geometry* of the flow (track variance, junctions, loops) carries information that columns cannot.
 

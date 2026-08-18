@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Deployment diagram skeleton — copy, rename, fill.
+
+  theme-handling: A (theme-neutral)
+  see  pm-documents:ref-svg-diagrams/standards/theme-handling.md
+
+  Placeholder content exercises every affordance of the type: three-level
+  containment nesting, a trust boundary with crossing glyphs, protocol+port
+  edge labels, a first-party / external distinction, mounted material, and a
+  collapsed group.
+  See  pm-documents:ref-svg-diagrams/standards/diagram-type-deployment.md
+  for placement conventions and  visual-language.md  for palette / typography.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 620"
+     role="img" aria-labelledby="title desc"
+     font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
+  <title id="title">Deployment diagram skeleton, placeholder topology</title>
+  <desc id="desc">A placeholder deployment topology used as an authoring skeleton. A host contains one network. Left of a trust boundary sits a first-party gateway with mounted certificate and configuration material, and a collapsed group standing in for N identically-shaped instances. Right of the boundary sit a first-party service and an external component. Two edges cross the trust boundary and are marked with crossing glyphs. Replace every placeholder label, and enumerate the members of any collapsed group in this description.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="9" markerHeight="9" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" class="arrow-fill"/>
+    </marker>
+    <style>
+      .stroke      { stroke: #6e7681; stroke-width: 1.2; fill: none; }
+      .encl        { font-size: 13px; font-weight: 600; fill: #6e7681; }
+      .encl-sub    { font-size: 11px; fill: #6e7681; font-style: italic; }
+      .item        { font-size: 12px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+      .own-bar     { stroke: #6e7681; stroke-width: 3; }
+      .trust       { stroke: #6e7681; stroke-width: 2; stroke-dasharray: 8 4; fill: none; }
+      .trust-lbl   { font-size: 11px; font-weight: 600; fill: #6e7681; }
+      .trust-cross { stroke: #6e7681; stroke-width: 1.2; fill: none; }
+      .arrow       { stroke: #6e7681; stroke-width: 1.5; fill: none; }
+      .arrow-fill  { fill: #6e7681; }
+      .edge-lbl    { font-size: 11px; fill: #6e7681; text-anchor: middle; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+      .mount-stem  { stroke: #6e7681; stroke-width: 1; stroke-dasharray: 2 2; fill: none; }
+      .mount       { font-size: 10px; fill: #6e7681; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+      .caption     { font-size: 12px; fill: #6e7681; text-anchor: middle; font-style: italic; }
+    </style>
+  </defs>
+
+  <!-- ============================================================
+       depth 1 — outermost enclosure (host / cluster).  rx=8
+       label band 44 (label + sub-label): children start at y >= 116
+       ============================================================ -->
+  <rect class="stroke" x="24" y="72" width="952" height="456" rx="8"/>
+  <text x="36" y="96"  class="encl">host</text>
+  <text x="36" y="112" class="encl-sub">deployment target — replace with the host or cluster name</text>
+
+  <!-- ============================================================
+       depth 2 — network / namespace.  inset 16, rx=6
+       label band 28: children start at y >= 144
+       ============================================================ -->
+  <rect class="stroke" x="40" y="116" width="920" height="396" rx="6"/>
+  <text x="52" y="140" class="encl">network</text>
+
+  <!-- ============================================================
+       trust boundary — dashed 8 4 at 2.0px, label upright above the
+       top-left corner.  Runs in the gutter between the two regions.
+       ============================================================ -->
+  <line class="trust" x1="470" y1="152" x2="470" y2="496"/>
+  <text x="482" y="144" class="trust-lbl">trust boundary — name what changes, not the mechanism</text>
+
+  <!-- ============================================================
+       depth 3 — first-party component with mounted material
+       ============================================================ -->
+  <rect class="stroke" x="64" y="176" width="280" height="136" rx="4"/>
+  <line class="own-bar" x1="64" y1="184" x2="64" y2="304"/>
+  <text x="76" y="200" class="encl">first-party component</text>
+  <text x="76" y="216" class="encl-sub">the artifact this documentation owns</text>
+  <text x="76" y="244" class="item">listener :8443</text>
+  <text x="76" y="264" class="item">management :9000</text>
+
+  <!-- mounted material — dashed stem, no arrowhead: material, not traffic -->
+  <line class="mount-stem" x1="112" y1="312" x2="112" y2="324"/>
+  <rect class="stroke" x="64" y="324" width="96" height="18" rx="4"/>
+  <text x="72" y="337" class="mount">certificates/</text>
+
+  <line class="mount-stem" x1="212" y1="312" x2="212" y2="324"/>
+  <rect class="stroke" x="176" y="324" width="72" height="18" rx="4"/>
+  <text x="184" y="337" class="mount">config/</text>
+
+  <!-- ============================================================
+       depth 3 — collapsed group.  Count in the label; the members are
+       enumerated in <desc>, never only in the raster.
+       ============================================================ -->
+  <rect class="stroke" x="64" y="368" width="280" height="104" rx="4"/>
+  <line class="own-bar" x1="64" y1="376" x2="64" y2="464"/>
+  <text x="76" y="392" class="encl">variant instances (N)</text>
+  <text x="76" y="408" class="encl-sub">same image, varied configuration</text>
+  <text x="76" y="436" class="item">:port-a  :port-b  :port-c</text>
+
+  <!-- ============================================================
+       depth 3 — first-party component, trusted side
+       ============================================================ -->
+  <rect class="stroke" x="496" y="176" width="200" height="120" rx="4"/>
+  <line class="own-bar" x1="496" y1="184" x2="496" y2="288"/>
+  <text x="508" y="200" class="encl">service</text>
+  <text x="508" y="216" class="encl-sub">first-party</text>
+  <text x="508" y="244" class="item">:8080</text>
+
+  <!-- ============================================================
+       depth 3 — external component: same box, no accent bar
+       ============================================================ -->
+  <rect class="stroke" x="744" y="344" width="200" height="104" rx="4"/>
+  <text x="756" y="368" class="encl">external component</text>
+  <text x="756" y="384" class="encl-sub">not first-party</text>
+  <text x="756" y="412" class="item">:5432</text>
+
+  <!-- ============================================================
+       edges — protocol + port labels in monospace, upright
+       ============================================================ -->
+
+  <!-- crosses the trust boundary: glyph at the intersection -->
+  <line class="arrow" x1="344" y1="236" x2="496" y2="236" marker-end="url(#arrow)"/>
+  <text x="420" y="228" class="edge-lbl">HTTPS :8443</text>
+  <circle class="trust-cross" cx="470" cy="236" r="3.5"/>
+
+  <!-- also crosses the boundary -->
+  <line class="arrow" x1="344" y1="420" x2="744" y2="420" marker-end="url(#arrow)"/>
+  <text x="544" y="412" class="edge-lbl">gRPC :9000</text>
+  <circle class="trust-cross" cx="470" cy="420" r="3.5"/>
+
+  <!-- cross-container edge, orthogonal; label on the longest segment -->
+  <polyline class="arrow" points="596,296 596,384 744,384" marker-end="url(#arrow)"/>
+  <text x="670" y="376" class="edge-lbl">TCP :5432</text>
+
+  <!-- ============================================================
+       footer caption
+       ============================================================ -->
+  <text x="500" y="572" class="caption">Skeleton only. Replace every label, delete the affordances the topology does not use, and render on both backgrounds before committing.</text>
+</svg>

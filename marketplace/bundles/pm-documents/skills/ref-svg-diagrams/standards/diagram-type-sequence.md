@@ -1,6 +1,6 @@
 # Diagram Type — Sequence
 
-Second per-diagram-type standard. Covers sequence diagrams: time-ordered exchanges between actors, where the spatial axis is actor identity and the vertical axis is time.
+Covers sequence diagrams: time-ordered exchanges between actors, where the spatial axis is actor identity and the vertical axis is time.
 
 Reference implementation: `doc/resources/diagrams/build-dispatch-sequence.svg`.
 
@@ -16,8 +16,8 @@ Use a sequence diagram when:
 Use a different diagram type when:
 
 - The relationship is static ("X depends on Y") → block diagram ([`diagram-type-block.md`](diagram-type-block.md)).
-- The structure is states + transitions of one entity → state diagram (`diagram-type-state.md`, when authored).
-- The structure is a fan-out tree (one caller, many callees) → graph diagram (`diagram-type-graph.md`, when authored).
+- The structure is states + transitions of one entity → state diagram ([`diagram-type-state.md`](diagram-type-state.md)).
+- The structure is a fan-out tree (one caller, many callees) → graph diagram ([`diagram-type-graph.md`](diagram-type-graph.md)).
 
 ## Layout
 
