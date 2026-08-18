@@ -34,7 +34,16 @@ Covered:
   difference.
 * A declaration-conformance guard over the derived implementor population: every
   ``verdict_inputs`` declaration is a non-empty list of non-empty strings, uses
-  no recursive ``**``, and rides on a ``head_dependent: true`` step.
+  no recursive ``**``, rides on a ``head_dependent: true`` step, and — for a glob
+  carrying no wildcard, so that it names ONE literal path rather than a family —
+  names a path that exists and is git-tracked. A literal glob bound to no path
+  matches nothing, so the classifier reads the surface as untouched and returns
+  ``preserved``: a skip bought by a typo.
+* The refusal table's rows: each tabled step's own doc carries the refusal section
+  as an ATX HEADING. The match is heading-anchored rather than a bare substring
+  search, because both tabled docs carry the phrase twice — as their own heading
+  and inside a cross-reference to the other step's section — so a substring search
+  survives renaming the heading itself.
 """
 
 from __future__ import annotations
@@ -506,6 +515,79 @@ def test_no_declared_glob_uses_recursive_double_star():
             assert '**' not in glob, f'{step} declares a recursive glob {glob!r}'
 
 
+#: The repository root — the base every declared glob is resolved against. Derived
+#: from this module's own position in the tree (``test/{bundle}/{skill}/``), so it
+#: is a property of the checkout layout rather than of the machine.
+_REPO_ROOT = Path(__file__).parents[3]
+
+#: The glob metacharacters whose presence means a declaration legitimately names a
+#: FAMILY of paths rather than one path. A declaration carrying neither names a
+#: single literal path, which can therefore be required to exist.
+_GLOB_METACHARACTERS = ('*', '?')
+
+
+def _is_wildcard_free(glob: str) -> bool:
+    """True when a declared glob names one literal path rather than a family."""
+    return not any(char in glob for char in _GLOB_METACHARACTERS)
+
+
+def _tracked_paths() -> frozenset[str]:
+    """Every git-tracked path in the repository, repo-relative and slash-separated."""
+    result = subprocess.run(
+        ['git', '-C', str(_REPO_ROOT), 'ls-files', '-z'],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return frozenset(entry for entry in result.stdout.split('\0') if entry)
+
+
+def test_wildcard_free_discriminator_separates_a_literal_from_a_family():
+    """Guards the guard below: a family glob must be EXEMPT and a literal must not.
+
+    Without this, a discriminator that classified everything as a family would make
+    the existence check below vacuously green over the whole population.
+    """
+    assert _is_wildcard_free('marketplace/bundles/plan-marshall/skills/x/SKILL.md')
+    assert not _is_wildcard_free('marketplace/*')
+    assert not _is_wildcard_free('*.py')
+    assert not _is_wildcard_free('scripts/audit?.py')
+
+
+def test_every_wildcard_free_declared_glob_names_a_tracked_path():
+    """A literal ``verdict_inputs`` glob must name a path that exists and is tracked.
+
+    The sibling conformance guards pin non-emptiness, well-formedness,
+    ``head_dependent`` companionship and the no-``**`` rule — none of which notices
+    a glob bound to no path at all. A wildcard-free declaration that names a moved
+    or deleted file silently matches nothing, so the classifier reads "the tree
+    difference touches none of my surface" and returns ``preserved``: the step's
+    stale verdict is kept on the strength of a surface that does not exist. That is
+    a skip bought by a typo.
+
+    Wildcard-bearing globs are exempt because they legitimately name a family that
+    may be empty right now; only a declaration claiming ONE literal path is held to
+    that path existing.
+    """
+    tracked = _tracked_paths()
+    assert tracked, 'git ls-files returned nothing, so this guard would be vacuous'
+
+    offenders = []
+    for step, (globs, _head_dependent) in _declared_surfaces().items():
+        for glob in globs:
+            if not _is_wildcard_free(glob):
+                continue
+            if glob not in tracked:
+                reason = 'not git-tracked' if (_REPO_ROOT / glob).exists() else 'does not exist'
+                offenders.append(f'{step} declares {glob!r} — {reason}')
+
+    assert not offenders, (
+        'These steps declare a wildcard-free verdict_inputs glob that names no '
+        'git-tracked path, so the glob matches nothing and the classifier would '
+        f'return `preserved` on a surface that is not there: {offenders}'
+    )
+
+
 # ---------------------------------------------------------------------------
 # The refusal table's rows are bound to their evidence
 # ---------------------------------------------------------------------------
@@ -523,6 +605,27 @@ _VERDICT_CURRENCY_DOC = (
 
 #: The heading each refusing step's own doc must carry.
 _REFUSAL_HEADING = 'Verdict-input surface — deliberately undeclared'
+
+#: The heading MATCH, anchored to an ATX heading line rather than searched as a
+#: bare substring. Both tabled steps carry the phrase TWICE — once as their own
+#: heading and once inside a cross-reference to the other step's section — so a
+#: substring search over the whole doc stays green when the heading itself is
+#: renamed and only the cross-reference survives. The captured group is the
+#: heading level, reported in the assertion message.
+_REFUSAL_HEADING_RE = re.compile(
+    rf'^(#{{1,6}})\s+{re.escape(_REFUSAL_HEADING)}\s*$', re.MULTILINE
+)
+
+
+def _refusal_heading_level(body: str) -> str | None:
+    """The ATX level of the refusal heading in ``body``, or ``None`` if absent.
+
+    A markdown link whose display text is the heading phrase — the cross-reference
+    form both tabled docs carry — never matches: it is not at the start of a line
+    behind a run of ``#``.
+    """
+    match = _REFUSAL_HEADING_RE.search(body)
+    return match.group(1) if match else None
 
 
 def _tabled_refusals() -> list[str]:
@@ -562,11 +665,41 @@ def test_every_tabled_refusal_carries_its_section():
             'finalize-step implementor — the row names a step that does not exist.'
         )
         body = records[step].read_text(encoding='utf-8')
-        assert _REFUSAL_HEADING in body, (
+        level = _refusal_heading_level(body)
+        assert level is not None, (
             f'{step} is tabled as a recorded refusal but its own doc carries no '
             f'"{_REFUSAL_HEADING}" section. The table would then assert evidence that is not '
-            'there — the exact un-propagated-restatement defect it is meant to survive.'
+            'there — the exact un-propagated-restatement defect it is meant to survive. '
+            'The match is anchored to an ATX heading line: a surviving cross-reference to '
+            'the other step\'s section does not satisfy it.'
         )
+        assert level, f'{step} matched the refusal heading at level {level!r}'
+
+
+def test_refusal_heading_match_ignores_a_cross_reference():
+    """The heading match fires on a heading and NOT on a link to one.
+
+    Both tabled docs carry the phrase twice — as their own heading and inside a
+    cross-reference to the other step's section — so a guard that cannot tell the
+    two apart stays green when the heading alone is renamed. That is the exact
+    defect this anchoring closes, so the discrimination is asserted here rather
+    than assumed.
+    """
+    heading_only = f'## {_REFUSAL_HEADING}\n\nbody text\n'
+    xref_only = (
+        'Some prose citing '
+        f'[§ "{_REFUSAL_HEADING}"](../other/doc.md) and nothing else.\n'
+    )
+
+    assert _refusal_heading_level(heading_only) == '##'
+    assert _refusal_heading_level(xref_only) is None, (
+        'A cross-reference to the section satisfied the heading match, so renaming '
+        'the real heading would leave the guard green — the bare-substring defect.'
+    )
+    assert _REFUSAL_HEADING in xref_only, (
+        'The cross-reference fixture must contain the phrase, or it does not '
+        'demonstrate anything about a substring search.'
+    )
 
 
 def test_no_tabled_refusal_also_declares_a_surface():

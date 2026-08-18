@@ -22,6 +22,15 @@ reads the closed metrics accumulator) is **below this floor** and invisible to a
 frontmatter derivation. That undeclared-edge gap is the defect the plan addresses; this
 module measures the floor honestly rather than asserting a coverage it does not have.
 
+A THIRD, non-gate-relative edge family is derived at the end of this module: a
+**named-step adjacency** that no marker expresses, because its producer→consumer relation
+is a data dependency between three specific steps rather than a property either of them
+declares. ``project:finalize-step-era-stamp-fill`` resolves the ``PR-PENDING`` era-stamp
+sentinel to the real PR number, so it can only run once ``default:create-pr`` has produced
+that number, and it must run before ``default:ci-verify`` validates the tree that carries
+the correction. That is an ordering obligation stated in prose in the step's own doc and,
+until this module derived it, asserted nowhere.
+
 The population is DERIVED from discovery, never hardcoded — a step added later is
 covered automatically — and this module deliberately asserts **no cardinality literal**:
 a hardcoded count is precisely the drift shape this plan removes. The cardinality is
@@ -218,4 +227,63 @@ def test_consumer_side_data_edges_are_undeclared_below_the_floor():
         'A finalize step declared a consumer-side artifact-read marker, which would widen '
         'the derivation past the gate-relative floor this test measures. Re-measure the '
         f'floor and update _ABSENT_CONSUMER_MARKERS: {declarers}'
+    )
+
+
+# ---------------------------------------------------------------------------
+# The named-step adjacency edge — a data dependency no marker expresses
+# ---------------------------------------------------------------------------
+
+#: The era-stamp adjacency's three steps, in the order they must run. The obligation is
+#: stated in ``.claude/skills/finalize-step-era-stamp-fill/SKILL.md``: the step resolves
+#: the ``PR-PENDING`` sentinel to the real PR number, so it needs the PR ``create-pr``
+#: opens, and the correction must be on the branch before ``ci-verify`` reads it.
+_PR_PRODUCER = 'default:create-pr'
+_ERA_STAMP_STEP = 'project:finalize-step-era-stamp-fill'
+_CI_CONSUMER = 'default:ci-verify'
+
+
+def _order_of(step_name: str) -> int:
+    """Read one discovered step's ``order`` off the registry, never a literal."""
+    for record in _finalize_records():
+        if record.get('name') == step_name:
+            order = record.get('order')
+            assert isinstance(order, int), (
+                f'{step_name} was discovered but its frontmatter ``order`` is '
+                f'{order!r}, not an int, so no ordering assertion can read it.'
+            )
+            return order
+    raise AssertionError(
+        f'{step_name} is not among the discovered {_EXT_POINT} implementors, so the '
+        f'era-stamp adjacency assertion has nothing to read and would pass vacuously.'
+    )
+
+
+def test_era_stamp_fill_runs_between_pr_creation_and_ci_verification():
+    """The era-stamp step's order lies STRICTLY between create-pr's and ci-verify's.
+
+    ``project:finalize-step-era-stamp-fill`` rewrites the ``PR-PENDING`` era-stamp
+    sentinel to this plan's real PR number and pushes the correction onto the feature
+    branch. Both bounds are load-bearing and neither is expressed by any frontmatter
+    marker:
+
+    - **After ``default:create-pr``** — the PR number does not exist until the PR is
+      opened, so an earlier order leaves the step with nothing but a guess, which is the
+      guessed-number defect the sentinel was introduced to remove.
+    - **Before ``default:ci-verify``** — the rewritten ``audit.py`` and its test mirror
+      must be on the branch before CI reads the tree, or CI verifies a tree the merge
+      will not contain.
+
+    Every order is READ from discovery, so moving any of the three steps moves the
+    obligation with it and no literal here goes stale.
+    """
+    pr_order = _order_of(_PR_PRODUCER)
+    era_order = _order_of(_ERA_STAMP_STEP)
+    ci_order = _order_of(_CI_CONSUMER)
+
+    assert pr_order < era_order < ci_order, (
+        f'{_ERA_STAMP_STEP} (order {era_order}) must run strictly after '
+        f'{_PR_PRODUCER} (order {pr_order}) — the PR number it resolves the PR-PENDING '
+        f'sentinel to does not exist before then — and strictly before {_CI_CONSUMER} '
+        f'(order {ci_order}), so the rewritten era stamp is on the branch CI reads.'
     )

@@ -1192,6 +1192,46 @@ def _head_contained_in_base(worktree, head_sha: str, base_branch: str) -> bool:
     return rc == 0
 
 
+#: The ONLY ``state`` value the push barrier re-fires on. Every other resolvable
+#: state skips, and the asymmetry is deliberate: re-firing is a PUSH, so an
+#: over-broad re-fire resurrects a landed branch, while an over-broad skip leaves
+#: a genuinely-unpushed branch for the operator to notice. Fail toward the
+#: non-destructive verdict.
+_BARRIER_REFIRE_STATE = 'ahead'
+
+
+def push_barrier_action(state: str) -> str:
+    """Map a ``branch-sync-state`` verdict to the push barrier's re-entry action.
+
+    The push step is a parity-driven barrier, not a done-record-driven one: at
+    re-entry the dispatcher asks this verb what the remote comparison implies
+    rather than trusting a recorded ``done``. This function IS that mapping —
+    the dispatcher branches on the returned ``barrier_action``, so the decision
+    lives in code with a test over it instead of in prose a consumer re-derives.
+
+    - ``ahead`` → ``re-fire``. The tracking ref exists and HEAD is past it, so
+      local commits are genuinely not on origin and the ``done`` record is stale.
+    - ``synced`` → ``skip``. Local HEAD is already on origin.
+    - ``remote_absent_landed`` → ``skip``. The work is contained in the base
+      branch; re-pushing would RESURRECT a landed branch.
+    - ``remote_absent_unverified`` → ``skip``. The tracking ref is absent and its
+      cause is ambiguous (never-pushed and squash-merged-and-deleted are
+      indistinguishable from local state alone), so the barrier DECLINES rather
+      than routing an under-determined verdict to a destructive re-push.
+
+    An unrecognised state also maps to ``skip``, for the same fail-toward-safety
+    reason: a verdict this mapping does not understand is not evidence that a
+    push is safe.
+
+    Args:
+        state: The ``state`` field of a successful ``branch-sync-state`` payload.
+
+    Returns:
+        ``'re-fire'`` or ``'skip'``.
+    """
+    return 're-fire' if state == _BARRIER_REFIRE_STATE else 'skip'
+
+
 def cmd_branch_sync_state(args):
     """Report the push-parity state of the plan's feature branch vs origin.
 
@@ -1219,6 +1259,13 @@ def cmd_branch_sync_state(args):
         assert "safe to re-push" and surfaces the ambiguity instead.
 
     ``remote_sha`` is present only when the tracking ref resolves.
+
+    Every successful payload also carries ``barrier_action`` —
+    :func:`push_barrier_action` applied to the returned ``state`` — so the push
+    barrier's consumer branches on a field this verb computes rather than
+    re-deriving the state→action mapping in prose. The error payloads carry no
+    ``barrier_action``: an unresolvable state is not a verdict to map, and the
+    consumer's own ``status: error`` branch (fail toward pushing) governs it.
     """
     plan_id = args.plan_id
     worktree, error = _resolve_worktree_path_for_plan(plan_id)
@@ -1247,11 +1294,13 @@ def cmd_branch_sync_state(args):
         ['-C', str(worktree), 'rev-parse', '--verify', '--quiet', f'origin/{branch}']
     )
     if rc == 0:
+        state = 'synced' if head_sha == remote_sha else 'ahead'
         return {
             'status': 'success',
             'plan_id': plan_id,
             'branch': branch,
-            'state': 'synced' if head_sha == remote_sha else 'ahead',
+            'state': state,
+            'barrier_action': push_barrier_action(state),
             'head_sha': head_sha,
             'remote_sha': remote_sha,
         }
@@ -1266,6 +1315,7 @@ def cmd_branch_sync_state(args):
             'plan_id': plan_id,
             'branch': branch,
             'state': 'remote_absent_landed',
+            'barrier_action': push_barrier_action('remote_absent_landed'),
             'head_sha': head_sha,
             'base_branch': base_branch,
         }
@@ -1275,6 +1325,7 @@ def cmd_branch_sync_state(args):
         'plan_id': plan_id,
         'branch': branch,
         'state': 'remote_absent_unverified',
+        'barrier_action': push_barrier_action('remote_absent_unverified'),
         'head_sha': head_sha,
         'base_branch': base_branch,
     }

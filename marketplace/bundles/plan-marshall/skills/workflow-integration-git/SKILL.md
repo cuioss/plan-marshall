@@ -175,7 +175,7 @@ pushed: true
 | `force-push-with-lease` | `(--plan-id \| --project-dir --branch)` | Force-push feature branch to origin with `--force-with-lease` guard (post-rebase). Resolves branch and worktree path from plan metadata when `--plan-id` is used. |
 | `switch-and-pull` | `(--plan-id \| --project-dir) --base` | Checkout `--base` on the main checkout and pull from origin. Resolves main checkout root from plan metadata when `--plan-id` is used. |
 | `prune-local-and-remote-ref` | `(--plan-id \| --project-dir --head) [--mode local_and_remote\|local_only]` | Delete local feature branch and optionally prune the remote-tracking ref after merge. Internal `show-ref` guard skips ref deletion when already absent. Default mode `local_and_remote`; use `local_only` in local-only plans. |
-| `branch-sync-state` | `--plan-id` | Report push parity of the plan's feature branch vs its `origin/{branch}` tracking ref: `ahead` \| `synced` \| `remote_absent_landed` \| `remote_absent_unverified` (a missing ref is disambiguated so a merged-and-deleted branch is never re-pushed). Pure read-only comparison (`git rev-parse HEAD` vs `git rev-parse origin/{branch}`), no fetch. Resolves branch from `metadata.worktree_branch` and the tree via the canonical worktree-resolution channel. |
+| `branch-sync-state` | `--plan-id` | Report push parity of the plan's feature branch vs its `origin/{branch}` tracking ref: `ahead` \| `synced` \| `remote_absent_landed` \| `remote_absent_unverified` (a missing ref is disambiguated so a merged-and-deleted branch is never re-pushed), plus the `barrier_action` (`re-fire` \| `skip`) the push barrier's consumer branches on. Pure read-only comparison (`git rev-parse HEAD` vs `git rev-parse origin/{branch}`), no fetch. Resolves branch from `metadata.worktree_branch` and the tree via the canonical worktree-resolution channel. |
 | `worktree-path` | `--plan-id` | Resolve the persisted worktree path via `manage-status get-worktree-path` |
 | `worktree-create` | `--plan-id --branch [--base]` | Run `git worktree add` plus project-state bookkeeping (`metadata.use_worktree`/`worktree_path`/`worktree_branch`) |
 | `worktree-remove` | `--plan-id [--force]` | Remove the worktree first, then delete the branch ref |
@@ -446,12 +446,22 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 - `remote_absent_landed` — `origin/{branch}` does not resolve AND HEAD is an ancestor of `origin/{base_branch}` (the branch's work already landed; it merged and the remote branch was deleted). `remote_sha` is omitted; `base_branch` names the ref used to prove containment. The push barrier must NOT re-fire — re-pushing would resurrect a landed branch.
 - `remote_absent_unverified` — `origin/{branch}` does not resolve AND containment could not be proven (no resolvable base ref, or HEAD is not an ancestor — which a squash merge also produces). Never-pushed and squash-merged-and-deleted are indistinguishable from local state alone, so the verb DECLINES to assert "safe to re-push". `remote_sha` is omitted; `base_branch` carries the base checked (or `null`). The push barrier declines to re-fire on this state.
 
+**Barrier action**: every **successful** payload also carries `barrier_action` — `re-fire` on `ahead`,
+`skip` on every other state, including one this verb learns to emit later. The push barrier's consumer
+branches on **this field**, not on the `state` token, so the state→action mapping lives in one place
+(`push_barrier_action`) with a test over it instead of being re-derived in each consumer's prose. An
+**error** payload carries no `barrier_action`: an unresolvable state is not a verdict to map, and the
+consumer's own `status: error` branch (fail toward pushing) governs it. The asymmetry — only `ahead`
+re-fires — is deliberate, because re-firing is a PUSH: an over-broad re-fire resurrects a landed
+branch, while an over-broad skip leaves a genuinely-unpushed branch for the operator to notice.
+
 **Output** (TOON, remote ref present):
 ```toon
 status: success
 plan_id: EXAMPLE-PLAN
 branch: feature/EXAMPLE-PLAN
 state: ahead
+barrier_action: re-fire
 head_sha: abc123def456
 remote_sha: 789fed654cba
 ```
@@ -462,6 +472,7 @@ status: success
 plan_id: EXAMPLE-PLAN
 branch: feature/EXAMPLE-PLAN
 state: remote_absent_unverified
+barrier_action: skip
 head_sha: abc123def456
 base_branch: main
 ```
