@@ -26,8 +26,11 @@ Opened against HEAD:
 - `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py`
   — `_parse_dispatch_boundary_totals` and its `_BC_LEDGER_*` constants (lines 7187–7330).
 - `test/plan-marshall/plan-retrospective/test_analyze_logs.py`
-  — `TestDispatchBoundaryContextLoadColumns` in full (lines 710–980).
+  — `TestDispatchBoundaryContextLoadColumns` in full (lines 710–1229, fourteen tests).
 - `test/plan-marshall/manage-metrics/test_record_model_representability.py` (lines 440–500, 775–830).
+  ⚠ Corrected during adversarial review: those two windows do **not** cover
+  `test_undatable_zeros_are_not_measurements_in_either_reader` (line 910), which is a fourth
+  non-vacuous guard on the fourth state and bears directly on G1 — see § Adversarial review.
 
 Executed (not read):
 
@@ -43,8 +46,11 @@ byte snapshot taken with `cp`, restored with `cp` back — never `git checkout`/
 `git diff --quiet` returned 0 after every restore):
 
 1. `provably_post_change = False` → `True` (re-creates the pre-fix defect) →
-   `test_all_zero_no_fingerprint_row_reads_indeterminate` and
-   `test_indeterminate_zero_coexists_with_unrecognised_cell` **FAILED**.
+   `test_all_zero_no_fingerprint_row_reads_indeterminate`,
+   `test_indeterminate_zero_coexists_with_unrecognised_cell` **and**
+   `test_record_model_representability.py::test_undatable_zeros_are_not_measurements_in_either_reader`
+   **FAILED** (3 failed, 124 passed). ⚠ The third was added during adversarial review: the original
+   run of this mutation covered only `test_analyze_logs.py`, so it under-reported the guard set.
 2. Removed the `provably_post_change = True` set on a nonzero cell (marks every zero indeterminate) →
    `test_nonzero_fingerprint_keeps_measured_zeros_measured` **FAILED**.
 3. Made `row['indeterminate_columns']` conditional on non-emptiness (the empty-collapses-to-absent
@@ -101,6 +107,20 @@ measured). Neither is reachable from a well-formed writer.
 anyway: `:624` skips a row whose key is absent and counts it as a writer-side gap, never as a zero, so
 the parser fix is not undone by it either. D3's absence-claim — the plan's flagged higher-risk half —
 holds both at landing and now.
+
+⚠ **The derivation above was narrower than it claimed** (corrected during adversarial review). The
+grep pattern `dispatch_boundaries|metrics-dispatch-boundaries` does not match
+`manage-metrics/scripts/_ledger_reconciliation.py:214` `load_boundary_rows`, a **fourth reader of the
+dispatch-boundary artifact** which names the file only in hyphenated prose. Re-swept with
+`dispatch_boundar|dispatch-boundar` across `marketplace/` and `.claude/`, and cross-checked with a
+column-name sweep (`input_tokens|cache_read_input_tokens|indeterminate_columns|unmeasured_columns`),
+which returns exactly four files: the writer (`manage-metrics.py`), the reader (`analyze-logs.py`),
+the audit re-reader (`audit.py`), and `platform-runtime/scripts/claude_runtime.py` — the latter reads
+`message.usage` off session transcripts (the producer side), not the ledger. `load_boundary_rows`
+parses columns 1–3 only (`timestamp`, `termination_cause`, `total_tokens`) and consumes none of the
+four context-load columns, so **D3's answer is unchanged**: three consumers of columns 6–9 at
+`d5b2c4e3`, four today. Only the claim that the pattern *derived* the set rather than *sampled* into
+it needed narrowing.
 
 ## Report accuracy
 
@@ -179,3 +199,93 @@ while `test_unmeasured_token_reads_as_absent_not_zero`'s docstring kept pointing
    Red-first was instead re-established directly, by the three mutations above.
 5. **CI and reviewer-participation claims** (check-run states, `coderabbitai` rate-limit,
    "no actionable comments"). These live on the GitHub PR, not in the tree; not fetched.
+
+## Adversarial review
+
+**Reviewed by:** an independent agent that did not write this document.
+
+**Checked.** Every `high` gap (there are none), every clean-pass deliverable row, every "swept, clean"
+claim, and every figure stated above. By these means:
+
+- **Re-executed the parser.** A standalone driver imported `analyze-logs.py` and called
+  `_parse_dispatch_boundary_file` on eight synthetic artifacts, printing the whole row dict:
+  `0,0,0,0` → four `indeterminate_columns`, no value keys; `9100,0,0,0` → `input_tokens=9100` plus
+  three measured `0`s; `unmeasured,0,0,0` → `unmeasured_columns=['input_tokens']` plus three measured
+  `0`s; `0,not-an-int,0,0` → three indeterminate plus `unrecognised_columns=['output_tokens']`; legacy
+  five-column → four `unmeasured_columns` with `indeterminate_columns == []`; seven-column → two
+  measured plus two `unmeasured_columns`; seven-column-with-zeros → two indeterminate plus two
+  unmeasured; `-5,0,0,0` → `input_tokens=-5` with measured siblings. **All five results the D2 row
+  states, and both edge behaviours § D2 records as by-design, reproduced exactly.**
+- **Re-applied all three mutations** to `analyze-logs.py`, independently. `git diff --quiet` returned
+  0 before each; bytes snapshotted with `cp` to `$TMPDIR` and restored by re-editing the same lines
+  back — never `git checkout`/`restore`/`stash`; `diff -q` against the snapshot and `git diff --quiet`
+  both clean after every restore, and after the last one. Results: mutation 1 → **3 failed / 124
+  passed** (one more than reported — see the corrected bullet under *Mutation checks*); mutation 2 →
+  **1 failed / 126 passed**, exactly as reported; mutation 3 → **3 failed / 124 passed**, exactly the
+  three tests reported. **No guard is vacuous, confirmed independently rather than repeated.**
+- **Re-derived every figure.** `test_analyze_logs.py` → 110 passed; `-k DispatchBoundary` → 14 passed;
+  `test_record_model_representability.py` → 17 passed. Test-def counts at `d5b2c4e3` → **78 + 15**,
+  today → **109 + 17** (`git show d5b2c4e3:<path> | grep -c 'def test_'`). Supersession → **exactly
+  six** commits in `d5b2c4e3..HEAD` over the five source paths. Landed diff → **exactly seven** paths,
+  none under `.plan/`. `.plan/` present, `metrics-dispatch-boundaries-*.toon` → **0**.
+- **Re-resolved every commit SHA and symbol reference:** `85432346`, `d5b2c4e3` (#1255), `d1c31533`
+  (#1278), `88894aef` (#1258), `89edc991` (#1260), `85abeeb9` (#1293), `2586ef00` (#1129) — all
+  resolve to the subjects named. `SKILL.md:448` carries the four-way sentence; `manage-metrics.py:136`
+  names `INDETERMINATE`; `audit.py:7280` reads "reads FOUR ways" with `_BC_LEDGER_UNMEASURABLE_FIELDS`
+  at `:7224` scoping `_BC_LEDGER_COLUMNS[5:]`; `test_analyze_logs.py:946` carries the re-pointed
+  docstring cross-reference. Line references for D4 (`:761`, `:806`, `:842`, `:872`, `:907`) are exact.
+- **Re-ran the sweeps with broader patterns than the originals.** `grep -rin` over `marketplace/`,
+  `.claude/`, `test/` and `doc/developer/` for `three.way|three ways|three-state|three states|reads
+  three|two-plus-one|three distinguishable`, then a second sweep for every `unrecognised`-beside-
+  `measured` restatement lacking `indeterminate`. **Beyond the three sites G1 already names, no stale
+  restatement of the four-column cell read exists.** `analyze-logs.py:561` and
+  `.claude/…/checks/billing-composition.md:47` were both checked and both already name the fourth
+  state. The D3 consumer sweep was widened as described in § D3.
+- **Compared the three hand-mirrored constant sets** member-by-member (`_DISPATCH_CONTEXT_LOAD_COLUMNS`
+  / `_CONTEXT_LOAD_COLUMNS` / `_BC_LEDGER_COLUMNS[5:]`, plus the `unmeasured` literal in each). They
+  agree in name and order. No lock-step drift.
+- **Re-read the writer's D0 evidence at symbol:** `cmd_record_dispatch_boundary`
+  (`manage-metrics.py:3101`) writes a literal three-line header with no schema or version field
+  (`:3210-3214`) and emits `int(measured)` or the token only. D0's "there is no discriminator" holds
+  by source read.
+
+**NOT re-checked** (and inheriting the original document's limits): the archived corpus and every
+claim resting on it — no dispatch-boundary ledger exists in this checkout; the `./pw verify
+plan-marshall` module total; the original empirical pre-fix observation against merged main; the
+GitHub PR surface (check-run states, reviewer participation). No mutation was applied to
+`manage-metrics.py`, `audit.py`, or either test file — only to `analyze-logs.py`.
+
+| Item | Original claim | Verdict | Evidence |
+|---|---|---|---|
+| Verdict | `implemented-with-gaps` | **upheld** | No deliverable is unimplemented: D0/D2/D3/D4 all pass with non-vacuous guards, and D1 is N/A by the plan's own design (D0's "there is none" selects D2 over D1, and the plan declares that a legitimate result). All three gaps are stale statements, none a behaviour defect — so `partially-implemented` would overstate |
+| D0 row | Yes / Yes / Yes / Partial | **upheld** | Writer header re-read at `manage-metrics.py:3210-3215` — no schema or version field; `find .plan -name 'metrics-dispatch-boundaries-*.toon'` → 0. The non-numeric population is the only answer derivable from git-tracked state |
+| D1 row | N/A, precondition refuted | **upheld** | `git show --stat -M d5b2c4e3` → 7 paths, none under `.plan/`. The corpus was not rewritten |
+| D2 row | Implemented, correct, 3 mutations red | **upheld** | All ten executed parser results reproduced; all three mutations re-applied and red, one of them redder than reported |
+| D3 row | Consumer set derived, three consumers | **upheld, derivation narrowed** | Two broader sweeps found a fourth *file* reader (`_ledger_reconciliation.py:214`) that reads columns 1–3 only. Consumer set of columns 6–9 unchanged; § D3 corrected to say the original pattern sampled rather than derived |
+| D4 row | Red-first, both directions, non-vacuous | **upheld** | Re-established by independent mutation rather than by the report's word. Every cited line number exact |
+| G1 | `medium`, incomplete sweep, three stale sites | **re-severitied to `low` + rewritten** | Three sites confirmed at `:450`/`:455`/`:783` and pre-existing at old `:482`/`:487`/`:815`. But: the sibling audit-ledger test was at old `:848`, not `:815`; the Done-when's `grep -n` can never return line 690 (`THREE-way` needs `-i`), so the condition was unsatisfiable as written; and the Fix's premise that the fourth state is otherwise unpinned is false — `test_undatable_zeros_are_not_measurements_in_either_reader` (`:910`) pins it through both readers and turns red under mutation 1. All three corrected in `gaps.md` |
+| G2 | `medium`, stale cell-read table row | **upheld unchanged** | `data-format.md:923` says an absent column reads *unrecognised*; `:940` and the code say *unmeasured*. Executed, not inferred: a seven-column row yields `unmeasured_columns == ['cache_read_input_tokens', 'cache_creation_input_tokens']`, `unrecognised_columns == []`. `analyze-logs.py:1052` carries the same wrong clause. `git log -S 'or a column the row does not have'` → `2586ef00` (#1129), so it does predate the plan |
+| G3 | `low`, wrong byte-identity pair | **upheld unchanged** | `:890` names rows 2 and 3; the example block at `:884`–`:886` makes them `unmeasured×4` and `9100,0,0,0` — pre-token `0,0,0,0` vs `9100,0,0,0`, not byte-identical. The earlier clause "the three distinguishable cases" was also checked and is *not* stale (it describes writer representations, not reader states) |
+| "sweep, clean" (F1–F3 lock-step) | three surfaces corrected, sweep incomplete | **upheld** | Re-swept case-insensitively with six patterns across four trees; no stale restatement beyond G1's three |
+| Figures: 110 / 14 / 17 / 78+15 / 109+17 / six commits / seven paths / 0 ledgers | as stated | **upheld** | Each re-derived by running the command, not by reading the number |
+
+**Documents corrected.** In `gaps.md`: G1 re-severitied `medium` → `low` with the reason stated
+inline; its wrong sibling-test line reference `:815` corrected to old `:848` / today `:816`; its
+Done-when made satisfiable (`grep -in`, and line 690 identified by its actual text); its Fix rationale
+corrected to stop claiming the fourth state is unpinned; a `## Refuted during adversarial review`
+section added recording that none of the three was refuted, plus three findings considered and
+declined with reasons. The `**Open items:** 3` count re-derived and annotated. In `verification.md`:
+the mutation-1 result corrected from two failures to three; the
+`TestDispatchBoundaryContextLoadColumns` range corrected from 710–980 to 710–1229; the
+representability read-window annotated with the guard it missed; § D3 given the narrowing above.
+
+**Residual doubt — what a third reviewer should look at first.** (1) The archived corpus. Every
+claim about blast radius still rests on a finding filed elsewhere and on rows no run in this clone can
+see; the plan's own Notes forbid going after `.plan/`, so this is unresolvable here rather than
+unexamined. (2) `audit.py`'s ported provenance gate — it lives outside the crawled inventory, only its
+constants and docstring were read here, and `_parse_dispatch_boundary_totals` was never executed
+directly on a mixed-fingerprint ledger (only indirectly, through
+`test_undatable_zeros_are_not_measurements_in_either_reader`). (3) Whether the conservative direction
+— a post-token, genuinely-all-zero row reading `indeterminate` — is truly unreachable, which rests on
+the assumption that a real dispatch never reports `input_tokens: 0`; that assumption was accepted
+here, not measured.
