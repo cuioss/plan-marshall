@@ -1,6 +1,6 @@
 # Run report — 070-architecture-and-orchestration-test-reduction (run 01)
 
-**Date (UTC):** 2026-08-18    **Branch:** `claude/architecture-orchestration-test-reduction-iuthfe` (harness-assigned; kept as-is per the lane contract)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-18    **Branch:** `claude/architecture-orchestration-test-reduction-iuthfe` (harness-assigned; kept as-is per the lane contract)    **PR:** _see below_    **Outcome:** **completed** — D1, D3's B7 half, D4's B3 half and D5 delivered; D2 correctly not built (premise refuted); D3's B6 half and D4's B5 remainder reported not done
 
 ## Skills loaded
 
@@ -522,8 +522,8 @@ not do. They are recorded in § Residue as a candidate list, deliberately not cl
 
 | Figure | Before | After | Command / population |
 |---|---:|---:|---|
-| Slice lines | 65,163 | **65,054** | `xargs wc -l` over the Expected-surface list |
-| Line delta | — | **−109 (0.167%)** | derived from the two above, re-measured after the verification rounds added ~70 lines of restored rationale |
+| Slice lines | 65,163 | **65,055** | `xargs wc -l` over the Expected-surface list |
+| Line delta | — | **−108 (0.166%)** | derived from the two above, re-measured after the final verification round. It moved twice during the run — −179 before the restorations, −109 after them, −108 after round 3 — and is stated here as last measured, not as first computed |
 | `.py` files in slice | 180 | 180 | none added, none deleted |
 | Collected tests | 3,622 | **3,622** | `pytest --collect-only -q` over the slice |
 | Passed / failed | 3,622 / 0 | **3,622 / 0** | `pytest -q -p no:randomly` over the slice |
@@ -562,7 +562,7 @@ reported as a measurement rather than argued from that expectation.
 | 4 | The slice is order-independent | ✅ **after a fix** — it FAILED first, found a pre-existing defect, and now passes in both orders at 3,622 each |
 | 5th (slice-specific) | Daemon-routing neutralization still engages **and discriminates** | ✅ passes as shipped; negative arm fails when the disengaging marker is removed |
 
-**On the line delta.** −0.167% sits inside the epic's measured band (`030`–`060` returned 2.56%,
+**On the line delta.** −0.166% sits inside the epic's measured band (`030`–`060` returned 2.56%,
 0.58%, 0.52%, 0.72% against floors of 20–30%). The plan retires its own 20% floor and says the delta
 is *reported, not targeted*; this run reports it and chased nothing. No assertion, rationale, or
 comment was deleted to move it — the removed lines are duplicated loader preambles, duplicated
@@ -632,6 +632,88 @@ known type), and it is exactly the "a variable used as a type" shape the lane co
 **test-only**, so it is invisible to `quality-gate`'s production-scoped mypy and to the test run
 itself; CI runs the full `verify` and would have caught it. The two annotations were dropped, matching
 `test_acceptance_fallback.py`'s already-unannotated `_config`, with a docstring line saying why.
+
+## Findings and the stop record
+
+Every finding from the verification sub-agents, the build gate and the doctor, recorded **per
+instance**. Dispositions: *fixed*, *rejected-with-reason*, *deferred*, or *survivor*.
+
+### How the loop ended
+
+**Round budget: 3, declared before the first dispatch.** The plan states none, so the run declared one
+up front, before knowing what the rounds would say.
+
+⛔ **The loop ended on the BUDGET exit, not on a verifier's "nothing remains".** Round 3's verifier
+answered the stop question **YES** — sixteen condition-A items and one condition-B item remained at the
+moment it was asked. Everything condition A forbids leaving open was then **fixed** (commit `5e6ae7e`),
+and condition B's item was **characterised** rather than left implied. What the run did **not** do is
+re-dispatch a fourth round to confirm that answer had become "no", because the budget was spent.
+
+**This is a stopped loop, not defect-free code**, and the two must not be blurred. The run is stopping
+on a declared budget, having fixed what it was told; it is not asserting convergence. A fourth round
+would very likely find more — every round here found defects in the previous round's fixes, including
+three the run itself introduced while fixing round 1.
+
+**Were the late rounds' findings narrower?** Partly, and honestly: no. Round 3's yield included **five
+genuine code defects** (a sentence fragment, an orphaned antecedent, three citations in string
+literals, a docstring describing a mechanism its function no longer used, a dead constant, two phantom
+file paths) alongside the report-figure corrections. That is **not** the "findings are now only about
+the run's own report" narrowing the contract describes as a signal it is safe to stop. The code was
+still yielding at the budget's end.
+
+**Residue to assume remains.** Read the deliverables as still carrying defects of the kind round 3
+found: prose that asserts more than the code shows, citations in shapes the doctor rule cannot match,
+and figures in this report that a fourth derivation would dispute. Three independent derivations of one
+count in this run produced three different answers.
+
+### Findings
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| F1 | plan gate | `test/conftest.py:1128` names `build_test_helpers.py` by path; D1's rename makes it stale. Symbol: `_routing_namespaces`. Corrected path: `test/plan-marshall/_build_extension_fixtures.py` | **proposal** — `090` § D6 owns it; this run may not edit `conftest.py` |
+| F2 | build gate | `test-compile` failed with two `no-any-return` errors invisible to `quality-gate` and to the test run | **fixed** (`a55cbf0`) |
+| F3 | condition 4 | Pre-existing order-dependent failure in `test_cmd_resolve.py`, reproduced on `origin/main` | **fixed** (`df79ccd`) |
+| F4 | cold read 1 | 4 of 10 docstrings over-stripped — consequence removed with the citation | **fixed** (`a55cbf0`) |
+| F5 | cold read 2 | "run a Maven build against a JavaScript edit" — false for the fixture, written by this run | **fixed** (`0fb3cb7`) |
+| F6 | cold read 2 | "the module … cannot build the file that changed" — unestablished, written by this run | **fixed** (`0fb3cb7`) |
+| F7 | cold read 2 | "`module-tests` **is** the plain Surefire goal" asserted where the fixture is pyproject — written by this run | **fixed** (`0fb3cb7`) |
+| F8 | cold read 2 | `test_cmd_resolve.py` gave pyproject's floor as 600s; it is 330, and 600 is the ceiling | **fixed** (`0fb3cb7`) |
+| F9 | cold read 2 | Same file called Maven "the only engine family" yielding `per_task`; a pyproject case below asserts it | **fixed** (`0fb3cb7`) |
+| F10 | cold read 2 | Section header "Case (a): … -> orchestrator tier" above a test asserting `per_task` | **fixed** (`0fb3cb7`) |
+| F11 | self-sweep | "this fixture's executables are engine-agnostic" — they are pyproject's; written by this run one commit earlier | **fixed** (`6fe7e52`) |
+| F12 | self-sweep | Line delta stale (−179/0.275%) after the restorations added lines | **fixed** (`b7d725d`) — now −109/0.167% |
+| F13 | self-sweep | `doc/developer/testing.adoc` named the renamed module in a live description of current plumbing | **fixed** (`17294ba`) |
+| F14 | round 3 | `test_skill_profile_resolve_commands.py` — B3 rewrite left a subordinate clause with no main clause | **fixed** (`5e6ae7e`) |
+| F15 | round 3 | Same file — "pre-lesson behaviour" antecedent deleted by the same rewrite | **fixed** (`5e6ae7e`) |
+| F16 | round 3 | Same file — three lesson ids surviving in assertion-message string literals | **fixed** (`5e6ae7e`) |
+| F17 | round 3 | `test_test_scope_divergence.py` — docstring described `spec_from_file_location` after conversion to `load_script_module`, omitting the new registration | **fixed** (`5e6ae7e`) |
+| F18 | round 3 | Same file — `_PYPROJECT_EXTENSION_FILE` orphaned by the conversion | **fixed** (`5e6ae7e`) |
+| F19 | round 3 | Two modules cite `test/plan-marshall/conftest.py`, which does not exist | **fixed** (`5e6ae7e`) |
+| F20–F27 | round 3 | Eight report figure/pointer errors (dangling `§ Findings, F1`; 16 vs 15 modules; ExecuteConfig 4 vs 3; `execute_config` 4 vs 3 copies; prose baseline 43 vs 42; condition-4 column unqualified; unlisted `spec_from_file_location` site; `plan-orchestrator` credited with deferred imports it has none of) | **fixed** (`5e6ae7e`) |
+| F28 | round 3 | Registration-name counts irreproducible — three methods, three answers | **fixed** (`5e6ae7e`) — restated with its derivation and a warning to re-derive |
+| F29 | round 3 | D3's literal done-when ("no `spec_from_file_location` remains") not met — 9 sites remain | **corrected to partial** (`5e6ae7e`); the sites are listed with owners |
+| F30 | round 3 | D4/B3 reported complete; the done-when is met but ~20 citations survive in shapes the rule cannot match | **corrected to partial** (`5e6ae7e`); listed per file, **deferred** to a follow-up run |
+| F31 | round 3 | `rule-catalog.md` and `doctor-test-conventions.md` say the preamble rule has "One known-legitimate occurrence"; D1 created a second | **proposal** — `marketplace/bundles/**` is out of scope |
+| F32 | round 3 | Four conversions turned a non-registering load into a registering one; two were undisclosed | **survivor, characterised** — see below |
+| F33 | round 3 | The order-dependency candidate class | **survivor, characterised** — see § "Condition 4" |
+
+### Survivors, each re-put to the verifier in the stopping round
+
+**F32 — the four non-registering → registering conversions.** Bound: each of the four names occurs
+nowhere else under `test/` or `marketplace/`, so the registration displaces no other copy and nothing
+resolves those names by import. The promise it stays outside of is the order-dependency class this run
+fixed, which requires a *shared* name; the full slice passes in both directory orders after the change.
+The two undisclosed ones now carry that bound in the report and in the code.
+
+**F33 — the order-dependency candidate class** (36 pairs by the AST derivation). Bound: the whole slice
+passes in both orders; exactly one instance was ever observed live, and it is fixed; the rest are
+**candidates, not claimed defects**, each needing its production consumer checked for the
+deferred-import shape. Most lie in concurrently-running siblings' slices this plan may not edit.
+
+**F30 — the ~20 surviving citations** is a **deferred** finding, not a survivor: it is real, unfixed,
+and this run does not argue it needs no fixing. It carries the same disclosure a survivor does — the
+bound is that it is confined to docstrings, comments and assertion-message strings within this slice,
+changing no behaviour — and it is owned by a follow-up run of this plan.
 
 ## Reviewer participation
 
