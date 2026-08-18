@@ -34,8 +34,10 @@ Facts emitted:
     merged diff touched production code) is a mis-prune — the highest-value
     output. An absent or unreadable decision log substantiates no cause at all,
     so the verdict is ``inconclusive`` rather than a fabricated ``fail``.
-  * ``cost_preview`` — predicted (init preview) vs actual (``execution_log``)
-    token totals and the delta, feeding the §4.6a recalibration loop.
+  * ``cost_preview`` — the ``execution_log`` token sum beside the init preview,
+    each naming the POPULATION it measures, and a ``comparison`` verdict that
+    feeds the ``cost_size_token_table`` recalibration loop only when the two
+    populations match.
   * ``kept_step_yield`` — finding count as the adversarial-step yield proxy.
   * ``recompose_divergence`` — the lane_resolution decision-log LINE count. Not a
     recompose count despite the name; see :func:`lane_resolution_view`.
@@ -425,14 +427,71 @@ def footprint_has_production(files: list[str]) -> bool:
     return any(classify_path(path, routes) in _PRODUCTION_CATEGORIES for path in files)
 
 
+# ---------------------------------------------------------------------------
+# The execution_log's population, and the population-match gate
+# ---------------------------------------------------------------------------
+#
+# ``execution_log[]`` is NOT a whole-plan ledger and cannot become one: its
+# writer refuses any row whose phase is outside ``VALID_RECORD_PHASES``
+# (``manage-execution-manifest/scripts/_manifest_core.py``), so a sum over it
+# measures phases 5 and 6 and NOTHING else. Naming that sum ``actual_tokens``
+# asserted a whole-plan actual it never held.
+#
+# This tuple is a hand-mirror of that writer-side constant, held in the same
+# cross-skill shape ``manage-metrics``'s ``_EXPLORATION_BUCKETS`` uses: the two
+# skills run in different processes and this script cannot import the manifest
+# skill's private module. The mirror is held honest by the contract-drift test
+# ``test_execution_log_population_matches_writer`` in
+# ``test/plan-marshall/plan-retrospective/test_check_routing_decisions.py``,
+# which imports ``VALID_RECORD_PHASES`` from the writer and fails loudly when a
+# phase is added or removed on either side.
+EXECUTION_LOG_PHASES = ('5-execute', '6-finalize')
+
+#: The population label the ``execution_log`` sum carries. A comma-joined phase
+#: list rather than a coined vocabulary word: this script is a CONSUMER of the
+#: population vocabulary, never its author, and the phase set is the exact,
+#: checkable statement of what the sum covers.
+EXECUTION_LOG_POPULATION = ','.join(EXECUTION_LOG_PHASES)
+
+#: The metadata key naming the population the persisted cost preview measures.
+#: No producer writes the preview itself today, so no producer writes this
+#: either — which is precisely why an absent value must NOT read as "matches".
+PREDICTED_POPULATION_KEY = 'execution_profile_cost_preview_population'
+
+#: The population value used when the record states none. It never equals
+#: ``EXECUTION_LOG_POPULATION``, so an unstated population always refuses.
+POPULATION_UNSTATED = 'unstated'
+
+#: ``cost_preview.comparison`` verdicts. ``not_attempted`` — no prediction was
+#: recorded, so there is nothing to compare. ``refused`` — a prediction exists
+#: but measures a different population than the sum, so no delta is emitted.
+#: ``computed`` — the two populations match and the delta is trustworthy.
+COMPARISON_NOT_ATTEMPTED = 'not_attempted'
+COMPARISON_REFUSED = 'refused'
+COMPARISON_COMPUTED = 'computed'
+
+
 def sum_execution_log_tokens(manifest: dict[str, Any]) -> int:
-    """Sum the ``total_tokens`` attribution across every ``execution_log`` row."""
+    """Sum ``total_tokens`` across the ``execution_log`` rows this sum CLAIMS to cover.
+
+    Filtered to :data:`EXECUTION_LOG_PHASES`, which is the population
+    :data:`EXECUTION_LOG_POPULATION` publishes beside the figure. Summing every
+    row regardless of phase and then labelling the result with a phase list makes
+    the label a promise about the writer rather than a property of the sum — and
+    a manifest carrying an out-of-population row (hand-edited, or archived from
+    before the writer's phase gate existed) would then be summed under a label
+    naming phases it did not measure. That is this plan's own keeper rule applied
+    to its own deliverable: the figure carries its population, or it is not named
+    for one.
+    """
     rows = manifest.get('execution_log')
     if not isinstance(rows, list):
         return 0
     total = 0
     for row in rows:
         if isinstance(row, dict):
+            if str(row.get('phase')) not in EXECUTION_LOG_PHASES:
+                continue
             value = row.get('total_tokens')
             if isinstance(value, int):
                 total += value
@@ -561,24 +620,101 @@ def evaluate_mis_prunes(
 
 
 def evaluate_cost_preview(manifest: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any]:
-    """Compare the init cost preview against the actual ``execution_log`` token total.
+    """Place the init cost preview beside the ``execution_log`` sum, population-matched.
 
-    The predicted total is the init-dialogue preview persisted to
-    ``status.metadata.execution_profile_cost_preview`` (when present); the actual
-    is the summed ``execution_log`` attribution. The signed delta feeds the
-    §4.6a ``cost_size_token_table`` recalibration loop.
+    The recorded figure is the summed ``execution_log`` attribution, emitted as
+    ``execution_log_tokens`` — NOT ``actual_tokens``. It is a sum over phases
+    ``5-execute`` and ``6-finalize`` alone (see :data:`EXECUTION_LOG_PHASES`), so
+    the old name asserted a whole-plan actual the ledger never held, and did so
+    under the one word a reader trusts least critically.
+
+    The prediction is ``status.metadata.execution_profile_cost_preview`` and its
+    population companion :data:`PREDICTED_POPULATION_KEY`. **The delta is emitted
+    only when the two populations are equal.** A population-mismatched
+    subtraction is the defect — not the field name — because it produces a
+    *plausible* number: the ``cost_size_token_table`` recalibration loop
+    reads ``delta_pct``, and a delta between a 2-of-6-phase sum and a prediction
+    covering some other phase set would recalibrate the cost model against a
+    quantity nobody measured. Withholding the delta is what turns that silent
+    choice into a legible refusal.
+
+    ``comparison`` is always present and is one of
+    :data:`COMPARISON_NOT_ATTEMPTED` (no prediction recorded — the state EVERY
+    run is in today, since no producer writes the key),
+    :data:`COMPARISON_REFUSED` (populations differ), or
+    :data:`COMPARISON_COMPUTED` (populations match; ``delta_tokens`` and
+    ``delta_pct`` accompany it and nowhere else).
+
+    Args:
+        manifest: The parsed ``execution.toon`` manifest.
+        metadata: The ``status.json`` metadata block.
+
+    Returns:
+        The ``cost_preview`` fact block.
     """
-    actual = sum_execution_log_tokens(manifest)
+    execution_log_tokens = sum_execution_log_tokens(manifest)
     raw_predicted = metadata.get('execution_profile_cost_preview')
     predicted: int | None = None
-    if isinstance(raw_predicted, int):
+    # `.strip()` before the digit test so a padded value is read rather than
+    # silently discarded — the population field beside it is already stripped,
+    # and one function reading two fields by two rules is how the third state
+    # below goes unnoticed.
+    if isinstance(raw_predicted, bool):
+        predicted = None
+    elif isinstance(raw_predicted, int):
         predicted = raw_predicted
-    elif isinstance(raw_predicted, str) and raw_predicted.isdigit():
-        predicted = int(raw_predicted)
-    preview: dict[str, Any] = {'actual_tokens': actual, 'predicted_tokens': predicted}
-    if predicted is not None:
-        preview['delta_tokens'] = actual - predicted
-        preview['delta_pct'] = round((actual - predicted) / predicted * 100, 1) if predicted else None
+    elif isinstance(raw_predicted, str) and raw_predicted.strip().isdigit():
+        predicted = int(raw_predicted.strip())
+    # RECORDED BUT UNPARSEABLE is a third state, and it is not absence. A value
+    # that is present and cannot be read (`'12.5'`, `'abc'`, `'-100'`) previously
+    # collapsed into `not_attempted` under the reason "no cost preview recorded",
+    # which states an absence the record contradicts — the silent choice this
+    # deliverable exists to replace with a legible one, committed by the code
+    # that replaces it.
+    recorded_unparseable = predicted is None and raw_predicted is not None
+
+    raw_population = metadata.get(PREDICTED_POPULATION_KEY)
+    predicted_population = (
+        raw_population.strip()
+        if isinstance(raw_population, str) and raw_population.strip()
+        else POPULATION_UNSTATED
+    )
+
+    preview: dict[str, Any] = {
+        'execution_log_tokens': execution_log_tokens,
+        'execution_log_population': EXECUTION_LOG_POPULATION,
+        'predicted_tokens': predicted,
+        'predicted_population': predicted_population if predicted is not None else POPULATION_UNSTATED,
+    }
+
+    if predicted is None:
+        preview['comparison'] = COMPARISON_NOT_ATTEMPTED
+        preview['comparison_reason'] = (
+            'status.metadata.execution_profile_cost_preview holds '
+            f'{raw_predicted!r}, which is not a token count — the comparison is '
+            'not attempted, and this is a recorded value that could not be read '
+            'rather than an absent one'
+            if recorded_unparseable
+            else 'no cost preview recorded in status.metadata.execution_profile_cost_preview'
+        )
+        return preview
+
+    if predicted_population != EXECUTION_LOG_POPULATION:
+        preview['comparison'] = COMPARISON_REFUSED
+        preview['comparison_reason'] = (
+            'population_mismatch: the recorded sum measures '
+            f'{EXECUTION_LOG_POPULATION} while the prediction measures '
+            f'{predicted_population}; no delta is emitted, because subtracting '
+            'across populations yields a plausible number that would recalibrate '
+            'cost_size_token_table against a quantity nobody measured'
+        )
+        return preview
+
+    preview['comparison'] = COMPARISON_COMPUTED
+    preview['delta_tokens'] = execution_log_tokens - predicted
+    preview['delta_pct'] = (
+        round((execution_log_tokens - predicted) / predicted * 100, 1) if predicted else None
+    )
     return preview
 
 

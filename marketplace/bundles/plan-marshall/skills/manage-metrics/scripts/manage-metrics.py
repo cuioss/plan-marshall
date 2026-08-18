@@ -24,6 +24,9 @@ Usage:
 
     Enrich from JSONL transcript (per-phase subagent <usage>):
         python3 manage-metrics.py enrich --plan-id <id> --session-id <sid>
+
+    Reconcile the row ledgers against each other (read-only):
+        python3 manage-metrics.py reconcile-ledgers --plan-id <id> [--window-seconds N]
 """
 
 import argparse
@@ -36,6 +39,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from _display_time import render_timestamp
+from _ledger_reconciliation import (
+    DEFAULT_WINDOW_SECONDS,
+    EXECUTION_LOG_PHASES,
+    execution_rows_for_phase,
+    load_boundary_rows,
+    load_execution_log,
+    reconcile_phase,
+)
 from _plan_parsing import extract_deliverable_headings, parse_document_sections
 from constants import FILE_STATUS, FILE_WORK_METRICS, PHASES
 from file_ops import (
@@ -249,6 +260,100 @@ _POPULATION_CELL_SUFFIX = {
 # on a phase row (a dispatched cell whose row ALSO recorded inline spend).
 _TOTAL_CROSS_POPULATION_SUFFIX = ' (spans populations)'
 
+# ---------------------------------------------------------------------------
+# The persisted aggregate — every figure the Total row renders
+# ---------------------------------------------------------------------------
+#
+# The Total row and its ``(n=k/N)`` qualifier were computed at render time and
+# written NOWHERE: ``write_metrics`` ran before the row was built, so the store's
+# header carried no aggregate at all. The one figure a human quotes, and the
+# population qualifier that makes it safe to quote, existed only in prose — a
+# script reading the store had to re-sum the rows itself and re-derive a
+# population, and could legitimately pick a different one than the renderer did.
+# Two producers of one number, one of them unpersisted.
+#
+# Each column now persists a TRIPLE, and the render reads it back rather than
+# keeping a second copy: the value, the count of phase rows that fed it
+# (``_POPULATION_COUNT_SUFFIX``), and the shared denominator
+# ``_TOTALS_DENOMINATOR_FIELD``. A value without its count cannot state its own
+# coverage — the same reason ``dispatch_boundary_rows_recorded`` rides beside
+# ``dispatch_boundary_total`` — and a count without its denominator is not a
+# population statement. A ``0`` value beside a ``0`` count is therefore legible
+# as the empty sum it is, not as a measured zero.
+#
+# The DURATION columns persist MILLISECONDS, the unit their per-phase operands
+# are already held in (``agent_duration_ms`` / ``idle_duration_ms``). Persisting
+# rounded seconds would put the store's precision below the render's: at 59.96 s
+# a decisecond rounding flips ``format_duration`` from ``60.0s`` to ``1m0s``, so
+# the store and the report would disagree about a figure the store exists to
+# make checkable.
+_TOTALS_FIELDS = {
+    'worked': 'totals_worked_ms',
+    'wall': 'totals_wall_ms',
+    'idle': 'totals_idle_ms',
+    'tokens': 'totals_tokens',
+    'tool_uses': 'totals_tool_uses',
+    'billing': 'totals_billing_weighted_total',
+}
+
+#: The columns whose persisted value is a millisecond duration.
+_TOTALS_DURATION_COLUMNS = frozenset({'worked', 'wall', 'idle'})
+
+_POPULATION_COUNT_SUFFIX = '_population_count'
+_TOTALS_DENOMINATOR_FIELD = 'totals_population_denominator'
+
+# When the aggregate was computed.
+#
+# Provenance only. ONLY ``generate`` computes the totals, while ``start-phase``,
+# ``end-phase``, ``phase-boundary`` and ``enrich`` all rewrite the store's phase
+# rows — so an aggregate left behind by an earlier ``generate`` would disagree
+# with the rows it claims to sum, and a consumer told to READ the totals instead
+# of re-summing would quote it anyway.
+#
+# Freshness is therefore carried by PRESENCE, not by this stamp: ``write_metrics``
+# drops the row-derived aggregate for any writer that did not just compute it. The stamp
+# records when the surviving aggregate was taken, mirroring the denominators'
+# ``denominators_sampled_at``; it is not what a reader tests.
+_TOTALS_SAMPLED_AT_FIELD = 'totals_sampled_at'
+_TOTALS_SPANS_POPULATIONS_FIELD = 'totals_tokens_spans_populations'
+_BOUNDARY_EXCLUDED_CLASSES_FIELD = 'dispatch_boundary_excluded_classes'
+
+# ---------------------------------------------------------------------------
+# Where a phase row's rendered Tokens cell came from
+# ---------------------------------------------------------------------------
+#
+# The reconciliation picks the largest eligible dispatched measure, and the
+# render then states WHICH measure won only in an annotation. Persisting the
+# provenance turns that sentence into a field: a consumer reading the store can
+# tell a cell backed by the recorded ``total_tokens`` from one backed by a
+# competing measure, without re-running the comparison or parsing the markdown.
+_TOKENS_CELL_SOURCE_FIELD = 'tokens_cell_source'
+
+#: The Tokens cell for a phase that was never closed, carrying its
+#: dispatch-boundary sum as a labelled FLOOR. A phase whose terminal close never
+#: fired is simultaneously the phase most likely to be missing the marker and the
+#: phase most likely to hold the largest figure. Its boundary file is one of two
+#: records that survive a missing close — the per-phase accumulator is the other,
+#: and ``_reconcile_accumulator_into_phase`` backfills ``total_tokens`` from it —
+#: so the fold takes the LARGER of the two rather than assuming either is the
+#: only evidence. Where neither is present the cell renders ``-``.
+TOKENS_SOURCE_UNCLOSED_BOUNDARY = 'unclosed_boundary_floor'
+
+#: The same fold on a row whose boundary coverage is ``over`` — more recorded
+#: rows than sampled dispatches. The figure is still the best available account
+#: of what the phase spent, but it is NOT a floor: ``_boundary_coverage_state``
+#: classifies ``over`` as impossible for a single population, so the two counts
+#: are not commensurable and the figure is bounded in neither direction — a
+#: lower-bound label would assert exactly what that classification denies.
+TOKENS_SOURCE_UNCLOSED_BOUNDARY_OVER = 'unclosed_boundary_over_covering'
+
+#: Their cell suffixes. Deliberately NOT ``TOKEN_POPULATIONS`` members: the figure
+#: measures the dispatched population like any other boundary sum. What they
+#: qualify is COVERAGE, not population — this skill consumes the population
+#: vocabulary and never extends it.
+_UNCLOSED_BOUNDARY_CELL_SUFFIX = ' (boundary floor)'
+_UNCLOSED_BOUNDARY_OVER_CELL_SUFFIX = ' (boundary sum, over-covering)'
+
 # The four raw ``message.usage`` fields rendered per phase, with their bullet
 # labels, in report order. Module-level so the render loop and the contract test
 # read the SAME population: a fifth usage field added here must render under the
@@ -262,6 +367,18 @@ _FOUR_FIELD_USAGE_LABELS = (
     ('cache_read_input_tokens', 'Cache read input tokens'),
     ('cache_creation_input_tokens', 'Cache creation input tokens'),
 )
+
+# The same four field names without their labels, DERIVED from the tuple above
+# so the persist site and the render site walk one population.
+#
+# ``cmd_enrich``'s persistence loop previously spelled these four out as an
+# inline literal. A hardcoded field list cannot drift VISIBLY: a fifth field
+# added to ``_FOUR_FIELD_USAGE_LABELS`` would gain a render bullet and a contract
+# test while never being persisted at all — and the render's presence guard would
+# then read the omission as an absent measurement rather than as a persister that
+# never looked. Deriving the loop's population from the canonical declaration is
+# what makes adding a field a one-site change.
+_FOUR_FIELD_USAGE_FIELDS = tuple(field for field, _label in _FOUR_FIELD_USAGE_LABELS)
 
 _FOUR_FIELD_GROUP_HEADING = (
     '- **Main-context-window usage**: raw `message.usage` summed over this phase\'s parent '
@@ -496,6 +613,49 @@ def _reconcile_dispatched_measures(phase_row: dict) -> tuple[str, int] | None:
     if not eligible:
         return None
     return max(eligible, key=lambda item: item[1])
+
+
+def _unclosed_boundary_floor(phase_row: dict) -> int | None:
+    """Return the boundary sum a NEVER-CLOSED phase can still account for.
+
+    A phase's recorded status is keyed solely off its ``end_time``, and that
+    marker is stamped by the terminal close. The final phase is therefore both
+    the one most likely to be missing it and the one most likely to hold the
+    largest figure — and its ``work/metrics-dispatch-boundaries-{phase}.toon``
+    file has been accumulating a row per dispatch the whole time, independent of
+    whether the boundary ever closed.
+
+    So when the row carries no ``end_time`` but does carry a
+    ``dispatch_boundary_total``, that sum is folded into the phase's Tokens cell
+    under a marker naming how far it can be trusted — ``(boundary floor)`` where
+    its coverage is partial or undecidable, and ``(boundary sum, over-covering)``
+    where the file holds more rows than the phase had sampled dispatches, which
+    is not a floor at all. This is the same move ``enrich`` already makes when it
+    folds inline main-context spend into a zero-dispatch phase's total and labels
+    the row's population — same reason (a real cost that would otherwise render
+    as nothing), applied to the dispatched population instead of the inline one.
+
+    ⛔ The fold is deliberately scoped to the TOKEN figure. The phase keeps its
+    place in ``phases_missing_end_time``, and NO duration is derived from the
+    boundary file, which records per-dispatch spans and cannot honestly supply
+    the phase wall-clock the close never stamped.
+
+    That is a statement about this fold, not about the row: an unclosed row can
+    still render a Worked figure, because ``_reconcile_accumulator_into_phase``
+    backfills ``agent_duration_ms`` from the durable accumulator — a source that
+    likewise does not depend on the close. Its wall-clock cell stays ``-``, since
+    ``duration_seconds`` is written only by a close. Nothing here changes either
+    behaviour.
+
+    Returns:
+        The boundary sum for an unclosed phase that recorded one, else ``None``.
+    """
+    if phase_row.get('end_time'):
+        return None
+    boundary_total = _coerce_numeric(phase_row.get('dispatch_boundary_total'))
+    if not isinstance(boundary_total, (int, float)) or not boundary_total:
+        return None
+    return int(boundary_total)
 
 
 def _reconciliation_relation_clause(value: int, beaten: int | None) -> str:
@@ -755,7 +915,47 @@ def _coerce_numeric(value: object) -> int | float | str:
 # get_plan_dir imported from file_ops
 
 
-def write_metrics(plan_id: str, data: dict) -> None:
+def write_metrics(plan_id: str, data: dict, *, preserve_totals: bool = False) -> None:
+    """Write the store, INVALIDATING the row-derived aggregate unless it was just computed.
+
+    Only ``cmd_generate`` computes the ``totals_*`` aggregate, while every other
+    writer of this store — ``start-phase``, ``end-phase``, ``phase-boundary`` and
+    ``enrich`` — rewrites the phase rows underneath it. Left in place, those totals would
+    silently stop being the sum of the rows they sit beside — and this
+    deliverable's whole point is that a consumer READS them instead of
+    re-summing, so a stale aggregate is a wrong answer delivered confidently.
+
+    The aggregate is therefore an INVARIANT of the most recent write: present iff
+    this write computed it. Every writer but ``generate`` drops it, so a reader
+    that finds the keys knows the rows have not moved since, and one that finds
+    them absent knows to re-generate. That is exact, unlike comparing timestamps
+    — ``updated`` and ``totals_sampled_at`` are both second-granularity, so a
+    write landing in the same second as the ``generate`` it invalidates would be
+    undetectable by comparison. The same present-iff-derivable-now rule already
+    governs ``cache_read_per_tool_use``.
+
+    ⚠ Scoped to the ROW-DERIVED keys — the ``totals_*`` family and its companions.
+    ``dispatch_boundary_excluded_classes`` also lives in the aggregate's field
+    table but is derived from a module constant rather than from the rows, so it
+    cannot go stale against them and is deliberately left in place.
+
+    Args:
+        plan_id: Plan identifier.
+        data: The store dict to write.
+        preserve_totals: Set ONLY by ``cmd_generate``, which has just recomputed
+            the aggregate from the rows being written.
+    """
+    if not preserve_totals:
+        for field in _TOTALS_FIELDS.values():
+            data.pop(field, None)
+            data.pop(f'{field}{_POPULATION_COUNT_SUFFIX}', None)
+        for field in (
+            _TOTALS_DENOMINATOR_FIELD,
+            _TOTALS_SPANS_POPULATIONS_FIELD,
+            _TOTALS_SAMPLED_AT_FIELD,
+        ):
+            data.pop(field, None)
+
     metrics_path = get_plan_dir(plan_id) / METRICS_FILE
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -1376,12 +1576,53 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     data.pop('partial', None)
     data.pop('unrecorded_phases', None)
 
-    # Denominators + their sampling point. Written last among the derived
-    # top-level keys so the pair's timestamp is the closest available stamp to
-    # the write itself.
-    _persist_denominators(plan_id, data)
+    # Inline main-context spend, present on EVERY row — as a figure, a measured
+    # zero, or an explicit not-measured marker, but never as absence.
+    #
+    # `enrich` writes `inline_main_context_tokens` only on a truthy inline sum, so
+    # the field was sparsely persisted and its absence conflated two facts: a
+    # phase `enrich` measured and found no inline spend, and a phase `enrich`
+    # never touched. The discriminator between them is already on the row —
+    # `enrich` stamps `total_tokens_population` on every row it visits, on all
+    # three of its branches — so the two states are separable without guessing.
+    #
+    # A row carrying the discriminator but no figure was MEASURED at zero and is
+    # written `0`. A row carrying neither was never enriched and is written the
+    # module's own `UNMEASURED_COLUMN_TOKEN`. The pre-labelling-`enrich` row
+    # `_token_population` documents (folded, but carrying no discriminator) lands
+    # in the unmeasured branch, which is the honest verdict for a row whose
+    # enrich provenance is unrecoverable.
+    for phase_name in PHASE_NAMES:
+        if phase_name not in phases:
+            continue
+        phase = phases[phase_name]
+        if isinstance(_coerce_numeric(phase.get('inline_main_context_tokens')), (int, float)):
+            # A real measurement, from `enrich`. Never overwritten.
+            continue
+        # Anything else — absent, or a sentinel this loop wrote on an earlier
+        # generate — is RE-DERIVED from the current row rather than preserved, so
+        # an `enrich` that has since measured the phase at zero is not shadowed by
+        # a stale `unmeasured`. The field's non-numeric value is an invariant of
+        # THIS regenerate's operands, the same rule `cache_read_per_tool_use`
+        # follows above.
+        phase['inline_main_context_tokens'] = (
+            0 if phase.get('total_tokens_population') else UNMEASURED_COLUMN_TOKEN
+        )
 
-    write_metrics(plan_id, data)
+    # The store write is deliberately NOT here. Every figure the Total row renders
+    # is derived below and must reach the store, so the single write — and the
+    # denominators that must be stamped last before it — happen once the aggregate
+    # exists. See "Persist the aggregate, then render the Total row FROM it".
+    #
+    # Moving the write past the render loop makes `generate` ALL-OR-NOTHING: an
+    # exception in that loop now discards the accumulator reconciliation, the idle
+    # residuals, the boundary totals and the end_time-presence keys that used to
+    # reach disk before rendering began. That is the intended shape — a store
+    # holding derived keys but no aggregate would be exactly the half-written
+    # record this deliverable exists to remove — and it is bounded: every read
+    # between here and the write goes through `_coerce_numeric` (which falls back
+    # to the original value) or `_numeric` (which returns None), neither of which
+    # raises on any stored value.
 
     # Build metrics.md content
     lines = []
@@ -1402,10 +1643,15 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         lines.append(
             '> Phases missing an end_time boundary marker — '
             f'{", ".join(phases_missing_end_time)}. These rows were never closed by '
-            'end-phase / phase-boundary, so their totals are absent and every column '
-            'Total above is a floor. This is an end_time-presence check only: a phase '
-            'NOT listed here carries the marker, which says nothing about whether its '
-            'recorded figures are complete or internally consistent.'
+            'end-phase / phase-boundary, so no close recorded their totals and every '
+            'column Total above is a floor. Such a row can still show figures recovered '
+            'from sources that do not depend on the close — its accumulator, and its '
+            'dispatch-boundary rows — and each carries its own marker saying how far it '
+            'can be trusted: `(boundary floor)` is a lower bound, `(boundary sum, '
+            'over-covering)` explicitly is not. This is an end_time-presence check only: '
+            'a phase NOT listed here '
+            'carries the marker, which says nothing about whether its recorded figures '
+            'are complete or internally consistent.'
         )
         lines.append('')
 
@@ -1454,26 +1700,31 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             return None
         return coerced
 
-    def _ms_cell(value_ms: int | None) -> tuple[str, float | None]:
+    def _ms_cell(value_ms: int | None) -> tuple[str, int | None]:
         """Render a duration-in-ms value as a table cell.
 
-        Returns (rendered_cell, value_for_total_in_seconds). A truthy numeric
-        renders via format_duration; zero or None renders '-' and contributes
-        nothing to the Total. This is the symmetric per-cell present/absent rule
-        applied uniformly to the Worked, Reported (wall), and Idle columns.
+        Returns (rendered_cell, value_for_total_in_ms). A truthy numeric renders
+        via format_duration; zero or None renders '-' and contributes nothing to
+        the Total. This is the symmetric per-cell present/absent rule applied
+        uniformly to the Worked, Reported (wall), and Idle columns.
+
+        The Total operand is returned in MILLISECONDS rather than seconds so the
+        persisted aggregate keeps the operands' own precision — a per-column
+        conversion to seconds before summing would put the store's granularity
+        below the render's (see ``_TOTALS_FIELDS``).
         """
         if value_ms is None:
             return '-', None
         numeric = _numeric(value_ms)
         if numeric is None:
             return '-', None
-        seconds = float(numeric) / 1000.0
-        return format_duration(seconds), seconds
+        return format_duration(float(numeric) / 1000.0), int(numeric)
 
     # Per-column value subsets (for Total aggregation and partial-marker decisions).
-    worked_values: list[float] = []
-    wall_values: list[float] = []
-    idle_values: list[float] = []
+    # The three duration subsets hold MILLISECONDS; see _ms_cell.
+    worked_values: list[int] = []
+    wall_values: list[int] = []
+    idle_values: list[int] = []
     tokens_values: list[int] = []
     tool_uses_values: list[int] = []
     # Billing is a DERIVED-COST measure, aggregated in its own column and never
@@ -1494,6 +1745,13 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # row records separately.
     inline_population_phases: list[str] = []
     mixed_population_phases: list[str] = []
+    # Phases whose Tokens cell is a never-closed phase's dispatch-boundary floor,
+    # collected so the annotation under the table can name them and their marker.
+    unclosed_boundary_phases: list[tuple[str, int]] = []
+    # The same fold on a row whose boundary coverage is `over`. Collected
+    # separately because the two carry different claims: one is a lower bound,
+    # the other explicitly is not.
+    unclosed_boundary_over_phases: list[tuple[str, int]] = []
 
     # Two-pass build: first collect all rows as tuples, then pad to uniform per-column width.
     header_row: tuple[str, ...] = (
@@ -1534,6 +1792,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         # measure won.
         raw_tokens = _numeric(phase.get('total_tokens'))
         winner = _reconcile_dispatched_measures(phase)
+        cell_source: str | None = None
         if winner is not None:
             winning_field, winning_value = winner
             if winning_field != 'total_tokens':
@@ -1543,14 +1802,69 @@ def cmd_generate(args: argparse.Namespace) -> dict:
                 )
             tokens_str = f'{winning_value:,}'
             tokens_values.append(winning_value)
+            cell_source = winning_field
         elif raw_tokens is not None:
             # No eligible dispatched measure. The row still carries a figure —
             # the inline phase's main-context total — which renders on its own
             # and is marked `(inline)` by the population suffix below.
             tokens_str = f'{int(raw_tokens):,}'
             tokens_values.append(int(raw_tokens))
+            cell_source = 'total_tokens'
         else:
             tokens_str = '-'
+
+        # A never-closed phase's recorded dispatch spend: folded in where the
+        # ordinary rules dropped it, and LABELLED in every case where it is what
+        # the cell shows.
+        #
+        # Two distinct gaps close here, and the labelling half is the one that is
+        # easy to miss. When the row carries no `subagent_samples`, coverage is
+        # UNDECIDABLE, the boundary sum is already eligible, and it simply wins the
+        # maximum — so the figure reaches the cell but renders as an ordinary
+        # dispatched total, saying nothing about the phase never having closed.
+        # That is the "technically correct, practically ignored" partiality this
+        # deliverable exists to fix: the reader sees a number, not a floor. When
+        # instead the sum is refused as PARTIAL or OVER, the cell can fall back to
+        # `-` while the boundary file holds the phase's whole recorded spend, and a
+        # multi-million-token phase disappears from the table entirely.
+        #
+        # So: fold only when the floor EXCEEDS whatever the ordinary rules produced
+        # (it can raise a cell, never lower one, and never displaces a measure the
+        # reconciliation trusted more) — then mark whenever the cell is the
+        # boundary sum on an unclosed row, however it got there.
+        floor = _unclosed_boundary_floor(phase)
+        if floor is not None:
+            current = tokens_values[-1] if cell_source else None
+            if current is None or floor > current:
+                if cell_source:
+                    tokens_values[-1] = floor
+                else:
+                    tokens_values.append(floor)
+                tokens_str = f'{floor:,}'
+                cell_source = 'dispatch_boundary_total'
+            if cell_source == 'dispatch_boundary_total':
+                # The marker states the figure's COVERAGE, so it must match what
+                # the coverage classification actually says. A sum whose rows
+                # exceed the phase's sampled dispatches is `over` — which this
+                # module elsewhere calls impossible for one population and an
+                # inflated / double-counted figure — so calling it a FLOOR would
+                # assert a lower bound the classification denies. The fold still
+                # happens (the alternative is rendering `-` for a phase that
+                # demonstrably spent something), but it is labelled for what it
+                # is, and the two markers are never interchangeable.
+                if _boundary_coverage_state(phase) == 'over':
+                    cell_source = TOKENS_SOURCE_UNCLOSED_BOUNDARY_OVER
+                    unclosed_boundary_over_phases.append((phase_name, floor))
+                else:
+                    cell_source = TOKENS_SOURCE_UNCLOSED_BOUNDARY
+                    unclosed_boundary_phases.append((phase_name, floor))
+
+        # Persist the cell's provenance so a consumer reads it off the row rather
+        # than re-running the comparison or parsing the rendered annotation.
+        if cell_source:
+            phase[_TOKENS_CELL_SOURCE_FIELD] = cell_source
+        else:
+            phase.pop(_TOKENS_CELL_SOURCE_FIELD, None)
 
         # Declare the population at the point of render. The cell carries the
         # marker; the annotation under the table declares the unmarked default
@@ -1569,6 +1883,13 @@ def cmd_generate(args: argparse.Namespace) -> dict:
                 inline_population_phases.append(phase_name)
             elif population == POPULATION_MIXED:
                 mixed_population_phases.append(phase_name)
+            # The coverage marker rides AFTER the population marker: they qualify
+            # different things (which population the figure measures, and whether
+            # it covers the whole phase), and a cell can legitimately carry both.
+            if cell_source == TOKENS_SOURCE_UNCLOSED_BOUNDARY:
+                tokens_str += _UNCLOSED_BOUNDARY_CELL_SUFFIX
+            elif cell_source == TOKENS_SOURCE_UNCLOSED_BOUNDARY_OVER:
+                tokens_str += _UNCLOSED_BOUNDARY_OVER_CELL_SUFFIX
 
         tool_uses = _numeric(phase.get('tool_uses'))
         tool_uses_str = str(int(tool_uses)) if tool_uses is not None else '-'
@@ -1584,39 +1905,79 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             (phase_name, worked_str, wall_str, idle_str, tokens_str, tool_uses_str, billing_str)
         )
 
-    def _total_str(values: list, formatter, *, is_duration: bool = False) -> str:
-        """Apply the symmetric Total aggregation rule.
-
-        - Empty subset → '-'.
-        - Subset smaller than breakdown_n → '{sum_str} (n=k/N)'.
-        - Subset equal to breakdown_n → plain sum.
-        """
-        k = len(values)
-        if k == 0:
-            return '-'
-        if is_duration:
-            total = sum(values)
-            sum_str = format_duration(float(total))
-        else:
-            total = sum(int(v) for v in values)
-            sum_str = formatter(total)
-        if k < breakdown_n:
-            return f'{sum_str} (n={k}/{breakdown_n})'
-        return sum_str
-
-    total_worked_str = _total_str(worked_values, lambda n: format_duration(float(n)), is_duration=True)
-    total_wall_str = _total_str(wall_values, lambda n: format_duration(float(n)), is_duration=True)
-    total_idle_str = _total_str(idle_values, lambda n: format_duration(float(n)), is_duration=True)
-    total_tokens_str = _total_str(tokens_values, lambda n: f'{n:,}')
+    # Persist the aggregate, then render the Total row FROM the persisted values.
+    #
+    # The order is the deliverable: every figure the Total row shows now exists in
+    # the store as a value beside the count of phase rows that fed it, and the
+    # render reads that pair back rather than holding a second, unpersisted copy.
+    # A figure the render computes and does not persist is a number nobody can
+    # check — and the qualifier is as load-bearing as the figure, because a sum
+    # over 2 of 6 phases and a sum over 6 of 6 are different quantities that
+    # render identically without it.
+    column_values: dict[str, list[int]] = {
+        'worked': worked_values,
+        'wall': wall_values,
+        'idle': idle_values,
+        'tokens': tokens_values,
+        'tool_uses': tool_uses_values,
+        'billing': billing_values,
+    }
+    data[_TOTALS_DENOMINATOR_FIELD] = breakdown_n
+    for column, values in column_values.items():
+        field = _TOTALS_FIELDS[column]
+        data[field] = sum(int(v) for v in values)
+        data[f'{field}{_POPULATION_COUNT_SUFFIX}'] = len(values)
     # The Total is a cell in the same column and inherits the same declared
     # default, so it takes the same marking discipline as every other cell: when
     # an `(inline)` row fed the sum, the Total spans populations and says so.
     # Only `(inline)` rows cross-contaminate the sum — a `(mixed)` row's cell is
     # the dispatched figure, with its inline spend deliberately excluded.
-    if inline_population_phases and total_tokens_str != '-':
+    spans_populations = bool(inline_population_phases)
+    data[_TOTALS_SPANS_POPULATIONS_FIELD] = 'true' if spans_populations else 'false'
+    # The declared exclusion set, as DATA. It is the key to every boundary
+    # coverage shortfall the report shows, and it previously existed only inside
+    # the rendered annotation — so a script reading the store got the coverage
+    # numbers without the declaration that makes them safe to interpret.
+    data[_BOUNDARY_EXCLUDED_CLASSES_FIELD] = ','.join(DISPATCH_BOUNDARY_EXCLUDED_CLASSES)
+    # Provenance for a reader: the moment this aggregate was computed. It is NOT
+    # the freshness signal — that is presence, enforced by write_metrics, which
+    # drops the row-derived aggregate for any writer that is not this one.
+    data[_TOTALS_SAMPLED_AT_FIELD] = now_utc_iso()
+
+    # Denominators + their sampling point. Written last among the derived
+    # top-level keys so the pair's timestamp is the closest available stamp to
+    # the write itself.
+    _persist_denominators(plan_id, data)
+
+    # The ONE call that keeps the aggregate: it was computed above, from exactly
+    # the rows being written here.
+    write_metrics(plan_id, data, preserve_totals=True)
+
+    def _total_str(column: str, formatter, *, is_duration: bool = False) -> str:
+        """Apply the symmetric Total aggregation rule, reading the STORE.
+
+        - Empty subset → '-'.
+        - Subset smaller than breakdown_n → '{sum_str} (n=k/N)'.
+        - Subset equal to breakdown_n → plain sum.
+        """
+        field = _TOTALS_FIELDS[column]
+        total = int(data[field])
+        k = int(data[f'{field}{_POPULATION_COUNT_SUFFIX}'])
+        if k == 0:
+            return '-'
+        sum_str = format_duration(float(total) / 1000.0) if is_duration else formatter(total)
+        if k < breakdown_n:
+            return f'{sum_str} (n={k}/{breakdown_n})'
+        return sum_str
+
+    total_worked_str = _total_str('worked', str, is_duration=True)
+    total_wall_str = _total_str('wall', str, is_duration=True)
+    total_idle_str = _total_str('idle', str, is_duration=True)
+    total_tokens_str = _total_str('tokens', lambda n: f'{n:,}')
+    if spans_populations and total_tokens_str != '-':
         total_tokens_str += _TOTAL_CROSS_POPULATION_SUFFIX
-    total_tool_uses_str = _total_str(tool_uses_values, str)
-    total_billing_str = _total_str(billing_values, lambda n: f'{n:,}')
+    total_tool_uses_str = _total_str('tool_uses', str)
+    total_billing_str = _total_str('billing', lambda n: f'{n:,}')
 
     total_row: tuple[str, ...] = (
         '**Total**',
@@ -1696,6 +2057,43 @@ def cmd_generate(args: argparse.Namespace) -> dict:
                 f'{", ".join(mixed_population_phases)}.'
             )
         lines.append(' '.join(population_clauses))
+        lines.append('')
+
+    # Unclosed-boundary fold annotation. The cell marker is not self-explanatory —
+    # it says the figure is a floor without saying why — so the key is rendered
+    # wherever the marker appears, and states BOTH what was folded in and what was
+    # deliberately not.
+    if unclosed_boundary_over_phases:
+        over_folded = ', '.join(f'{name} → {value:,}' for name, value in unclosed_boundary_over_phases)
+        lines.append(
+            '> Marked `(boundary sum, over-covering)` — the phase was never closed, and the '
+            'sum of its dispatch-boundary rows is the largest measure available for it, but '
+            'that file holds MORE rows than the phase had sampled dispatches: '
+            f'{over_folded}. Numerator over denominator is impossible for one population, so '
+            'the two counts are not commensurable and this is not a coverage ratio at all — '
+            'which is why the figure is **not** labelled a floor. It is bounded in neither '
+            'direction: the row count exceeding the sample admits rows the sampled window '
+            'never saw, while the declared exclusions below mean the file still omits every '
+            'dispatch class that registers no boundary. It is shown because the alternative '
+            'is rendering nothing for a phase that demonstrably spent something. See the '
+            'per-phase Dispatch-boundary total bullet for both counts.'
+        )
+        lines.append('')
+
+    if unclosed_boundary_phases:
+        folded = ', '.join(f'{name} → {value:,}' for name, value in unclosed_boundary_phases)
+        lines.append(
+            '> Marked `(boundary floor)` — the phase was never closed by end-phase / '
+            'phase-boundary, and the sum of its dispatch-boundary rows is the largest '
+            'measure available for it; those rows accumulate per dispatch and do not '
+            f'depend on the phase boundary closing: {folded}. It is a FLOOR — it covers '
+            'only the dispatch classes that register a boundary (see the declared '
+            'exclusions below). The phase stays listed as missing its end_time marker, '
+            'and no wall-clock duration is derived from the boundary file, which records '
+            'per-dispatch spans rather than the phase span the close never stamped. Any '
+            'Worked figure shown for such a row comes from its accumulator, not from '
+            'this fold.'
+        )
         lines.append('')
 
     # Declared dispatch-boundary population. Whenever the report carries a boundary
@@ -1830,7 +2228,11 @@ def cmd_generate(args: argparse.Namespace) -> dict:
                 f'(dispatched-subagent population; {coverage}; {outcome})'
             )
 
-        inline_main_context = phase.get('inline_main_context_tokens')
+        # Guarded on the NUMERIC value, not on truthiness: the field is now
+        # present on every row, and a measured `0` or the `unmeasured` sentinel
+        # renders no bullet. The sentinel is a truthy string, so a bare
+        # truthiness test would reach `int('unmeasured')`.
+        inline_main_context = _numeric(phase.get('inline_main_context_tokens'))
         if inline_main_context:
             # The relationship to Total tokens differs by population, so the
             # bullet states which one applies. Claiming "surfaced alongside the
@@ -1965,13 +2367,25 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     md_path = get_plan_dir(plan_id) / METRICS_MD
     atomic_write_file(md_path, md_content)
 
-    total_worked = sum(worked_values)
-    total_wall = sum(wall_values)
-    total_idle = sum(idle_values)
-    total_tokens = sum(tokens_values)
+    # Read the aggregate back from the STORE rather than re-summing the render's
+    # working lists. Re-summing here would make this return block a third producer
+    # of the same figures, free to diverge from both the store and the table — the
+    # very shape this deliverable removes.
+    #
+    # The duration fields are converted from the persisted milliseconds here, and
+    # the `total_*_seconds` keys below then ROUND to one decimal — so the returned
+    # second-scale value is the persisted measurement at a coarser precision, not
+    # the same number. That rounding is why the store keeps milliseconds: at
+    # 59 960 ms the store renders `60.0s` while `round(59.96, 1)` formats as
+    # `1m0s`. Read `totals_*_ms` when the exact figure matters; the `_seconds`
+    # keys are the human-facing summary and are kept for their existing callers.
+    total_worked = int(data[_TOTALS_FIELDS['worked']]) / 1000.0
+    total_wall = int(data[_TOTALS_FIELDS['wall']]) / 1000.0
+    total_idle = int(data[_TOTALS_FIELDS['idle']]) / 1000.0
+    total_tokens = int(data[_TOTALS_FIELDS['tokens']])
     # Aggregated separately and returned as its own field — never added to
     # total_tokens, which measures dispatched work rather than cost.
-    total_billing_weighted = sum(billing_values)
+    total_billing_weighted = int(data[_TOTALS_FIELDS['billing']])
 
     # Echo each persisted denominator with its sampling point, and OMIT the pair
     # for a denominator that could not be counted — the same absent-is-not-zero
@@ -1987,12 +2401,26 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     if 'denominators_sampled_at' in data:
         denominators['denominators_sampled_at'] = data['denominators_sampled_at']
 
+    # Echo every persisted aggregate together with the count of phase rows that
+    # fed it, DERIVED from `_TOTALS_FIELDS` so a column added there cannot reach
+    # the report while staying absent from the return. A caller that reads a total
+    # without its population count is back to quoting a figure whose coverage it
+    # cannot state — the defect the persisted triple exists to close.
+    totals_echo: dict[str, object] = {_TOTALS_DENOMINATOR_FIELD: data[_TOTALS_DENOMINATOR_FIELD]}
+    for field in _TOTALS_FIELDS.values():
+        count_field = f'{field}{_POPULATION_COUNT_SUFFIX}'
+        totals_echo[field] = data[field]
+        totals_echo[count_field] = data[count_field]
+    totals_echo[_TOTALS_SPANS_POPULATIONS_FIELD] = data[_TOTALS_SPANS_POPULATIONS_FIELD]
+    totals_echo[_TOTALS_SAMPLED_AT_FIELD] = data[_TOTALS_SAMPLED_AT_FIELD]
+
     return {
         'status': 'success',
         'plan_id': plan_id,
         'file': METRICS_MD,
         'phases_recorded': len(phases),
         **denominators,
+        **totals_echo,
         'any_phase_missing_end_time': any_phase_missing_end_time,
         'phases_missing_end_time': phases_missing_end_time,
         'boundary_monotonicity': non_monotonic_phases,
@@ -2533,6 +2961,80 @@ def cmd_boundary_status(args: argparse.Namespace) -> dict:
     }
 
 
+def cmd_reconcile_ledgers(args: argparse.Namespace) -> dict:
+    """Reconcile this plan's row ledgers against each other. Mutates NOTHING.
+
+    Joins ``execution.toon``'s ``execution_log[]`` against each phase's
+    ``work/metrics-dispatch-boundaries-{phase}.toon`` on phase and timestamp
+    window, and emits one finding per row present in one ledger and absent from
+    the other. The two partiality shapes are labelled distinctly — a phase whose
+    boundary never closed is not the same defect as an absent row — and a phase
+    the execution log structurally cannot cover is DECLARED rather than reported
+    as a pile of divergences.
+
+    See :mod:`_ledger_reconciliation` for the ledger populations and why they
+    cannot agree by construction.
+
+    The result publishes ``union_rows`` per phase and in the totals: neither
+    ledger's own row count is the number of times a phase's steps ran, and
+    without the union nothing tells a reader which count to take.
+    """
+    plan_id = require_valid_plan_id(args)
+
+    guard_error = _guard_plan_exists(plan_id)
+    if guard_error is not None:
+        return guard_error
+
+    plan_dir = get_plan_dir(plan_id)
+    execution_rows, execution_log_reason = load_execution_log(plan_dir)
+    data = read_metrics_raw(plan_id)
+    phases = data.get('phases', {})
+
+    phase_blocks: list[dict] = []
+    findings: list[dict] = []
+    for phase_name in PHASE_NAMES:
+        boundary_rows = load_boundary_rows(_dispatch_boundary_path(plan_id, phase_name))
+        metrics_row = phases.get(phase_name) or {}
+        if not boundary_rows and not metrics_row and not execution_rows:
+            continue
+        phase_rows = (
+            None if execution_rows is None else execution_rows_for_phase(execution_rows, phase_name)
+        )
+        block = reconcile_phase(
+            phase_name,
+            phase_rows,
+            boundary_rows,
+            metrics_row,
+            args.window_seconds,
+            execution_log_reason,
+        )
+        if (
+            block['execution_log_rows'] == 0
+            and block['boundary_rows'] == 0
+            and not block['findings']
+        ):
+            continue
+        phase_blocks.append(block)
+        findings.extend(block['findings'])
+
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'window_seconds': args.window_seconds,
+        'execution_log_readable': execution_rows is not None,
+        'execution_log_reason': execution_log_reason,
+        'execution_log_population': ','.join(EXECUTION_LOG_PHASES),
+        'phases': phase_blocks,
+        'findings': findings,
+        'findings_count': len(findings),
+        # The union is the count a reader should take: neither ledger alone
+        # observed every dispatch, and they diverge in both directions.
+        'union_rows': sum(block['union_rows'] for block in phase_blocks),
+        'execution_log_rows': sum(block['execution_log_rows'] for block in phase_blocks),
+        'boundary_rows': sum(block['boundary_rows'] for block in phase_blocks),
+    }
+
+
 def cmd_accumulate_agent_usage(args: argparse.Namespace) -> dict:
     """Persist running per-phase totals of subagent <usage> data.
 
@@ -2997,12 +3499,9 @@ def cmd_enrich(args: argparse.Namespace) -> dict:
         if not isinstance(bucket, dict):
             continue
         phase_row = phases_state.setdefault(phase_name, {})
-        for field in (
-            'input_tokens',
-            'output_tokens',
-            'cache_read_input_tokens',
-            'cache_creation_input_tokens',
-        ):
+        # Population DERIVED from the canonical label set the render walks, never
+        # re-spelled here — see _FOUR_FIELD_USAGE_FIELDS.
+        for field in _FOUR_FIELD_USAGE_FIELDS:
             if field in bucket:
                 phase_row[field] = bucket[field]
         if 'billing_weighted_total' in bucket:
@@ -3231,6 +3730,38 @@ def main() -> int:
     bs.add_argument('--prev-phase', default=None, help='Phase that should have been closed (optional)')
     bs.add_argument('--next-phase', required=True, help='Phase being entered on resume')
     bs.set_defaults(func=cmd_boundary_status)
+
+    # reconcile-ledgers
+    rl = subparsers.add_parser(
+        'reconcile-ledgers',
+        help='Reconcile the row ledgers against each other (read-only)',
+        description=(
+            'Deterministic cross-ledger reconciliation. Joins execution.toon\'s '
+            'execution_log[] against each phase\'s '
+            'work/metrics-dispatch-boundaries-{phase}.toon on phase and timestamp '
+            'window, emitting one finding per row present in one ledger and '
+            'absent from the other. The two partiality shapes are labelled '
+            'distinctly: boundary_never_closed (the rows exist, the phase '
+            'aggregate is missing) versus row_absent_from_* (a specific row has '
+            'no partner). A phase the execution log structurally cannot cover is '
+            'DECLARED, not reported as divergences. Publishes union_rows because '
+            'neither ledger alone observed every dispatch. Mutates nothing.'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(rl)
+    rl.add_argument(
+        '--window-seconds',
+        type=int,
+        default=DEFAULT_WINDOW_SECONDS,
+        help=(
+            'Maximum timestamp gap for pairing a row across the two ledgers '
+            f'(default: {DEFAULT_WINDOW_SECONDS}). The boundary row carries no '
+            'step_id, so the window is the only join available.'
+        ),
+    )
+    rl.set_defaults(func=cmd_reconcile_ledgers)
 
     # accumulate-agent-usage
     acc = subparsers.add_parser(

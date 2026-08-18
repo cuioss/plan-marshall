@@ -427,7 +427,14 @@ class TestConditionalFragmentActuallyRenders:
                 {'check': 'mis_prune:sonar-roundtrip', 'status': 'pass',
                  'predicate': 'no_code_delta', 'detail': 'step ran'},
             ],
-            'cost_preview': {'actual_tokens': 123, 'predicted_tokens': 100, 'delta_tokens': 23},
+            'cost_preview': {
+                'execution_log_tokens': 123,
+                'execution_log_population': '5-execute,6-finalize',
+                'predicted_tokens': 100,
+                'predicted_population': '5-execute,6-finalize',
+                'comparison': 'computed',
+                'delta_tokens': 23,
+            },
             'posture_verdict': 'correct',
             'summary': {'passed': 1, 'failed': 0, 'skipped': 0},
         }

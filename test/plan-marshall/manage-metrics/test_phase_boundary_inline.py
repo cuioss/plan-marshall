@@ -393,9 +393,14 @@ def test_inline_main_context_surfaced_on_mixed_finalize_phase(plan_context, monk
     assert 'Inline main-context tokens' in md
 
 
-def test_dispatched_phase_without_four_field_usage_has_no_inline_field(plan_context, monkeypatch):
-    """A dispatched phase (total_tokens present) with NO attributed four-field usage
-    does not gain an inline_main_context_tokens field — the else-branch sum is zero.
+def test_dispatched_phase_without_four_field_usage_is_marked_unmeasured(plan_context, monkeypatch):
+    """A dispatched phase enrich never attributed carries the unmeasured marker.
+
+    `enrich` writes no inline figure for such a phase, and `generate` must not
+    leave the field absent: absence conflated "enrich measured no inline spend"
+    with "enrich never looked at this phase". The discriminator is the row's own
+    `total_tokens_population` stamp, which enrich writes on every row it visits —
+    this phase carries none, so the honest value is the marker, not a `0`.
     """
     _drive_full_six_phase_plan('inline-no-fourfield')
     # Feed enrich buckets ONLY for the inline early phases; 5-execute (dispatched
@@ -406,5 +411,5 @@ def test_dispatched_phase_without_four_field_usage_has_no_inline_field(plan_cont
     content = (plan_context.plan_dir_for('inline-no-fourfield') / 'work' / 'metrics.toon').read_text()
     exec_block = _phase_block(content, '5-execute')
     assert int(_field(exec_block, 'total_tokens')) == 88000
-    # No four-field usage was attributed, so the inline field is absent.
-    assert _field(exec_block, 'inline_main_context_tokens') is None
+    assert _field(exec_block, 'inline_main_context_tokens') == 'unmeasured'
+    assert _field(exec_block, 'total_tokens_population') is None
