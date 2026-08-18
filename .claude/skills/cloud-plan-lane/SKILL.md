@@ -693,6 +693,20 @@ So, before recording a finding closed:
 
 - **Mutation-test the new guard against the defect the finding names.** Not against a plausible
   neighbouring defect — that one.
+  - ⛔ **Restore the mutated file from a snapshot the harness took itself — NEVER with a git command.**
+    `git checkout -- <path>`, `git restore <path>` and `git restore --worktree <path>` all rewrite the
+    working tree from the **index**, and `git stash` moves the edit aside; every one of them discards
+    the *unstaged* changes in that file, not just the mutation. Mutating a file the run has edited but
+    not committed therefore reverts the run's own work, and every red count the sweep then reports is
+    measured against reverted code — a clean matrix that means nothing. An observed run lost a whole
+    round's fixes this way and caught it only because the next mutation's anchor happened not to match;
+    looser anchors would have left it undetected.
+    **Order matters: commit everything the sweep must not lose (`git status --porcelain` empty), THEN
+    snapshot, THEN mutate.** A commit records only what was staged, so an unstaged remnant is still
+    unprotected. The snapshot is the harness's own copy of each file's bytes, written back in a
+    `finally` — which covers a normal return and any exception but **not** a killed process, so
+    re-check `git status` when the sweep ends and treat a surviving mutation as a failed sweep rather
+    than a result.
 - **Assert the verdict positively.** `assert x == expected`, never only `assert wrong not in x`.
 - **Check the fixture reaches the state by the route the test claims**, and pin that precondition with
   its own assertion where a second route exists.
