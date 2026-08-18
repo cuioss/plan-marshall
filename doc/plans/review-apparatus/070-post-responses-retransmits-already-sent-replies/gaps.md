@@ -100,7 +100,7 @@ without re-deriving the analysis.
 - **Evidence:** the sentence reads "… Only a finding with no `resolution_detail` is skipped — there is
   genuinely nothing to transmit:". Three other skip reasons exist in the same verb:
   `already responded` (`github_pr.py:1607`), `belongs_to_pr_<n>` and `pr_number_unrecorded`
-  (`github_pr.py:1602-1603`). The corrected paragraph this plan wrote sits at `:265` of the same file and
+  (`github_pr.py:1591`). The corrected paragraph this plan wrote sits at `:265` of the same file and
   contradicts it directly. The report's Finding 6 records the cold read as passing — it was aimed at the
   new paragraph and did not read the surrounding section.
 - **Impact:** a reader of Step 8 who stops at the invocation block — the natural stopping point, since the
@@ -124,7 +124,7 @@ without re-deriving the analysis.
   findings without a `thread_id` or `resolution_detail` are skipped, never guessed at". Wrong on two
   counts: a thread-bearing finding with no `thread_id` is `untransmitted`, not skipped
   (`github_pr.py:1636-1642`), and a genuinely threadless kind is batched rather than requiring a
-  `thread_id` at all (`github_pr.py:1620-1622`). Silent on the `already responded` skip this plan added.
+  `thread_id` at all (`github_pr.py:1621`). Silent on the `already responded` skip this plan added.
 - **Impact:** the second-most-read description of the RESPOND loop still describes the pre-fix,
   pre-kind-routing verb. An operator reading it will not expect a second run to be a no-op, which is the
   behaviour the plan set out to make legible.
@@ -140,7 +140,7 @@ without re-deriving the analysis.
 - **Severity:** minor
 - **Kind:** omission / stale-doc
 - **Where:** `marketplace/bundles/plan-marshall/skills/manage-findings/standards/jsonl-format.md`
-  § Plan Finding Record (Required table at `:70-79`, Optional table at `:130-140`);
+  § Plan Finding Record (Required table at `:70-79`, Optional table at `:82-95`);
   `marketplace/bundles/plan-marshall/skills/manage-findings/SKILL.md:322-329` (§ resolve).
 - **Evidence:** `grep -rn "responded" marketplace/bundles/plan-marshall/skills/manage-findings/` returns
   hits in `.py` files only — zero in either document. `jsonl-format.md`'s Optional table lists `file_path`,
@@ -295,12 +295,12 @@ without re-deriving the analysis.
 - **Where:** `marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/github_pr.py:1607`;
   mirrored at `gitlab_pr.py:410`, `sonar.py:749`; documented at
   `workflow-integration-github/SKILL.md:162` and asserted in four tests
-  (`test_github_pr.py:1645,1679,1733,1765`)
+  (`test_github_pr.py:1645,1679,1732,1765-1766`)
 - **Evidence:** every other GitHub skip reason is a snake_case token —
-  `{'hash_id': hash_id, 'reason': 'no_resolution_detail'}` (`:1611`), `'pr_number_unrecorded'` and
-  `f'belongs_to_pr_{finding_pr}'` (`:1602-1603`) — while the new one is the space-separated phrase
+  `{'hash_id': hash_id, 'reason': 'no_resolution_detail'}` (`:1612`), and `'pr_number_unrecorded'` /
+  `f'belongs_to_pr_{finding_pr}'` (`:1591`) — while the new one is the space-separated phrase
   `'already responded'`. The phrase was copied from Sonar, whose own vocabulary is mixed
-  (`'no issue key in detail'` at `sonar.py:757`).
+  (`'no issue key in detail'` at `sonar.py:754`).
 - **Impact:** a consumer matching skip reasons as tokens (the shape every other GitHub reason invites)
   will not match this one. The inconsistency is inside a single `skipped[].reason` field.
 - **Task:** rename to `already_responded` across the three providers, the SKILL.md tables

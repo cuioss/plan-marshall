@@ -16,7 +16,7 @@ Read in full: `plan.md`, `report-01.md`.
 Diff read: `git show --stat -M c89bfc53`; `git show c89bfc53 -- <path>` for `github_pr.py`,
 `_findings_core.py`, `verification-feedback.md`, `workflow-integration-github/SKILL.md`.
 
-Ground truth is the current tree at `61a43e53`. Later commits touching the same files were enumerated
+Ground truth is the current tree. Every source read below was taken at `61a43e53`; sibling verification sessions have since advanced HEAD with `doc/plans/`-only commits, and `git diff --stat 61a43e53 HEAD -- marketplace/ test/ .claude/` is empty, so the source ground truth is unchanged. Later commits touching the same files were enumerated
 with `git log --oneline c89bfc53..HEAD -- <paths>` → `d3ba81fd`, `9e9e9880`, `38548923`, `66a5d66b`,
 plus `b19ef4a6` found via `git log -S'Every respond verb' -- .../verification-feedback.md`.
 
@@ -182,7 +182,7 @@ not by any test.
 | # | Claim (`report-01.md`) | Verdict | Evidence |
 |---|---|---|---|
 | 1 | "There is **no prior-transmission term** in the predicate" (pre-fix) | ACCURATE | `git show c89bfc53 -- …/github_pr.py` shows the `if finding.get('responded')` block as an addition |
-| 2 | "`responded` at `github_pr.py:1593` is a local output accumulator … not a persisted per-finding marker" | ACCURATE | `responded: list[dict[str, str]] = []` at `github_pr.py:1562`, returned as `responded` at 1696 |
+| 2 | "`responded` at `github_pr.py:1593` is a local output accumulator … not a persisted per-finding marker" | ACCURATE | `responded: list[dict[str, str]] = []` at `github_pr.py:1560`, returned as `responded` at 1696 |
 | 3 | "Consumer derivation — method: grep the whole repository tree … for the literal field name" | ACCURATE as a description of what was done | Re-running it reproduces the report's hit table exactly |
 | 4 | "`verification-feedback.md` Step 8 (**sole** production invoker)" | **OVERSTATED** | `workflow-pr-doctor/standards/automated-review-lifecycle.md:135-140` is a second documented invocation of `github_pr post_responses` |
 | 5 | "`finalize-step-review-retrospective` … **No** — different data path (the finding `resolution` family, not the post_responses return)" | ACCURATE | `review_retrospective.py:39-47,69-80,279-282`; `count_responded` absent from the file |
@@ -233,7 +233,7 @@ makes `--detail` optional (`manage-findings/SKILL.md:325-327`).
 `mark_finding_responded` is a separate JSONL rewrite after the transmit. For the batched path
 (`github_pr.py:1676-1679`) the loop stamps N findings one at a time after a single post, so an
 interruption mid-loop leaves a partially-marked batch whose unmarked members re-post in a fresh batch.
-The docstring's "same unit of work" (`github_pr.py:1536-1537`) is a description of ordering, not of
+The docstring's "same unit of work" (`github_pr.py:1537-1538`) is a description of ordering, not of
 atomicity. No store-level transaction primitive exists to fix this, so it is a documented-limitation
 item rather than an actionable bug.
 
@@ -279,7 +279,7 @@ out of scope and closed by a follow-up.
 **The owning skill does not document the field or the new side effect.**
 `grep -rn "responded" marketplace/bundles/plan-marshall/skills/manage-findings/` returns hits in `.py`
 only — zero in `SKILL.md` or `standards/jsonl-format.md`. `jsonl-format.md` § Plan Finding Record
-carries Required and Optional field tables (lines 68–90 and 130–140) listing `promoted` / `promoted_to`
+carries Required and Optional field tables (lines 70–79 and 82–95) listing `promoted` / `promoted_to`
 but neither `responded` nor `responded_at`, and `manage-findings/SKILL.md` § resolve (lines 322–329)
 documents the verb with no mention that it now clears a provider-transmission marker. The field is
 persisted into `pr-comment.jsonl` and read by three provider scripts; its lifecycle is documented only
