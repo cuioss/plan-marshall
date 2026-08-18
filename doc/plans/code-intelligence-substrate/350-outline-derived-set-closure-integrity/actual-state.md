@@ -11,6 +11,13 @@
 > § 4 "What is NOT done" and § 8 "If this work is resumed" are the halt's inventory, not open
 > items. [`report-02.md`](report-02.md) is the live record; read it for what run 02 actually
 > closed. Commit SHAs here are the **rebased** ones, so they resolve on the branch under review.
+>
+> **Every item § 4 lists as not done is now done**, in PR
+> [#1295](https://github.com/cuioss/plan-marshall/pull/1295): verification round 4 ran (and found
+> fourteen condition-A defects, all fixed); the PR was created without `skip-bot-review`; all three
+> comment surfaces were worked; per-reviewer participation is recorded from the bodies at 1-of-3 with
+> a `Reopens?` value each; and the merge gate was reached. § 6's evidence for a contract change was
+> taken up — it is proposal 2 in `report-02.md` § "What have we learned".
 
 This document is the honest state of play, written because the run was halted mid-contract. It is a
 companion to [`report-01.md`](report-01.md), which carries the per-deliverable record; this one says

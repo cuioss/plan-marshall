@@ -1,7 +1,14 @@
 # Run report — 350-outline-derived-set-closure-integrity (run 02)
 
 **Date (UTC):** 2026-08-18    **Branch:** `claude/derived-set-closure-integrity-3i53aj` (harness-assigned)
-**PR:** _pending_    **Outcome:** _in progress_
+**PR:** [#1295](https://github.com/cuioss/plan-marshall/pull/1295)    **Outcome:** completed
+
+> **Verification loop exit:** budget-exhausted, **non-converging** — round 4 found more shipped-surface
+> defects than round 3, and an automated reviewer then found one more that all four rounds missed.
+> `Outcome` reports the **deliverables**, which are complete; it does not report the loop. Carried in
+> the header deliberately, because a stop record a reader has to go looking for is how this distinction
+> gets lost — see § "What have we learned", proposal 2, which puts that as a contract change to the
+> operator rather than adopting it unilaterally.
 
 This run **continues** run 01, which was halted by operator instruction before the PR cycle. Run 01's
 per-deliverable record stays in [`report-01.md`](report-01.md); the state it was halted in is written
@@ -354,9 +361,69 @@ interactive cloud session does not share that boundary — this run's sub-agent 
 verification round) and its own main-loop work fall under no such ledger. The two cannot be made
 comparable here, so no parity is implied.
 
+## Merge gate (Step 8)
+
+**Condition 1 — required contexts on the exact head SHA.** Read from GitHub's own computation over the
+ruleset (`pull_request_read method: get` → `mergeable_state`), never from a ruleset-config call, which
+is unreachable on the cloud MCP path. Required-ness is the ruleset's to define and no individual check
+is named as required or ignorable here.
+
+**Condition 2 — every PR comment handled.** One actionable finding was filed (`cuioss-review-bot`,
+F-R1); it was fixed in `8486214` and answered on its thread. No surface was `unreadable` — all three
+returned real bodies — so this condition is **established**, not overridden.
+
+**Condition 3 — the report finalized and pushed as the last pre-merge commit**, before arming, because
+arming locks the branch against further pushes the instant the required checks go green.
+
+**Condition 4 — the review-coverage shortfall disclosure. This is a disclosure, not a gate**, and it
+does not hold the merge open. Stated in words:
+
+> **Review coverage: 1 of 3.** `cuioss-review-bot` reviewed and its finding was fixed and answered.
+> `coderabbitai` is rate-limited on a per-developer quota — **reopens: yes**, and it was re-requested
+> explicitly, which returned *"Action not completed — Review rate limited."* `sourcery-ai` is
+> rate-limited on a **diff-size ceiling of 150000 characters** — **reopens: no**, so no wait and no
+> re-request would ever have obtained it at this diff's size.
+
+⚠ **This PR merges on 1-of-3 review coverage, and says so.** Blocking on a bot's quota would strand a
+landing behind something outside our control, which the contract names as the wrong direction; the
+defect it guards against is the *silence*, not the shortfall.
+
 ## Contract check (Step 9)
 
-_Recorded before the merge gate._
+Re-read against what actually happened, confirming both that each step ran and that its artifact
+exists.
+
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | **done** | § Skills loaded — six, all by bundle path (the plugin is not installed in this session); none unobtainable. |
+| 2 Branch | **done** | `claude/derived-set-closure-integrity-3i53aj` exists **on `origin`** — harness-assigned, kept as assigned. § "How run 01's work was recovered" records the rebase that carried run 01's commits onto it. |
+| 3 Plan directory | **done** | `doc/plans/code-intelligence-substrate/350-outline-derived-set-closure-integrity/plan.md` exists and opens with the first-instruction block (checked, present, not repaired). |
+| 4 Implement | **done** | Commits carry the `Co-Authored-By` trailer and no "Generated with Claude Code" footer; deliverables addressed by run 01, round-4 and reviewer fixes by run 02. |
+| 4 Per-commit gate | **done** | Both `*.py`-touching commits (`f11e8b7`, `8486214`) preceded by a `./pw quality-gate` reporting `ruff` / `mypy` / SPDX clean — § Build gate. |
+| 4 Pushed | **done** | Every commit pushed on creation; `git status -sb` reports no `ahead` at the final commit. |
+| 5 Build gate | **done** | § Build gate — git-derived Python verdict (8 production scripts, 9 test modules), full `./pw verify` SUCCESS, with the explicit note that it measured `117d351` and that CI's required `verify` covers the final head. |
+| 6 Verification sub-agent | **done** | § Findings and § Stop record — four rounds against a budget declared before the first dispatch; **exit (ii), the exhausted budget**, at round 4; round 4's own stop answer quoted; every condition-**A** finding fixed regardless of the budget; two survivors listed individually with their (b) bounds and confirmed re-put to the verifier; late rounds recorded as **not** narrower; residue to assume stated. |
+| 7 PR cycle | **done** | PR [#1295](https://github.com/cuioss/plan-marshall/pull/1295). Every comment dispositioned; § Reviewer participation carries a verdict **and** a `Reopens?` value per reviewer, derived from bodies. No `silent` verdict survives — the one provisionally recorded was this run's own misread, corrected and disclosed with its cost. No `unreadable` verdict, so condition 2 is established. |
+| 8 Merge gate | **see § Merge gate** | Conditions 1–3 met, condition 4 disclosed in words at 1-of-3. |
+| 8 Bridge | **done** | One write under `doc/plans/` outside this plan's directory — a **link repair** caused by Step 3's own `git mv`, not a status or bookkeeping write; no ledger, no status file, no other plan's directory. § Bridge. This report carries the PR number and per-deliverable outcome the orchestrator collects from. |
+| 9 This check | **done** | This table. |
+| 9 What have we learned | **done** | Two proposals plus one secondary, each with evidence from this run, put to the operator and **not** self-approved; to ship as separate `chore/` PRs on approval. |
+
+**No `/sync-plugin-cache` is owed.** It is a machine-local build step reading the git-ignored
+`target/` and writing `~/.claude/`; a cloud run neither performs nor records it as a debt.
+
+**GitHub access path:** the **GitHub MCP server** throughout. There is no `gh` CLI in this session and
+Bash cannot reach `api.github.com`.
+
+**Branch form:** **harness-assigned**, kept as assigned.
+
+### Tree claims re-verified at the moment of this claim
+
+Claims about the *diff* are re-derived by the § Findings sweeps; claims about the **filesystem** are
+not, and the run's own build gate mutates the tree the report describes. Re-checked here:
+`git status --porcelain` is empty; the two mutation sweeps restored every file from their harness
+snapshots (never `git checkout`), and the post-sweep status was empty both times; no `uv.lock` churn
+was produced, the session interpreter being 3.12.3.
 
 ## What have we learned (Step 9)
 
