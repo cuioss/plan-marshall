@@ -97,6 +97,23 @@ def test_nested_targets_key_is_not_a_declaration():
     assert declared_targets('---\nname: a\nmetadata:\n  targets: nonsense\n---\n') is None
 
 
+def test_comments_do_not_turn_a_declaration_into_an_empty_one():
+    """A commented list declares its targets; reporting it empty names a file that does not exist."""
+    block = declared_targets('---\nname: a\ntargets:\n  # why\n  - claude  # here\n---\n')
+    inline = declared_targets('---\nname: a\ntargets: [claude]  # here\n---\n')
+
+    assert block is not None and block[0] == ['claude']
+    assert inline is not None and inline[0] == ['claude']
+
+
+def test_a_byte_order_mark_does_not_hide_the_declaration():
+    """A BOM'd file must not read as having no frontmatter at all."""
+    declaration = declared_targets('﻿---\nname: a\ntargets: [cluade]\n---\n')
+
+    assert declaration is not None
+    assert declaration[0] == ['cluade']
+
+
 # ---------------------------------------------------------------------------
 # The derived registry
 # ---------------------------------------------------------------------------

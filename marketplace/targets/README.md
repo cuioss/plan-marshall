@@ -124,6 +124,22 @@ missing flag, generator error, plugin.json drift, unmapped tool, etc.).
    fires.
 5. Add config files under `marketplace/targets/{name}/` and tests under
    `test/marketplace/targets/{name}/`.
+6. **If the target emits a component tree, honour the per-component
+   `targets:` scope.** Call
+   `marketplace.targets.component_targets.emits_to(component_path, self.name)`
+   (or `excluded_emission_roots(bundle_dir, self.name)` for a
+   whole-bundle walk) from the emit path, and skip a component whose
+   declaration omits this target — a skill's declaration takes its whole
+   directory with it. A target whose output is not a component tree
+   declares `emits_bundle_tree = False` and has nothing to filter.
+
+   Step 6 is not optional and not self-enforcing: no shared code can apply
+   the filter for a target, because only the target knows which paths it
+   emits. `test/marketplace/targets/test_target_scoped_emission.py`
+   generates through **every** registered component-tree target and asserts
+   a scoped-out component is absent from its output, so a target that skips
+   this step fails the suite rather than shipping components it was told
+   not to.
 
 ## Output directories
 

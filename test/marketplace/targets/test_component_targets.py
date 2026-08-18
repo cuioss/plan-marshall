@@ -29,6 +29,11 @@ _ACCEPTED_FORMS = {
     'inline-bare-multi': ('targets: claude, opencode', {'claude', 'opencode'}),
     'block': ('targets:\n  - claude\n  - opencode', {'claude', 'opencode'}),
     'quoted': ("targets: ['claude']", {'claude'}),
+    'inline-flow-trailing-comment': ('targets: [claude]  # only here', {'claude'}),
+    'inline-bare-trailing-comment': ('targets: claude  # only here', {'claude'}),
+    'block-with-comment-line': ('targets:\n  # why\n  - claude', {'claude'}),
+    'block-item-trailing-comment': ('targets:\n  - claude  # why', {'claude'}),
+    'block-with-blank-line': ('targets:\n\n  - claude', {'claude'}),
 }
 
 
@@ -150,6 +155,23 @@ def test_three_hyphen_value_does_not_truncate_the_block(tmp_path):
         '---\nname: demo\ndescription: a --- b\ntargets: [claude]\n---\n\n# Body\n',
         encoding='utf-8',
     )
+
+    assert read_target_scope(path) == {'claude'}
+
+
+def test_a_byte_order_mark_does_not_hide_the_declaration(tmp_path):
+    """A BOM'd file must not read as "no frontmatter", which ships it everywhere."""
+    path = tmp_path / 'demo.md'
+    path.write_text('﻿---\nname: demo\ntargets: [claude]\n---\n\n# Body\n', encoding='utf-8')
+
+    assert read_target_scope(path) == {'claude'}
+    assert emits_to(path, 'opencode') is False
+
+
+def test_crlf_line_endings_do_not_hide_the_declaration(tmp_path):
+    """Universal-newline decoding normalises CRLF; pin it rather than assume it."""
+    path = tmp_path / 'demo.md'
+    path.write_bytes(b'---\r\nname: demo\r\ntargets: [claude]\r\n---\r\n\r\n# Body\r\n')
 
     assert read_target_scope(path) == {'claude'}
 

@@ -25,10 +25,12 @@ An absent field is correct and common — it means "ship to every target" and
 is the state of nearly every component in the marketplace.
 
 The generator additionally rejects a declaration naming ONLY targets that
-emit no component tree. That check needs each target's ``emits_bundle_tree``
-capability, which is a runtime property of a target class rather than
-something a static scan can read; it stays in the build, where the classes
-are importable. This rule covers the two defects a static scan CAN settle.
+emit no component tree. That check asks each target class for its
+``emits_bundle_tree`` capability. This analyzer does not import the target
+classes — pattern-matching the method body to guess the answer would be a
+second, weaker restatement of a contract the build can simply ask for — so
+that check stays in the build and this rule covers the two defects a static
+scan settles outright.
 
 Deriving the target set
 -----------------------
@@ -94,9 +96,11 @@ _DESCRIPTION_EMPTY = (
 def _frontmatter_block(text: str) -> str | None:
     """Return the leading ``---``-fenced block's inner text, or ``None``.
 
-    The closing fence is matched as a whole ``---`` line, so a value that
-    itself contains three hyphens does not truncate the block.
+    A UTF-8 BOM is stripped first so a BOM'd file does not read as having no
+    frontmatter at all. The closing fence is matched as a whole ``---`` line,
+    so a value that itself contains three hyphens does not truncate the block.
     """
+    text = text.lstrip('\ufeff')
     if not text.startswith('---\n'):
         return None
     end = text.find('\n---\n', 4)
@@ -107,24 +111,44 @@ def _frontmatter_block(text: str) -> str | None:
     return None
 
 
+def _strip_comment(value: str) -> str:
+    """Drop a trailing YAML comment from a scalar or flow-sequence value.
+
+    Mirrors the generator's own parser (``component_targets._strip_comment``)
+    so the two agree on what a declaration says: a ``#`` opens a comment only
+    when it opens a token.
+    """
+    head, sep, _tail = value.partition('#')
+    if not sep:
+        return value
+    if head and not head[-1].isspace():
+        return value
+    return head.rstrip()
+
+
 def _split_inline(value: str) -> list[str]:
     """Split an inline scalar or flow-sequence value into tokens."""
-    inner = value
+    inner = _strip_comment(value)
     if inner.startswith('[') and inner.endswith(']'):
         inner = inner[1:-1]
     return [token.strip().strip('"').strip("'") for token in inner.split(',') if token.strip()]
 
 
 def _collect_block_items(lines: list[str]) -> list[str]:
-    """Collect a YAML block sequence's items, stopping at the first non-item."""
+    """Collect a YAML block sequence's items, stopping at the first non-item.
+
+    A blank line and a whole-line ``#`` comment are skipped rather than ending
+    the sequence, so a commented list is not misread as an EMPTY one and
+    reported as a component that ships nowhere.
+    """
     items: list[str] = []
     for line in lines:
         stripped = line.strip()
-        if not stripped:
+        if not stripped or stripped.startswith('#'):
             continue
         if not stripped.startswith('-'):
             break
-        item = stripped[1:].strip().strip('"').strip("'")
+        item = _strip_comment(stripped[1:].strip()).strip().strip('"').strip("'")
         if item:
             items.append(item)
     return items

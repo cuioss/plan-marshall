@@ -6,9 +6,12 @@ provides ``--output``:
 
 * **Emit mode (`--output` provided)** — walk every bundle under
   ``marketplace/bundles/`` and copy its content byte-for-byte into
-  ``{output}/{bundle}/`` *except* for ``.claude-plugin/plugin.json``,
+  ``{output}/{bundle}/`` with two exceptions: ``.claude-plugin/plugin.json``,
   which is regenerated deterministically from the bundle's source
-  frontmatter. Immediately after emit, the regenerated content is
+  frontmatter, and any component whose ``targets:`` frontmatter scope omits
+  this target, which is not mirrored at all (a skill's declaration takes its
+  whole directory with it — see ``component_targets.py``). Immediately after
+  emit, the regenerated content is
   diffed against the just-written ``{output}/{bundle}/.claude-plugin/plugin.json``
   so callers see drift as part of the same TOON return. Equality
   failure raises ``RuntimeError`` so the CLI surfaces a non-zero exit.
@@ -17,7 +20,11 @@ provides ``--output``:
   The engine reads ``target/claude/{bundle}/.claude-plugin/plugin.json``
   (relative to the project root) and diffs it against a fresh in-memory
   regeneration. When ``target/claude/`` is absent, the result includes
-  a structured "run emit mode first" diagnostic.
+  a structured "run emit mode first" diagnostic. This mode also re-walks
+  each bundle's components to validate their ``targets:`` declarations:
+  the equality path regenerates only the manifest, which never opens a
+  ``SKILL.md``, so without that walk a skill's invalid declaration would
+  pass a validate-only run that an emit rejects.
 
 The TOON return contains ``status``, ``emitted_count``,
 ``plugin_json_diff_count``, and ``equality_check_result``.
@@ -38,6 +45,7 @@ from marketplace.targets.claude.emitter import (
 from marketplace.targets.claude.equality_check import run_equality_check
 from marketplace.targets.claude.marketplace_json_gen import generate_marketplace_json
 from marketplace.targets.claude.plugin_json_gen import generate_plugin_json
+from marketplace.targets.component_targets import excluded_emission_roots
 from marketplace.targets.claude.source_fingerprint import (
     FingerprintError,
     compute_source_tree_fingerprint,
@@ -127,6 +135,12 @@ class ClaudeTarget(TargetBase):
         # Validate mode: equality check only. Read from the canonical
         # ``target/claude/`` location relative to the project root.
         if output_dir is None:
+            # Validate every component's ``targets:`` declaration first. The
+            # equality path regenerates the manifest only, and the manifest
+            # never lists skills, so a skill's invalid declaration would slip
+            # through a validate-only run that an emit rejects.
+            for bundle_dir in bundle_dirs:
+                excluded_emission_roots(bundle_dir, self.name)
             equality = run_equality_check(
                 DEFAULT_VALIDATE_TARGET_DIR, bundle_dirs, target_name=self.name
             )

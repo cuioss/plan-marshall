@@ -49,8 +49,22 @@ moment it is read and an invalid one aborts the build
 
 The valid names are derived from ``TARGET_REGISTRY`` and from each
 target's own :attr:`~marketplace.targets.base.TargetBase.emits_bundle_tree`
-capability, never enumerated here: a target registered later is covered,
-or exempted by its own declared capability, with no edit to this module.
+capability, never enumerated here, so a target registered later needs no
+edit to this module to be a legal value or to be exempt.
+
+What derivation does NOT give you
+---------------------------------
+That derivation governs which names are LEGAL. It does not make a new
+target honour the filter: ENFORCEMENT is per-target wiring — each
+component-tree target calls :func:`emits_to` (or
+:func:`excluded_emission_roots`) from its own emit path, and a target that
+simply never called it would emit every scoped-out component with nothing
+here to stop it. The obligation is stated on
+:meth:`~marketplace.targets.base.TargetBase.generate` and in
+``marketplace/targets/README.md`` § "Adding a New Target", and it is pinned
+by a test that generates through EVERY registered component-tree target and
+asserts a scoped-out component is absent from its output — so an unwired
+target fails the suite rather than shipping quietly.
 
 Degradation
 -----------
@@ -98,10 +112,13 @@ class TargetScopeError(RuntimeError):
 def registered_target_names() -> frozenset[str]:
     """Return every registered target's registry name.
 
-    The import is deferred to call time: ``marketplace.targets`` imports its
-    target sub-packages for their registration side-effect, and those
-    sub-packages import this module, so a module-level import would close a
-    cycle during package initialisation.
+    The import is deferred to call time. This module is imported from inside
+    the target sub-packages that ``marketplace.targets`` imports for their
+    registration side-effect, so a module-level ``from marketplace.targets
+    import TARGET_REGISTRY`` would bind the registry before any target had
+    registered into it. That happens to work — the registry is mutated in
+    place rather than rebound — but it makes correctness rest on that detail.
+    Reading it at call time does not.
     """
     from marketplace.targets import TARGET_REGISTRY  # noqa: PLC0415
 
@@ -131,10 +148,16 @@ def component_tree_target_names() -> frozenset[str]:
 def _frontmatter_block(text: str) -> str | None:
     """Return the leading ``---``-fenced block's inner text, or ``None``.
 
+    A UTF-8 BOM is stripped first: ``read_text`` leaves it in the string, and
+    a file carrying one would otherwise look like it had no frontmatter at
+    all — which reads as "declares no scope" and silently ships the component
+    everywhere.
+
     The closing fence is matched as a whole ``\\n---\\n`` line rather than as
     a bare ``---`` substring, so a value that itself contains three hyphens
     does not truncate the block and hide the fields after it.
     """
+    text = text.lstrip('\ufeff')
     if not text.startswith('---\n'):
         return None
     end = text.find('\n---\n', 4)
@@ -145,6 +168,23 @@ def _frontmatter_block(text: str) -> str | None:
     return None
 
 
+def _strip_comment(value: str) -> str:
+    """Drop a trailing YAML comment from a scalar or flow-sequence value.
+
+    ``targets: [claude]  # note`` and ``targets: claude  # note`` both carry a
+    comment the value parser would otherwise fold into a token, producing a
+    diagnostic that names ``[claude] # note`` as the unknown target. A ``#``
+    is a comment only when it opens a token, which is what YAML requires and
+    what keeps a hypothetical name containing ``#`` intact.
+    """
+    head, sep, _tail = value.partition('#')
+    if not sep:
+        return value
+    if head and not head[-1].isspace():
+        return value
+    return head.rstrip()
+
+
 def _split_inline(value: str) -> list[str]:
     """Split an inline scalar or flow-sequence value into tokens.
 
@@ -152,22 +192,28 @@ def _split_inline(value: str) -> list[str]:
     empty list, which the validator rejects — an empty declaration is an
     authoring error rather than a silent no-op.
     """
-    inner = value
+    inner = _strip_comment(value)
     if inner.startswith('[') and inner.endswith(']'):
         inner = inner[1:-1]
     return [token.strip().strip('"').strip("'") for token in inner.split(',') if token.strip()]
 
 
 def _collect_block_items(lines: list[str]) -> list[str]:
-    """Collect a YAML block sequence's items, stopping at the first non-item."""
+    """Collect a YAML block sequence's items, stopping at the first non-item.
+
+    A blank line and a whole-line ``#`` comment are skipped rather than
+    ending the sequence: ending there would read a commented list as an
+    EMPTY one and reject a component that declares its targets perfectly
+    well, under a message describing a file that does not exist.
+    """
     items: list[str] = []
     for line in lines:
         stripped = line.strip()
-        if not stripped:
+        if not stripped or stripped.startswith('#'):
             continue
         if not stripped.startswith('-'):
             break
-        item = stripped[1:].strip().strip('"').strip("'")
+        item = _strip_comment(stripped[1:].strip()).strip().strip('"').strip("'")
         if item:
             items.append(item)
     return items
@@ -265,9 +311,16 @@ def emits_to(path: Path, target_name: str) -> bool:
     """Whether the component at ``path`` is emitted by ``target_name``.
 
     Raises:
-        TargetScopeError: The component's declaration is invalid. The check
-            is performed on every read, so an invalid declaration fails the
-            build whichever target happens to be generating.
+        TargetScopeError: The component's declaration is invalid. Validation
+            runs on every read, so an invalid declaration aborts any run that
+            reads that component. What that covers is exactly the runs that
+            READ components: every component-tree target's emit, and the
+            Claude target's validate-only mode (which re-walks each bundle's
+            components for this check alone). A ``pr-agent``-only run reads
+            no component at all — it derives a reviewer configuration from
+            skill rule text — so it neither can nor does validate a
+            declaration; the plugin-doctor ``targets-scope-invalid`` rule is
+            the authoring-time net for that case.
     """
     scope = read_target_scope(path)
     return scope is None or target_name in scope

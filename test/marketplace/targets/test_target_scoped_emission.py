@@ -24,11 +24,42 @@ from marketplace.targets.component_targets import (
 )
 from marketplace.targets.opencode.target import OpenCodeTarget
 
-_SCOPED = '---\nname: {name}\ndescription: scoped to claude only\ntargets: [claude]\n---\n\n# Body\n'
-# The mirror image. Without it the Claude pipeline's exclusion path is never
-# taken — a fixture scoped TO claude exercises only the other target's skip.
-_OTHER = '---\nname: {name}\ndescription: scoped away from claude\ntargets: [opencode]\n---\n\n# Body\n'
-_PLAIN = '---\nname: {name}\ndescription: ships everywhere\n---\n\n# Body\n'
+# The fixture's components, as data: stem -> the scope its frontmatter declares
+# (``None`` = no declaration = every target). The fixture WRITES from this table
+# and the registry sweep READS its expectation from it, so the two cannot drift
+# — and neither is derived from the code under test.
+#
+# Both scope directions are present deliberately. A fixture scoped only TO
+# claude exercises the OpenCode skip alone, leaving the Claude emitter's own
+# exclusion path unobserved.
+_FIXTURE_SCOPES: dict[str, frozenset[str] | None] = {
+    'scoped-agent': frozenset({'claude'}),
+    'scoped-cmd': frozenset({'claude'}),
+    'scoped-skill': frozenset({'claude'}),
+    'other-agent': frozenset({'opencode'}),
+    'other-cmd': frozenset({'opencode'}),
+    'other-skill': frozenset({'opencode'}),
+    'plain-agent': None,
+    'plain-cmd': None,
+    'plain-skill': None,
+}
+
+_UNSCOPED_COMMAND = 'plain-cmd'
+
+
+def _frontmatter(stem: str) -> str:
+    scope = _FIXTURE_SCOPES[stem]
+    declaration = '' if scope is None else f'targets: [{", ".join(sorted(scope))}]\n'
+    return f'---\nname: {stem}\ndescription: fixture component\n{declaration}---\n\n# Body\n'
+
+
+def _scoped_away_from(target_name: str) -> set[str]:
+    """Stems whose declaration excludes ``target_name`` — what it must NOT emit."""
+    return {
+        stem
+        for stem, scope in _FIXTURE_SCOPES.items()
+        if scope is not None and target_name not in scope
+    }
 
 
 def _write(path: Path, content: str) -> None:
@@ -70,17 +101,14 @@ def marketplace(tmp_path: Path) -> Path:
         )
         + '\n',
     )
-    _write(bundle / 'agents' / 'scoped-agent.md', _SCOPED.format(name='scoped-agent'))
-    _write(bundle / 'agents' / 'plain-agent.md', _PLAIN.format(name='plain-agent'))
-    _write(bundle / 'commands' / 'scoped-cmd.md', _SCOPED.format(name='scoped-cmd'))
-    _write(bundle / 'commands' / 'plain-cmd.md', _PLAIN.format(name='plain-cmd'))
-    _write(bundle / 'skills' / 'scoped-skill' / 'SKILL.md', _SCOPED.format(name='scoped-skill'))
-    _write(bundle / 'skills' / 'scoped-skill' / 'standards' / 'x.md', '# standard\n')
-    _write(bundle / 'skills' / 'plain-skill' / 'SKILL.md', _PLAIN.format(name='plain-skill'))
-    _write(bundle / 'agents' / 'other-agent.md', _OTHER.format(name='other-agent'))
-    _write(bundle / 'commands' / 'other-cmd.md', _OTHER.format(name='other-cmd'))
-    _write(bundle / 'skills' / 'other-skill' / 'SKILL.md', _OTHER.format(name='other-skill'))
-    _write(bundle / 'skills' / 'other-skill' / 'standards' / 'y.md', '# standard\n')
+    for stem in _FIXTURE_SCOPES:
+        if stem.endswith('-agent'):
+            _write(bundle / 'agents' / f'{stem}.md', _frontmatter(stem))
+        elif stem.endswith('-cmd'):
+            _write(bundle / 'commands' / f'{stem}.md', _frontmatter(stem))
+        else:
+            _write(bundle / 'skills' / stem / 'SKILL.md', _frontmatter(stem))
+            _write(bundle / 'skills' / stem / 'standards' / 'x.md', '# standard\n')
     return bundles
 
 
@@ -148,7 +176,7 @@ def test_components_scoped_away_from_claude_still_reach_the_target_they_name(
     assert (opencode_tree / 'agent' / 'other-agent.md').is_file()
     assert (opencode_tree / 'command' / 'other-cmd.md').is_file()
     assert (opencode_tree / 'skill' / 'demo-other-skill' / 'SKILL.md').is_file()
-    assert (opencode_tree / 'skill' / 'demo-other-skill' / 'standards' / 'y.md').is_file()
+    assert (opencode_tree / 'skill' / 'demo-other-skill' / 'standards' / 'x.md').is_file()
 
 
 def test_unscoped_components_reach_every_target(claude_tree: Path, opencode_tree: Path):
@@ -161,15 +189,44 @@ def test_unscoped_components_reach_every_target(claude_tree: Path, opencode_tree
     assert (opencode_tree / 'skill' / 'demo-plain-skill' / 'SKILL.md').is_file()
 
 
-def test_every_component_tree_target_honours_the_filter():
-    """The filter's reach is the derived capability set, not a pair of names.
+def test_every_component_tree_target_honours_the_filter(marketplace: Path, tmp_path: Path):
+    """Generate through EVERY registered component-tree target; none may emit a scoped-out component.
 
-    Quantifying over the registry is what makes a target registered later
-    covered by this expectation rather than silently exempt.
+    Honouring the filter is per-target wiring — no shared code can apply it on
+    a target's behalf, because only the target knows which paths it emits — so
+    this is what makes the obligation enforceable rather than merely
+    documented. Quantifying over the registry is the load-bearing part: a
+    target registered later is generated here too, and fails unless it wired
+    the filter in.
+
+    The assertion is made from each target's OWN emitted-path list, not from
+    the filter's return value, so it cannot agree with the filter by
+    construction.
     """
-    assert component_tree_target_names() == {
-        name for name, target_cls in TARGET_REGISTRY.items() if target_cls().emits_bundle_tree
-    }
+    tree_targets = sorted(component_tree_target_names())
+    assert tree_targets, 'no component-tree target registered — the sweep would be vacuous'
+
+    for name in tree_targets:
+        target = TARGET_REGISTRY[name]()
+        emitted = target.generate(marketplace, tmp_path / 'sweep' / name)
+        # A skill is emitted as a directory, and each target names that
+        # directory its own way, so match on any path SEGMENT rather than on a
+        # filename: that covers the file-shaped and directory-shaped
+        # components with one rule and needs no per-target path knowledge.
+        segments = {segment for path in emitted for segment in Path(path).parts}
+        emitted_stems = {Path(path).stem for path in emitted}
+
+        for stem in sorted(_scoped_away_from(name)):
+            assert not any(stem in segment for segment in segments), (
+                f'{name} emitted {stem}, which declares a scope excluding {name}'
+            )
+
+        # Anti-vacuity: a target that emitted nothing would satisfy every
+        # assertion above. The unscoped command must actually be there.
+        if target.supports_commands():
+            assert _UNSCOPED_COMMAND in emitted_stems, (
+                f'{name} emitted no unscoped command; the absences above are vacuous'
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +304,29 @@ def test_generation_fails_on_an_invalid_declaration(
 
     assert expected_fragment in str(excinfo.value)
     assert 'bad.md' in str(excinfo.value)
+
+
+def test_validate_only_mode_rejects_an_invalid_skill_declaration(
+    marketplace: Path, tmp_path: Path, monkeypatch
+):
+    """Validate-only mode must not pass a declaration an emit would reject.
+
+    The equality path regenerates the manifest only, and the manifest never
+    lists skills, so without an explicit component walk a skill's invalid
+    declaration reaches validate-only mode unexamined.
+    """
+    output = tmp_path / 'out' / 'claude'
+    ClaudeTarget().generate(marketplace, output)
+    monkeypatch.setattr(
+        'marketplace.targets.claude.target.DEFAULT_VALIDATE_TARGET_DIR', output
+    )
+    _write(
+        marketplace / 'demo' / 'skills' / 'bad-skill' / 'SKILL.md',
+        '---\nname: bad-skill\ndescription: d\ntargets: [cluade]\n---\n\n# Body\n',
+    )
+
+    with pytest.raises(TargetScopeError, match='cluade'):
+        ClaudeTarget().generate(marketplace, None)
 
 
 def test_generation_fails_when_no_named_target_emits_a_component_tree(
