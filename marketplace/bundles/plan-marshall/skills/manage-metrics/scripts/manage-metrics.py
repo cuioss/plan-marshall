@@ -301,6 +301,20 @@ _TOTALS_DURATION_COLUMNS = frozenset({'worked', 'wall', 'idle'})
 
 _POPULATION_COUNT_SUFFIX = '_population_count'
 _TOTALS_DENOMINATOR_FIELD = 'totals_population_denominator'
+
+# When the aggregate was computed.
+#
+# Provenance only. ONLY ``generate`` computes the totals, while ``start-phase``,
+# ``end-phase``, ``phase-boundary`` and ``enrich`` all rewrite the store's phase
+# rows — so an aggregate left behind by an earlier ``generate`` would disagree
+# with the rows it claims to sum, and a consumer told to READ the totals instead
+# of re-summing would quote it anyway.
+#
+# Freshness is therefore carried by PRESENCE, not by this stamp: ``write_metrics``
+# drops every aggregate key for any writer that did not just compute it. The stamp
+# records when the surviving aggregate was taken, mirroring the denominators'
+# ``denominators_sampled_at``; it is not what a reader tests.
+_TOTALS_SAMPLED_AT_FIELD = 'totals_sampled_at'
 _TOTALS_SPANS_POPULATIONS_FIELD = 'totals_tokens_spans_populations'
 _BOUNDARY_EXCLUDED_CLASSES_FIELD = 'dispatch_boundary_excluded_classes'
 
@@ -608,9 +622,16 @@ def _unclosed_boundary_floor(phase_row: dict) -> int | None:
     as nothing), applied to the dispatched population instead of the inline one.
 
     ⛔ The fold is deliberately scoped to the TOKEN figure. The phase keeps its
-    place in ``phases_missing_end_time`` and its duration stays absent, because
-    the boundary file records per-dispatch spans and cannot honestly supply a
-    phase wall-clock the close never stamped.
+    place in ``phases_missing_end_time``, and NO duration is derived from the
+    boundary file, which records per-dispatch spans and cannot honestly supply
+    the phase wall-clock the close never stamped.
+
+    That is a statement about this fold, not about the row: an unclosed row can
+    still render a Worked figure, because ``_reconcile_accumulator_into_phase``
+    backfills ``agent_duration_ms`` from the durable accumulator — a source that
+    likewise does not depend on the close. Its wall-clock cell stays ``-``, since
+    ``duration_seconds`` is written only by a close. Nothing here changes either
+    behaviour.
 
     Returns:
         The boundary sum for an unclosed phase that recorded one, else ``None``.
@@ -880,7 +901,42 @@ def _coerce_numeric(value: object) -> int | float | str:
 # get_plan_dir imported from file_ops
 
 
-def write_metrics(plan_id: str, data: dict) -> None:
+def write_metrics(plan_id: str, data: dict, *, preserve_totals: bool = False) -> None:
+    """Write the store, INVALIDATING the persisted aggregate unless it was just computed.
+
+    Only ``cmd_generate`` computes the ``totals_*`` aggregate, while every other
+    writer of this store — ``start-phase``, ``end-phase``, ``phase-boundary`` and
+    ``enrich`` — rewrites the phase rows underneath it. Left in place, those totals would
+    silently stop being the sum of the rows they sit beside — and this
+    deliverable's whole point is that a consumer READS them instead of
+    re-summing, so a stale aggregate is a wrong answer delivered confidently.
+
+    The aggregate is therefore an INVARIANT of the most recent write: present iff
+    this write computed it. Every writer but ``generate`` drops it, so a reader
+    that finds the keys knows the rows have not moved since, and one that finds
+    them absent knows to re-generate. That is exact, unlike comparing timestamps
+    — ``updated`` and ``totals_sampled_at`` are both second-granularity, so a
+    write landing in the same second as the ``generate`` it invalidates would be
+    undetectable by comparison. The same present-iff-derivable-now rule already
+    governs ``cache_read_per_tool_use``.
+
+    Args:
+        plan_id: Plan identifier.
+        data: The store dict to write.
+        preserve_totals: Set ONLY by ``cmd_generate``, which has just recomputed
+            the aggregate from the rows being written.
+    """
+    if not preserve_totals:
+        for field in _TOTALS_FIELDS.values():
+            data.pop(field, None)
+            data.pop(f'{field}{_POPULATION_COUNT_SUFFIX}', None)
+        for field in (
+            _TOTALS_DENOMINATOR_FIELD,
+            _TOTALS_SPANS_POPULATIONS_FIELD,
+            _TOTALS_SAMPLED_AT_FIELD,
+        ):
+            data.pop(field, None)
+
     metrics_path = get_plan_dir(plan_id) / METRICS_FILE
     metrics_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -1538,6 +1594,15 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # is derived below and must reach the store, so the single write — and the
     # denominators that must be stamped last before it — happen once the aggregate
     # exists. See "Persist the aggregate, then render the Total row FROM it".
+    #
+    # Moving the write past the render loop makes `generate` ALL-OR-NOTHING: an
+    # exception in that loop now discards the accumulator reconciliation, the idle
+    # residuals, the boundary totals and the end_time-presence keys that used to
+    # reach disk before rendering began. That is the intended shape — a store
+    # holding derived keys but no aggregate would be exactly the half-written
+    # record this deliverable exists to remove — and it is bounded: every read
+    # between here and the write goes through `_coerce_numeric` / `_numeric`,
+    # which return None rather than raising on any stored value.
 
     # Build metrics.md content
     lines = []
@@ -1558,10 +1623,13 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         lines.append(
             '> Phases missing an end_time boundary marker — '
             f'{", ".join(phases_missing_end_time)}. These rows were never closed by '
-            'end-phase / phase-boundary, so their totals are absent and every column '
-            'Total above is a floor. This is an end_time-presence check only: a phase '
-            'NOT listed here carries the marker, which says nothing about whether its '
-            'recorded figures are complete or internally consistent.'
+            'end-phase / phase-boundary, so no close recorded their totals and every '
+            'column Total above is a floor. Such a row can still show figures recovered '
+            'from sources that do not depend on the close — its accumulator, and its '
+            'dispatch-boundary rows (marked `(boundary floor)`) — and those are floors '
+            'too. This is an end_time-presence check only: a phase NOT listed here '
+            'carries the marker, which says nothing about whether its recorded figures '
+            'are complete or internally consistent.'
         )
         lines.append('')
 
@@ -1830,13 +1898,19 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # the rendered annotation — so a script reading the store got the coverage
     # numbers without the declaration that makes them safe to interpret.
     data[_BOUNDARY_EXCLUDED_CLASSES_FIELD] = ','.join(DISPATCH_BOUNDARY_EXCLUDED_CLASSES)
+    # Provenance for a reader: the moment this aggregate was computed. It is NOT
+    # the freshness signal — that is presence, enforced by write_metrics, which
+    # drops every aggregate key for any writer that is not this one.
+    data[_TOTALS_SAMPLED_AT_FIELD] = now_utc_iso()
 
     # Denominators + their sampling point. Written last among the derived
     # top-level keys so the pair's timestamp is the closest available stamp to
     # the write itself.
     _persist_denominators(plan_id, data)
 
-    write_metrics(plan_id, data)
+    # The ONE call that keeps the aggregate: it was computed above, from exactly
+    # the rows being written here.
+    write_metrics(plan_id, data, preserve_totals=True)
 
     def _total_str(column: str, formatter, *, is_duration: bool = False) -> str:
         """Apply the symmetric Total aggregation rule, reading the STORE.
@@ -1952,13 +2026,15 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         folded = ', '.join(f'{name} → {value:,}' for name, value in unclosed_boundary_phases)
         lines.append(
             '> Marked `(boundary floor)` — the phase was never closed by end-phase / '
-            'phase-boundary, so it has no recorded total; the figure is the sum of its '
-            'dispatch-boundary rows, which accumulate per dispatch and do not depend on '
-            f'the phase boundary closing: {folded}. It is a FLOOR — it covers only the '
-            'dispatch classes that register a boundary (see the declared exclusions '
-            'below). The phase stays listed as missing its end_time marker and its '
-            'duration stays absent: the boundary file records per-dispatch spans and '
-            'cannot supply a phase wall-clock the close never stamped.'
+            'phase-boundary, and the sum of its dispatch-boundary rows is the largest '
+            'measure available for it; those rows accumulate per dispatch and do not '
+            f'depend on the phase boundary closing: {folded}. It is a FLOOR — it covers '
+            'only the dispatch classes that register a boundary (see the declared '
+            'exclusions below). The phase stays listed as missing its end_time marker, '
+            'and no wall-clock duration is derived from the boundary file, which records '
+            'per-dispatch spans rather than the phase span the close never stamped. Any '
+            'Worked figure shown for such a row comes from its accumulator, not from '
+            'this fold.'
         )
         lines.append('')
 
@@ -2236,9 +2312,15 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # Read the aggregate back from the STORE rather than re-summing the render's
     # working lists. Re-summing here would make this return block a third producer
     # of the same figures, free to diverge from both the store and the table — the
-    # very shape this deliverable removes. The duration fields are converted from
-    # the persisted milliseconds at the point of use, so the returned second-scale
-    # value and the persisted millisecond value are the same measurement.
+    # very shape this deliverable removes.
+    #
+    # The duration fields are converted from the persisted milliseconds here, and
+    # the `total_*_seconds` keys below then ROUND to one decimal — so the returned
+    # second-scale value is the persisted measurement at a coarser precision, not
+    # the same number. That rounding is why the store keeps milliseconds: at
+    # 59 960 ms the store renders `60.0s` while `round(59.96, 1)` formats as
+    # `1m0s`. Read `totals_*_ms` when the exact figure matters; the `_seconds`
+    # keys are the human-facing summary and are kept for their existing callers.
     total_worked = int(data[_TOTALS_FIELDS['worked']]) / 1000.0
     total_wall = int(data[_TOTALS_FIELDS['wall']]) / 1000.0
     total_idle = int(data[_TOTALS_FIELDS['idle']]) / 1000.0
@@ -2272,6 +2354,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
         totals_echo[field] = data[field]
         totals_echo[count_field] = data[count_field]
     totals_echo[_TOTALS_SPANS_POPULATIONS_FIELD] = data[_TOTALS_SPANS_POPULATIONS_FIELD]
+    totals_echo[_TOTALS_SAMPLED_AT_FIELD] = data[_TOTALS_SAMPLED_AT_FIELD]
 
     return {
         'status': 'success',

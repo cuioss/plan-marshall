@@ -36,7 +36,8 @@ Facts emitted:
     so the verdict is ``inconclusive`` rather than a fabricated ``fail``.
   * ``cost_preview`` — the ``execution_log`` token sum beside the init preview,
     each naming the POPULATION it measures, and a ``comparison`` verdict that
-    feeds the §4.6a recalibration loop only when the two populations match.
+    feeds the ``cost_size_token_table`` recalibration loop only when the two
+    populations match.
   * ``kept_step_yield`` — finding count as the adversarial-step yield proxy.
   * ``recompose_divergence`` — the lane_resolution decision-log LINE count. Not a
     recompose count despite the name; see :func:`lane_resolution_view`.
@@ -618,7 +619,7 @@ def evaluate_cost_preview(manifest: dict[str, Any], metadata: dict[str, Any]) ->
     population companion :data:`PREDICTED_POPULATION_KEY`. **The delta is emitted
     only when the two populations are equal.** A population-mismatched
     subtraction is the defect — not the field name — because it produces a
-    *plausible* number: the §4.6a ``cost_size_token_table`` recalibration loop
+    *plausible* number: the ``cost_size_token_table`` recalibration loop
     reads ``delta_pct``, and a delta between a 2-of-6-phase sum and a prediction
     covering some other phase set would recalibrate the cost model against a
     quantity nobody measured. Withholding the delta is what turns that silent

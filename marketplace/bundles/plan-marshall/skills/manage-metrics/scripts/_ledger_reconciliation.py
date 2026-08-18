@@ -17,8 +17,11 @@ boundaries-{phase}.toon``        dispatch classes that call
                                  ``record-dispatch-boundary``. The other
                                  classes are excluded BY DECLARATION.
 ``work/metrics.toon``            A per-phase AGGREGATE across all six
-                                 canonical phases. It holds sums, not rows,
-                                 so it cannot express a repeat count at all.
+                                 canonical phases. It holds sums rather than
+                                 rows, so it cannot say WHICH dispatches it
+                                 summed — only how many times the phase
+                                 closed (``close_count``), which this module
+                                 reads as the re-entry signal.
 ===============================  ==========================================
 
 The two ROW ledgers are written by independent call sites with no shared
@@ -146,11 +149,13 @@ def load_execution_log(plan_dir: Path) -> tuple[list[dict[str, Any]] | None, str
 def execution_rows_for_phase(rows: list[dict[str, Any]], phase: str) -> list[dict[str, Any]]:
     """Return this phase's execution-log rows, normalised and timestamp-ordered.
 
-    A row with an unparseable timestamp is KEPT, with ``timestamp`` ``None``: it
-    is a real recorded dispatch, and dropping it would silently shrink the
-    population the reconciliation reports on. It can never pair (pairing needs
-    two timestamps), so it surfaces as an unpaired row — which is the honest
-    outcome for a row whose position nothing can establish.
+    A row with an unparseable timestamp is KEPT, with ``parsed_timestamp``
+    ``None`` and ``timestamp`` left at its raw recorded value: it is a real
+    recorded dispatch, and dropping it would silently shrink the population the
+    reconciliation reports on. It can never pair (pairing needs two parsed
+    timestamps), so it surfaces as an unpaired row — the honest outcome for a row
+    whose position nothing can establish — and its finding still quotes the raw
+    value, so a reader can see what could not be parsed.
     """
     selected = [row for row in rows if str(row.get('phase')) == phase]
     normalised = [

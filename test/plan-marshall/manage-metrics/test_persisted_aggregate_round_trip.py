@@ -23,10 +23,12 @@ honestly supply a wall-clock the close never stamped.
 
 import importlib.util
 import re
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 from _manage_metrics_fixtures import (
+    ns_accumulate,
     ns_end_phase,
     ns_generate,
     ns_record_dispatch_boundary,
@@ -46,6 +48,7 @@ cmd_start_phase = manage_metrics.cmd_start_phase
 cmd_end_phase = manage_metrics.cmd_end_phase
 cmd_generate = manage_metrics.cmd_generate
 cmd_record_dispatch_boundary = manage_metrics.cmd_record_dispatch_boundary
+cmd_accumulate_agent_usage = manage_metrics.cmd_accumulate_agent_usage
 
 #: The Total row's six value columns, keyed as `_TOTALS_FIELDS` keys them. Read
 #: from production so a column added there is covered here without an edit — a
@@ -226,6 +229,44 @@ class TestPersistedAggregate:
             assert f'{field}{manage_metrics._POPULATION_COUNT_SUFFIX}' in result
         assert result[manage_metrics._TOTALS_DENOMINATOR_FIELD] == 6
 
+    def test_a_later_write_invalidates_the_aggregate_rather_than_stranding_it(self, plan_context):
+        """The aggregate is present iff the most recent write computed it.
+
+        Only `generate` computes the totals; every other writer moves the phase
+        rows underneath them. Left in place they would silently stop summing the
+        rows beside them — and this deliverable tells consumers to READ them
+        instead of re-summing, so a stranded aggregate is a wrong answer given
+        confidently. Presence is the freshness signal, deliberately rather than a
+        timestamp comparison: `updated` and `totals_sampled_at` are both
+        second-granularity, so a write in the same second would be invisible to
+        one — as it is here, where the whole test runs inside one second.
+        """
+        plan_id = 'agg-stale'
+        cmd_start_phase(ns_start_phase(plan_id, '4-plan'))
+        cmd_end_phase(ns_end_phase(plan_id, '4-plan', total_tokens=1000))
+        cmd_generate(ns_generate(plan_id))
+        store = _store(plan_context, plan_id)
+        assert _top_level_field(store, 'totals_tokens') == '1000'
+        assert _top_level_field(store, 'totals_sampled_at') is not None
+
+        # A write that does NOT re-generate: the rows move.
+        cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
+        cmd_end_phase(ns_end_phase(plan_id, '5-execute', total_tokens=999000))
+
+        # Every aggregate key is gone — no stale value survives to be quoted.
+        store = _store(plan_context, plan_id)
+        for field in manage_metrics._TOTALS_FIELDS.values():
+            assert _top_level_field(store, field) is None
+            assert _top_level_field(store, f'{field}{manage_metrics._POPULATION_COUNT_SUFFIX}') is None
+        assert _top_level_field(store, manage_metrics._TOTALS_DENOMINATOR_FIELD) is None
+        assert _top_level_field(store, manage_metrics._TOTALS_SAMPLED_AT_FIELD) is None
+        # The phase rows themselves are untouched by the invalidation.
+        assert _phase_field(store, '5-execute', 'total_tokens') == '999000'
+
+        # Re-generating restores it, now summing the moved rows.
+        cmd_generate(ns_generate(plan_id))
+        assert _top_level_field(_store(plan_context, plan_id), 'totals_tokens') == '1000000'
+
     def test_duration_totals_persist_milliseconds_not_rounded_seconds(self, plan_context):
         """The store keeps the operands' own precision.
 
@@ -253,6 +294,84 @@ class TestPersistedAggregate:
         assert _top_level_field(store, 'totals_worked_ms') == '59960'
         rendered = _total_row_cells(_report(plan_context, plan_id))[1]
         assert rendered.startswith('60.0s')
+
+
+class TestWorkedTimeExcludesTheIdleGap:
+    """The substrate the per-task ratio reads: worked effort, not operator idle.
+
+    `plan-efficiency`'s `worked_seconds_per_task` is computed by an LLM from a
+    reference contract, so the ratio itself has no script to test. What IS
+    script-level, and what the deliverable actually rests on, is that the figure
+    the contract tells it to read — `totals_worked_ms` — reflects worked time on
+    a plan containing a long idle gap, while `totals_wall_ms` reflects the gap.
+    If that separation did not hold, reading the worked field would change
+    nothing and the fix would be cosmetic.
+    """
+
+    #: An overnight gap: the phase was open for eight hours.
+    _WALL_MS = 8 * 60 * 60 * 1000
+    #: The agent actually worked ten minutes of it.
+    _WORKED_MS = 10 * 60 * 1000
+
+    def _drive_phase_with_idle_gap(self, plan_id: str) -> None:
+        """Open a phase eight hours ago and close it after ten minutes of work."""
+        cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
+        raw = manage_metrics.read_metrics_raw(plan_id)
+        opened = datetime.now(UTC) - timedelta(milliseconds=self._WALL_MS)
+        raw['phases']['5-execute']['start_time'] = opened.isoformat()
+        manage_metrics.write_metrics(plan_id, raw)
+        cmd_end_phase(
+            ns_end_phase(plan_id, '5-execute', total_tokens=5000, duration_ms=self._WORKED_MS)
+        )
+
+    def test_worked_excludes_the_gap_and_wall_includes_it(self, plan_context):
+        """The two totals disagree by the idle gap — that IS the deliverable."""
+        plan_id = 'idle-gap-split'
+        self._drive_phase_with_idle_gap(plan_id)
+
+        cmd_generate(ns_generate(plan_id))
+
+        store = _store(plan_context, plan_id)
+        worked_ms = int(_top_level_field(store, 'totals_worked_ms'))
+        wall_ms = int(_top_level_field(store, 'totals_wall_ms'))
+        assert worked_ms == self._WORKED_MS
+        # The wall span carries the whole gap (within a second of scheduling slack).
+        assert wall_ms >= self._WALL_MS - 1000
+        # A per-task figure over wall would grade ~48x more cost than was worked.
+        assert wall_ms > worked_ms * 40
+
+    def test_the_worked_figure_is_not_achieved_by_clamping(self, plan_context):
+        """⛔ The plan forbids clamping, and no clamp fired here.
+
+        `_clamp_worked_to_wall` only ever lowers a worked value TOWARD the wall
+        span. On an idle-gap row worked is far below wall, so the clamp is a
+        no-op and the recorded figure is the one the caller supplied — untouched,
+        not reduced. Asserting the exact supplied value is what distinguishes
+        "read the worked measurement" from "clamp the wall measurement".
+        """
+        plan_id = 'idle-gap-unclamped'
+        self._drive_phase_with_idle_gap(plan_id)
+
+        cmd_generate(ns_generate(plan_id))
+
+        store = _store(plan_context, plan_id)
+        assert _phase_field(store, '5-execute', 'agent_duration_ms') == str(self._WORKED_MS)
+        # Positive control on the clamp: it exists and fires when worked EXCEEDS
+        # wall, so the no-op above is a property of this row, not a dead clamp.
+        assert manage_metrics._clamp_worked_to_wall({'duration_seconds': 1.0}, 5000) == 1000
+
+    def test_the_idle_residual_is_the_gap(self, plan_context):
+        """Idle is published as its own figure, not folded into either total."""
+        plan_id = 'idle-gap-residual'
+        self._drive_phase_with_idle_gap(plan_id)
+
+        cmd_generate(ns_generate(plan_id))
+
+        store = _store(plan_context, plan_id)
+        idle_ms = int(_top_level_field(store, 'totals_idle_ms'))
+        worked_ms = int(_top_level_field(store, 'totals_worked_ms'))
+        wall_ms = int(_top_level_field(store, 'totals_wall_ms'))
+        assert idle_ms == wall_ms - worked_ms
 
 
 class TestInlineCostFieldOnEveryRow:
@@ -361,23 +480,41 @@ class TestUnclosedBoundaryFold:
     def test_the_duration_partiality_verdict_survives_the_fold(self, plan_context):
         """⛔ The token fold must NOT launder the phase into looking closed.
 
-        The boundary file records per-dispatch spans and cannot honestly supply a
-        phase wall-clock the close never stamped, so the phase stays listed as
-        missing its end_time marker and renders no duration.
-        """
-        self._drive_unclosed_finalize('unclosed-partial')
+        The phase stays listed as missing its `end_time` marker, and no
+        wall-clock duration is derived from the boundary file — which records
+        per-dispatch spans, not the phase span the close never stamped.
 
-        result = cmd_generate(ns_generate('unclosed-partial'))
+        The fixture gives the phase an ACCUMULATOR as well as boundary rows, so
+        the Worked cell is populated by a route the fold does not control. That
+        is the point: an earlier version of this test used a boundary-only
+        fixture, where Worked rendered `-` because nothing had ever been
+        recorded rather than because the fold withheld it — it asserted the
+        right cells for the wrong reason and could not fail against the defect
+        it names. Here the row demonstrably CAN render a duration, and the
+        assertion is that the fold still does not supply the wall-clock one.
+        """
+        plan_id = 'unclosed-partial'
+        self._drive_unclosed_finalize(plan_id)
+        cmd_accumulate_agent_usage(
+            ns_accumulate(plan_id, '6-finalize', total_tokens=1000, duration_ms=600000)
+        )
+
+        result = cmd_generate(ns_generate(plan_id))
 
         assert result['any_phase_missing_end_time'] is True
         assert '6-finalize' in result['phases_missing_end_time']
-        report = _report(plan_context, 'unclosed-partial')
+        report = _report(plan_context, plan_id)
         assert 'Phases missing an end_time boundary marker' in report
         finalize_row = next(line for line in report.splitlines() if line.startswith('| 6-finalize'))
-        # Worked / Reported (wall) / Idle all render absent for the unclosed row.
         cells = [cell.strip() for cell in finalize_row.strip().strip('|').split('|')]
-        assert cells[1] == '-'
+        # Precondition — the accumulator route DID populate Worked, so a `-` in
+        # the wall column below cannot be "nothing was ever recorded".
+        assert cells[1] == '10m0s'
+        # The fold supplies no wall-clock span, and no idle residual derived from one.
         assert cells[2] == '-'
+        assert cells[3] == '-'
+        # And the token cell is still the labelled floor, so the fold did fire.
+        assert '(boundary floor)' in cells[4]
 
     def test_a_closed_phase_takes_no_floor_marker(self, plan_context):
         """The negative control: `end_time` alone is what withholds the marker.
@@ -399,7 +536,11 @@ class TestUnclosedBoundaryFold:
         # the marker.
         assert _phase_field(store, '6-finalize', 'tokens_cell_source') == 'dispatch_boundary_total'
         assert _phase_field(store, '6-finalize', 'end_time') is not None
-        assert '(boundary floor)' not in _report(plan_context, 'unclosed-control')
+        # Scoped to the DATA ROWS: the end_time-presence annotation names the
+        # marker in prose to explain it, which is not a cell carrying it.
+        report = _report(plan_context, 'unclosed-control')
+        data_rows = [line for line in report.splitlines() if line.startswith('| ')]
+        assert not any('(boundary floor)' in row for row in data_rows)
 
     def test_the_fold_never_lowers_a_cell(self, plan_context):
         """A boundary sum below the recorded figure does not replace it."""

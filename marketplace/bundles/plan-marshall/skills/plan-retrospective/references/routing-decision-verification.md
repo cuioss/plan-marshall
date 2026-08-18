@@ -18,7 +18,7 @@ The predicate definitions (the closed `prunable_when` vocabulary, the class→de
 | `planning_lane` | the resolved `light` / `deep` planning lane |
 | `mis_prune_checks[]` | one per prunable step: `pass` (step ran / predicate still holds), `skip` (footprint unresolvable — no `--diff-file` **and** the shared whole-chain resolver recovered none — or a recorded non-predicate removal cause), `inconclusive` (removal cause unestablishable), or **`fail`** (predicate now false — a mis-prune). Every row also carries `removal_cause` — see [Removal cause precedes predicate re-evaluation](#removal-cause-precedes-predicate-re-evaluation) |
 | `footprint_source` | how the realized footprint was obtained: `diff_file` (explicit `--diff-file`), `resolved` (recovered through the shared resolver), or `unresolved` (no tier answered → the mis-prune checks skip). A **supplied** `--diff-file` never yields `unresolved`: see [A supplied `--diff-file` resolves or raises](#a-supplied---diff-file-resolves-or-raises) |
-| `cost_preview` | `execution_log_tokens` (the `execution_log` sum) and `predicted_tokens` (init preview), each beside the population it measures (`execution_log_population` / `predicted_population`), plus a `comparison` verdict. `execution_log_population` is `5-execute,6-finalize` — the only phases the ledger's writer accepts — so the sum is **not** a whole-plan actual and is not named one. `delta_tokens` / `delta_pct` appear **only** when `comparison: computed`; see [The cost-preview comparison is population-gated](#the-cost-preview-comparison-is-population-gated) |
+| `cost_preview` | `execution_log_tokens` (the `execution_log` sum) and `predicted_tokens` (init preview), each beside the population it measures (`execution_log_population` / `predicted_population`), plus a `comparison` verdict. `execution_log_population` is `5-execute,6-finalize` — the only phases the ledger's writer accepts — so the sum is **not** a whole-plan actual and is not named one. `delta_tokens` / `delta_pct` appear **only** when `comparison: computed`, and `comparison_reason` only when it is not; see [The cost-preview comparison is population-gated](#the-cost-preview-comparison-is-population-gated) |
 | `recompose_divergence` | the `lane_resolution` decision-log **line** count. ⚠ Despite the field name this is NOT a recompose count: the composer emits one line per dropped step plus one per lane warning, so the number rises with the size of a single compose's subtraction, not with the number of composes. Read it as "how much lane subtraction was recorded", never as "how many times the manifest was recomposed" |
 | `recorded_lane_decisions[]` | the raw `lane_resolution` decision-log lines |
 | `llm_judgement_required` | always `true` — the marker that the OVER/UNDER verdict is the LLM's, not the script's |
@@ -77,7 +77,7 @@ The gate follows:
 | `refused` | prediction recorded, populations differ (including `unstated`) | absent |
 | `computed` | populations equal | present |
 
-⛔ **A population-mismatched subtraction is the defect, not the field name.** It produces a *plausible* figure — two token counts, one subtraction, a percentage — which is exactly why it would not look wrong to the §4.6a recalibration loop that consumes `delta_pct`. Withholding the delta and stating `comparison_reason` turns a silent choice into a legible one.
+⛔ **A population-mismatched subtraction is the defect, not the field name.** It produces a *plausible* figure — two token counts, one subtraction, a percentage — which is exactly why it would not look wrong to the `cost_size_token_table` recalibration loop that consumes `delta_pct`. Withholding the delta and stating `comparison_reason` turns a silent choice into a legible one.
 
 A producer that wants the comparison back persists **both** keys, and persists a population that genuinely matches. Persisting a phase-6-only figure (for instance the `lanes preview` `cost_sum_tokens`, which sums `phase_6_steps` alone) under a matching-looking label would defeat the gate; the label must state what was actually summed.
 
@@ -87,7 +87,7 @@ Synthesize ONE verdict — `OVER-PROVISIONED | UNDER-PROVISIONED | correct` — 
 
 1. **Mis-prune is the highest-value signal.** Any `mis_prune_checks[].status == fail` is strong evidence of **UNDER-PROVISIONED** for that step: a step the lane skipped (e.g. `sonar-roundtrip` skipped as "no code delta") whose predicate the realized footprint falsifies (the merged diff touched production code). A wrongly-skipped adversarial / quality step is the file-worthy outcome. A `skip` row carrying a recorded `removal_cause` says nothing about provisioning — the step left the chain for a reason orthogonal to the footprint — and MUST NOT be read as either evidence for or against the posture. An `inconclusive` row means the removal cause could not be established; surface it as a plan-state defect (the decision log was missing or unreadable), never as a mis-prune.
 2. **Posture counterfactual.** Compare the chosen `posture` against the posture the realized signals would have selected. A `minimal` run that produced a large production diff with mis-prunes reads OVER-pruned (UNDER-PROVISIONED); a `full` run on a trivial doc change with zero kept-step yield reads OVER-PROVISIONED.
-3. **Cost-preview accuracy.** A large `cost_preview.delta_pct` (predicted far from recorded) is a calibration signal, not a posture error — route it to the `cost_size_token_table` recalibration (§4.6a), not to a posture re-judgment. ⛔ **`delta_pct` is present only when `cost_preview.comparison` is `computed`.** When it is `refused` or `not_attempted` there is no calibration signal to route: report the `comparison_reason` and route nothing. Never subtract `predicted_tokens` from `execution_log_tokens` yourself to recover a delta the script withheld — the withholding is the finding.
+3. **Cost-preview accuracy.** A large `cost_preview.delta_pct` (predicted far from recorded) is a calibration signal, not a posture error — route it to the `cost_size_token_table` recalibration (the tunable size→token map owned by [`phase-4-plan/standards/cost-sizing.md`](../../phase-4-plan/standards/cost-sizing.md)), not to a posture re-judgment. ⛔ **`delta_pct` is present only when `cost_preview.comparison` is `computed`.** When it is `refused` or `not_attempted` there is no calibration signal to route: report the `comparison_reason` and route nothing. Never subtract `predicted_tokens` from `execution_log_tokens` yourself to recover a delta the script withheld — the withholding is the finding.
 
 ## Output fragment + the file-worthy signal
 
@@ -103,7 +103,8 @@ posture: minimal | standard | full
 planning_lane: light | deep
 posture_verdict: UNDER-PROVISIONED | OVER-PROVISIONED | correct
 mis_prune_checks[N]: [ {check, status, predicate, removal_cause, detail}, ... ]
-cost_preview: { execution_log_tokens, execution_log_population, predicted_tokens, predicted_population, comparison, comparison_reason }
-              # delta_tokens / delta_pct present ONLY when comparison: computed
+cost_preview: { execution_log_tokens, execution_log_population, predicted_tokens, predicted_population, comparison }
+              # comparison_reason present on not_attempted / refused; absent on computed
+              # delta_tokens / delta_pct present ONLY on computed
 proposed_lessons[M]: [ ... ]
 ```

@@ -120,6 +120,21 @@ phases_missing_end_time[1]:
 boundary_monotonicity[0]:
 re_entered_phases[1]:
   - 5-execute
+totals_population_denominator: 6
+totals_worked_ms: 572500
+totals_worked_ms_population_count: 6
+totals_wall_ms: 640000
+totals_wall_ms_population_count: 6
+totals_idle_ms: 67500
+totals_idle_ms_population_count: 6
+totals_tokens: 86754
+totals_tokens_population_count: 6
+totals_tool_uses: 214
+totals_tool_uses_population_count: 6
+totals_billing_weighted_total: 128900
+totals_billing_weighted_total_population_count: 6
+totals_tokens_spans_populations: true
+totals_sampled_at: 2026-03-27T10:25:00+00:00
 total_worked_seconds: 572.5
 total_wall_seconds: 640.0
 total_idle_seconds: 67.5
@@ -581,7 +596,8 @@ writer accepts **only** `5-execute` and `6-finalize`. Each
 termination, for the dispatch classes that call `record-dispatch-boundary` — the
 rest are excluded by declaration. `work/metrics.toon` holds a per-phase
 **aggregate** across all six canonical phases, so it stores sums rather than rows
-and cannot express a repeat count at all.
+and cannot say *which* dispatches it summed — only how many times the phase
+closed (`close_count`), which the reconciliation reads as the re-entry signal.
 
 The two row ledgers are written by independent call sites with no shared
 transaction and no shared key — a boundary row carries no `step_id` — so a
@@ -686,14 +702,29 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics gene
   --plan-id PLAN_ID
 ```
 
-Returns the per-column totals — `total_worked_seconds`, `total_wall_seconds`,
-`total_idle_seconds`, `total_tokens` (dispatched work), and
-`total_billing_weighted` (derived cost, aggregated separately and never summed
-into `total_tokens`) — plus their formatted variants, the `end_time`-presence
-check (`any_phase_missing_end_time` / `phases_missing_end_time`), and each
-persisted denominator with its `_sampling_point` companion. A denominator that
-could not be counted is omitted from the return, exactly as it is from the
-record.
+Returns the **persisted aggregate** — one `totals_*` value per breakdown column,
+each with its `{field}_population_count` companion, plus the shared
+`totals_population_denominator`, `totals_tokens_spans_populations`, and
+`totals_sampled_at`. These are the same fields written to `work/metrics.toon`,
+echoed so a caller reading the return can state each total's coverage without a
+second read. The three duration totals are **milliseconds**; see
+[data-format.md](standards/data-format.md) § "The Persisted Aggregate" for why
+the store keeps that unit.
+
+⚠ In the store — not in this return — the aggregate is **present iff the most
+recent write computed it**: any later `start-phase` / `end-phase` /
+`phase-boundary` / `enrich` drops the keys, because those writers move the phase
+rows the totals sum. A reader finding them absent re-runs `generate`.
+
+Alongside them it returns the human-facing summary — `total_worked_seconds`,
+`total_wall_seconds`, `total_idle_seconds` (each the corresponding
+`totals_*_ms` in seconds, **rounded to one decimal**), `total_tokens`
+(dispatched work), `total_billing_weighted` (derived cost, aggregated separately
+and never summed into `total_tokens`), and their formatted variants — plus the
+`end_time`-presence check (`any_phase_missing_end_time` /
+`phases_missing_end_time`) and each persisted denominator with its
+`_sampling_point` companion. A denominator that could not be counted is omitted
+from the return, exactly as it is from the record.
 
 ### print-phase-breakdown
 

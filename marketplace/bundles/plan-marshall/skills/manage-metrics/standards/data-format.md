@@ -390,7 +390,9 @@ the full four-field `message.usage` view — a window carrying only
 |-----------|-----------|----------------|------------------------------|---------------------------|
 | **inline-only** | non-zero inline sum, **no** dispatched `total_tokens` (`1-init`, recipe-inline refine/outline) | the inline sum is folded in | the same sum, under its own name | `inline` |
 | **mixed** | non-zero inline sum **and** a dispatched `total_tokens` (the `6-finalize` shape — dispatched steps and inline finalize steps both ran) | left byte-identical (explicit-wins) | the inline sum | `mixed` |
-| **dispatched** | zero inline sum (no inline attribution) | left byte-identical | not written | `dispatched` |
+| **dispatched** | zero inline sum (no inline attribution) | left byte-identical | not written by `enrich`; `generate` then completes it as a measured `0` | `dispatched` |
+
+The `inline_main_context_tokens` column above describes what **`enrich`** writes. `generate` completes the field on every phase row afterwards, so it is never absent from the record — see its Per-Phase Fields row for the `0`-versus-`unmeasured` rule.
 
 **The inline-only fold is deliberate, not a silent substitution.** Folding the
 inline sum into `total_tokens` is what keeps a zero-dispatch phase countable in
@@ -500,9 +502,9 @@ reuses the existing `generate` read → annotate → write loop.
 
 ### The Persisted Aggregate
 
-`generate` renders a **Total** row and, until it wrote these keys, persisted none of it: the store write ran before the row was built, so the store's header carried no aggregate at all. The one figure a human quotes — and the `(n=k/N)` qualifier that makes it safe to quote — existed only in the rendered prose, leaving a script to re-sum the rows itself and re-derive a population it could legitimately pick differently from the renderer's.
+`generate` persists every figure its **Total** row renders, and then renders that row *from* the persisted values — so there is one producer of each figure, not a rendered number and a separate store the reader must reconcile.
 
-Each column persists a **triple**: the value, the count of phase rows that fed it, and the shared denominator. The render reads that triple back rather than keeping a second copy, so there is one producer of each figure.
+Each column persists a **triple**: the value, the count of phase rows that fed it, and the shared denominator. A figure a renderer computes and does not persist is a number nobody can check, and the `(n=k/N)` qualifier is as load-bearing as the value it qualifies — a sum over 2 of 6 phases and a sum over 6 of 6 render identically without it.
 
 | Field | Type | Source |
 |-------|------|--------|
@@ -514,6 +516,11 @@ Each column persists a **triple**: the value, the count of phase rows that fed i
 | `totals_population_denominator` | int | Derived by `generate` — the canonical-six baseline every count is read against. A count without its denominator is not a population statement |
 | `totals_tokens_spans_populations` | `true` / `false` token | Derived by `generate` — whether an `(inline)` row fed the token sum, i.e. whether the rendered Total carries `(spans populations)` |
 | `dispatch_boundary_excluded_classes` | list (comma-joined) | Derived by `generate` from `DISPATCH_BOUNDARY_EXCLUDED_CLASSES` — the dispatch classes that register no boundary. These are the key to every boundary coverage shortfall the report shows; as prose alone, a script got the coverage numbers without the declaration that makes them interpretable |
+| `totals_sampled_at` | ISO 8601 timestamp | Written by `generate` — the moment the aggregate above was computed. Provenance for a reader; **not** the freshness signal, which is presence (below) |
+
+**The aggregate is present iff the most recent write computed it.** Only `generate` computes the totals, while every other writer of this store — `start-phase`, `end-phase`, `phase-boundary` and `enrich` — rewrites the phase rows underneath them — so `write_metrics` **drops every aggregate key** for those writers. A reader that finds the keys knows the rows have not moved since they were summed; a reader that finds them absent knows to re-run `generate`. There is nothing to compare and no stale value to mistake for a current one.
+
+⛔ Do **not** substitute a timestamp comparison for this. `updated` and `totals_sampled_at` are both second-granularity, so a write landing in the same second as the `generate` it invalidates is indistinguishable from a fresh one — presence is exact where the comparison is not. The rule is the same present-iff-derivable-from-this-run invariant `cache_read_per_tool_use` follows.
 
 **The round-trip rule.** Every figure the Total row renders is locatable in the store, with its population count. A figure present only in the render is a number nobody can check, and fails this contract. The rule governs the render's own output — it is emphatically **not** satisfied by parsing `metrics.md`: the markdown is the artifact, not the source.
 
@@ -717,9 +724,11 @@ A label may state a default population only when **both** guards hold, and they 
 
 The **Total** row is a cell in the same column and inherits the same default, so it takes the same discipline: when an `(inline)` row fed the sum it is marked `(spans populations)`. Only `(inline)` rows cross-contaminate the Total — a `(mixed)` row's cell is the dispatched figure with its inline spend deliberately excluded. The distinct marker is deliberate: `(mixed)` already means something else on a phase row.
 
-**A third marker qualifies COVERAGE, not population.** A phase whose row carries no `end_time` was never closed, so it has no recorded total — yet its `work/metrics-dispatch-boundaries-{phase}.toon` file accumulated a row per dispatch throughout, independent of whether the boundary ever closed. When that sum is what the cell shows, the cell is marked `(boundary floor)` and the row records `tokens_cell_source: unclosed_boundary_floor`. This is the same move `enrich` makes when it folds inline spend into a zero-dispatch phase's total and labels the row — a real cost that would otherwise render as nothing — applied to the dispatched population instead of the inline one. It closes two gaps: a boundary sum refused as PARTIAL or OVER leaves the cell rendering `-` while the file holds the phase's whole recorded spend, and a sum whose coverage is UNDECIDABLE already wins the maximum but renders as an ordinary dispatched total, saying nothing about the phase never having closed. The fold can only ever RAISE a cell, and never displaces a measure the reconciliation trusted more.
+**A third marker qualifies COVERAGE, not population.** A phase whose row carries no `end_time` was never closed, so no close recorded its totals — yet its `work/metrics-dispatch-boundaries-{phase}.toon` file accumulated a row per dispatch throughout, independent of whether the boundary ever closed. When that sum is what the cell shows, the cell is marked `(boundary floor)` and the row records `tokens_cell_source: unclosed_boundary_floor`. This is the same move `enrich` makes when it folds inline spend into a zero-dispatch phase's total and labels the row — a real cost that would otherwise render as nothing — applied to the dispatched population instead of the inline one. It closes two gaps: a boundary sum refused as PARTIAL or OVER leaves the cell rendering `-` while the file holds the phase's whole recorded spend, and a sum whose coverage is UNDECIDABLE already wins the maximum but renders as an ordinary dispatched total, saying nothing about the phase never having closed. The fold can only ever RAISE a cell, and never displaces a measure the reconciliation trusted more.
 
-⛔ The marker is **not** a `total_tokens_population` value and adds no member to that vocabulary: the figure measures the dispatched population like any other boundary sum. And the fold is scoped to the token figure alone — the phase keeps its place in `phases_missing_end_time` and renders no duration, because the boundary file records per-dispatch spans and cannot honestly supply a phase wall-clock the close never stamped.
+⛔ The marker is **not** a `total_tokens_population` value and adds no member to that vocabulary: the figure measures the dispatched population like any other boundary sum. And the fold is scoped to the token figure alone — the phase keeps its place in `phases_missing_end_time`, and **no duration is derived from the boundary file**, which records per-dispatch spans rather than the phase span the close never stamped.
+
+That is a statement about the fold, not about the row. An unclosed row can still render a **Worked** figure, because `generate` backfills `agent_duration_ms` from the phase's durable accumulator — a source that likewise does not depend on the close. Its **Reported (wall)** cell stays `-`, since `duration_seconds` is written only by a close. Neither behaviour is changed by the fold.
 
 Every rendered `total_tokens` figure therefore carries its population: the column header states the default, the `Tokens` cell takes an `(inline)` / `(mixed)` suffix, the Total takes `(spans populations)` when it spans them, the annotation under the table declares the default and names the marked phases, and the `Total tokens` bullet carries the exact per-row population qualifier shown above. The bullet states its row's population outright — it needs no default, so it does **not** take a `(dispatched)` label that would be false on an `inline` row. See § Inline Main-Context Attribution for the three signatures and the `total_tokens_population` discriminator that drives every render site.
 

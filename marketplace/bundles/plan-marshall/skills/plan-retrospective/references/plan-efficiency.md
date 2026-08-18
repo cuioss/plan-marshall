@@ -5,6 +5,10 @@ How much time and how many tokens did the plan consume relative to its scope? LL
 ## Inputs
 
 - `work/metrics.toon` — the **persisted aggregate**: `totals_tokens`, `totals_worked_ms`, `totals_wall_ms`, each with its `{field}_population_count` companion, plus the shared `totals_population_denominator` and `totals_tokens_spans_populations`. **Read the totals from the record.** They are written by `manage-metrics generate` and are the same figures the report renders — see [`manage-metrics/standards/data-format.md`](../../manage-metrics/standards/data-format.md) § "The Persisted Aggregate". Re-summing the phase breakdown here would make this aspect a second producer of a figure the store already holds, free to pick a different population than the renderer did.
+
+  ⛔ **The two duration totals are MILLISECONDS — divide by 1000 before using them as seconds.** The field names say so (`_ms`), and the store keeps that unit deliberately so its precision is not below the report's. A ratio computed straight from `totals_worked_ms` is 1000× too large and trips every threshold below.
+
+  ⚠ **When the `totals_*` keys are ABSENT, they were invalidated — do not re-derive them silently.** Only `generate` computes the aggregate, and every other writer drops it, so the keys are present exactly when they still sum the rows beside them. Absence means a later write moved the rows: re-run `generate`, or report the totals as unavailable. It never means "sum the phase breakdown yourself" — that is the second-producer defect this aspect is not permitted to commit.
 - `metrics.md` — the per-phase breakdown table, for the phase-level cut the fragment carries. The **totals come from the store**, never from re-parsing this table's Total row.
 - `log_analysis` fragment (already computed) — entry counts, script durations, **and the `build_time` block** (see § "Build time is READ from the change-ledger").
 - `work/metrics.toon` — the **persisted denominators** and their sampling points: `deliverable_count`, `files_modified`, `tasks_completed`, each with its `{denominator}_sampling_point` companion, plus the shared `denominators_sampled_at` timestamp.
@@ -64,8 +68,8 @@ aspect: plan_efficiency
 status: success
 plan_id: {plan_id}
 totals:
-  duration_seconds: N   # wall clock — READ from totals_wall_ms, reported, never divided by
-  worked_seconds: N     # agent effort — READ from totals_worked_ms; the ratio denominator
+  duration_seconds: N   # wall clock — totals_wall_ms / 1000; reported, never a ratio numerator
+  worked_seconds: N     # agent effort — totals_worked_ms / 1000; the ratio NUMERATOR below
   tokens: N
   total_build_seconds: N   # READ from log_analysis.build_time (a FLOOR when suspect_count > 0)
   files_modified: N
@@ -124,7 +128,9 @@ For each plan, look up the row matching the plan's `(scope_estimate, change_type
 - **`anchored`** — the row defines warning and error thresholds for `totals.tokens`, against which Section 3 emits `[BUDGET]` findings.
 - **`fallback`** — the pair is a *present, deliberately ungraded* key: no calibration observation exists for it, so scoring falls back to the four ratio thresholds in Section 1 (`tokens_per_file_modified > 50_000` warning; `worked_seconds_per_task > 900` warning; `max_phase_token_share > 0.50` warning; `total_tokens_per_deliverable > 500_000` warning). A `fallback` row is **not** the same as a missing row: it records that the pair was considered and left unanchored on purpose, so a silently-absent pair is a defect the cross-product guard catches.
 
-⚠ **The `worked_seconds_per_task > 900` fallback threshold was calibrated against WALL CLOCK and has not been re-derived for worked time.** Worked time is bounded above by the wall span (the per-phase `Worked <= Reported (wall)` invariant `manage-metrics` maintains), so the same threshold fires **strictly less often** on the new numerator: it introduces no false warnings, and may now miss a genuine one. It is left at its measured value rather than moved by an invented reduction factor — the same discipline the token anchors take below. Re-derive it when a corpus of worked-time observations exists.
+⚠ **The `worked_seconds_per_task > 900` fallback threshold was calibrated against WALL CLOCK and has not been re-derived for worked time, so it is UNANCHORED for the numerator it now scores.** It is left at its measured value rather than moved by an invented conversion factor — the same discipline the token anchors take below — and a warning it emits should be read as a prompt to look, not as a calibrated verdict. Re-derive it when a corpus of worked-time observations exists.
+
+⛔ **Do not assume the worked figure is smaller than the wall figure.** The per-phase `Worked <= Reported (wall)` invariant holds only where `_worked_ms`'s own docstring says it does — for a phase whose subagent dispatches stay inside the phase window — and two recorded shapes escape it: `subagent_duration_ms` is written by `enrich` with no clamp at all, and an unclosed phase's `agent_duration_ms` cannot be clamped because the row carries no `duration_seconds` to clamp against. `Worked` therefore can and does exceed `Reported (wall)` on real rows, so the threshold may fire *more* often than before, not only less.
 
 **Population scored.** Every threshold below is scored against `totals.tokens` **as the Inputs section defines it** — dispatched-subagent on every row except those the report marks `(inline)`, where a main-context figure is folded in, and `(spans populations)` on the Total when that occurs. The anchors do not score `billing_weighted_total`.
 
