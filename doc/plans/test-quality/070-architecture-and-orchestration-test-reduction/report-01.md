@@ -26,7 +26,7 @@ Both are recorded here as **not separately read**, rather than silently omitted.
 | Plan `090` landed? | `grep -rn 'build_test_helpers' test/conftest.py` | **non-empty** — line 1128. `090` has **not** landed |
 
 `090`'s absence has two consequences the plan names, and both are honoured: the `conftest.py`
-reference is recorded as a proposal rather than edited (see § Findings, F1), and D3's `parse_ns` half
+reference is recorded as a proposal in § Residue rather than edited, and D3's `parse_ns` half
 stops at the first missing parser seam.
 
 ### The partition — holds, no defect
@@ -117,7 +117,7 @@ independently. Read one module per directory:
 | `build-npm` | `load_script_module` — already **B7**-compliant |
 | `build-operations` | its own private `_load_build_extension(skill, module_name)` over `MARKETPLACE_ROOT` |
 | `build-pyproject` | `load_script_module` + `get_scripts_dir` — already **B7**-compliant |
-| `build-server` | a 3-line `sys.path.insert` bootstrap repeated in 4 modules, plus an identical 8-field `ExecuteConfig` baseline declared in 3 and in compact form in a 4th |
+| `build-server` | a 3-line `sys.path.insert` bootstrap repeated in 4 modules, plus an identical 8-field `ExecuteConfig` baseline in 3 modules — two expanded, one compact |
 
 **Importer sets confirmed as OBSERVED.** `build_test_helpers` was imported by exactly four `build-*`
 directories in 8 modules (`build-gradle`, `build-maven`, `build-npm`, `build-pyproject`);
@@ -132,7 +132,7 @@ exactly `build-npm/test_npm_discover.py` and `build-gradle/test_gradle_discover_
 * `build_scripts_dir()` — the `sys.path` bootstrap, replacing 4 copies. It deliberately does **not**
   import the factory; each consumer keeps its own module-level
   `import _build_execute_factory as factory` so binding timing is unchanged by sharing the bootstrap.
-* `execute_config(factory, capture_strategy, **overrides)` — the `ExecuteConfig` baseline, replacing 4
+* `execute_config(factory, capture_strategy, **overrides)` — the `ExecuteConfig` baseline, replacing 3
   copies. The factory module is **passed in** rather than imported here, so the config is built from
   the same copy whose seams the caller patches, and this module never binds a copy of its own.
 * `load_build_extension(skill, module_name)` — replacing the 5 `spec_from_file_location` loaders. It
@@ -164,7 +164,7 @@ with `git checkout --`, and `git status` confirms the directory is untouched in 
 
 The plan labels D2's premise `HYPOTHESIS — asserted absence, the higher-risk half; it is D2's entire
 justification`, and instructs: *"If two already share one, D2 is an extension of that surface rather
-than a new one — say so rather than building a second."* Measured across all 16 test modules in the
+than a new one — say so rather than building a second."* Measured across all 15 `test_*.py` modules in the
 nine directories:
 
 | Directory | Module | `plan_context` | `plan_dir_for` | inline `mkdir` | stages a plan dir? |
@@ -214,7 +214,13 @@ The four identical `_load_module` re-implementations in `manage-architecture` ar
 `load_script_module`. They already registered under the same name they passed, so the conversion is
 semantics-identical — the registration-preservation hazard the plan names does not arise.
 
-**Every remaining `spec_from_file_location` site is listed with its reason.** None is an oversight:
+**Every remaining `spec_from_file_location` site is listed with its reason**, including the one this
+run **added**:
+
+⚠️ D3's done-when reads *"no `spec_from_file_location` … remains in the slice"*. Taken literally that is
+**not met** — nine sites across nine modules remain, and the table below is a reasoned exception list
+rather than the zero the sentence asks for. Recorded as a shortfall against the literal done-when, not
+as satisfaction of it.
 
 | Site | Reason it stays | Owner |
 |---|---|---|
@@ -226,6 +232,7 @@ semantics-identical — the registration-preservation hazard the plan names does
 | `build-pyproject/test_dynamic_mypypath.py` | same | `090` § D2 |
 | `build-pyproject/test_pyproject_build.py` (line 321) | same | `090` § D2 |
 | `build-pyproject/test_pyproject_build.py` (line 49) | installs `sys.modules` mocks (`plan_logging`, `run_config`) **between** `module_from_spec` and `exec_module`. `load_script_module` performs both in one call, so that window does not exist | this slice, needs a loader change → `090` |
+| `_build_extension_fixtures.py` (line 139) | **Added by this run, deliberately.** `load_build_extension` uses `spec_from_file_location` precisely *because* it does not register, which is what keeps two backends loaded through it independent. It is consequently one of the **18** residual `test-module-preamble-boilerplate` findings, i.e. that count is 17 pre-existing plus 1 this run introduced | this run, by design |
 | `phase-1-init/test_phase_1_init.py` | ⛔ **registration collision.** It loads `manage-lessons.py` under the name `manage_lessons`, and `test/plan-marshall/manage-lessons/_lessons_helpers.py` **already registers that exact name** through `load_script_module`. Its own load does not register, so the two copies are independent today; converting it would collapse them onto one registration — the order-dependent-failure class plan `030` paid **173 failures** for. `manage-lessons/` is plan `050`'s directory, so the other half is not reachable from here either | recorded; needs `050`/`090` coordination |
 
 #### B6 — not done, with the seam map measured rather than assumed
@@ -270,11 +277,37 @@ per-assertion, 506 unconverted**.
 | Measure | Before | After |
 |---|---:|---:|
 | `test-docstring-historical-prose` (slice) | 42 | **0** |
-| `test-docstring-historical-prose` (all of `test/plan-marshall/`) | 43 | **0** |
+| `test-docstring-historical-prose` (all of `test/plan-marshall/`) | 42 | **0** |
 
-The done-when reads *"the rule reports zero findings over this slice **or** each remaining finding is
-recorded as a data-not-citation case"*. It reports **zero**, so the disjunct's second branch is not
-needed.
+The done-when reads *"the `plugin-doctor` `test-docstring-historical-prose` rule reports zero findings
+over this slice **or** each remaining finding is recorded as a data-not-citation case"*. Keyed on the
+rule, it reports **zero**, so the disjunct's second branch is not needed and **the done-when is met**.
+
+⛔ **The done-when is met; D4's broader deliverable text is NOT, and the two must not be conflated.**
+That text says to strip "plan ids, deliverable ids, PR numbers, lesson ids, and superseded-behaviour
+narration" from test docstrings and comments. The rule's zero is **rule-scoped**:
+`_PLAN_DELIVERABLE_ID_RE` matches only `TASK-\d{3}` and `deliverable D\d+`, `_PR_REFERENCE_RE` only
+`PR #\d+`, and **no pattern opens a string literal**. Roughly twenty citations therefore survive in
+the slice in shapes the rule cannot match — `"introduced by D2"`, `"TASK-2 removed them"`,
+`"TASK-1 unified …"`, `"In-scope flags from TASK-1"`, `"TASK-2 foundation"` — across
+`manage-architecture/test_architecture_core.py`, `test_derive_verification.py`,
+`test_descriptor_regression_check.py`, `test_diff_modules.py`,
+`manage-architecture/test_architecture_input_validation.py`,
+`manage-plan-documents/test_manage_plan_documents_input_validation.py`,
+`plan-marshall/test_invariants.py`, `test_phase_handshake_validators.py`, `test_effort_presets.py`,
+`build-maven/test_discover_modules.py`, `test_maven_rewrite_log.py`,
+`build-pyproject/test_build_cmd_coverage.py`, `test_build_findings_store.py`,
+`test_pyproject_cmd_parse.py`, `phase-3-outline/test_phase_3_outline_qgate_bypass.py` and
+`phase-4-plan/test_verification_only_guard_contract.py`.
+
+**This run fixed the string-literal instances it had itself made inconsistent** — three lesson ids in
+assertion messages in `execute-task/test_skill_profile_resolve_commands.py`, whose prose citation this
+run had already stripped, leaving the file asserting an id it no longer explained. The remaining ~20
+are **not** fixed: they were not attempted, and the round budget is spent. Attempting a bulk prose
+rewrite in the final round is precisely what produced this run's own over-stripping and
+invented-rationale defects, so they go to § Residue rather than into a rushed pass. **B3 is partially
+done, and reporting it otherwise would be the "empty exception list produced by not attempting the
+sweep" failure `030`'s report warns about.**
 
 **The over-stripping risk the plan flags was handled by rewriting, not deleting.** Where a citation
 carried the *only* statement of the consequence, the consequence was rewritten in the present tense
@@ -422,7 +455,7 @@ separate worktree**:
 
 | Ordering | `origin/main` (`eb0124c`) | This branch |
 |---|---|---|
-| `manage-architecture` before `build-maven` | **1 failed**, 817 passed | **1 failed**, 817 passed |
+| `manage-architecture` before `build-maven` | **1 failed**, 817 passed | **1 failed**, 817 passed *before the fix below*; **818 passed** after |
 | `build-maven` before `manage-architecture` | 818 passed | 818 passed |
 
 Identical on both. The defect is pre-existing and latent; the full-slice run in forward order — the
@@ -457,16 +490,28 @@ for the same shape. The defect needs three things at once: a registration name *
 test module**, a test that **patches its own import-time binding** of that name, and production that
 **resolves the name through a deferred, function-body import**. Measured:
 
-* **25 registration names are used by more than one test module** tree-wide (derived by parsing the
-  explicit `module_name` argument of every `load_script_module` call under `test/`).
-* **25 module/name pairs patch their own import-time binding** of such a name — the candidate set,
-  measured *after* this run's fix, which is why `test_cmd_resolve.py`/`_maven_cmd_discover` is correctly
-  absent from it. They span `manage-architecture`, `manage-status`, `plan-orchestrator`,
-  `workflow-integration-git`, `workflow-integration-github`, `build-maven`, `tools-integration-ci`,
-  `manage-findings` and `plan-retrospective` — so **most are outside this plan's slice**, in
-  concurrently-running siblings' directories this plan may not edit.
-* The slice's own production scripts (`manage-architecture`, `plan-orchestrator`) carry **13**
-  function-body `from _… import …` statements — the third ingredient.
+⛔ **This count is method-sensitive, so the method is stated with it rather than the number alone.**
+By an **AST parse** of every `load_script_module` call under `test/`, counting both an explicit
+`module_name` and the stem it defaults to when that argument is omitted, and treating
+`monkeypatch.setattr` / `patch.object` on a module-level binding as a patch site:
+
+* **44 registration names are used by more than one module**, and
+* **36 module/name pairs patch their own import-time binding** of such a name — the candidate set,
+  measured *after* this run's fix, which is why `test_cmd_resolve.py`/`_maven_cmd_discover` is
+  correctly absent from it.
+
+A narrower earlier derivation — regex, explicit four-positional-argument calls only — gave **25/25**
+and was reported here first; it undercounts by missing the `module_name=` keyword form and every
+defaulted stem. An independent verifier applying a third method got 38/32. **Three methods, three
+answers**: whoever acts on this must re-derive it with a stated method rather than inherit a number.
+The candidate set spans `manage-architecture`, `manage-config`, `manage-status`,
+`manage-execution-manifest`, `manage-solution-outline`, `plan-orchestrator`, `workflow-integration-git`,
+`workflow-integration-github`, `build-maven`, `tools-integration-ci`, `manage-findings` and
+`plan-retrospective` — so **most are outside this plan's slice**, in concurrently-running siblings'
+directories this plan may not edit.
+* The slice's `manage-architecture` production scripts carry **13** function-body
+  `from _… import …` statements — the third ingredient. `plan-orchestrator` carries **0**, so it
+  contributes candidate bindings but not the deferred-import half.
 
 **Only the one instance is confirmed live**, because only it was observed to fail: after the fix the
 full slice passes in **both** orders (3,622 each). The remaining 25 candidates are **not** confirmed
@@ -630,8 +675,33 @@ _Recorded after the PR is opened and the three comment surfaces are read._
 | `manage-lifecycle`, `build-server`, `q-gate-validation-agent` publish no top-level CLI script, so `parse_ns` has nothing to address | `090` § D1 |
 | Seven `spec_from_file_location` sites load a bundle skill's **root-level** `extension.py` or the repository-root `build.py`, neither reachable through `get_scripts_dir` | `090` § D2 |
 | `load_script_module` cannot host a load that needs `sys.modules` mocks installed **between** `module_from_spec` and `exec_module` (`build-pyproject/test_pyproject_build.py`) | `090` |
-| **25 module/name pairs patch an import-time binding of a doubly-registered module** — the candidate set for the order-dependency class this run fixed one instance of (§ "Condition 4"). Most are in sibling slices | recorded; the in-slice ones are this plan's on a follow-up run, the rest belong to their owning slices |
+| **36 module/name pairs patch an import-time binding of a doubly-registered module** (AST derivation; the figure is method-sensitive — § "Condition 4") — the candidate set for the order-dependency class this run fixed one instance of. Most are in sibling slices | recorded; the in-slice ones are this plan's on a follow-up run, the rest belong to their owning slices |
 | 62 modules over the 400-line budget in this slice | `100` |
+| ⚠️ `plugin-doctor` `references/rule-catalog.md` (line 623) and `standards/doctor-test-conventions.md` (line 185) both say the `test-module-preamble-boilerplate` rule has **"One known-legitimate occurrence"** — `test/conftest.py`'s own `load_script_module`. D1 created a **second**: `_build_extension_fixtures.load_build_extension`, which the doctor now reports and which is deliberate. Both statements are now incomplete. `marketplace/bundles/**` is out of scope for this plan, so this is a **proposal**, not an edit | `090` (the only plan that may edit that tree) |
+| The ~20 surviving citations in shapes the `test-docstring-historical-prose` rule cannot match (§ D4) — the string-literal and `TASK-n`/`D2`-in-prose forms | this plan, on a follow-up run |
+
+### The four non-registering → registering conversions, and their bound
+
+D3's B7 half converted four call sites from a **non**-registering `spec_from_file_location` to
+`load_script_module`, which always registers. The report's B7 narrative — "they already registered
+under the same name they passed, so the conversion is semantics-identical" — is true of the four
+`manage-architecture` modules and **does not cover these four**. Their bound, stated per the contract
+rather than left implied:
+
+| Site | New `sys.modules` entry |
+|---|---|
+| `phase-2-refine/test_phase_2_refine_scope_estimate.py` | `_p2refine_refs_crud` |
+| `plan-marshall/test_lifecycle_handshake_e2e.py` | `_e2e_handshake_tasks_query` |
+| `plan-marshall/test_phase_handshake_worktree_assertion.py` | `phase_handshake_under_test` |
+| `build-pyproject/test_test_scope_divergence.py` | `pyproject_extension_for_root_crosscheck` |
+
+**The bound:** each of the four names occurs nowhere else under `test/` or `marketplace/`, so the
+registration displaces no other module's copy and nothing resolves those names by import; each is a
+new, distinct entry rather than a shared one. **The promise it stays outside of** is the
+order-dependency class this run fixed, which requires a *shared* name — and the full slice passes in
+both directory orders (3,622 each) after the change. The first two carry a code comment saying this;
+the second two did not, and `test_test_scope_divergence.py`'s docstring additionally still described
+the old mechanism — both corrected.
 
 **The plan's own leads that measurement corrected**, recorded so the next author does not re-inherit them:
 

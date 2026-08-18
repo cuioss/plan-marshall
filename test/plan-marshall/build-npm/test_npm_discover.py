@@ -19,7 +19,7 @@ from _discovery_fixtures import (
     assert_valid_module,
 )
 
-# Shared test helpers (test/plan-marshall/conftest.py adds parent to sys.path)
+# Shared test helpers (test/conftest.py puts test/plan-marshall/ on sys.path)
 from conftest import BuildContext, load_script_module
 
 _npm_cmd_discover_mod = load_script_module('plan-marshall', 'build-npm', '_npm_cmd_discover.py', '_npm_cmd_discover')

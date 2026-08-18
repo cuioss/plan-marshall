@@ -43,7 +43,7 @@ from _test_scope_divergence import (
     resolve_test_scope,
 )
 
-from conftest import get_scripts_dir, load_script_module
+from conftest import load_script_module
 
 # The Python build extension's real build_map globs (single-``*`` fnmatch, so a
 # ``*`` spans ``/``) - the same globs pre-push-quality-gate derivation filters
@@ -83,17 +83,18 @@ _SHARED_TEST_HELPER = 'test/_shared/_build_class_roster.py'
 #: A well-formed bundle path whose bundle token names no registered module.
 _UNREGISTERED_BUNDLE = 'marketplace/bundles/not-a-real-bundle/skills/foo/scripts/bar.py'
 
-_PYPROJECT_EXTENSION_FILE = get_scripts_dir('plan-marshall', 'build-pyproject') / 'extension.py'
-
-
 def _load_pyproject_extension():
-    """Load the build-pyproject extension module by explicit file path.
+    """Load the build-pyproject extension module under a distinct name.
 
     All four build skills ship an ``extension.py`` sharing the module basename
     ``extension``, so ``import extension`` resolves to whichever sys.path entry
-    comes first. Loading via ``spec_from_file_location`` names the file, not the
-    basename, which is what makes the cross-check below read the intended
-    declaration.
+    comes first. The shared loader is given an explicit module name instead, so
+    the cross-check below reads the intended declaration.
+
+    That name is REGISTERED in ``sys.modules`` — ``load_script_module`` always
+    registers. ``pyproject_extension_for_root_crosscheck`` is used nowhere else
+    in the tree and nothing imports it by name, so the registration displaces no
+    other module's copy; it is a distinct entry rather than a shared one.
     """
     return load_script_module(
         'plan-marshall', 'build-pyproject', 'extension.py',

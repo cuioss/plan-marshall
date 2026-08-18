@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Lock the resolve-command contract for execute-task profiles.
 
-Per-task verification must not be lenient. When the implementation profile resolved
-``compile`` (mypy on production sources only, no ruff) and the module_testing
-profile resolved ``module-tests`` (pytest only, no static analysis on tests).
-Static-analysis regressions accumulated silently across tasks and only
-surfaced at the holistic verification step.
+Per-task verification must not be lenient. An implementation profile resolving
+``compile`` (mypy on production sources only, no ruff) and a module_testing
+profile resolving ``module-tests`` (pytest only, no static analysis on tests)
+let static-analysis regressions accumulate silently across tasks, surfacing only
+at the holistic verification step.
 
 These tests assert that ``execute-task/SKILL.md`` documents the tightened
 contract:
@@ -19,7 +19,7 @@ contract:
 
 The SKILL.md document is the authoritative source consumed by the LLM agent
 that runs the per-task workflow; pinning these strings prevents silent drift
-back to the lax pre-lesson behaviour.
+back to the lax resolutions described above.
 """
 
 
@@ -49,7 +49,7 @@ def test_implementation_profile_resolves_quality_gate(skill_text: str) -> None:
 
     assert 'resolve command: `quality-gate`' in section, (
         'implementation profile must resolve `quality-gate`, not `compile`. '
-        'Lesson 2026-05-03-21-003 requires ruff to run alongside mypy on '
+        'The implementation profile requires ruff to run alongside mypy on '
         'production sources at task time.'
     )
     assert 'resolve command: `compile`' not in section, (
@@ -62,7 +62,7 @@ def test_module_testing_profile_resolves_verify(skill_text: str) -> None:
 
     assert 'resolve command: `verify`' in section, (
         'module_testing profile must resolve `verify` (quality-gate + '
-        'module-tests), not `module-tests` alone. Lesson 2026-05-03-21-003 '
+        'module-tests), not `module-tests` alone. The tightened contract '
         'requires mypy + ruff to run on test files at task time.'
     )
     assert 'resolve command: `module-tests`' not in section, (
@@ -130,7 +130,7 @@ def test_verification_profile_resolves_worktree_path(skill_text: str) -> None:
     assert 'get-worktree-path' in section, (
         'verification profile workflow must instruct the subagent to resolve '
         'the worktree path via manage-status get-worktree-path before '
-        'executing any step.target. See lesson 2026-05-26-15-002 — without '
+        'executing any step.target — without '
         'this directive the subagent freezes on holistic verification tasks '
         'when the plan runs in an isolated worktree.'
     )

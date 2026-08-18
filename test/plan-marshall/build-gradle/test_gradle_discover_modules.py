@@ -22,7 +22,7 @@ available depending on the environment (CI runners have it, local may not).
 
 import sys
 
-# Shared discovery helpers (test/plan-marshall/conftest.py adds parent to sys.path)
+# Shared discovery helpers (test/conftest.py puts test/plan-marshall/ on sys.path)
 from _discovery_fixtures import (
     assert_command_uses_executor,
     assert_module_commands,
