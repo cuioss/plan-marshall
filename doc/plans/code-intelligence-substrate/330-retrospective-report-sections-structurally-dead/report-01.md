@@ -490,7 +490,33 @@ in every one of the four rounds, including the round that introduced the correct
 
 ## Reviewer participation
 
-_Recorded after the PR is opened._
+Expected population **derived from configuration**, not transcribed: the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc —
+`coderabbit.md`, `pr-agent.md`, `sourcery.md`. Every verdict below is read from the reviewer's own
+comment body, never from a check state.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence |
+|---|---|---|---|
+| `cuioss-review-bot` | `reviewed` | — | "PR Reviewer Guide 🔍 — PR contains tests / No security concerns identified / No major issues detected". A review artifact against the diff with an explicit nothing-to-report. |
+| `coderabbitai` | `rate-limited` | **yes** | "Review limit reached … **Next review available in: 38 minutes**". Its `CodeRabbit` commit status reads `Review rate limited`. |
+| `sourcery-ai` | `rate-limited` | **no** | "your pull request is larger than the review limit of **150000 diff characters**". A ceiling on *this diff*, not on the clock — the same request never succeeds at this size, so waiting is futile. Its check run concluded `skipped`. |
+
+**Coverage: 1 of 3.** No surface errored, so no verdict is `unreadable` and merge-gate condition 2 is
+established on evidence rather than on an unread surface: all three comment surfaces were read
+(`get_comments`, `get_reviews`, `get_review_comments`) and the inline-thread surface returned a
+genuine empty set. There were no findings to handle — the one review reports none, and the two
+refusals are notices about the review rather than feedback about the code.
+
+⭐ **Two reviewers refused the same PR at the same moment for opposite reasons**, which is exactly why
+the `Reopens?` column exists: `coderabbitai` is behind a clock that clears, `sourcery-ai` behind a
+size ceiling that never will. A record without that column would have rendered them identically and
+left a reader unable to tell which was worth re-requesting.
+
+**The reopening reviewer is being re-requested rather than merged past.** A `@coderabbitai review`
+comment is scheduled for after its window clears, on a deliberately stable head — the report is
+committed *before* that point precisely so no later push aborts the review it is waiting for. The
+merge is armed only after that round completes, and the § Step 8 condition-4 disclosure will state
+the final coverage as N-of-3.
 
 ## Cost
 
@@ -506,11 +532,76 @@ _Recorded after the PR is opened._
 
 ## Contract check (Step 9)
 
-_Completed at Step 8 condition 3, before arming auto-merge._
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | **Done** — named above; all obtainable by bundle path (the plugin is not installed in this session) |
+| 2 Branch | **Done** — the harness-assigned `claude/code-intelligence-retrospective-s9weii` was kept as-is and pushed to `origin` before any edit; it was absent from the remote on arrival |
+| 3 Plan directory | **Done** — `…/330-retrospective-report-sections-structurally-dead/plan.md` exists and opens with the first-instruction block (checked on arrival and re-checked after the `git mv`) |
+| 4 Implement | **Done** — every commit carries the trailer; all five deliverables addressed |
+| 4 Per-commit gate | **Done** — every `*.py`-touching commit preceded by a clean `./pw quality-gate`: `ruff … All checks passed!`, `mypy … Success: no issues found in 412 source files`, `SPDX-header check passed`. One gate rejection (plugin-doctor `no-historical-prose-in-skills`) was fixed, not worked around |
+| 4 Pushed | **Done** — no unpushed commit; `git status -sb` reports no `ahead` |
+| 5 Build gate | **Done** — 14 `*.py` files changed, so the full gate applies; `./pw verify` re-run each round, last `=== verify: SUCCESS ===`, 20723 passed |
+| 6 Verification sub-agent | **Done** — four rounds, budget declared before the first dispatch; findings, dispositions and the stop record above |
+| 7 PR cycle | **Done** — PR #1287; no `skip-bot-review` (the diff touches `*.py` and `marketplace/bundles/**`, and a skill is code); participation table carries a verdict **and** a `Reopens?` value per reviewer; no `silent` verdict arose, so no recovery check was owed; no surface was `unreadable` |
+| 8 Merge gate | **Pending at the time of writing** — armed only after the re-requested review round, per § Reviewer participation |
+| 8 Bridge | **Done** — nothing was written under `doc/plans/` outside this plan's own directory: no ledger, no status file, no other plan touched. The report carries the PR number and the per-deliverable outcome |
+| 9 This check | **Done** — this table |
+| 9 What have we learned | **Done** — below |
+
+**Re-verified tree claims.** The claims this report makes about the *filesystem* (as opposed to the
+diff) were re-checked at the end rather than trusted from when they were written, since the build
+gate itself mutates the tree: the plan directory contains `plan.md` and `report-01.md` and nothing
+else, and no file was written outside the repository.
+
+**No `/sync-plugin-cache` is owed.** It is a machine-local build step reading the git-ignored
+`target/` and writing `~/.claude/`; a cloud run neither performs nor records one.
+
+**GitHub access path:** the GitHub MCP server (no `gh` CLI in this session). **Branch form:**
+harness-assigned.
 
 ## What have we learned (Step 9)
 
-_Completed at Step 8 condition 3._
+**One contract change is proposed, and this run produced the evidence for it.**
+
+**The gap.** § Step 6 tells a run to verify a *rationale* by running the function, to mutation-test a
+*guard*, and to sweep what a fix made false *elsewhere*. It says nothing about verifying that a fix's
+**predicate matches the claim the fix is written to support** — and that is the single defect this run
+paid for four times over. Each attempt at *written implies non-empty* was **sound where it landed**
+and **narrower than the claim**:
+
+| Attempt | Predicate shipped | The claim it was written to support | What it missed |
+|---|---|---|---|
+| 1 | the `_executive-summary` branch | every section | ten other rows |
+| 2 | `fragment is None` | any empty body | `''`, which is what `parse_toon` actually returns |
+| 3 | container emptiness | any unusable body | `{'findings': []}` — the shape an LLM aspect with nothing to report writes |
+| 4 | `not _fragment_has_payload` | (same) | nothing found, over 34 input classes |
+
+Every one passed its own tests, the quality gate, and the full suite. Nothing in the contract asks
+the question that separates attempt 4 from attempts 1–3, and it is a cheap question:
+**enumerate the input classes the claim ranges over, and check the predicate against each.** Round 4
+did exactly that — a 34-class differential across two trees — and it is the round that established
+the fix was finally right, and right for the right reason (for a dict the new predicate is *exactly*
+the existing payload discriminator, so no newly-omitted section can be a drop by construction).
+
+**The proposed edit** — a new obligation in § Step 6 beside the existing sweep rules:
+
+> **A fix's predicate is checked against the claim it supports, by enumeration.** When a fix closes a
+> *class* of defect, write down the input classes the claim ranges over and test the predicate against
+> each one. A predicate that is *sound but narrower than its claim* passes every test written for it,
+> passes the build, and leaves the documentation it was written to make true still false — so no gate
+> in this contract can see it. Where the codebase already has a discriminator for the same question,
+> prefer delegating to it over introducing a second predicate that will drift from the first.
+
+⛔ **Not self-approved.** The contract governing this run may not be amended by it. The proposal is
+presented to the operator with the evidence above; on approval it ships as a **separate PR** on its
+own `chore/` branch touching only the skill, with no `skip-bot-review` label — a skill is code and
+gets reviewed. It is deliberately kept out of this plan's PR: two changes with different review
+audiences in one diff means neither is read properly.
+
+**Rejected as a proposal:** the § Cost section asks for a token figure this session's harness does not
+expose to the running agent. That is a real gap, but it is an *environment* limitation rather than a
+contract defect, and the section already permits "not available to the agent in this session" — which
+is what this report says. No edit proposed.
 
 ## Residue
 
