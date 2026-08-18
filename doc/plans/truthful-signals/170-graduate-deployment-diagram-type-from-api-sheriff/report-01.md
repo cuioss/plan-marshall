@@ -1,6 +1,6 @@
 # Run report — 170-graduate-deployment-diagram-type-from-api-sheriff (run 01)
 
-**Date (UTC):** 2026-08-18    **Branch:** `claude/deployment-diagram-graduation-536j1k` (harness-assigned, kept as-is)    **PR:** _pending_    **Outcome:** _pending_
+**Date (UTC):** 2026-08-18    **Branch:** `claude/deployment-diagram-graduation-536j1k` (harness-assigned, kept as-is)    **PR:** [#1296](https://github.com/cuioss/plan-marshall/pull/1296)    **Outcome:** completed
 
 ## Skills loaded
 
