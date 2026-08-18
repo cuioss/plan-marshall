@@ -1,8 +1,16 @@
 # Actual state — 350-outline-derived-set-closure-integrity
 
-**Date (UTC):** 2026-08-18    **Branch:** `claude/derived-set-closure-integrity-g7n8x2` (harness-assigned)
-**Head:** `0f10d16`    **PR:** none — not opened
-**Run outcome:** **partial — stopped by operator instruction before the PR cycle.**
+**Date (UTC):** 2026-08-18    **Branch as run 01 executed it:** `claude/derived-set-closure-integrity-g7n8x2` (harness-assigned)
+**Run-01 head:** `4f7ab38`, as rebased onto `claude/derived-set-closure-integrity-3i53aj`
+**PR at the halt:** none — not opened
+**Run-01 outcome:** **partial — stopped by operator instruction before the PR cycle.**
+
+> ⚠ **This document describes the state RUN 01 was halted in, and it is no longer the current
+> state of the branch.** Run 02 resumed the work — rebasing run 01's commits onto
+> `claude/derived-set-closure-integrity-3i53aj` and carrying them through the PR cycle — so
+> § 4 "What is NOT done" and § 8 "If this work is resumed" are the halt's inventory, not open
+> items. [`report-02.md`](report-02.md) is the live record; read it for what run 02 actually
+> closed. Commit SHAs here are the **rebased** ones, so they resolve on the branch under review.
 
 This document is the honest state of play, written because the run was halted mid-contract. It is a
 companion to [`report-01.md`](report-01.md), which carries the per-deliverable record; this one says
@@ -147,7 +155,7 @@ sub-agents clobbered each other's mutation harness by choosing the same filename
   `SPDX-header check passed`.
 - **Branch gate:** `./pw verify` ran four times. ⚠ **The second run FAILED** —
   `verify: test-compile failed`, a test-only type error invisible to `quality-gate` and to per-file
-  `pytest`, with the wrapper still exiting 0. Fixed in `0702530`. The final run's result is recorded
+  `pytest`, with the wrapper still exiting 0. Fixed in `4ec39fd`. The final run's result is recorded
   in `report-01.md` § Build gate.
 
 ⛔ **Read the gate for what it is.** The build's own coverage line says it: SPDX cannot evaluate file

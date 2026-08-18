@@ -1,7 +1,15 @@
 # Run report — 350-outline-derived-set-closure-integrity (run 01)
 
 **Date (UTC):** 2026-08-18    **Branch:** `claude/derived-set-closure-integrity-g7n8x2` (harness-assigned)
-**PR:** _pending_    **Outcome:** _in progress_
+**PR:** none — run 01 was halted before the PR cycle    **Outcome:** partial
+
+> Run 01 was halted by operator instruction before Step 7, so this report is a record of a
+> **partial** run and stops where the halt did. Run 02 resumed the work: run 01's commits were
+> rebased onto `claude/derived-set-closure-integrity-3i53aj` and carried to a PR there. **Every
+> commit SHA quoted below is the rebased one**, so it resolves on the branch under review — the
+> pre-rebase SHAs exist only on `claude/derived-set-closure-integrity-g7n8x2`, which is still on
+> `origin` and untouched. See [`report-02.md`](report-02.md) § "How run 01's work was recovered";
+> [`actual-state.md`](actual-state.md) writes up the state the halt left.
 
 ## Verification round budget — declared before the first dispatch
 
@@ -62,7 +70,7 @@ sentence resolved, and the behaviour claim did not hold.
 
 ## Deliverables
 
-D1–D5 land across four commits: `d9f9534` (the closure module, the parser widening, the first test suites), `46f919c` and `0702530` (the round-1 fixes — the non-vacuous D1 fixture, the three unmeasured-scope repairs, the D3 positive-population guards, three previously-uncovered behaviours), and the round-2 fix commit (the population/heading guards, the holistic-task carve-out, and the bypass-predicate widening). D0 mutated nothing and is recorded above. ⚠ Figures in this report are re-derived at the moment of the claim; an earlier version of this line attributed all five deliverables to the first commit.
+D1–D5 land across four commits: `3b57b7e` (the closure module, the parser widening, the first test suites), `9d257dd` and `4ec39fd` (the round-1 fixes — the non-vacuous D1 fixture, the three unmeasured-scope repairs, the D3 positive-population guards, three previously-uncovered behaviours), and the round-2 fix commit (the population/heading guards, the holistic-task carve-out, and the bypass-predicate widening). D0 mutated nothing and is recorded above. ⚠ Figures in this report are re-derived at the moment of the claim; an earlier version of this line attributed all five deliverables to the first commit.
 
 ### D1 — outline completeness is CLOSURE, not existence
 
@@ -306,7 +314,7 @@ clean before this diff was taken, so nothing staged or untracked is invisible to
 - Every `./pw` call carried `UV_HTTP_TIMEOUT=600`; the branch gate exceeds the 600 s foreground Bash
   timeout and was run in the background each time.
 
-**Final gate** — _pending a clean re-run._ A `./pw verify` at `a583652` reported
+**Final gate** — _pending a clean re-run._ A `./pw verify` at `51829af` reported
 `=== verify: SUCCESS ===`, but it is **not** recorded as the final gate: it overlapped a verification
 sub-agent's mutation campaign on the same tree, so it did not measure the committed state
 undisturbed. (A concurrent mutant can only produce a false RED, never a false GREEN — so the
