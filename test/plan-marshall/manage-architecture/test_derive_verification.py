@@ -537,7 +537,8 @@ def test_it_route_stamped_verify_derives_failsafe_gate():
     IT-signature path resolves the Failsafe-bound class rather than the plain
     test goal, because the plain goal does not run IT-named tests and so reports
     success having executed none of them. Here the concern is only that the
-    deriver honours the stamp; this fixture's executables are engine-agnostic.
+    deriver honours the stamp: this fixture seeds pyproject executables, so it
+    exercises route precedence and not the Maven behaviour that motivates it.
     """
     with tempfile.TemporaryDirectory() as tmp:
         project = Path(tmp) / 'project'
