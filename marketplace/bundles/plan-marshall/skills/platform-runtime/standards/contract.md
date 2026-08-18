@@ -932,6 +932,8 @@ tokens_captured: 8000
 source: manual
 ```
 
+**This success does NOT mean the count was stored.** Note the absent `cursor_updated` — the Claude success above carries it because that path writes the token cursor and calls `manage-metrics end-phase`; this one reaches no persistence boundary at all, so the number is reported back and then lost. That is a known contract violation (`Runtime.metrics_capture` requires an explicit count to be persisted before `success`, or declined with `no-op`), recorded as a survivor rather than fixed, because the metrics boundary is target-neutral in substance but currently lives in the Claude runtime. Do not rely on this call to record anything on OpenCode.
+
 **No-op (OpenCode — no manual tokens)**:
 ```toon
 status: no-op

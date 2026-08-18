@@ -657,9 +657,22 @@ class Runtime(ABC):
 
         A target that exposes a session transcript sums the tokens recorded
         since this phase's last capture. A target that does not returns
-        ``no-op`` — unless *total_tokens* is supplied, in which case it stores
-        that value directly. An explicit count is always honoured, whatever the
-        target can measure on its own.
+        ``no-op`` — unless *total_tokens* is supplied.
+
+        **Requirement when *total_tokens* is supplied:** the count MUST be
+        persisted before ``success`` is returned. A target that cannot persist
+        it MUST return ``no-op`` rather than a success carrying the number,
+        because a success the caller cannot distinguish from a stored one turns
+        a declined measurement into a silently lost one.
+
+        **Known violation, documented rather than implied:** ``OpenCodeRuntime``
+        currently returns ``success`` for an explicit count while reaching no
+        persistence boundary. This is a recorded survivor, not the contract —
+        the requirement above is what an implementation must satisfy, and the
+        remedy is to relocate the (target-neutral) metrics boundary to a shared
+        home so both targets can reach it, or to decline with ``no-op``. Do not
+        read this note as permission; it exists so the contract does not assert
+        a behaviour a registered runtime does not have.
 
         Args:
             plan_id: Plan identifier.
