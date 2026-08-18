@@ -64,7 +64,9 @@ tests addressing the private handler module rather than the CLI that owns its pa
 defect with a different remedy.
 
 **A broader mechanical derivation was also run and is reported as a lead, not as the blocked set.**
-Over the 253 test modules that construct a `Namespace(`, resolving the marketplace modules they reach
+Over the 253 `test_*.py` modules whose source text contains `Namespace(` (252 of them by an actual
+`Namespace()` call node — the population is stated exactly because it is the sweep's denominator),
+resolving the marketplace modules they reach
 by both import styles (`load_script_module` triples **and** plain imports): 148 modules reached, of
 which 8 expose a published builder, 33 a `main()`, 5 failed to load, 87 expose neither but sit in a
 skill whose front script does, and 15 expose neither in a skill with no seam-bearing front script at
@@ -97,15 +99,27 @@ replaces did not carry them either.
 
 ### D2 — Let the shared loader address a skill file outside `scripts/` — **done** (`aeb8f7a`)
 
-**Instance set, derived per finding.** Of the 183 whole-tree `test-module-preamble-boilerplate`
-findings, **14** resolve a skill-root `extension.py` — read at each finding's `file:line`, since the
-sweep names the test module and not the path it resolves. Not two: `060`'s figure was scoped to the
-fifteen directories it worked. The 14 sit in 13 test modules across 11 directories.
+**Instance set, derived per finding — and the derivation took four attempts.** Of the 183 whole-tree
+`test-module-preamble-boilerplate` findings, **86** are `spec_from_file_location` and **20** of those
+resolve a skill-root `extension.py`. Not two: `060`'s figure was scoped to the fifteen directories it
+worked. The 20 sit in 20 distinct test modules across 15 directories and 10 top-level entries under
+`test/`.
+
+⚠️ **Three earlier automated classifications of this same set returned 14, 7 and 15, and all three
+were wrong.** The plan warned that the sweep "names the test module and the line, not the path it
+resolves, so the derivation is a read at `file:line` rather than a grep of the output", and that is
+exactly what bit: the path expression is built through module constants, *function-local* variables,
+and in one case a function *parameter*. A text-window scan over-matched; resolving only module-level
+constants under-matched; resolving the FIRST binding of a name rather than the nearest preceding one
+under-matched again. The figure here comes from resolving each call's path argument through the
+nearest preceding binding, plus a hand read of the four cases whose argument is a parameter — of
+which exactly one (`test_direct_gh_glab_usage.py:135`, reached with `_PLUGIN_DEV_EXT_PATH`) is a
+skill-root extension and three are not.
 
 **Option chosen: widen the loader.** The alternative (exempt the shape in the analyzer) was rejected
 with a reason: the shape is a stable marketplace convention — 11 bundles ship
 `skills/plan-marshall-plugin/extension.py`, and **9 of the 11 have no `scripts/` directory at all** —
-so exempting it would silence the message while leaving 14 hand-rolled `spec_from_file_location`
+so exempting it would silence the message while leaving 20 hand-rolled `spec_from_file_location`
 preambles in the tree, which is the duplication **B7** exists to remove. Widening makes the remedy the
 rule already prescribes actually applicable.
 
@@ -119,12 +133,21 @@ The rule's own message, the standards doc, the rule catalog and the provenance t
 applicable helper per shape.
 
 ⚠️ **The count is unchanged at 183, and that is the correct outcome.** D2's done-when is satisfied by
-the first of its two branches — every one of the 14 findings is now *fixable by the documented
-remedy*. Converting the call sites is not this plan's to do: the 14 live under `test/pm-dev-*/`,
-`test/pm-documents/`, `test/marketplace/`, `test/pm-code-intelligence/`,
-`test/plan-marshall/build-gradle/`, `test/plan-marshall/build-npm/`, and one at the root of
+the first of its two branches — every one of the 20 findings is now *fixable by the documented
+remedy*. Converting the call sites is not this plan's to do; they live under `test/marketplace/`,
+`test/pm-code-intelligence/`, `test/pm-dev-frontend/`, `test/pm-dev-frontend-cui/`,
+`test/pm-dev-java/`, `test/pm-dev-java-cui/`, `test/pm-dev-python/`, `test/pm-documents/`,
+`test/pm-plugin-development/plan-marshall-plugin/`, `test/plan-marshall/build-gradle/`,
+`test/plan-marshall/build-npm/`, `test/plan-marshall/build-operations/`,
+`test/plan-marshall/extension-api/`, `test/plan-marshall/plan-retrospective/`, and one at the root of
 `test/plan-marshall/` (`test_plan_marshall_plugin_extension.py`) — none of which this plan's Expected
-surface claims. They belong to the
+surface claims.
+
+⛔ **A conversion must pass a distinct `module_name`.** Every bundle ships its extension under the
+same filename, so `load_skill_module`'s default `sys.modules` name is `extension` for all of them and
+a mechanical conversion would make the 20 displace each other — and the D3 guard could not see it,
+because nothing imports `extension` plainly. The analyzer's message, the standards doc's remediation
+and the loader's own docstring all say so now; they did not in the first round. They belong to the
 owning slices (`080` for the `pm-*` and `marketplace` directories, `060`'s slice for the `build-*`
 ones). This is the same division D1's Out-of-scope states: this plan opens the seam, the owning slice
 performs the conversion.
@@ -141,17 +164,27 @@ finds every call to the three registering helpers, resolves the name each publis
 module-level string constants as well as literals), and cross-checks against every plain import in the
 tree. Nothing is hard-coded about which modules participate.
 
-⚠️ **Re-derivation refuted the count.** `060` recorded **three** latent registrations. The whole-tree
-derivation finds **19 live collisions** — names that are both file-loaded and plainly imported *today*,
-not latent at all:
+⚠️ **Re-derivation refuted the count — twice.** `060` recorded **three** latent registrations. The
+whole-tree derivation finds **23 live collisions** — names that are both file-loaded and plainly
+imported *today*, not latent at all:
 
 `_architecture_core`, `_build_execute_factory`, `_cmd_effort`, `_config_defaults`, `_cred_edit`,
 `_findings_core`, `_github_pr`, `_gradle_cmd_discover`, `_gradle_execute`, `_maven_execute`,
-`_pyproject_execute`, `effort_presets`, `finalize_step_presets`, `github_pr`, `manage_terminal_title`,
-`plan_logging`, `recipe_scoring`, `review_completeness`, `run_config`.
+`_pyproject_execute`, `effort_presets`, `finalize_step_presets`, `github_pr`, `lsp_client`,
+`manage_terminal_title`, `permission_doctor`, `permission_fix`, `plan_logging`, `platform_runtime`,
+`recipe_scoring`, `review_completeness`, `run_config`.
 
 `060`'s three was a property of the slice it measured, not of the tree. Blast radius varies widely —
 `_build_execute_factory` is loaded by one module and plainly imported by 19; `run_config` by 2 and 13.
+
+⛔ **The first round of this run reported 19, and that was a defect in the guard itself.**
+`parse_ns(bundle, skill, script, *argv)` takes **no** `module_name`, so its fourth positional is the
+first argv token; the walker read it as a module name and attributed **179** call sites to subcommand
+strings (`'run'`, `'read'`, `'list'`, …), losing their registrations entirely. Since `parse_ns` is the
+most common of the three call shapes, the guard was inert on its main input while reporting a clean
+baseline. The fix reads the helper's arity from a table rather than assuming one signature for all
+three, and the module's positive control now asserts a `parse_ns` attribution as well as a
+`load_script_module` one — a control over the latter alone is structurally incapable of catching this.
 
 **Consequence for the guard's shape.** An `assert no collisions` guard would red the build on 19
 pre-existing conditions spread across directories this plan may not edit. The guard is therefore a
@@ -168,8 +201,9 @@ reason `parse_ns` needed the passthrough.
 
 **Coverage bound, stated rather than hidden.** 88 loader call sites pass a module name that is neither
 a literal nor a module-level constant, so the walker cannot resolve them and a collision introduced at
-one is invisible to the guard. That count is asserted as a non-growing ceiling with its own test, so
-the blind spot is a visible quantity rather than an unstated narrowing.
+one is invisible to the guard. That count is asserted from **both** sides — it may not grow (widening
+the blind spot) and it may not silently shrink (leaving the constant overstating it) — so it carries
+the same anti-rot property as the collision baseline rather than being a one-way ceiling.
 
 **Guard placement.** `test/plan-marshall/script-shared/test_conftest_loader_contract.py` — inside a
 directory this plan's Expected surface claims, and explicitly **not** at the root of `test/` or of
@@ -191,8 +225,18 @@ Widened `_PLAN_DELIVERABLE_ID_RE` (`deliverable D?\d+`, so `Deliverable 2` match
 
 | Bound | What it excludes | Why |
 |---|---|---|
-| `(?<=[^\w#\-])` | `plan-marshall#123`; `pre-#812`; a comment's own `#` delimiter | The reference analyzer already owns the first. `pre-#812` is a schema-state literal the corpus asserts on. Comment segments arrive from `tokenize` with the delimiter attached |
+| `(?<![\w#\-])` | `plan-marshall#123`; `pre-#812` | The reference analyzer already owns the first. `pre-#812` is a schema-state literal the corpus asserts on |
 | `#\d{2,}` on the bare form only | `#1`, `#2`, `#3` enumerations | One-digit bare numbers are intra-document enumeration. Affordable because `PR #7` still matches through the prefixed alternative, which carries no digit bound |
+
+⛔ **The comment-delimiter case is handled where it belongs, and the first round of this run got it
+wrong.** That round used a POSITIVE lookbehind demanding some preceding character, which does keep a
+comment's own `#` from reading as a citation — and also silences a **docstring that opens with one**.
+Four real citations in this tree were invisible to it: `test_comments_stage.py:1138` and
+`test_re_review_strategy.py:745` (`#1014`), `test_github_ops_pr_merge.py:520` and
+`test_gitlab_ops_mr_merge.py:670` (`#1081`). The delimiter is now stripped in `_iter_prose_segments`,
+where it is punctuation the tokenizer supplied rather than something an author wrote, so the matcher
+uses a plain negative lookbehind and stays able to fire at position 0 of a docstring. All four are now
+reported, and a new case pins the behaviour.
 
 **Whole-tree counts** (`doctor-marketplace.py test-conventions --test-root test/`):
 
@@ -200,10 +244,12 @@ Widened `_PLAN_DELIVERABLE_ID_RE` (`deliverable D?\d+`, so `Deliverable 2` match
 |---|---:|
 | pristine `origin/main` | 81 |
 | widened, unbounded | 308 |
-| **widened + bounded (shipped)** | **282** |
+| widened + bounded, first round | 282 |
+| **shipped (delimiter stripped, negative lookbehind)** | **286** |
 
 **No true positive stopped being reported.** Every one of the 81 pristine findings is present in the
-final set — zero `file:line` pairs disappeared and no file's count decreased. The 26 findings the
+final set — zero `file:line` pairs disappeared and no file's count decreased. (Measured against the
+first round's 282; the four the delimiter fix restored are additions on top of that.) The 26 findings the
 bounds removed are fully accounted for, and split cleanly in two: **10** one-digit bare numbers (`#1`
 ×4, `#2` ×5, `#3` ×1), and **16** numbers inside a hyphenated compound (`pre-#812` ×11, `pre-#515`
 ×2, `post-PR-#474` ×2, `post-#854` ×1). The 16 were listed individually with their source lines and
@@ -227,9 +273,10 @@ phrase would newly add. A third cold read of 10, told that `plan` is also a doma
 **7 CITATION / 3 DATA — a 30% FP rate**, worse than the 20% the shipped widenings measure at. The
 phrase names the plan *record under test* often enough that shape cannot separate the two senses.
 
-Six test cases added to `test_test_conventions_rule6.py`, each **mutation-proven**: reverting the
-matchers to their pre-widening spellings, un-narrowing the bare form, removing the preceding-character
-bound, and "simplifying" the digit bound onto both alternatives each turn a distinct subset red.
+Seven test cases added to `test_test_conventions_rule6.py`, each **mutation-proven**: reverting the
+matchers to their pre-widening spellings, un-narrowing the bare form, removing the leading-character
+bound, and "simplifying" the digit bound onto both alternatives each turn a distinct subset red. The
+seventh pins the docstring-opening case the first round silenced.
 
 ### D5 — Generalise the citation-versus-datum fix to the sibling rule — **measured; rule left unchanged** (`00c6fa7`)
 
@@ -279,8 +326,8 @@ partial (point 2 and the `__globals__` paragraph).
 | `test-module-line-budget` | 317 | 317 | 0 |
 | `test-helper-module-misnamed` | 0 | 0 | 0 |
 | `test-module-preamble-boilerplate` | 183 | 183 | 0 |
-| `test-docstring-historical-prose` | 81 | 282 | **+201** |
-| **total** | **597** | **798** | **+201** |
+| `test-docstring-historical-prose` | 81 | 286 | **+205** |
+| **total** | **597** | **802** | **+205** |
 
 The single delta is D4's widening; it is a rule seeing more of what was always there, not a
 regression. `error_count` is unchanged at 16, so `status` is unaffected.
@@ -291,7 +338,7 @@ regression. `error_count` is unchanged at 16, so `status` is unaffected.
 |---|---:|---|---:|---|
 | `test-module-line-budget` | 315 | `warning` | 317 | No |
 | `test-module-preamble-boilerplate` | 382 | `warning` | 183 | No |
-| `test-docstring-historical-prose` | 254 | `warning` | 282 | No |
+| `test-docstring-historical-prose` | 254 | `warning` | 286 | No |
 | `test-helper-module-misnamed` | 1 | **`error`** | 0 | Already flipped |
 
 **No flip performed.** The plan's HYPOTHESIS — that no rule other than the already-flipped one is at
@@ -299,7 +346,45 @@ zero — is **confirmed**. Severities read from the `RuleDescriptor` table in
 `_analyze_test_conventions.py`; baselines from `rule-provenance.md`.
 
 **Collected test count** (`pytest test/ --collect-only -q`): **20805 → 20854 (+49)**. This plan adds
-tests and removes none.
+tests and removes none. (Verification condition 1 — holds.)
+
+**Coverage** — verification condition 2, `./pw coverage <bundle>` on this branch and on a pristine
+`origin/main` worktree, for the two bundles the changed production modules sit under:
+
+| Bundle | Before | After |
+|---|---:|---:|
+| `pm-plugin-development` | 84.91% | 84.91% |
+| `plan-marshall` | 83.40% | **83.34%** |
+
+⚠️ **The `plan-marshall` aggregate falls 0.06 pp, and it is not a coverage regression.** Read per file
+from the runs' own `coverage.xml`, **every changed production file is covered at least as well as
+before**, and one file newly ENTERS the measured population:
+
+| File | Before | After |
+|---|---|---|
+| `build/_build_cli.py` | 132/143 (92.3%) | 137/148 (92.6%) |
+| `build/_build_execute_factory.py` | 281/297 (94.6%) | 288/304 (94.7%) |
+| `manage-providers/scripts/credentials.py` | *not in the measured set* | 41/78 (52.6%) |
+
+`credentials.py` was reached by no `plan-marshall` test before; the new seam test imports it, so it
+joins the denominator at its own 52.6% and pulls the aggregate down. Exactly one other file moved —
+`script-shared/scripts/marketplace_paths.py`, 216/231 → 215/231, one line — which this change does not
+touch and which is unexplained; recorded as residue rather than waved away.
+
+**Reverse-directory-order run** — D3's done-when. `pytest` over every top-level entry under `test/`
+passed in reverse-sorted order, serially, on **both** trees:
+
+| Tree | Result |
+|---|---|
+| pristine `origin/main` | 36 failed, 20755 passed, 14 skipped |
+| this branch | 36 failed, 20804 passed, 14 skipped |
+
+The two **failing sets are identical test-for-test** (diffed, 36 nodes), across
+`platform-runtime` (17), `workflow-integration-gitlab` (6), `tools-integration-ci` (8),
+`workflow-integration-github` (5) — none of them a module this plan touches. They are module-level
+caching defects (a cached real-marketplace path returned where the test staged a `tmp_path`), entirely
+pre-existing, and **this plan neither introduces nor removes any of them**. Under the parallel runner
+the suite is green in both directions; the sensitivity is specific to a serial reverse-order run.
 
 ## Build gate
 
@@ -307,7 +392,8 @@ tests and removes none.
 
 `./pw verify` — clean: `ruff` "All checks passed!", `mypy` "Success: no issues found in 413 source
 files" (production) and 771 (test-compile), "SPDX-header check passed", plugin-doctor `status: pass` /
-`total_issues: 0`, and **20840 passed, 14 skipped in 380.81s**.
+`total_issues: 0`, and **20840 passed, 14 skipped in 380.81s**. That run predates the second commit
+round; the gate was re-run after it and reports clean on the same four dimensions.
 
 ⚠️ **`test-compile` caught one error the narrower calls did not** — exactly the class the lane
 contract warns about. `mypy` rejected `keywords['register'].value` because an `isinstance` narrowing on
@@ -335,7 +421,29 @@ Every finding, per instance.
 | F9 | Beyond-diff sweep (D2) | Five sites restated the remedy the rule prescribes, two of them naming `load_script_module`'s `spec_from_file_location` call, which this change moved into `_exec_module_from_path` | **Fixed** in the analyzer message, its docstring, the standards doc, the rule catalog and the provenance table |
 | F10 | D5 measurement | The plan's premise that the sibling rule "still matches on shape alone" is partly wrong — markdown already carries the inline-code exemption | Recorded; D5's decision rests on the corrected picture |
 | F11 | Sequencing | Plan `070` has already landed, so this plan did **not** land before `070` started as its § Notes intended; `070`'s **B6** half ran without D1's seams | Recorded; out of this run's control |
-| F12 | D3 guard coverage | 88 loader call sites pass a non-literal, non-constant module name and are invisible to the guard | **Disclosed** and pinned as a non-growing ceiling with its own test |
+| F12 | D3 guard coverage | 88 loader call sites pass a non-literal, non-constant module name and are invisible to the guard | **Disclosed** and pinned from both sides with its own test |
+
+Round 1 of the pre-PR verification loop returned twelve findings. Each, per instance:
+
+| # | Finding | Disposition |
+|---|---|---|
+| V1 | **The D3 guard mis-resolved every `parse_ns` site.** `parse_ns` takes no `module_name`, so its 4th positional is an argv token; 179 sites were attributed to subcommand strings and their registrations lost. 4 collisions (`lsp_client`, `permission_doctor`, `permission_fix`, `platform_runtime`) were invisible, and the baseline of 19 was wrong | **Fixed.** Arity read from a table; baseline re-derived to 23; the positive control now asserts a `parse_ns` attribution too |
+| V2 | **D2's instance set was 14, not 20.** Three automated classifications disagreed (14 / 7 / 15) | **Fixed.** Re-derived to 20 by nearest-preceding-binding resolution plus a hand read of the four parameter-driven cases; the report now records why automation failed |
+| V3 | **The bare-number bound also silenced citations at the start of a docstring** — four real ones in this tree — and the exclusion was named nowhere | **Fixed**, not merely named: the comment delimiter is stripped in `_iter_prose_segments`, so the matcher uses a negative lookbehind and fires at position 0 of a docstring. All four are now reported; a new case pins it |
+| V4 | **`282 / 904` did not re-derive, and `282` was the wrong metric** — it is the deduped finding count, not "pattern hits"; `904` reproduced under no derivation | **Fixed.** Both docs now state the definition that reproduces them: **286** prose segments carrying a citation (= the finding count) and **955** non-docstring string-literal constants, with the walk that produces each |
+| V5 | **`build_parser` omitted `run-config-key`** while its docstring claimed to carry every subcommand the wrappers inherit from this module; all four register it | **Fixed.** The omission is real and forced (that registration needs the wrapper's own `ExecuteConfig`), so it is named with the reason — and the test now DERIVES the expected set by intersecting the four wrappers' live parsers instead of asserting a 5-name literal |
+| V6 | **"their only module is a root-level `extension.py`" is false for 2 of the 11** (`pm-documents`, `pm-plugin-development` ship `scripts/` too) — asserted in two places | **Fixed** in both |
+| V7 | **`parse_ns`'s Cost paragraph** became conditionally false once `register=False` existed | **Fixed** |
+| V8 | **The remedy the widened message prescribes produces an 11-way basename collision** — every bundle's `extension.py` defaults to the `sys.modules` name `extension`, and nothing imports it plainly so the guard cannot see it | **Fixed.** The message, the standards remediation and the loader docstring now all say to pass a distinct `module_name` (or `register=False`) |
+| V9 | **Verification condition 2 (coverage) was neither measured nor declared unavailable** | **Fixed.** Both bundles measured before and after, per file, with the aggregate dip explained |
+| V10 | **D3's reverse-directory-order clause was unreported** | **Fixed.** Run on both trees; identical 36-test failing sets, all pre-existing |
+| V11 | **`test/README.md` (untouched) is contradicted** — its "do not add a parallel loader" rule, and its owned-helpers table omitting the new pair | **Fixed.** The rule now records why a second ROOT is a different question rather than a second answer, and the table lists both helpers |
+| V12 | Smaller items: the `253` figure's population unstated; the coverage bound was a one-way ceiling; the rule6 fixture README listed 16 of 31 cases; `_exec_module_from_path` said "Script not found" for a skill-root module; `credentials.py`'s Usage block omitted `find-by-category` | **All fixed**; the README now lists all 31 |
+
+⚠️ **Two of these — V1 and V3 — were defects in guards this run wrote to catch defects.** V1 left the
+registration guard inert on its most common input while reporting a clean baseline; V3 made the
+citation rule silently narrower than the round's own report claimed. Both are the vacuous-guard class,
+found by an independent reader and not by the author.
 
 ### Stop record
 
@@ -371,10 +479,13 @@ _Filled in as the final pre-merge commit._
 
 | Item | Where it goes |
 |---|---|
-| The 14 skill-root `extension.py` preambles are now fixable but **not fixed** | The owning slices — `080` (`test/pm-dev-*/`, `test/pm-documents/`, `test/marketplace/`, `test/pm-code-intelligence/`), `060`'s slice (`test/plan-marshall/build-gradle/`, `build-npm/`), and `test/plan-marshall/test_plan_marshall_plugin_extension.py` |
+| The **20** skill-root `extension.py` preambles are now fixable but **not fixed** — and a conversion must pass a distinct `module_name` | The owning slices — `080` (`test/pm-dev-*/`, `test/pm-documents/`, `test/marketplace/`, `test/pm-code-intelligence/`, `test/pm-plugin-development/plan-marshall-plugin/`), `060`'s slice (`test/plan-marshall/build-gradle/`, `build-npm/`, `build-operations/`, `extension-api/`), `050`'s (`test/plan-marshall/plan-retrospective/`), and `test/plan-marshall/test_plan_marshall_plugin_extension.py` |
 | The 15 `script-shared` `parse_ns` conversions D1 unblocks | `070` / `080` per the plan's Out of scope; `060`'s slice for its own residue |
 | The 12 `manage-providers` sites — convertible via `credentials.py`, and never seam-blocked | Same owners; the remedy is to target the CLI owner, not the private handler module |
-| **19 live `sys.modules` registration collisions**, pinned not fixed | Each owning slice; the guard prevents a 20th |
+| **23 live `sys.modules` registration collisions**, pinned not fixed | Each owning slice; the guard prevents a 20th |
 | 88 loader call sites the guard cannot resolve statically | Any slice touching them: hoist the argument to a module-level constant |
-| `test-docstring-historical-prose` at 282, `test-module-preamble-boilerplate` at 183, `test-module-line-budget` at 317 — none at zero, so no further flip is licensed | `100` for the line budget; the reduction slices for the other two |
+| `test-docstring-historical-prose` at 286, `test-module-preamble-boilerplate` at 183, `test-module-line-budget` at 317 — none at zero, so no further flip is licensed | `100` for the line budget; the reduction slices for the other two |
 | `identifier-validator-corpus`'s empty registry; the `broken-relative-link` fragment gap | Out of scope by the plan; already in the epic README's residue table |
+| **36 tests fail under a SERIAL reverse-directory-order run**, identically on `origin/main` — module-level caching in `platform-runtime`, `tools-integration-ci`, `workflow-integration-github` / `-gitlab`. Green under the parallel runner | `110`, which owns run-condition instruments; the owning slices for the modules themselves |
+| `script-shared/scripts/marketplace_paths.py` covered 216/231 → 215/231, one line, unexplained and untouched by this change | Whoever next measures that bundle; recorded rather than explained away |
+| `pm-dev-python:pytest-testing`'s `parse_ns` teaching does not mention the `register` escape. Not false — the escape is additive — but incomplete, and that file is plan `010`'s surface | `010`, or a follow-up |
