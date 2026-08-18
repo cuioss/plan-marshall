@@ -81,15 +81,19 @@ TARGET_SCOPE_FIELD = 'targets'
 #: the targets' own registration, which is the source of truth for the set.
 _REGISTER_TARGET_RE = re.compile(r'register_target\(\s*[\'"]([^\'"]+)[\'"]')
 
-#: A non-indented line that OPENS A YAML KEY — an identifier at column 0
-#: followed by a colon. It bounds the fold of an unclosed flow sequence.
+#: Approximates "a new key starts here" — an unquoted, letter-or-underscore
+#: initial identifier at column 0 followed by a colon. It bounds the fold of
+#: an unclosed flow sequence.
 #:
-#: The identifier is what makes it a key test rather than a colon test. A
-#: looser ``^[^\s#][^:]*:`` matched any non-indented line containing a colon
-#: anywhere, which broke two VALID declarations: a continuation line carrying
-#: a trailing comment with a URL in it, and one whose value is a quoted string
-#: containing a colon. Both are ordinary YAML, and both were then rejected
-#: naming a target nobody wrote — the defect the fold exists to prevent.
+#: Requiring an identifier before the colon is what distinguishes this from
+#: the looser ``^[^\s#][^:]*:`` it replaced, which matched any non-indented,
+#: non-comment line containing a colon anywhere. That looser form broke two
+#: VALID declarations: a continuation line carrying a trailing comment with a
+#: URL in it, and one whose value is a quoted string containing a colon. Both
+#: are ordinary YAML, and both were then rejected naming a target nobody
+#: wrote — the defect the fold exists to prevent. This form is still only an
+#: approximation of a YAML key; see :func:`_join_flow_sequence` for what it
+#: misses and why that is safe here.
 _TOP_LEVEL_KEY_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_.-]*\s*:')
 
 _DESCRIPTION_UNKNOWN = (
@@ -143,10 +147,11 @@ def _join_flow_sequence(value: str, rest: list[str]) -> str:
     Mirrors ``component_targets._join_flow_sequence``: a ``targets: [claude,``
     continued on the next line is one value, and reading only the first
     physical line would report ``[claude`` as an unknown target. The fold
-    stops at the first line that opens a key — an identifier at column 0
-    followed by a colon (:data:`_TOP_LEVEL_KEY_RE`) — so an unclosed
-    sequence cannot absorb the fields that follow it, while a continuation
-    line that merely contains a colon is still folded in.
+    stops at the first non-indented line matching :data:`_TOP_LEVEL_KEY_RE`,
+    so an unclosed sequence cannot absorb the fields that follow it. That
+    pattern approximates "a new key starts here" and is wrong in both
+    directions — see ``component_targets._join_flow_sequence`` for what it
+    misses and why every misread is rejected rather than mis-accepted.
     """
     head = _strip_comment(value)
     if not head.startswith('[') or ']' in head:

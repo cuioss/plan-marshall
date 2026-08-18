@@ -155,8 +155,8 @@ def test_a_hash_that_opens_no_token_is_not_a_comment(value, expected):
             id='continuation-with-a-url-comment',
         ),
         pytest.param(
-            'targets: [claude,\n"opencode"]',
-            ['claude', 'opencode'],
+            'targets: [claude,\n"a: b"]',
+            ['claude', 'a: b'],
             id='continuation-quoting-a-colon',
         ),
     ],

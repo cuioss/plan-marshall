@@ -197,7 +197,7 @@ user-invocable: true
 
 ### Optional Fields
 
-Skills do not use `model`, `color`, or `tools`/`allowed-tools` fields. The skill fields **this document names** are: `name`, `description`, `user-invocable`, `mode`, `implements`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`, `profiles`, `priming_preamble`, `composes`, `targets`.
+Skills do not use `model`, `color`, or `tools`/`allowed-tools` fields. **This list** is: `name`, `description`, `user-invocable`, `mode`, `implements`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`, `profiles`, `priming_preamble`, `composes`, `targets`.
 
 ⛔ **That is not the whole set of frontmatter a skill may carry, and this document is not the register of it.** A field belongs to whichever contract declares it, and several are declared elsewhere: `scope:` by [`plan-marshall:ref-workflow-architecture` § manage-contract](../../../../plan-marshall/skills/ref-workflow-architecture/standards/manage-contract.md), `lane:` by [`ext-point-lane-element`](../../../../plan-marshall/skills/extension-api/standards/ext-point-lane-element.md), and a finalize-step's `order` / `default_on` / `presets` / `mutates_source` and their siblings by [`ext-point-finalize-step`](../../../../plan-marshall/skills/extension-api/standards/ext-point-finalize-step.md). Read the owning contract before concluding a field is unsupported — an enumeration here would go stale the moment a contract adds one, which is why this one does not claim to be exhaustive.
 
@@ -535,7 +535,7 @@ Agents must not declare `Task` — the host platform restricts Task from sub-age
 
 ### Issue 4: Unsupported Fields in Skills
 
-Skills must not declare `allowed-tools` or `tools`. For the fields a skill MAY carry, see [Skill Frontmatter → Optional Fields](#optional-fields-2) — and note that the list there is what this document names, not the whole set: a field may be declared by its own owning contract instead. A field that is neither specified here nor declared by a contract is ignored — carry it under `metadata:` if it needs to be recognized, or remove it.
+Skills must not declare `allowed-tools` or `tools`. For the fields a skill MAY carry, see [Skill Frontmatter → Optional Fields](#optional-fields-2) — and note that the list there is not the whole set: a field may be declared by its own owning contract instead. A field that is neither specified here nor declared by a contract is ignored — carry it under `metadata:` if it needs to be recognized, or remove it.
 
 ### Issue 5: Invalid Tool Names
 

@@ -59,12 +59,12 @@ pr-agent: produced 1 entries
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD -- '*.py'` reports **17 changed Python files** at the commit
-recorded below, so the gate applies.
+`git diff --name-only origin/main...HEAD -- '*.py'` reports **17 changed Python files**, so the gate
+applies.
 
-`./pw verify` — **SUCCESS**, all three sub-steps clean. Re-run after every commit that changed a
-Python file. The figures below are from the LAST such run, recorded at the commit named in the
-Contract check below; every earlier run is superseded rather than reported here:
+`./pw verify` — **SUCCESS**, all three sub-steps clean. It was re-run after every commit that changed
+a Python file; the figures below are from the last such run, and every earlier run is superseded
+rather than reported here:
 
 - quality-gate: `ruff … All checks passed!`, `mypy … Success: no issues found in 415 source files`,
   `SPDX-header check passed`, plugin-doctor `total_issues: 0`
@@ -76,10 +76,10 @@ explicit deliverable paths (never `git add -A`).
 
 ## Findings
 
-Source key: **V1**–**V4** = pre-PR verification sub-agent, rounds 1 to 4. **S** = self-found
+Source key: **V1**–**V5** = pre-PR verification sub-agent, rounds 1 to 5. **S** = self-found
 (mutation sweep or my own re-read). One row per instance.
 
-### Round 1 — all fixed
+### Round 1
 
 | # | Source | Finding | Disposition |
 |---|---|---|---|
@@ -97,7 +97,7 @@ Source key: **V1**–**V4** = pre-PR verification sub-agent, rounds 1 to 4. **S*
 | C | V1 | Registry derivation governs which target NAMES are legal; it does not make a new target honour the filter, which is per-target wiring. So "a target registered later is covered … never silently bypassed" was a guarantee the code did not provide. | **Fixed** — the obligation is stated on `TargetBase.generate` and as step 6 of the targets README, and A7's replacement sweep fails an unwired target. Round 2 constructed a rogue `emits_bundle_tree=True` target that never calls `emits_to` and confirmed it fails the suite. |
 | S1 | S | Every scoping fixture named `claude`, so the CLAUDE emitter's own exclusion path was never taken — it could be deleted with the suite green. | **Fixed** before the round-1 dispatch: mirror-image fixtures scoped to the other target, in commit `7114c24`. |
 
-### Round 2 — all fixed
+### Round 2
 
 | # | Source | Finding | Disposition |
 |---|---|---|---|
@@ -119,7 +119,7 @@ Source key: **V1**–**V4** = pre-PR verification sub-agent, rounds 1 to 4. **S*
 | R2-16 | V2 | `claude/emitter.py`'s new paragraph claimed the manifest entry is dropped in lock-step for every scoped-out component; a skill has none to drop, which `plugin_json_gen.py`'s docstring states correctly. The two contradicted each other. | **Fixed** |
 | R2-17 | V2 | `marketplace/targets/__init__.py` carries a second "adding a new target" checklist that round 1 did not update, so an author reading only the package docstring got four steps and no filter obligation. | **Fixed** |
 
-### Round 3 — all fixed
+### Round 3
 
 | # | Source | Finding | Disposition |
 |---|---|---|---|
@@ -136,14 +136,14 @@ Source key: **V1**–**V4** = pre-PR verification sub-agent, rounds 1 to 4. **S*
 | F11 | V3 | The doctor's operator-facing `_DESCRIPTION_UNKNOWN` said an unknown target means the component "ships to fewer targets"; the build rejects it and ships nothing. | **Fixed**, and now pinned by an assertion on the text. |
 | F12 | V3 | A findings heading counted 12 over a 13-row table. | **Fixed** — the headings name what they cover instead of counting. |
 
-### Round 4 — all fixed
+### Round 4
 
 | # | Source | Finding | Disposition |
 |---|---|---|---|
 | R4-1 | V4 | A **fourth** copy of the withdrawn closed-schema claim, in the `metadata` paragraph of the very file round 3 edited — and named in round 1's own A5 row, which left it. | **Fixed.** A tree-wide grep for the claim now returns nothing. |
 | R4-2 | V4 | `ext-point-verify.md` cites "the skill frontmatter schema is closed", naming as its authority the document that now says it is not the register — a contradiction round 3's edit CREATED. | **Fixed** — it states the true reason (`verification_profile` has no owning contract). |
-| R4-3 | V4 | The docstrings round 3 wrote to explain its own guard were false of the code: `^[^\s#][^:]*:` matches any non-indented line containing a colon anywhere, not "a top-level key". | **Fixed** — the docstrings describe the real test. |
-| R4-4 | V4 | **A behavioural regression round 3 introduced.** That loose boundary broke two VALID declarations: a continuation line with a URL in a trailing comment, and one whose value is a quoted string containing a colon. Both are ordinary YAML; both were rejected naming `[claude` — the very defect the fold exists to prevent. | **Fixed** — the boundary is now a key test (`^[A-Za-z_][A-Za-z0-9_.-]*\s*:`), both shapes are restored, and both are pinned in both suites. |
+| R4-3 | V4 | The docstrings round 3 wrote to explain its own guard were false of the code: `^[^\s#][^:]*:` matches any non-indented line containing a colon anywhere, not "a top-level key". | **Fixed, then found false again in round 5 (F1/F2) and fixed there.** Round 4's replacement claimed the pattern tests a YAML key; it is only an approximation of one, wrong in both directions. The docstrings now say so. |
+| R4-4 | V4 | **A behavioural regression round 3 introduced.** That loose boundary broke two VALID declarations: a continuation line with a URL in a trailing comment, and one whose value is a quoted string containing a colon. Both are ordinary YAML; both were rejected naming `[claude` — the very defect the fold exists to prevent. | **Fixed** — the boundary is now a key test (`^[A-Za-z_][A-Za-z0-9_.-]*\s*:`), both shapes are restored. Round 5 found the second fixture pinned nothing — it quoted no colon and was green against the pre-fix parser — so it was replaced by one replayed against that parser and confirmed red (F5). |
 | R4-5 | V4 | The provenance lead-in round 3 wrote asserts the reference-resolution rules are "analyze-only" — false for three of that section's eight rows, which are quality-gate-ONLY. | **Fixed** — it states only what is true of this rule. |
 | R4-6 | V4 | "The skill fields **this document specifies**" — four of the fourteen appear exactly once, inside the list, and are not specified anywhere. | **Fixed** — "names" rather than "specifies", at both sites. |
 | R4-7 | V4 | The adoc's "**Further** optional fields (`implements`, …, `targets`)" listed two fields that are the bullets immediately above it. | **Fixed** |
@@ -157,6 +157,47 @@ Source key: **V1**–**V4** = pre-PR verification sub-agent, rounds 1 to 4. **S*
 | R4-15 | V4 | The report carried no Round 3 section at all, while its headings claimed "all fixed" — a completed-state claim the branch's own HEAD commit contradicted. | **Fixed** — this section and the Round 4 section below it. |
 | R4-16 | V4 | The plan's cold-read semantics check had no recorded result. | **Fixed** — performed and recorded under "Cold read" below. |
 | R4-17 | V4 | PR / Outcome fields still `pending`. | **Fixed at close** — filled in before the merge gate. |
+
+### Round 5
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| F1 | V5 | The `_join_flow_sequence` docstring is false in BOTH directions. `^[A-Za-z_][A-Za-z0-9_.-]*\s*:` is not a YAML key test: a digit-initial (`2fa: no`) or quoted (`"q": v`) key is a real key it does NOT match and folds in, while a bare `https://…` at column 0 is not a key and DOES break the fold. Rounds 3 and 4 both rewrote this docstring and both got it wrong. | **Fixed** — it now states the pattern is a heuristic, names both misreads, and gives the reason they are safe: in the bracketed form every misread leaves a token no registry name matches, so the value is rejected, never mis-accepted. |
+| F2 | V5 | The doctor's mirror of the same docstring, same falsity. | **Fixed** |
+| F3 | V5 | The `#:` constant comment says the old pattern matched "any non-indented line containing a colon anywhere" — it excluded comment lines. Overstated in both copies. | **Fixed** in both |
+| F4 | V5 | A test-fixture comment claimed "Both continuation lines below … contain a colon"; the second contained none. | **Fixed** |
+| F5 | V5 | **The `quoting-a-colon` fixture quotes no colon**, was green against the pre-fix parser, and pins nothing — so the second of R4-4's two restored shapes was pinned in NEITHER suite. Two instances (both suites). | **Fixed** — replaced with `"a: b"`, and replayed against a reconstruction of the pre-fix boundary to confirm it goes red (`['[claude']` before, `['claude', 'a: b']` after). The url-comment fixture was replayed too and is a genuine regression test. |
+| F6 | V5 | Round 4's "the skill fields **this document names**" is false: the very next paragraph names six more (`scope`, `lane`, `order`, `default_on`, `presets`, `mutates_source`). Round 4 fixed an overstatement about four fields by making the sentence false about six others. | **Fixed** — the sentence no longer characterises the document's scope at all. |
+| F7 | V5 | The same phrasing at the Issue-4 site. | **Fixed** |
+| F8 | V5 | **Behavioural, previously uncharacterised:** the plain-scalar form (`targets: claude` continued on an indented line) is a multi-line YAML scalar the fold does not engage on, so both parsers read the first line only and ACCEPT a scope PyYAML would reject. Fail-OPEN. | **Survivor (B), characterised below.** No statement claims otherwise, so nothing false ships. |
+| F9 | V5 | `targets:` followed by an indented scalar reports "declares an empty list" — the build outcome is right, the message names a defect the file does not have. | **Survivor (B), characterised below.** |
+| F10 | V5 | The R4-3 disposition read "Fixed — the docstrings describe the real test". They did not. | **Fixed** |
+| F11 | V5 | The R4-4 disposition claimed both shapes "pinned in both suites" (F5 refutes). | **Fixed** |
+| F12 | V5 | "Round 3 — all fixed" over a table containing a "Not fixed" row. | **Fixed** — the headings no longer assert a state. |
+| F13 | V5 | "Round 4 — all fixed" over two "Not fixed" rows and a "Fixed at close" whose header still read pending. This re-committed R4-15's own defect while closing it. | **Fixed** |
+| F14–F17 | V5 | Four dispositions said "Recorded in Residue" while `## Residue` read `_(filled in at close)_`. Four instances. | **Fixed** — § Residue is written and carries all four. |
+| F18 | V5 | The build-gate figures pointed at "the commit named in the Contract check below", which was unwritten — R4-13's fix replaced a stale value with a pointer to nothing. | **Fixed** — the figures stand on their own; § Contract check names the commit. |
+| F19 | V5 | The plan's red-first Verification bullet had no recorded result. | **Fixed** — recorded below. |
+
+### Red-first (the plan's § Verification requirement)
+
+**Stated honestly: there is no red-first git history.** D1's and D2's tests landed in the same commit
+as the implementation (`fab9611`), so no commit in this branch shows them failing. That is a real
+shortfall against the plan's wording and is not narrated away.
+
+What was done instead, and what it establishes:
+
+| Evidence | Scope | Result |
+|---|---|---|
+| Mutation sweep, 18 mutations across both parsers, both emitters, the manifest generator and the doctor rule | Every guard the plan's D1/D2 introduced | **18/18 reddened**, no survivors, tree byte-restored and re-checked clean |
+| Mutation sweep, 4 further mutations after round 2 (`_strip_comment` guard and the flow join, each parser separately) | The round-2 additions | **4/4 reddened**, 3 tests each |
+| Round 4's mutation of `_TOP_LEVEL_KEY_RE` → `False` | The round-3 boundary | Reddens in both suites |
+| Round 5's mutation of `_DESCRIPTION_UNKNOWN` | The doctor's operator-facing text | Reddens |
+| **Replay against the pre-fix parser** (round 5's method, repeated here for the corrected fixture) | The two shapes R4-4 restored | Both **red before, green after** — a true red-first demonstration, obtained after the fact |
+
+A mutation that reddens a test proves the same property red-first proves — that the test discriminates
+the defect — and it proves it for guards whose defect no longer exists to be reintroduced. It does not
+substitute for the plan's literal instruction, which is why the shortfall is stated first.
 
 ### Cold read (the plan's § Verification requirement)
 
@@ -181,6 +222,58 @@ It surfaced two wording gaps, both fixed rather than waved through:
    that sentence introduced a falsity of its own — the command also prints `all`, which is not a
    target name — caught by running it before the claim shipped.
 
+### Stop record
+
+**Which exit ended the loop: the BUDGET, not the verifier.** The budget was the contract's default of
+**five rounds**; the plan set none. No round returned "nothing remains" — round 5 answered the stop
+question **"Yes, condition A is violated at 13 sites"**, and those 13 were then fixed, as condition A
+requires regardless of budget. What the budget ended is the *verifying*, never the *fixing*.
+
+**Rounds and what they found:** 12, 17, 12, 17, 19. Two further round-5 dispatches died to server-side
+API errors (one mid-response, one a 529) before doing any work; neither is counted as a round, because
+a failed dispatch produced no verification and counting it would be the "silence read as a pass"
+defect this loop exists to catch.
+
+**Convergence: no.** Each round was asked for the shipped-change vs report split, and the answer never
+narrowed — round 3: 9/12 in the shipped change; round 4: 10/17; round 5: 9/19. Round 5's verdict:
+*"merely fewer, and barely … the share has fallen only because the report grew a Round 3 and a Round 4
+section this round — the denominator moved, not the numerator."* Two of its findings sat in the same
+docstring pair rounds 3 and 4 had each rewritten and each got wrong.
+
+**The operator was asked at the boundary** (§ Budget escalation below), because an operator is
+reachable in this session and the contract makes the ask an obligation rather than an option there.
+
+**Evidence stronger than another read** — all obtained in round 5, none of which the branch previously
+carried:
+
+- an **exhaustive combinatorial differential** over 4761 frontmatter shapes between the two parsers:
+  **0 disagreements**. The "mirrors the generator's parser so the two agree" claim, flagged in round 2
+  as having nothing behind it, is now established by enumeration rather than by three examples;
+- a **three-way oracle comparison against PyYAML** over the same 4761 shapes, classified by
+  accept/reject verdict: 42 divergences, **all confined to the plain-scalar family and zero in the
+  bracketed flow form** the fold governs. That is what bounds F8/F9 rather than leaving them open;
+- **mutation kills** (18 + 4 + 2) and a **pre-fix parser replay** that exposed F5 — evidence no amount
+  of reading would have produced.
+
+This evidence covers the parsers. It does not cover the report or the bundle prose, where the verdict
+still rests on reading — which is precisely where round 5 found most of what it found.
+
+**Survivors left open, each characterised:**
+
+| Survivor | Kind | (a) proof / (b) bound |
+|---|---|---|
+| **F8** — plain-scalar `targets: claude` continued on an indented line is read as its first line only, accepting a scope PyYAML would reject | Behavioural, fail-**open** | **(b)** Reach: one component, scoped to a set YAML never declared. It cannot reach a component with no `targets:` field, and the 4761-case differential proves the family is the *only* one producing accept/reject divergence — the bracketed form has none. No component in the tree uses the plain-scalar multi-line form; the standards section documents inline and block form only. |
+| **F9** — `targets:` plus an indented scalar reports "declares an empty list" | Diagnostic text | **(a)** The build outcome is unchanged (rejection); only the message misnames the defect. It cannot change what the deliverable does. |
+| **B3** — a duplicate top-level `targets:` resolves to the first declaration, silently | Behavioural | **(b)** Verified again at HEAD: cannot narrow below the first declaration and cannot widen past "every target"; the result is then fully validated. |
+| **B5** — OpenCode's `_prune_stale_outputs` runs only on a full regeneration, so a `--bundles` subset emit can leave a scoped-out component behind | Behavioural, pre-existing | **(b)** Bounded to scoped emits. The normal build and both drift checks run full regenerations; the constraint is documented at the function with its reason. Unchanged by this plan — reachable through a new cause, not newly created. |
+| **B6** — `check_bundle`'s orphan sweep covers `agents/` and `commands/`, not skill directories | Behavioural, pre-existing | **(b)** Bounded to validate-only mode over a stale tree. Any emit wipes each bundle's destination first, and `content_drift`'s `orphan_in_target` catches a stale `.md` because it regenerates through `ClaudeTarget`. A deleted skill was equally invisible before this plan. |
+
+Every one was re-put to the verifier in the stopping round and re-characterised there, not carried
+forward unread.
+
+**Residue to assume remains:** see § Residue. In short — the parsers are well evidenced; the prose
+about them is where five rounds kept finding defects, and the last round still did.
+
 ## Reviewer participation
 
 _(filled in after the PR is opened)_
@@ -199,4 +292,24 @@ _(filled in at close)_
 
 ## Residue
 
-_(filled in at close)_
+Four dispositions above defer here; this is that record.
+
+**Open, and deliberately not fixed by this plan:**
+
+| Item | Why it is left | Where it should go |
+|---|---|---|
+| `core-principles.md` lines 48-52 list `allowed-tools` and `model` as optional skill fields, contradicting `frontmatter-standards.md`'s "Skills do not use `model`, `color`, or `tools`/`allowed-tools`" — and two real skills (`automatic-review`, `plan-retrospective`) do declare `allowed-tools` (round 3, F4) | Pre-existing. It became visible only because this branch briefly asserted the field list was closed; that assertion is withdrawn, so the inconsistency reverts to what it was on `main`. Resolving it means deciding which document is right about a field this plan does not touch | A frontmatter-documentation reconciliation, not a target-scoping plan |
+| `principles.md` §6 carries a third "adding a target" checklist ("adding target X is **exactly**: 1…3 … **Nothing else**") with no filter obligation (round 3, F10) | The verifier judged it **not false**: the `emits_to` call lands inside its item 2, and "Nothing else" scopes to *other files needing edits*, which stays true | The epic's own reference set, if a later plan widens that checklist |
+| The `#optional-fields-2` anchor ordinal in `frontmatter-standards.md` is unguarded — `broken-relative-link` explicitly skips pure-anchor links, so inserting an earlier `### Optional Fields` heading would silently retarget it (round 4, R4-8) | Correct today (headings at 80/149/198). Guarding it means widening a plugin-doctor rule's scope, which is outside this plan | A plugin-doctor rule-scope change |
+| The `rule-provenance.md` § "Target-scope rule" lead-in is unguarded prose — the provenance test checks only that a *row* exists (round 4, R4-10) | Same class as the anchor: the guard would be a new doctor capability, not a fix to this change | With R4-8 |
+| `rule-provenance.md` line 247's "**Five rules** … NOT in `quality-gate`" stands over an 8-row table whose last three rows are `cmd_quality_gate` (round 5) | **Pre-existing and not branch-introduced** — round 5 confirmed the section is byte-identical to `origin/main` after this plan's row was moved out of it | A provenance-table audit |
+| `CLAUDE.md`'s "157 registered components (153 skills…)" has drifted (156 skills) | Pre-existing, already tracked as deferred in another plan's report | Already owned elsewhere |
+
+**Behavioural survivors** — see § Findings → "Stop record" for each one's bound.
+
+**What a reader should assume still remains.** Round 5's own answer, quoted because it is the most
+useful sentence in this report: *"The code is in much better shape than the prose about the code …
+the residue is documentary, and it is concentrated in exactly the sentences written to close a prior
+round."* Five rounds rewrote `_join_flow_sequence`'s docstring and the first four were false of their
+own regex. Treat any self-descriptive comment in the two parsers, and any "X is pinned in both
+suites" claim, as needing its own check rather than trusting the sentence.

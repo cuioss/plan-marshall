@@ -85,15 +85,19 @@ from pathlib import Path
 #: Frontmatter field a component uses to declare the targets it ships to.
 TARGET_SCOPE_FIELD = 'targets'
 
-#: A non-indented line that OPENS A YAML KEY — an identifier at column 0
-#: followed by a colon. It bounds the fold of an unclosed flow sequence.
+#: Approximates "a new key starts here" — an unquoted, letter-or-underscore
+#: initial identifier at column 0 followed by a colon. It bounds the fold of
+#: an unclosed flow sequence.
 #:
-#: The identifier is what makes it a key test rather than a colon test. A
-#: looser ``^[^\s#][^:]*:`` matched any non-indented line containing a colon
-#: anywhere, which broke two VALID declarations: a continuation line carrying
-#: a trailing comment with a URL in it, and one whose value is a quoted string
-#: containing a colon. Both are ordinary YAML, and both were then rejected
-#: naming a target nobody wrote — the defect the fold exists to prevent.
+#: Requiring an identifier before the colon is what distinguishes this from
+#: the looser ``^[^\s#][^:]*:`` it replaced, which matched any non-indented,
+#: non-comment line containing a colon anywhere. That looser form broke two
+#: VALID declarations: a continuation line carrying a trailing comment with a
+#: URL in it, and one whose value is a quoted string containing a colon. Both
+#: are ordinary YAML, and both were then rejected naming a target nobody
+#: wrote — the defect the fold exists to prevent. This form is still only an
+#: approximation of a YAML key; see :func:`_join_flow_sequence` for what it
+#: misses and why that is safe here.
 _TOP_LEVEL_KEY_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_.-]*\s*:')
 
 #: Bundle sub-directories holding single-file components, keyed to nothing
@@ -208,12 +212,23 @@ def _join_flow_sequence(value: str, rest: list[str]) -> str:
     A sequence that never closes is malformed YAML, and folding in the rest
     of the block would make the diagnostic name the following FIELDS as
     targets — the same "names a target nobody wrote" defect one shape over.
-    So the fold stops at the first line that OPENS A KEY: an identifier at
-    column 0 followed by a colon (:data:`_TOP_LEVEL_KEY_RE`), leaving the
-    unclosed value to be rejected on its own terms. The test is the key
-    shape rather than the mere presence of a colon, so a continuation line
-    carrying a URL in a trailing comment, or a quoted value containing a
-    colon, is still folded in — both are valid YAML.
+    So the fold stops at the first non-indented line matching
+    :data:`_TOP_LEVEL_KEY_RE`.
+
+    That pattern is a HEURISTIC for "a new key starts here", not a YAML key
+    parser, and it is wrong in both directions: a digit-initial or quoted key
+    (``2fa: no``, ``"q": v``) does not match it and is folded in, while a
+    flow item whose first token ends in a colon (a bare ``https://…`` at
+    column 0) does match it and ends the fold early.
+
+    Both misreads are safe HERE, and the reason is specific rather than
+    hopeful: in the bracketed form every misread leaves the joined value
+    holding a token no registered name matches — an absorbed ``2fa: no``, or
+    a truncated ``[claude`` — so :func:`_validate` rejects it and the build
+    stops. A misread can widen or truncate the text that gets REJECTED; it
+    cannot produce a scope the author did not write. A differential sweep
+    over several thousand frontmatter shapes found no accept/reject
+    divergence from PyYAML anywhere in this bracketed form.
     """
     head = _strip_comment(value)
     if not head.startswith('[') or ']' in head:

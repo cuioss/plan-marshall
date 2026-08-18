@@ -41,15 +41,14 @@ _ACCEPTED_FORMS = {
         {'claude', 'opencode'},
     ),
     'flow-opened-on-its-own-line': ('targets: [\n  claude\n  ]', {'claude'}),
-    # Both continuation lines below start at column 0 and contain a colon, so
-    # a boundary test that looked for a colon rather than a KEY rejected them.
-    # Both are ordinary YAML.
+    # A continuation line at column 0 whose trailing comment carries a colon.
+    # The boundary test that looked for a colon rather than a key rejected it,
+    # though it is ordinary YAML. The sibling case — a continuation whose
+    # VALUE quotes a colon — cannot live here, because the resulting target
+    # name is not registry-valid; it is pinned at parser level instead, in
+    # ``test_a_flow_continuation_may_quote_a_colon``.
     'flow-continuation-with-a-url-comment': (
         'targets: [claude,\nopencode] # see https://example.com',
-        {'claude', 'opencode'},
-    ),
-    'flow-continuation-quoting-a-colon': (
-        'targets: [claude,\n"opencode"]',
         {'claude', 'opencode'},
     ),
 }
@@ -171,6 +170,20 @@ def test_an_unclosed_flow_sequence_does_not_swallow_the_following_fields(
     description and mode lines that happen to sit beneath it.
     """
     assert _declared_tokens(f'---\nname: demo\n{frontmatter}\n---\n\n# Body\n') == expected
+
+
+def test_a_flow_continuation_may_quote_a_colon():
+    """A quoted value containing a colon is ordinary YAML and must fold in.
+
+    This is the second of the two shapes the colon-based boundary broke. It
+    is asserted at parser level because ``a: b`` is not a registry-valid
+    target name, so the validating entry point would reject it before the
+    parse could be observed — and asserting it through a name that IS valid
+    would not exercise the colon at all.
+    """
+    tokens = _declared_tokens('---\nname: demo\ntargets: [claude,\n"a: b"]\n---\n\n# Body\n')
+
+    assert tokens == ['claude', 'a: b']
 
 
 @pytest.mark.parametrize(
