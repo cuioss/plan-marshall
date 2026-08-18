@@ -56,3 +56,18 @@ No work exists only on this VM.
 - **No force-push.** One pushed commit message states a finding count one lower than that commit closes
   (`R2-F10`); the correction is recorded in `report-01.md` rather than by rewriting pushed history.
 - **No `/sync-plugin-cache`.** A machine-local build step a cloud run neither performs nor owes.
+
+## Addendum — arming (2026-08-18, on the operator's instruction)
+
+The operator instructed "arm now and merge it". Re-checked on head `cf1ba0b` before acting:
+`verify / conclusion`, `verify / verify`, `verify / gate`, `dependency-review` and `generate-check`
+all `success`; `mergeable_state: clean`. Conditions 1–3 hold on that exact head, and the 1-of-3
+coverage shortfall was disclosed to the operator first.
+
+`coderabbitai` was **not** re-requested a third time: its window had opened, but the operator chose to
+proceed, which the contract permits — a coverage shortfall is a disclosure, never a block. Coverage
+therefore lands at **1 of 3**, as stated above.
+
+Auto-merge is armed with `SQUASH` immediately after this commit. From that point the branch is
+queue-locked and takes no further pushes, which is why this addendum is written before arming rather
+than after.

@@ -1,7 +1,7 @@
 # Run report — 340-token-ledgers-disagree-and-the-smallest-is-named-actual (run 01)
 
 **Date (UTC):** 2026-08-18    **Branch:** `claude/token-ledgers-disagree-q3t771` (harness-assigned)
-**PR:** [#1293](https://github.com/cuioss/plan-marshall/pull/1293)    **Outcome:** deliverables complete; PR open with required checks green and auto-merge not yet armed (see `status-report.md`)
+**PR:** [#1293](https://github.com/cuioss/plan-marshall/pull/1293)    **Outcome:** completed — deliverables complete, required checks green, auto-merge armed on the operator's instruction (landing delegated to the merge queue)
 
 ## Skills loaded
 
@@ -317,7 +317,7 @@ Merge-gate condition 2 is therefore genuinely established, not assumed.
 | 5 Build gate | **done** | 9 `*.py` files in the diff → gate applies. `./pw verify` → `SUCCESS`, 20 852 passed, 14 skipped |
 | 6 Verification sub-agent | **done** | 4 rounds; findings and dispositions in the table above; stop record states the **budget exit**, the budget declared before round 1, and each survivor's bound |
 | 7 PR cycle | **done** | PR #1293; no `skip-bot-review` (the diff touches `*.py` and `marketplace/bundles/**`, and a skill is code). All three comment surfaces read |
-| 8 Merge gate | **conditions 1–3 met; NOT YET ARMED** | `verify / conclusion` green on the head, every comment handled, this report pushed as the last pre-merge commit, and the coverage shortfall disclosed. Arming is a one-way door on this merge-queue repo, so it is left as a separate deliberate act — see `status-report.md` for the live state |
+| 8 Merge gate | **conditions 1–3 met; armed on the operator's instruction immediately after this commit** | Verified on the exact head: `verify / conclusion`, `verify / verify`, `verify / gate`, `dependency-review` and `generate-check` all `success`; `mergeable_state: clean`. Every comment handled, this report pushed as the last pre-merge commit, and the 1-of-3 coverage shortfall disclosed to the operator before arming. Landing confirmation is recorded to the operator, not here — the squash SHA does not exist until the queue lands it |
 | 8 Bridge | **done** | No status or bookkeeping write outside this plan's own directory; the report carries the PR number and per-deliverable outcome |
 | 9 This check | **done** | This table |
 | 9 What have we learned | **done** | Below |
