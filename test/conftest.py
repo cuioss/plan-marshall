@@ -1125,12 +1125,16 @@ def _routing_namespaces(test_module) -> list[dict]:
     load-order dependent — which makes getting it wrong a FLAKY green rather
     than a clean red. Two facts combine:
 
-    1. ``test/plan-marshall/build_test_helpers.py`` loads the factory through
-       ``load_script_module``, which re-registers it in ``sys.modules`` under its
-       own stem. That REPLACES the entry, so a test module that already did
+    1. Any caller that loads the factory through :func:`load_script_module` —
+       the shared build-test helper module does, to reach the factory's
+       ``compute_command_key`` — re-registers it in ``sys.modules`` under its own
+       stem. That REPLACES the entry, so a test module that already did
        ``import _build_execute_factory as factory`` at its own import time holds
        a copy that is no longer reachable from ``sys.modules`` at all — it
-       survives only as a reference in that test module's globals.
+       survives only as a reference in that test module's globals. The helper is
+       named by its ROLE rather than its path on purpose: the mechanism belongs
+       to the loader, not to any one caller, so the explanation stays true when a
+       caller is renamed or a second one appears.
     2. ``cmd_run`` is a CLOSURE created by ``create_execute_handlers``, so it
        resolves ``_route_to_daemon`` from ``cmd_run.__globals__`` — the dict of
        whichever factory copy produced it, not from whatever ``sys.modules``
