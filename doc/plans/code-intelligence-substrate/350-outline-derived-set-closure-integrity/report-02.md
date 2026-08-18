@@ -191,6 +191,36 @@ aspect numbering in a recipe skill.
   source rather than a regex dump showed the sentence is intact and correct — the extraction dropped a
   double-quoted continuation line. No defect; recorded so the negative is not re-derived later.
 
+### F-R1 — the finding an automated reviewer caught that four verification rounds did not
+
+| Source | Finding | Disposition |
+|---|---|---|
+| `cuioss-review-bot`, PR #1295 | `_qgate_closure.check_declared_set_closure` built the referrer finding's title and detail with a raw `int(task["number"])`. A task record whose `number` is absent, `None`, or non-numeric raises `KeyError` / `TypeError` / `ValueError` and takes the whole mechanical Q-Gate down. | **Fixed** in `8486214`, guarded, mutation-verified. |
+
+⭐ **This is the same class round 4 was told to hunt, at a site round 4 read and passed.** The module
+**already guards this exact field at three other sites** — `_as_int(task.get('number')) or 0` for the
+holistic and unmapped accounting (twice) and an `isdigit()` filter for the deliverable index — so the
+question that finds it is not *"is this conversion correct?"* but *"what else needs this guard?"*.
+Four rounds asked the first question about this line and none asked the second.
+
+⛔ **And the timing is what makes it worth fixing rather than bounding under (b).** Both accesses sit
+on the path that **emits** a referrer finding. The check would therefore crash exactly when it has a
+closure gap to report and pass whenever it has none — a **fail-open inside the checks written to
+prevent fail-open**, which is this plan's entire subject reproduced in its own deliverable.
+
+The guard is a regression test parametrized over `None`, `''` and a non-numeric value, plus a separate
+case for an **absent key** (which fails earlier and differently — `KeyError` before any conversion is
+attempted, so it does not ride along with the parametrized cases). Assertions are **positive** — one
+referrer gap, naming the target, rendering as `TASK-000` — not "did not raise", so a regression that
+swallowed the finding could not pass. Mutation-verified: reverting to `int(task['number'])` turns all
+four red (4 failed, 34 passed).
+
+**Sweep-and-count on the same claim.** The identical raw pattern appears at six sites in
+`_cmd_qgate_mechanical.py`. All six are **pre-existing on `origin/main`** — re-derived by grepping the
+diff's added lines, which contain none of them — so this branch did not make them false and they are
+recorded as residue rather than widened into this diff. They are a behavioural hardening opportunity,
+not a false statement, so condition **A** does not reach them.
+
 ### B — behavioural findings
 
 | # | Finding | Disposition |
@@ -256,7 +286,51 @@ themselves young unreviewed prose that no fifth round has read.
 
 ## Reviewer participation
 
-_Pending the PR._
+**The expected population is derived from configuration, not transcribed.** It is the `author_login`
+of each `marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry
+doc — read at the moment of this claim — cross-named in prose by `.github/workflows/pr-agent.yml`.
+That read returns three: `coderabbitai` (coderabbit.md), `cuioss-review-bot` (pr-agent.md),
+`sourcery-ai` (sourcery.md). **M = 3.**
+
+Every verdict below is derived from the **stored comment bodies** across all three surfaces
+(`get_comments`, `get_reviews`, `get_review_comments`), never from a check-run state or a summary.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
+|---|---|---|---|
+| `cuioss-review-bot` | **`reviewed`** | — | Published a "PR Reviewer Guide 🔍" issue comment against head `117d351`, carrying one actionable finding (**Unhandled Exception** on `int(task["number"])`). Fixed in `8486214` and answered on the thread — see § Findings, F-R1. |
+| `coderabbitai` | **`rate-limited`** | **yes** | Two bodies. First: *"Review limit reached … **Next review available in: 28 minutes**"*. Then, on an explicit `@coderabbitai review` re-request: *"I will review pull request #1295. ⚠️ Action not completed — Review rate limited."* A countdown, so it clears on its own. |
+| `sourcery-ai` | **`rate-limited`** | **no** | *"your pull request is larger than the review limit of 150000 diff characters."* A property of **this diff's size**, not of the clock — the same request never succeeds at this size, so waiting is futile and re-requesting is not productive. |
+
+⭐ **The two `rate-limited` verdicts are not the same fact, and only the `Reopens?` column separates
+them.** Both reviewers refused the same PR at the same moment. `coderabbitai`'s refusal is a clock
+that clears and was worth re-requesting; `sourcery-ai`'s is a size ceiling that never clears, so
+re-requesting it would have been wasted effort. A participation table carrying only the verdict would
+have rendered them identically and told a reader nothing about which — if either — was worth chasing.
+
+**No surface was `unreadable`.** All three MCP surfaces returned real bodies on this PR
+(`get_reviews` → Sourcery's refusal, `get_comments` → CodeRabbit's and pr-agent's, `get_review_comments`
+→ a genuine empty set), so every absence recorded here is a trustworthy absence rather than a failed
+read. Merge-gate **condition 2 is therefore established**, not overridden.
+
+### ⚠ A misread by this run, recorded because it nearly produced a false verdict
+
+At roughly 12:03 this run recorded `cuioss-review-bot` as **`silent`** and posted its registry
+`trigger_comment` (`/review`) as the recovery check. **That verdict was wrong.** The bot had already
+published its Guide comment at 11:58:33 — five minutes earlier.
+
+The cause is exactly the failure the contract warns about, committed by the run enforcing it: the
+absence was inferred from a **stale page-1 read plus an empty page-2 read**, and page 1 was never
+re-read. A filtered query that could only return what it already had was believed without a positive
+control.
+
+Consequences, stated rather than tidied away: one unnecessary `/review` comment, and one redundant
+`issue_comment`-triggered workflow run (`32134879260`, conclusion `success`). No incorrect verdict
+reached the report, because the bodies were re-read before this table was written. The run also
+briefly speculated that the pr-agent workflow's fail-closed gate had a hole; it does not — the gate
+was right and the reader was wrong.
+
+**Coverage: 1 of 3 reviewed.** The § Step 8 condition-4 shortfall disclosure fires — see the merge
+gate below for its exact wording.
 
 ## Cost
 
