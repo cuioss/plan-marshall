@@ -31,6 +31,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -79,32 +81,26 @@ class TestDetectionInBashFence:
         """$(  inside ```bash``` block is a finding."""
         content = '```bash\nresult=$(git rev-parse HEAD)\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_shell_substitution_in_skills(marketplace_root)
-        assert len(findings) == 1
-        assert findings[0]['rule_id'] == RULE_ID
+        assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [RULE_ID])
 
     def test_dollar_paren_in_sh_fence_triggers_finding(self, tmp_path: Path) -> None:
         """$(  inside ```sh``` block is a finding (sh treated same as bash)."""
         content = '```sh\nval=$(echo hello)\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_shell_substitution_in_skills(marketplace_root)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [RULE_ID])
 
     def test_dollar_paren_in_python_fence_triggers_finding(self, tmp_path: Path) -> None:
         """$(  inside a non-bash code fence is still a finding."""
         content = '```python\n# shell call: $(some_cmd)\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_shell_substitution_in_skills(marketplace_root)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [RULE_ID])
 
     def test_finding_shape_in_bash_fence(self, tmp_path: Path) -> None:
         """Finding carries expected shape fields."""
         content = '```bash\noutput=$(cat file.txt)\n```\n'
         marketplace_root, md_path = _make_skill_md(tmp_path, content)
-        findings = analyze_shell_substitution_in_skills(marketplace_root)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [RULE_ID])
         f = findings[0]
-        assert f['rule_id'] == RULE_ID
         assert f['type'] == 'shell_substitution_in_skills'
         assert f['rule'] == 'analyze_shell_substitution_in_skills'
         assert f['file'] == str(md_path)
@@ -120,8 +116,7 @@ class TestDetectionInBashFence:
         """Two ``$(`` on the same fenced-block line produce two findings."""
         content = '```bash\na=$(cmd1) b=$(cmd2)\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_shell_substitution_in_skills(marketplace_root)
-        assert len(findings) == 2
+        assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [RULE_ID] * 2)
 
 
 # ===========================================================================
@@ -137,24 +132,20 @@ class TestDetectionInNarrativeProse:
         """Bare $(  in prose is a finding."""
         content = 'Do not use $(git log) in your command strings.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_shell_substitution_in_skills(marketplace_root)
-        assert len(findings) == 1
-        assert findings[0]['rule_id'] == RULE_ID
+        assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [RULE_ID])
 
     def test_dollar_paren_line_number_in_narrative(self, tmp_path: Path) -> None:
         """Line number is correctly reported for narrative occurrences."""
         content = 'First line.\nSecond line with $(subshell) call.\nThird line.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_shell_substitution_in_skills(marketplace_root)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [RULE_ID])
         assert findings[0]['line'] == 2
 
     def test_multiple_dollar_paren_in_narrative(self, tmp_path: Path) -> None:
         """Two ``$(`` on the same narrative line produce two findings."""
         content = 'The pattern $(a) and $(b) are both forbidden.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_shell_substitution_in_skills(marketplace_root)
-        assert len(findings) == 2
+        assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [RULE_ID] * 2)
 
     def test_clean_narrative_no_finding(self, tmp_path: Path) -> None:
         """Narrative prose without ``$(`` produces no findings."""
@@ -164,8 +155,7 @@ class TestDetectionInNarrativeProse:
             'No shell substitution here.\n'
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_shell_substitution_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [])
 
 
 # ===========================================================================
@@ -182,36 +172,31 @@ class TestExemptionInInlineCodeSpan:
         """$(  inside backtick span produces no finding."""
         content = 'Use `$(git rev-parse HEAD)` carefully.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_shell_substitution_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [])
 
     def test_inline_code_exempt_on_forbidden_keyword_line(self, tmp_path: Path) -> None:
         """Inline-code span is exempt even when line mentions 'forbidden'."""
         content = 'The anti-pattern `$(...)` is forbidden in skill docs.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_shell_substitution_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [])
 
     def test_inline_code_exempt_on_must_not_line(self, tmp_path: Path) -> None:
         """Inline-code span exempt when line contains 'must not'."""
         content = 'You must not write `$(some_command)` in skill markdown.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_shell_substitution_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [])
 
     def test_inline_code_exempt_on_anti_pattern_line(self, tmp_path: Path) -> None:
         """Inline-code span exempt when line contains 'anti-pattern'."""
         content = '**Anti-pattern**: `$(git log)` expands in the shell.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_shell_substitution_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [])
 
     def test_inline_code_exempt_on_rule_line(self, tmp_path: Path) -> None:
         """Inline-code span exempt when line mentions 'rule'."""
         content = 'This rule forbids using `$(...)` constructs.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_shell_substitution_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [])
 
     def test_dollar_paren_outside_inline_code_on_same_line_is_flagged(
         self, tmp_path: Path
@@ -237,43 +222,37 @@ class TestExemptionInDocumentaryFence:
         """$(  inside ```markdown``` block produces no finding."""
         content = '```markdown\n```bash\nresult=$(git rev-parse HEAD)\n```\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_shell_substitution_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [])
 
     def test_dollar_paren_in_text_fence_is_exempt(self, tmp_path: Path) -> None:
         """$(  inside ```text``` block produces no finding."""
         content = '```text\noutput=$(whoami)\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_shell_substitution_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [])
 
     def test_markdown_fence_case_insensitive(self, tmp_path: Path) -> None:
         """Info-string matching is case-insensitive (``MARKDOWN`` still exempt)."""
         content = '```MARKDOWN\nresult=$(cmd)\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_shell_substitution_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [])
 
     def test_text_fence_case_insensitive(self, tmp_path: Path) -> None:
         """Info-string matching is case-insensitive (``TEXT`` still exempt)."""
         content = '```TEXT\nresult=$(cmd)\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_shell_substitution_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [])
 
     def test_bash_fence_not_exempt(self, tmp_path: Path) -> None:
         """``bash`` info-string is NOT in the exempt set — finding expected."""
         content = '```bash\nresult=$(cmd)\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_shell_substitution_in_skills(marketplace_root)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [RULE_ID])
 
     def test_unfenced_block_not_exempt(self, tmp_path: Path) -> None:
         """No info-string (bare ````` ``` `````) is not exempt."""
         content = '```\nresult=$(cmd)\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_shell_substitution_in_skills(marketplace_root)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [RULE_ID])
 
 
 # ===========================================================================
@@ -288,15 +267,13 @@ class TestCleanBaseline:
         """marketplace_root with no plan-marshall/skills/ dir returns empty list."""
         marketplace_root = tmp_path / 'empty-marketplace'
         marketplace_root.mkdir()
-        findings = analyze_shell_substitution_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [])
 
     def test_empty_skills_directory_returns_empty(self, tmp_path: Path) -> None:
         """plan-marshall/skills/ dir with no *.md files returns empty list."""
         skills_root = tmp_path / 'plan-marshall' / 'skills'
         skills_root.mkdir(parents=True)
-        findings = analyze_shell_substitution_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_shell_substitution_in_skills, tmp_path, [])
 
     def test_markdown_file_without_dollar_paren(self, tmp_path: Path) -> None:
         """Clean markdown file with no $(  produces no findings."""
@@ -310,8 +287,7 @@ class TestCleanBaseline:
             'No substitutions here.\n'
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_shell_substitution_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [])
 
     def test_multiple_skill_files_scanned(self, tmp_path: Path) -> None:
         """Multiple *.md files under plan-marshall/skills/ are all scanned."""
@@ -335,5 +311,4 @@ class TestCleanBaseline:
             'Another violation: $(cmd_c) here.\n', encoding='utf-8'
         )
 
-        findings = analyze_shell_substitution_in_skills(tmp_path)
-        assert len(findings) == 2
+        assert_analyzer_findings(analyze_shell_substitution_in_skills, tmp_path, [RULE_ID] * 2)

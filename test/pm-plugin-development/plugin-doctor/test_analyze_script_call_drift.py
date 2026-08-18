@@ -20,6 +20,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 # ---------------------------------------------------------------------------
 # Module loader — spec-load the analyzer directly. Underscore-prefixed
 # analyzers are not importable through the executor.
@@ -255,8 +257,7 @@ def test_known_verb_produces_no_finding(tmp_path):
         'python3 .plan/execute-script.py pkg:skill:multi alpha --foo bar\n',
     )
 
-    findings = analyze_script_call_drift(bundles)
-    assert findings == []
+    assert_analyzer_findings(analyze_script_call_drift, bundles, [])
 
 
 def test_invented_verb_emits_verb_not_in_subcommand_list(tmp_path):
@@ -314,8 +315,7 @@ def test_help_and_audit_plan_id_flags_exempt(tmp_path):
         'python3 .plan/execute-script.py pkg:skill:multi alpha --help --audit-plan-id foo\n',
     )
 
-    findings = analyze_script_call_drift(bundles)
-    assert findings == []
+    assert_analyzer_findings(analyze_script_call_drift, bundles, [])
 
 
 def test_caching_one_help_call_per_unique_notation(tmp_path, monkeypatch):
@@ -356,8 +356,7 @@ def test_no_executor_returns_empty(tmp_path):
     )
 
     # No .plan/execute-script.py — the rule cannot probe, returns [].
-    findings = analyze_script_call_drift(bundles)
-    assert findings == []
+    assert_analyzer_findings(analyze_script_call_drift, bundles, [])
 
 
 # =============================================================================

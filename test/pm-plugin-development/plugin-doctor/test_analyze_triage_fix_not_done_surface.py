@@ -36,6 +36,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -84,7 +86,7 @@ _COMPLIANT_FIX = (
 
 def test_compliant_fix_body_not_flagged(tmp_path: Path) -> None:
     _write(_triage_doc(tmp_path), _COMPLIANT_FIX)
-    assert analyze_triage_fix_not_done_surface(tmp_path) == []
+    assert_analyzer_findings(analyze_triage_fix_not_done_surface, tmp_path, [])
 
 
 def test_prose_failure_mode_description_not_flagged(tmp_path: Path) -> None:
@@ -101,7 +103,7 @@ def test_prose_failure_mode_description_not_flagged(tmp_path: Path) -> None:
         '- **SUPPRESS** — annotate the sink.\n'
     )
     _write(_triage_doc(tmp_path), body)
-    assert analyze_triage_fix_not_done_surface(tmp_path) == []
+    assert_analyzer_findings(analyze_triage_fix_not_done_surface, tmp_path, [])
 
 
 def test_prohibition_line_quoting_call_tokens_not_flagged(tmp_path: Path) -> None:
@@ -118,7 +120,7 @@ def test_prohibition_line_quoting_call_tokens_not_flagged(tmp_path: Path) -> Non
         '- **SUPPRESS** — annotate the sink.\n'
     )
     _write(_triage_doc(tmp_path), body)
-    assert analyze_triage_fix_not_done_surface(tmp_path) == []
+    assert_analyzer_findings(analyze_triage_fix_not_done_surface, tmp_path, [])
 
 
 def test_describe_only_doc_without_fix_action_not_flagged(tmp_path: Path) -> None:
@@ -130,7 +132,7 @@ def test_describe_only_doc_without_fix_action_not_flagged(tmp_path: Path) -> Non
         'loop_back re-enters phase-5-execute which owns execution and commit.\n'
     )
     _write(_triage_doc(tmp_path), body)
-    assert analyze_triage_fix_not_done_surface(tmp_path) == []
+    assert_analyzer_findings(analyze_triage_fix_not_done_surface, tmp_path, [])
 
 
 def test_non_triage_file_with_fix_body_not_flagged(tmp_path: Path) -> None:
@@ -138,7 +140,7 @@ def test_non_triage_file_with_fix_body_not_flagged(tmp_path: Path) -> None:
     # body in another doc is never scanned.
     other = tmp_path / 'plan-marshall' / 'skills' / 'plan-marshall' / 'workflow' / 'verification-feedback.md'
     _write(other, _COMPLIANT_FIX.replace('not-done', 'nope').replace('STOP', 'go'))
-    assert analyze_triage_fix_not_done_surface(tmp_path) == []
+    assert_analyzer_findings(analyze_triage_fix_not_done_surface, tmp_path, [])
 
 
 # ===========================================================================
@@ -157,9 +159,7 @@ def test_inline_done_marking_flagged(tmp_path: Path) -> None:
         '- **SUPPRESS** — annotate the sink.\n'
     )
     _write(_triage_doc(tmp_path), body)
-    findings = analyze_triage_fix_not_done_surface(tmp_path)
-    assert len(findings) == 1
-    assert findings[0]['rule_id'] == RULE_ID
+    findings = assert_analyzer_findings(analyze_triage_fix_not_done_surface, tmp_path, [RULE_ID])
     assert 'done inline' in findings[0]['description']
 
 
@@ -173,9 +173,7 @@ def test_status_done_call_shape_flagged(tmp_path: Path) -> None:
         '- **SUPPRESS** — annotate the sink.\n'
     )
     _write(_triage_doc(tmp_path), body)
-    findings = analyze_triage_fix_not_done_surface(tmp_path)
-    assert len(findings) == 1
-    assert findings[0]['rule_id'] == RULE_ID
+    assert_analyzer_findings(analyze_triage_fix_not_done_surface, tmp_path, [RULE_ID])
 
 
 def test_inline_done_on_not_done_line_flagged(tmp_path: Path) -> None:
@@ -196,9 +194,7 @@ def test_inline_done_on_not_done_line_flagged(tmp_path: Path) -> None:
         '- **SUPPRESS** — annotate the sink.\n'
     )
     _write(_triage_doc(tmp_path), body)
-    findings = analyze_triage_fix_not_done_surface(tmp_path)
-    assert len(findings) == 1
-    assert findings[0]['rule_id'] == RULE_ID
+    findings = assert_analyzer_findings(analyze_triage_fix_not_done_surface, tmp_path, [RULE_ID])
     assert 'done inline' in findings[0]['description']
 
 
@@ -211,9 +207,7 @@ def test_missing_triad_flagged(tmp_path: Path) -> None:
         '- **SUPPRESS** — annotate the sink.\n'
     )
     _write(_triage_doc(tmp_path), body)
-    findings = analyze_triage_fix_not_done_surface(tmp_path)
-    assert len(findings) == 1
-    assert findings[0]['rule_id'] == RULE_ID
+    findings = assert_analyzer_findings(analyze_triage_fix_not_done_surface, tmp_path, [RULE_ID])
     assert 'triad' in findings[0]['description']
 
 
@@ -246,4 +240,4 @@ def test_rule_descriptor_fields() -> None:
 
 
 def test_absent_tree_returns_empty(tmp_path: Path) -> None:
-    assert analyze_triage_fix_not_done_surface(tmp_path / 'does-not-exist') == []
+    assert_analyzer_findings(analyze_triage_fix_not_done_surface, tmp_path / 'does-not-exist', [])

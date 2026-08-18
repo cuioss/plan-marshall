@@ -17,6 +17,8 @@ from pathlib import Path
 
 from conftest import MARKETPLACE_ROOT, load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -49,10 +51,8 @@ class TestFlagsNonAllowlisted:
             _NON_ALLOWLISTED,
             'import sys\nsys.path.insert(0, "x")\n',
         )
-        findings = analyze_sys_path_bootstrap(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_sys_path_bootstrap, tmp_path, [RULE_ID])
         f = findings[0]
-        assert f['rule_id'] == RULE_ID
         assert f['type'] == FINDING_TYPE
         assert f['rule'] == 'analyze_sys_path_bootstrap'
         assert f['call'] == 'sys.path.insert'
@@ -88,7 +88,7 @@ class TestExemptAllowlisted:
             _ALLOWLISTED,
             'import sys\nsys.path.insert(0, "x")\nsys.path.append("y")\n',
         )
-        assert analyze_sys_path_bootstrap(tmp_path) == []
+        assert_analyzer_findings(analyze_sys_path_bootstrap, tmp_path, [])
 
     def test_allowlist_entry_matches_expected_shape(self):
         # Every allowlist entry is a bundles-relative POSIX path to a .py file.
@@ -109,7 +109,7 @@ class TestAstNotText:
             'PATTERN = re.compile(r"sys\\\\.path\\\\.insert")\n'
             'HELP = "call sys.path.append to bootstrap"\n',
         )
-        assert analyze_sys_path_bootstrap(tmp_path) == []
+        assert_analyzer_findings(analyze_sys_path_bootstrap, tmp_path, [])
 
     def test_clean_script_is_not_flagged(self, tmp_path):
         _make_script(
@@ -117,7 +117,7 @@ class TestAstNotText:
             _NON_ALLOWLISTED,
             'from file_ops import safe_main\n\n\ndef main():\n    return 0\n',
         )
-        assert analyze_sys_path_bootstrap(tmp_path) == []
+        assert_analyzer_findings(analyze_sys_path_bootstrap, tmp_path, [])
 
     def test_unrelated_insert_append_not_flagged(self, tmp_path):
         # ``foo.path.insert`` / ``mylist.append`` are not sys.path mutations.
@@ -126,7 +126,7 @@ class TestAstNotText:
             _NON_ALLOWLISTED,
             'import sys\nitems = []\nitems.append(sys.argv)\nfoo = object()\n',
         )
-        assert analyze_sys_path_bootstrap(tmp_path) == []
+        assert_analyzer_findings(analyze_sys_path_bootstrap, tmp_path, [])
 
 
 class TestRealTreeInSync:

@@ -23,6 +23,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -288,22 +290,19 @@ class TestCleanBaseline:
             'No shell-active tokens here.\n'
         )
         skill_dir, _ = _make_standards_file(tmp_path, content)
-        findings = analyze_shell_active_tokens(skill_dir)
-        assert findings == []
+        assert_analyzer_findings(analyze_shell_active_tokens, skill_dir, [])
 
     def test_no_standards_directory(self, tmp_path: Path) -> None:
         """Skill with no standards/ directory produces no findings."""
         skill_dir = tmp_path / 'skill-no-standards'
         skill_dir.mkdir()
-        findings = analyze_shell_active_tokens(skill_dir)
-        assert findings == []
+        assert_analyzer_findings(analyze_shell_active_tokens, skill_dir, [])
 
     def test_empty_standards_directory(self, tmp_path: Path) -> None:
         """Empty standards/ directory produces no findings."""
         skill_dir = tmp_path / 'skill-empty-standards'
         (skill_dir / 'standards').mkdir(parents=True)
-        findings = analyze_shell_active_tokens(skill_dir)
-        assert findings == []
+        assert_analyzer_findings(analyze_shell_active_tokens, skill_dir, [])
 
 
 # ===========================================================================
@@ -324,8 +323,7 @@ class TestAnalyzeShellActiveTokensScope:
             encoding='utf-8',
         )
         # No standards files → no findings
-        findings = analyze_shell_active_tokens(skill_dir)
-        assert findings == []
+        assert_analyzer_findings(analyze_shell_active_tokens, skill_dir, [])
 
     def test_multiple_standards_files_scanned(self, tmp_path: Path) -> None:
         """Multiple standards/*.md files are all scanned."""

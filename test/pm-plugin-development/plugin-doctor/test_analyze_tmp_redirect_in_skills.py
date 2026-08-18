@@ -17,6 +17,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -141,8 +143,7 @@ class TestProseNotScanned:
             'Another line with > /tmp/data.txt mention.\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
     def test_non_bash_fence_not_scanned(self, tmp_path):
         content = (
@@ -152,8 +153,7 @@ class TestProseNotScanned:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
     def test_text_fence_not_scanned(self, tmp_path):
         content = (
@@ -162,8 +162,7 @@ class TestProseNotScanned:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
 
 # ---------------------------------------------------------------------------
@@ -179,8 +178,7 @@ class TestCommentLinesExempt:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
     def test_indented_comment_line_not_flagged(self, tmp_path):
         content = (
@@ -189,8 +187,7 @@ class TestCommentLinesExempt:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
 
 # ---------------------------------------------------------------------------
@@ -240,10 +237,8 @@ class TestFindingShape:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID])
         f = findings[0]
-        assert f['rule_id'] == RULE_ID
         assert f['type'] == FINDING_TYPE
         assert isinstance(f['file'], str)
         assert isinstance(f['line'], int)
@@ -333,8 +328,7 @@ class TestAgentMarkdownScanned:
             '```\n'
         )
         _make_agent_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
 
 # ---------------------------------------------------------------------------
@@ -352,8 +346,7 @@ class TestCleanBaseline:
             'Reference: use `.plan/temp/plan_id-output.txt`\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
     def test_bash_fence_plan_temp_no_findings(self, tmp_path):
         content = (
@@ -362,8 +355,7 @@ class TestCleanBaseline:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
     def test_bash_fence_pipe_no_findings(self, tmp_path):
         content = (
@@ -372,10 +364,8 @@ class TestCleanBaseline:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
     def test_empty_marketplace_root_no_findings(self, tmp_path):
         # No plan-marshall bundle directory at all
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])

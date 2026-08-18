@@ -18,6 +18,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -61,8 +63,7 @@ class TestFlagDeclaredAndRead:
             '    print(path)\n'
         )
         script = _write_script(tmp_path, src)
-        findings = analyze_orphan_argparse_flags(script)
-        assert findings == []
+        assert_analyzer_findings(analyze_orphan_argparse_flags, script, [])
 
     def test_flag_with_hyphen_dest(self, tmp_path: Path) -> None:
         """Flag --dry-run normalises to dest dry_run and is correctly tracked."""
@@ -79,8 +80,7 @@ class TestFlagDeclaredAndRead:
             '        return\n'
         )
         script = _write_script(tmp_path, src)
-        findings = analyze_orphan_argparse_flags(script)
-        assert findings == []
+        assert_analyzer_findings(analyze_orphan_argparse_flags, script, [])
 
 
 # ===========================================================================
@@ -103,10 +103,8 @@ class TestFlagNeverRead:
             '    print("running")\n'
         )
         script = _write_script(tmp_path, src)
-        findings = analyze_orphan_argparse_flags(script)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_orphan_argparse_flags, script, [RULE_ID])
         f = findings[0]
-        assert f['rule_id'] == RULE_ID
         assert f['flag_name'] == '--verbose'
         assert f['subcommand'] == 'run'
         assert isinstance(f['line'], int)
@@ -155,8 +153,7 @@ class TestVarsArgsConservative:
             '    _run(**kwargs)\n'
         )
         script = _write_script(tmp_path, src)
-        findings = analyze_orphan_argparse_flags(script)
-        assert findings == []
+        assert_analyzer_findings(analyze_orphan_argparse_flags, script, [])
 
 
 # ===========================================================================
@@ -179,8 +176,7 @@ class TestDoubleStarVarsArgs:
             '    do_build(**vars(args))\n'
         )
         script = _write_script(tmp_path, src)
-        findings = analyze_orphan_argparse_flags(script)
-        assert findings == []
+        assert_analyzer_findings(analyze_orphan_argparse_flags, script, [])
 
 
 # ===========================================================================
@@ -217,17 +213,14 @@ class TestMixedFlags:
 class TestRobustness:
     def test_nonexistent_file(self, tmp_path: Path) -> None:
         path = tmp_path / 'nonexistent.py'
-        findings = analyze_orphan_argparse_flags(path)
-        assert findings == []
+        assert_analyzer_findings(analyze_orphan_argparse_flags, path, [])
 
     def test_syntax_error_file(self, tmp_path: Path) -> None:
         path = tmp_path / 'broken.py'
         path.write_text('def x(\n', encoding='utf-8')
-        findings = analyze_orphan_argparse_flags(path)
-        assert findings == []
+        assert_analyzer_findings(analyze_orphan_argparse_flags, path, [])
 
     def test_no_argparse_file(self, tmp_path: Path) -> None:
         path = tmp_path / 'simple.py'
         path.write_text('print("hello")\n', encoding='utf-8')
-        findings = analyze_orphan_argparse_flags(path)
-        assert findings == []
+        assert_analyzer_findings(analyze_orphan_argparse_flags, path, [])

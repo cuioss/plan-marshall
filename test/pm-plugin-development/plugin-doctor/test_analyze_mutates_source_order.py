@@ -26,6 +26,8 @@ from pathlib import Path
 
 from conftest import get_script_path, load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 _amso = load_script_module(
     'pm-plugin-development',
     'plugin-doctor',
@@ -381,7 +383,7 @@ class TestNoMutatesSourceClaim:
         )
         target.write_text(commented, encoding='utf-8')
 
-        assert analyze_mutates_source_order(tmp_path) == []
+        assert_analyzer_findings(analyze_mutates_source_order, tmp_path, [])
 
         target.write_text(live, encoding='utf-8')
 
@@ -410,7 +412,7 @@ class TestUndiscoverableMergeGate:
 
     def test_empty_marketplace_yields_no_findings(self, tmp_path: Path) -> None:
         """An empty tree is tolerated without raising."""
-        assert analyze_mutates_source_order(tmp_path) == []
+        assert_analyzer_findings(analyze_mutates_source_order, tmp_path, [])
 
 
 # ===========================================================================

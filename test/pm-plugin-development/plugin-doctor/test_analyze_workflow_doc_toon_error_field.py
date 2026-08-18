@@ -19,6 +19,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -88,9 +90,7 @@ class TestErrorTypeDetected:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_workflow_doc_toon_error_field(tmp_path)
-        assert len(findings) == 1
-        assert findings[0]['rule_id'] == RULE_ID
+        assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [RULE_ID])
 
     def test_tab_style_error_type_detected(self, tmp_path):
         content = (
@@ -100,8 +100,7 @@ class TestErrorTypeDetected:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_workflow_doc_toon_error_field(tmp_path)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [RULE_ID])
 
     def test_indented_error_type_detected(self, tmp_path):
         content = (
@@ -112,8 +111,7 @@ class TestErrorTypeDetected:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_workflow_doc_toon_error_field(tmp_path)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [RULE_ID])
 
     def test_multiple_error_type_keys_each_flagged(self, tmp_path):
         content = (
@@ -126,8 +124,7 @@ class TestErrorTypeDetected:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_workflow_doc_toon_error_field(tmp_path)
-        assert len(findings) == 2
+        assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [RULE_ID] * 2)
 
     def test_agent_md_is_scanned(self, tmp_path):
         content = (
@@ -137,8 +134,7 @@ class TestErrorTypeDetected:
             '```\n'
         )
         _make_agent_md(tmp_path, content)
-        findings = analyze_workflow_doc_toon_error_field(tmp_path)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [RULE_ID])
 
 
 # ---------------------------------------------------------------------------
@@ -156,8 +152,7 @@ class TestCanonicalErrorKeyClean:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_workflow_doc_toon_error_field(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [])
 
     def test_error_substring_key_not_flagged(self, tmp_path):
         # A key that merely starts with ``error`` but is not ``error_type``
@@ -169,8 +164,7 @@ class TestCanonicalErrorKeyClean:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_workflow_doc_toon_error_field(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [])
 
 
 # ---------------------------------------------------------------------------
@@ -187,8 +181,7 @@ class TestOutOfScopeExclusions:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_workflow_doc_toon_error_field(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [])
 
     def test_prose_error_type_not_flagged(self, tmp_path):
         content = (
@@ -196,8 +189,7 @@ class TestOutOfScopeExclusions:
             'Another line mentioning error_type: as a field name.\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_workflow_doc_toon_error_field(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [])
 
     def test_error_type_in_python_fence_not_flagged(self, tmp_path):
         content = (
@@ -206,8 +198,7 @@ class TestOutOfScopeExclusions:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_workflow_doc_toon_error_field(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [])
 
     def test_error_type_in_json_fence_not_flagged(self, tmp_path):
         content = (
@@ -216,8 +207,7 @@ class TestOutOfScopeExclusions:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_workflow_doc_toon_error_field(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [])
 
 
 # ---------------------------------------------------------------------------
@@ -234,10 +224,8 @@ class TestFindingShape:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_workflow_doc_toon_error_field(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [RULE_ID])
         f = findings[0]
-        assert f['rule_id'] == RULE_ID
         assert f['type'] == FINDING_TYPE
         assert f['rule'] == RULE_NAME
         assert isinstance(f['file'], str)
@@ -257,8 +245,7 @@ class TestFindingShape:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_workflow_doc_toon_error_field(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [RULE_ID])
         # error_type is on the 5th line (1-based).
         assert findings[0]['line'] == 5
 
@@ -269,8 +256,7 @@ class TestFindingShape:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_workflow_doc_toon_error_field(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [RULE_ID])
         assert Path(findings[0]['file']).is_absolute()
 
 
@@ -287,13 +273,11 @@ class TestCleanBaseline:
             'This skill does things and returns an error envelope.\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_workflow_doc_toon_error_field(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [])
 
     def test_empty_marketplace_root_no_findings(self, tmp_path):
         # No plan-marshall bundle directory at all.
-        findings = analyze_workflow_doc_toon_error_field(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_workflow_doc_toon_error_field, tmp_path, [])
 
 
 # ---------------------------------------------------------------------------

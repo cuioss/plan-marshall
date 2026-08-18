@@ -23,6 +23,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -60,7 +62,7 @@ def test_scalar_implements_with_block_canonicals_ok(tmp_path: Path) -> None:
         'canonical_verify.md',
         f'implements: {_EXT_POINT}\nname: default:verify\ncanonicals:\n  - quality-gate\n  - module-tests\n',
     )
-    assert analyze_verify_step_contract(tmp_path) == []
+    assert_analyzer_findings(analyze_verify_step_contract, tmp_path, [])
 
 
 def test_block_sequence_implements_recognized(tmp_path: Path) -> None:
@@ -71,7 +73,7 @@ def test_block_sequence_implements_recognized(tmp_path: Path) -> None:
         'canonicals:\n  - quality-gate\n'
     )
     _write(tmp_path, 'multi.md', fm)
-    assert analyze_verify_step_contract(tmp_path) == []
+    assert_analyzer_findings(analyze_verify_step_contract, tmp_path, [])
 
 
 def test_inline_canonicals_list_ok(tmp_path: Path) -> None:
@@ -80,7 +82,7 @@ def test_inline_canonicals_list_ok(tmp_path: Path) -> None:
         'inline.md',
         f'implements: {_EXT_POINT}\ncanonicals: [quality-gate, module-tests]\n',
     )
-    assert analyze_verify_step_contract(tmp_path) == []
+    assert_analyzer_findings(analyze_verify_step_contract, tmp_path, [])
 
 
 # ===========================================================================
@@ -90,16 +92,13 @@ def test_inline_canonicals_list_ok(tmp_path: Path) -> None:
 
 def test_missing_canonicals_flagged(tmp_path: Path) -> None:
     _write(tmp_path, 'nocanon.md', f'implements: {_EXT_POINT}\nname: default:verify\n')
-    findings = analyze_verify_step_contract(tmp_path)
-    assert len(findings) == 1
-    assert findings[0]['rule_id'] == RULE_ID
+    findings = assert_analyzer_findings(analyze_verify_step_contract, tmp_path, [RULE_ID])
     assert 'missing required' in findings[0]['description']
 
 
 def test_empty_inline_canonicals_flagged(tmp_path: Path) -> None:
     _write(tmp_path, 'emptycanon.md', f'implements: {_EXT_POINT}\ncanonicals: []\n')
-    findings = analyze_verify_step_contract(tmp_path)
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_verify_step_contract, tmp_path, [RULE_ID])
     assert 'empty' in findings[0]['description']
 
 
@@ -107,8 +106,7 @@ def test_empty_block_canonicals_flagged(tmp_path: Path) -> None:
     # canonicals: key present, immediately followed by another top-level key
     # (no list items) → empty.
     _write(tmp_path, 'emptyblock.md', f'implements: {_EXT_POINT}\ncanonicals:\nname: default:verify\n')
-    findings = analyze_verify_step_contract(tmp_path)
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_verify_step_contract, tmp_path, [RULE_ID])
     assert 'empty' in findings[0]['description']
 
 
@@ -123,19 +121,19 @@ def test_other_ext_point_not_flagged(tmp_path: Path) -> None:
         'other.md',
         'implements: plan-marshall:extension-api/standards/ext-point-finalize-step\nname: x\n',
     )
-    assert analyze_verify_step_contract(tmp_path) == []
+    assert_analyzer_findings(analyze_verify_step_contract, tmp_path, [])
 
 
 def test_no_implements_not_flagged(tmp_path: Path) -> None:
     _write(tmp_path, 'plain.md', 'name: supporting-doc\norder: 20\n')
-    assert analyze_verify_step_contract(tmp_path) == []
+    assert_analyzer_findings(analyze_verify_step_contract, tmp_path, [])
 
 
 def test_no_frontmatter_not_flagged(tmp_path: Path) -> None:
     path = tmp_path / 'plan-marshall' / 'skills' / 'phase-5-execute' / 'standards' / 'body.md'
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text('# No frontmatter\n\nBody only.\n', encoding='utf-8')
-    assert analyze_verify_step_contract(tmp_path) == []
+    assert_analyzer_findings(analyze_verify_step_contract, tmp_path, [])
 
 
 # ===========================================================================
@@ -153,4 +151,4 @@ def test_finding_shape(tmp_path: Path) -> None:
 
 
 def test_absent_tree_returns_empty(tmp_path: Path) -> None:
-    assert analyze_verify_step_contract(tmp_path / 'does-not-exist') == []
+    assert_analyzer_findings(analyze_verify_step_contract, tmp_path / 'does-not-exist', [])

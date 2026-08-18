@@ -50,6 +50,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -399,7 +401,7 @@ class TestPersonaSecurityExpertIndex:
     def test_index_agreeing_with_the_directory_is_clean(self, tmp_path: Path) -> None:
         _write_persona_security_expert(tmp_path, self._POPULATION)
 
-        assert analyze_literal_count(tmp_path) == []
+        assert_analyzer_findings(analyze_literal_count, tmp_path, [])
 
     def test_ordinary_prose_naming_the_standards_dir_is_not_a_count_claim(
         self, tmp_path: Path
@@ -414,14 +416,14 @@ class TestPersonaSecurityExpertIndex:
         assert '`standards/` sub-documents follow two conventions' in body, (
             'the decoy sentence must be present, or this test asserts nothing'
         )
-        assert analyze_literal_count(tmp_path) == []
+        assert_analyzer_findings(analyze_literal_count, tmp_path, [])
 
     def test_digit_form_of_the_prose_count_is_accepted(self, tmp_path: Path) -> None:
         # The count may be spelled as a word or as a digit; both compare against
         # the same derived population size.
         _write_persona_security_expert(tmp_path, self._POPULATION, prose='3')
 
-        assert analyze_literal_count(tmp_path) == []
+        assert_analyzer_findings(analyze_literal_count, tmp_path, [])
 
     def test_stale_prose_count_is_flagged_with_the_derived_population(self, tmp_path: Path) -> None:
         skill_md = _write_persona_security_expert(tmp_path, self._POPULATION, prose='four')

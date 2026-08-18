@@ -24,6 +24,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -62,9 +64,7 @@ def _ext_triage_doc(tmp_path: Path, bundle: str = 'pm-dev-java') -> Path:
 
 def test_dotted_raw_input_read_in_triage_doc_flagged(tmp_path: Path) -> None:
     _write(_triage_doc(tmp_path), '# Triage\n\nRead the finding `raw_input.detail` and decide.\n')
-    findings = analyze_triage_read_surface(tmp_path)
-    assert len(findings) == 1
-    assert findings[0]['rule_id'] == RULE_ID
+    assert_analyzer_findings(analyze_triage_read_surface, tmp_path, [RULE_ID])
 
 
 def test_subscript_raw_input_read_in_verification_feedback_flagged(tmp_path: Path) -> None:
@@ -72,8 +72,7 @@ def test_subscript_raw_input_read_in_verification_feedback_flagged(tmp_path: Pat
         _triage_doc(tmp_path, 'verification-feedback.md'),
         "# VF\n\nQuote raw_input['body'] into the reply.\n",
     )
-    findings = analyze_triage_read_surface(tmp_path)
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_triage_read_surface, tmp_path, [RULE_ID])
     assert findings[0]['file'].endswith('verification-feedback.md')
 
 
@@ -82,15 +81,13 @@ def test_key_access_raw_input_in_ext_triage_skill_flagged(tmp_path: Path) -> Non
         _ext_triage_doc(tmp_path),
         "# ext-triage-java\n\nInspect finding['raw_input'] before triage.\n",
     )
-    findings = analyze_triage_read_surface(tmp_path)
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_triage_read_surface, tmp_path, [RULE_ID])
     assert 'ext-triage-java' in findings[0]['file']
 
 
 def test_get_raw_input_read_flagged(tmp_path: Path) -> None:
     _write(_triage_doc(tmp_path), "# Triage\n\nfinding.get('raw_input') is off-limits.\n")
-    findings = analyze_triage_read_surface(tmp_path)
-    assert len(findings) == 1
+    assert_analyzer_findings(analyze_triage_read_surface, tmp_path, [RULE_ID])
 
 
 def test_multiple_reads_emit_one_finding_per_line(tmp_path: Path) -> None:
@@ -98,8 +95,7 @@ def test_multiple_reads_emit_one_finding_per_line(tmp_path: Path) -> None:
         _triage_doc(tmp_path),
         '# Triage\n\nRead `raw_input.detail`.\nAlso `raw_input.message`.\n',
     )
-    findings = analyze_triage_read_surface(tmp_path)
-    assert len(findings) == 2
+    findings = assert_analyzer_findings(analyze_triage_read_surface, tmp_path, [RULE_ID] * 2)
     assert {f['line'] for f in findings} == {3, 4}
 
 
@@ -118,7 +114,7 @@ def test_placeholder_wildcard_forms_not_flagged(tmp_path: Path) -> None:
             'Every value is quarantined under `raw_input`.\n'
         ),
     )
-    assert analyze_triage_read_surface(tmp_path) == []
+    assert_analyzer_findings(analyze_triage_read_surface, tmp_path, [])
 
 
 def test_non_triage_file_reading_raw_input_not_flagged(tmp_path: Path) -> None:
@@ -126,7 +122,7 @@ def test_non_triage_file_reading_raw_input_not_flagged(tmp_path: Path) -> None:
     # but is NOT a triage surface, so it is never scanned.
     store_doc = tmp_path / 'plan-marshall' / 'skills' / 'manage-findings' / 'standards' / 'jsonl-format.md'
     _write(store_doc, '# Ledger\n\nThe store writes raw_input.detail on file.\n')
-    assert analyze_triage_read_surface(tmp_path) == []
+    assert_analyzer_findings(analyze_triage_read_surface, tmp_path, [])
 
 
 def test_clean_triage_doc_with_top_level_reads_not_flagged(tmp_path: Path) -> None:
@@ -134,7 +130,7 @@ def test_clean_triage_doc_with_top_level_reads_not_flagged(tmp_path: Path) -> No
         _triage_doc(tmp_path),
         '# Triage\n\nDecide on the promoted top-level `detail` and `message` fields.\n',
     )
-    assert analyze_triage_read_surface(tmp_path) == []
+    assert_analyzer_findings(analyze_triage_read_surface, tmp_path, [])
 
 
 # ===========================================================================
@@ -152,4 +148,4 @@ def test_finding_shape(tmp_path: Path) -> None:
 
 
 def test_absent_tree_returns_empty(tmp_path: Path) -> None:
-    assert analyze_triage_read_surface(tmp_path / 'does-not-exist') == []
+    assert_analyzer_findings(analyze_triage_read_surface, tmp_path / 'does-not-exist', [])

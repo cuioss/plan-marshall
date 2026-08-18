@@ -46,6 +46,8 @@ from pathlib import Path
 
 from conftest import get_script_path, load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -89,17 +91,14 @@ class TestPositiveDetection:
         """'Driving lesson:' annotation is a finding."""
         content = '- Driving lesson: `2026-04-30-23-001` (scope expanded silently).\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_historical_prose_in_skills(marketplace_root)
-        assert len(findings) == 1
-        assert findings[0]['rule_id'] == RULE_ID
+        findings = assert_analyzer_findings(analyze_historical_prose_in_skills, marketplace_root, [RULE_ID])
         assert findings[0]['pattern_family'] == 'driving_lesson_prefix'
 
     def test_driving_lesson_inline_triggers_finding(self, tmp_path: Path) -> None:
         """Inline 'driving lesson:' is also detected."""
         content = 'Driving lesson: the recurring failure mode documented here.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_historical_prose_in_skills(marketplace_root)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_historical_prose_in_skills, marketplace_root, [RULE_ID])
         assert findings[0]['pattern_family'] == 'driving_lesson_prefix'
 
     def test_back_reference_prefix_triggers_finding(self, tmp_path: Path) -> None:
@@ -113,8 +112,7 @@ class TestPositiveDetection:
         """'An earlier proposal' is a finding."""
         content = 'An earlier proposal suggested intercepting tool calls via a hook.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_historical_prose_in_skills(marketplace_root)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_historical_prose_in_skills, marketplace_root, [RULE_ID])
         assert findings[0]['pattern_family'] == 'earlier_proposal'
 
     def test_earlier_approach_triggers_finding(self, tmp_path: Path) -> None:
@@ -163,10 +161,8 @@ class TestPositiveDetection:
         """Finding carries the expected shape fields."""
         content = '- Driving lesson: see context.\n'
         marketplace_root, md_path = _make_skill_md(tmp_path, content)
-        findings = analyze_historical_prose_in_skills(marketplace_root)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_historical_prose_in_skills, marketplace_root, [RULE_ID])
         f = findings[0]
-        assert f['rule_id'] == RULE_ID
         assert f['type'] == 'historical_prose_in_skills'
         assert f['rule'] == 'analyze_historical_prose_in_skills'
         assert f['file'] == str(md_path)
@@ -191,16 +187,14 @@ class TestAllowlistExemption:
         skill_dir = tmp_path / 'plan-marshall' / 'skills' / 'manage-lessons'
         skill_dir.mkdir(parents=True)
         (skill_dir / 'SKILL.md').write_text(content, encoding='utf-8')
-        findings = analyze_historical_prose_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_historical_prose_in_skills, tmp_path, [])
 
     def test_plan_retrospective_is_exempt(self, tmp_path: Path) -> None:
         content = 'An earlier proposal suggested this approach.\n'
         skill_dir = tmp_path / 'plan-marshall' / 'skills' / 'plan-retrospective'
         skill_dir.mkdir(parents=True)
         (skill_dir / 'SKILL.md').write_text(content, encoding='utf-8')
-        findings = analyze_historical_prose_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_historical_prose_in_skills, tmp_path, [])
 
     def test_plugin_doctor_rule_provenance_is_exempt(self, tmp_path: Path) -> None:
         content = 'Driving lesson: `2026-04-29-23-002` — recurrence of stale flags.\n'
@@ -213,8 +207,7 @@ class TestAllowlistExemption:
         )
         ref_dir.mkdir(parents=True)
         (ref_dir / 'rule-provenance.md').write_text(content, encoding='utf-8')
-        findings = analyze_historical_prose_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_historical_prose_in_skills, tmp_path, [])
 
     def test_plugin_doctor_rule_catalog_is_exempt(self, tmp_path: Path) -> None:
         content = 'Driving lesson: rule catalog describes rule context.\n'
@@ -227,8 +220,7 @@ class TestAllowlistExemption:
         )
         ref_dir.mkdir(parents=True)
         (ref_dir / 'rule-catalog.md').write_text(content, encoding='utf-8')
-        findings = analyze_historical_prose_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_historical_prose_in_skills, tmp_path, [])
 
     def test_plan_doctor_standards_is_exempt(self, tmp_path: Path) -> None:
         content = 'Back-reference: check-lesson-id-references standard.\n'
@@ -237,8 +229,7 @@ class TestAllowlistExemption:
         )
         std_dir.mkdir(parents=True)
         (std_dir / 'check-lesson-id-references.md').write_text(content, encoding='utf-8')
-        findings = analyze_historical_prose_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_historical_prose_in_skills, tmp_path, [])
 
 
 # ===========================================================================
@@ -258,8 +249,7 @@ class TestSkipContextExemption:
             'Normal body content.\n'
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_historical_prose_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_historical_prose_in_skills, marketplace_root, [])
 
     def test_fenced_code_block_is_exempt(self, tmp_path: Path) -> None:
         content = (
@@ -268,14 +258,12 @@ class TestSkipContextExemption:
             '```\n'
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_historical_prose_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_historical_prose_in_skills, marketplace_root, [])
 
     def test_source_line_is_exempt(self, tmp_path: Path) -> None:
         content = 'Source: Driving lesson `2026-04-29-23-002` provenance.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_historical_prose_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_historical_prose_in_skills, marketplace_root, [])
 
 
 # ===========================================================================
@@ -304,8 +292,7 @@ class TestFrontmatterDisable:
             'An earlier proposal was rejected.\n'
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_historical_prose_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_historical_prose_in_skills, marketplace_root, [])
 
     def test_block_list_disable_suppresses_whole_file(self, tmp_path: Path) -> None:
         """A YAML block-list ``plugin-doctor-disable`` form is also honored."""
@@ -318,8 +305,7 @@ class TestFrontmatterDisable:
             'Driving lesson: context here is disabled per-file.\n'
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_historical_prose_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_historical_prose_in_skills, marketplace_root, [])
 
     def test_disable_list_for_other_rule_does_not_suppress(self, tmp_path: Path) -> None:
         """A disable list naming a DIFFERENT rule leaves this rule's findings flagged."""
@@ -331,9 +317,7 @@ class TestFrontmatterDisable:
             'Driving lesson: this rule is NOT in the disable list.\n'
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_historical_prose_in_skills(marketplace_root)
-        assert len(findings) == 1
-        assert findings[0]['rule_id'] == RULE_ID
+        assert_analyzer_findings(analyze_historical_prose_in_skills, marketplace_root, [RULE_ID])
 
     def test_no_disable_key_is_still_flagged(self, tmp_path: Path) -> None:
         """Frontmatter without ``plugin-doctor-disable`` leaves findings flagged."""
@@ -344,8 +328,7 @@ class TestFrontmatterDisable:
             'Driving lesson: no disable key present.\n'
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_historical_prose_in_skills(marketplace_root)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_historical_prose_in_skills, marketplace_root, [RULE_ID])
 
     def test_disable_does_not_bleed_across_files(self, tmp_path: Path) -> None:
         """A per-file disable in one file has no effect on a sibling file."""
@@ -365,8 +348,7 @@ class TestFrontmatterDisable:
         (skill_b / 'SKILL.md').write_text(
             'Driving lesson: flagged in file B.\n', encoding='utf-8'
         )
-        findings = analyze_historical_prose_in_skills(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_historical_prose_in_skills, tmp_path, [RULE_ID])
         assert findings[0]['file'].endswith('bundle-b/skills/skill-b/SKILL.md')
 
     def test_retired_inline_marker_no_longer_suppresses(self, tmp_path: Path) -> None:
@@ -377,9 +359,7 @@ class TestFrontmatterDisable:
         """
         content = 'Driving lesson: context. <!-- doctor-ignore: historical-prose -->\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_historical_prose_in_skills(marketplace_root)
-        assert len(findings) == 1
-        assert findings[0]['rule_id'] == RULE_ID
+        assert_analyzer_findings(analyze_historical_prose_in_skills, marketplace_root, [RULE_ID])
 
 
 # ===========================================================================
@@ -396,8 +376,7 @@ class TestBoundaryCases:
             'Do not reuse prose across skills — extract to a central reference.\n'
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_historical_prose_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_historical_prose_in_skills, marketplace_root, [])
 
     def test_out_of_scope_readme_not_scanned(self, tmp_path: Path) -> None:
         bundle_dir = tmp_path / 'some-bundle'
@@ -405,15 +384,13 @@ class TestBoundaryCases:
         (bundle_dir / 'README.md').write_text(
             'Driving lesson: not in scope.\n', encoding='utf-8'
         )
-        findings = analyze_historical_prose_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_historical_prose_in_skills, tmp_path, [])
 
     def test_word_driving_alone_no_finding(self, tmp_path: Path) -> None:
         """The word 'driving' alone without 'lesson:' is not flagged."""
         content = 'The driving constraint is isolation.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_historical_prose_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_historical_prose_in_skills, marketplace_root, [])
 
 
 # ===========================================================================
@@ -489,8 +466,7 @@ class TestSuppressionAwareAllowlist:
             'Driving lesson: historical context lives here legitimately.\n',
             encoding='utf-8',
         )
-        findings = analyze_historical_prose_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_historical_prose_in_skills, tmp_path, [])
 
     def test_path_not_in_config_is_still_flagged(self, tmp_path: Path) -> None:
         """A historical-prose file outside every exempt prefix is flagged.
@@ -507,9 +483,7 @@ class TestSuppressionAwareAllowlist:
             'Driving lesson: this sibling skill is NOT exempt.\n',
             encoding='utf-8',
         )
-        findings = analyze_historical_prose_in_skills(tmp_path)
-        assert len(findings) == 1
-        assert findings[0]['rule_id'] == RULE_ID
+        assert_analyzer_findings(analyze_historical_prose_in_skills, tmp_path, [RULE_ID])
 
 
 # ===========================================================================
