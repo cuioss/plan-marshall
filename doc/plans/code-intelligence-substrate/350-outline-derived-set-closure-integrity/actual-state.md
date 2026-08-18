@@ -147,8 +147,11 @@ sub-agents clobbered each other's mutation harness by choosing the same filename
   `SPDX-header check passed`.
 - **Branch gate:** `./pw verify` ran four times. ⚠ **The second run FAILED** —
   `verify: test-compile failed`, a test-only type error invisible to `quality-gate` and to per-file
-  `pytest`, with the wrapper still exiting 0. Fixed in `0702530`. The final run's result is recorded
-  in `report-01.md` § Build gate.
+  `pytest`, with the wrapper still exiting 0. Fixed in `0702530`.
+- **Final gate — clean**, run at `0f10d16` with no other process touching the tree:
+  `=== verify: SUCCESS ===`, **20840 passed, 14 skipped in 6:25**, 0 failed / 0 errors, all six
+  sub-dimensions at full scope (mypy 414 production + 770 test files, ruff, SPDX, plugin-doctor
+  marketplace-wide, whole-tree pytest).
 
 ⛔ **Read the gate for what it is.** The build's own coverage line says it: SPDX cannot evaluate file
 content, plugin-doctor cannot evaluate whether a documented claim is true, `mypy(test)` cannot

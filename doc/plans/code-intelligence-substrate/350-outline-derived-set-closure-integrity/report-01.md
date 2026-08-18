@@ -306,11 +306,19 @@ clean before this diff was taken, so nothing staged or untracked is invisible to
 - Every `./pw` call carried `UV_HTTP_TIMEOUT=600`; the branch gate exceeds the 600 s foreground Bash
   timeout and was run in the background each time.
 
-**Final gate** — _pending a clean re-run._ A `./pw verify` at `a583652` reported
-`=== verify: SUCCESS ===`, but it is **not** recorded as the final gate: it overlapped a verification
-sub-agent's mutation campaign on the same tree, so it did not measure the committed state
-undisturbed. (A concurrent mutant can only produce a false RED, never a false GREEN — so the
-`SUCCESS` is not in doubt; what is missing is a clean, quotable measurement.) The figure it would
-have carried was also lost to a `tail` on the captured output. The gate is re-run once no other
-process is touching the tree, and the result recorded here with its pytest summary re-derived at the
-moment of the claim.
+**Final gate** — clean, run at `0f10d16` with no other process touching the tree:
+
+```
+=== verify: SUCCESS ===
+20840 passed, 14 skipped in 385.92s (0:06:25)
+```
+
+All six sub-dimensions ran at full scope, read from the run's own coverage line: mypy(production)
+over 414 files, ruff over `marketplace/bundles` + `test` + `.claude`, SPDX headers, plugin-doctor
+marketplace-wide, mypy(test) over 770 files, and module-tests whole-tree. The pytest summary reports
+**0 failed / 0 errors**; the figure is a count of *collected cases*, re-derived from this run rather
+than carried forward from an earlier one (the branch's four verify runs reported 20814, a
+`test-compile` failure, and this 20840 as tests were added).
+
+An earlier `verify: SUCCESS` at the same head is deliberately NOT the recorded gate: it overlapped a
+verification sub-agent's mutation campaign, so it did not measure the committed state undisturbed.
