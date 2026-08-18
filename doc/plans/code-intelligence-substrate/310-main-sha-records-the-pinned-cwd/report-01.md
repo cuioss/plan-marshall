@@ -553,7 +553,38 @@ reviewers see this diff (§ Reviewer participation).
 
 ## Reviewer participation
 
-_(Recorded after the PR is opened.)_
+**Population derived from configuration, not transcribed.** The expected reviewers are the
+`author_login` of each registry doc under
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/` — `coderabbit.md`,
+`pr-agent.md`, `sourcery.md` — cross-named by `.github/workflows/pr-agent.yml`. **M = 3.**
+
+Every verdict below is read from the reviewer's own **comment body**, never from a check-run state. Two
+check runs would have misled here: `Sourcery review` concluded `skipped`, and `review / review`
+concluded `success` — neither says whether a review happened.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence |
+|---|---|---|---|
+| `cuioss-review-bot` | `reviewed` | — | Published its `## PR Reviewer Guide 🔍` issue comment (id `5321782250`) over this diff: "🧪 PR contains tests", "🔒 No security concerns identified", "⚡ No major issues detected". An explicit clean review with no findings to action |
+| `coderabbitai` | `rate-limited` | **yes** | Issue comment `5321775975`, rewritten in place: "**Review limit reached** … you've reached your PR review limit, so we couldn't start this review. **Next review available in: 56 minutes.** You've used all 1 included review currently available under your plan." A countdown, so it clears on its own |
+| `sourcery-ai` | `rate-limited` | **yes** | Review-summary body (id `4955724124`): "you have reached your **weekly rate limit of 500000 diff characters**." A quota that resets weekly — distinct from a per-PR size ceiling, which would never clear |
+
+**Coverage: 1 of 3.** No reviewer was `silent`, so no recovery check was owed. No surface was
+`unreadable`: all three were read cleanly, and the positive control confirms it — the PR payload's own
+`comments: 2` matches the two issue comments read. **Merge-gate condition 2 is therefore established**,
+and trivially satisfied: the only bodies on this PR are one clean review and two quota notices, so
+there was no finding to fix and no comment to answer.
+
+⚠ **This run's own push contributed to CodeRabbit's shortfall, and that is disclosed rather than
+glossed.** CodeRabbit's first comment read "review in progress"; the run then pushed the report-progress
+commit `e22f7fd`, which changed the head, and CodeRabbit re-evaluated against the new head and hit its
+limit. Per the lane contract an aborted review is **never** counted as `reviewed`, and the push was
+nonetheless correct — durability outranks review cleanliness, and a finished commit is not held back to
+spare a reviewer. The lever the contract does offer was used: work was batched at the commit boundary,
+so ten commits' worth of changes went out as ten coherent pushes rather than a flurry.
+
+**The § Step 8 shortfall disclosure fired before auto-merge was armed**, and said: *"Review coverage: 1
+of 3 — `cuioss-review-bot` reviewed clean; `coderabbitai` rate-limited, reopens in ~56 minutes;
+`sourcery-ai` rate-limited on a weekly diff-character quota, reopens weekly."*
 
 ## Cost
 
@@ -581,8 +612,8 @@ _(Recorded after the PR is opened.)_
 | 4 Pushed | **Done** — pushed after every commit; `git status -sb` reports no `ahead` |
 | 5 Build gate | **Done** — git-derived verdict: **11 Python files (6 production, 5 test)**, so the gate applies. `./pw verify` run **six times**, clean at every commit; final `20665 passed, 14 skipped` |
 | 6 Verification sub-agent | **Done** — four rounds against a budget declared up front. 37 findings, all fixed, none deferred. The stop record names exit (ii), round 4's own answer, the one condition-B survivor with its bound, and the residue |
-| 7 PR cycle | See § Reviewer participation |
-| 8 Merge gate | See § Reviewer participation |
+| 7 PR cycle | **Done** — PR [#1286](https://github.com/cuioss/plan-marshall/pull/1286). All **three** comment surfaces read (`get_comments`, `get_reviews`, `get_review_comments` — three distinct calls, none subsuming the others), with the payload's own `comments: 2` as the positive control. No verdict is `unreadable`, so condition 2 is **established**, not overridden. The participation table carries a verdict **and** a `Reopens?` value per reviewer; no `silent` verdict arose, so no recovery check was owed. The label `skip-bot-review` was **not** applied — the diff touches `*.py` and `marketplace/bundles/**`, and a skill is code |
+| 8 Merge gate | **Done** — conditions 1–3 met, condition 4's shortfall disclosed in words (1 of 3) before arming, auto-merge armed SQUASH |
 | 8 Bridge | **Done** — no status or bookkeeping write landed under `doc/plans/` outside this plan's own directory; no ledger, no other plan touched. This report carries the PR number and the per-deliverable outcome |
 | 9 This check | **Done** — this table |
 | 9 What have we learned | **Done** — below |
@@ -633,4 +664,30 @@ because A reaches false statements regardless of whether they execute.
 
 ## Residue
 
-_(Recorded at close.)_
+**Nothing is left unfinished in the deliverables.** All five are complete; D4's count is BLOCKED by
+design, as the plan permits, and the rule shipped in its place.
+
+What a reader should pick up next, in priority order:
+
+1. **A second review pass is owed and was not obtained.** Two of three automated reviewers were
+   rate-limited, and **both reopen** — CodeRabbit on a ~56-minute countdown, Sourcery on a weekly
+   quota. This diff has had exactly one automated review (clean) plus four internal verification
+   rounds. Re-requesting either once its window reopens is worth more than usual here, because their
+   method differs from the loop that just ended: the loop's late rounds were reading prose, and a
+   code-shaped reviewer has not looked at the resolver split since round 1's version of it.
+2. **The condition-B survivor** — `TaskGraphInvalid` has no handler in `cmd_capture` or `cmd_verify`,
+   so a broken task graph surfaces as `internal_error` instead of its structured `cycle`/`dangling`
+   payload. Pre-existing, fail-closed at both verbs, bounded in the stop record. It is the same defect
+   shape as this plan's F1, on the one member of `capture_all`'s raise set that no verb handles. A
+   four-line follow-up, out of scope here.
+3. **The residue class named in the stop record** — prose describing the deliverable at sites the
+   previous finding did not point at. Round 4's own fixes are unreviewed and are the most likely place
+   for the next instance.
+4. **A contract-change proposal awaits the operator** (§ What have we learned): the lane's
+   mutation-testing guidance should forbid `git checkout` as the restore mechanism. If accepted it
+   ships as a separate `chore/` PR touching only the skill.
+
+**Not residue, recorded so it is not mistaken for it:** `config_hash`'s cwd-relative `marshal.json`
+read, which the predecessor plan (`truthful-signals/290-…`) deferred here. D1 examined it and returned
+a verdict — it is **not** a member of the main-scoped population, because its name makes no main claim
+and its resolution is the ADR-002 rule rather than a mislabel. No work is owed on it.
