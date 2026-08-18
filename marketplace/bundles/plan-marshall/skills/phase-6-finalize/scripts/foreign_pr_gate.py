@@ -196,9 +196,14 @@ def _foreign_paths_by_deliverable(deliverables: list[dict]) -> list[tuple[int, l
     for deliverable in deliverables:
         if not isinstance(deliverable, dict) or not deliverable.get('foreign'):
             continue
+        # All THREE declaration fields — a survey-scope deliverable declares
+        # `Files expected to mutate:` instead of `Affected files:`, and its
+        # foreign paths must reach this gate like any other. Reading one field
+        # made the gate's population a strict subset of the declared surface.
         paths = [
             str(entry.get('path', ''))
-            for entry in deliverable.get('affected_files', [])
+            for field in ('affected_files', 'mutation_scope', 'survey_scope')
+            for entry in deliverable.get(field, []) or []
             if isinstance(entry, dict) and entry.get('foreign') and entry.get('path')
         ]
         if paths:

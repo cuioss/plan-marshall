@@ -190,7 +190,7 @@ def validate_steps_are_file_paths(steps: list[str]) -> tuple[list[str], list[str
         if not has_path_separator and not has_valid_extension:
             errors.append(
                 f"Step {i}: '{step[:50]}...' is not a file path. "
-                f"Steps MUST be file paths from deliverable's Affected files section."
+                f"Steps MUST be file paths the deliverable declares (Affected files, Files expected to mutate, or Files to survey)."
             )
             continue
 

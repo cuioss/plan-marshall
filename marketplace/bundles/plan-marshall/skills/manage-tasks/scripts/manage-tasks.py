@@ -369,7 +369,7 @@ def build_parser() -> argparse.ArgumentParser:
     # qgate-mechanical-checks
     p_qgate = subparsers.add_parser(
         'qgate-mechanical-checks',
-        help='Run deterministic Q-Gate checks for phase-4-plan Step 9 (no LLM dispatch)',
+        help='Run deterministic Q-Gate checks for phase-4-plan Step 8 (no LLM dispatch)',
         description=(
             'Run the deterministic Q-Gate checks over the just-written tasks '
             'and parent deliverables: coverage, skill-resolution, acyclic, '

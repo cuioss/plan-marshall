@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Q-Gate mechanical checks for phase-4-plan Step 9.
+"""Q-Gate mechanical checks for phase-4-plan Step 8.
 
 Pure regex + graph + filesystem deterministic checks over the just-written
 tasks and parent deliverables. Each failure becomes a Q-Gate finding under
@@ -67,7 +67,7 @@ _FINDING_TYPE = 'triage'
 # Planning-domain keywords whose presence in a task.description but absence
 # from the parent deliverable haystack indicates compound-word drift
 # (PR review / CI etc. is planning vocabulary leaking into task narrative).
-# Mirrors the existing inline Step 9 prose in phase-4-plan/SKILL.md.
+# Mirrors the existing inline Step 8 prose in phase-4-plan/SKILL.md.
 _PLANNING_KEYWORDS: tuple[str, ...] = (
     'PR review',
     'CI',
@@ -421,8 +421,9 @@ def _check_files_exist(
                     detail = (
                         f'TASK-{number:03d} {t.get("title", "?")!r} declares step '
                         f'target {target!r}, which is not present on disk. '
-                        f"Phase-4-plan steps must list paths from the deliverable's "
-                        f'Affected files section; create the file or correct the '
+                        f'Phase-4-plan steps must list paths the deliverable declares '
+                        f'(Affected files, Files expected to mutate, or Files to '
+                        f'survey); create the file or correct the '
                         f'path before phase-5-execute reads it.'
                     )
                 emitted += _emit_finding(
@@ -440,7 +441,7 @@ def _check_files_exist(
 def _build_haystack(deliverable: dict[str, Any], prose: str = '') -> str:
     """Concatenate a deliverable's fields AND its prose into one haystack.
 
-    Mirrors the Step 9 keyword-drift recipe in phase-4-plan/SKILL.md.
+    Mirrors the Step 8 keyword-drift recipe in phase-4-plan/SKILL.md.
 
     ``prose`` is the deliverable's verbatim block body. It is part of the
     haystack because the check asks whether a task description says something

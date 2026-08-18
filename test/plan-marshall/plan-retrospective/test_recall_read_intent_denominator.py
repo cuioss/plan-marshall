@@ -168,7 +168,7 @@ class TestIntentCaptureNeverBreaksParsing:
     """Reading an intent must not narrow what a path is allowed to contain.
 
     This regex decides whether a bullet parses AT ALL, and a bullet that stops
-    matching is reported as "Affected files heading present but no bullet
+    matching is reported as "Declaration heading present but no bullet
     parsed" — a ``fail`` at ``severity: error``. So a bullet that parsed before
     intents were read must still parse, with the same path, and yield no intent.
     An intermediate fix excluded ``(`` from the bare path class, which silently
