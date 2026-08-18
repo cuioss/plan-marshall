@@ -16,9 +16,9 @@ work, no collateral.
 
 | # | Deliverable (short) | Report claim | Ground truth | Verdict |
 |---|---|---|---|---|
-| D0 | GATE: can the residency population be derived in this clone? | HALT (b) — no git-reachable population | Re-derived at `61a43e5`: zero tracked `metrics.toon`, no `.plan/plans/`, no `.plan/local/`, no tracked archived-plan record, no tracked transcript | **CONFIRMED** |
+| D0 | GATE: can the residency population be derived in this clone? | HALT (b) — no git-reachable population | Re-derived at `57c63a8`: zero tracked `metrics.toon`, no `.plan/plans/`, no `.plan/local/archived-plans/`, no `metrics*.toon` anywhere under `.plan/`, no tracked archived-plan record, no tracked transcript | **CONFIRMED** |
 | D1 | Derive the corpus-residency population | Not attempted — gated by D0 | Nothing in the tree derives per-phase residency/consumption; no three-state record read exists | **CONFIRMED (correctly not attempted)** |
-| D2 | Section-granular corpus read verb | Not attempted — gated by D0 | No section-granular read verb over `SKILL.md` / `standards/*.md` exists on any surface | **CONFIRMED (correctly not attempted)** |
+| D2 | Section-granular corpus read verb | Not attempted — gated by D0 | Nothing addresses a named section of a `SKILL.md` or `standards/*.md`. ⚠ But the analogous verb **does** exist over plan documents (`manage-solution-outline`/`manage-plan-documents` `read --section`), and a corpus language server has since shipped — see D2 detail, G11, G12 | **CONFIRMED (correctly not attempted)** |
 | D3 | Re-read elimination within an envelope | Not attempted — gated by D0 | Not built; not dropped-on-evidence either (D1 never ran to supply the refutation) | **CONFIRMED (correctly not attempted)** |
 | D4 | Restate the epic's value case | Not attempted — gated by D0 | `doc/concepts/token-management.adoc:35` § 4 still carries the unrevised skill-driven-guidance claim | **CONFIRMED (correctly not attempted)** |
 
@@ -30,7 +30,7 @@ work, no collateral.
   either (a) a population of instrumented records it can measure, or (b) that no such population is
   reachable here. ⛔ On (b): HALT. Report the plan blocked on corpus availability and stop."*
 - **Claimed (report):** `report-01.md:38` — HALT (b), established from git-reachable evidence alone.
-- **Found / checks run** (each re-run by me at `61a43e5`, not copied from the report):
+- **Found / checks run** (each re-run at `61a43e5` and again at `57c63a8`, not copied from the report):
   - `git ls-files "*metrics.toon"` → **empty**. Control: `git ls-files "*.toon"` returns **39** paths
     (39 at `61a43e5` too), so the pattern is not silently failing.
   - `git show HEAD:.gitignore` → `.plan/*` at line 45, un-ignored back only `!.plan/marshal.json`
@@ -348,3 +348,42 @@ SKILL.md | wc -l` = **156** across 11 bundles. All three of the plan's leads hol
   citation was exact when written) and confirmed item 4 directly instead of by proxy.
 - **`./pw verify`.** Not run, per the audit brief; the plan's diff carries no `*.py`, so the lane's
   own gate would skip it too.
+
+## Adversarial review
+
+Independent review of this document and `gaps.md`. Attacks run: A1 false positives, A2 false
+negatives, A3 vacuous evidence, A4 counts and quotes, A5 actionability, A6 severity/topic,
+A7 coverage, A8 internal consistency.
+
+Re-derived at `57c63a8`, 16 commits after the audited state `61a43e5` — all 16 are `doc/plans/**`
+audit documents, so no source file moved between the two.
+
+| # | Attack | What was found | Correction applied |
+|---|---|---|---|
+| A1 | False positives | **No gap was fabricated** — G1 and G3–G9 each re-derived and each holds. Four citation defects: `report-01.md:47-53`→`46-52` (G1), `:112`→`:111` (G3), `:69-71`→`:68-70` (G4), `:245-246`→`:244-245` (G7); plus `plan.md:66-73`→`66-75`, `:74-80`→`76-80`, `:143-146`→`142-144`, `:146-148`→`145-148`, `:64`→`63-64`. G3's *evidence* was wrong in the other direction: `data-format.md:152` was **exact at `60c34cb`**, the report's own commit — the first audit called it a wrong line only because a 50-commit shallow clone hid that. | All nine ranges repinned. G3 re-titled and re-framed as decayed-not-wrong, with a stable Done-when (cite the field name, not a line). |
+| A1 | False positives | The D0 bullet *"`find .plan -maxdepth 2` → only `marshal.json` and `project-architecture/`… no `.plan/local/`"* is **now false**: this working tree has grown `.plan/execute-script.py`, `.plan/local/{logs,marshall-state.toon}` and `.plan/temp/`. `.plan/` is untracked and machine-local, so any inventory of it decays. | Bullet and the matching residue cell rewritten around the load-bearing negatives, which all still hold: no `.plan/plans/`, no `.plan/local/archived-plans/`, `find .plan -name "metrics*.toon"` empty. **The D0 verdict is unaffected.** |
+| A2 | False negatives | **The D2 row asserted an absence it never checked.** *"There is no section-addressed read on any surface"* is false: `manage-solution-outline read --section` (`manage-solution-outline.py:606-636`) and `manage-plan-documents read --section` (`_cmd_request.py:172-196`) both return one named `##` section without the file, and the first already separates `section_not_found` / read-error / empty-body — D2's three negative controls, working. They are over plan documents, so D2's literal target is still unbuilt and the CONFIRMED verdict survives. | D2 § rewritten with the precedents and their state discrimination; **new G11** (medium, `architecture-core`) to record them in `plan.md` § Expected surface before D2 is built. This is `plan.md:132-135`'s own named risk. |
+| A2 | False negatives | **A shipped corpus surface was missed.** Plan 240 (PR #1256, `5edca5a`, an ancestor of `61a43e5`) shipped `pm-plugin-development:tools-corpus-language-server` — a resident language server *over the marketplace skill corpus*. The audit's residue named 240 as "a plan that now exists", never as a landed surface. It does not satisfy D2 (component-granular: `definition` → file at line 0 by design, `hover` → description + frontmatter; no heading/anchor concept in the index), but it is what `plan.md:157-160`'s "do not fork a second client" now points at first. | Residue row rewritten; § Report accuracy item 9 added; **new G12** (low, `lsp/resolvers`) to repoint the coordination note. |
+| A2 | False negatives | **A false claim was certified as "held exactly".** The report's explanation that the pr-agent registry exempts the Guide from `skip-bot-review` is a misreading: `pr-agent.md:65` sets `honors_skip_label: true`, `:168-174` and `.github/workflows/pr-agent.yml:3-6` put the skip in a job-level `if:` guard over the whole review job, and the `/improve` gate is a *different, enabling* label (`pr-agent-improve`). The observation holds — Guide posted `21:22:32Z` on a PR created `21:21:43Z` carrying the label, re-read live via `get_comments` — only the mechanism is invented. | Entry withdrawn from "Claims that held exactly"; § Report accuracy item 8 added; **new G10** (medium). |
+| A3 | Vacuous evidence | § Test adequacy claimed the existing coverage is *"real, not vacuous"* on the strength of two files **mentioning** the field — which is exactly the re-reading the attack targets. Re-run as a real sweep: mutating `claude_runtime.py:269,271` (`doc_residency`→`index_answerable`) turns `test_metrics_tokens.py` red (1/32); dropping `'doc_residency'` from `_EXPLORATION_SUBSOURCES` at `manage-metrics.py:3411` turns `test_manage_metrics.py` red (3/207). ⚠ The second sweep's first reading came back **all-green** because a concurrent agent restored that file mid-measurement; re-taken per the brief. | § Test adequacy replaced with the mutation table and baselines. Both files snapshotted to `$TMPDIR/adv-020-…-mutsweep/` and written back from the snapshot — no `git checkout`/`restore`/`stash`; `git status --porcelain` confirms neither is modified. The claim survives, now on evidence. |
+| A4 | Counts and quotes | One number wrong: the control `git ls-files "*.toon"` returns **39**, not 36 (39 at `61a43e5` too). Everything else re-derived exact: `git grep -l exploration_doc_residency_bytes` = 6 at `61a43e5` (10 now — the audit documents themselves inflate it, so the durable form is "five non-audit files"); 112 reports; 7 residency hits; 249 report lines; 163 plan lines; 156 `SKILL.md` over 11 bundles; 14,835 / 5 files 102,086 / 116,921 bytes; PR #1149 merged, 2 files, 249 additions. Every quoted line verified verbatim against its source (`data-format.md:13,163,186`; `runtime_base.py:770`; `080-…/plan.md:59-60`; `010-…/plan.md:178-179`; `cloud-plan-lane/SKILL.md:501-502`; `pr-agent.yml:3-6`). | 36→39 corrected; the `git grep` count annotated as self-inflating. |
+| A5 | Actionability | G3's *Done when* — "resolves to the line it names at the current `main`" — decays on the next edit of `data-format.md`, so it can never stay satisfied. G2's Action said "an instrument that exists", which needs a judgement call to check. Every other gap already carries a concrete path, change and observable condition; none says "review"/"consider"/"investigate". | G3's Done-when rewritten to cite the field name. G2's rewritten to require a per-question mapping (four questions → field or predecessor deliverable). |
+| A6 | Severity and topic | Severities re-checked against the calibration and all hold: G1/G2 **medium** (they change a re-run's premise), G3–G9 **low** (stale or unstated claims confined to the run report). No topic was mis-assigned. | New gaps rated: G10 medium (a false claim about a documented review contract, in the section later runs read to judge bot participation), G11 medium (`architecture-core` — the owning surface is the two `manage-*` read verbs), G12 low (`lsp/resolvers`). |
+| A7 | Coverage | D0–D4, out-of-scope, report accuracy, test adequacy, residue and method were all covered. One hole: the audit asserted D2's absence and assessed the coordination residue **without reading any corpus-facing surface** — neither the shipped corpus language server nor the two `--section` verbs. That is the only deliverable whose "Found" rested on an unexamined negative. | Closed by the two A2 rows; § Method now lists the corpus surfaces actually read. |
+| A8 | Internal consistency | The overall verdict follows from the rows. Two breaks: **(1)** G8 (the 080 flat-file path) traced to nothing in `verification.md` — § Report accuracy listed only six items and G8 was not among them; **(2)** the header's arithmetic ("one equation plus five citations") therefore under-counted. | § Report accuracy now runs to **nine** items, with item 7 covering G8 and items 8–9 the new findings; header restated as one equation, one registry misreading, seven citations. Every gap now traces to a numbered item, and every item to a gap. |
+
+**Residual doubt:** The next round would most likely land on **G11's consequences rather than its
+existence** — whether extending `manage-solution-outline`'s section splitter to `SKILL.md` and
+`standards/*.md` is actually sound, given that a skill body's `##` structure is not a plan document's
+and that progressive disclosure may already bound what a `Skill:` load admits (`plan.md:130`, still
+unverified by anyone). That question is D2's design work, not this audit's, and the plan is halted
+before it. Two smaller residuals: the *cause* of the pr-agent Guide appearing on a labelled PR is
+recorded as unexplained rather than resolved — settling it needs the workflow run log, which is not
+reachable from this session; and every count over `.plan/` or over `doc/plans/**` decays by
+construction, so the corrected documents pin claims to `60c34cb`/`57c63a8` rather than pretending to
+be timeless.
+
+**Verdict on the audit:** SOUND AFTER CORRECTION — the D0 halt and all five deliverable verdicts were
+right and are re-confirmed independently, but the audit certified a false claim as exact, asserted D2's
+absence without examining the corpus surfaces that would have refuted its scope, and rested a
+non-vacuity claim on a grep; all three are now corrected and evidenced.

@@ -380,6 +380,10 @@ permanent commit message of `a3a4da6`.
   grown; they are **UNVERIFIABLE** as stated and are not treated as defects.
 - The originating incident's machine-local `.plan/` run log. The plan itself declares it unreachable
   and directs confirmation by reading the generator's success path instead; I did that.
+- The report's **Reviewer participation** table (per-reviewer verdicts on PR #1164) and its cost
+  section. Both are records of a past run's external environment — rate-limit windows in particular
+  do not reproduce — and neither bears on a deliverable. Named here so the omission is visible rather
+  than silent.
 
 **Environment caveat (stated because it affected one observation).** This clone was shared with
 roughly a dozen concurrent pytest runs, each triggering its own executor bootstrap. My first D2 run

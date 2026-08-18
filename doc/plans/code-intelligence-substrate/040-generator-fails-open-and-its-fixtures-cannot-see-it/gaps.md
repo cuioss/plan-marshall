@@ -6,12 +6,18 @@ preserves the previous executor, the population-derived test is genuinely unsamp
 into three clusters. **First**, the guard's refusal exits `0`, not non-zero: the plan's literal *Done
 when* is unmet, four shipped statements assert the non-zero exit anyway, and one consumer in this very
 repository (`test/conftest.py`, `check=True`) is therefore blind to the refusal it exists to raise —
-the original fail-open shape, relocated to the consumer. **Second**, 72.6% of D2's corpus is a
-tautology: measured by mutation, 0 of 1750 help checks refuse against a surface stripped of every
-attribute, because the validator short-circuits on a help spelling before reading the surface. **Third**,
-a handful of measurement and documentation defects: a dry run publishing `scripts_registered: 0`
-against 158 registered scripts, a stale "four deterministic guards" enumeration the F4 sweep missed,
-and a published population count that the repo's own pytest flags discard.
+the original fail-open shape, relocated to the consumer. **Second**, 72.6% of D2's corpus is
+surface-insensitive: measured by mutation with the refusals partitioned by half, 0 of 1750 help
+checks refuse against a surface stripped of every attribute, because the validator short-circuits on
+a help spelling before reading the surface. **Third**, a handful of measurement and documentation
+defects: a dry run publishing `scripts_registered: 0` against 158 registered scripts, a stale "four
+deterministic guards" enumeration surviving at two sites, and a published population count that the
+repo's own pytest flags discard.
+
+Every gap below was re-derived independently in adversarial review: the exit-0 refusal through the
+unmocked CLI, the per-attribute mutation matrix through a partitioned driver, the invisible
+population count through a default-flags pytest run, and each `path:line` against the tree as it
+stands.
 
 ## G1 — Make the conftest executor bootstrap detect a failed generation
 
@@ -21,24 +27,39 @@ and a published population count that the repo's own pytest flags discard.
 - **Where:** `test/conftest.py:116-132` (`_ensure_executor_present`), consuming
   `marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py:2306-2419` (`main`)
 - **Evidence:** the bootstrap's only failure detection is
-  `subprocess.run([...'generate'], capture_output=True, text=True, check=True, timeout=120)`.
-  `main()` ends `print(serialize_toon(result)); return 0` with no branch on `result['status']`, so
-  `check=True` can never fire on a guard refusal. Measured directly: a driver forcing Guard 5 printed
-  `status: error` / `error: "Fail-open regeneration refused: …"` and exited `0`; independently,
-  `generate_executor.py verify` against a missing executor printed `status: error` and exited `0`.
+  `subprocess.run([...'generate'], capture_output=True, text=True, check=True, timeout=120)`, and
+  nothing after the `try/except` re-checks that `executor_path` now exists. `main()`
+  (`generate_executor.py:2306-2419`) ends `print(serialize_toon(result)); return 0` with no branch on
+  `result['status']`, so `check=True` can never fire on a guard refusal. Measured three ways: a
+  driver forcing Guard 5 printed `status: error` / `error: "Fail-open regeneration refused: …"` and
+  exited `0`; `generate_executor.py verify` against a missing executor printed `status: error` and
+  exited `0`; and the **unmocked CLI** against the real registry —
+  `PLAN_TRACKED_CONFIG_DIR=<tmp with a one-entry SCRIPT_SURFACES executor> PM_SURFACE_BUDGET_SECONDS=0 python3 …/generate_executor.py generate --marketplace --marketplace-root .`
+  → `surface-stats: scripts_registered=158 surfaces_derived=0 surfaces_reused=0 surfaces_not_derivable=158`,
+  `status: error`, `EXIT=0`.
 - **Why it matters:** this is the plan's own failure shape one layer out. A regeneration that Guard 5
   correctly refuses is reported to the test harness as a success; the bootstrap returns having written
   nothing, and downstream tests fail with unrelated diagnostics or (where they guard on absence) go
   vacuously green. Observed here: the D2 population test failed with
   `Failed: no .plan/execute-script.py under /home/user/plan-marshall` after a bootstrap that raised
   nothing.
-- **Action:** stop relying on the exit code. Drop `check=True`, capture stdout, parse the TOON with
-  `toon_parser.parse_toon`, and treat `status != 'success'` (or an unparseable payload) as the failure
-  — printing the generator's `error` and its `surface-stats` counts in the warning. Do **not** make
-  `main()` return non-zero: `marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/manage-contract.md:34-36`
+- **Action:** stop relying on the exit code. Drop `check=True`, capture stdout, and treat a
+  non-success generation as the failure — printing the generator's `error` and its `surface-stats`
+  counts in the warning. Two mechanisms, either acceptable, and the second is the cheap floor:
+  (a) parse the TOON and branch on `status != 'success'` (or an unparseable payload); (b) after the
+  subprocess returns, re-check `executor_path.exists()` and warn when it does not. ⚠ If (a) is
+  chosen, note that `_ensure_executor_present()` runs at `test/conftest.py:135`, **before**
+  `_setup_marketplace_pythonpath()` at `:186` puts the bundle script dirs on `sys.path` — a bare
+  `import toon_parser` there raises `ImportError`, so the fix must add
+  `marketplace/bundles/plan-marshall/skills/ref-toon-format/scripts` to `sys.path` first, or use (b),
+  or a plain `'status: error' in stdout` check. Do **not** make `main()` return non-zero:
+  `marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/manage-contract.md:34-36`
   mandates exit 0 for an expected error and forbids returning 1 from `main()`.
-- **Done when:** with `generate_executor.generate_executor` stubbed to return a `status: error`
-  result, `_ensure_executor_present()` emits a warning naming that error string; a test asserts it.
+- **Done when:** a test monkeypatches `subprocess.run` (or points the bootstrap at a stub generator
+  script) so the generation returns exit `0` with a `status: error` TOON on stdout, and asserts that
+  `_ensure_executor_present()` emits a warning carrying that error string. ⛔ The assertion must go
+  through the **subprocess boundary** — the bootstrap shells out, so stubbing
+  `generate_executor.generate_executor` in-process changes nothing the bootstrap can see.
 - **Effort:** S
 - **Risk if fixed:** a bootstrap that now reports failures loudly may surface pre-existing generation
   problems on hosts where they were previously silent — that is the point, but it will look like new
@@ -51,13 +72,18 @@ and a published population count that the repo's own pytest flags discard.
 - **Topic:** tests
 - **Where:** `test/plan-marshall/tools-script-executor/test_generate_executor_behavior.py:372-507`
   and `test/plan-marshall/tools-script-executor/test_generate_executor.py:2865-2894`
-- **Evidence:** every fail-open assertion is on the returned dict — `assert result['status'] == 'error'`.
-  No test in the suite invokes the CLI and asserts a process exit code, which is why the plan's
-  "exits non-zero" clause could go unmet through review, two verification sub-agents, and a green
-  `./pw verify`.
+- **Evidence:** every fail-open assertion is on the returned dict — `assert result['status'] == 'error'`
+  — and no test exercises the **fail-open refusal** through the CLI. The suite does assert the
+  process exit code on other generator error paths: `test_generate_executor.py:225-259`
+  (`test_verify_requires_executor`, `test_drift_requires_executor`, `test_paths_requires_executor`)
+  each subprocess `generate_executor.py` and assert
+  `result.returncode == 0, f'Expected exit 0 (error in TOON output), got …'`. So the repository
+  already pins exit `0` on an expected error, in the same test file the plan's work landed in.
 - **Why it matters:** the exit code is the contract surface every shell and `subprocess` consumer
-  reads. Untested, it silently became `0` while four shipped statements and the run report said
-  otherwise (G3-G6, G8).
+  reads, and here the suite's pre-existing tests state the **opposite** of what four shipped
+  statements and the run report claim (G3-G6, G8). The plan's "exits non-zero" clause was
+  unsatisfiable against a contract the suite was already enforcing three files away, and nobody
+  reconciled the two. Pinning the new path closes that loop.
 - **Action:** add one subprocess-level test that runs `generate_executor.py` through `safe_main` on a
   forced fail-open scenario and asserts the observed pair — exit `0` **with** `status: error` and the
   `surface-stats:` line on stdout — pinning the actual contract so a future change to either half is
