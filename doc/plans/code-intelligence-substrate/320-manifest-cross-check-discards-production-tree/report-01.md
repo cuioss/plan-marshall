@@ -1,6 +1,6 @@
 # Run report — 320-manifest-cross-check-discards-production-tree (run 01)
 
-**Date (UTC):** 2026-08-17    **Branch:** `claude/manifest-cross-check-production-edn4tw` (harness-assigned)    **PR:** TBD    **Outcome:** completed
+**Date (UTC):** 2026-08-17 – 2026-08-18    **Branch:** `claude/manifest-cross-check-production-edn4tw` (harness-assigned)    **PR:** TBD    **Outcome:** completed
 
 ## Skills loaded
 
@@ -96,14 +96,18 @@ originating report's 10-of-11, with `.claude/skills/audit-archived-plan-retrospe
 The plan says *"only config or unclassified paths are bookkeeping."* Config is dropped as written.
 **`unclassified` is RETAINED**, and that is a deliberate divergence:
 
-- The build_map role vocabulary **deliberately has no `documentation` role** (documentation has no
-  build-system owner — `_extension_constants.py` says so explicitly), so *every* `.md`/`.adoc` path
-  is unclassified. Dropping unclassified would drop all documentation before rule M1, leaving M1's
-  own `is_docs_path` predicate unable to ever return `True` in its culprit comprehension — a
-  detector that cannot detect, which is precisely the archetype this plan exists to remove, newly
-  created by its own fix.
-- It would equally drop every unrouted-but-real path (`.github/workflows/*.yml`, `.gitignore`,
-  shell scripts), opening a fresh blind spot in M1/M2/M3.
+Dropping `unclassified` would drop every unrouted-but-real path — `.github/workflows/*.yml`,
+`Dockerfile`, shell scripts, `.gitignore` — opening a fresh blind spot in M1/M2/M3. A manifest
+claiming a docs-only change while a CI workflow was rewritten would pass. Retaining is strictly
+fail-closed: it can only widen what a rule examines, never narrow it, and D2 makes the retention
+visible rather than silent.
+
+⛔ **An earlier draft of this section gave a second reason that was false, and round 3 caught it.**
+It argued that dropping `unclassified` would also drop all documentation and leave M1's docs
+predicate unable to fire. It would not: `classify_path` returns `documentation` as its own category
+for `.md`/`.adoc`, and `_DROPPED_CATEGORIES` is `(runtime_state, report, config)` — documentation is
+never dropped. The conclusion was right and the reason given for it was invented, which is the worse
+of the two failures, because a stated reason is what a later reader checks instead of the code.
 
 Retaining is strictly fail-closed: it can only widen what a rule examines, never narrow it. The
 observable cost is that a `.claude/` path the build map does *not* route (e.g.
@@ -190,38 +194,43 @@ to notice:
 
 ### D5 — tests, each verified to FAIL pre-fix
 
-`test/plan-marshall/plan-retrospective/test_footprint_oracle_classification.py` carries **18 test
-functions, collecting as 18 cases**, and `test/plan-marshall/script-shared/test_extension_base.py`
+`test/plan-marshall/plan-retrospective/test_footprint_oracle_classification.py` carries **25 test
+functions, collecting as 25 cases**, and `test/plan-marshall/script-shared/test_extension_base.py`
 gains **11 test functions, collecting as 13 cases** (two are parametrized). Both figures re-derived
-at the moment of this claim; a count of test *functions* and a count of *collected cases* are
+against the delivered tree; a count of test *functions* and a count of *collected cases* are
 different numbers and both are stated.
 
-**The red-first run covered the 11 tests that existed at that point** — the file then held 11 test
-functions, and the recorded result is **10 failed, 1 passed**. The single pass was
+⚠ These figures moved three times across the verification rounds, and twice this report stated a
+value the same commit had already invalidated — round 2 caught it once and round 3 caught it again
+(18 stated where the tree held 25). They are re-derived here against HEAD rather than carried
+forward, which is the only thing that keeps them true.
+
+**The red-first record covers the 11 tests that existed when it was taken** — the file then held 11
+test functions, and the recorded result is **10 failed, 1 passed**. The single pass was
 `test_m3_still_recognises_the_bare_module_tests_form`, which pins pre-existing back-compat behaviour
 and is a regression pin rather than a red-first test — stated rather than counted as coverage.
 
-The remaining 7 tests were added later and so have **no red-first record**; each was instead shown
-non-vacuous by mutation (below). Naming which is more useful than counting them:
-`test_unclassifiable_path_counts_as_production_for_the_mis_prune` and
-`test_documentation_alone_does_not_count_as_production` (fail-closed pins, added in round 1), and the
-five added in round 2 to close that round's findings —
-`TestTestRecognitionSurvivesAnOracleWithNoTestRoute` (three),
-`TestBranchCleanupRuleDoesNotClaimAnEmptyDiff` (one), and
-`TestConsumerDispatchSetsAreKnownCategories` (one).
+**The other 14 tests have no red-first record**, because each was written to close a verification
+finding against code that already existed. Each was instead shown non-vacuous by mutation (below).
+Naming them is more useful than counting them:
 
-| Deliverable | Test | Pre-fix |
-|---|---|---|
-| D5a | `test_multi_file_project_local_footprint_is_not_filtered` | FAIL (`files_filtered` 5, expected 0) |
-| D5a | `test_runtime_state_directory_is_still_bookkeeping` | FAIL |
-| D5a | `test_routing_check_sees_project_local_production` | FAIL (`pass`, expected `fail`) |
-| D5b | `test_majority_filtered_footprint_never_yields_a_bare_pass` | FAIL (bare `pass`) |
-| D5b | `test_unreduced_footprint_still_passes_cleanly` | FAIL (no `indeterminate` key) |
-| D5c | `test_m3_fires_on_canonical_verify_step_shape` | FAIL (`skip`, expected `fail`) |
-| D5c | `test_m3_passes_when_the_diff_really_is_tests_only` | FAIL (`skip`, expected `pass`) |
-| D5d | `test_documented_relative_form_matches_the_absolute_form` | FAIL |
-| D5d | `test_unresolvable_diff_file_fails_loudly` | FAIL (succeeded, reporting skip) |
-| D5d | `test_manifest_check_also_resolves_the_relative_form` | FAIL |
+- **Round 1** added 2 — `test_unclassifiable_path_counts_as_production_for_the_mis_prune` and
+  `test_documentation_alone_does_not_count_as_production`.
+- **Round 2** added 5 — `TestTestRecognitionSurvivesAnOracleWithNoTestRoute`'s first three,
+  `TestBranchCleanupRuleDoesNotClaimAnEmptyDiff`'s one, and
+  `TestConsumerDispatchSetsAreKnownCategories`'s one.
+- **Round 3** added 7 — `test_the_directory_tokens_are_boundary_anchored`,
+  `test_the_two_predicates_answer_different_questions`,
+  `test_docs_directory_tokens_never_classify_a_source_file`,
+  `test_an_unrouted_source_file_under_references_still_counts_as_production`, and
+  `TestSummarizeChecksIsTotal`'s three. It also RENAMED two —
+  `test_both_checks_agree_on_test_ness` → `test_the_shared_convention_recognises_the_documented_test_shapes`
+  (round 2 found the old name described something the body did not test), and, in
+  `test_plan_retrospective_manifest.py`, `test_pass_when_only_bookkeeping_changes` →
+  `test_verdict_withheld_when_only_bookkeeping_changes`. Neither old name exists in the tree; an
+  earlier draft of this report cited both, which round 3 caught.
+
+11 + 14 = 25, which reconciles with the collected count above.
 
 #### Mutation campaign — every new guard shown non-vacuous
 
@@ -238,9 +247,13 @@ Each guard was re-run against the specific defect it names, not a neighbouring o
 | M4's `"diff is empty"` message restored (the B2 defect) | `test_fully_filtered_footprint_names_the_reduction_not_an_empty_diff` |
 | A dispatch set pointed at a non-existent category | `test_dispatch_sets_are_subsets_of_the_category_vocabulary` |
 
+| Classification rung uses the WIDE docs predicate again (the F12 defect) | `test_docs_directory_tokens_never_classify_a_source_file`, `test_an_unrouted_source_file_under_references_still_counts_as_production` |
+| The unanchored routing test tokens restored (the F1 substring defect) | `test_the_directory_tokens_are_boundary_anchored` |
+| `summarize_checks` drops an unknown status again (the F4 defect) | `test_every_check_is_counted_even_under_an_unknown_status` |
+
 Every mutation was caught by the guard that names it; each was reverted and the tree restored
-(`git diff --stat`) before proceeding. The first five were run in round 1, the last three in round 2
-against the guards that round added.
+(`git diff --stat`) before proceeding. Five were run in round 1, three in round 2, and three in
+round 3, each against the guards that round added.
 
 Two details worth recording rather than smoothing over. The precedence mutation was caught by only
 **one** arm of each parametrized pair — the adverse declaration order — which is the arm that exists
@@ -274,7 +287,7 @@ before staging, and every commit stages named paths rather than `git add -A`.
 Recorded **per instance**. Sources: the pre-PR verification sub-agent (rounds 1–3), the build gate,
 and PR review (below).
 
-### Round 1 — 2 behavioural, 12 false statements
+### Round 1 — 2 behavioural findings, 12 false statements, and 6 lower-severity observations
 
 Both behavioural findings were confirmed by RUNNING the code, not by reading it.
 
@@ -327,7 +340,45 @@ The docstring beside it asserted the sets were "carried over unchanged".
 | F11 | round 2 | The C6 remedy landed at 1 of 4 shipped sites | **fixed** at all 4, in one uniform verifiable form |
 | F13 | round 2 | D0's denominator (428) counted HEAD, including the file the fix created; the sweep ran over `origin/main`'s 427 | **fixed** — re-derived via `git ls-tree -r origin/main` |
 
-### Round 3 — see the stop record below
+### Round 3 — 13 false statements, 1 undeclared behavioural delta
+
+⭐ **Round 3's distinctive signal: the n−1-of-n failure migrated from "code sites" to "code but not
+the shipped doc".** Round 2's two most valuable fixes — the docs split (F12) and M4's message (F10)
+— were each applied to the Python module and **not** to `standards/manifest-crosscheck.md`, which
+documents the same behaviour and is the surface consumer projects read. The plan's own D4 states
+that the documentation and the script must agree; for two rounds they did not.
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| A1 | round 3 | The standards doc still stated the **pre-F12** docs rule — `references/`/`templates/` as part of the classification rung | **fixed**; the doc now states the split and why only the rung is suffix-only |
+| A2 | round 3 | The standards doc still documented M4's retracted `"nothing to push/clean"` conclusion, and the documented string no longer matched the emitted one | **fixed**; a guard already asserts `'nothing to push' not in message`, so doc and guard now agree |
+| A3 | round 3 | "carried over unchanged from the pre-oracle code" — the exact phrase the module's own ⛔ forbids | **fixed**; the doc now separates the halves (docs did not move; tests moved in both directions) |
+| A4 | round 3 | `load_oracle_routes` claimed `classify_path` returns `unclassified` for every non-runtime-state, non-docs path — the `test` and `report` rungs also fire with no oracle | **fixed** |
+| A5 | round 3 | The ⛔ block claimed unification "necessarily changed each of" the copies — false for the documentation sets, which were identical in both and did not move | **fixed** |
+| A6 | round 3 | The docs-provenance claim survived at a **third** site (the `DOCS_SUFFIXES` comment), untouched by all three rounds | **fixed** |
+| A7 | round 3 | **"`.plan/` is git-ignored" is false in this repository** — `git ls-files .plan/` returns 13 tracked paths including `marshal.json`, which holds `build.map` itself. 7 sites, 2 of them written by round 3. This repo's own `_plan_state_exemption.py` exists *because* a bare `.plan/` rule keyed on that premise hid tracked edits — and the report's D0 table cites that very module | **fixed at all 7**; the rung is now justified by the absence of an oracle answer, which is true, rather than by trackedness, which is not. The behaviour is unchanged and remains authorised by the plan's ⭐ |
+| A8 | round 3 | `_STATUS_BUCKETS` described as covering "statuses whose bucket name differs from the status itself"; its fourth row is an identity | **fixed** |
+| A9 | round 3 | D5's figures said 18/18 where the tree held 25/25 — invalidated by the same commit that recorded them, the second instance of this failure mode | **fixed**, re-derived |
+| A10 | round 3 | The report cited two test names that same commit had renamed | **fixed** |
+| A11 | round 3 | "Mutation campaign — every new guard shown non-vacuous" omitted round 3's 7 guards | **fixed** |
+| A12 | round 3 | **D1's divergence rationale rested on an invented premise** — that dropping `unclassified` would drop documentation. It would not; `documentation` is its own category and is never dropped | **fixed**; the conclusion stands on the true reason (unrouted-but-real paths) |
+| A13 | round 3 | Minor: "reduced to a single survivor" (an entirely-from-that-tree footprint leaves zero); a dangling "see the stop record below"; the round-1 heading characterised 14 of 20 rows | **fixed** |
+| B1 | round 3 | `*Spec.java` in the shared name pattern is an **exonerating** delta for the routing consumer, undeclared, while the docstring claimed to name "both directions" | **fixed by declaration** — see below |
+
+**B1 in full.** `TEST_NAME_RE` gained `*Spec.java`, which only the manifest copy carried, so
+`footprint_has_production(['src/FooSpec.java'])` is `False` at HEAD and was `True` on `origin/main`
+— a `no_code_delta` mis-prune moves `fail` → `pass`. The change is **deliberate and correct** (a
+Spock/Spek spec is a test, and the routing copy's omission was a gap, not a policy), and it is
+**bounded**: reachable only where the oracle is silent for that path, the basename matches
+`*Spec.java`, and the path lies outside `test/`/`tests/`. A JVM project routes `src/test/**` as
+`test`, so the oracle answers first and the rung is never consulted; this repository holds 10 `.java`
+files and zero `*Spec.java`, so it cannot change this deliverable's own verdict. The defect was that
+none of this was written down while the docstring claimed to name "both directions" — it is now
+declared, with its direction and bound, in `TEST_DIR_TOKENS`' comment and in the standards doc.
+
+**One correction that cannot be made where it was written.** Commit `a657691`'s message says "Adds
+six guards"; it adds seven. The commit is pushed, so the message is corrected here rather than by
+rewriting history.
 
 ## Reviewer participation
 

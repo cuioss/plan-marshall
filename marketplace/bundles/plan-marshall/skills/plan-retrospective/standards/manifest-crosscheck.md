@@ -50,7 +50,9 @@ This is a soft consistency check — the script does not query git for branch st
 
 **M4 is the only diff-fed rule that fails on the survivor set being EMPTY** rather than on a culprit present within it, which makes the filter the thing that produces its failing state. Reaching that state requires a non-empty raw diff (an empty one is already skipped as missing data) whose every entry the filter dropped — so the finding names the reduction rather than claiming the diff was empty, which the missing-data guard has already ruled out.
 
-**Finding**: `severity=info`, `code=branch_cleanup_without_changes`, `message="phase_6.steps includes branch-cleanup but no implementation file changed — all N diff entries were classified as bookkeeping, so there is nothing to push/clean"`.
+**Finding**: `severity=info`, `code=branch_cleanup_without_changes`, `message="phase_6.steps includes branch-cleanup but no implementation file changed — all N diff entries classified as bookkeeping (plan state, the plan report, or a build-config route)"`.
+
+⛔ The finding stops at what it knows and draws no conclusion about the push. Every drop category can contain tracked files that really did change on the branch — a `report` or `config` entry plainly, and `runtime_state` too, since `.plan/` is only partly git-ignored.
 
 ### Rule M5: Manifest version recognized
 
@@ -69,15 +71,27 @@ Before evaluating any rule, the script drops the diff entries that are bookkeepi
 
 A path is dropped when it falls in one of exactly three categories:
 
-- `runtime_state` — a path beginning with `.plan/` (plan state, lessons drafts, archive moves). This is the one prefix still decided in code, because `.plan/` is git-ignored and therefore appears in no build map: there is no oracle answer to defer to.
+- `runtime_state` — a path beginning with `.plan/` (plan state, lessons drafts, archive moves). This is the one prefix still decided in code, because this tooling's own per-plan working state is not a file type any build system routes, so it appears in no build map and there is no oracle answer to defer to. ⛔ Not because it is git-ignored — it partly is not: `marshal.json` (which holds `build.map` itself) and every `project-architecture/**/enriched.json` are tracked. Trackedness is a different question with a different owner (`script-shared`'s `_plan_state_exemption`); this classifier answers what kind of file a path is, never whether an edit to it would be pushable.
 - `report` — the plan's own `quality-verification-report*.md` files.
 - `config` — a path the **oracle** routes with role `config`.
 
 Everything else is kept: `production` and `test` (the oracle's implementation roles), `documentation`, and `unclassified`.
 
-Two categories are resolved by convention rather than by the oracle, because the oracle cannot answer for them. The build_map role vocabulary deliberately has **no** documentation role (documentation has no build-system owner), so an unrouted path is recognised as `documentation` by the `.md` / `.adoc` / `references/` / `templates/` set. And a project whose `build.map` declares no `test` route would leave every test file unrouted, so test-ness is recognised by filename/directory convention where the oracle is silent — without which a tests-only footprint would fall to `unclassified`, which the routing check treats as possible production. A routed path always keeps the role the project declared; the conventions fire only where the oracle has no answer.
+Two categories are resolved by convention rather than by the oracle, because the oracle cannot answer for them.
 
-⛔ These convention sets are **these checks' own**, carried over unchanged from the pre-oracle code. They are not imported from, and not identical to, `manage-execution-manifest`'s change-footprint classifier (`_manifest_core._DOC_SUFFIXES` also carries `.asciidoc` and has no directory concept). Do not describe them as that classifier's set.
+- **`documentation`** — the build_map role vocabulary deliberately has **no** documentation role (documentation has no build-system owner), so an unrouted path is recognised as `documentation` by **file suffix alone** (`.md` / `.adoc`). ⛔ The directory tokens (`references/`, `templates/`) are deliberately NOT part of this rung: a `.py` file under a `references/` directory is source, and classifying it as documentation would let a consumer that reads documentation as "not production" exonerate a real source change. Those tokens belong to the wider rule-side predicate below.
+- **`test`** — a project whose `build.map` declares no `test` route would leave every test file unrouted, so test-ness is recognised by filename/directory convention where the oracle is silent. Without it a tests-only footprint would fall to `unclassified`, which the routing check treats as possible production.
+
+A routed path always keeps the role the project declared; the conventions fire only where the oracle has no answer, and the `test` rung sits behind the `documentation` rung.
+
+**The rules keep a wider docs predicate than the classifier does, and the difference is safe by position.** M1 and M3 test a *surviving* path for docs-shapedness using the wider suffix-OR-directory-token set they always used. That can never remove a path from view: the filter retains `documentation` and `unclassified` alike, so a wider recognition inside a rule only moves a path from culprit to non-culprit within an already-retained set. The narrow rung, by contrast, decides a *category* that a consumer may read as "not production" — which is why only it is suffix-only.
+
+⛔ These convention sets are **these checks' own**. They are not imported from, and not identical to, `manage-execution-manifest`'s change-footprint classifier (`_manifest_core._DOC_SUFFIXES` also carries `.asciidoc` and has no directory concept). Do not describe them as that classifier's set.
+
+⚠ And do not describe them as carried over unchanged from the pre-oracle code — that is true of one half only:
+
+- **The documentation sets did not move.** Both retired copies used the same `.md` / `.adoc` suffixes; the directory tokens were the manifest copy's alone and, after the split described above, remain the manifest copy's alone. Neither consumer's docs behaviour changed.
+- **The test sets moved, in both directions.** The name pattern gained `*Spec.java`, which only the manifest copy carried — for the routing check that is an **exonerating** change (a footprint of only `src/FooSpec.java` counted as production before and is `test` now), deliberate because a spec file is a test, and bounded to the case where the oracle is silent, the basename matches, and the path lies outside `test/`/`tests/`. The directory tokens lost the routing copy's bare `test/`/`tests/` forms, which were matched unanchored and so also hit `latest/`, `contest/` and `mytest/` — a substring defect, and dropping it is **fail-closed** (those paths now read as possible production).
 
 **`unclassified` is kept, and that is deliberate.** A path no declared route covers is one the oracle has no opinion about — a could-not-classify, not a classified-as-unimportant. Dropping it would put a private guess back in charge of the question, so it is retained and counted instead, which can only widen what a rule examines.
 

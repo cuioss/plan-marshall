@@ -442,10 +442,12 @@ def evaluate_branch_cleanup(
     supplied path was positively identified as non-implementation — but the message
     must name the reduction that produced it.
 
-    ⚠ It must not go further and infer that there was nothing to push. Only
-    ``runtime_state`` is git-ignored; a ``report`` or ``config`` entry is a tracked
-    file that really did change on the branch. The finding says what it knows —
-    no IMPLEMENTATION file changed — and names the categories, rather than
+    ⚠ It must not go further and infer that there was nothing to push. Every drop
+    category can contain tracked files that really did change on the branch — a
+    ``report`` or ``config`` entry plainly, and ``runtime_state`` too, since
+    ``.plan/`` is only partly git-ignored (``marshal.json`` and the
+    ``project-architecture/**`` descriptors are tracked). The finding says what it
+    knows — no IMPLEMENTATION file changed — and names the categories, rather than
     concluding anything about the push.
     """
     phase_6 = manifest.get('phase_6', {}) if isinstance(manifest.get('phase_6'), dict) else {}
@@ -499,10 +501,12 @@ _DIFF_FED_CHECKS = frozenset(
 )
 
 
-#: Emitted check status → its ``summary`` bucket name, for the statuses whose bucket
-#: name differs from the status itself. Every status this script emits appears here,
-#: so :func:`summarize_checks` reports an explicit zero for each and an absent key is
-#: never mistaken for a measured zero.
+#: Emitted check status → its ``summary`` bucket name. EVERY status this script
+#: emits has a row, including :data:`STATUS_INDETERMINATE`, whose bucket name is the
+#: status itself — the map is total over the emitted set rather than a table of
+#: exceptions, which is what lets :func:`summarize_checks` report an explicit zero
+#: for each so an absent key is never mistaken for a measured zero. A status with no
+#: row is still counted, under its own name (see that function).
 _STATUS_BUCKETS: dict[str, str] = {
     'pass': 'passed',
     'fail': 'failed',

@@ -698,9 +698,10 @@ class TestBranchCleanupRuleDoesNotClaimAnEmptyDiff:
         finding = [f for f in data['findings'] if f['code'] == 'branch_cleanup_without_changes']
         assert finding, data['findings']
         assert 'diff is empty' not in finding[0]['message'], finding[0]['message']
-        # The finding says what it knows and stops there: only `.plan/` is
-        # git-ignored, so a report or config entry IS a tracked change on the
-        # branch and no conclusion about the push follows from this state.
+        # The finding says what it knows and stops there: every drop category can
+        # hold tracked files that really changed on the branch — a report or config
+        # entry plainly, and `.plan/` too, which is only partly git-ignored — so no
+        # conclusion about the push follows from this state.
         assert 'nothing to push' not in finding[0]['message'], finding[0]['message']
 
 
