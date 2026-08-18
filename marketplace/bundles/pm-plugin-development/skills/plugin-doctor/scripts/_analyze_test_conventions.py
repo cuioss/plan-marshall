@@ -88,15 +88,45 @@ PARENT_CHAIN_MIN_DEPTH = 3
 # rather than restated here: one textual shape, one matcher. Only the two
 # shapes those analyzers do not carry are defined locally.
 
-#: ``PR #123`` / ``pull request #123`` — the incident analyzer detects
-#: ``plan-marshall#123`` but not this spelling, which is the common one in
-#: test prose.
-_PR_REFERENCE_RE = re.compile(r'\b(?:PR|pull request)\s*#\d+', re.IGNORECASE)
+#: ``PR #123`` / ``pull request #123`` and the bare ``#123`` — the incident
+#: analyzer detects ``plan-marshall#123`` but neither of these spellings, and
+#: both occur in this repository's test prose.
+#:
+#: ⛔ The bare alternative is bounded on three sides, and every bound answers a
+#: false positive a cold read of this corpus actually returned:
+#:
+#: 1. ``(?<![\w#\-])`` rejects a preceding word character, ``#``, or hyphen. The
+#:    word-character half keeps the bare alternative off ``plan-marshall#123``,
+#:    which the reference analyzer already owns. The hyphen half keeps it off a
+#:    compound token that embeds a number — ``pre-#812`` is a schema-state
+#:    literal the corpus asserts on, not a citation of 812.
+#:
+#:    ⛔ It is a NEGATIVE lookbehind, so it SUCCEEDS at position 0, and that is
+#:    deliberate: a docstring may open with its citation, and a lookbehind
+#:    demanding a preceding character would silence exactly those. The comment
+#:    case that motivates a start-of-segment bound is handled where it belongs
+#:    instead — :func:`_iter_prose_segments` strips a comment's ``#`` delimiter,
+#:    so ``#123 note`` reaches the matchers as ``123 note`` and offers no ``#``.
+#: 2. ``\d{2,}`` — the BARE form requires at least two digits. A one-digit
+#:    ``#1`` is overwhelmingly intra-document enumeration ("mis-attribution
+#:    #1"), not a record id. This bound is affordable precisely because it is
+#:    local to the bare form: an unambiguous ``PR #7`` still matches through the
+#:    first alternative, which carries no digit bound.
+#: 3. ``\b`` after the digits keeps it off an identifier that merely starts with
+#:    digits.
+_PR_REFERENCE_RE = re.compile(
+    r'\b(?:PR|pull request)\s*#\d+|(?<![\w#\-])#\d{2,}\b',
+    re.IGNORECASE,
+)
 
 #: Plan and deliverable identifiers: ``TASK-001``, ``deliverable D3``,
-#: ``plan `some-plan-slug` ``.
+#: ``Deliverable 2``, ``plan `some-plan-slug` ``.
+#:
+#: The ``D`` is optional because both spellings occur: the ordinal is the
+#: citation whether or not the author wrote the letter, and a rule that matched
+#: only the lettered form would report one half of a corpus that writes both.
 _PLAN_DELIVERABLE_ID_RE = re.compile(
-    r'\bTASK-\d{3}\b|\bdeliverable\s+D\d+\b|\bplan\s+`[a-z0-9][a-z0-9-]{4,}`',
+    r'\bTASK-\d{3}\b|\bdeliverable\s+D?\d+\b|\bplan\s+`[a-z0-9][a-z0-9-]{4,}`',
     re.IGNORECASE,
 )
 
@@ -656,12 +686,18 @@ def analyze_test_module_preamble(test_root: Path) -> list[dict]:
     Two shapes are flagged, both of which resolve a module by the test file's
     own location rather than by identity:
 
-    1. A ``spec_from_file_location`` call — re-implements ``load_script_module``.
+    1. A ``spec_from_file_location`` call — re-implements the shared loader.
     2. A ``Path(__file__).parent`` chain of depth three or more — counts
        directories to the repository root, and breaks when the file moves.
 
-    Both have a ``conftest`` helper (``load_script_module``, ``get_scripts_dir``)
-    that resolves by ``(bundle, skill, script)`` instead.
+    Both have a ``conftest`` helper that resolves by ``(bundle, skill, file)``
+    instead, in two variants that differ only in what the path is relative to:
+    ``load_script_module`` / ``get_scripts_dir`` for the skill's ``scripts/``
+    subtree, and ``load_skill_module`` / ``get_skill_dir`` for the skill root. The
+    second pair is what makes the remedy applicable to a bundle's
+    ``plan-marshall-plugin`` ``extension.py``, which sits at the skill root — most
+    such skills ship no ``scripts/`` directory, so the scripts-relative pair cannot
+    address the file at all.
     """
     findings: list[dict] = []
     for path in _iter_test_tree_modules(test_root):
@@ -796,14 +832,19 @@ def _build_preamble_finding(path: Path, node: ast.AST, kind: str, depth: int | N
     if kind == 'spec_from_file_location':
         description = (
             'hand-rolled spec_from_file_location preamble — use '
-            'conftest.load_script_module(bundle, skill, filename), which resolves by '
-            "identity instead of by the test file's own location"
+            'conftest.load_script_module(bundle, skill, filename) for a module under '
+            'scripts/, or conftest.load_skill_module(bundle, skill, filename, '
+            'module_name) for one at the skill root (every bundle ships an '
+            'extension.py, so pass a distinct module_name — or register=False — or '
+            'they displace each other); both resolve by identity '
+            "instead of by the test file's own location"
         )
     else:
         description = (
             f'Path(__file__) followed by a {depth}-deep .parent chain — use '
-            'conftest.get_scripts_dir(bundle, skill); a directory-counting chain '
-            'breaks the moment the test module moves'
+            'conftest.get_scripts_dir(bundle, skill), or conftest.get_skill_dir(bundle, '
+            'skill) for a skill that ships no scripts/ directory; a directory-counting '
+            'chain breaks the moment the test module moves'
         )
     details: dict = {
         'kind': kind,
@@ -927,6 +968,12 @@ def _iter_prose_segments(source: str, path: Path) -> list[tuple[int, str]]:
 
     Only these two contexts carry prose. Every other string in a test module is
     data the test operates on.
+
+    A comment's text is returned WITHOUT its leading ``#``: the delimiter is
+    punctuation the tokenizer supplies rather than something the author wrote, and
+    leaving it attached makes every comment look like it opens with a
+    ``#``-prefixed token. A docstring is returned verbatim, so a citation sitting
+    at its very first character is still there to be matched.
     """
     segments: list[tuple[int, str]] = []
     try:
@@ -949,7 +996,14 @@ def _iter_prose_segments(source: str, path: Path) -> list[tuple[int, str]]:
     try:
         for token in tokenize.generate_tokens(io.StringIO(source).readline):
             if token.type == tokenize.COMMENT:
-                segments.append((token.start[0], token.string))
+                # Strip the ``#`` delimiter the tokenizer supplies. It is
+                # punctuation rather than prose, and leaving it attached makes
+                # every comment appear to open with a ``#``-prefixed token, which
+                # a bare record-number matcher reads as a citation. Stripping it
+                # here is what lets those matchers use a plain negative lookbehind
+                # and so stay able to fire at the start of a DOCSTRING, where a
+                # citation legitimately can sit.
+                segments.append((token.start[0], token.string[1:]))
     except (tokenize.TokenError, IndentationError, SyntaxError):
         # A module that does not tokenize still yields its parsed docstrings.
         pass
