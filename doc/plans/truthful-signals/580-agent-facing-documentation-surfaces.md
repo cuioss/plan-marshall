@@ -554,8 +554,9 @@ only thing holding the line against a tempting adjacent change.
 
 ## Expected surface
 
-Twenty-seven files across five bundles plus `doc/user/`. Grouped by deliverable so a concurrency check
-against another plan can be made per group.
+Twenty-seven files: twenty-one across four bundles (`plan-marshall`, `pm-dev-java`, `pm-documents`,
+`pm-plugin-development`), five under `doc/user/`, and one in a sibling plan directory. Grouped by
+deliverable so a concurrency check against another plan can be made per group.
 
 - `marketplace/bundles/plan-marshall/skills/manage-findings/SKILL.md` — D1(a), the type enum and the
   storage tree.
