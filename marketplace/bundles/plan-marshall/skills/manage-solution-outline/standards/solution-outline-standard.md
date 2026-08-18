@@ -52,7 +52,7 @@ Classifies the change footprint. Required field; the validator rejects the docum
 | `multi_module` | Touches more than one module |
 | `broad` | Codebase-wide changes (glob-only file lists, sweeping refactors) |
 
-**Derivation helper (rule of thumb)**: Compute `scope_estimate` from the union of `affected_files` across all deliverables.
+**Derivation helper (rule of thumb)**: Compute `scope_estimate` from the union of every deliverable's **declared file surface** — `affected_files`, plus the `Files to survey:` / `Files expected to mutate:` pair a survey-scope deliverable declares instead of a flat list, across all deliverables. ⛔ Reading `affected_files` alone would band a survey-scope plan `none` (its flat list is empty) and so feed the phase-4-plan surgical-scope bypass the narrowest possible answer for the deliverables whose scope is *least* knowable — see `phase-4-plan/SKILL.md` § Step 8b B2, whose second conjunct reads the same widened surface.
 
 1. If the union is empty (analysis-only) → `none`.
 2. Else if all files map to a single module AND the count is ≤3 AND no file is in a public API surface → `surgical`.
@@ -300,7 +300,8 @@ For the exact fill-in-the-blank structure, see:
 | `module` | Yes | Module name from architecture | Skill resolution |
 | `depends` | Yes | Dependencies on other deliverables | Ordering, parallelization |
 | `**Profiles:**` | Yes | List of profiles (implementation, module_testing) | Task creation (1:N) |
-| `Affected files` | Conditional | Explicit file list, each with a required `(intent)` marker | Step generation, intent-aware files_exist gate |
+| `Affected files` | Conditional | Explicit file list, each with a required `(intent)` marker. Required UNLESS the deliverable is survey-scope (declaring the pair below instead) or verification-only | Step generation, intent-aware files_exist gate |
+| `Files to survey` + `Files expected to mutate` | Conditional | The survey-scope alternative to `Affected files`, declared as a disjoint PAIR — one field alone is not a complete declaration. Neither carries `(intent)` markers, and the candidate pool MAY name a pattern | Write-set derivation, declared-scope reconciliation at the phase-4-plan Q-Gate |
 | `Change per file` | Yes | What changes | Task description |
 | `Pattern` | Conditional | Code/format pattern | Implementation guide |
 | `Verification` | Yes | How to verify | Task verification |

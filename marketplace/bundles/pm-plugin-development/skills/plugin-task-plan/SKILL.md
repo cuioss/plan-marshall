@@ -301,7 +301,7 @@ delegation:
 
 **Deliverable**: "Migrate {components} to {new format}"
 
-The `steps` field lists ALL files to migrate (copied from `Affected files`):
+The `steps` field lists ALL files to migrate (copied from the declared file surface — `Affected files`, or the survey-scope pair):
 
 ```yaml
 title: Migrate plan-marshall Phase Components to TOON Format

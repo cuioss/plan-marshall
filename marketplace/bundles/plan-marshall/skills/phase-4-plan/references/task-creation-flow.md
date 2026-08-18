@@ -32,7 +32,7 @@ their standards.
 ```text
 phase-4-plan
    │
-   ├── Step 5..7: Create tasks (per-deliverable + holistic)
+   ├── Step 5+6: Create tasks (per-deliverable)
    ├── Step 7:    Compute execution order (parallel groups)
    │
    ├── Step 7b:   ┌────────────────────────────────────────────┐

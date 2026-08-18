@@ -318,7 +318,7 @@ The deliverable's resolved file-type bucket reflects the added test files: a `do
 
 The downstream [phase-4-plan value-change rule](../phase-4-plan/SKILL.md) carries these enumerated existing-test targets into the `module_testing` task's `steps[]` and anchors the obligation into the task `description`, so the executing agent updates every existing test asserting the old value.
 
-**Step 6 may also refine `scope_estimate`**: After deliverables crystalize and the concrete Affected files lists are known, phase-3-outline MAY downgrade `scope_estimate` (e.g., `single_module` → `surgical`) when the final deliverable composition narrows the actual scope. Persist any change via `manage-references set --field scope_estimate`. Refinement happens BEFORE Step 8 so the bypass rule sees the refined value.
+**Step 6 may also refine `scope_estimate`**: After deliverables crystalize and the concrete declared file surfaces are known (`Affected files:`, or the survey-scope pair), phase-3-outline MAY downgrade `scope_estimate` (e.g., `single_module` → `surgical`) when the final deliverable composition narrows the actual scope. Persist any change via `manage-references set --field scope_estimate`. Refinement happens BEFORE Step 8 so the bypass rule sees the refined value.
 
 > **Coverage contract**: deliverable composition is where a per-deliverable *scope × thoroughness* cell would be declared — `scope_estimate` is the scope dial; *thoroughness* (coverage breadth + relation-tracing depth) is its orthogonal partner. The coupling constraint `reject thoroughness ≥ T4 ∧ scope < component` means a relation-tracing deliverable forces scope ≥ `component`. See the two-dial ladders, the grade-to-the-floor rule, and the coupling constraint in [`persona-plan-marshall-agent/standards/thoroughness.md`](../persona-plan-marshall-agent/standards/thoroughness.md).
 
@@ -355,7 +355,7 @@ For codebase-wide changes requiring discovery and analysis.
 
 **Step 10 deliverable authoring** MUST apply the [Value-change test-sweep rule](#value-change-test-sweep-rule-normative): any deliverable that changes a default value, constant, or enum member enumerates every existing test asserting the old value into its `**Affected files:**`.
 
-**Step 10 may also refine `scope_estimate`**: After Complex Track discovery and deliverable composition, the concrete Affected files lists may narrow the actual scope. Phase-3-outline MAY downgrade `scope_estimate` (e.g., `multi_module` → `single_module`, or `single_module` → `surgical`) and persist via `manage-references set --field scope_estimate`. Refinement happens BEFORE Step 11 so the bypass rule sees the refined value.
+**Step 10 may also refine `scope_estimate`**: After Complex Track discovery and deliverable composition, the concrete declared file surfaces (`Affected files:`, or the survey-scope pair) may narrow the actual scope. Phase-3-outline MAY downgrade `scope_estimate` (e.g., `multi_module` → `single_module`, or `single_module` → `surgical`) and persist via `manage-references set --field scope_estimate`. Refinement happens BEFORE Step 11 so the bypass rule sees the refined value.
 
 **Step 11 — `q_gate_validation` knob consult** (evaluated FIRST, before the surgical bypass): read the operator's planning-time Q-Gate knob:
 
