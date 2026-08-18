@@ -1,10 +1,13 @@
 # Gaps — 460-audit-ledger-reader-reads-undatable-zero-as-measured
 
-**Source:** verification.md (same directory)   **Open items:** 4
+**Source:** verification.md (same directory)   **Open items:** 5
 
-None of the four is a defect in the deliverables D0–D3, which verify clean, including under four mutants.
-All four are open items the run itself declared as residue or created as a side effect of a
-deliberately-scoped edit; each is stated here with the concrete change that settles it.
+None of the five is a defect in the deliverables D0–D3, which verify clean — re-confirmed under
+adversarial review by executing both readers on purpose-built ledgers and by re-applying three of the
+four mutants. Four are open items the run itself declared as residue or created as a side effect of a
+deliberately-scoped edit; the fifth (G5) was found during adversarial review, at a site the run's own
+stated tree-wide sweep did not carry through to its residue list. Each is stated here with the
+concrete change that settles it.
 
 ## G1 — Reconcile the lock-step mirror in `analyze-logs.py` with the surface-#4 description it mirrors
 
@@ -30,6 +33,9 @@ deliberately-scoped edit; each is stated here with the concrete change that sett
   constants, and keep the stated count at four. Text only; no code change, no count change.
 - **Done when:** `analyze-logs.py:986-996` and `data-format.md:944` describe the same set of audit-side
   symbols for surface #4, and both still say "four surfaces".
+- **Note:** G2 edits the same two paragraphs. They are separate defects (a wrong *description* of surface
+  #4 here; a *missing* surface there), but must not land as two conflicting rewrites of one paragraph —
+  settle them in one change, or land G1 first and let G2 build on the corrected text.
 - **Module/topic:** `plan-marshall:plan-retrospective` + `plan-marshall:manage-metrics` standards —
   dispatch-boundary schema lock-step list
 
@@ -37,7 +43,7 @@ deliberately-scoped edit; each is stated here with the concrete change that sett
 
 - **Kind:** omission
 - **Severity:** medium
-- **Where:** `.claude/skills/audit-archived-plan-retrospectives/checks/billing-composition.md:34-71`;
+- **Where:** `.claude/skills/audit-archived-plan-retrospectives/checks/billing-composition.md:34-72`;
   the lists that omit it are
   `marketplace/bundles/plan-marshall/skills/manage-metrics/standards/data-format.md:944` and
   `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/analyze-logs.py:987-996`
@@ -68,14 +74,29 @@ deliberately-scoped edit; each is stated here with the concrete change that sett
   (`index = _LEGACY_COLUMN_COUNT + offset`)
 - **What is wrong:** `audit.py` resolves the four context-load columns **by name from the declared
   `rows[]{…}:` header**; `analyze-logs.py` resolves them **positionally at indices 5–8** and ignores the
-  header entirely. Three observable divergences follow, each re-confirmed at HEAD: (a) a ledger whose header
-  declares only the legacy five columns while its rows carry nine cells — `audit.py` measures nothing,
-  `analyze-logs.py` measures all four **and dates the row**; (b) a malformed `total_tokens` beside a nonzero
-  context cell — `analyze-logs.py` drops the whole row (`:1140-1148`), `audit.py` keeps it, degrades
-  `total_tokens` to `0` via `_to_int`, sums the context cell and dates the row; (c) a missing `rows[]{…}:`
-  header line — `audit.py` returns `{}` because `in_rows` is never set (`:7346`), `analyze-logs.py` parses
-  the row because its skip list is prefix-based (`:1126`). A reordered header additionally transposes values
-  between the two.
+  header entirely. Three observable divergences follow, each **executed** at HEAD against a purpose-built
+  ledger, both readers driven off the same file (row
+  `2026-01-01T00:00:00Z,clean_exit_queue_empty,9100,10,500,11,22,33,44` unless stated):
+
+  - **(a) short header, long rows** — the header declares only the legacy five columns while the rows carry
+    nine cells. `audit.py` → `{'total_tokens': 9100}`: it measures **none of the four context columns**
+    (`total_tokens` still sums, so "measures nothing" would overstate it). `analyze-logs.py` → all four
+    measured (`input_tokens=11 … cache_creation_input_tokens=44`), `indeterminate_columns == []` — it
+    measures all four **and dates the row**.
+  - **(b) malformed `total_tokens` beside a nonzero context cell** (cell 3 = `NaN`) — `analyze-logs.py`
+    drops the whole row (`:1140-1148`), returning `rows == []`. `audit.py` keeps it, degrades
+    `total_tokens` to `0` via `_to_int` (`audit.py:955`) **and marks it measured**, then sums all four
+    context cells and dates the row → `{'total_tokens': 0, 'input_tokens': 11, 'output_tokens': 22,
+    'cache_read_input_tokens': 33, 'cache_creation_input_tokens': 44}`. The corpus therefore gains a
+    `total_tokens` measurement of `0` that no dispatch reported, from a row the sibling reader discarded.
+  - **(c) missing `rows[]{…}:` header line** — `audit.py` returns `{}` because `in_rows` is never set
+    (`:7345-7346`); `analyze-logs.py` parses the row in full because its skip list is prefix-based
+    (`:1126`).
+
+  A **reordered** header additionally transposes values: with `output_tokens` and `input_tokens` swapped in
+  the declared header, `audit.py` → `input_tokens=22, output_tokens=11` while `analyze-logs.py` → the
+  positional `input_tokens=11, output_tokens=22`. (An `rows[]{}:` header declaring *no* columns is the one
+  malformed case the two agree on — `audit.py` falls back to `_BC_LEDGER_COLUMNS`, so both read all four.)
 - **Why it matters:** the plan's stated goal is that "the two parallel readers of one ledger stop
   disagreeing about the same bytes". That now holds for the fingerprint gate and not for the surrounding
   parse, so the same on-disk file can still yield a dated row in one corpus and nothing in the other —
@@ -85,9 +106,10 @@ deliberately-scoped edit; each is stated here with the concrete change that sett
   implements it. Then extend the shared-fixture cross-reader tests in
   `test/plan-marshall/manage-metrics/test_record_model_representability.py` with one fixture per divergence
   class (short header + long rows; malformed `total_tokens` beside a nonzero context cell; missing
-  `rows[]{…}:` line), asserting the same verdict in each reader's own vocabulary. Requires touching
+  `rows[]{…}:` line; a header that reorders two context columns), asserting the same verdict in each
+  reader's own vocabulary. Requires touching
   `analyze-logs.py`, which plan 460 scoped out, so it needs its own plan.
-- **Done when:** for each of the three divergence classes a single fixture drives both readers and both
+- **Done when:** for each of the four divergence classes a single fixture drives both readers and both
   report the same measured set and the same datability verdict.
 - **Module/topic:** `plan-marshall:plan-retrospective` + `audit-archived-plan-retrospectives` —
   dispatch-boundary ledger parse
@@ -117,3 +139,64 @@ deliberately-scoped edit; each is stated here with the concrete change that sett
 - **Done when:** `grep -rn "three_ways\|three-way distinction" test/plan-marshall/manage-metrics/` returns
   nothing, and the module's audit-side and retrospective-side tests follow one naming convention.
 - **Module/topic:** `plan-marshall:manage-metrics` tests — dispatch-boundary representability suite
+
+## G5 — Two stale "three-way" statements about the retrospective reader in the `plan-retrospective` suite
+
+- **Kind:** stale-statement
+- **Severity:** low
+- **Where:** `test/plan-marshall/plan-retrospective/test_analyze_logs.py:984` — the docstring of
+  `TestDispatchBoundaryContextLoadColumns::test_per_column_mix_of_measured_and_unmeasured`
+  ("The three-way read is per COLUMN, not per row."); and
+  `test/plan-marshall/plan-retrospective/test_analyze_logs_behavior.py:173` — the docstring of
+  `TestParseDispatchBoundaryFile::test_malformed_appended_cell_is_unrecognised_not_unmeasured`
+  ("The three-way distinction at its sharpest: a legacy row (nothing there), an ``unmeasured`` token
+  (deliberately not measured) and a corrupt cell (a shape the reader failed to parse) must not collapse
+  into one bucket.")
+- **What is wrong:** the retrospective reader's context-load cell has read **four** ways since plan 420
+  (`analyze-logs.py:1177-1225`; `data-format.md:927-936` § *Provenance of a measured zero*). Both
+  docstrings still describe a three-state taxonomy, and the first one's headline claim is not merely an
+  outdated count — it is now **false about the mechanism**: `indeterminate`, the fourth state, is decided
+  by the row-level provenance gate (`analyze-logs.py:1181`, `:1218-1222`), so the read is precisely *not*
+  per column any more. This is the same defect class as G4, one directory over, and it is what the
+  verification's own stated tree-wide `three-way` sweep should have surfaced — its residue list carried
+  only the `test/plan-marshall/manage-metrics/` hits.
+- **Why it matters:** these are the two modules a maintainer opens to learn what the retrospective
+  reader's cell read is (`test_analyze_logs.py` is the reader's own unit suite). A docstring asserting
+  the read is per column and three-valued teaches the exact pre-420 model this epic removed — and it sits
+  in the same file as the tests that pin the four-state behaviour, so the contradiction reads as an
+  intentional distinction rather than as drift.
+- **Fix:** in `test_analyze_logs.py:984`, replace "The three-way read is per COLUMN, not per row." with a
+  statement of what the test actually pins — that the *measured / unmeasured / unrecognised* verdicts are
+  reached per column, one cell's verdict never propagating to its neighbours — and add that the fourth
+  state, `indeterminate`, is the one verdict decided per row by the provenance gate. In
+  `test_analyze_logs_behavior.py:173`, change "The three-way distinction at its sharpest" to name the
+  three states it is contrasting without claiming they are the whole taxonomy (e.g. "Three of the four
+  states at their sharpest"). Docstrings only; no assertion or test-name changes, so no behaviour moves.
+- **Done when:** `grep -rn --include="*.py" "three-way\|three ways\|three_ways"
+  test/plan-marshall/plan-retrospective/`
+  returns exactly one hit — `test_chat_provenance.py:270`, which is about chat-provenance splitting and
+  not about the dispatch-boundary cell — and neither `test_analyze_logs.py` nor
+  `test_analyze_logs_behavior.py` appears.
+- **Module/topic:** `plan-marshall:plan-retrospective` tests — dispatch-boundary context-load read
+
+## Refuted during adversarial review
+
+**None.** All four originally-filed gaps (G1–G4) survived adversarial re-derivation, and each was
+re-checked at its named symbol rather than accepted from the text:
+
+- **G1** — read `analyze-logs.py:986-996` and `data-format.md:944` side by side. The mirror does still
+  describe surface #4 as "the hand-copied `_BC_LEDGER_COLUMNS` / `_BC_LEDGER_UNMEASURED_TOKEN` pair" with
+  no mention of the gate, while the standard now names `_parse_dispatch_boundary_totals`'s cell read and
+  the row-level provenance gate. Both still say "four". The causal attribution to R2-3 also holds:
+  `git show d1c31533 -- …/data-format.md` is a single-line change and the pre-change wording was "the
+  hand-copied `_BC_LEDGER_COLUMNS` tuple", i.e. the run widened the standard past its own mirror.
+- **G2** — read `checks/billing-composition.md:34-72`; it carries the whole four-way cell read and the
+  whole gate rule. Neither `data-format.md:944` nor `analyze-logs.py:987-996` names the file. Upheld;
+  only the cited line range was off by one (`:34-71` → `:34-72`).
+- **G3** — not accepted by reading. Both readers were **executed** on purpose-built ledgers (see the
+  per-class results now inlined in the gap). All three divergence classes reproduce, plus the
+  header-reorder transposition. One sub-claim was overstated and has been corrected: in class (a)
+  `audit.py` does not "measure nothing" — it measures `total_tokens` and none of the four context columns.
+- **G4** — all three sites confirmed present at HEAD
+  (`test_record_model_representability.py:450`, `:455`, `:783`), and `analyze-logs.py:1177-1225` confirms
+  the retrospective reader is four-state, so the names are genuinely stale.
