@@ -63,7 +63,8 @@ Use the returned `executable` value as the Verification Command. Both Command an
 | `depends` | Yes | Use `none` if no dependencies |
 | `**Intent gloss:**` | Conditional | Required when title head morpheme is a planning-domain verb; ≤15 words |
 | `**Profiles:**` | Yes | At least `implementation`; add `module_testing` only if deliverable creates/modifies test files |
-| `**Affected files:**` | Yes | Explicit paths only - NO wildcards, NO "all files in...". Each entry MUST carry a required `(intent)` marker: `read`, `write-new`, `write-replace`, or `delete` |
+| `**Affected files:**` | Conditional | Required UNLESS the deliverable is survey-scope (declaring the `Files to survey:` / `Files expected to mutate:` pair instead) or verification-only. Explicit paths only - NO wildcards, NO "all files in...". Each entry MUST carry a required `(intent)` marker: `read`, `write-new`, `write-replace`, or `delete` |
+| `**Files to survey:**` + `**Files expected to mutate:**` | Conditional | The survey-scope alternative to `Affected files:`, for a discovery-style deliverable whose mutation set is not knowable at authoring time. Declared as a disjoint PAIR — one field alone does not satisfy the section requirement. Neither carries `(intent)` markers, and the survey pool MAY name a pattern; see `phase-3-outline/standards/outline-workflow-detail.md` § "Survey-scope vs mutation-scope declaration" |
 | `**Change per file:**` | Yes | What specifically changes |
 | `**Verification:**` | Yes | Command and Criteria - both required |
 | `**Success Criteria:**` | Yes | At least one criterion |

@@ -261,7 +261,8 @@ def validate_deliverable_contract(deliverable: dict[str, Any]) -> tuple[list[str
     - Metadata block with required fields
     - Profiles block with valid profiles
     - A declared file-type bucket consistent with the declared write-set
-    - Affected files with explicit paths
+    - A declared file surface: either **Affected files:** with explicit paths, or
+      the survey-scope pair **Files to survey:** + **Files expected to mutate:**
     - Verification section
     - Success criteria
     """
@@ -520,10 +521,22 @@ def _annotate_foreign(deliverables: list[dict[str, Any]]) -> None:
 
     for deliverable in deliverables:
         any_foreign = False
-        for entry in deliverable.get('affected_files', []):
-            is_foreign = project_root is not None and is_foreign_path(entry.get('path', ''), project_root)
-            entry['foreign'] = is_foreign
-            any_foreign = any_foreign or is_foreign
+        # All THREE declaration fields, not `affected_files` alone. A
+        # survey-scope deliverable declares `Files to survey:` +
+        # `Files expected to mutate:` instead, so scanning only the flat field
+        # would leave its whole surface unstamped — and the phase-6 landing gate
+        # iterates exactly this stamped population, so an unstamped foreign path
+        # is one the gate cannot see. That is the incomplete-derived-set failure
+        # this plan exists to close, reproduced in the gate that guards landings.
+        for field in ('affected_files', 'mutation_scope', 'survey_scope'):
+            for entry in deliverable.get(field, []) or []:
+                if not isinstance(entry, dict):
+                    continue
+                is_foreign = project_root is not None and is_foreign_path(
+                    entry.get('path', ''), project_root
+                )
+                entry['foreign'] = is_foreign
+                any_foreign = any_foreign or is_foreign
         deliverable['foreign'] = any_foreign
 
 

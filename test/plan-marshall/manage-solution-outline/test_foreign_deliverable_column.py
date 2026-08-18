@@ -131,3 +131,35 @@ def test_annotate_handles_deliverable_with_no_affected_files(monkeypatch):
     deliverables = [{'number': 1, 'title': 'D1', 'affected_files': []}]
     mso._annotate_foreign(deliverables)
     assert deliverables[0]['foreign'] is False
+
+
+def test_annotate_stamps_the_survey_scope_pair_not_only_affected_files(monkeypatch):
+    """A survey-scope deliverable's foreign paths reach the landing gate.
+
+    ``_annotate_foreign`` stamps the population the phase-6 pre-archive landing
+    gate iterates. A deliverable that declares ``Files to survey:`` +
+    ``Files expected to mutate:`` instead of a flat ``Affected files:`` list has
+    a real write-set, and stamping only the flat field left that surface
+    invisible to the gate — an incomplete derived set inside the check that
+    guards landings.
+
+    The roll-up is asserted through a deliverable whose ONLY foreign path is in
+    the mutation scope, so a regression to the flat-field-only scan reaches the
+    opposite verdict rather than a different count.
+    """
+    monkeypatch.setattr(mso, 'cwd_checkout_root', lambda: '/repo')
+    deliverables = [
+        {
+            'number': 1,
+            'title': 'Survey and classify',
+            'affected_files': [],
+            'survey_scope': [{'path': 'src/surveyed.py', 'intent': 'read'}],
+            'mutation_scope': [{'path': '/foreign/Mutated.java', 'intent': None}],
+        }
+    ]
+
+    mso._annotate_foreign(deliverables)
+
+    assert deliverables[0]['mutation_scope'][0]['foreign'] is True
+    assert deliverables[0]['survey_scope'][0]['foreign'] is False
+    assert deliverables[0]['foreign'] is True

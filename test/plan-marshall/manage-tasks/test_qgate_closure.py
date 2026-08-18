@@ -2,19 +2,28 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the phase-4-plan mechanical Q-Gate's CLOSURE checks.
 
-Existence and closure are different questions. Every fixture here declares
-paths that RESOLVE on disk, so the pre-existing ``files_exist`` check passes on
-each of them; what the closure checks add is whether the declared SET is
-complete. A fixture whose paths all exist and whose set is still incomplete is
-the precise shape these checks were written for, and the shape no other check
-in the mechanical pass can see.
+Existence and closure are different questions, and the end-to-end fixtures are
+built so that difference is actually exercised rather than merely asserted.
+
+⛔ ``files_exist`` applies an INTENT-DEPENDENT predicate: it skips
+``write-replace`` outright, requires existence for ``read`` and ``delete``, and
+inverts for ``write-new``. A fixture whose steps all carry ``write-replace``
+therefore reports ``files_exist: 0`` no matter what its paths are — including
+paths that do not exist — so asserting that zero would prove nothing about
+existence. The end-to-end fixtures below use ``read`` intent on their steps and
+real repository files, which makes the existence check actually run and actually
+pass; ``test_files_exist_zero_is_load_bearing_not_vacuous`` pins that by
+replacing the paths with absent ones and asserting ``files_exist`` goes
+non-zero.
 """
 
 from __future__ import annotations
 
 import json
+import os
 from argparse import Namespace
 from fnmatch import fnmatch
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -34,9 +43,16 @@ declared_paths = _closure.declared_paths
 normalize_declared_path = _closure.normalize_declared_path
 cmd_qgate_mechanical = _qgate.cmd_qgate_mechanical
 
-#: Two real repository files. Using real paths keeps ``files_exist`` green in
-#: the end-to-end cases, so a closure finding can never be confused with an
-#: existence finding.
+_parsing = load_script_module(
+    'plan-marshall', 'manage-solution-outline', '_plan_parsing.py', '_plan_parsing_closure'
+)
+extract_deliverables = _parsing.extract_deliverables
+parse_document_sections = _parsing.parse_document_sections
+
+#: Two real repository files. Paired with ``read``-intent steps (see
+#: :func:`_task`), they make ``files_exist`` run its existence predicate and
+#: pass, so a closure finding in the same result can never be an existence
+#: finding wearing another name.
 _REAL_A = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
 _REAL_B = 'marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_qgate_closure.py'
 
@@ -44,6 +60,51 @@ _REAL_B = 'marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_qgate_
 #: cases. Its enumeration is re-derived from the tree at assert time rather
 #: than hard-coded, so the test cannot go stale when a file is added.
 _STANDARDS_GLOB = 'marketplace/bundles/plan-marshall/skills/manage-tasks/standards/*.md'
+
+#: A glob matching MANY files. Every other glob fixture here expands to exactly
+#: one, which cannot exercise a ceiling, a remainder summary, or a truncation
+#: disclosure — a fixture set sharing the implementation's scale cannot see a
+#: scale defect. Its cardinality is re-derived from the tree at assert time,
+#: never written as a literal.
+_MULTI_HIT_GLOB = 'marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/*.py'
+
+#: Trees the independent oracle's walk skips — build output, caches and VCS
+#: internals, none of which any pattern under test targets. Pruning keeps the
+#: walk cheap; the exclusion is stated rather than silent because it bounds
+#: where the oracle is faithful.
+_WALK_PRUNED_DIRS = frozenset({'.git', '.venv', 'node_modules', 'target', '__pycache__', '.plan'})
+
+
+@lru_cache(maxsize=1)
+def _repo_file_index() -> tuple[str, ...]:
+    """Every repo-relative file path, walked once per session.
+
+    Cached because :func:`_independent_expansion` is called by several tests and
+    a full-tree walk each time dominates the suite's runtime.
+    """
+    paths: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(PROJECT_ROOT):
+        dirnames[:] = [d for d in dirnames if d not in _WALK_PRUNED_DIRS]
+        for name in filenames:
+            paths.append((Path(dirpath) / name).relative_to(PROJECT_ROOT).as_posix())
+    return tuple(sorted(paths))
+
+
+def _independent_expansion(pattern: str) -> list[str]:
+    """Enumerate a pattern's matching files WITHOUT calling ``Path.glob``.
+
+    The production expander is ``repo_root.glob(pattern)``. A test expectation
+    computed with that same call agrees with the implementation by construction
+    — it cannot disagree, so it verifies nothing about the expansion. This walks
+    the tree and matches with :func:`fnmatch` instead, so the two computations
+    are genuinely independent and CAN contradict each other.
+
+    ⚠ The walk prunes :data:`_WALK_PRUNED_DIRS`, so this is a faithful
+    independent oracle only for patterns rooted OUTSIDE those trees. Every
+    caller here targets ``marketplace/bundles/…``, which no pruned directory
+    contains.
+    """
+    return [rel for rel in _repo_file_index() if fnmatch(rel, pattern)]
 
 
 def _deliverable(
@@ -71,15 +132,23 @@ def _task(
     *,
     profile: str = 'implementation',
     title: str = 'T',
+    intent: str = 'read',
 ) -> dict[str, Any]:
+    """Build a task record whose steps carry an EXISTENCE-CHECKED intent.
+
+    ``read`` is the default deliberately. ``write-replace`` — the obvious choice
+    for a step that edits a file — is the one intent ``files_exist`` skips
+    entirely, so a fixture built on it reports ``files_exist: 0`` for absent
+    paths just as readily as for present ones, and any test asserting that zero
+    would be measuring nothing.
+    """
     return {
         'number': number,
         'title': title,
         'profile': profile,
         'deliverable': deliverable,
         'steps': [
-            {'number': i + 1, 'target': t, 'intent': 'write-replace'}
-            for i, t in enumerate(targets)
+            {'number': i + 1, 'target': t, 'intent': intent} for i, t in enumerate(targets)
         ],
     }
 
@@ -226,9 +295,7 @@ def test_declared_glob_wider_than_the_enumeration_is_reported():
     written as a literal, so the assertion cannot drift from what the glob
     actually matches.
     """
-    expected_hits = sorted(
-        p.relative_to(PROJECT_ROOT).as_posix() for p in PROJECT_ROOT.glob(_STANDARDS_GLOB)
-    )
+    expected_hits = _independent_expansion(_STANDARDS_GLOB)
     assert expected_hits, 'positive-population guard: the glob must match something'
     deliverable = _deliverable(1, survey=[_STANDARDS_GLOB], mutate=[_REAL_A])
 
@@ -238,15 +305,15 @@ def test_declared_glob_wider_than_the_enumeration_is_reported():
     assert population['globs_expanded'] == 1
     assert population['matches_enumerated'] == len(expected_hits)
     assert [g['kind'] for g in gaps] == ['claim_vs_index']
+    # Every KNOWN hit is named — the positive half of the population guard, which
+    # a cardinality assertion alone cannot express.
     for hit in expected_hits:
         assert hit in gaps[0]['detail'], hit
 
 
 def test_declared_glob_fully_enumerated_is_closed():
     """When every match is also enumerated, the claim and the index agree."""
-    expected_hits = sorted(
-        p.relative_to(PROJECT_ROOT).as_posix() for p in PROJECT_ROOT.glob(_STANDARDS_GLOB)
-    )
+    expected_hits = _independent_expansion(_STANDARDS_GLOB)
     assert expected_hits, 'positive-population guard: the glob must match something'
     deliverable = _deliverable(1, survey=[_STANDARDS_GLOB, *expected_hits])
 
@@ -270,15 +337,37 @@ def test_unexpandable_glob_is_reported_not_silently_zero():
     assert population['population_complete'] is False
 
 
+def test_a_home_relative_glob_is_unmeasured_not_empty():
+    """``~/…`` raises NOTHING and matches nothing — the silent half of the guard.
+
+    An absolute pattern raises inside ``Path.glob`` and is caught either way, so
+    guarding it is a statement of intent. ``~`` is different: pathlib treats it
+    as an ordinary directory name, so the expansion succeeds, returns zero
+    matches, and would be reported as a measured-empty scope. Only the explicit
+    guard separates that from a pattern that genuinely matches nothing.
+    """
+    assert list(PROJECT_ROOT.glob('~/x/*.py')) == [], 'precondition: pathlib does not raise here'
+
+    expansion = expand_declared_glob('~/x/*.py', PROJECT_ROOT)
+
+    assert expansion.expandable is False
+    _gaps, population = check_declared_scope_reconciliation(
+        [_deliverable(1, survey=['~/x/*.py'])], PROJECT_ROOT
+    )
+    assert population['globs_unexpandable'] == 1
+    assert population['population_complete'] is False
+
+
 def test_expand_declared_glob_reports_expandability_separately_from_emptiness():
     """A pattern matching nothing and a pattern that cannot expand differ."""
-    empty_matches, empty_truncated, empty_expandable = expand_declared_glob(
+    empty = expand_declared_glob(
         'marketplace/bundles/plan-marshall/skills/manage-tasks/no-such-dir/*.md', PROJECT_ROOT
     )
-    abs_matches, _abs_truncated, abs_expandable = expand_declared_glob('/etc/*.conf', PROJECT_ROOT)
+    absolute = expand_declared_glob('/etc/*.conf', PROJECT_ROOT)
 
-    assert empty_matches == [] and empty_expandable is True and empty_truncated is False
-    assert abs_matches == [] and abs_expandable is False
+    assert empty.matches == [] and empty.expandable is True and empty.truncated is False
+    assert empty.directories_matched == 0
+    assert absolute.matches == [] and absolute.expandable is False
 
 
 # =============================================================================
@@ -357,9 +446,11 @@ def _write_outline(plan_dir: Path, body: str) -> None:
 def test_qgate_reports_closure_gap_while_files_exist_stays_clean(plan_context):
     """Every declared path resolves, and the set is still incomplete.
 
-    This is the fixture the plan names: existence passes, closure does not. If
-    ``files_exist`` reported anything here the test would be measuring the wrong
-    check, so its zero is asserted alongside the closure finding.
+    This is the fixture the plan names: existence passes, closure does not. The
+    steps carry ``read`` intent, so ``files_exist`` runs its existence predicate
+    over real files and passes on the merits — its zero is a measured verdict,
+    not the skip ``write-replace`` would have produced. The companion test below
+    proves that zero can move.
     """
     plan_dir = plan_context.plan_dir_for('closure-e2e')
     _write_outline(
@@ -400,15 +491,204 @@ def test_qgate_reads_the_survey_scope_pair_from_the_outline(plan_context):
     assert result['checks']['declared_set_closure']['failed'] == 1
 
 
+def test_files_exist_zero_is_load_bearing_not_vacuous(plan_context):
+    """The end-to-end fixture's ``files_exist: 0`` moves when the paths vanish.
+
+    Without this, ``files_exist: 0`` could not be told from the skip that
+    ``write-replace`` intent produces, and the "existence passes, closure does
+    not" claim would be unearned. The SAME shape as the fixture above, with the
+    declared and targeted paths swapped for absent ones: the existence check
+    must now report, which is what makes its zero elsewhere a measurement.
+    """
+    plan_dir = plan_context.plan_dir_for('closure-files-exist-control')
+    absent_a, absent_b = 'src/ABSENT-A.java', 'src/ABSENT-B.java'
+    assert not (PROJECT_ROOT / absent_a).exists(), 'precondition: the control path must be absent'
+    _write_outline(
+        plan_dir,
+        f'### 1. Widen the sweep\n\n'
+        f'**Affected files:**\n- `{absent_a}` (write-replace)\n- `{absent_b}` (write-replace)\n',
+    )
+    _write_task_file(plan_dir / 'tasks', _task(1, 1, [absent_a]))
+
+    result = cmd_qgate_mechanical(Namespace(plan_id='closure-files-exist-control', no_emit=True))
+
+    assert result['checks']['files_exist']['failed'] == 1
+    assert result['checks']['declared_set_closure']['failed'] == 1
+
+
+def test_a_declared_glob_escaping_the_repo_is_unmeasured_not_empty():
+    """``../../etc/*.conf`` names a real populated directory OUTSIDE the tree.
+
+    Left unnormalised, ``Path.glob`` walks out of the repository and returns
+    nothing, so a scope nothing examined reports a clean zero — the very defect
+    this module reports on outlines, committed by the module itself.
+    """
+    expansion = expand_declared_glob('../../etc/*.conf', PROJECT_ROOT)
+    assert expansion.expandable is False
+
+    deliverable = _deliverable(1, survey=['../../etc/*.conf'])
+    gaps, population = check_declared_scope_reconciliation([deliverable], PROJECT_ROOT)
+
+    assert [g['kind'] for g in gaps] == ['unexpandable_glob']
+    assert population['globs_unexpandable'] == 1
+    assert population['population_complete'] is False
+
+
+def test_an_in_repo_dotdot_glob_expands_to_canonical_paths():
+    """``doc/../marketplace/…`` and the plain path name the same file.
+
+    Without normalisation the expansion returned the literal ``doc/../…``
+    spelling, which compares unequal to the canonical declaration — so the check
+    manufactured a claim_vs_index finding against a path the deliverable HAD
+    enumerated.
+    """
+    canonical = sorted(
+        p.relative_to(PROJECT_ROOT).as_posix() for p in PROJECT_ROOT.glob(_STANDARDS_GLOB)
+    )
+    assert canonical, 'positive-population guard: the glob must match something'
+    detoured = 'doc/../' + _STANDARDS_GLOB
+
+    expansion = expand_declared_glob(detoured, PROJECT_ROOT)
+
+    assert expansion.matches == canonical
+    gaps, _population = check_declared_scope_reconciliation(
+        [_deliverable(1, survey=[detoured, *canonical])], PROJECT_ROOT
+    )
+    assert gaps == []
+
+
+def test_a_directory_only_scope_is_unmeasured_not_a_clean_zero():
+    """``marketplace/bundles/*/`` matches only directories, which is/was dropped.
+
+    Every match falling to the ``is_file()`` filter left an empty file list and
+    a ``population_complete: True`` — a measured-looking verdict over a scope
+    that was never reconciled.
+    """
+    expansion = expand_declared_glob('marketplace/bundles/*/', PROJECT_ROOT)
+    assert expansion.matches == []
+    assert expansion.directories_matched > 0, 'precondition: the pattern must match directories'
+
+    gaps, population = check_declared_scope_reconciliation(
+        [_deliverable(1, survey=['marketplace/bundles/*/'])], PROJECT_ROOT
+    )
+
+    assert [g['kind'] for g in gaps] == ['unexpandable_glob']
+    assert population['directories_matched'] > 0
+    assert population['population_complete'] is False
+
+
+def test_a_declaration_normalizing_to_nothing_is_dropped():
+    """``./`` is a non-empty string that normalizes to ``''``.
+
+    Guarding the raw string let the empty path into the comparison, where it was
+    reported as a gap named ``''``.
+    """
+    assert normalize_declared_path('./') == ''
+    deliverable = _deliverable(1, survey=['./'], mutate=[_REAL_A])
+
+    assert declared_paths(deliverable) == {_REAL_A}
+    assert compute_referrer_gaps(_task(1, 1, ['./']), declared_paths(deliverable)) == []
+
+
+def test_truncated_enumeration_is_disclosed_and_bounds_the_hit_list(monkeypatch):
+    """A capped expansion is a LOWER BOUND, and says so.
+
+    The match ceiling and the hit-naming cap are both lowered here rather than
+    building a fixture large enough to reach the shipped values — the property
+    under test is the disclosure, not the constants. The glob is asserted to
+    match MORE than the lowered ceiling, so the cap is genuinely reached.
+    """
+    monkeypatch.setattr(_closure, '_MAX_GLOB_MATCHES', 1)
+    all_hits = _independent_expansion(_MULTI_HIT_GLOB)
+    assert len(all_hits) > 1, 'precondition: the glob must exceed the lowered ceiling'
+
+    expansion = expand_declared_glob(_MULTI_HIT_GLOB, PROJECT_ROOT)
+    assert expansion.truncated is True
+    assert len(expansion.matches) == 1
+
+    gaps, population = check_declared_scope_reconciliation(
+        [_deliverable(1, survey=[_MULTI_HIT_GLOB])], PROJECT_ROOT
+    )
+    assert population['enumeration_truncated'] is True
+    assert population['population_complete'] is False
+    assert 'LOWER BOUND' in gaps[0]['detail']
+
+
+def test_the_hit_list_names_a_bounded_set_and_discloses_the_remainder(monkeypatch):
+    """Above the naming cap the finding still states the TOTAL.
+
+    A silent truncation would read as "these are the hits"; the ``+N more``
+    summary and the unenumerated count keep the finding honest about its own
+    elision.
+    """
+    monkeypatch.setattr(_closure, '_MAX_HITS_NAMED', 1)
+    hits = _independent_expansion(_MULTI_HIT_GLOB)
+    assert len(hits) > 1, 'precondition: the glob must exceed the lowered naming cap'
+
+    gaps, _population = check_declared_scope_reconciliation(
+        [_deliverable(1, survey=[_MULTI_HIT_GLOB])], PROJECT_ROOT
+    )
+
+    assert len(gaps) == 1
+    detail = gaps[0]['detail']
+    assert f'+{len(hits) - 1} more' in detail
+    assert f'{len(hits)} of them appear in no declared list' in detail
+
+
+def test_population_publishes_member_identities_not_only_counts():
+    """The positive-population assertion needs the members, not the cardinality.
+
+    A count answers "was the population non-empty?". Only the members answer
+    "did it contain the element at risk?" — the half of the guard the plan asks
+    for and a count cannot express.
+    """
+    deliverables = [_deliverable(1, affected=[_REAL_A], survey=[_REAL_B])]
+
+    _gaps, population = check_declared_set_closure([_task(1, 1, [_REAL_A])], deliverables)
+
+    assert population['scanned_paths'] == sorted([_REAL_A, _REAL_B])
+    assert population['scanned_paths_truncated'] is False
+
+
+def test_ambiguous_flips_when_the_closure_population_is_incomplete(plan_context):
+    """The mechanism q-gate-validation.md §2.9a names as discharging D3.
+
+    ``population_complete: False`` MUST reach the caller as ``ambiguous``, or the
+    normative line `detector_population ⊇ fix_set_population` is documentation
+    with nothing behind it: the orchestrator would read a clean mechanical pass
+    over a population the check could not fully scan.
+    """
+    plan_dir = plan_context.plan_dir_for('closure-ambiguous')
+    _write_outline(
+        plan_dir,
+        f'### 1. One deliverable\n\n**Affected files:**\n- `{_REAL_A}` (read)\n',
+    )
+    _write_task_file(plan_dir / 'tasks', _task(1, 1, [_REAL_A]))
+    # TASK-002 names deliverable 99, which the outline does not contain.
+    _write_task_file(plan_dir / 'tasks', _task(2, 99, [_REAL_A]))
+
+    result = cmd_qgate_mechanical(Namespace(plan_id='closure-ambiguous', no_emit=True))
+
+    assert result['population']['declared_set_closure']['population_complete'] is False
+    assert result['population_complete'] is False
+    assert result['ambiguous'] is True
+
+
 def test_closure_check_runs_under_the_surgical_scope_bypass_shape(plan_context):
     """ADVERSARIAL: a plan shaped exactly like the Step 8b bypass is still checked.
 
-    phase-4-plan's B2 predicate — ``scope_estimate == surgical`` with at most
-    two declared affected files — suppresses the DISPATCHED q-gate-validation.
-    This fixture satisfies that predicate exactly, and asserts the closure check
-    still runs and still fires, because it lives in Step 8, which has no bypass.
-    A closure claim is a hint; it may never be a licence to skip the check that
-    would test it.
+    phase-4-plan's B2 predicate — ``scope_estimate == surgical`` AND at most two
+    declared affected files — suppresses the DISPATCHED q-gate-validation. This
+    fixture satisfies BOTH conjuncts, and asserts the closure check still runs
+    and still fires, because it lives in Step 8, which has no bypass. A closure
+    claim is a hint; it may never be a licence to skip the check that would test
+    it.
+
+    Both conjuncts are asserted as PRECONDITIONS, re-derived from the artifacts
+    the fixture just wrote — the persisted ``scope_estimate`` and the declared
+    cardinality the predicate actually reads. Without that, the fixture could
+    drift out of the bypass shape and the test would keep passing while
+    verifying nothing about the bypass at all.
     """
     plan_dir = plan_context.plan_dir_for('closure-bypass')
     (plan_dir / 'references.json').write_text(
@@ -418,16 +698,23 @@ def test_closure_check_runs_under_the_surgical_scope_bypass_shape(plan_context):
         plan_dir,
         f'### 1. Surgical fix\n\n'
         f'**Metadata:**\n- change_type: bug_fix\n\n'
-        f'**Affected files:**\n- `{_REAL_A}` (write-replace)\n- `{_REAL_B}` (write-replace)\n',
+        f'**Affected files:**\n- `{_REAL_A}` (read)\n- `{_REAL_B}` (write-replace)\n',
     )
     _write_task_file(plan_dir / 'tasks', _task(1, 1, [_REAL_A]))
 
+    # Precondition 1 — the persisted scope_estimate the B2 predicate reads.
+    references = json.loads((plan_dir / 'references.json').read_text(encoding='utf-8'))
+    assert references['scope_estimate'] == 'surgical'
+
+    # Precondition 2 — the deduplicated declared cardinality, re-derived through
+    # the SAME parser phase-4-plan uses, never by counting bullet lines.
+    outline = (plan_dir / 'solution_outline.md').read_text(encoding='utf-8')
+    deliverables = extract_deliverables(parse_document_sections(outline)['deliverables'])
+    affected_files_count = len(
+        {entry['path'] for d in deliverables for entry in d['affected_files']}
+    )
+    assert affected_files_count <= 2, 'precondition: the fixture must satisfy the bypass predicate'
+
     result = cmd_qgate_mechanical(Namespace(plan_id='closure-bypass', no_emit=True))
 
-    declared = sum(
-        1
-        for line in (plan_dir / 'solution_outline.md').read_text(encoding='utf-8').splitlines()
-        if line.startswith('- `')
-    )
-    assert declared <= 2, 'precondition: the fixture must satisfy the bypass predicate'
     assert result['checks']['declared_set_closure']['failed'] == 1

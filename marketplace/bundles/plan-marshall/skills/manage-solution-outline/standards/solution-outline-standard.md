@@ -211,8 +211,8 @@ The `manage-solution-outline validate` command checks:
 3. Solution Metadata block contains `scope_estimate` with a value in the enum (`none|surgical|single_module|multi_module|broad`)
 4. Deliverables section has numbered `### N. Title` items
 5. At least one deliverable defined
-6. Deliverable contract compliance (Metadata, Profiles, Affected files, Verification)
-7. Every `Affected files` entry carries a required `(intent)` marker whose value is one of `read|write-new|write-replace|delete` — a missing or invalid marker is a hard error
+6. Deliverable contract compliance (Metadata, Profiles, a declared file surface, Verification). The file surface is `Affected files`, OR — for a survey-scope deliverable — the disjoint pair `Files to survey:` + `Files expected to mutate:`, OR nothing at all when the deliverable is verification-only
+7. Every `Affected files` entry carries a required `(intent)` marker whose value is one of `read|write-new|write-replace|delete` — a missing or invalid marker is a hard error. The survey pair is exempt: its documented form carries no markers, and its candidate pool may name a pattern, so neither the marker requirement nor the wildcard rejection applies to it
 8. Compatibility extraction from header metadata (if present)
 
 **Validation Command**:

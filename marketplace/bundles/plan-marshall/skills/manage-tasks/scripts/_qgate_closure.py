@@ -3,12 +3,14 @@
 """Closure checks for the phase-4-plan mechanical Q-Gate.
 
 **Existence and closure are different questions, and only the first was ever
-asked.** ``_cmd_qgate_mechanical._check_files_exist`` confirms that each
-declared path RESOLVES on disk; nothing confirms that the declared SET contains
-everything it must. A plan whose every declared path exists can still be
-missing the one path that matters, and the omission is invisible by
-construction: the gap is precisely what never entered the write-set, so no
-downstream check that reads the write-set can see it.
+asked.** ``_cmd_qgate_mechanical._check_files_exist`` applies an intent-aware
+existence predicate to each TASK STEP TARGET — requiring existence for ``read``
+and ``delete``, forbidding it for ``write-new``, and skipping ``write-replace``
+entirely. Nothing confirms that the declared SET contains everything it must. A
+plan whose every step target resolves can still be missing the one path that
+matters, and the omission is invisible by construction: the gap is precisely
+what never entered the write-set, so no downstream check that reads the
+write-set can see it.
 
 Three closures are computed here, matching the three ways a derived set goes
 incomplete:
@@ -45,8 +47,9 @@ examined.
 
 from __future__ import annotations
 
+import posixpath
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from _plan_parsing import deliverable_write_set
 
@@ -67,6 +70,14 @@ _MAX_GLOB_MATCHES = 2000
 #: rest. The finding always states the TOTAL, so the cap shortens the message
 #: without understating the contradiction.
 _MAX_HITS_NAMED = 20
+
+#: How many scanned declared paths the closure population publishes by
+#: IDENTITY rather than by count. A count proves a population was non-empty; only
+#: the members prove it contained the element at risk, which is the half of a
+#: positive-population assertion a cardinality cannot carry. Capped so a large
+#: plan does not put its whole file list into every Q-Gate payload — and the cap
+#: is DISCLOSED (``scanned_paths_truncated``), never applied silently.
+_MAX_SCANNED_PATHS_PUBLISHED = 200
 
 _VERIFICATION_PROFILE = 'verification'
 
@@ -122,8 +133,14 @@ def declared_paths(deliverable: dict[str, Any]) -> set[str]:
             if not isinstance(entry, dict):
                 continue
             raw = entry.get('path')
-            if isinstance(raw, str) and raw.strip():
-                paths.add(normalize_declared_path(raw))
+            if not isinstance(raw, str):
+                continue
+            # Guard the NORMALIZED value, not the raw one: './' is a non-empty
+            # string that normalizes to '', and an empty path compared against
+            # step targets would be reported as a gap named ''.
+            normalized = normalize_declared_path(raw)
+            if normalized:
+                paths.add(normalized)
     return paths
 
 
@@ -133,9 +150,10 @@ def _step_targets(task: dict[str, Any]) -> list[str]:
     for step in task.get('steps', []) or []:
         if not isinstance(step, dict):
             continue
-        raw = (step.get('target') or '').strip()
-        if raw:
-            targets.append(normalize_declared_path(raw))
+        # Guard the NORMALIZED value — see :func:`declared_paths`.
+        normalized = normalize_declared_path(str(step.get('target') or ''))
+        if normalized:
+            targets.append(normalized)
     return targets
 
 
@@ -178,35 +196,70 @@ def compute_referrer_gaps(task: dict[str, Any], declared: set[str]) -> list[str]
     return sorted({t for t in _step_targets(task) if t not in declared})
 
 
-def expand_declared_glob(pattern: str, repo_root: Path) -> tuple[list[str], bool, bool]:
+class GlobExpansion(NamedTuple):
+    """The result of expanding one declared glob, with its own coverage facts.
+
+    ``matches`` alone cannot be read: an empty list means "matched nothing"
+    ONLY when ``expandable`` is True and ``directories_matched`` is zero. The
+    other fields exist so a caller can never mistake an UNMEASURED scope for a
+    measured-empty one, which is the failure this whole module exists to
+    prevent — committed against itself if the expander reports them alike.
+    """
+
+    matches: list[str]
+    truncated: bool
+    expandable: bool
+    directories_matched: int
+
+
+def expand_declared_glob(pattern: str, repo_root: Path) -> GlobExpansion:
     """Expand one declared glob against the tree.
 
-    Returns ``(matches, truncated, expandable)``:
+    The pattern is normalised with :func:`posixpath.normpath` FIRST, which does
+    two things that matter:
 
-    - ``matches`` — repo-relative paths of matching FILES, sorted, capped at
-      :data:`_MAX_GLOB_MATCHES`.
-    - ``truncated`` — True when the cap was reached, so the caller can disclose
-      that the enumeration is a lower bound rather than the whole set.
-    - ``expandable`` — False when the pattern could not be expanded at all (an
-      absolute pattern, or one ``pathlib`` rejects). An unexpandable pattern is
-      NOT an empty match set: it is an unmeasured one, and the caller must not
-      let it read as "the glob matched nothing".
+    - a pattern escaping the repository (``../../etc/*.conf``) normalises to a
+      leading ``..`` and is rejected as **unexpandable**. Left unnormalised,
+      ``Path.glob`` walks out of the tree and returns nothing for a scope it
+      never measured — an unmeasured scope reported as a measured zero, which
+      is exactly the defect this module reports on outlines;
+    - an in-repo ``..`` (``doc/../marketplace/x/*.md``) collapses to its
+      canonical form, so the expansion's paths compare equal to the same file
+      declared canonically. Without it the check manufactured a
+      ``claim_vs_index`` finding against a path the deliverable HAD enumerated.
+
+    ``directories_matched`` counts matches dropped by the ``is_file()`` filter.
+    A declared scope naming directories (``marketplace/bundles/*/``) matches
+    only directories, so the file list is empty while the scope was never
+    reconciled — the caller treats that as unmeasured, not as clean.
     """
-    if pattern.startswith('/') or pattern.startswith('~'):
-        return [], False, False
+    # ``~`` is the load-bearing half of this guard, and it is NOT redundant with
+    # the exception handler below: ``Path.glob('~/x/*.py')`` raises nothing and
+    # returns zero matches, because ``~`` is just a directory name to pathlib —
+    # a measured-empty verdict over a scope nothing examined. An absolute
+    # pattern is rejected here too, for an explicit statement of intent; that
+    # one WOULD also be caught below, since ``Path.glob`` raises on it
+    # (``NotImplementedError`` on 3.12, ``ValueError`` from 3.13).
+    if pattern.startswith('~') or pattern.startswith('/'):
+        return GlobExpansion([], False, False, 0)
+    normalised = posixpath.normpath(pattern)
+    if normalised == '..' or normalised.startswith('../'):
+        return GlobExpansion([], False, False, 0)
     matches: list[str] = []
     truncated = False
+    directories = 0
     try:
-        for found in repo_root.glob(pattern):
+        for found in repo_root.glob(normalised):
             if not found.is_file():
+                directories += 1
                 continue
             if len(matches) >= _MAX_GLOB_MATCHES:
                 truncated = True
                 break
             matches.append(found.relative_to(repo_root).as_posix())
     except (ValueError, NotImplementedError, OSError):
-        return [], False, False
-    return sorted(matches), truncated, True
+        return GlobExpansion([], False, False, 0)
+    return GlobExpansion(sorted(matches), truncated, True, directories)
 
 
 def check_declared_set_closure(
@@ -222,11 +275,20 @@ def check_declared_set_closure(
 
     ``population`` publishes what was actually examined:
     ``deliverables_scanned``, ``declared_paths_scanned``,
-    ``step_targets_scanned``, ``tasks_scanned``, ``unmapped_tasks`` and
-    ``population_complete``. ``population_complete`` is False when any
-    non-verification task names a deliverable the outline does not contain, so
-    an empty gap list computed over an incomplete population can never be read
-    as closure.
+    ``step_targets_scanned``, ``tasks_scanned``, ``unmapped_tasks``,
+    ``scanned_paths`` and ``population_complete``. ``population_complete`` is
+    False when any non-verification task names a deliverable the outline does
+    not contain, so an empty gap list computed over an incomplete population can
+    never be read as closure.
+
+    ``scanned_paths`` carries the MEMBER IDENTITIES, sorted — not just the
+    cardinality. A count answers "was the population non-empty?"; only the
+    members answer "did it contain the element at risk?", which is the half of
+    a positive-population assertion a count cannot express. It is capped at
+    :data:`_MAX_SCANNED_PATHS_PUBLISHED` with ``scanned_paths_truncated``
+    disclosing the cap, so a large plan does not put its whole file list in
+    every Q-Gate payload while a reader can still tell a full list from a cut
+    one.
     """
     by_number = {int(d['number']): d for d in deliverables if str(d.get('number', '')).isdigit()}
     tasks_by_deliverable: dict[int, list[dict[str, Any]]] = {}
@@ -247,11 +309,13 @@ def check_declared_set_closure(
 
     gaps: list[dict[str, str]] = []
     declared_paths_scanned = 0
+    scanned_paths: set[str] = set()
 
     for number in sorted(by_number):
         deliverable = by_number[number]
         declared = declared_paths(deliverable)
         declared_paths_scanned += len(declared)
+        scanned_paths |= declared
         owned = tasks_by_deliverable.get(number, [])
 
         for path in compute_projection_gaps(deliverable, owned):
@@ -303,12 +367,15 @@ def check_declared_set_closure(
                     }
                 )
 
+    published = sorted(scanned_paths)
     population = {
         'deliverables_scanned': len(by_number),
         'declared_paths_scanned': declared_paths_scanned,
         'tasks_scanned': tasks_scanned,
         'step_targets_scanned': step_targets_scanned,
         'unmapped_tasks': sorted(unmapped_tasks),
+        'scanned_paths': published[:_MAX_SCANNED_PATHS_PUBLISHED],
+        'scanned_paths_truncated': len(published) > _MAX_SCANNED_PATHS_PUBLISHED,
         'population_complete': not unmapped_tasks,
     }
     return gaps, population
@@ -330,17 +397,24 @@ def check_declared_scope_reconciliation(
 
     Returns ``(gaps, population)``. ``population`` publishes
     ``globs_declared``, ``globs_expanded``, ``globs_unexpandable``,
-    ``matches_enumerated``, ``enumeration_truncated`` and
-    ``population_complete``. ``population_complete`` is False when any declared
-    glob could not be expanded or when an expansion hit the match ceiling: a
-    pattern that was never expanded contributes zero hits exactly as a pattern
-    that genuinely matches nothing does, and the two must not be reported alike.
+    ``matches_enumerated``, ``directories_matched``, ``enumeration_truncated``
+    and ``population_complete``. ``population_complete`` is False when any
+    declared glob could not be expanded or when an expansion hit the match
+    ceiling: a pattern that was never expanded contributes zero hits exactly as
+    a pattern that genuinely matches nothing does, and the two must not be
+    reported alike.
+
+    A pattern that matched ONLY directories is counted as unexpandable for the
+    same reason. ``is_file()`` drops directory matches, so a directory-shaped
+    scope would otherwise reconcile to a clean zero over a surface nothing
+    examined — a measured-looking verdict over an unmeasured scope.
     """
     gaps: list[dict[str, str]] = []
     globs_declared = 0
     globs_expanded = 0
     globs_unexpandable = 0
     matches_enumerated = 0
+    directories_matched = 0
     enumeration_truncated = False
 
     for deliverable in deliverables:
@@ -351,8 +425,14 @@ def check_declared_scope_reconciliation(
         globs_declared += len(patterns)
 
         for pattern in patterns:
-            matches, truncated, expandable = expand_declared_glob(pattern, repo_root)
+            expansion = expand_declared_glob(pattern, repo_root)
+            matches, truncated = expansion.matches, expansion.truncated
+            directories_matched += expansion.directories_matched
             enumeration_truncated = enumeration_truncated or truncated
+            # A directory-only match is an unmeasured scope, not an empty one.
+            expandable = expansion.expandable and not (
+                not matches and expansion.directories_matched
+            )
             if not expandable:
                 globs_unexpandable += 1
                 gaps.append(
@@ -364,11 +444,15 @@ def check_declared_scope_reconciliation(
                         ),
                         'detail': (
                             f'Deliverable {number} declares the pattern {pattern!r}, which '
-                            f'could not be expanded against the repository (absolute, or '
-                            f'rejected by the path matcher). An unexpandable pattern is an '
-                            f'UNMEASURED scope, not an empty one — it contributes zero hits '
-                            f'exactly as a pattern matching nothing does. Replace it with a '
-                            f'repo-relative pattern or with the enumerated paths themselves.'
+                            f'yielded no measurable file set: it is absolute, it escapes the '
+                            f'repository root, the path matcher rejected it, or it matched '
+                            f'only directories '
+                            f'({expansion.directories_matched} directory match(es)). An '
+                            f'unexpandable pattern is an UNMEASURED scope, not an empty one — '
+                            f'it contributes zero hits exactly as a pattern matching nothing '
+                            f'does, and only this finding separates the two. Replace it with '
+                            f'a repo-relative file pattern, or with the enumerated paths '
+                            f'themselves.'
                         ),
                         'file_path': pattern,
                     }
@@ -418,6 +502,7 @@ def check_declared_scope_reconciliation(
         'globs_expanded': globs_expanded,
         'globs_unexpandable': globs_unexpandable,
         'matches_enumerated': matches_enumerated,
+        'directories_matched': directories_matched,
         'enumeration_truncated': enumeration_truncated,
         'population_complete': globs_unexpandable == 0 and not enumeration_truncated,
     }

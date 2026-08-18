@@ -9,7 +9,7 @@ implements: plan-marshall:extension-api/standards/ext-point-execution-context-wo
 
 Verify solution outline deliverables against request intent and assessments — catch false positives, missing coverage, and scope drift. Dispatched under `--phase phase-N` (no `--role`) — q-gate-validation tracks the calling phase's default level via the bubbling resolver.
 
-Three call sites: phase-2-refine lesson-derived narrative validation (Step 13.5), phase-3-outline outline-time Q-Gate (Complex Track Step 11) and phase-4-plan plan-time Q-Gate (Step 9b). Each call site activates a different validator subset via runtime `activation_context` / `validators` parameters; the workflow body stays shared and the dispatch passes only `--phase phase-N` so the level tracks whatever the caller phase configures.
+Three call sites: phase-2-refine lesson-derived narrative validation (Step 13.5), phase-3-outline outline-time Q-Gate (Complex Track Step 11) and phase-4-plan plan-time Q-Gate (Step 8b). Each call site activates a different validator subset via runtime `activation_context` / `validators` parameters; the workflow body stays shared and the dispatch passes only `--phase phase-N` so the level tracks whatever the caller phase configures.
 
 ## Role boundaries
 
@@ -387,7 +387,7 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Cross-references**:
 - [`consumer-sweep.md`](../../phase-3-outline/standards/consumer-sweep.md) — outline-time procedure this check enforces
-- § 2.9a below — the mechanical closure checks, which run even when this dispatched validator is bypassed
+- § 2.9a below — the mechanical closure checks, which run unconditionally in phase-4-plan Step 8. (This check activates at the **phase-3-outline** call site, so the phase-4-plan surgical-scope bypass does not reach it; § 2.9a explains what that bypass does reach.)
 
 #### 2.9a Declared-Set Closure (mechanical, unsuppressible)
 

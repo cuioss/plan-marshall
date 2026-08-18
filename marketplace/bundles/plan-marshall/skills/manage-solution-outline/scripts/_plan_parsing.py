@@ -416,10 +416,18 @@ def extract_survey_scope(content: str) -> list[dict[str, Any]]:
 def extract_mutation_scope(content: str) -> list[dict[str, Any]]:
     """Extract the ``**Files expected to mutate:**`` change-bearing subset.
 
-    A marker-less bullet is left unset rather than defaulted, matching
-    :func:`_extract_affected_files`: :func:`deliverable_write_set` counts an
-    unmarked entry as a write, so the path reaches the write-set either way and
-    a genuinely missing marker stays reportable rather than being papered over.
+    A marker-less bullet is left unset rather than defaulted to a write, so the
+    parsed record still distinguishes "declared a write" from "stated no
+    intent". :func:`deliverable_write_set` counts an unmarked entry as a write
+    either way, which is the conservative direction — the path reaches the
+    write-set rather than being silently subtracted from the change footprint.
+
+    ⚠ Unlike an unmarked ``**Affected files:**`` entry, an unmarked entry here
+    is **not** reported by the validator: ``validate_deliverable_contract``'s
+    check 3b walks ``affected_files`` only, deliberately (the survey pair's
+    documented form carries no markers at all, so requiring them would fail
+    every correctly-authored survey deliverable). The intent is therefore
+    consumed but not enforced on this field.
     """
     return _extract_scope_field(content, _MUTATION_SCOPE_HEADING)
 
