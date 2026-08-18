@@ -480,7 +480,9 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-manifest-
   [--diff-file DIFF_FILE] [--base-ref BASE_REF]
 ```
 
-`--base-ref` is required when `--diff-file` is absent.
+Supply `--base-ref` whenever `--diff-file` is absent — it is how the script obtains a diff at all. It is **not CLI-enforced**, and the behaviour when both are absent is defined rather than fatal: the script is a best-effort retrospective signal, not a build-blocking gate, so it records `base: unknown` and every diff-fed rule reports `indeterminate` instead of a clean pass. A verdict over no evidence is not a clean result, so none is emitted.
+
+`--diff-file` resolves relative paths the same way `check-routing-decisions` does — plan directory first, cwd second — and errors rather than reporting an empty diff when neither candidate exists. A supplied file that names nothing is a *resolved empty footprint*, not an absent one, and rules may pass on it.
 
 ### check-routing-decisions — run
 
@@ -490,7 +492,7 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-routing-d
   [--diff-file DIFF_FILE]
 ```
 
-`--diff-file` carries the realized footprint (one path per line) that the prune-predicate re-evaluation tests; absent → the footprint is recovered through the shared resolver (realized-footprint capture → merge-commit → legacy key), and only a still-unresolvable footprint SKIPs the mis-prune checks.
+`--diff-file` carries the realized footprint (one path per line) that the prune-predicate re-evaluation tests. A relative path is resolved against the plan directory first and the cwd second, so the `work/footprint.txt` form above resolves to the same file an absolute path names; a supplied path that resolves to nothing is an error, never an empty footprint. Absent → the footprint is recovered through the shared resolver (realized-footprint capture → merge-commit → legacy key), and only a still-unresolvable footprint SKIPs the mis-prune checks.
 
 ### check-dispatch-audit — run
 
