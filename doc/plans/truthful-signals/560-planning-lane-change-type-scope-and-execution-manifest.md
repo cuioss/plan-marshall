@@ -37,7 +37,7 @@ found — so the sensor's "I found nothing to bound this with" is consumed as "I
 change". The same branch defines its residue by exclusion (`not in _DEEP_SCOPE_ESTIMATES and not in
 _NARROW_SCOPE_ESTIMATES`), so every unrecognised, empty or whitespace-padded band also de-escalates,
 while the comment directly above it asserts the residue "is exactly `{single_module}`" and "adapts
-automatically if the band set changes". Fifty lines further down, the `low_confidence` flag is
+automatically if the band set changes". Further down in the same function, the `low_confidence` flag is
 `signals_null > signals_resolved` over a seven-member vector in which two members are booleans that are
 never `None` — so it needs 4 of the 5 nullable fields null and can no longer fire for the
 orchestrator-launched population it was built for.
@@ -93,18 +93,24 @@ minutes-long derivation whose failure would invalidate D5, D6 and D7 as well; it
    editing anything that depends on them, and **write neither as a hand-maintained list**:
    - **(a) The unresolvable-canonical set.** Evaluate `_check_step_resolvable(f'verify:{verb}',
      'phase_5')` over every entry of `ALL_CANONICAL_COMMANDS`
-     (`marketplace/bundles/script-shared/scripts/extension/_extension_constants.py`) at HEAD and record
+     (`marketplace/bundles/plan-marshall/skills/script-shared/scripts/extension/_extension_constants.py`;
+     `_check_step_resolvable` lives in
+     `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/_manifest_validation.py`)
+     at HEAD and record
      which canonicals have no phase-5 verify gate. **Do not trust any count in this plan** — the gap
      that motivated it recorded seven of fourteen at its own authoring time, and the set moves whenever
      a canonical gains or loses a gate. Re-derive it at the moment of the edit.
    - **(b) The `baseline-reconcile` consumer set.** Sweep `marketplace/` for documents that instruct a
      reader to parse `conflict_count` from a `baseline-reconcile` return, and record which of them
-     branch on `status` first. The gap that motivated this names two documents; the authoring sweep
-     also surfaced `plan-marshall/standards/execution-recovery.md` and
-     `plan-marshall/workflow/execution.md` as files mentioning both tokens — establish for each
-     whether it is a consumer of this return or an unrelated mention, and record the verdict per file.
-     Exclude `phase-6-finalize/standards/archive-plan.md`, whose `conflict_count` belongs to a
-     different script.
+     branch on `status` first. **The candidate set is what the sweep returns, not what this plan
+     lists** — the gap that motivated this names only the two `phase-5-execute` documents, and a sweep
+     at authoring time found several further `.md` files carrying both tokens (under `phase-6-finalize/`,
+     `phase-2-refine/` and `plan-marshall/`), so the population is materially larger than the gap's two
+     and its exact membership must be re-derived at the moment of the edit. For **every** file the sweep
+     returns, establish whether it is a consumer of this return (it dispatches `baseline-reconcile` and
+     reads `conflict_count` from the result) or an unrelated mention (it describes the field, or reads a
+     different script's `conflict_count`), and record the verdict per file. Exclude
+     `phase-6-finalize/standards/archive-plan.md`, whose `conflict_count` belongs to a different script.
    **HALT condition:** if either population cannot be derived from the tree — the constant is
    unimportable, the resolvability check cannot be executed, the sweep cannot be scoped to a decidable
    set — **stop the run and report it blocked**, naming which derivation failed. Do not substitute a
@@ -134,10 +140,11 @@ minutes-long derivation whose failure would invalidate D5, D6 and D7 as well; it
 
 3. **D3 — The planning-lane router de-escalates only on measured evidence, and reports its own
    confidence** *(closes 240/G2 — `high` —, 240/G5, 240/G1)*
-   All three edits land in `evaluate_signals_pure`
+   The three behavioural edits (a)–(c) land in `evaluate_signals_pure`
    (`marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_planning_lane.py`) and its
-   surrounding comments; they are one deliverable because they rewrite the same two blocks and the same
-   false comment.
+   caller `_evaluate_signals` in the same file; (d) corrects the prose around them, in that file and in
+   `manage-status/SKILL.md`. They are one deliverable because they rewrite the same two blocks and the
+   same false comment.
    - **(a) Require a measured band (240/G2).** `classify_scope_pure` already returns `band_rule`, and
      `_evaluate_signals` computes it but attaches it to the result only after the decision is made. Add
      an optional `scope_band_rule: str | None = None` parameter to `evaluate_signals_pure`, pass
@@ -153,8 +160,12 @@ minutes-long derivation whose failure would invalidate D5, D6 and D7 as well; it
      discriminating inputs rather than a bare majority of the seven-member dict: exclude
      `planning_lane_override` from the denominator (its absence is the normal state, not an unresolved
      read) and flag when two or more of `plan_source`, `scope_estimate`, `change_type`, `compatibility`
-     are null. No existing test pins the current threshold in either direction, so the new tests are
-     what give the change teeth.
+     are null. Three existing assertions in
+     `test/plan-marshall/manage-status/test_planning_lane_corroboration.py` already read
+     `confidence['low_confidence']` (`test_d3c_several_nulls_reported_low_confidence`,
+     `test_confidence_high_when_most_signals_resolve`, and the control
+     `test_d3d_control_deep_warranting_vector_still_routes_deep`) — re-read all three at HEAD and state
+     for each whether the new predicate keeps its expected value or the expectation has to move.
    - **(d) Correct the prose that (a) and (b) falsify.** The corroboration comment block, the module
      docstring, the `confidence` docstring, and
      `marketplace/bundles/plan-marshall/skills/manage-status/SKILL.md` all currently assert that "a

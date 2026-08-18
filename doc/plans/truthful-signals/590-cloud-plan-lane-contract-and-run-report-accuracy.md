@@ -336,9 +336,9 @@ the choice is stated in the deliverable. The run makes no such decision.
       direction-2 population it did not cover.
 
    *Done when:* each of the seven corrections satisfies its gap's own *Done when*; and, checked once
-   per touched file across the six, no
-   `_pending_` or `(Recorded at close.)` placeholder remains, no template heading occurs twice, and no
-   § Build gate or § Contract check statement is contradicted by another section of the same file.
+   per touched file across the six, no `_pending_` or `(Recorded at close.)` placeholder remains, no
+   template heading occurs twice, and no § Build gate or § Contract check statement is contradicted
+   by another section of the same file.
 
 6. **D6 — Five stated counts re-derived, not transcribed** *(closes 040/G4, 260/G5, 430/G4, 430/G9,
    440/G5 — class C3)*

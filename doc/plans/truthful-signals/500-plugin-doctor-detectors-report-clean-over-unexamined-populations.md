@@ -132,8 +132,9 @@ halts and reports, and D2–D8 are not attempted.**
 2. **D2 — The pin-trap oracle stops issuing verdicts over axes it did not read**
    (closes 320/G1, 320/G3, 320/G8, 320/G2, 320/G7)
 
-   All five changes are in
-   `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_plugin_pin_trap.py`.
+   All five **production** changes are in
+   `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_plugin_pin_trap.py`; the
+   tests each item requires land in `test/pm-plugin-development/plugin-doctor/test_plugin_pin_trap.py`.
 
    - **320/G1** — make an empty content comparison unrepresentable as a pass. Either return `None`
      from `compare_pin_content` when `total == 0` (routing to the existing `content is None` →

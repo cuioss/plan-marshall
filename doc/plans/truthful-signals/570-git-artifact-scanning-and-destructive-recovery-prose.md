@@ -413,6 +413,9 @@ not trust any cited in this plan or in the gap documents.
 - `marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_handshake_store.py` — D6(a)
 - `marketplace/bundles/plan-marshall/skills/plan-marshall/references/phase-handshake.md` — D6(a)
 - `test/plan-marshall/plan-marshall/test_invariants_behavior.py` — D4(a)(b)(c)
+- one module under `test/plan-marshall/plan-marshall/` for D6(a)'s exempted-population test — **not
+  named here**: derive it from the test tree (several handshake/invariants modules sit there) and name
+  the one chosen in the run report
 - `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/research-best-practices.md`,
   `.../persona-plan-marshall-agent/standards/agent-behavior-rules.md`,
   `.../phase-6-finalize/standards/finalize-step-simplify.md`,

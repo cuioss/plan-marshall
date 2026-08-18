@@ -228,7 +228,8 @@ hand-maintained list, because a hand-maintained population is the defect class t
      constant must be **strictly below 220.0** (= 660 / 3.0) or this deliverable's own *Done when* is
      unreachable — pick it inside that ceiling with headroom over the cold throughput measured below,
      and **record in the constant's own comment the measured cold throughput the ceiling was derived
-     from, re-measuring it on this tree during the run** (lead, do not trust it: `uv run python build.py compile` reported ~414 files in ~11.35 s, ~37 files/s — re-derive and
+     from, re-measuring it on this tree during the run** (lead, do not trust it:
+     `uv run python build.py compile` reported ~414 files in ~11.35 s, ~37 files/s — re-derive and
      write the figure you actually observe). Add a unit test pinning
      `classify_check_duration(660, 3.0).plausible is False`, and re-key
      `test_quality_gate_fails_closed_when_whole_tree_mypy_reports_implausibly_fast`
@@ -463,10 +464,9 @@ Production sources:
 - `marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_git_helpers.py` — D1 porcelain
   encoding
 - `marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/post_run_source_guard.py` — D1,
-  only if the shared `parse_porcelain_z` is extracted to `script-shared`; that extraction also adds or
-  edits one module under
-  `marketplace/bundles/plan-marshall/skills/script-shared/scripts/` (name it in the run report), which
-  is expected surface under that option and not collateral change
+  only if the shared `parse_porcelain_z` is extracted to `script-shared`; that extraction also adds
+  or edits one module under `.../script-shared/scripts/` (name it in the run report), which is
+  expected surface under that option and not collateral change
 - `marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_invariants.py` — D1 layer-D capture,
   if the encoding change surfaces there
 - `marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/_build_shared.py`,
@@ -549,6 +549,9 @@ Beyond each deliverable's *Done when*:
    verification sub-agent to read each of the following **cold** — without this plan, without the gap
    documents — and report *which reading it took*. A wrong reading means the wording failed, however
    complete the change looks:
+   - D3's rewritten `test_executor_version_split_regression.py` prose: does the reader conclude that
+     the marker is **never consulted** and selection is eligibility plus version ordering alone — and
+     not that some pin still protects the newest directory?
    - the three rendered clauses from D4's `_render_structural_limits`: does the reader distinguish
      "not performed at this scope" from "not performed by this gate at all" from "attempted, nothing
      in scope", and can they say which remedy each implies?
@@ -559,9 +562,6 @@ Beyond each deliverable's *Done when*:
      `github.event_name` is unsafe, without opening the git history?
    - D5's permissions allowlist comments: does the reader conclude that widening a scope requires
      editing the allowlist?
-   - D3's rewritten `test_executor_version_split_regression.py` prose: does the reader conclude that
-     the marker is **never consulted** and selection is eligibility plus version ordering alone — and
-     not that some pin still protects the newest directory?
    - D7's rewritten conftest text for the zero-skip gate: does the reader conclude the gate is
      **unarmed in this repository** — and not that it was deleted, and not that CI arms it?
 3. **Whole-suite green.** The Python change footprint is large and crosses `build.py`, so run the full

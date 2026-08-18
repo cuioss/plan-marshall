@@ -34,9 +34,10 @@ and say they did not.** `ClaudeRuntime.project_initial_setup`
 read of the existing file and no existence check — every other top-level block in an initialized
 project is destroyed, and the verb returns `marshal_written: True`. Its OpenCode sibling, implementing
 the same contract operation, reads and merges. `manage-providers`' `_save_marshal` performs an
-unguarded whole-document read-modify-write with a plain `write_text`. And the two keys those seeds do
-write, `runtime` and `project_dir`, are absent from `CANONICAL_TOP_LEVEL_KEY_ORDER`, so
-`normalize-keys` reports the product's own first-party configuration as unrecognized.
+unguarded whole-document read-modify-write with a plain `write_text`. And the top-level keys those
+seeds write — `runtime` from both targets, `project_dir` from the Claude seed alone — are absent from
+`CANONICAL_TOP_LEVEL_KEY_ORDER`, so `normalize-keys` reports the product's own first-party
+configuration as unrecognized.
 
 **Second, the build-server reconcile infers idleness it was never told.** `run_status`
 (`manage-build-server/scripts/manage_build_server.py`) coerces a missing `in_flight` to `0`, so a
@@ -56,8 +57,10 @@ parser ever sees it, and a lane value (`auto`) argparse rejects.
 
 ## Goal
 
-The five write paths that touch `.plan/marshal.json` either preserve what they did not author or are
-recorded, in the docstring that claims to be the ordering authority, as the ones that do not; a
+Every write path that touches `.plan/marshal.json` — the population and its routed/bypass split
+re-derived by D1(a), never counted from this plan or from the gap documents — either preserves what it
+did not author or is recorded, in the docstring that claims to be the ordering authority, as one that
+does not; a
 reconcile that cannot read the daemon's own counts defers instead of draining; the guards and
 descriptions this epic's earlier plans shipped constrain and describe what actually runs; and the
 operator-facing steward surfaces relay the fields the tools underneath them now emit. Where a fix
@@ -92,8 +95,12 @@ than on any derived population, so they proceed regardless of D1's outcome.
    `marketplace/bundles/plan-marshall/skills/platform-runtime/scripts/_claude_runtime_impl.py`,
    `project_initial_setup` reads any existing `marshal.json` first and merges, mirroring
    `opencode_runtime.py`'s implementation of the same contract operation: load the existing document
-   when the file is present, set `runtime.target` and `project_dir` on it, write the merged result; a
-   missing or unparseable file falls back to `{}` exactly as the OpenCode path does.
+   when the file is present, set `runtime.target` and `project_dir` on it, write the merged result. On
+   the failure edges, mirror what `opencode_runtime.project_initial_setup` actually does rather than
+   the source gap's paraphrase of it: a *missing* file starts from `{}`, while an unreadable or
+   unparseable one is caught (`except (OSError, json.JSONDecodeError)`) and returned as an `io_error` —
+   the OpenCode path does **not** fall back to `{}` on a corrupt file, and neither may this one,
+   because that fallback would destroy exactly the config this fix exists to preserve.
    *Done when:* a test in `test/plan-marshall/platform-runtime/test_claude_runtime.py` seeds
    `.plan/marshal.json` with a `plan` block, calls `ClaudeRuntime.project_initial_setup`, and asserts
    both that `runtime.target == 'claude'` and that the pre-existing `plan` block survives — **and the
@@ -145,8 +152,10 @@ than on any derived population, so they proceed regardless of D1's outcome.
    fallback in `_cmd_build_map.py`, change that file's error string to `build-decision requires
    --plan-id`, and delete the alias sentence from `manage-config/SKILL.md`. Do **not** take the
    alternative direction (re-appending the flag in the executor) — it contradicts the stated contract
-   in `tools-script-executor`'s `argparse_surface.py`, and amending that contract is not this run's to
-   decide.
+   in `plan-marshall:script-shared`'s `argparse_surface.py`
+   (`marketplace/bundles/plan-marshall/skills/script-shared/scripts/argparse_surface.py`, the
+   `audit-plan-id` member of the universal accept-set comment), and amending that contract is not this
+   run's to decide.
    (d) *(100/G3)* Replace `auto` with `standard` at the three surviving lane restatements —
    `manage-config/SKILL.md`'s `finalize-steps` row of the noun/verb summary table,
    `manage-config/standards/data-model.md`'s per-element lane-override paragraph, and the
@@ -177,9 +186,10 @@ than on any derived population, so they proceed regardless of D1's outcome.
    first-party keys as unrecognized. Adding is the non-destructive half and is grounded:
    `platform_runtime._resolve_target` reads `runtime.target` back. **Record as a proposal, do not act
    on it:** D1(a) is expected to show that no code reads the *top-level* `project_dir` key, so the
-   tighter alternative is to stop persisting it in the two runtime seeds — that is a schema decision
-   with no operator to approve it, so the run writes the proposal into its report and ships the
-   additive change only.
+   tighter alternative is to stop persisting it in the Claude runtime seed — the only seed that writes
+   it, since `opencode_runtime.project_initial_setup` sets `runtime.target` alone — and that is a
+   schema decision with no operator to approve it, so the run writes the proposal into its report and
+   ships the additive change only.
    (b) *(080/G6)* Route `_providers_core._save_marshal` through `_config_core.save_config`, pairing it
    with a `_config_core.load_config` at the read end of `write_provider_config` so the fingerprint is
    recorded. Both sides already resolve the same path via `file_ops.get_marshal_path()`, so no path
@@ -338,7 +348,13 @@ than on any derived population, so they proceed regardless of D1's outcome.
    (f) *(380/G5)* Normalise every remaining `/Users/…` placeholder root under `test/` onto `/home/dev`,
    over the population **D1(c) derives** — the source gap's own file list is a lead and is known to be
    short by at least one file — then re-run the owning test directories to confirm no assertion depends
-   on the strings. Do **not** retro-edit `380-test-suite-false-confidence/report-01.md`.
+   on the strings. Do **not** retro-edit `380-test-suite-false-confidence/report-01.md`. ⛔ Scope this
+   to the `/Users/` population only. The source gap's *Done when* additionally demands that `/home/dev`
+   be the only `/home/` root under `test/`; that condition is **false at HEAD and is not adopted here**
+   — `test/` independently carries `/home/u` HOME-whitelist literals in more than one module,
+   `/home/runner` inside captured CI-log fixtures, and other unrelated roots, none of which is a
+   placeholder this gap is about. Re-derive that set with D1(c)'s `/home/…` sweep, record it, and leave
+   it untouched.
    *Done when:* for every input on which `check_emitted_steps_resolvable` returns a message containing
    `NOT authored in marshal.json` or `composer-injected`, that message contains no occurrence of
    `referenced by \`marshal.json\``, pinned by a test in `TestUnresolvableStepProvenance`; a re-run of
