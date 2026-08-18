@@ -1,7 +1,7 @@
 # Run report — 340-token-ledgers-disagree-and-the-smallest-is-named-actual (run 01)
 
 **Date (UTC):** 2026-08-18    **Branch:** `claude/token-ledgers-disagree-q3t771` (harness-assigned)
-**PR:** [#1293](https://github.com/cuioss/plan-marshall/pull/1293)    **Outcome:** completed
+**PR:** [#1293](https://github.com/cuioss/plan-marshall/pull/1293)    **Outcome:** deliverables complete; PR open with required checks green and auto-merge not yet armed (see `status-report.md`)
 
 ## Skills loaded
 
@@ -133,7 +133,7 @@ D3+D5+D6 persistence) was evaluated and rejected on three grounds recorded here:
 
 `git diff --name-only origin/main...HEAD -- '*.py'` names **9 Python files**, so the gate applies.
 
-`./pw verify` at the final commit → **`=== verify: SUCCESS ===`**, `20852 passed, 14 skipped` (375.9 s). Re-run after every round; the figure above is the last one, not an earlier round's. Per-commit `./pw quality-gate` before every commit touching `*.py`: `ruff … All checks passed!`, `mypy … Success: no issues found`, `SPDX-header check passed`, plugin-doctor `issues[0]`. No `uv.lock` churn at any commit (`git status` checked before each).
+`./pw verify` locally at each gate point → **`=== verify: SUCCESS ===`**, most recently `20852 passed, 14 skipped` (375.9 s). Re-run after every round; that figure is the last local one, not an earlier round's. **CI is the authority on the head**: `verify / conclusion` → `success` on `f1b9eb9`. Per-commit `./pw quality-gate` before every commit touching `*.py`: `ruff … All checks passed!`, `mypy … Success: no issues found`, `SPDX-header check passed`, plugin-doctor `issues[0]`. No `uv.lock` churn at any commit (`git status` checked before each).
 
 ⚠ **`test-compile` earned its place.** The first `./pw verify` failed with two `no-any-return` errors in the new metrics test module — a sub-step neither `quality-gate` nor `module-tests` performs, both of which were green on that same file. Fixed in `e978619`.
 
@@ -317,7 +317,7 @@ Merge-gate condition 2 is therefore genuinely established, not assumed.
 | 5 Build gate | **done** | 9 `*.py` files in the diff → gate applies. `./pw verify` → `SUCCESS`, 20 852 passed, 14 skipped |
 | 6 Verification sub-agent | **done** | 4 rounds; findings and dispositions in the table above; stop record states the **budget exit**, the budget declared before round 1, and each survivor's bound |
 | 7 PR cycle | **done** | PR #1293; no `skip-bot-review` (the diff touches `*.py` and `marketplace/bundles/**`, and a skill is code). All three comment surfaces read |
-| 8 Merge gate | see Reviewer participation | Conditions 1–3 met before arming; condition 4 disclosed |
+| 8 Merge gate | **conditions 1–3 met; NOT YET ARMED** | `verify / conclusion` green on the head, every comment handled, this report pushed as the last pre-merge commit, and the coverage shortfall disclosed. Arming is a one-way door on this merge-queue repo, so it is left as a separate deliberate act — see `status-report.md` for the live state |
 | 8 Bridge | **done** | No status or bookkeeping write outside this plan's own directory; the report carries the PR number and per-deliverable outcome |
 | 9 This check | **done** | This table |
 | 9 What have we learned | **done** | Below |
