@@ -81,10 +81,14 @@ TARGET_SCOPE_FIELD = 'targets'
 #: the targets' own registration, which is the source of truth for the set.
 _REGISTER_TARGET_RE = re.compile(r'register_target\(\s*[\'"]([^\'"]+)[\'"]')
 
+#: A non-indented ``key:`` line — the boundary an unclosed flow sequence
+#: must not be folded past.
+_TOP_LEVEL_KEY_RE = re.compile(r'^[^\s#][^:]*:')
+
 _DESCRIPTION_UNKNOWN = (
     'component `targets:` frontmatter names a target that is not registered — the '
-    'multi-target build rejects the declaration, and until it is fixed the component '
-    'ships to fewer targets than the author intended.'
+    'multi-target build rejects the declaration, so until it is fixed the build fails '
+    'rather than shipping the component anywhere.'
 )
 
 _DESCRIPTION_EMPTY = (
@@ -131,13 +135,17 @@ def _join_flow_sequence(value: str, rest: list[str]) -> str:
 
     Mirrors ``component_targets._join_flow_sequence``: a ``targets: [claude,``
     continued on the next line is one value, and reading only the first
-    physical line would report ``[claude`` as an unknown target.
+    physical line would report ``[claude`` as an unknown target. The fold
+    stops at the next top-level key, so an unclosed sequence cannot absorb
+    the fields that follow it.
     """
     head = _strip_comment(value)
     if not head.startswith('[') or ']' in head:
         return head
     parts = [head]
     for line in rest:
+        if _TOP_LEVEL_KEY_RE.match(line):
+            break
         segment = _strip_comment(line.strip())
         if segment:
             parts.append(segment)

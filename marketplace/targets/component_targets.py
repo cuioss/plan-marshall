@@ -78,11 +78,16 @@ actually consumed.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from pathlib import Path
 
 #: Frontmatter field a component uses to declare the targets it ships to.
 TARGET_SCOPE_FIELD = 'targets'
+
+#: A non-indented ``key:`` line — the boundary an unclosed flow sequence
+#: must not be folded past.
+_TOP_LEVEL_KEY_RE = re.compile(r'^[^\s#][^:]*:')
 
 #: Bundle sub-directories holding single-file components, keyed to nothing
 #: else: the file itself is both the declaration site and the emission unit.
@@ -191,15 +196,21 @@ def _join_flow_sequence(value: str, rest: list[str]) -> str:
     ``targets: [claude,`` continued on the next line is one value, not a
     truncated one. Reading only the first physical line yields the token
     ``[claude`` and a diagnostic naming a target nobody wrote, so the
-    continuation lines are folded in until the closing bracket. A sequence
-    that never closes is malformed YAML; it is left as-is, which the
-    validator then rejects rather than guessing at.
+    continuation lines are folded in until the closing bracket.
+
+    A sequence that never closes is malformed YAML, and folding in the rest
+    of the block would make the diagnostic name the following FIELDS as
+    targets — the same "names a target nobody wrote" defect one shape over.
+    So the fold stops at the next top-level key, leaving the unclosed value
+    to be rejected on its own terms.
     """
     head = _strip_comment(value)
     if not head.startswith('[') or ']' in head:
         return head
     parts = [head]
     for line in rest:
+        if _TOP_LEVEL_KEY_RE.match(line):
+            break
         segment = _strip_comment(line.strip())
         if segment:
             parts.append(segment)

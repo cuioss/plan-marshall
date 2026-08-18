@@ -148,7 +148,7 @@ Plan Marshall adds frontmatter fields the open standard does not define. These a
 
 * `targets` (optional) — the build targets the component ships to; absent means every target. Consumed by the adapter system below, which omits the component from any target the list does not name.
 
-The full optional set (`argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`, `profiles`, `priming_preamble`, `composes`, `targets`) is documented in `frontmatter-standards.md`. None of these fields is part of the agentskills.io spec; they are Plan Marshall's own workflow metadata.
+Further optional fields (`implements`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`, `profiles`, `priming_preamble`, `composes`, `targets`) are documented in `frontmatter-standards.md`, which is not an exhaustive register — a field may instead be declared by the extension-point contract that owns it. None of these fields is part of the agentskills.io spec; they are Plan Marshall's own workflow metadata.
 
 === How the adapter system relates to the standard
 

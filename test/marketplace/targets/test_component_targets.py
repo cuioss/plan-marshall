@@ -142,9 +142,29 @@ def test_declaration_forms_parse_to_the_same_scope(tmp_path, frontmatter, expect
 @pytest.mark.parametrize(
     ('frontmatter', 'expected'),
     [
-        pytest.param(form, expected, id=key)
-        for key, (form, expected) in _HASH_IS_NOT_A_COMMENT.items()
+        pytest.param(
+            'targets: [claude,\ndescription: a demo\nmode: workflow',
+            ['[claude'],
+            id='unclosed-then-more-keys',
+        ),
+        pytest.param('targets: [claude,', ['[claude'], id='unclosed-at-the-fence'),
     ],
+)
+def test_an_unclosed_flow_sequence_does_not_swallow_the_following_fields(
+    frontmatter, expected
+):
+    """Folding the rest of the block in would name the FOLLOWING FIELDS as targets.
+
+    The value is malformed either way and the build rejects it; what this
+    pins is that the diagnostic names only the malformed value, not the
+    description and mode lines that happen to sit beneath it.
+    """
+    assert _declared_tokens(f'---\nname: demo\n{frontmatter}\n---\n\n# Body\n') == expected
+
+
+@pytest.mark.parametrize(
+    ('frontmatter', 'expected'),
+    [pytest.param(form, expected, id=key) for key, (form, expected) in _HASH_IS_NOT_A_COMMENT.items()],
 )
 def test_a_hash_that_opens_no_token_is_not_a_comment(frontmatter, expected):
     """The comment stripper must not eat a ``#`` that is part of a value.

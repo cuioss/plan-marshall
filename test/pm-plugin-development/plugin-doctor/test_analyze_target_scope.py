@@ -144,10 +144,19 @@ def test_a_hash_that_opens_no_token_is_not_a_comment(value, expected):
             'targets: [claude,  # and\n  opencode]', ['claude', 'opencode'], id='with-comment'
         ),
         pytest.param('targets: [\n  claude\n  ]', ['claude'], id='opened-on-its-own-line'),
+        pytest.param(
+            'targets: [claude,\ndescription: a demo\nmode: workflow',
+            ['[claude'],
+            id='unclosed-does-not-swallow-the-following-fields',
+        ),
     ],
 )
 def test_a_flow_sequence_spanning_lines_is_read_whole(block, expected):
-    """Reading only the first physical line would report a target nobody wrote."""
+    """Reading only the first physical line would report a target nobody wrote.
+
+    The unclosed case is the mirror of that defect: folding in the rest of
+    the block would name the FOLLOWING FIELDS as targets instead.
+    """
     declaration = declared_targets(f'---\nname: a\n{block}\n---\n')
 
     assert declaration is not None
