@@ -477,8 +477,8 @@ not do. They are recorded in § Residue as a candidate list, deliberately not cl
 
 | Figure | Before | After | Command / population |
 |---|---:|---:|---|
-| Slice lines | 65,163 | **64,984** | `xargs wc -l` over the Expected-surface list |
-| Line delta | — | **−179 (0.275%)** | derived from the two above |
+| Slice lines | 65,163 | **65,054** | `xargs wc -l` over the Expected-surface list |
+| Line delta | — | **−109 (0.167%)** | derived from the two above, re-measured after the verification rounds added ~70 lines of restored rationale |
 | `.py` files in slice | 180 | 180 | none added, none deleted |
 | Collected tests | 3,622 | **3,622** | `pytest --collect-only -q` over the slice |
 | Passed / failed | 3,622 / 0 | **3,622 / 0** | `pytest -q -p no:randomly` over the slice |
@@ -517,10 +517,10 @@ reported as a measurement rather than argued from that expectation.
 | 4 | The slice is order-independent | ✅ **after a fix** — it FAILED first, found a pre-existing defect, and now passes in both orders at 3,622 each |
 | 5th (slice-specific) | Daemon-routing neutralization still engages **and discriminates** | ✅ passes as shipped; negative arm fails when the disengaging marker is removed |
 
-**On the line delta.** −0.275% sits inside the epic's measured band (`030`–`060` returned 2.56%,
+**On the line delta.** −0.167% sits inside the epic's measured band (`030`–`060` returned 2.56%,
 0.58%, 0.52%, 0.72% against floors of 20–30%). The plan retires its own 20% floor and says the delta
 is *reported, not targeted*; this run reports it and chased nothing. No assertion, rationale, or
-comment was deleted to move it — the 179 lines are duplicated loader preambles, duplicated
+comment was deleted to move it — the removed lines are duplicated loader preambles, duplicated
 `ExecuteConfig` baselines, and citation text, and the 73-finding drop in doctor findings is the better
 measure of what happened.
 
