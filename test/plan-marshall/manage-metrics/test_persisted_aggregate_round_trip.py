@@ -23,6 +23,7 @@ honestly supply a wall-clock the close never stamped.
 
 import importlib.util
 import re
+from pathlib import Path
 
 import pytest
 from _manage_metrics_fixtures import (
@@ -71,11 +72,13 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
 
 
 def _store(plan_context, plan_id: str) -> str:
-    return (plan_context.plan_dir_for(plan_id) / 'work' / 'metrics.toon').read_text(encoding='utf-8')
+    path: Path = plan_context.plan_dir_for(plan_id) / 'work' / 'metrics.toon'
+    return path.read_text(encoding='utf-8')
 
 
 def _report(plan_context, plan_id: str) -> str:
-    return (plan_context.plan_dir_for(plan_id) / 'metrics.md').read_text(encoding='utf-8')
+    path: Path = plan_context.plan_dir_for(plan_id) / 'metrics.md'
+    return path.read_text(encoding='utf-8')
 
 
 def _top_level_field(content: str, key: str) -> str | None:
