@@ -552,7 +552,10 @@ the tool-call walk) — see [data-format.md](standards/data-format.md). `enrich`
 also stamps `total_tokens_population` on every row it touches, and writes
 `inline_main_context_tokens` on any row whose
 `input + output + cache_creation` sum is non-zero (`cache_read` is excluded, so
-a window carrying only `cache_read_input_tokens` receives no field).
+a window carrying only `cache_read_input_tokens` gets no figure from `enrich`).
+`generate` then completes that field on every phase row, so it is never absent:
+a row `enrich` stamped but left without a figure was measured at zero and reads
+`0`, while a row `enrich` never visited reads `unmeasured`.
 
 A dispatched `total_tokens` is left byte-identical (explicit-wins). The ONE case
 where `enrich` writes `total_tokens` is a phase that dispatched nothing: there it

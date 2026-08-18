@@ -4,7 +4,8 @@ How much time and how many tokens did the plan consume relative to its scope? LL
 
 ## Inputs
 
-- `metrics.md` — total_wall_seconds, total_tokens, per-phase breakdown.
+- `work/metrics.toon` — the **persisted aggregate**: `totals_tokens`, `totals_worked_ms`, `totals_wall_ms`, each with its `{field}_population_count` companion, plus the shared `totals_population_denominator` and `totals_tokens_spans_populations`. **Read the totals from the record.** They are written by `manage-metrics generate` and are the same figures the report renders — see [`manage-metrics/standards/data-format.md`](../../manage-metrics/standards/data-format.md) § "The Persisted Aggregate". Re-summing the phase breakdown here would make this aspect a second producer of a figure the store already holds, free to pick a different population than the renderer did.
+- `metrics.md` — the per-phase breakdown table, for the phase-level cut the fragment carries. The **totals come from the store**, never from re-parsing this table's Total row.
 - `log_analysis` fragment (already computed) — entry counts, script durations, **and the `build_time` block** (see § "Build time is READ from the change-ledger").
 - `work/metrics.toon` — the **persisted denominators** and their sampling points: `deliverable_count`, `files_modified`, `tasks_completed`, each with its `{denominator}_sampling_point` companion, plus the shared `denominators_sampled_at` timestamp.
 
@@ -46,13 +47,13 @@ Each persisted count arrives as a **pair** with its `{denominator}_sampling_poin
 
 ### What population `totals.tokens` measures
 
-`totals.tokens` is read from `metrics.md`'s population-qualified `Tokens (dispatched unless marked)` column, and it inherits that column's **default-plus-exception** labelling verbatim — it does not re-derive a population of its own:
+`totals.tokens` is read from the store's `totals_tokens` field — the same figure `metrics.md`'s population-qualified `Tokens (dispatched unless marked)` column renders — and it inherits that column's **default-plus-exception** labelling verbatim; it does not re-derive a population of its own. The population qualifier is a field too: `totals_tokens_population_count` over `totals_population_denominator` is the `(n=k/N)` marker, and `totals_tokens_spans_populations` is the `(spans populations)` one.
 
 - **Default** — a phase row is a **dispatched-subagent** measurement, and is unmarked.
 - **Exception** — a row marked `(inline)` is a **main-context-window** measurement that `manage-metrics enrich` folds into `total_tokens` because the phase dispatched nothing (the same figure is also recorded under its own name as `inline_main_context_tokens`). A row marked `(mixed)` is still the dispatched figure, with its inline spend excluded.
 - **The sum** — when an `(inline)` row fed the sum, the Total cell is marked `(spans populations)`, and `totals.tokens` is then **not** a dispatched total.
 
-So `totals.tokens` is dispatched-population on every row *except* the marked ones, and spans populations exactly when the source Total says it does. The full contract — the three `total_tokens_population` signatures, the two guards a default-plus-exception label must satisfy, and every render site that prints the discriminator — is owned by [`manage-metrics/standards/data-format.md`](../../manage-metrics/standards/data-format.md) § "Default-plus-exception labelling of the `Tokens` column". Read the marker off the report; never assume the unmarked default holds for a plan whose Total carries `(spans populations)`.
+So `totals.tokens` is dispatched-population on every row *except* the marked ones, and spans populations exactly when `totals_tokens_spans_populations` says it does. The full contract — the three `total_tokens_population` signatures, the two guards a default-plus-exception label must satisfy, and every render site that prints the discriminator — is owned by [`manage-metrics/standards/data-format.md`](../../manage-metrics/standards/data-format.md) § "Default-plus-exception labelling of the `Tokens` column". Read the marker off the report; never assume the unmarked default holds for a plan whose Total carries `(spans populations)`.
 
 `billing_weighted_total` (the `Billing (cost)` column) is a **derived-cost** measure over the main-context window, not dispatched work. It is never summed into `totals.tokens` and never scored against the Section 2 anchors.
 
@@ -63,7 +64,8 @@ aspect: plan_efficiency
 status: success
 plan_id: {plan_id}
 totals:
-  duration_seconds: N
+  duration_seconds: N   # wall clock — READ from totals_wall_ms, reported, never divided by
+  worked_seconds: N     # agent effort — READ from totals_worked_ms; the ratio denominator
   tokens: N
   total_build_seconds: N   # READ from log_analysis.build_time (a FLOOR when suspect_count > 0)
   files_modified: N
@@ -79,7 +81,7 @@ denominator_provenance:
   sampled_at: {denominators_sampled_at} | absent
 ratios:
   tokens_per_file_modified: N
-  seconds_per_task: N
+  worked_seconds_per_task: N
 phase_breakdown[*]{phase,duration_seconds,tokens}:
   1-init,N,N
   ...
@@ -101,7 +103,13 @@ For every plan, compute and embed the following four ratios explicitly under the
 **Coerce each count to an integer before computing.** `read_metrics_raw` numeric-coerces per-phase block values only, so every PLAN-level key round-trips as text — `deliverable_count` reads back as `'3'`, not `3` — and applying `max(denominator, 1)` or division directly to the read value operates on a string.
 
 1. `tokens_per_file_modified` = `totals.tokens / max(files_modified, 1)` — `files_modified` READ from the persisted `files_modified` field.
-2. `seconds_per_task` = `totals.duration_seconds / max(tasks_completed, 1)` — `tasks_completed` READ from the persisted `tasks_completed` field.
+2. `worked_seconds_per_task` = `totals.worked_seconds / max(tasks_completed, 1)` — `tasks_completed` READ from the persisted `tasks_completed` field.
+
+   ⛔ **The numerator is WORKED time, not wall clock.** A per-task figure derived from `totals.duration_seconds` grades operator idle time as agent cost: a plan left open overnight between two tasks reports the gap as effort those tasks consumed. The worked figure is already recorded per phase (`agent_duration_ms` / `subagent_duration_ms`, aggregated into `totals_worked_ms`), so the ratio simply reads it — ⛔ **never clamp the wall figure, and never heuristically exclude long gaps**; both invent a measurement rather than reading the one that exists. The name states the population for the same reason: `seconds_per_task` over wall clock asserted a per-task cost the number was not.
+
+   ⭐ Reading the worked figure also survives an **unclosed phase boundary**. The worked value accumulates per dispatch and is backfilled from the durable accumulator at generate time, whereas the wall span is only ever written by a close — so on a plan whose terminal phase never closed, the wall numerator silently drops that phase while the worked numerator keeps it.
+
+   `totals.duration_seconds` stays in the fragment as a reported wall-clock fact. It is not a ratio numerator.
 3. `max_phase_token_share` = `max(phase_breakdown[*].tokens) / max(totals.tokens, 1)` (as a fraction 0.0–1.0; emit two decimals). This one needs no external denominator: it divides the numerator population by itself.
 4. `total_tokens_per_deliverable` = `totals.tokens / max(deliverable_count, 1)` — `deliverable_count` READ from the persisted `deliverable_count` field.
 
@@ -114,7 +122,9 @@ The four computed values MUST appear under `ratios:` in the fragment alongside t
 For each plan, look up the row matching the plan's `(scope_estimate, change_type)` combination. Every pair in the live key space is present as a row, and each row carries a `grade`:
 
 - **`anchored`** — the row defines warning and error thresholds for `totals.tokens`, against which Section 3 emits `[BUDGET]` findings.
-- **`fallback`** — the pair is a *present, deliberately ungraded* key: no calibration observation exists for it, so scoring falls back to the four ratio thresholds in Section 1 (`tokens_per_file_modified > 50_000` warning; `seconds_per_task > 900` warning; `max_phase_token_share > 0.50` warning; `total_tokens_per_deliverable > 500_000` warning). A `fallback` row is **not** the same as a missing row: it records that the pair was considered and left unanchored on purpose, so a silently-absent pair is a defect the cross-product guard catches.
+- **`fallback`** — the pair is a *present, deliberately ungraded* key: no calibration observation exists for it, so scoring falls back to the four ratio thresholds in Section 1 (`tokens_per_file_modified > 50_000` warning; `worked_seconds_per_task > 900` warning; `max_phase_token_share > 0.50` warning; `total_tokens_per_deliverable > 500_000` warning). A `fallback` row is **not** the same as a missing row: it records that the pair was considered and left unanchored on purpose, so a silently-absent pair is a defect the cross-product guard catches.
+
+⚠ **The `worked_seconds_per_task > 900` fallback threshold was calibrated against WALL CLOCK and has not been re-derived for worked time.** Worked time is bounded above by the wall span (the per-phase `Worked <= Reported (wall)` invariant `manage-metrics` maintains), so the same threshold fires **strictly less often** on the new numerator: it introduces no false warnings, and may now miss a genuine one. It is left at its measured value rather than moved by an invented reduction factor — the same discipline the token anchors take below. Re-derive it when a corpus of worked-time observations exists.
 
 **Population scored.** Every threshold below is scored against `totals.tokens` **as the Inputs section defines it** — dispatched-subagent on every row except those the report marks `(inline)`, where a main-context figure is folded in, and `(spans populations)` on the Total when that occurs. The anchors do not score `billing_weighted_total`.
 
