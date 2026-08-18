@@ -139,7 +139,7 @@ D3+D5+D6 persistence) was evaluated and rejected on three grounds recorded here:
 
 ## Findings
 
-One row per instance. Round-1 findings come from the independent verification sub-agent.
+One row per instance — **58 rows**: 55 from the four verification rounds (21 / 13 / 7 / 14 by round) plus 3 caught by this run itself during implementation. Counted from this table at the moment of writing, not carried forward.
 
 | # | Source | Finding | Disposition |
 |---|---|---|---|
@@ -263,7 +263,29 @@ Concretely, a reader should assume:
 
 ## Reviewer participation
 
-_Pending._
+Population **derived from configuration** — the `author_login` of each registry doc under
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/` (`pr-agent.md`, `coderabbit.md`,
+`sourcery.md`). Not transcribed from memory. All three comment surfaces were read
+(`get_comments`, `get_reviews`, `get_review_comments`); each verdict comes from the stored bodies, never
+from a check state.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
+|---|---|---|---|
+| `cuioss-review-bot` | **`reviewed`** | — | Posted a *PR Reviewer Guide* naming one focus area: `_parse_iso` parsing a zone-less stamp naive, so mixing awareness raises `TypeError` in the sort and in `pair_rows`. **Fixed** (see the R4-F5 row) and answered on the thread. Its `review / review` check concluded `success` |
+| `coderabbitai` | **`rate-limited`** | **yes** | *"Review limit reached … you've reached your PR review limit, so we couldn't start this review. **Next review available in: 24 minutes.**"* A countdown, not a property of this diff |
+| `sourcery-ai` | **`rate-limited`** | **no** | *"your pull request is larger than the review limit of 150000 diff characters"* — a size ceiling. Waiting cannot clear it; the same request never succeeds at this diff size. Its `Sourcery review` check concluded `skipped`, consistent with the refusal |
+
+⚠ **Two reviewers refused at the same moment for opposite reasons**, which is exactly why the `Reopens?`
+column exists: `coderabbitai`'s window clears on a clock and was worth re-requesting, `sourcery-ai`'s never
+will at this diff size. A table without the column would have rendered them identically.
+
+**Coverage: see the merge-gate disclosure below.** No `silent` verdict arose, so no recovery check was
+needed — the one reviewer whose body was absent on the first read had simply not finished (its comment
+landed at 10:59:56, after that read), which a second read established rather than a `silent` record.
+
+⛔ **No verdict is `unreadable`.** All three surfaces returned cleanly, and the PR payload's own
+`comments` count agreed with the bodies read — the positive control against believing an empty result.
+Merge-gate condition 2 is therefore genuinely established, not assumed.
 
 ## Cost
 
@@ -272,7 +294,7 @@ _Pending._
   usage on return — 279 458 / 278 356 / 214 719 / 225 251 sub-agent tokens, **998 K in total across the
   four** — which is the only measured token figure this run holds. It excludes the main session entirely.
 - **Wall-clock:** **3 h 19 min** — first commit `c39363a` at 07:38:45 UTC to final commit `394053d` at
-  10:57:53 UTC (source: `git log --date=iso`). Of that, **1 h 44 min** was the four verification agents'
+  10:57:53 UTC (source: `git log --date=iso`). Of that, **1 h 45 min** was the four verification agents'
   own reported durations (1 142 s / 2 813 s / 852 s / 1 503 s), i.e. **a little over half the elapsed time
   was spent verifying rather than building.**
 - **Population:** these figures count **one Claude Code cloud session's git-observable span, plus four
@@ -289,7 +311,7 @@ _Pending._
 | 1 Skills loaded | **done** | Named above; all obtained by bundle path (plugin absent in this session) |
 | 2 Branch | **done** | `claude/token-ledgers-disagree-q3t771` — **harness-assigned**, kept as-is per the cloud-session rule. Published to `origin` before the first edit; the plan's `Branch prefix: fix` is superseded by that rule and the divergence is recorded here |
 | 3 Plan directory | **done** | `doc/plans/code-intelligence-substrate/340-…/plan.md` exists via `git mv`; the first-instruction block was present and needed no repair |
-| 4 Implement | **done** | 11 commits, each carrying the `Co-Authored-By` trailer and no "Generated with" footer |
+| 4 Implement | **done** | 12 commits **including this report's own final commit**, each carrying the `Co-Authored-By` trailer and none carrying a "Generated with" footer — both verified by walking `git log origin/main..HEAD`, not asserted |
 | 4 Per-commit gate | **done** | Every commit touching `*.py` preceded by `./pw quality-gate` reporting `ruff … All checks passed!`, `mypy … Success: no issues found`, `SPDX-header check passed`, plugin-doctor `issues[0]` |
 | 4 Pushed | **done** | Pushed after every commit; no unpushed commit remains |
 | 5 Build gate | **done** | 9 `*.py` files in the diff → gate applies. `./pw verify` → `SUCCESS`, 20 852 passed, 14 skipped |

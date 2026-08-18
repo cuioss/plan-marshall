@@ -65,7 +65,7 @@ Log readability is the sole discriminator between `fail` and `inconclusive`: the
 
 `cost_preview` places two token figures side by side, and they do not measure the same thing.
 
-The recorded figure is the `execution_log[]` sum. Its writer (`manage-execution-manifest record-step`) refuses any row whose phase is outside `5-execute` / `6-finalize`, so the sum covers **two of the plan's six phases and cannot cover more** — it is emitted as `execution_log_tokens`, never as `actual_tokens`, because "actual" is the one word a reader accepts without checking its scope.
+The recorded figure is the `execution_log[]` sum over `5-execute` and `6-finalize`, so it covers **two of the plan's six phases**. That holds twice over: the writer (`manage-execution-manifest record-step`) refuses any row outside those phases, and the sum **filters to them itself** rather than trusting that refusal — a label backed only by a promise about another process is not a property of the figure. It is emitted as `execution_log_tokens`, never as `actual_tokens`, because "actual" is the one word a reader accepts without checking its scope.
 
 The prediction is whatever a producer persisted to `status.metadata.execution_profile_cost_preview`, together with the population it measures at `execution_profile_cost_preview_population`. An absent population reads as `unstated`, which never matches — absence is not agreement.
 
