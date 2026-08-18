@@ -314,8 +314,9 @@ class TestWrittenImpliesNonEmpty:
         ids=['blank-summary', 'empty-findings', 'envelope-only', 'both-empty', 'null-summary'],
     )
     def test_a_dict_with_no_payload_is_not_written(self, tmp_path, fragment):
-        # REGRESSION, and the third attempt at this invariant. Attempts 1 and 2
-        # asked whether the fragment was ABSENT; attempt 3 asked whether its
+        # REGRESSION. Earlier attempts at this invariant closed narrower cases:
+        # the first changed only the `_executive-summary` branch, the second
+        # asked whether the fragment was ABSENT, and the third asked whether its
         # CONTAINER was empty. Every shape here is a non-empty dict that renders
         # a JSON block stating nothing — and `{'findings': []}` is the literal
         # shape an LLM aspect with nothing to report writes. The compiler's own

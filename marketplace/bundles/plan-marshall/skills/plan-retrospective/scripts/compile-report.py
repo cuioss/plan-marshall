@@ -440,7 +440,9 @@ def _fragment_renders_empty(fragment: Any) -> bool:
     counted as written.
 
     ⛔ **A non-empty CONTAINER is not the same as a usable BODY**, and testing the
-    container was the third of three attempts to get this right. A dict such as
+    container was one of several attempts that each closed a narrower case than
+    the invariant needs — no count is given here, because a count of attempts
+    goes stale on the next one. A dict such as
     ``{'summary': ''}`` or ``{'findings': []}`` — the literal shape an LLM aspect
     with nothing to report writes — is a non-empty dict that renders a JSON block
     stating nothing. So for a dict the question is delegated to
@@ -558,13 +560,17 @@ def build_document(
             continue
         fragment = fragments.get(fragment_key)
         if _fragment_renders_empty(fragment):
-            # Nothing to render. An absent fragment gets the literal
-            # ``_No data provided._`` placeholder; an EMPTY one (``''`` from a
-            # valueless TOON key, ``{}``, ``[]``) gets a heading over an empty
-            # fenced block. Counting either as written is the invariant breach
-            # the Executive Summary branch above closes, and it was never
-            # confined to one row: every ``conditional_trigger = None`` row
-            # reaches here whenever its producer wrote nothing usable.
+            # Nothing usable to render, in any of three ways: an ABSENT fragment
+            # gets the literal ``_No data provided._`` placeholder; an EMPTY
+            # container (``''`` from a valueless TOON key, ``{}``, ``[]``) gets a
+            # heading over an empty fenced block; and a NON-EMPTY dict carrying
+            # no payload beyond its envelope (``{'findings': []}`` — the shape an
+            # LLM aspect with nothing to report writes) gets a heading over a
+            # JSON block that states nothing. Counting any of them as written is
+            # the invariant breach the Executive Summary branch above closes, and
+            # it was never confined to one row: every
+            # ``conditional_trigger = None`` row reaches here whenever its
+            # producer wrote nothing usable.
             #
             # Nothing was lost (there was no content to lose), so this is the
             # benign half of the partition.

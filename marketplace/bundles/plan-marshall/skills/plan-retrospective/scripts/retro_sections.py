@@ -100,7 +100,10 @@ def valid_aspect_keys() -> set[str]:
 #
 # * ``evaluated_population`` — ``standards/execution-context-dispatch-audit.md``
 #   ("publishes the evaluated population beside every count so a zero is
-#   legible"); emitted by ``check-dispatch-audit.py`` on every fact block.
+#   legible"); emitted by ``check-dispatch-audit.py`` on its ``shape_violation``
+#   and ``dispatch_coverage`` blocks. NOT on ``channel_completeness``, which
+#   publishes ``dispatch_line_count`` / ``completion_count`` /
+#   ``dispatched_step_count`` / ``ratio`` / ``confidence`` instead.
 # * ``population`` — the fragment-schema key in ``references/log-analysis.md``
 #   (e.g. ``population: plan_script_execution_log``), which names the corpus a
 #   block's counts were taken over.
@@ -137,8 +140,11 @@ def valid_aspect_keys() -> set[str]:
 # A false positive here is not harmless: the whole point of the signal is that an
 # unattributed zero is worth a reader's attention, and a list that cries wolf on
 # its own producers stops being read. Note that the probe's live population is
-# smaller than eight — three of the eight never reach ``written`` at all on an
-# ordinary plan, being classified as drops.
+# smaller than eight, and by how much depends on the plan: on a plan carrying an
+# ``execution.toon`` exactly ONE of the eight (``script-failure-analysis``) is
+# classified a drop and so never reaches ``written``; on a manifest-less plan
+# ``manifest-decisions`` and ``routing-decisions`` are dropped as well, making
+# three.
 ZERO_ATTRIBUTION_FIELDS: tuple[str, ...] = (
     'evaluated_population',
     'population',
