@@ -100,7 +100,7 @@ replaces did not carry them either.
 **Instance set, derived per finding.** Of the 183 whole-tree `test-module-preamble-boilerplate`
 findings, **14** resolve a skill-root `extension.py` — read at each finding's `file:line`, since the
 sweep names the test module and not the path it resolves. Not two: `060`'s figure was scoped to the
-fifteen directories it worked. The 14 span 11 test directories across 8 bundles.
+fifteen directories it worked. The 14 sit in 13 test modules across 11 directories.
 
 **Option chosen: widen the loader.** The alternative (exempt the shape in the analyzer) was rejected
 with a reason: the shape is a stable marketplace convention — 11 bundles ship
@@ -120,9 +120,11 @@ applicable helper per shape.
 
 ⚠️ **The count is unchanged at 183, and that is the correct outcome.** D2's done-when is satisfied by
 the first of its two branches — every one of the 14 findings is now *fixable by the documented
-remedy*. Converting the call sites is not this plan's to do: the 14 live in `test/pm-dev-*/`,
-`test/pm-documents/`, `test/marketplace/`, `test/pm-code-intelligence/` and
-`test/plan-marshall/build-*/`, none of which this plan's Expected surface claims. They belong to the
+remedy*. Converting the call sites is not this plan's to do: the 14 live under `test/pm-dev-*/`,
+`test/pm-documents/`, `test/marketplace/`, `test/pm-code-intelligence/`,
+`test/plan-marshall/build-gradle/`, `test/plan-marshall/build-npm/`, and one at the root of
+`test/plan-marshall/` (`test_plan_marshall_plugin_extension.py`) — none of which this plan's Expected
+surface claims. They belong to the
 owning slices (`080` for the `pm-*` and `marketplace` directories, `060`'s slice for the `build-*`
 ones). This is the same division D1's Out-of-scope states: this plan opens the seam, the owning slice
 performs the conversion.
@@ -202,9 +204,10 @@ Widened `_PLAN_DELIVERABLE_ID_RE` (`deliverable D?\d+`, so `Deliverable 2` match
 
 **No true positive stopped being reported.** Every one of the 81 pristine findings is present in the
 final set — zero `file:line` pairs disappeared and no file's count decreased. The 26 findings the
-bounds removed are fully accounted for: 10 one-digit bare numbers, and 16 numbers inside a hyphenated
-compound (`pre-#812` ×11, `pre-#515` ×2, `post-PR-#474` ×2, `post-#854` ×1), each listed individually
-and each read.
+bounds removed are fully accounted for, and split cleanly in two: **10** one-digit bare numbers (`#1`
+×4, `#2` ×5, `#3` ×1), and **16** numbers inside a hyphenated compound (`pre-#812` ×11, `pre-#515`
+×2, `post-PR-#474` ×2, `post-#854` ×1). The 16 were listed individually with their source lines and
+read; the 10 were classified by matched text rather than read one by one.
 
 **False-positive rate, measured by a cold reader.** Two independent sub-agents, each given only the
 findings and their surrounding source — no plan, no diff, no task context — and asked per finding
