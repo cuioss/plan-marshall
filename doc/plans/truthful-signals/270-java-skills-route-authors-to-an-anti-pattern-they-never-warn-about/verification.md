@@ -29,11 +29,42 @@ What was actually done, in order:
      `@Builder.Default` limitations, none about nullability. Absence claim holds.
    - `git grep -n -iE "else if|if/else|if-else|closed constant|constant set" a75060de^ -- .../java-core`
      → **zero** hits. Absence claim holds.
+     ⚠ **Corrected in adversarial review: this sweep's scope was too narrow as run.** It was confined
+     to `.../skills/java-core`, which is where the report expected the trigger to be, not where a
+     trigger could be. Re-run over the whole `pm-dev-java` bundle with a widened pattern
+     (`… |chain of if|if chain|switch statement|nested if`) it returns 6 hits, of which one matters:
+     `java-maintenance/standards/refactoring-triggers.md:61-87`, a "**Legacy Switch Statements**"
+     trigger whose worked example already converts an `if`/`else if` chain — but over **types**
+     (`instanceof` → pattern matching), not over a closed constant set. **The absence claim survives
+     on the broader basis**, but it was not decisive as originally evidenced, and the near-miss it
+     surfaces is a real gap the first pass missed. Filed as **G7**.
 6. Re-ran the beyond-diff staleness sweep myself: `grep -rn "Optional" marketplace/bundles/pm-dev-java/`
-   (36 hits outside the two edited standards files) and `grep -rn "@Nullable" --include=*.md
-   --include=*.adoc --include=*.py .` outside `pm-dev-java` (2 hits, both skill-registry descriptions).
+   and `grep -rn "@Nullable" --include=*.md --include=*.adoc --include=*.py .` outside `pm-dev-java`
+   (2 hits, both skill-registry descriptions).
    Read every `Optional` hit in `java-17-features.md`, `java-performance-patterns.md`, `javadoc/**`,
    `refactoring-triggers.md`, `compliance-checklist.md` in context.
+
+   ⚠ **Corrected in adversarial review — the count originally stated here ("36 hits outside the two
+   edited standards files") does not re-derive.** At HEAD (and the pm-dev-java files are unchanged
+   since `a75060de`, so the figure should be stable) the honest numbers are: **86** total `Optional`
+   hits in the bundle; **46** excluding the two edited standards files; **39** excluding all three
+   edited `java-null-safety` files; **38** of those in `*.md`. No reading of "outside the two edited
+   standards files" yields 36. Worse, the five files named as read account for only **32** hits, so
+   **6 were neither counted nor named**: `java-core/SKILL.md:41`, `java-cdi/SKILL.md:32`,
+   `java-cdi/standards/basic.md:110`, `java-quarkus/standards/container.md:123`,
+   `ext-triage-java/standards/pr-comment-disposition.md:41,67`, and
+   `manage-maven-profiles/scripts/profiles.py:154`. All six were opened in adversarial review: three
+   are prose uses of the English word "optional", one is CDI's `Instance<T>` idiom (explicitly *not*
+   `Optional`), one is a Python docstring, and two are triage phrasings about `Optional.get()` on a
+   return value. **None presents an `Optional` field, parameter, or record component as idiomatic —
+   the sweep's conclusion survives; only its arithmetic and its stated coverage were wrong.**
+
+   The sweep was also **scoped only to `pm-dev-java`**, which leaves a hole, since
+   `plan-marshall:ref-code-quality` is a *default* skill of the java domain. Closed in adversarial
+   review: `grep -rn "Optional" .../ref-code-quality/` → 2 hits, `error-handling.md:151` (return-scoped,
+   "Throw or use Optional/Result") and `code-organization.md:305` (Python `Optional[...]`). Neither is
+   stale. `grep -rInE "record [A-Z][A-Za-z]*\(" marketplace/bundles/ --include=*.md` outside
+   `pm-dev-java` → **zero** hits: no Java record is taught anywhere else in the marketplace.
 7. **Executed the guidance's code.** `javac 21.0.10` is available in this environment. Compiled all
    four Java examples the plan added (D3 enum switch, D2 `TokenConfig` compact constructor, D2
    `RetryPolicy` defaulting, D2 `Config` wrong/correct contrast) with `javac -Xlint:all` and ran them:
@@ -59,8 +90,8 @@ What was actually done, in order:
 
 | # | Deliverable | Done-when condition | Implemented? | As documented? | Correct? | Complete? | Evidence (file:line / symbol / command + result) |
 |---|---|---|---|---|---|---|---|
-| D0 | GATE: derive the positional rule set; verify the asserted absences | Every position and quoted rule confirmed against current text; asserted absence verified and reported | Yes | Yes | Yes | Yes | `report-01.md` § D0 carries the positional table with per-position status + evidence, the explicit absence report with the search terms, and the "I did not find it vs it is not there" statement. I re-ran the two absence searches at `a75060de^`: `record component` → 3 Lombok-only hits; the D3 trigger terms → 0 hits. Both hold. |
-| D1 | Null-safety guidance for every position, with reasons | All four positions stated with their reasons | Yes | Yes | Yes | Yes | `null-safety-core.md:138` § "Null-Safety by Position" (4-row table: return / field / parameter / record component) + `:156` § "Why `Optional` is a return type only" (3 reasons). Mirrored at `java-null-safety/SKILL.md:66-69` (Key Rules) and `:86` (Quality Rules). Serializable reason executed → `NotSerializableException: java.util.Optional`. |
+| D0 | GATE: derive the positional rule set; verify the asserted absences | Every position and quoted rule confirmed against current text; asserted absence verified and reported | Yes | Yes | Yes | Yes | `report-01.md` § D0 carries the positional table with per-position status + evidence, the explicit absence report with the search terms, and the "I did not find it vs it is not there" statement. I re-ran the two absence searches at `a75060de^`: `record component` → 3 Lombok-only hits; the D3 trigger terms → 0 hits. Both hold. **Adversarial review re-ran both wider:** the field/parameter/component prohibition swept bundle-wide at `a75060de^` with `Optional<T>\|never .{0,20}Optional\|Optional as a (field\|parameter)` — the only pre-existing `Optional` rules anywhere are return-scoped (`refactoring-triggers.md:49`, `java-null-safety/SKILL.md:64`, `null-safety-core.md:102`, `javadoc-core.md:173`), so the absence holds on a much broader basis than originally evidenced. The D3 sweep widened past `java-core` surfaced a near-miss → **G7**; see Method § 5. |
+| D1 | Null-safety guidance for every position, with reasons | All four positions stated with their reasons | Yes | Yes | Yes | Yes | `null-safety-core.md:138` § "Null-Safety by Position" (4-row table: return / field / parameter / record component) + `:156` § "Why `Optional` is a return type only" (3 reasons). Mirrored at `java-null-safety/SKILL.md:66-69` (Key Rules) and `:86` (Quality Rules). **Added in adversarial review:** the parameter half also lands in `null-safety-patterns.md:68-70` § "Nullable Parameters" ("**Never accept `Optional<T>` as a parameter.**"), the diff's `@@ -65,6 +65,10 @@` hunk — evidence the original row omitted. All heading line numbers re-derived exactly via `grep -n "^#"`. Serializable reason executed twice → `NotSerializableException: java.util.Optional`. |
 | D2 | Records section: component nullability, compact constructor, defaulting | Section exists and makes the normalization-vs-gymnastics distinction explicit | Yes | Yes | Yes | Mostly | `null-safety-core.md:173` § "Records and Null-Safety"; `:183` § "The compact constructor"; `:205` § "Defaulting without a builder-default annotation"; `:231` § "Legitimate normalization vs reassignment gymnastics". Both examples compile `-Xlint:all` clean and run. Accessor propagation executed → `@Nullable java.lang.String`. See G3, G6. |
 | D3 | `if`/`else`-over-closed-constants → `switch`, with the enum half | Trigger stated, with the enum half | Yes | Yes | Yes | Yes | `java-17-features.md:75` § "From an if/else chain over a closed constant set", before/after pair, enum-exhaustiveness paragraph, and the "constants must remain `String`" caveat. `javac -Xlint:all` compiles the after-example with no `default` — exhaustive. |
 | D4 | Null-coalescing interaction with static analysis | Named together with the working alternative | Yes | Yes | Plausible, unconfirmed | No | `null-safety-patterns.md:146` § "Static Analysis and Null-Coalescing Helpers"; alternative (flow-narrowable ternary) present. But no analyser is named and neither plan nor report records a reproduction or citation. See G1, G2. |
@@ -191,3 +222,107 @@ shipped. It remains an operator decision; it is not this plan's gap and is not c
   See G2.
 - **The merge-queue `merge_group` verification run** for this commit. Not inspected; the docs-only
   footprint claim it rests on was verified directly from git instead.
+
+## Adversarial review
+
+**Reviewed by:** an independent agent that did not write this document.
+
+**Checked.** Everything below was re-derived from the tree, not read out of this document or
+`report-01.md`.
+
+*Git and provenance.* `git cat-file -t 0e7c5869…` (exists), `git merge-base --is-ancestor` (it is an
+ancestor of today's HEAD `45ec01f9`), `git log -1 a75060de…` (the #1195 merge, 2026-08-13),
+`git show --name-status` (7 paths: 1 R100 rename, 1 add, 5 modifies, all `.md`, no `*.py`),
+`git show --stat` (424 insertions, **1** deletion), and the per-file hunk headers — which confirm
+`null-safety-core.md`'s `@@ -134,3 +134,117 @@` pure append and locate the single deletion in
+`java-null-safety/SKILL.md`. `git log --oneline -2` on all five touched bundle files plus the three
+untouched ones cited (`compliance-checklist.md`, `refactoring-triggers.md`, `java-21-features.md`)
+confirms `a75060de` is still newest and the working tree is clean for `pm-dev-java`
+(`git diff --quiet` → 0), so nothing here is mid-mutation by another agent.
+
+*Executed, not read.* `javac`/`java 21.0.10` against the real `jspecify-1.0.0` jar found on this
+machine. Compiled all four shipped Java examples verbatim with `-Xlint:all` → **exit 0, no warnings**,
+including the D3 enum `switch` with **no `default`**. Then ran them:
+`ConfigRight.class.getMethod("name").getAnnotatedReturnType()` → `@org.jspecify.annotations.Nullable()
+java.lang.String` and `TokenConfig.validity()` likewise → accessor propagation **confirmed by
+execution**. `Serializable.class.isAssignableFrom(Optional.class)` → `false`; serializing
+`record ConfigWrong(Optional<String> name) implements Serializable` → `NotSerializableException:
+java.util.Optional` **for both `Optional.of("x")` and `Optional.empty()`**, while the `@Nullable
+String` twin serialized in 70 bytes with the value *and* with `null`. `RetryPolicy.of(3, null)` →
+`RetryPolicy[maxAttempts=3, backoff=PT1S]`. Separately, reflection on
+`Objects.requireNonNullElse(Object,Object)` → `public static <T> T …(T,T)`, `getAnnotations()` `[]`,
+annotated return `[]`, both annotated params `[]`, and the call returns the fallback at runtime — G2's
+mechanism clause is now executed rather than asserted.
+
+*Sweeps re-run wider than the originals.* The `Optional` inventory re-counted five ways (86 / 46 / 39 /
+38 / 32); the D0 field-parameter-component absence re-swept bundle-wide rather than by the reporter's
+phrase; the D3 trigger absence re-swept across all of `pm-dev-java` rather than `java-core`; the
+staleness sweep extended outside `pm-dev-java` to `ref-code-quality` (a java-domain **default** skill,
+never swept originally) and to a bundle-wide search for Java record teaching. Every unnamed `Optional`
+hit was opened.
+
+*Load configuration.* `plan-marshall-plugin/extension.py:29-53` read directly to settle whether G3's
+"an author who loads `java-core` alone" is real. It is the default.
+
+*GitHub.* MCP `pull_request_read` `get` and `get_reviews` on `cuioss/plan-marshall#1195` — merged
+2026-08-13, head `21aa3eb`, 7 changed files, 424/1, `sourcery-ai[bot]` rate-limited, `coderabbitai[bot]`
+"Actionable comments posted: 7" on `0d90640` plus the CAUTION review carrying the one comment that
+failed to post. The report's reviewer table and the "6 inline + 1 failed to post" figure hold.
+
+**NOT re-checked.** (a) The cold read — still unreproducible, no transcript; this review adds nothing
+to it. (b) The analyser false positive as an empirical fact — no null-checker is installed or
+reachable, so G2 stays open on exactly the ground it was filed on. (c) The merge-queue `merge_group`
+run. (d) The consuming project's counts — a different repository. (e) `report-01.md`'s narrative of
+*how* the run proceeded (step ordering, sub-agent dispatch); only its checkable assertions were
+re-derived. (f) No mutation test was attempted — correctly, since the surface is Markdown with no
+guard to break. (g) `get_review_comments` bodies for the 6 inline CodeRabbit comments were not
+re-read; only the review-level records were.
+
+| Item | Original claim | Verdict | Evidence |
+|---|---|---|---|
+| **Verdict** | `implemented-with-gaps` | **upheld** | All six deliverables are implemented and every *Done when:* is met at HEAD; none is unimplemented, so `partially-implemented` would be wrong. D4's row ("Complete? No") is a discharged-deliverable-with-an-undischarged-gate, not a missing deliverable. |
+| D0 | Absences verified and reported | **upheld, evidence widened** | Both absences survive a much broader sweep than the one originally run — but the original D3 sweep was scoped to `java-core` and would not have caught a counter-example living in `java-maintenance`. Conclusion right, method too narrow. → G7. |
+| D1 | Four positions with reasons | **upheld** | Table at `null-safety-core.md:138`, reasons at `:156`, mirrored at `SKILL.md:66-69`/`:86`, parameter half additionally at `null-safety-patterns.md:68-70`. Serializability reason re-executed. |
+| D2 | Records section, distinction explicit | **upheld** | Sections at `:173`/`:183`/`:205`/`:231` confirmed by `grep -n "^#"`; both examples recompiled and re-ran. |
+| D3 | Trigger with the enum half | **upheld** | `java-17-features.md:75`, enum-exhaustiveness paragraph and `String`-caveat present; the after-example compiles with no `default`. |
+| D4 | Named with a working alternative | **upheld** | `null-safety-patterns.md:146-166`; ternary alternative present; gate still undischarged (G2). |
+| D5 | A sentence each, not rules | **upheld** | `java-lombok/SKILL.md:60-69`, two bullets under "these are **gaps, not rules**"; `@NonNull` grep re-run case-insensitively across the whole skill returns only the new bullet. |
+| G1 | Step-2 index omits the D4 section — `medium` | **re-severitied → `low`** | The omission is real (`SKILL.md:54-59`, five bullets ending at migration strategy). Its harm story is not: `SKILL.md:48`'s load condition already names "migration", which is D4's exact target reader, and the list does not gate the read. |
+| G2 | Analyser unnamed, gate undischarged — `medium` | **upheld, strengthened** | Section names no tool; `report-01.md` § D0 records no analyser check. The JDK-signature half of its mechanism is now executed (no annotations anywhere on `requireNonNullElse`). What is missing is a checker run, and none is reachable. `medium` is right — nothing false shipped, the prose is hedged "Some". |
+| G3 | `java-core` § Records has no pointer — `medium` | **upheld, evidence upgraded** | The one-hit grep re-derived. New: `java-core` is a **default** skill of the java domain and `java-null-safety` an **optional** (`extension.py:29-53`), and `java-core`'s registered description advertises "null-safety". The failure path is the default path, not a scenario. Kept at `medium`: the rule does exist and is reachable, just not from where records are taught. |
+| G4 | Checklist covers 1 of 4 positions — `medium` | **re-severitied → `high`** | Meets the rubric's "a guard that passes against the defect it names". `compliance-checklist.md` is the bundle's verification surface ("Full standards compliance verification", `java-maintenance/SKILL.md:104`; step 4 "**Verify**" in `maintenance-prioritization.md:102`); its § "Null Safety" names `pm-dev-java:java-null-safety` as its standard (`:33`) and checks one of that standard's four positions (`:36`). The plan's motivating population passes it clean. |
+| G5 | Xref names a heading that does not exist — `low` | **upheld, figures exact** | `grep -n "^#"` → **15** headings in `null-safety-core.md`, **12** in `null-safety-patterns.md`, none "Optional Usage"; `java-17-features.md:206` **is** `## Optional Usage`. `refactoring-triggers.md:48` reads exactly as quoted. Every stated figure re-derives. |
+| G6 | Heading over-promises its example — `low` | **upheld, citation fixed** | `:231-250` read: two record declarations, neither with a compact constructor, so no reassignment of either kind appears. The Fix text's "trim/`Set.copyOf` normalization already shown at `:183`" was imprecise — the `TokenConfig` example (`:191-203`) does a `Set.copyOf` defensive copy and a blank-check, no trim. Corrected. |
+| **G7** | *(new)* Switch trigger not extended to the if/else-over-constants shape | **added** | `refactoring-triggers.md:61-64` Detection reads "Switch statements with break keywords, fall-through cases" — it cannot match code containing no `switch`, which is precisely D3's motivating instance. Found only by widening the D0 sweep past `java-core`. |
+| Report figures | "seven files, all `.md`, no `*.py`"; "one deleted line"; `compliance-checklist.md:36`; `refactoring-triggers.md:48/49`; java-21 switch content; reviewer table | **upheld, all re-derived** | `--name-status`, `--stat` (1 deletion), exact line reads, `grep -n -i switch java-21-features.md` → 4 hits all under `## Pattern Matching in Switch`, MCP review records. |
+| "36 hits outside the two edited standards files" | count | **refuted as a figure** | Does not re-derive under any of five readings (86/46/39/38); the five files named as read account for 32, leaving 6 hits neither counted nor named. All 6 opened; none is stale. Conclusion stands, count replaced. |
+| "@Nullable outside `pm-dev-java` → 2 hits" | count | **upheld exactly** | Re-run: exactly 2, both skill-registry descriptions. |
+| "No genuinely-stale consumer" | sweep | **upheld, on wider ground** | Re-swept including the 6 unnamed hits, `ref-code-quality`, and a bundle-wide hunt for Java record teaching (zero outside `pm-dev-java`). Nothing presents `Optional` as a field, parameter, or component. |
+
+**Documents corrected.**
+*verification.md*: Method § 5 now records that the D3 absence sweep was scoped too narrowly and what
+the widened sweep found; Method § 6 replaces the unre-derivable "36" with the five honest counts, names
+the 6 hits the sweep never enumerated and their dispositions, and closes the outside-`pm-dev-java`
+scope hole; the D0 row records the widened absence sweeps; the D1 row gains the
+`null-safety-patterns.md:68-70` parameter evidence it had omitted. The verdict is unchanged.
+*gaps.md*: **Open items 6 → 7**; G4 `medium` → `high` with the rubric clause and a recorded
+counter-argument; G1 `medium` → `low` with its refuted harm story kept visible rather than deleted;
+G3 gains the default-vs-optional load evidence; G2 gains the executed reflection result; G6's `:183`
+citation corrected to `:191-203`; **G7 added**; a `## Refuted during adversarial review` section added
+recording that nothing was refuted outright and naming the two clauses that were.
+
+**Residual doubt — what a third reviewer should look at first.**
+1. **G4's severity.** It is the one judgement call here, and it turns on whether an agent-read Markdown
+   checklist counts as a "guard". If it does not, G4 returns to `medium` and this review's headline
+   correction goes with it. The counter-argument is recorded in the gap itself; weigh it rather than
+   inheriting the verdict.
+2. **The cold read remains the plan's central check and remains unverifiable.** Two independent
+   reviewers have now confirmed the guidance *says* the right thing; neither has confirmed that a cold
+   reader *derives* it. The cheapest way to close this is to re-run it — hand a fresh agent only the
+   three guidance files and the task, and persist the transcript this time. Until then the plan's own
+   stated success criterion is attested only by the run that had an interest in it passing.
+3. **G2's analyser claim.** Still the only shipped sentence in this diff whose truth nobody has
+   observed. Someone with NullAway or the Checker Framework available should spend ten minutes on it.
+4. **G3 and G7 are the same shape as G4** — a rule that landed in one skill and was never wired into
+   the surfaces that route readers to it. If a third reviewer finds a fourth instance, the right
+   response is probably one plan about cross-skill routing rather than four separate line edits.
