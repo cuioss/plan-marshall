@@ -352,6 +352,45 @@ route against Surefire's default IT excludes (the tree's own statement, in
 The same Surefire consequence in `build-maven/test_maven_extension.py` was itself narrated in the past
 tense as superseded behaviour; it is now present tense, which is what **B3** asks for.
 
+**Round 2 — re-read after restoration: "8 of 10 answer both questions."** All four restored docstrings
+moved to ANSWERS BOTH. Two that had passed in round 1 (#7 `test_cmd_which_module_root_exact_hit…`,
+#10 `test_which_module_resolves_test_path_via_paths_tests`) were scored ANSWERS Q1 ONLY in round 2
+**without their text changing between rounds** — the same reading applied more strictly, on the
+grounds that naming the wrong answer is the negation of the assertion rather than a consequence. That
+is verifier variance, not a regression, and it is recorded as such rather than smoothed over. Both
+docstrings do state the *mechanism*; what they omit is the downstream cost, and neither was rewritten
+by this run beyond removing its citation.
+
+⭐ **Round 2's real yield was its SUSPECT CLAIMS list, and three entries were defects in prose this run
+had written one commit earlier** — the invented-rationale class, committed while fixing the
+over-stripping. Every entry was checked against the tree before acting on it; these held up:
+
+| Claim (all written by this run in `a55cbf0`) | Verified against | Verdict |
+|---|---|---|
+| "the executable would name `e-2-e-playwright-maven` and **run a Maven build** against a JavaScript edit" | `_virtual_module_derived` → `_module_derived`, whose every executable is `pyproject_build` | **FALSE for this fixture.** Resolving the Maven sibling emits a *pyproject* invocation scoped to that module |
+| "the module the deriver then verifies is the one that **cannot build** the file that changed" | the two siblings' command sets, identical apart from the module name | **Unestablished.** Nothing in the fixture supports it |
+| "`module-tests` **is** the plain Surefire goal, and Surefire's default includes EXCLUDE the IT naming patterns" | this fixture's build classes resolve to `pyproject_build`; the Surefire fact is pinned in `build-maven/test_maven_extension.py` | **True of the Maven backend, but not of what this test demonstrates.** Stating it flatly here claims the test shows something it does not |
+
+All three are corrected in `0fb3cb7`, each now claiming only what the test actually pins. ⛔ This is
+the defect the lane contract singles out as the one nothing else catches — a stale claim contradicts
+the tree and a sweep finds it, but an invented one contradicts only reality: the suite is green, the
+linter clean, the doctor at zero, and the sentence has no earlier version to diff against. It was
+introduced at exactly the moment the contract predicts — writing a docstring to explain a fix a
+reviewer had just asked for.
+
+**Three further false statements, pre-existing, in `test_cmd_resolve.py`** — each contradicted by that
+same file, and each fixed under condition A because a false statement is fixed wherever it lives:
+
+| Statement | Contradicted by |
+|---|---|
+| a comment giving **pyproject's floor as 600s** | the module docstring ("pyproject declares 330 (-> 360)") and the floor test naming `PYTEST_OUTER_FLOOR_SECONDS = 330`. 600 is the **ceiling** everywhere else in the file |
+| the same comment calling Maven "**the only** engine family that still yields a `per_task` verdict" | the pyproject floor case forty lines below, asserting `execution_tier == 'per_task'` and `hint == _per_task_hint(360)` |
+| a section header reading "Case (a): … -> **floored to orchestrator tier**" | the test directly beneath it, asserting `per_task` |
+
+Plus superseded-behaviour narration the doctor's patterns do not match — "the pre-fix deriver
+matched…", and four `pre-#515` / `post-#515` spellings that survived the prose pass because the rule
+keys on `PR #nnn`. All rewritten in the present tense, keeping the mechanism.
+
 #### B5 — the plan's named target was already converged before this run
 
 D4 names "the build-system detection matrices (six implementations × the same contract questions — the
