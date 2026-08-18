@@ -147,7 +147,7 @@ deliverable item whose red was not observed is reported as **not done**, never a
    fail.
 2. **310/G4 — the push barrier's re-fire mapping is self-asserted.**
    `test/plan-marshall/workflow-integration-git/test_git_workflow.py::test_verdict_token_drives_refire_skip_mapping`
-   defines its own `verdict()` oracle three lines above the assertion. **This plan pre-decides the
+   opens its body with a local `def verdict(state)` and then asserts against it. **This plan pre-decides the
    gap's option (a)**, so the run makes no mid-run call: add a pure helper
    `push_barrier_action(state) -> 're-fire' | 'skip'` to
    `marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py`, have
@@ -257,9 +257,11 @@ the matching `requires_prompt_fields` entry turns a test in
 `test_step_prompt_fields_contract.py` **red** (observed, then reverted byte-identically); adding
 `requires_prompt_fields: [<field>]` to a generically-dispatched step with no own `prompt:` block
 leaves the suite **green**; a synthetic block carrying `caller_phase` is exercised and asserted
-not step-specific; `grep -rn "cannot send a step-specific one\|cannot carry a step-specific field"
-marketplace/ test/` returns zero hits; and the fixed link's display text resolves to an existing file
-when joined to its own directory.
+not step-specific; `grep -rn "send a step-specific one\|carry a step-specific field" marketplace/
+test/ .claude/` returns zero hits — note the pattern deliberately omits the leading "cannot", because
+one of the four sites (the module docstring) writes it as `**structurally cannot** send`, which a
+`"cannot send …"` pattern silently misses, so each of the four sites is re-read as well as grepped;
+and the fixed link's display text resolves to an existing file when joined to its own directory.
 
 ---
 
@@ -661,7 +663,7 @@ Every confirm/refute artifact below is **git-reachable from a fresh clone**. No 
 | 260/G1 reproduces: the guard reads carriage only from `prompt:` literal blocks, never from the input table | OBSERVED | `test/plan-marshall/phase-6-finalize/test_step_prompt_fields_contract.py` — `_step_specific_fields`, `_prompt_blocks`; `extension-api/standards/ext-point-finalize-step.md` § "Step-specific prompt-body fields" naming the input table as the declaration surface |
 | 260/G2 reproduces: the extension slot and the ∃-direction contradict | OBSERVED | `phase-6-finalize/SKILL.md` generic-template paragraph (`<plus every step-specific field …>` slot, "a floor, not a ceiling", "the dispatcher MUST forward every declared field", "a step's extras live in its own dispatch body") vs `test_step_prompt_fields_contract.py::test_no_orphan_prompt_field_declaration` and its assertion message |
 | 280/G2 reproduces: hand-written `[DISPATCH]` blocks survive at real dispatch sites | OBSERVED | `plan-marshall/workflow/planning-outline.md`, `.../planning.md`, `workflow-pr-doctor/SKILL.md`, `phase-6-finalize/workflow/pre-submission-self-review.md`, `phase-3-outline/standards/outline-workflow-detail.md` — each carries a `manage-logging work --message "[DISPATCH]…"` block; `ref-workflow-architecture/standards/dispatch-logging.md` § "Anti-pattern (forbidden)" forbids the shape |
-| 310/G4 reproduces: the re-fire mapping test defines its own oracle | OBSERVED | `test/plan-marshall/workflow-integration-git/test_git_workflow.py::test_verdict_token_drives_refire_skip_mapping` — the local `def verdict(state)` three lines above the assertion it checks |
+| 310/G4 reproduces: the re-fire mapping test defines its own oracle | OBSERVED | `test/plan-marshall/workflow-integration-git/test_git_workflow.py::test_verdict_token_drives_refire_skip_mapping` — the local `def verdict(state)` opening the test body, and the `assert verdicts == {…}` block built from it |
 | 440/G6 reproduces: the refusal guard is a bare substring check | OBSERVED | `test/plan-marshall/phase-6-finalize/test_verdict_currency.py::test_every_tabled_refusal_carries_its_section` — `assert _REFUSAL_HEADING in body` over the whole doc; the phrase occurs twice in each tabled step's doc |
 | No gap in this plan's set was already closed at authoring time | OBSERVED | Every gap listed in a deliverable heading was opened at its cited file and symbol and reproduces; the per-gap artifacts are the `Where` clauses of the source `gaps.md` entries |
 | Population (a) — the implementor set and its frontmatter — is derivable from `implements:` frontmatter | HYPOTHESIS | D1 settles it: the derivation either returns a non-empty set carrying the named keys, or the plan HALTS |

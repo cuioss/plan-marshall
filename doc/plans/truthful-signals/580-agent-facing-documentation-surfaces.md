@@ -117,9 +117,9 @@ entirely, that is a finding: record it and say so, do not invent a substitute si
    tree each equal the `FINDING_TYPES` tuple recovered by the gating derivation, element for element;
    `grep -c "arch-constraint" marketplace/bundles/plan-marshall/skills/manage-findings/SKILL.md` is
    non-zero; every `--category` enum in `manage-lessons/SKILL.md` lists all `LESSON_CATEGORIES`
-   members; and the class sweep in (c) returns no file that claims a skill is unregistered while its
-   own bundle `plugin.json` registers it, with every remaining hit listed in the report with its
-   reason for surviving.
+   members; and the class sweep in (c) has been run with every hit listed in the report against its
+   disposition — `tools-integration-ci/SKILL.md` fixed, the `manage-execution-manifest` variant
+   recorded as 100/G9 and left untouched, and each remaining hit named with its reason for surviving.
 
 2. **D2 — Configuration truth on the five consumer-facing `doc/user/` pages**
    (closes 190/G1 **high**, 190/G2, 190/G3, 190/G8, 200/G8)
@@ -285,14 +285,19 @@ entirely, that is a finding: record it and say so, do not invent a substitute si
      `marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/agents.md` is the
      declared SSOT for build-tier ownership on the leaf boundary and says the opposite in two
      directions: an `execution_tier: orchestrator` build MUST NOT be run by a leaf inline **or**
-     backgrounded, and the `await-long-running` seam is the one component permitted to background a
-     build, which it does with `run_in_background: true`. Scope the closing instruction: state that it
-     governs a build the caller runs itself — an `execution_tier: per_task` build — and that an
-     `execution_tier: orchestrator` build is neither foregrounded nor backgrounded by the caller but
-     handed to the `await-long-running` seam. Cross-link
+     backgrounded, and the `await-long-running` seam "is the ONLY component permitted to background a
+     build" — quote and confirm that clause in `agents.md` before relying on it. Scope the closing
+     instruction: state that it governs a build the caller runs itself — an `execution_tier: per_task`
+     build — and that an `execution_tier: orchestrator` build is neither foregrounded nor backgrounded
+     by the caller but handed to the `await-long-running` seam. Cross-link
      `../../ref-workflow-architecture/standards/agents.md` § "Leaf cannot reap a backgrounded build"
-     as the owning contract. **No sentence in the section may forbid the backgrounding
-     `await-long-running` mandates.**
+     as the owning contract. **No sentence in the section may forbid the backgrounding `agents.md`
+     sanctions.** Note that `await-long-running.md` itself opens by stating the build consumer does
+     **not** use its detach-and-notify seam (an orchestrator-tier build routes to the `marshalld`
+     build server instead) — so take the permission clause from `agents.md`, which is the declared
+     SSOT, and do not attribute a `run_in_background` build detach to `await-long-running.md`. If the
+     two still disagree at run time, record the disagreement in the run report; reconciling them is a
+     change to `agents.md` or `await-long-running.md` and is not in this deliverable.
    - **(b) Reconcile the two framings of harness auto-backgrounding** (110/G3). The same section
      presents auto-backgrounding as the thing that "preserved the job every time";
      `marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/SKILL.md` presents the same
