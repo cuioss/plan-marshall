@@ -8,9 +8,10 @@ YAML frontmatter configuration standards for agents, commands, and skills in the
 2. [Agent Frontmatter](#agent-frontmatter)
 3. [Command Frontmatter](#command-frontmatter)
 4. [Skill Frontmatter](#skill-frontmatter)
-5. [Tools Declaration](#tools-declaration)
-6. [Common Issues](#common-issues)
-7. [Validation Rules](#validation-rules)
+5. [Target Scoping](#target-scoping)
+6. [Tools Declaration](#tools-declaration)
+7. [Common Issues](#common-issues)
+8. [Validation Rules](#validation-rules)
 
 ## Frontmatter Format
 
@@ -93,6 +94,10 @@ color: blue
 - Purpose: Visual identification in UI
 - No functional impact
 
+**targets** (optional):
+- Build-time field naming the build targets this agent ships to; absent means every target
+- See [Target Scoping](#target-scoping) for the format, the validation rules, and the admission test
+
 ### Complete Agent Example
 
 ```yaml
@@ -143,7 +148,7 @@ Commands use the same field specifications as agents with these differences:
 
 ### Optional Fields
 
-Same as agents: `model`, `color`
+Same as agents: `model`, `color`, `targets` (see [Target Scoping](#target-scoping))
 
 ### Complete Command Example
 
@@ -193,6 +198,8 @@ user-invocable: true
 ### Optional Fields
 
 Skills do not use `model`, `color`, or `tools`/`allowed-tools` fields. The plugin schema for skills supports only: `name`, `description`, `user-invocable`, `mode`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`, `profiles`, `priming_preamble`, `composes`.
+
+That list is the **runtime** schema — the fields the host platform reads from an installed skill. `targets` (see [Target Scoping](#target-scoping)) is not in it and does not need to be: it is a build-time field the multi-target generator consumes from the source bundle when deciding whether to emit the skill at all. It is therefore a top-level field rather than a `metadata:` sub-key — `metadata:` is the escape hatch for keys that must be *recognized at runtime*, which this one never is.
 
 **implements** (optional):
 
@@ -403,6 +410,50 @@ mode: script-executor
 ---
 ```
 
+## Target Scoping
+
+### `targets` (optional — agents, commands, and skills alike)
+
+Declares the closed list of build targets a component ships to. It is a **build-time** field: the multi-target generator reads it from the source bundle and decides whether to emit the component at all.
+
+```yaml
+---
+name: tools-fix-intellij-diagnostics
+description: Retrieve and fix IDE diagnostics automatically
+tools: Read, Edit, Task, mcp__ide__getDiagnostics
+targets: [claude]
+---
+```
+
+**Semantics**:
+
+- **Field absent ⇒ every target.** This is the default and the overwhelmingly common case. Omitting the field is how an author says "ship everywhere"; nearly every component in the marketplace omits it.
+- **Field present ⇒ only the targets named.** On every other target the component is simply **absent** — no stub, no runtime no-op, no empty file.
+- **Format**: a YAML list, inline (`targets: [claude]`) or block form. Values are build-target registry names — derive the live set from `TARGET_REGISTRY` in `marketplace/targets/__init__.py`; it is the source of truth and is never enumerated in prose.
+- **Scope of one declaration**: an agent's or a command's declaration governs that one file. A skill's declaration lives on its `SKILL.md` and governs the **whole skill directory**, its `standards/`, `references/`, `templates/`, and `scripts/` sub-trees included. Files *inside* a skill are not individually scopable.
+
+**Validation** — every one of these **fails the build**, because a component silently shipping to fewer targets than intended is exactly the defect the field exists to prevent:
+
+| Declaration | Outcome |
+|---|---|
+| A name absent from `TARGET_REGISTRY` (a typo) | Build fails, naming the component and the unknown value |
+| `targets: []` | Build fails — a component shipped nowhere is an authoring error, not an intent |
+| Only targets that emit no component tree | Build fails — such a declaration also ships the component nowhere |
+
+The plugin-doctor `targets-scope-invalid` rule reports the first two at authoring time so the defect surfaces before the build. The third needs each target's `emits_bundle_tree` capability and is checked by the build alone.
+
+### Admission test — when a target-scoped component is the right answer
+
+A target-scoped component is the **fourth** placement home, and it is gated. A capability that exists everywhere but *behaves* differently belongs behind a runtime operation (uniform contract, per-target implementation); emitted-text and emitted-frontmatter vocabulary belongs in the build target's `mapping.json` data. Reach for `targets:` only when all three of these hold:
+
+1. It is a whole workflow or knowledge body — not reducible to a single runtime operation or to a body/frontmatter transform.
+2. It is genuinely not applicable on other targets, rather than merely hard to abstract.
+3. Normalizing it would force a no-op operation onto every other target, or distort the shared contract.
+
+It must never be used to dodge normalization: format-coupling (metrics shape, permission DSL, tool-name vocabulary) still normalizes into the runtime and build-target homes. The field is for target-bound *capabilities*, never for the per-target *rendering* of a shared one.
+
+**Cross-references are the author's responsibility.** Scoping a component away from a target does not rewrite references to it from components that still ship there. A component that scopes itself out of a target should not be the only path to a capability the remaining components point at.
+
 ## Tools Declaration
 
 ### Correct Format: Comma-Separated
@@ -476,7 +527,7 @@ Agents must not declare `Task` — the host platform restricts Task from sub-age
 
 ### Issue 4: Unsupported Fields in Skills
 
-Skills must not declare `allowed-tools` or `tools`. The skill schema only supports: `name`, `description`, `user-invocable`, `mode`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`, `profiles`, `priming_preamble`, `composes`. Any other field is silently ignored — remove it.
+Skills must not declare `allowed-tools` or `tools`. The runtime skill schema only supports: `name`, `description`, `user-invocable`, `mode`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`, `profiles`, `priming_preamble`, `composes`. Any other field is silently ignored at runtime — remove it, unless it is a build-time field the generator consumes before the artifact exists (`targets`, see [Target Scoping](#target-scoping)).
 
 ### Issue 5: Invalid Tool Names
 
@@ -617,6 +668,7 @@ Use this checklist when creating or reviewing frontmatter:
 - `description` field present with adequate length
 - No blank lines in frontmatter
 - Valid YAML syntax (no tabs, proper spacing)
+- `targets` field, if present, is non-empty and names only registered build targets — and the component meets the three-condition admission test in [Target Scoping](#target-scoping)
 
 **Agents**:
 - `tools` field uses comma-separated format (not array)

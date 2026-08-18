@@ -30,7 +30,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from marketplace.targets.base import TargetBase
-from marketplace.targets.claude.emitter import emit_bundle_verbatim, iter_bundle_dirs
+from marketplace.targets.claude.emitter import (
+    CLAUDE_TARGET_NAME,
+    emit_bundle_verbatim,
+    iter_bundle_dirs,
+)
 from marketplace.targets.claude.equality_check import run_equality_check
 from marketplace.targets.claude.marketplace_json_gen import generate_marketplace_json
 from marketplace.targets.claude.plugin_json_gen import generate_plugin_json
@@ -99,7 +103,7 @@ class ClaudeTarget(TargetBase):
 
     @property
     def name(self) -> str:
-        return 'claude'
+        return CLAUDE_TARGET_NAME
 
     def supports_agents(self) -> bool:
         return True
@@ -123,7 +127,9 @@ class ClaudeTarget(TargetBase):
         # Validate mode: equality check only. Read from the canonical
         # ``target/claude/`` location relative to the project root.
         if output_dir is None:
-            equality = run_equality_check(DEFAULT_VALIDATE_TARGET_DIR, bundle_dirs)
+            equality = run_equality_check(
+                DEFAULT_VALIDATE_TARGET_DIR, bundle_dirs, target_name=self.name
+            )
             self._last_run = {
                 'status': 'success' if equality.passed else 'error',
                 'emitted_count': 0,
@@ -139,10 +145,10 @@ class ClaudeTarget(TargetBase):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         for bundle_dir in bundle_dirs:
-            mirrored = emit_bundle_verbatim(bundle_dir, output_dir)
+            mirrored = emit_bundle_verbatim(bundle_dir, output_dir, target_name=self.name)
             emitted.extend(mirrored)
 
-            generated = generate_plugin_json(bundle_dir)
+            generated = generate_plugin_json(bundle_dir, target_name=self.name)
             target_plugin_json = output_dir / bundle_dir.name / '.claude-plugin' / 'plugin.json'
             target_plugin_json.parent.mkdir(parents=True, exist_ok=True)
             target_plugin_json.write_text(generated, encoding='utf-8')
@@ -161,7 +167,7 @@ class ClaudeTarget(TargetBase):
 
         # Run equality check after emit so emit_count reflects bytes written
         # AND so the equality engine has fresh artifacts to compare against.
-        equality = run_equality_check(output_dir, bundle_dirs)
+        equality = run_equality_check(output_dir, bundle_dirs, target_name=self.name)
 
         self._last_run = {
             'status': 'success' if equality.passed else 'error',

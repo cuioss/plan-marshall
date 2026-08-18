@@ -1,0 +1,290 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Component ``targets:`` frontmatter validity analyzer.
+
+Implements the ``targets-scope-invalid`` rule. A component — an
+``agents/*.md``, a ``commands/*.md``, or a skill's ``SKILL.md`` — may declare
+the build-time field ``targets:`` naming the build targets it ships to. The
+field is consumed by the multi-target generator
+(``marketplace/targets/component_targets.py``); a value the generator rejects
+fails the build, so this rule surfaces the same defect at authoring time,
+where the author is still looking at the file.
+
+What is flagged
+---------------
+- **Unknown target name** — a value naming no registered build target. Almost
+  always a typo, and one that would otherwise silently narrow the component's
+  reach.
+- **Empty declaration** — ``targets: []`` or a ``targets:`` key with no items.
+  A component that ships nowhere is an authoring error; omitting the field is
+  how an author says "every target".
+
+What is NOT flagged
+-------------------
+An absent field is correct and common — it means "ship to every target" and
+is the state of nearly every component in the marketplace.
+
+The generator additionally rejects a declaration naming ONLY targets that
+emit no component tree. That check needs each target's ``emits_bundle_tree``
+capability, which is a runtime property of a target class rather than
+something a static scan can read; it stays in the build, where the classes
+are importable. This rule covers the two defects a static scan CAN settle.
+
+Deriving the target set
+-----------------------
+The valid names are derived from the targets' own registrations —
+``register_target('{name}', …)`` in ``marketplace/targets/*/__init__.py`` —
+never from a list transcribed here, so a target registered later is honoured
+with no edit to this module.
+
+``marketplace/targets/`` is a meta-project tree: a consumer project installs
+the bundles without it. When it cannot be located, the unknown-name check is
+skipped (there is nothing to check names against) while the empty-declaration
+check, which needs no registry, still runs. Skipping a check whose input is
+absent is reported by silence rather than by a fabricated verdict.
+
+Pattern alignment
+-----------------
+Mirrors ``_analyze_frontmatter.py``: pure static analysis, line-based
+frontmatter parsing, stdlib-only, no mutation, ``Finding``-shaped output.
+
+Public API
+----------
+- ``analyze_target_scope(marketplace_root)``: entry point.
+- ``RULE_ID``: the canonical rule key.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+from _doctor_shared import Finding
+from _rule_registry import RuleDescriptor
+
+RULE_ID = 'targets-scope-invalid'
+
+RULE_DESCRIPTOR = RuleDescriptor(
+    rule_id=RULE_ID,
+    severity='error',
+    category='structural',
+    scope='corpus-relational',
+)
+RULE_NAME = 'analyze_target_scope'
+
+#: Frontmatter field under inspection.
+TARGET_SCOPE_FIELD = 'targets'
+
+#: Captures the name in a ``register_target('claude', ClaudeTarget)`` call —
+#: the targets' own registration, which is the source of truth for the set.
+_REGISTER_TARGET_RE = re.compile(r'register_target\(\s*[\'"]([^\'"]+)[\'"]')
+
+_DESCRIPTION_UNKNOWN = (
+    'component `targets:` frontmatter names a target that is not registered — the '
+    'multi-target build rejects the declaration, and until it is fixed the component '
+    'ships to fewer targets than the author intended.'
+)
+
+_DESCRIPTION_EMPTY = (
+    'component `targets:` frontmatter declares an empty list — a component that ships '
+    'to no target is an authoring error. Omit the field to ship to every target.'
+)
+
+
+def _frontmatter_block(text: str) -> str | None:
+    """Return the leading ``---``-fenced block's inner text, or ``None``.
+
+    The closing fence is matched as a whole ``---`` line, so a value that
+    itself contains three hyphens does not truncate the block.
+    """
+    if not text.startswith('---\n'):
+        return None
+    end = text.find('\n---\n', 4)
+    if end != -1:
+        return text[4:end]
+    if text.endswith('\n---'):
+        return text[4: len(text) - len('\n---')]
+    return None
+
+
+def _split_inline(value: str) -> list[str]:
+    """Split an inline scalar or flow-sequence value into tokens."""
+    inner = value
+    if inner.startswith('[') and inner.endswith(']'):
+        inner = inner[1:-1]
+    return [token.strip().strip('"').strip("'") for token in inner.split(',') if token.strip()]
+
+
+def _collect_block_items(lines: list[str]) -> list[str]:
+    """Collect a YAML block sequence's items, stopping at the first non-item."""
+    items: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if not stripped.startswith('-'):
+            break
+        item = stripped[1:].strip().strip('"').strip("'")
+        if item:
+            items.append(item)
+    return items
+
+
+def declared_targets(text: str) -> tuple[list[str], int] | None:
+    """Return ``(tokens, line_number)`` for a top-level ``targets:`` declaration.
+
+    ``None`` means the field is absent, which is the correct default. An empty
+    token list means the field is present but names nothing. Only a TOP-LEVEL
+    key counts — an indented ``targets:`` belongs to a nested mapping and is a
+    different field. The line number is 1-based within the whole file.
+    """
+    block = _frontmatter_block(text)
+    if block is None:
+        return None
+    lines = block.split('\n')
+    for index, line in enumerate(lines):
+        if line[:1].isspace():
+            continue
+        key, separator, value = line.partition(':')
+        if not separator or key.strip() != TARGET_SCOPE_FIELD:
+            continue
+        # +2: the opening fence occupies line 1, so block line 0 is file line 2.
+        line_number = index + 2
+        value = value.strip()
+        if value:
+            return _split_inline(value), line_number
+        return _collect_block_items(lines[index + 1:]), line_number
+    return None
+
+
+def registered_target_names(marketplace_root: Path) -> frozenset[str] | None:
+    """Derive the registered build-target names, or ``None`` when unavailable.
+
+    ``marketplace_root`` is the bundles root, so the targets tree is its
+    sibling. ``None`` means the tree is absent (a consumer project installed
+    the bundles without it) and names cannot be validated.
+    """
+    targets_root = marketplace_root.parent / 'targets'
+    if not targets_root.is_dir():
+        return None
+    names: set[str] = set()
+    try:
+        packages = sorted(targets_root.iterdir())
+    except OSError:
+        return None
+    for package in packages:
+        init_py = package / '__init__.py'
+        if not (package.is_dir() and init_py.is_file()):
+            continue
+        try:
+            text = init_py.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            continue
+        names.update(match.group(1) for match in _REGISTER_TARGET_RE.finditer(text))
+    return frozenset(names) if names else None
+
+
+def component_files(marketplace_root: Path) -> list[Path]:
+    """Enumerate every component file that may carry a ``targets:`` declaration."""
+    files: list[Path] = []
+    try:
+        bundle_dirs = sorted(marketplace_root.iterdir())
+    except OSError:
+        return files
+    for bundle_dir in bundle_dirs:
+        if not bundle_dir.is_dir():
+            continue
+        for subdir_name in ('agents', 'commands'):
+            subdir = bundle_dir / subdir_name
+            if not subdir.is_dir():
+                continue
+            files.extend(
+                path
+                for path in sorted(subdir.glob('*.md'))
+                if path.is_file() and not path.name.startswith('.')
+            )
+        skills_dir = bundle_dir / 'skills'
+        if not skills_dir.is_dir():
+            continue
+        for skill_dir in sorted(skills_dir.iterdir()):
+            skill_md = skill_dir / 'SKILL.md'
+            if skill_dir.is_dir() and skill_md.is_file():
+                files.append(skill_md)
+    return files
+
+
+def _scan_component(path: Path, registered: frozenset[str] | None) -> list[dict]:
+    """Return findings for one component's ``targets:`` declaration."""
+    try:
+        text = path.read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError):
+        return []
+
+    declaration = declared_targets(text)
+    if declaration is None:
+        return []
+    tokens, line_number = declaration
+
+    if not tokens:
+        return [
+            Finding(
+                type=RULE_ID,
+                file=str(path),
+                line=line_number,
+                severity='error',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=_DESCRIPTION_EMPTY,
+                details={'reason': 'targets_empty'},
+                extra={'rule': RULE_NAME},
+            ).to_dict()
+        ]
+
+    if registered is None:
+        return []
+
+    unknown = sorted(token for token in tokens if token not in registered)
+    if not unknown:
+        return []
+    return [
+        Finding(
+            type=RULE_ID,
+            file=str(path),
+            line=line_number,
+            severity='error',
+            fixable=False,
+            rule_id=RULE_ID,
+            description=(
+                f'{_DESCRIPTION_UNKNOWN} Unknown: {", ".join(unknown)}. '
+                f'Registered targets are: {", ".join(sorted(registered))}.'
+            ),
+            details={
+                'reason': 'targets_unknown',
+                'declared_targets': tokens,
+                'unknown_targets': unknown,
+                'registered_targets': sorted(registered),
+            },
+            extra={'rule': RULE_NAME},
+        ).to_dict()
+    ]
+
+
+def analyze_target_scope(marketplace_root: Path) -> list[dict]:
+    """Scan every component for an invalid ``targets:`` declaration.
+
+    Parameters
+    ----------
+    marketplace_root:
+        The bundles root (the directory that contains ``plan-marshall``,
+        ``pm-plugin-development``, etc.).
+
+    Returns
+    -------
+    list[dict]
+        A list of finding dicts (see the module docstring for the shape).
+    """
+    registered = registered_target_names(marketplace_root)
+    findings: list[dict] = []
+    for path in component_files(marketplace_root):
+        findings.extend(_scan_component(path, registered))
+    return findings

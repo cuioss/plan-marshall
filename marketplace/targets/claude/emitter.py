@@ -14,6 +14,11 @@ byte-for-byte: the canonical no-suffix file is emitted with
 ``implements:`` and ``levels:`` stripped, and per-level variants
 (``{base}-{level}.md``) are produced alongside it. See
 ``variant_emitter.py`` for the variant-emission contract.
+
+A component declaring a ``targets:`` frontmatter scope that omits this
+target is not mirrored at all — see ``component_targets.py``. Its
+manifest entry is dropped in lock-step by ``plugin_json_gen``, so the
+equality check sees a deliberately-absent component rather than drift.
 """
 
 from __future__ import annotations
@@ -26,7 +31,15 @@ from marketplace.targets.claude.variant_emitter import (
     VariantEmissionResult,
     emit_variants_for_agent,
 )
+from marketplace.targets.component_targets import excluded_emission_roots, is_under_any
 from marketplace.targets.fs_safety import is_within, safe_rmtree
+
+#: This target's registry name — the value a component's ``targets:``
+#: declaration must contain for the Claude target to emit it. Defined here
+#: rather than on the target class because the emitter is the first module
+#: that needs it, and importing the class from ``target.py`` (which imports
+#: this module) would close a cycle.
+CLAUDE_TARGET_NAME = 'claude'
 
 EXCLUDED_DIR_NAMES = frozenset({'__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache'})
 
@@ -72,7 +85,12 @@ def _is_agent_file(rel: Path) -> bool:
     )
 
 
-def emit_bundle_verbatim(bundle_dir: Path, output_dir: Path) -> list[Path]:
+def emit_bundle_verbatim(
+    bundle_dir: Path,
+    output_dir: Path,
+    *,
+    target_name: str = CLAUDE_TARGET_NAME,
+) -> list[Path]:
     """Mirror ``bundle_dir`` into ``output_dir/{bundle_name}/``.
 
     Most files copy byte-for-byte. Agent files (``agents/*.md``) that
@@ -83,7 +101,13 @@ def emit_bundle_verbatim(bundle_dir: Path, output_dir: Path) -> list[Path]:
 
     Returns the list of paths written under the destination directory.
     Skips entries listed in ``EXCLUDED_DIR_NAMES`` and
-    ``EXCLUDED_RELATIVE_FILES``.
+    ``EXCLUDED_RELATIVE_FILES``, plus every component whose ``targets:``
+    frontmatter scope omits ``target_name`` (a skill's declaration
+    governs its whole directory).
+
+    Raises:
+        TargetScopeError: Some component in the bundle declares an
+            invalid ``targets:`` scope.
 
     The destination bundle directory is wiped before writing so stale
     artifacts from prior emits (e.g. variant files for source canonicals
@@ -115,12 +139,14 @@ def emit_bundle_verbatim(bundle_dir: Path, output_dir: Path) -> list[Path]:
         safe_rmtree(dest_root, output_dir)
     dest_root.mkdir(parents=True, exist_ok=True)
 
+    scoped_out = excluded_emission_roots(bundle_dir, target_name)
+
     written: list[Path] = []
     for source in sorted(bundle_dir.rglob('*')):
         if not source.is_file():
             continue
         rel = source.relative_to(bundle_dir)
-        if _is_excluded(rel):
+        if _is_excluded(rel) or is_under_any(rel, scoped_out):
             continue
         dest = dest_root / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -146,10 +172,12 @@ def emit_bundles_verbatim(
     marketplace_dir: Path,
     output_dir: Path,
     bundles: Iterable[str] | None = None,
+    *,
+    target_name: str = CLAUDE_TARGET_NAME,
 ) -> list[Path]:
     """Convenience wrapper — mirror every selected bundle."""
     bundle_list = list(bundles) if bundles is not None else None
     written: list[Path] = []
     for bundle_dir in iter_bundle_dirs(marketplace_dir, bundle_list):
-        written.extend(emit_bundle_verbatim(bundle_dir, output_dir))
+        written.extend(emit_bundle_verbatim(bundle_dir, output_dir, target_name=target_name))
     return written

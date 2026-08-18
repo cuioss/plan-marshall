@@ -86,6 +86,7 @@ GOLDEN_QG_LABELS = [
     'analyze_role_field',
     'analyze_lane_frontmatter',
     'analyze_skill_mode',
+    'analyze_target_scope',
     'analyze_persona_profile_uniqueness',
     'analyze_persona_binding_resolves',
     'provides-method-table-drift',
