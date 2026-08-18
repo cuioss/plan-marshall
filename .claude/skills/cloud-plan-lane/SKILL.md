@@ -177,6 +177,78 @@ git checkout {prefix}/{plan-name}
 Determine which case you are in before acting (`git rev-parse --verify --quiet {prefix}/{plan-name}`
 succeeds when the branch exists).
 
+### A run resumed in a NEW session, on a DIFFERENT assigned branch
+
+The two arrivals above are "first run" and "resumed run", and the second silently assumes the resumed
+run is bound to the **same** branch name. A cloud session halted mid-run and picked up later is not:
+the replacement session is pre-assigned its **own** `claude/{slug}-{hash}`, while the work sits on the
+previous session's branch. Neither arrival covers that, and the two rules that do apply point in
+opposite directions — *keep your assigned branch* (§ "A cloud session MUST keep its harness-assigned
+branch") and *the remote is the only durable storage* (so the earlier work must be carried forward,
+not abandoned).
+
+**Resolve it in favour of both: carry the work onto the branch this session is bound to.**
+
+⛔ **Establish the precondition BEFORE resetting anything.** `checkout -B` force-moves an existing
+local branch, and the assigned branch may already carry commits — its own, or a previous attempt's.
+Resetting it discards them silently, which is the exact work-loss failure this contract exists to
+prevent, committed by the step written to prevent it. Check first:
+
+```bash
+git fetch origin main {previous-branch}
+git ls-remote --heads origin {assigned-branch}
+git log --oneline origin/main..{assigned-branch}     # empty ⇒ safe to reset
+```
+
+Then act on what you found:
+
+- **The assigned branch has no unique commits** (the ordinary case — a fresh session's branch sits at
+  `main`): reset it and rebase.
+- **It has unique commits**: do **not** reset. They are unpushed or unreviewed work belonging to this
+  session; rebase the previous branch's commits **on top of** them, or stop and report the run
+  **blocked**, naming both sets. Never choose silently between two lines of real work.
+- **It already exists on `origin` with commits**: the push below will be rejected as a non-fast-forward.
+  That rejection is information, not an obstacle to force past — resolve it as the case above, and do
+  not reach for `--force` to make the symptom go away.
+
+```bash
+git checkout -B {assigned-branch} origin/{previous-branch}
+git rebase origin/main
+git push -u origin {assigned-branch}
+```
+
+A plain checkout of the previous branch is not an option — it leaves every later commit somewhere this
+session's harness cannot find after a VM reclaim. A fast-forward often is not available either: once
+`main` has taken any commit the older branch predates, the two have diverged and `merge --ff-only`
+refuses. **Leave the previous branch on `origin` untouched**; it costs nothing and is the only copy of
+the pre-rebase history.
+
+⛔ **A rebase changes the SHA of every commit it REPLAYS, and any document quoting one then cites a
+commit on no branch under review — a condition-A defect the run manufactured by following this very
+step.** Scope that precisely rather than overstating it: the replayed set is what the branch carries
+and `main` does not. A SHA already reachable from `origin/main` keeps its object id and stays valid,
+so **rewrite only references you have proven stale** — checking each with
+`git cat-file -e {sha}` against the current branch, or `git merge-base --is-ancestor {sha} HEAD`.
+
+**Pair old to new by patch content, not by subject.** Subjects repeat, conflict resolution edits them,
+and a rebase can drop or squash a commit, so subject-and-order matching is a guess dressed as a method:
+
+```bash
+git range-diff origin/main...{previous-branch} origin/main...{assigned-branch}
+```
+
+Its output pairs each old commit with its replayed counterpart and marks any that were dropped or
+changed — a commit with no counterpart must be reported, never silently remapped to a neighbour.
+
+**Two surfaces hold quoted SHAs and they are not equally fixable.** Run documents (`report-NN.md`,
+`actual-state.md`) and the **PR description** are editable — correct them here, and say in the new
+run's report that you did. **Commit messages are not**, short of another history rewrite; a stale SHA
+in an already-written commit message is therefore accepted and disclosed, not chased. The practical
+consequence is forward-looking: **do not quote a same-branch SHA in a commit message** on a branch that
+may still be rebased.
+
+Record in the report which arrival this run was.
+
 ### Get the branch onto the remote before any work
 
 **The invariant, independent of how the branch came to be: no work proceeds until the branch exists
@@ -708,6 +780,11 @@ So, before recording a finding closed:
     `finally` — which covers a normal return and any exception but **not** a killed process, so
     re-check `git status` when the sweep ends and treat a surviving mutation as a failed sweep rather
     than a result.
+  - ⛔ **Scratch paths are unique per agent.** Put the snapshot under a path carrying the agent's own
+    name or role (`$TMPDIR/{agent}-mutsweep/…`), never a shared generic one. A run's mutation sweeps
+    can be in flight concurrently — the author's and a dispatched verifier's — and two agents choosing
+    the same filename clobber each other's snapshot, so the `finally` restores the *other* agent's
+    bytes. An observed run had exactly this collision between two independent sub-agents.
 - **Assert the verdict positively.** `assert x == expected`, never only `assert wrong not in x`.
 - **Check the fixture reaches the state by the route the test claims**, and pin that precondition with
   its own assertion where a second route exists.
@@ -786,6 +863,26 @@ and neither sweep caught either:
 |---|---|---|
 | a run report's findings table | nine test stubs "supply a non-empty path, which the state machine maps to `materialized`" | True of the path; the stubs return a **boolean** as the tuple's first element. `True == 'materialized'` is `False`, so every one of them silently took the fallback branch. The build failed 12 tests |
 | a docstring, inside the check written to prevent this exact class | `documentation_only` "is the only bucket checkable without the build extensions" | Calling the aggregator on a config-only write-set returns `documentation_only`. The check was **rejecting three shapes the classifier accepts**, blocking valid outlines |
+
+⛔ **When the clause asserts something ENVIRONMENT-DERIVED, running it once is not enough — run it
+against a second shape it will actually meet.** A path's depth below `/`, a hostname, a user, a home
+directory, a locale, a CPU count, a temp-dir location: each is a property of the *machine*, not of the
+code, so executing the claim where it was written confirms it by construction — the same failure this
+rule already names, one level up. The check is to evaluate it against a shape CI will present, not
+merely a representative one.
+
+This is the class the local build gate **structurally cannot** catch, which is what makes it worth its
+own paragraph. An observed run's test hard-coded `../../../etc` to escape the repository and asserted
+the result was `/etc`. That holds only from a checkout three levels below `/`; the authoring machine's
+was, a GitHub Actions checkout at `/home/runner/work/{repo}/{repo}` is five. `./pw verify` reported
+`SUCCESS` with the whole suite green **on the exact commit CI rejected**, and the test's own docstring
+stated the false premise as a fact — *"`PROJECT_ROOT` is three levels below `/`"* — so test and prose
+agreed, both derived from the same unexamined assumption. Four verification rounds read the file.
+
+⭐ **And such a fix is verified by DERIVATION, not by re-running**, because the machine that must
+confirm it is the one that cannot reproduce the failure. Evaluate the corrected expression against
+several shapes — the authoring path, CI's actual path, a degenerate one — and show it holds for each.
+A green local re-run proves only that the machine still agrees with itself.
 
 Both were one function call from being falsified, and both were expensive to find: a full build, and
 a dispatched sub-agent. The second is the sharper warning — the sentence violating this rule sat
@@ -1402,7 +1499,7 @@ that its artifact exists on disk:
 | 4 Per-commit gate | Every commit touching `*.py` was preceded by a clean quality gate — a `total_issues: 0` / empty `errors[]` executor log, or the direct `./pw` tools each reporting clean (`ruff`/`mypy`/SPDX passed) |
 | 4 Pushed | No unpushed commit remains (`git status -sb` reports no `ahead`) |
 | 5 Build gate | Report states the git-derived Python-change verdict and the build outcome |
-| 6 Verification sub-agent | Findings and dispositions in the report; **which of the two exits ended the loop**, the **budget that applied** (five, or the plan's) with **every extension and who granted it**, and the round that stopped it. Where the budget ran out with an operator reachable, that the boundary question was **put to them** and what they answered; where it ran out headless, that fact and the fallback taken. On the verifier exit: **the verifier's own last answer** — never the author's verdict — and the **evidence stronger than a read** it rests on, named. On the budget exit: that fact, with everything A forbids **fixed** regardless and what closing each remaining B survivor would take. Either way: each survivor — and each behavioural finding left `deferred` — listed individually with its (a) proof or (b) bound and confirmation it was **re-put to the verifier** in the stopping round; whether the late rounds' findings were **narrower and not merely fewer**; the **residue to assume remains**; and `Outcome` still reporting the deliverables, not the loop (§ Step 6, "When the loop stops") |
+| 6 Verification sub-agent | Findings and dispositions in the report; **which of the two exits ended the loop** — named with the same `verifier-clear` / `budget-exhausted` token the report header carries, plus the `non-converging` qualifier where it applies (§ Report) — the **budget that applied** (five, or the plan's) with **every extension and who granted it**, and the round that stopped it. Where the budget ran out with an operator reachable, that the boundary question was **put to them** and what they answered; where it ran out headless, that fact and the fallback taken. On the verifier exit: **the verifier's own last answer** — never the author's verdict — and the **evidence stronger than a read** it rests on, named. On the budget exit: that fact, with everything A forbids **fixed** regardless and what closing each remaining B survivor would take. Either way: each survivor — and each behavioural finding left `deferred` — listed individually with its (a) proof or (b) bound and confirmation it was **re-put to the verifier** in the stopping round; whether the late rounds' findings were **narrower and not merely fewer**; the **residue to assume remains**; and `Outcome` still reporting the deliverables, not the loop (§ Step 6, "When the loop stops") |
 | 7 PR cycle | PR exists; every comment dispositioned in the report; the participation table carries a verdict **and** a `Reopens?` value per reviewer, and every `silent` verdict records what its recovery check found. An `unreadable` verdict means condition 2 is NOT established — the row is reported as **not done**, whatever the merge outcome |
 | 8 Merge gate | Conditions 1–3 met and auto-merge armed. Either `state: MERGED` was confirmed after arming, **or** the session could not self-wake to watch the queue (§ Cloud session affordances) and delegated the landing to the orchestrator's collect — both are completed, neither is partial (§ Step 8). The merge commit is recorded to the operator, not in the pre-merge report |
 | 8 Bridge | No **status or bookkeeping** write landed under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan's directory was touched; a **declared-deliverable** edit to a shared lane doc (e.g. `cloud-bridge.md`, `README.md`, the plan template) is permitted — and the report carries the PR number and per-deliverable outcome the orchestrator will collect from |
@@ -1418,8 +1515,18 @@ very tree the report describes. No gate can catch this, because the claim is abo
 rather than the code: the suite stays green while the sentence goes false. An observed report stated
 that `.plan/` carried only `marshal.json` and `project-architecture`, with no `logs/` and no `local/`.
 That was true when written; by the time the build gate had run, the same tree held
-`.plan/execute-script.py`, `.plan/temp/`, and a file under `.plan/local/logs/`. Only tree claims need
-this re-check — diff claims are already covered.
+`.plan/execute-script.py`, `.plan/temp/`, and a file under `.plan/local/logs/`.
+
+**Re-verify every HISTORY claim too, whenever this run rebased.** A commit SHA quoted anywhere — a
+prior `report-NN.md`, this run's own report, a commit message, the PR description — is a claim about
+the branch under review, and a rebase makes every one of them false at once (§ Step 2, "A run resumed
+in a NEW session"). It is the same shape as the tree claim above and equally invisible: the suite
+stays green, the diff is unchanged, and only the citations rot. An observed run rebased nine commits
+and left two documents naming SHAs that existed on no branch under review. Re-derive each against the
+current branch at the moment of the claim.
+
+So three claim classes, and only one is covered for free: **diff** claims are re-derived by the § Step
+6 sweeps; **tree** and **history** claims are not, and are re-checked here.
 
 ### What have we learned
 
@@ -1476,6 +1583,21 @@ Required content:
 
 **Date (UTC):** …    **Branch:** …    **PR:** …    **Outcome:** completed | partial | blocked
 
+> **Verification loop exit:** `{exit}` [`, non-converging`]
+
+**The schema is a primary exit plus an optional qualifier — not a three-value enum.** `{exit}` is
+exactly one of **`verifier-clear`** or **`budget-exhausted`**, because § Step 6 defines exactly two
+ways the loop ends. **`non-converging`** is a *qualifier* appended to either, and it is appended
+whenever the late rounds' findings were not narrower — which § Step 6 already requires the stop record
+to state. It is a qualifier rather than a third exit because it answers a different question: the exit
+says *what stopped the loop*, the qualifier says *whether the loop was still finding things when it
+stopped*. Both combinations are real — a budget can run out on a converging loop, and a verifier can
+answer "nothing remains" on a loop whose previous round was still finding defects.
+
+Write it exactly as `**Verification loop exit:** budget-exhausted, non-converging` or
+`**Verification loop exit:** verifier-clear`. Use these same two tokens and this same qualifier in the
+§ Step 6 stop record and the § Step 9 contract-check row; do not paraphrase them into other wording.
+
 ## Skills loaded
 …
 
@@ -1493,7 +1615,8 @@ section states what was checked to reach it.
 
 Then the stop record (§ Step 6, "When the loop stops"):
 
-- **which of the two exits ended the loop** — the verifier's answer, or a spent budget no operator
+- **which of the two exits ended the loop**, named with the header's own token (`verifier-clear` or
+  `budget-exhausted`, plus `non-converging` where it applies) — the verifier's answer, or a spent budget no operator
   extended — the budget that applied (five, or the plan's), every extension granted and by whom, and
   which round stopped it. A budget exhausted with a reachable operator records the boundary question
   and its answer; one exhausted headless records that there was nobody to ask;
@@ -1515,6 +1638,16 @@ Then the stop record (§ Step 6, "When the loop stops"):
   reports the deliverables, not the loop.
 
 A run that fixed everything says so, and has no survivor rows.
+
+⭐ **The exit belongs in the report HEADER, not only in this stop record.** `Outcome` reports the
+deliverables and says nothing about the loop, so a run that stopped because it ran out of rounds
+carries the same `Outcome: completed` as one that stopped on a verifier's all-clear — and `Outcome` is
+what a collector reads. Naming the exit in the header (above) costs one line and makes the difference
+visible without hunting for this section. **A `non-converging` loop is the case that most needs
+saying**: the useful signal is not "verification finished" but *"each round is still finding defects at
+the same rate, and the rate is not decaying."* An observed run reached its fourth round finding **more**
+shipped-surface defects than its third, and a fifth party — an automated reviewer — then found a
+fail-open none of the four had caught.
 
 ## Reviewer participation
 The expected reviewer population **derived from configuration** — the `author_login` of each
