@@ -683,12 +683,18 @@ def analyze_test_module_preamble(test_root: Path) -> list[dict]:
     Two shapes are flagged, both of which resolve a module by the test file's
     own location rather than by identity:
 
-    1. A ``spec_from_file_location`` call — re-implements ``load_script_module``.
+    1. A ``spec_from_file_location`` call — re-implements the shared loader.
     2. A ``Path(__file__).parent`` chain of depth three or more — counts
        directories to the repository root, and breaks when the file moves.
 
-    Both have a ``conftest`` helper (``load_script_module``, ``get_scripts_dir``)
-    that resolves by ``(bundle, skill, script)`` instead.
+    Both have a ``conftest`` helper that resolves by ``(bundle, skill, file)``
+    instead, in two variants that differ only in what the path is relative to:
+    ``load_script_module`` / ``get_scripts_dir`` for the skill's ``scripts/``
+    subtree, and ``load_skill_module`` / ``get_skill_dir`` for the skill root. The
+    second pair is what makes the remedy applicable to a bundle's
+    ``plan-marshall-plugin`` ``extension.py``, which sits at the skill root — most
+    such skills ship no ``scripts/`` directory, so the scripts-relative pair cannot
+    address the file at all.
     """
     findings: list[dict] = []
     for path in _iter_test_tree_modules(test_root):
@@ -823,14 +829,17 @@ def _build_preamble_finding(path: Path, node: ast.AST, kind: str, depth: int | N
     if kind == 'spec_from_file_location':
         description = (
             'hand-rolled spec_from_file_location preamble — use '
-            'conftest.load_script_module(bundle, skill, filename), which resolves by '
-            "identity instead of by the test file's own location"
+            'conftest.load_script_module(bundle, skill, filename) for a module under '
+            "scripts/, or conftest.load_skill_module(bundle, skill, filename) for one "
+            'at the skill root (a bundle extension.py); both resolve by identity '
+            "instead of by the test file's own location"
         )
     else:
         description = (
             f'Path(__file__) followed by a {depth}-deep .parent chain — use '
-            'conftest.get_scripts_dir(bundle, skill); a directory-counting chain '
-            'breaks the moment the test module moves'
+            'conftest.get_scripts_dir(bundle, skill), or conftest.get_skill_dir(bundle, '
+            'skill) for a skill that ships no scripts/ directory; a directory-counting '
+            'chain breaks the moment the test module moves'
         )
     details: dict = {
         'kind': kind,

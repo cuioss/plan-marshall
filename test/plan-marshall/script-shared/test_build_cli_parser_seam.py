@@ -58,7 +58,7 @@ RUN_DEFAULTS = {
 @pytest.fixture(scope='module')
 def shared_run_ns():
     """The ``run`` namespace the shared build-CLI seam produces."""
-    return parse_ns(BUNDLE, SKILL, CLI_SCRIPT, *RUN_ARGV)
+    return parse_ns(BUNDLE, SKILL, CLI_SCRIPT, *RUN_ARGV, register=False)
 
 
 @pytest.mark.parametrize(('attribute', 'expected'), sorted(RUN_DEFAULTS.items()))
@@ -69,7 +69,7 @@ def test_shared_run_seam_carries_production_defaults(shared_run_ns, attribute, e
 
 def test_shared_seam_registers_the_shared_build_subcommands():
     """``build_parser`` publishes the subcommand set every build wrapper inherits."""
-    cli = load_script_module(BUNDLE, SKILL, CLI_SCRIPT)
+    cli = load_script_module(BUNDLE, SKILL, CLI_SCRIPT, register=False)
 
     subparser_actions = [
         action
@@ -89,7 +89,7 @@ def test_shared_seam_registers_the_shared_build_subcommands():
 
 def test_execute_factory_seam_yields_the_shared_run_namespace(shared_run_ns):
     """The factory's seam parses ``run`` into the namespace the shared surface defines."""
-    factory_ns = parse_ns(BUNDLE, SKILL, FACTORY_SCRIPT, *RUN_ARGV)
+    factory_ns = parse_ns(BUNDLE, SKILL, FACTORY_SCRIPT, *RUN_ARGV, register=False)
 
     assert vars(factory_ns) == vars(shared_run_ns)
 
@@ -105,7 +105,7 @@ def test_shared_run_surface_is_a_restriction_of_each_wrapper(shared_run_ns, skil
     redefine a shared one. Asserting the restriction rather than equality is what
     lets the extra flags exist while still failing on a shared default that drifts.
     """
-    wrapper_ns = parse_ns(BUNDLE, skill, script, *RUN_ARGV)
+    wrapper_ns = parse_ns(BUNDLE, skill, script, *RUN_ARGV, register=False)
 
     shared = vars(shared_run_ns)
     wrapper = vars(wrapper_ns)
@@ -122,7 +122,7 @@ def test_build_main_parses_with_the_shared_construction(monkeypatch):
     later edit from giving ``build_main`` a second, independent construction that
     the seam would then silently misdescribe.
     """
-    cli = load_script_module(BUNDLE, SKILL, CLI_SCRIPT)
+    cli = load_script_module(BUNDLE, SKILL, CLI_SCRIPT, register=False)
     calls = []
 
     def _record(description, subparser_fns):

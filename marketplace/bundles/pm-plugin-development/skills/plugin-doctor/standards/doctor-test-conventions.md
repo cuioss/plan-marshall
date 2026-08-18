@@ -176,13 +176,13 @@ Flag hand-rolled import preambles that resolve a module by the test file's own l
 **Violation message format**:
 
 ```text
-{file_path}:{lineno}: hand-rolled spec_from_file_location preamble — use conftest.load_script_module(bundle, skill, filename), which resolves by identity instead of by the test file's own location.
-{file_path}:{lineno}: Path(__file__) followed by a {depth}-deep .parent chain — use conftest.get_scripts_dir(bundle, skill); a directory-counting chain breaks the moment the test module moves.
+{file_path}:{lineno}: hand-rolled spec_from_file_location preamble — use conftest.load_script_module(bundle, skill, filename) for a module under scripts/, or conftest.load_skill_module(bundle, skill, filename) for one at the skill root (a bundle extension.py); both resolve by identity instead of by the test file's own location.
+{file_path}:{lineno}: Path(__file__) followed by a {depth}-deep .parent chain — use conftest.get_scripts_dir(bundle, skill), or conftest.get_skill_dir(bundle, skill) for a skill that ships no scripts/ directory; a directory-counting chain breaks the moment the test module moves.
 ```
 
-**Suggested remediation**: Replace with the `conftest` helpers `load_script_module(bundle, skill, filename)` or `get_scripts_dir(bundle, skill)`, which resolve by `(bundle, skill, script)` identity.
+**Suggested remediation**: Replace with the `conftest` helpers, which resolve by `(bundle, skill, file)` identity rather than by location. `load_script_module(bundle, skill, filename)` / `get_scripts_dir(bundle, skill)` address the skill's `scripts/` subtree; `load_skill_module(bundle, skill, filename)` / `get_skill_dir(bundle, skill)` address the skill root, which is where a bundle's `plan-marshall-plugin` `extension.py` lives — most such skills ship no `scripts/` directory, so the scripts-relative pair cannot reach them.
 
-**One known-legitimate occurrence.** The rule fires on `test/conftest.py`'s own `load_script_module` implementation, whose `spec_from_file_location` call *is* the sanctioned helper the message points at — the suggested remediation there is circular. It ships unsuppressed on purpose: at `warning` severity one structurally-unfixable finding is cheaper than a path allowlist, which would also silence genuine defects elsewhere in the same file.
+**One known-legitimate occurrence.** The rule fires on `test/conftest.py`'s own `_exec_module_from_path`, the construction both sanctioned loaders share, whose `spec_from_file_location` call *is* the helper the message points at — the suggested remediation there is circular. It ships unsuppressed on purpose: at `warning` severity one structurally-unfixable finding is cheaper than a path allowlist, which would also silence genuine defects elsewhere in the same file.
 
 **Why**: Both shapes hard-code the test module's position in the directory tree. Moving the file — which the line-budget rule above actively encourages — silently breaks the resolution, and the failure surfaces as an import error far from its cause. Resolution by identity survives the move.
 

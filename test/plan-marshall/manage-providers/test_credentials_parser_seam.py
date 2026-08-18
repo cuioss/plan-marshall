@@ -35,7 +35,7 @@ SUBCOMMAND_DEFAULTS = [
 )
 def test_seam_parses_each_subcommand_with_its_defaults(argv, expected):
     """The published seam parses each subcommand and applies the parser's own defaults."""
-    namespace = parse_ns(BUNDLE, SKILL, SCRIPT, *argv)
+    namespace = parse_ns(BUNDLE, SKILL, SCRIPT, *argv, register=False)
 
     assert {key: getattr(namespace, key) for key in expected} == expected
 
@@ -47,7 +47,7 @@ def test_main_parses_with_the_published_parser(monkeypatch):
     ``main`` that rebuilt its own could accept flags the seam never publishes, and
     a namespace taken from the seam would then describe a CLI that does not exist.
     """
-    credentials = load_script_module(BUNDLE, SKILL, SCRIPT)
+    credentials = load_script_module(BUNDLE, SKILL, SCRIPT, register=False)
     calls = []
 
     def _record():
