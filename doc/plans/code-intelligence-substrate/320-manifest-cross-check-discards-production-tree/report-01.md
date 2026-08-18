@@ -615,7 +615,7 @@ exists on disk.
 | 4 Per-commit gate | **done** | Every commit touching `*.py` was preceded by a clean gate — the direct `./pw` path, so read from the streamed tool output: `ruff … All checks passed!`, `mypy … Success: no issues found in 413 source files`, `SPDX-header check passed`, `issues[0]` |
 | 4 Pushed | **done** | Pushed after every commit, not once at PR time. `git status -sb` reports no `ahead` at the final commit |
 | 5 Build gate | **done** | Git-derived verdict recorded (§ Build gate): `*.py` changed ⇒ full `./pw verify`; result `20695 passed, 14 skipped`, coverage COMPLETE over all six dimensions. Re-measured on the delivered tree each time the tree moved — round 3 caught this figure describing a superseded tree, and the PR-review round moved it again |
-| 6 Verification sub-agent | **done** | Four rounds, budget declared before the first dispatch. Findings and dispositions per instance above; the stop record names the **budget exit**, the round that ended it, round 4's own last answer, the evidence it rested on (a 2,871-path differential), that rounds 2–3's findings were **not** narrower and round 4's were, the single survivor with its (b) bound, and the residue to assume remains |
+| 6 Verification sub-agent | **done** (and partly overtaken) | Four rounds, budget declared before the first dispatch. Findings and dispositions per instance above; the stop record names the **budget exit**, the round that ended it, round 4's own last answer, the evidence it rested on (a 2,871-path differential), that rounds 2–3's findings were **not** narrower and round 4's were, the single survivor with its (b) bound, and the residue to assume remains. ⚠ The loop's verdict was then **partly overtaken by PR review**: `coderabbitai` found two real defects the four rounds missed. Recorded as the loop's limit rather than as a failure of it — a reviewer whose method differs is worth having, which is why the run waited out its rate window instead of merging without it |
 | 7 PR cycle | **done** | PR [#1288](https://github.com/cuioss/plan-marshall/pull/1288). No `skip-bot-review` label: the diff touches `*.py` **and** `marketplace/bundles/**`, and a skill is code. All three surfaces read; participation table carries a verdict **and** a `Reopens?` value per reviewer; no `silent` verdict, so no recovery check of that kind was owed; no `unreadable` verdict, so condition 2 is established on evidence. `coderabbitai`'s 6 comments were each fixed, replied to naming the commit, and resolved |
 | 8 Merge gate | see below | |
 | 8 Bridge | **done** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan's directory touched. The report carries the PR number and a per-deliverable outcome for the orchestrator to collect |
@@ -633,11 +633,24 @@ creates; this run created none.
 git-ignored `target/` and writing `~/.claude/`; a cloud run neither performs nor records one, even
 though this diff edits `marketplace/bundles/`.
 
-**Tree claims re-verified.** Claims about the *filesystem* are not covered by the diff sweeps, and
-this run's own build gate mutates the tree it describes. Re-checked at the end: `git status
---porcelain` clean apart from the staged report; no `uv.lock` churn in any commit (every commit
-staged named paths, never `git add -A`); `__pycache__` directories created by the test runs are
-git-ignored and reached no commit.
+**Tree claims re-verified at the end, not recalled.** Claims about the *filesystem* are not covered
+by the diff sweeps, and this run's own build gate mutates the tree it describes. Re-derived:
+
+- `git status -sb` reports no `ahead` — nothing unpushed;
+- **no `uv.lock` churn in any commit** — every commit staged named paths, never `git add -A`;
+- every commit carries the `Co-Authored-By: Claude` trailer, and **no** commit carries a "Generated
+  with Claude Code" footer (`git log --format=%B | grep -c` → 0);
+- **no write under `doc/plans/` outside this plan's own directory** — the bridge rule, checked by
+  diffing the path set rather than asserted;
+- the build runs created `.plan/execute-script.py`, `.plan/local/` and `.plan/temp/`, plus
+  `__pycache__` trees. All are git-ignored and reached no commit. Recorded because the tree at the
+  end of the run is not the tree it started with, and a report describing the starting tree would be
+  false by the time anyone read it.
+
+⛔ **One tree claim in this report was false and was caught by exactly this check** — see the
+disclosure at the head of § Findings. Two whole sections had been deleted by an earlier edit of this
+file and shipped that way. Nothing in the diff sweeps could see it: the loss was in the artifact
+doing the describing.
 
 ## What have we learned (Step 9)
 
