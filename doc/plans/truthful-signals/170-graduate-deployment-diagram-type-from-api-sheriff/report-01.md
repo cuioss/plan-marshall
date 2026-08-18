@@ -736,3 +736,79 @@ configuration, not by accident. Even with its window open, its green would say n
 skeleton. Together with the plugin-doctor analysis in § D5, **no automated reviewer or gate available
 to this PR reads the skeleton's geometry at all.**
 
+## What have we learned (Step 9)
+
+Two proposals, both grounded in what this run measured. **Neither is self-approved** — the contract
+that governs this run is not amended by it. Each would ship as its own `chore/` PR, without
+`skip-bot-review`, since a skill is code.
+
+### Proposal 1 — the report's disposition cells are a defect generator, and the contract should say so
+
+**Evidence, from this run.** The lane already says *"The run report is part of that surface"* and that
+a findings table contradicting the artifacts is the same defect as a stale doc. What it does not say
+is **why that keeps happening**, and this run measured the mechanism. Round 4 diagnosed it: roughly
+forty finding rows quoted the *post-fix text* of a site, or a figure derived from a mutable file.
+Every round edits three to six of those sites and does not sweep the rows quoting them. So the report
+manufactured **three to five new condition-A statements per round, mechanically**:
+
+- Six of round 4's sixteen findings existed *only* because round 3 had fixed something.
+- The § D2 line counts went stale in **three consecutive rounds** — including once under an R2-10
+  disposition that claimed they had been *"re-derived programmatically at the moment of the claim."*
+- Round 3 wrote *"§ Residue now exists"* for a section it never added (R3-A4) — a **claimed fix that
+  was never applied**, which no sweep trusting the disposition column can catch.
+
+This is not the moving-figure rule restated. That rule says *re-derive a figure at the moment of the
+claim*, and this run obeyed it and still produced the defect, because the problem is not staleness in
+the figure — it is that **a disposition cell quoting mutable text has no moment of claim**; it is
+written once and silently invalidated by a later round's edit to a different file.
+
+**Proposed edit** — to the lane's § Report, in the "A finding is recorded per instance" area:
+
+> **A disposition cell cites, it does not quote.** Record what a finding was fixed *in* — the commit
+> and the finding ID — never the current text of the site it fixed. A later round will edit that site,
+> and the cell then states something false about a file it never touched. For the same reason, do not
+> record a figure derived from a file the run is still editing (line counts, section counts); the diff
+> carries them and cannot go stale. A cell reading "fixed in `abc1234`, revised at R2-16 and R3-A9"
+> stays true no matter what the sentence becomes.
+
+**Cost of not doing it:** unbounded. Every additional verification round adds three to five report-side
+condition-A defects that must then be found and fixed, which is a meaningful share of why this run's
+per-round finding count did not fall.
+
+### Proposal 2 — the lane's affordances table should record that a rasteriser IS available
+
+**Evidence, from this run.** The plan carried `HYPOTHESIS: no rasteriser is installed, blocking render
+verification`, inherited from a downstream PR that had resolved it as its own gate deliverable. In this
+environment that is **false**: `rsvg-convert`, `inkscape`, `convert`/`magick` and `cairosvg` are all
+absent, but **Chromium 141 is present** at `/opt/pw-browsers/chromium` (the Playwright build the system
+prompt already documents for browser work), and it rasterises SVG on an arbitrary background in about a
+second. This run used it for six render-and-read-back cycles, including a 2.4× re-render to resolve a
+12 px caption the 1200 px render could not.
+
+A run that does not know this reads the skill's own recipe (`rsvg-convert`, or Docker), finds neither,
+and either skips a **blocking, non-skippable** gate or spends the effort re-deriving the workaround.
+
+**Proposed edit** — one row in § Cloud session affordances:
+
+> | **Rasterising an SVG** | No `rsvg-convert`, `inkscape`, `magick` or `cairosvg`. The pre-installed Chromium (`/opt/pw-browsers/chromium`) renders an SVG to PNG on any background via a one-line HTML wrapper — enough to satisfy a render-and-read-back gate. It is a different engine from `rsvg-convert`, and closer to GitHub's own rendering surface; say which engine was used. |
+
+**Operator decision on both: pending.** Recorded here as required whether or not they are accepted.
+
+### A third finding, from this run's own tooling — recorded, not proposed as a contract change
+
+The "What have we learned" section above was first appended to **the wrong file**. A `cat >>` ran with
+a relative path after the shell's working directory had reset to the repository root, creating a stray
+`report-01.md` there instead of writing to this one. The run's own verification step — `tail -3` on the
+same relative path — **read the stray file back and reported the expected content**, so the check
+confirmed a write that had not gone where it was meant to.
+
+It was caught by the repository's stop hook noticing an untracked file, not by anything this run did.
+
+This is worth writing down in a report about untruthful signals, because it is the smallest possible
+instance of the pattern the whole run has been chasing: **a verification that shares the defect of the
+thing it verifies cannot detect it.** The `tail` inherited the same wrong path as the `cat`, exactly as
+a guard that computes its expectation with the function it guards inherits that function's blind spot.
+No contract change is proposed for it — the lane already forbids shell file operations, and the
+existing rule would have prevented it. The failure was mine, not the contract's.
+
+
