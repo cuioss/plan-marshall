@@ -49,8 +49,8 @@ recovery" — both true by construction of the region heading — so a full rest
 passes, and `test_named_recovery_never_instructs_unconditional_discard` sweeps every derived region
 but only for two literal signatures (a `Recovery:`-prefixed `git checkout --` line and an "always
 safe" phrase), never asserting that every derived region is `_is_inspection_first` — the sibling
-`test_named_recovery_inspection_first_population_nonempty_and_covers_known_members` asserts that only
-of the three already-known members. And a **fourth** destructive site was missed
+`test_named_recovery_inspection_first_population_nonempty_and_covers_known_members` asserts it only of
+the three already-known members. And a **fourth** destructive site was missed
 entirely: `workflow-integration-git/standards/worktree-handling.md` § "Recovery Loop" routes a dirty
 path to `git -C {main_checkout} checkout -- {path}` labelled "(typical case)", while its own § "Filter
 Rule" names `.plan/marshal.json` as exactly the kind of tracked file that reaches that loop.

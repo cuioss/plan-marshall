@@ -108,8 +108,8 @@ halts and reports, and D2–D8 are not attempted.**
 
    ⛔ **STOP CONDITION.** If the `scoped(...)` / `suppressed(...)` call sites cannot be enumerated
    from `_runner.py`, or if a routed rule's finding anchor cannot be determined by reading its
-   analyzer, **halt the plan**,
-   record what was derivable and what was not, and ship nothing from D2–D8. Do **not** fall back to a
+   analyzer, **halt the plan**, record what was derivable and what was not, and ship nothing from
+   D2–D8. Do **not** fall back to a
    hand-maintained list of exempt finding types: a hand-maintained enumeration of a machine-derivable
    set is the defect class this epic exists to remove, and writing one here would reproduce it inside
    the fix.
@@ -123,8 +123,11 @@ halts and reports, and D2–D8 are not attempted.**
    asserts that a clean result can never read as a vacuous pass over an unread population, which does
    not hold under `--paths` today.
 
-   *Done when:* a quality-gate run with a non-empty `--paths` scope, over a tree that defines the
-   rule's convention document and derives zero population members, reports a **non-zero** `findings`
+   *Done when:* a quality-gate run with a non-empty `--paths` scope, over a tree that derives zero
+   population members and satisfies each rule's own precondition for emitting the finding (the
+   `EMPTY_POPULATION_TYPE` pair each gate on their convention/standard document existing;
+   `analyze_incident_reference_in_docs` has no such gate — re-derive each rule's precondition from
+   its analyzer), reports a **non-zero** `findings`
    count for every rule in the derived set; and a committed test in
    `test/pm-plugin-development/plugin-doctor/` builds that tree, runs the gate scoped to a
    subdirectory, and asserts each such finding is still present.
@@ -205,11 +208,17 @@ halts and reports, and D2–D8 are not attempted.**
    confirmation of 060/G7's live incidence is attempted and cannot be produced for this reason,
    **record the coverage gap in the run report** rather than reporting the tree clean.
 
-   *Done when:* (a) a synthetic two-skill tree whose single fenced block documents two invocations,
-   each correctly, yields **0** findings from `analyze_canonical_enum_drift`, and `derive_population`
+   *Done when:* (a) a synthetic tree whose SKILL.md carries a **single** fenced block documenting two
+   invocations under **different** subcommands, each with its own enum and each documented correctly,
+   yields **0** findings from `analyze_canonical_enum_drift` (the same fixture goes red against the
+   current latch, which scopes the second enum to the first invocation's subcommand — build it from
+   the `_write_bundle` helper in `test_analyze_canonical_enum_drift.py`, re-deriving that helper's
+   name from the file), and `derive_population`
    over the real tree reports, for a site below a second invocation in a shared fence, the subcommand
    path the invocation line above it actually names — with `analyze_canonical_enum_drift` still
-   returning 0 findings over the real tree; (b) the cluster returns a router-flag-misplaced finding
+   returning 0 findings over the real tree. **The real-tree half has a live subject: re-derive it, and
+   if no shared-fence site with an enum below a second invocation is found, record that and drop the
+   real-tree half rather than asserting over an empty set.** (b) the cluster returns a router-flag-misplaced finding
    for a SKILL.md documenting a root-declared flag written *after* the verb, and returns none for the
    same document written with the flag *before* the verb; (c) a doc writing the flag before the verb
    produces no unknown-flag finding for a flag the named subcommand declares. All three are pinned by

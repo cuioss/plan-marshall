@@ -362,9 +362,9 @@ than on any derived population, so they proceed regardless of D1's outcome.
    recorded; every key `get_default_config()` emits under `plan.phase-1-init` appears in
    `data-model.md`'s table; `_cmd_sync_defaults.py` carries no `# SHIM(B):` block above
    `_deep_merge_missing` and the detector run is clean; the `_ping` docstring names all five keys and
-   the omission case; and a re-run of D1(c)'s sweep returns no `/Users/` root under `test/` and only
-   `/home/dev` among `/home/` roots, apart from the unrelated `/home/u` HOME-whitelist literal in
-   `test/plan-marshall/build-server/test_marshalld_supervisor.py`.
+   the omission case; and a re-run of D1(c)'s `/Users/` sweep over `test/` returns zero, with every
+   path it rewrote landing on `/home/dev` and the pre-existing unrelated `/home/` roots D1(c) recorded
+   unchanged.
 
 ## Out of scope
 
@@ -376,7 +376,8 @@ than on any derived population, so they proceed regardless of D1's outcome.
   sites inside `manage-config`; the source gap document filed the `manage-execution-manifest` pair
   separately and scoped `100/G3` explicitly to the `manage-config` skill, so widening here would take
   work another plan owns.
-- **Amending `argparse_surface.py`'s stripping contract to let `--audit-plan-id` survive to the parser.**
+- **Amending the stripping contract in `script-shared/scripts/argparse_surface.py` to let
+  `--audit-plan-id` survive to the parser.**
   D4(c) takes the contract-preserving direction. The alternative is a change to a governing contract,
   and a cloud run has no operator to approve one — the source gap says as much ("should not be chosen
   without amending that comment").
@@ -384,16 +385,16 @@ than on any derived population, so they proceed regardless of D1's outcome.
   three in-tree sites independently require. Whether that command exists at all is a fact about the
   Claude Code plugin CLI that no file in the clone settles, so acting on it would be shipping the same
   unverified guidance the gap objects to, in the other direction.
-- **Removing top-level `project_dir` from the two runtime seeds.** D5(a) adds it to the canonical order
-  instead. Removal is a schema decision whose only evidence is an absence (no reader found), and an
-  unverified absence acted on in a run with no operator is exactly the class of mistake this epic
-  documents.
+- **Removing top-level `project_dir` from the Claude runtime seed** — the only seed that writes it.
+  D5(a) adds it to the canonical order instead. Removal is a schema decision whose only evidence is an
+  absence (no reader found), and an unverified absence acted on in a run with no operator is exactly
+  the class of mistake this epic documents.
 - **`manage-config/scripts/_cmd_effort.py`'s `RESERVED_LEVELS` block and its `level-7` advice string.**
   Explicitly excluded by D7(c) with the reason there: both statements are correct in their own context,
   and "harmonising" them would introduce the defect `200/G1` removes.
 - **Redesigning `CANONICAL_TOP_LEVEL_KEY_ORDER` beyond adding the two runtime-seed keys.** The source
   plan for `080` declared that redesign out of scope, and reopening it here would put a schema debate
-  in front of five unrelated fixes.
+  in front of the unrelated fixes D5 otherwise carries.
 - **Every other gap in the twelve source `gaps.md` files.** This plan closes the thirty-four listed
   under § Claim labels and nothing else; the remainder are assigned to sibling plans, and an unassigned
   gap fixed here is a gap fixed twice.
