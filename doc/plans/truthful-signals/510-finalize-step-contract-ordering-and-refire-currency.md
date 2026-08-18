@@ -35,18 +35,19 @@ declaration key was added with a both-direction conformance guard that reads a s
 implementors do not have, so it is vacuous for them; the same commit shipped a dispatcher extension
 slot that the guard rejects. Nine hand-written `[DISPATCH]` emission blocks sit at real dispatch
 sites in a tree whose own standard calls that shape forbidden and calls the resolve seam "the sole
-permitted dispatch-emission shape". And five separate guards — over step ordering, over the push
-barrier's re-fire mapping, over the verdict-currency refusal table, over the declared `verdict_inputs`
-globs, and over the two canonical `destroys` declarations — were each demonstrated, by mutation, to
-stay green against exactly the defect they were written to catch.
+permitted dispatch-emission shape". And four separate areas — step ordering, the push barrier's
+re-fire mapping, the verdict-currency refusal table, and the declared `verdict_inputs` globs — were
+each demonstrated, by a recorded mutation, to leave the suite **green** against exactly the defect
+the guard over them names. A fifth, the two canonical `destroys` declarations, is an asserted
+unpinnedness that D2 re-verifies by mutation before it adds the guard.
 
 The mechanism is common to all of them: **a fact is declared in one place and restated in another,
 and nothing derives the second from the first.** `test_step_prompt_fields_contract.py` reads
 carriage from `prompt: |` blocks while `ext-point-finalize-step.md:130` names the step's *input
 table* as the declaration surface; `test_verdict_currency.py:565` asserts a refusal heading with a
 bare substring search over the whole file, so a cross-reference to the other step's section satisfies
-it; `test_git_workflow.py:632` defines its own RE-FIRE/SKIP oracle three lines above the assertion
-that checks it. Each restatement is individually plausible and collectively unbound, which is why
+it; `test_git_workflow.py:632` opens its test body with its own RE-FIRE/SKIP oracle and then asserts
+against that oracle. Each restatement is individually plausible and collectively unbound, which is why
 the drift is invisible until someone re-derives the population by hand.
 
 ## Goal
@@ -77,7 +78,8 @@ two, D4 two, D5 one.
 
 *(closes 040/G3)*
 
-Three later deliverables scope themselves by a population that must be **derivable from the tree**.
+Five later deliverables — D2, D3, D5, D7 and D8 — scope themselves by a population that must be
+**derivable from the tree**.
 Derive all four first, in the run report, naming the exact command used for each. **If (a) or (c)
 cannot be derived, stop and report the plan blocked** — do not substitute a hand-maintained list,
 because a hand-maintained population is the defect class several of these gaps already are.
@@ -93,9 +95,17 @@ because a hand-maintained population is the defect class several of these gaps a
   which is not in this plan's scope.)
 - **(b) The tree-wide hand-written `[DISPATCH]` emission population** — every occurrence of a
   `manage-logging work` call carrying a `[DISPATCH]` message under `marketplace/` and `.claude/`,
-  split into *dispatch sites* (the file also contains an `effort resolve-target` command block) and
-  *doc-echoes* (it does not). D5's scope is exactly this split. The gap body records 11 matches in 7
-  files, 9 blocks across 5 dispatch-site files — **re-derive it; do not trust those numbers**.
+  split into *dispatch sites* (the file also contains an `effort resolve-target` call inside a fenced
+  command block) and *doc-echoes* (it does not). ⛔ Two exclusions the derivation MUST apply, because
+  a bare grep gets both wrong: **(i)** `ref-workflow-architecture/standards/dispatch-logging.md` is
+  the standard that forbids the shape and quotes it to forbid it (§ "Anti-pattern (forbidden)" and
+  the emission-contract prose) — it is never a member of this population and is never edited by D5;
+  **(ii)** the split is decided by a fenced, executable `effort resolve-target` command block, **not**
+  by the string appearing in prose — the two doc-echoes each mention `manage-config effort
+  resolve-target …` inline while describing what the *dispatcher* does, and a string-match split
+  misclassifies both as dispatch sites. D5's scope is exactly this split. The gap body records 11
+  matches in 7 files, 9 blocks across 5 dispatch-site files — **re-derive it; do not trust those
+  numbers**.
 - **(c) The per-implementor input-table `Required` row population** — for each implementor doc, the
   rows of any prompt-body-field table under a `Required` column whose key falls outside the generic
   dispatch contract. Parse the table header to locate the `Required` column; never assume a column

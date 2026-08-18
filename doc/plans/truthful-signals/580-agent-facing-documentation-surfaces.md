@@ -104,9 +104,14 @@ entirely, that is a finding: record it and say so, do not invent a substitute si
      `"./skills/tools-integration-ci"`. Drop the parenthetical. Then sweep for the **class**, not the
      phrasing: `grep -rniE "(not|never|must not be) registered in .?plugin\.json" marketplace/bundles/
      --include=*.md`. For every hit, check whether the named skill is registered in its own bundle's
-     `plugin.json`. Fix each that is; leave hits that are about *project* registration with the build
-     server, or that name no skill at all, and **name each survivor and its reason in the run report**
-     rather than asserting the sweep came back clean.
+     `plugin.json`, and **name every hit and its disposition in the run report** rather than asserting
+     the sweep came back clean. **Fix only the `tools-integration-ci` hit.** The sweep is otherwise a
+     *reporting* instrument here, not a licence to edit: hits about *project* registration with the
+     build server, and hits naming no skill at all, are correct and stay; and the
+     `manage-execution-manifest/SKILL.md` variant — which asserts the skill *MUST NOT* be registered
+     while the same `plugin.json` registers it — is **gap 100/G9, assigned to another plan and out of
+     scope here** (see § Out of scope). Record it as a known, owned survivor; do not edit that file,
+     which is not in § Expected surface.
 
    *Done when:* the type set on the `Types:` line and the set of `{type}.jsonl` rows in the storage
    tree each equal the `FINDING_TYPES` tuple recovered by the gating derivation, element for element;
@@ -116,7 +121,7 @@ entirely, that is a finding: record it and say so, do not invent a substitute si
    own bundle `plugin.json` registers it, with every remaining hit listed in the report with its
    reason for surviving.
 
-2. **D2 — Configuration truth on the four consumer-facing `doc/user/` pages**
+2. **D2 — Configuration truth on the five consumer-facing `doc/user/` pages**
    (closes 190/G1 **high**, 190/G2, 190/G3, 190/G8, 200/G8)
 
    - **(a) Delete the dead merge knob.** `doc/user/parallelism-and-locking.adoc` (near `:55`) carries

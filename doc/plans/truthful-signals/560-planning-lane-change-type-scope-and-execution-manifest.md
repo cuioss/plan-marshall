@@ -177,7 +177,8 @@ minutes-long derivation whose failure would invalidate D5, D6 and D7 as well; it
      `marketplace/bundles/plan-marshall/skills/manage-status/SKILL.md` § planning-lane — the SKILL.md
      asserting "a genuinely large change is unaffected because it fires a corroborating signal", but
      making no "adapts automatically" claim. A pathless, concretely-worded, non-generative,
-     non-breaking request that declares its own scale fires none of those four corroborators — state
+     non-breaking request that declares its own scale fires no corroborator at all (not S2, S3, S4 or
+     S5), so the "genuinely large change is unaffected" reassurance is exactly what fails — state
      the narrowed rule, say the residue is enumerated rather than derived, and restate the
      `low_confidence` predicate to match (c). Re-read each site before editing it: only rewrite the
      sentences that are actually there.
@@ -194,7 +195,8 @@ minutes-long derivation whose failure would invalidate D5, D6 and D7 as well; it
    ' single_module']` shows each routes `deep` with an empty `suppressed_signals`; and
    `evaluate_signals_pure` reports `low_confidence: True` for the post-bridge motivating vector
    (`plan_source` non-null, `scope_estimate='single_module'`, `change_type=None`, `compatibility=None`,
-   `override=None`) — every one of the four pinned by a test.
+   `override=None`) — every one of the four pinned by a test; and `test/plan-marshall/manage-status/`
+   passes in full, with no test left asserting the pre-(a) suppression.
 
 4. **D4 — The reconciliation refusal is auditable, and its test can tell the two scopes apart**
    *(closes 350/G4, 350/G2)*
@@ -445,7 +447,8 @@ Files this plan is expected to touch. Anything else changing is collateral and i
   `planning-lane` subparser description.
 - `marketplace/bundles/plan-marshall/skills/manage-status/SKILL.md` — D3(d); D8(e).
 - `marketplace/bundles/plan-marshall/skills/manage-status/standards/status-lifecycle.md` — D8(e).
-- `test/plan-marshall/manage-status/test_planning_lane_corroboration.py` — D3 tests; D8(a).
+- `test/plan-marshall/manage-status/test_planning_lane_corroboration.py` — D3's new tests and D3(e)'s
+  updates to the existing ones; D8(a).
 - `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py`
   — D2, D4(a), D5(a).
 - `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/_manifest_decide.py` —
