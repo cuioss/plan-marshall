@@ -300,7 +300,7 @@ For the exact fill-in-the-blank structure, see:
 | `module` | Yes | Module name from architecture | Skill resolution |
 | `depends` | Yes | Dependencies on other deliverables | Ordering, parallelization |
 | `**Profiles:**` | Yes | List of profiles (implementation, module_testing) | Task creation (1:N) |
-| `Affected files` | Yes | Explicit file list, each with a required `(intent)` marker | Step generation, intent-aware files_exist gate |
+| `Affected files` | Conditional | Explicit file list, each with a required `(intent)` marker | Step generation, intent-aware files_exist gate |
 | `Change per file` | Yes | What changes | Task description |
 | `Pattern` | Conditional | Code/format pattern | Implementation guide |
 | `Verification` | Yes | How to verify | Task verification |

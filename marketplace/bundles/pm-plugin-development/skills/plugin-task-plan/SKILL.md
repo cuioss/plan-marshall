@@ -21,7 +21,7 @@ mode: workflow
 
 **Non-compliant tasks will be rejected by validation.**
 
-**CRITICAL**: The `steps` field MUST contain file paths from the deliverable's `Affected files` section:
+**CRITICAL**: The `steps` field MUST contain file paths the parent deliverable declares — under `Affected files:`, or under the `Files expected to mutate:` / `Files to survey:` pair a survey-scope deliverable declares instead:
 
 ```yaml
 # CORRECT - file paths from deliverable
@@ -111,7 +111,7 @@ This logging is REQUIRED for audit trail and debugging.
 
 For aggregated deliverables or single deliverables, create tasks using the three-step path-allocate flow: (1) `prepare-add` allocates a scratch TOON file under `<plan>/work/pending-tasks/`, (2) the skill writes the task definition to that path with the Write tool, (3) `commit-add` validates and creates `TASK-NNN.json`. No multi-line content crosses the shell boundary.
 
-**CRITICAL**: The `steps` field MUST contain file paths copied from the deliverable's `Affected files` section.
+**CRITICAL**: The `steps` field MUST contain file paths copied from the deliverable's declared file surface — under `Affected files:`, or under the `Files expected to mutate:` / `Files to survey:` pair a survey-scope deliverable declares instead.
 
 ```bash
 # Step 1: allocate a scratch path
@@ -147,7 +147,7 @@ python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
 
 | Deliverable Field | Task Field | Required |
 |-------------------|------------|----------|
-| `Affected files:` list | `steps:` list (copy file paths directly) | Yes |
+| `Affected files:` list (or the `Files expected to mutate:` / `Files to survey:` pair) | `steps:` list (copy file paths directly) | Yes |
 | `metadata.suggested_skill` | `delegation.skill` | Yes |
 | `metadata.suggested_workflow` | `delegation.workflow` | Yes |
 | `metadata.context_skills` | `delegation.context_skills` | **Yes (even if empty `[]`)** |

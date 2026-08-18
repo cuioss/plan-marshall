@@ -62,7 +62,7 @@ sentence resolved, and the behaviour claim did not hold.
 
 ## Deliverables
 
-Commit `d9f9534` carries D1–D5. D0 mutated nothing and is recorded above.
+D1–D5 land across four commits: `d9f9534` (the closure module, the parser widening, the first test suites), `46f919c` and `0702530` (the round-1 fixes — the non-vacuous D1 fixture, the three unmeasured-scope repairs, the D3 positive-population guards, three previously-uncovered behaviours), and the round-2 fix commit (the population/heading guards, the holistic-task carve-out, and the bypass-predicate widening). D0 mutated nothing and is recorded above. ⚠ Figures in this report are re-derived at the moment of the claim; an earlier version of this line attributed all five deliverables to the first commit.
 
 ### D1 — outline completeness is CLOSURE, not existence
 
@@ -169,7 +169,11 @@ then asserts the closure check still runs and still fires.
 
 ### D5 — tests, each verified to fail pre-fix, plus the characterization-corpus rule
 
-**Done.** 20 tests in `test_qgate_closure.py`, 3 in `test_recall_survey_scope.py`.
+**Done.** Re-derived with `grep -c '^def test_'` at the moment of this claim: **33** in
+`test_qgate_closure.py`, **8** in `test_survey_scope_declaration.py`, **4** in
+`test_recall_survey_scope.py`, plus one added to each of `test_foreign_deliverable_column.py` and
+`test_foreign_pr_gate.py` — **47** new test functions across five modules. (Stated as a count of
+test *functions*, not of collected cases; the two differ wherever a test is parametrized.)
 
 **Red-before-green was done by MUTATION, not by a stash.** A first attempt stashed the production
 changes and ran the new suite: it produced a *collection error* (the new module was absent), which
@@ -238,8 +242,9 @@ whatever is added after it; quantifying over the produced set does not.
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD -- '*.py'` is **non-empty** — six production scripts and
-five test modules — so the full gate applies. The working tree was clean at Step 2, and re-asserted
+`git diff --name-only origin/main...HEAD -- '*.py'` is **non-empty** — **8 production scripts and 9
+test modules**, re-derived by running that exact command at the moment of this claim — so the full
+gate applies. The working tree was clean at Step 2, and re-asserted
 clean before this diff was taken, so nothing staged or untracked is invisible to it.
 
 - **Per-commit gate**: `./pw quality-gate` before each `*.py`-touching commit, read from the tools'

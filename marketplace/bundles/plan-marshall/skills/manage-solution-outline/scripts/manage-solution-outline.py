@@ -362,7 +362,12 @@ def validate_deliverable_contract(deliverable: dict[str, Any]) -> tuple[list[str
     declares_survey_pair = bool(survey_scope) and bool(mutation_scope)
     is_verification_only = 'verification' in profiles
     if not affected_files and not declares_survey_pair and not is_verification_only:
-        errors.append(f'D{num}: Missing **Affected files:** section')
+        errors.append(
+            f'D{num}: Missing declared file surface — provide **Affected files:**, '
+            f'or BOTH **Files to survey:** and **Files expected to mutate:** for a '
+            f'survey-scope deliverable (one of the pair alone is not a complete '
+            f'declaration)'
+        )
     else:
         # Check 3a: No wildcards or vague references; Check 3b: required intent marker.
         for entry in affected_files:
@@ -498,10 +503,12 @@ def cmd_list_deliverables(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _annotate_foreign(deliverables: list[dict[str, Any]]) -> None:
-    """Stamp a ``foreign`` flag onto every deliverable and each of its
-    ``affected_files`` entries, in place.
+    """Stamp a ``foreign`` flag onto every deliverable and each of its declared
+    file entries, in place.
 
-    Each ``affected_files`` entry gains ``foreign: true/false`` derived from
+    Every entry of the deliverable's declared surface — ``affected_files``, plus
+    the ``mutation_scope`` / ``survey_scope`` pair a survey-scope deliverable
+    declares instead — gains ``foreign: true/false`` derived from
     :func:`is_foreign_path` against the project root (the git toplevel), and the
     deliverable gains a roll-up ``foreign: true`` when ANY of its paths is
     foreign. This is what lets a coverage ratio separate the two populations

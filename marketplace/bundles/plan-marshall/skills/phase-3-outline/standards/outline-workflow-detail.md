@@ -853,7 +853,6 @@ So, before the deliverable is finalised:
 - module: plan-marshall
 
 **Files to survey:**
-- `marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage_status.py`
 - `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/manage_tasks.py`
 - `marketplace/bundles/plan-marshall/skills/manage-config/scripts/manage_config.py`
 
@@ -861,7 +860,7 @@ So, before the deliverable is finalised:
 - `marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage_status.py`
 ```
 
-Here three scripts are surveyed for legacy logging calls, but the deliverable expects to mutate only the one that the survey confirms uses the legacy pattern. The other two are analysed and ruled out — they stay under `**Files to survey:**`. (When the survey confirms a file does need changing, the author moves it from `Files to survey:` to `Files expected to mutate:` before the outline is finalised, preserving disjointness.)
+Here three scripts are in play. The survey confirmed `manage_status.py` uses the legacy pattern, so it has been **moved** into `Files expected to mutate:` and no longer appears under `Files to survey:`; the other two are analysed and ruled out, and stay in the candidate pool. ⚠ **The two lists never share a path** — the fields are disjoint by construction, and this example shows the post-move state the outline is finalised in, not a snapshot mid-survey.
 
 #### `survey_vs_mutation_scope_declared` outline check (LLM-driven)
 
@@ -875,14 +874,13 @@ This is an LLM-driven outline check — prose the outline agent applies in-conte
 ### 2. Survey deprecated config keys and classify each for removal
 
 **Files to survey:**
-- `marketplace/bundles/plan-marshall/skills/manage-config/standards/config-schema.md`
 - `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/marshall_steward.py`
 
 **Files expected to mutate:**
 - `marketplace/bundles/plan-marshall/skills/manage-config/standards/config-schema.md`
 ```
 
-The title contains `Survey` and `classify`; both fields are present and disjoint → the check passes.
+The title contains `Survey` and `classify`; both fields are present and share no path → the check passes.
 
 **Negative example (flagged)** — survey-style deliverable with a single flat list:
 
