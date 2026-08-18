@@ -72,7 +72,8 @@ rather than reported here:
 - module-tests: **21042 passed, 14 skipped** — 0 failed, 0 errors
 
 No lockfile churn: `git status --porcelain` was empty after the build, and every commit staged
-explicit deliverable paths (never `git add -A`).
+deliverable paths explicitly — by name, or with `git add -A --` bounded by an explicit pathspec, which
+sweeps nothing outside the named paths. No commit staged the whole worktree.
 
 ## Findings
 
