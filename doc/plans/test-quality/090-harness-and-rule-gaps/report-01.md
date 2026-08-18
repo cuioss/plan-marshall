@@ -345,7 +345,7 @@ regression. `error_count` is unchanged at 16, so `status` is unaffected.
 zero — is **confirmed**. Severities read from the `RuleDescriptor` table in
 `_analyze_test_conventions.py`; baselines from `rule-provenance.md`.
 
-**Collected test count** (`pytest test/ --collect-only -q`): **20805 → 20854 (+49)**. This plan adds
+**Collected test count** (`pytest test/ --collect-only -q`): **20805 → 20855 (+50)**. This plan adds
 tests and removes none. (Verification condition 1 — holds.)
 
 **Coverage** — verification condition 2, `./pw coverage <bundle>` on this branch and on a pristine
@@ -379,6 +379,9 @@ passed in reverse-sorted order, serially, on **both** trees:
 | pristine `origin/main` | 36 failed, 20755 passed, 14 skipped |
 | this branch | 36 failed, 20804 passed, 14 skipped |
 
+(The branch figure was taken before the verification round added one further test; the failing set is
+what the comparison rests on, and it is unchanged.)
+
 The two **failing sets are identical test-for-test** (diffed, 36 nodes), across
 `platform-runtime` (17), `workflow-integration-gitlab` (6), `tools-integration-ci` (8),
 `workflow-integration-github` (5) — none of them a module this plan touches. They are module-level
@@ -390,10 +393,10 @@ the suite is green in both directions; the sensitivity is specific to a serial r
 
 `git diff --name-only origin/main...HEAD -- '*.py'` → **9 files**, so the gate applies.
 
-`./pw verify` — clean: `ruff` "All checks passed!", `mypy` "Success: no issues found in 413 source
-files" (production) and 771 (test-compile), "SPDX-header check passed", plugin-doctor `status: pass` /
-`total_issues: 0`, and **20840 passed, 14 skipped in 380.81s**. That run predates the second commit
-round; the gate was re-run after it and reports clean on the same four dimensions.
+`./pw verify` — **SUCCESS**, re-run after the verification-round fixes: `ruff` "All checks passed!",
+`mypy` "Success: no issues found in 413 source files" (production) and 772 (test-compile),
+"SPDX-header check passed", plugin-doctor `status: pass` / `total_issues: 0`, and **20841 passed, 14
+skipped in 357.37s**.
 
 ⚠️ **`test-compile` caught one error the narrower calls did not** — exactly the class the lane
 contract warns about. `mypy` rejected `keywords['register'].value` because an `isinstance` narrowing on
