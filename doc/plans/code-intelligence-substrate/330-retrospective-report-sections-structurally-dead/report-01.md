@@ -1,6 +1,6 @@
 # Run report — 330-retrospective-report-sections-structurally-dead (run 01)
 
-**Date (UTC):** 2026-08-17 – 2026-08-18    **Branch:** `claude/code-intelligence-retrospective-s9weii`    **PR:** _see below_    **Outcome:** completed
+**Date (UTC):** 2026-08-17 – 2026-08-18    **Branch:** `claude/code-intelligence-retrospective-s9weii`    **PR:** [#1287](https://github.com/cuioss/plan-marshall/pull/1287)    **Outcome:** completed
 
 ## Skills loaded
 
