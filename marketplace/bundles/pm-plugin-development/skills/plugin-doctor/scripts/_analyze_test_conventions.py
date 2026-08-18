@@ -88,15 +88,42 @@ PARENT_CHAIN_MIN_DEPTH = 3
 # rather than restated here: one textual shape, one matcher. Only the two
 # shapes those analyzers do not carry are defined locally.
 
-#: ``PR #123`` / ``pull request #123`` — the incident analyzer detects
-#: ``plan-marshall#123`` but not this spelling, which is the common one in
-#: test prose.
-_PR_REFERENCE_RE = re.compile(r'\b(?:PR|pull request)\s*#\d+', re.IGNORECASE)
+#: ``PR #123`` / ``pull request #123`` and the bare ``#123`` — the incident
+#: analyzer detects ``plan-marshall#123`` but neither of these spellings, and
+#: both occur in this repository's test prose.
+#:
+#: ⛔ The bare alternative is bounded on three sides, and every bound answers a
+#: false positive a cold read of this corpus actually returned:
+#:
+#: 1. ``(?<=[^\w#\-])`` requires a preceding character that is not a word
+#:    character, another ``#``, or a hyphen. The word-character half keeps the
+#:    bare alternative off ``plan-marshall#123``, which the reference analyzer
+#:    already owns. The hyphen half keeps it off a compound token that embeds a
+#:    number — ``pre-#812`` is a schema-state literal the corpus asserts on, not
+#:    a citation of 812. Requiring a preceding character AT ALL is what keeps it
+#:    off the start of a comment: a comment segment arrives from ``tokenize``
+#:    with its ``#`` delimiter attached, so ``#123 note`` would otherwise read as
+#:    a citation when the ``#`` is punctuation the tokenizer supplied.
+#: 2. ``\d{2,}`` — the BARE form requires at least two digits. A one-digit
+#:    ``#1`` is overwhelmingly intra-document enumeration ("mis-attribution
+#:    #1"), not a record id. This bound is affordable precisely because it is
+#:    local to the bare form: an unambiguous ``PR #7`` still matches through the
+#:    first alternative, which carries no digit bound.
+#: 3. ``\b`` after the digits keeps it off an identifier that merely starts with
+#:    digits.
+_PR_REFERENCE_RE = re.compile(
+    r'\b(?:PR|pull request)\s*#\d+|(?<=[^\w#\-])#\d{2,}\b',
+    re.IGNORECASE,
+)
 
 #: Plan and deliverable identifiers: ``TASK-001``, ``deliverable D3``,
-#: ``plan `some-plan-slug` ``.
+#: ``Deliverable 2``, ``plan `some-plan-slug` ``.
+#:
+#: The ``D`` is optional because both spellings occur: the ordinal is the
+#: citation whether or not the author wrote the letter, and a rule that matched
+#: only the lettered form would report one half of a corpus that writes both.
 _PLAN_DELIVERABLE_ID_RE = re.compile(
-    r'\bTASK-\d{3}\b|\bdeliverable\s+D\d+\b|\bplan\s+`[a-z0-9][a-z0-9-]{4,}`',
+    r'\bTASK-\d{3}\b|\bdeliverable\s+D?\d+\b|\bplan\s+`[a-z0-9][a-z0-9-]{4,}`',
     re.IGNORECASE,
 )
 
