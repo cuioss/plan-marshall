@@ -4,14 +4,23 @@ The plan's substantive work landed: the taxonomy has its `returned_with_findings
 finalize classification routes a loop-back to it, the audit rule reads every dispatching phase, the
 context-load columns were correctly settled without a second writer, D3 halted honestly, and the
 terminal-vs-retryable split is emitted, rendered and non-vacuously tested. What remains falls into
-four groups: the two *published* token figures sum a column whose "no measurement" case is a
-fabricated `0` (G1, G2, G6) — the exact asymmetry D2 exists to prevent, one column over; the
-retryable class has no path to a non-zero value on the phase the plan was written about (G3); the
-routing prose that D1 rewrote is guarded by no test, so it can silently regress (G5); and the
-CR-7 proxy-vs-proof correction was applied to the code and the report but not to the analyst-facing
-rule document that the retrospective agent actually follows (G4), nor to three lower-stakes
-comment surfaces (G7-G9). Two residue items from the run (D3's finding-yield sweep, D4's class
-shares) are still open (G12), and two low-severity record defects round out the list (G10, G11).
+five groups: the two *published* token figures sum a column whose "no measurement" case is a
+fabricated `0` (G1, G2, G6) — the exact asymmetry D2 exists to prevent, one column over, and
+demonstrated end-to-end from the writer to the reader rather than inferred; the cause-class
+partition those figures are computed over is hand-written and pinned to the taxonomy by nothing, so
+a future member falls silently out of both (G13); the finalize dispatcher's 5c gate and the cause
+table it classifies into describe different populations on the phase the plan was written about
+(G3); the routing prose that D1 rewrote is guarded by no test, so it can silently regress (G5); and
+the CR-7 proxy-vs-proof correction was applied to the code and the report but not to the
+analyst-facing rule document that the retrospective agent actually follows (G4), nor to three
+lower-stakes comment surfaces (G7-G9). Two residue items from the run (D3's finding-yield sweep,
+D4's class shares) are still open (G12), and two low-severity record defects round out the list
+(G10, G11).
+
+**Grouping note.** G4, G7, G8 and G9 are one sweep — the completion of the CR-7 proxy-vs-proof
+relabelling across the surfaces the run missed — and are all topiced `measurement/metrics` (G7
+stays `tests` because its surface is a test file) so a fix plan picks them up together rather than
+in three unrelated passes. G1 is the root cause of G2 and interacts with G3 and G12; fix G1 first.
 
 ## G1 — Represent an unmeasured `total_tokens` instead of writing a fabricated `0`
 
@@ -159,7 +168,10 @@ shares) are still open (G12), and two low-severity record defects round out the 
 
 - **Kind:** doc-defect
 - **Severity:** medium
-- **Topic:** documentation-surface
+- **Topic:** measurement/metrics — re-topiced from `documentation-surface`: the defect is a false
+  claim about what a published *measurement* asserts, and it belongs in the same fix pass as G7,
+  G8 and G9 (see the CR-7 completion-sweep note at the top of this file), not with unrelated doc
+  churn
 - **Where:** `marketplace/bundles/plan-marshall/skills/plan-retrospective/references/logging-gap-analysis.md:160-168`
 - **Evidence:** verbatim — "`error_total_tokens` — the spend on dispatches whose terminal state is
   **genuinely non-productive**: they raised a fatal `error` and returned nothing … This is the
@@ -175,9 +187,11 @@ shares) are still open (G12), and two low-severity record defects round out the 
   terminal-error spend, the strongest proxy for genuinely-wasted spend now that productive
   loop-backs are stamped `returned_with_findings`, with the finding-yield confirmation still
   outstanding.
-- **Done when:** `logging-gap-analysis.md` contains no assertion that `error` rows "returned
-  nothing" or "bought zero detection", and its wording is consistent with `analyze-logs.py`'s
-  module preamble.
+- **Done when:** `logging-gap-analysis.md:160-168` contains none of "genuinely non-productive"
+  (`:164`), "returned nothing" (`:164`), "genuine terminal waste" (`:166`) or "bought zero
+  detection" (`:168`) as assertions about `error` rows, the bullet's own heading at `:160`
+  ("**Genuinely-wasted vs retryable dispatch spend**") is restated in the proxy framing, and the
+  wording is consistent with `analyze-logs.py:1013-1024`.
 - **Effort:** S
 - **Risk if fixed:** none beyond doc churn; the `the accepted causes:` enum set in the same file is
   pinned by `test_logging_gap_analysis_termination_cause_set_matches_the_enum`, so the edit must not
@@ -192,9 +206,16 @@ shares) are still open (G12), and two low-severity record defects round out the 
   `marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md:1095-1110`; the missing test
   belongs beside `test/plan-marshall/plan-retrospective/test_dispatch_waste_and_finalize_scope.py:200`
   or in `test/plan-marshall/phase-6-finalize/`
-- **Evidence:** `grep -rln "returned_with_findings" test/` returns five files, none of which reads
+- **Evidence:** re-derived at HEAD: `grep -rln "returned_with_findings" test/` returns five `.py`
+  files (`manage-metrics/test_manage_metrics.py`,
+  `manage-metrics/test_manage_metrics_record_dispatch_boundary.py`,
+  `plan-retrospective/test_compile_report.py`, `…/test_compile_report_behavior.py`,
+  `…/test_dispatch_waste_and_finalize_scope.py`), none of which reads
   `phase-6-finalize/SKILL.md`; `grep -rn "termination.cause\|record-dispatch-boundary"
-  test/plan-marshall/phase-6-finalize/*.py` returns nothing. The one full-enum documentation guard
+  test/plan-marshall/phase-6-finalize/*.py` returns nothing across all 28 test files there —
+  including `test_loop_back_outcome.py`, which pins the `loop_back` *outcome* end-to-end but says
+  nothing about the 5c termination-cause classification it feeds. The one full-enum documentation
+  guard
   (`_parse_termination_cause_sites`, `test_manage_metrics.py:3837`) parses manage-metrics' own
   SKILL.md by construction, and the plugin-doctor `canonical-enum-choices-drift` rule scans
   `## Canonical invocations` blocks — line 1110 sits under `## Operation: finalize` and is a
@@ -204,7 +225,12 @@ shares) are still open (G12), and two low-severity record defects round out the 
   show the path was rerouted". The only shipped assertion is that the writer accepts the string on
   the finalize file. If the 5c table is edited back to route `loop_back → error`, the whole
   deliverable silently reverts with every test still green.
-- **Action:** add a document-contract test (the shape already used for `logging-gap-analysis.md`)
+- **Action:** add a document-contract test. The shape is already shipped **in the target directory
+  itself**: `test/plan-marshall/phase-6-finalize/test_loop_back_outcome.py` validates markdown
+  contracts in this same `phase-6-finalize/SKILL.md` (its invariant 4 asserts the Resumability
+  section's table rows), and `test_step_termination_contract.py` in the same directory pairs every
+  prose sweep with an executable mutation guard — so the new test has a local precedent to follow
+  rather than needing a new pattern. Assert
   asserting that the 5c cause table maps `outcome: loop_back` to `returned_with_findings` and
   `outcome: failed` to `error`, that the table's row count matches the invocation's brace-form value
   list, and that every value in that list is a member of `DISPATCH_TERMINATION_CAUSES` (a subset
@@ -223,13 +249,15 @@ shares) are still open (G12), and two low-severity record defects round out the 
 - **Severity:** medium
 - **Topic:** measurement/metrics
 - **Where:** `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/compile-report.py:371-378`
-  (`render_dispatch_boundaries_body`); the behaviour is pinned by
-  `test/plan-marshall/plan-retrospective/test_compile_report.py:876`
-- **Evidence:** `wasted = phase_data.get('error_total_tokens', 0)` /
-  `retryable = phase_data.get('retryable_total_tokens', 0)` /
-  `returned_with_findings = phase_data.get('returned_with_findings_count', 0)`, and the test's own
-  comment: "This fixture carries none of the new figures, so they default to 0", asserting
-  `| 5-execute | 0 | 0 | 0 | 0 | 0 | 3 |`.
+  (`render_dispatch_boundaries_body`); the behaviour is pinned by the assertion at
+  `test/plan-marshall/plan-retrospective/test_compile_report.py:876`, under the comment at `:875`
+- **Evidence:** `wasted = phase_data.get('error_total_tokens', 0)` (`:373`) /
+  `retryable = phase_data.get('retryable_total_tokens', 0)` (`:374`) /
+  `returned_with_findings = phase_data.get('returned_with_findings_count', 0)` (`:375`), and the
+  test's own comment at `:875`: "This fixture carries none of the new figures, so they default to
+  0", asserting `| 5-execute | 0 | 0 | 0 | 0 | 0 | 3 |` at `:876`. The two pre-070 counters
+  (`unknown_count`, `clean_exit_queue_empty_count`, `:371-372`) share the same `.get(…, 0)`
+  default; they are out of this plan's scope but sit in the same loop and should move with it.
 - **Why it matters:** a `dispatch_boundaries` fragment produced by a pre-070 `analyze-logs` (any
   archived plan re-compiled later) has no such keys, and the report then publishes zero
   terminal-error spend for a phase where nothing measured it. The repository's own absent-is-not-zero
@@ -256,7 +284,8 @@ shares) are still open (G12), and two low-severity record defects round out the 
 - **Why it matters:** the test file is the executable specification of D4/D5; it now specifies a
   stronger claim than the code makes, and a later reader will reinstate the overclaim from it.
 - **Action:** restate as terminal-error spend / strongest proxy, with the finding-yield proof
-  deferred, matching `analyze-logs.py:1013-1024`.
+  deferred, matching `analyze-logs.py:1013-1024`. Part of the CR-7 completion sweep with G4, G8
+  and G9 — do them in one pass.
 - **Done when:** the module docstring contains no assertion that `error` rows produced nothing.
 - **Effort:** S
 - **Risk if fixed:** none — docstring only.
@@ -265,19 +294,23 @@ shares) are still open (G12), and two low-severity record defects round out the 
 
 - **Kind:** doc-defect
 - **Severity:** low
-- **Topic:** documentation-surface
+- **Topic:** measurement/metrics — re-topiced from `documentation-surface` so it groups with G4,
+  G7 and G9 as one CR-7 completion sweep
 - **Where:** `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/compile-report.py:373`
   (`wasted = phase_data.get('error_total_tokens', 0)`);
-  `test/plan-marshall/plan-retrospective/test_compile_report.py:873,943` ("Columns: phase | rows |
-  error_total_tokens (wasted) | …")
+  `test/plan-marshall/plan-retrospective/test_compile_report.py:873` and `:943` ("Columns: phase |
+  rows | error_total_tokens (wasted) | …") and `:947` ("the genuinely-wasted vs retryable split");
+  `test/plan-marshall/plan-retrospective/test_compile_report_behavior.py:140` ("the
+  genuinely-wasted vs retryable spend split")
 - **Evidence:** the rendered header is `error_total_tokens (terminal-error)`
-  (`compile-report.py:357`), but the local variable and the two test comments still call the same
-  quantity "wasted".
-- **Why it matters:** the CR-7 disposition claims the label was corrected; three surfaces still
+  (`compile-report.py:357`), but the local variable and **four** comment lines across two test
+  files still call the same quantity "wasted" / "genuinely-wasted".
+- **Why it matters:** the CR-7 disposition claims the label was corrected; five surfaces still
   carry the old one, so the next reader sees a contradiction between the code and its own comments.
-- **Action:** rename the local to `terminal_error` and update the two comment lines.
-- **Done when:** `grep -n "wasted" compile-report.py test_compile_report.py` returns nothing that
-  refers to `error_total_tokens`.
+- **Action:** rename the local to `terminal_error` and update the four comment lines.
+- **Done when:** across `compile-report.py`, `test_compile_report.py` and
+  `test_compile_report_behavior.py`, no occurrence of "wasted" or "genuinely-wasted" refers to
+  `error_total_tokens`.
 - **Effort:** S
 - **Risk if fixed:** none.
 
@@ -306,19 +339,28 @@ shares) are still open (G12), and two low-severity record defects round out the 
 - **Severity:** low
 - **Topic:** plan-lane-contract
 - **Where:** `doc/plans/code-intelligence-substrate/070-dispatch-spend-on-dispatches-that-produced-nothing/report-01.md:64`
-- **Evidence:** "On head `dc8e352` the required `verify / conclusion` check concluded **success**".
-  The PR's final head was `f45bae2` — CodeRabbit re-reviewed `f45bae2` at 16:24Z and
-  `pull_request_read get_status` for PR #1180 returns `sha: f45bae2e751a111bc0e27b84347527ce56be93ef`
-  with overall state `success`. The report's own Contract check says the finalized report was
-  "pushed as the last pre-merge commit", i.e. after `dc8e352`.
+- **Evidence:** the report reads "On head `dc8e352` the required `verify / conclusion` check
+  concluded **success**; `verify / verify`, `verify / gate`, `review / review`, `dependency-review`,
+  and `generate-check` all success". `pull_request_read get_status` on PR #1180 returns
+  `sha: f45bae2e751a111bc0e27b84347527ce56be93ef` — the report-finalization commit, which the
+  report's own Contract check says was "pushed as the last pre-merge commit", i.e. after
+  `dc8e352`. Re-derived here with `get_check_runs`, which is the surface that actually carries the
+  verdict (`get_status` returns `total_count: 1`, only CodeRabbit's "Review rate limited" commit
+  status): on `f45bae2` there are **7** check runs — `verify / conclusion` success (completed
+  16:36:31Z), `verify / verify`, `verify / gate`, `dependency-review / dependency-review` and
+  `generate-check` success, `Sourcery review` and `auto-merge` skipped. **`review / review` is not
+  among them**, so that clause of the report is wrong independently of the SHA.
 - **Why it matters:** the merge gate's condition is "required check green **on head**"; a report
   that evidences an earlier head does not evidence the condition it claims to have met. Here the
-  final head was in fact green, so the outcome was right and the record is wrong.
-- **Action:** in a future lane run, capture the CI verdict after the report-finalization commit, or
-  state explicitly which head each check verdict belongs to.
-- **Done when:** the lane's Step-8 evidence names the same SHA as the PR's final head.
+  final head was in fact green, so the outcome was right and only the record is wrong.
+- **Action:** correct the sentence at `report-01.md:64` to name `f45bae2` as the head the merge
+  gate acted on, and to list the checks that actually ran on it (dropping `review / review`).
+  Separately, state in the lane's Step-8 evidence which head each check verdict belongs to.
+- **Done when:** `report-01.md:64` names `f45bae2` and its check list matches
+  `get_check_runs` for that SHA.
 - **Effort:** S
-- **Risk if fixed:** none — a record correction and a lane-contract habit, not a code change.
+- **Risk if fixed:** none — a record correction. Note that editing a landed run report is the same
+  lane-contract question G11 raises; prefer an inline correction note over a silent rewrite.
 
 ## G11 — Reconcile `plan.md`'s D2 binary with the shipped three-state contract
 
@@ -371,3 +413,46 @@ shares) are still open (G12), and two low-severity record defects round out the 
 - **Risk if fixed:** a share computed against an unsettled denominator would reproduce the very
   sample-is-not-a-population error this plan exists to correct — the halt is preferable to a
   premature number.
+
+## G13 — Anchor the cause-class partition to `DISPATCH_TERMINATION_CAUSES`
+
+- **Kind:** bug
+- **Severity:** medium
+- **Topic:** measurement/metrics
+- **Where:** `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/analyze-logs.py:1025-1027`
+  (`_TERMINAL_WASTE_CAUSES`, `_RETRYABLE_CAUSES`, `_RETURNED_WITH_FINDINGS_CAUSE`), against
+  `marketplace/bundles/plan-marshall/skills/manage-metrics/scripts/manage-metrics.py:79-103`
+  (`DISPATCH_TERMINATION_CAUSES`); the test belongs in
+  `test/plan-marshall/plan-retrospective/test_dispatch_waste_and_finalize_scope.py`
+- **Evidence:** the three constants are hand-written string literals in a **different bundle** from
+  the enum they partition. A repository-wide search for all three names across `marketplace/`,
+  `test/` and `.claude/` returns only their definitions and their three use sites inside
+  `analyze-logs.py` (`:1236`, `:1242`, `:1245`) — no test, and no structural relationship to the
+  enum. By contrast every *documentation* mirror of that enum is guarded by a structural-equality
+  test with an executable negative control (`test_manage_metrics.py:3870`/`:3905`,
+  `:4016`/`:4027`, `:4048`/`:4053`). The partition that decides what two **published** figures are
+  computed over is guarded by nothing. Of the 12 enum members, four are classified or counted
+  (`error`, `blocked_session_restart`, `harness_cancellation`, `returned_with_findings`), one more
+  is counted separately (`clean_exit_queue_empty`), and seven are silently unclassified.
+- **Why it matters:** the plan's D3 says in terms: "⛔ **Derive the terminal-state vocabulary from
+  the schema**, not from the two names that happened to be observed — they are a sample, not the
+  enum." `_RETRYABLE_CAUSES` is literally those two names. A member added to
+  `DISPATCH_TERMINATION_CAUSES` later — the taxonomy has been widened twice already, most recently
+  by this very plan — lands in neither published figure and in no test, so its spend disappears
+  from both without any signal. This is a guard that cannot fire rather than one that fires wrongly,
+  which is why grep and the green suite both look clean.
+- **Action:** add a test asserting that every member of `DISPATCH_TERMINATION_CAUSES` appears in
+  exactly one of a declared set of classes — terminal, retryable, productive, and an explicit
+  `_BENIGN_CAUSES` (or `_UNCLASSIFIED_CAUSES`) tuple naming the seven that belong in neither
+  spend figure — so the union equals the enum and the intersections are empty. Import the enum
+  rather than re-typing it (`test_dispatch_waste_and_finalize_scope.py` already loads scripts via
+  `conftest.load_script_module`). Pair it with a negative control that appends a fictitious member
+  and requires the assertion to raise.
+- **Done when:** appending a member to `DISPATCH_TERMINATION_CAUSES` without adding it to one of
+  the `analyze-logs.py` cause-class tuples turns a named test red.
+- **Effort:** S
+- **Risk if fixed:** the test couples two bundles, so `plan-retrospective`'s test suite gains an
+  import of `manage-metrics`' script; that direction already exists in this repository's contract
+  tests (`test_logging_gap_analysis_termination_cause_set_matches_the_enum` reads a
+  `plan-retrospective` document from a `manage-metrics` test), so the reverse coupling is
+  precedented rather than novel.

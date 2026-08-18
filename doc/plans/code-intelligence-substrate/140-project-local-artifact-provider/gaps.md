@@ -1,12 +1,22 @@
 # Gaps — 140-project-local-artifact-provider
 
 The plan landed substantially as specified: the bare-root `.claude` claim ships through the Axis-D seam,
-the ownership ruling is recorded in four places, the consistency check enumerates the real tree (47 files,
-re-derived at audit time) and dies under mutation, and the core was not edited. Six gaps remain, none of
-which refutes a deliverable. One is a test-quality defect on the deliverable the plan singled out as
-"the enumeration *is* the deliverable" (G1); one is a substantive coverage half-closure the shipped prose
-does not warn about (G2); one is a scope statement missing from the ownership contract (G3); and three are
-inaccuracies confined to the run report (G4-G6).
+the ownership ruling is recorded in four places, the consistency check enumerates the real tree and dies
+under mutation (re-run independently: 6 failed, 14 passed), and the core was not edited. Eight gaps
+remain, none of which refutes a deliverable.
+
+Two are test-quality defects on the deliverable the plan singled out as "the enumeration *is* the
+deliverable": the count it publishes is unobservable (G1) and the population it counts is not
+deterministic (G7). One is a substantive coverage half-closure the shipped prose does not warn about
+(G2); one is a scope statement missing from the ownership contract (G3); one is a misleading comment in
+the very fixture the run's own finding 3 corrected (G8); and three are inaccuracies confined to the run
+report (G4-G6).
+
+**On the `.claude` population, since two gaps turn on it.** `git ls-files .claude` → **47** — the
+report's number, correct for the tracked corpus. The walk the test performs is a live filesystem
+`rglob`, which at adversarial-review time read **52**: the 47 tracked files plus git-ignored
+`.claude/settings.local.json` and four `__pycache__/*.pyc` artifacts. No tracked file moved between the
+audit and this review (`git diff` over the audited surface is empty), so the delta is build state alone.
 
 ## G1 — Make D3's published count observable, and drop the self-referential assertion
 
@@ -24,23 +34,31 @@ inaccuracies confined to the run report (G4-G6).
 
   The assertion reads back the test's own `print` from the line above, with `len(files)` interpolated on
   both sides. It holds for every possible state of the production code and can only fail if the `print`
-  itself is deleted. And on a green run pytest captures and discards stdout: the audit's clean run of this
-  file emitted `9 passed in 4.81s` and nothing else — the `[D3] enumerated 47 files …` line appeared
-  nowhere.
+  itself is deleted. And on a green run pytest captures and discards stdout: re-run independently at
+  adversarial review, `uv run python -m pytest test/pm-plugin-development/plan-marshall-plugin/test_path_attribution.py -o addopts="" -q`
+  emitted `9 passed` and nothing else — no `[D3] enumerated … files …` line appeared. Separately, the
+  mutation sweep showed the test dies at the `assert not mismatches` line above, never reaching the
+  `capsys` line, which confirms the `capsys` assertion is not what bites.
 - **Why it matters:** the plan made the publication load-bearing — "⛔ N probes of a pure prefix function
   is ONE assertion repeated N times … the check that bites walks the actual tree and **publishes the
   population size it walked**", and D3's *Done when* is "the check enumerates rather than samples, **and
   publishes its count**". The enumeration half is real and proven (mutating the claim reddens this test).
   The publication half is satisfied only in appearance: no reader, human or CI, ever sees the number on a
   passing run, and the guard that claims to verify the publication cannot fail.
-- **Action:** replace the `capsys` round-trip with a mechanism that survives a green run — e.g.
-  `record_property('claude_tree_population', len(files))` (surfaced in the JUnit XML CI already collects),
-  or a `pytest` `-rA`-visible summary via `request.node.user_properties`. Keep the real assertions
-  (`assert files`, `assert not mismatches`) unchanged and delete the self-referential `in
-  capsys.readouterr().out` check, which asserts nothing about the system under test.
-- **Done when:** the file's tests pass with `capsys` no longer imported or used for the count, and the
-  enumerated population size is retrievable from a passing run's machine-readable output (JUnit XML
-  property or equivalent) without `-s`.
+- **Action:** delete the `assert … in capsys.readouterr().out` statement and the `capsys` fixture
+  parameter — it asserts nothing about the system under test — and keep the real assertions
+  (`assert files`, `assert not mismatches`) unchanged. Then give the count a channel that survives a
+  green run: `record_property('claude_tree_population', len(files))`.
+  ⛔ **Do not justify that as "the JUnit XML CI already collects"** — this repository collects none.
+  `pyproject.toml:110` sets `addopts = ["-v", "--tb=short", "--strict-markers", "--strict-config",
+  "--durations=25"]` with no `--junitxml` and no `junit_family`, and the CI `verify` job delegates to an
+  external reusable workflow (`.github/workflows/python-verify.yml:43`) whose collection behaviour is not
+  inspectable from this repository. So the property must be paired with a run that actually requests the
+  XML, and the fixing run must demonstrate that pairing rather than assume it.
+- **Done when:** `capsys` appears nowhere in
+  `test_every_path_under_the_real_claude_tree_resolves_to_pm_plugin_development`; the file's tests still
+  pass; and running it with `--junitxml` produces an XML in which a `<property name="claude_tree_population" …>`
+  element carries the walked count — demonstrated by pasting that element into the fixing run's report.
 - **Effort:** S
 - **Risk if fixed:** none to production behaviour; the test's fixture signature changes, so any sibling
   test copying this pattern should be checked for the same defect.

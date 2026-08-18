@@ -48,8 +48,19 @@ shipped as documented prose that the step's own execution path never points at.
   `standards/*.md` paths. File restored from a byte snapshot at
   `/tmp/verify-100-mutsweep/_self_review_detectors.py.orig`; md5 matches and `git status --porcelain`
   is clean for it.
+  - **Stale consumer of the same value change, not caught by the run.**
+    `marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md:206` still
+    justifies `count_prose`'s exclusion from `total` as *"it anchors a **sibling-SKILL.md** re-check
+    rather than flagging an added line"* — the pre-fix file set. Rule 14 at `:256` and the schema
+    placeholder at `:178` (`{repo-relative-contract-source-path}`) both state the post-fix file set
+    correctly, so the document contradicts itself. A sweep of `marketplace/bundles/` for
+    `sibling-SKILL.md|sibling SKILL.md|SKILL.md sibling` returns exactly this one hit. This does not
+    touch the *Done when* (the resolver, the agreement test, and the negative control are all satisfied)
+    but it is a fourth stale *consumer kind* of the D1 value change, alongside the three the report's
+    § "What have we learned" enumerates. See G4.
 - **Verdict:** CONFIRMED — every clause of the *Done when* is satisfied and the negative control is
-  non-vacuous by direct mutation evidence.
+  non-vacuous by direct mutation evidence. One stale doc consumer survives outside the *Done when*
+  (G4).
 
 ### D2 — tie registry membership to check coverage by an invariant
 
@@ -157,18 +168,29 @@ shipped as documented prose that the step's own execution path never points at.
 - **Checks run:** `uv run python -m pytest …/test_inbox_channel_contract.py -o addopts="" -q -k "TargetPlan or help"`
   → `4 passed`. Whole file plus the ext-self-review dir → `345 passed`.
   Content sweep for `--target-plan` / `target_plan` across `marketplace/bundles/` and `test/`: the flag
-  appears **only** in the two orchestrator scripts, the two orchestrator docs, and the test file. No
-  `orchestrator inbox write` invocation anywhere in the bundles passes it — checked every `inbox write`
-  call site (`phase-6-finalize/standards/emit-landing.md:204`,
-  `phase-6-finalize/standards/finalize-step-preference-emitter.md:220`,
-  `phase-6-finalize/workflow/lessons-capture.md:103`, `plan-retrospective/SKILL.md:338`,
-  `plan-orchestrator/SKILL.md:190`).
-- **Verdict:** PARTIAL — the mechanism exists, is correct on its own terms, is well tested, and stays
-  inside the scope guard. But it is **opt-in**: the refusal fires only when a caller volunteers
-  `--target-plan`, and no caller in the tree does. A sender who writes a message *about* a running plan
-  in the payload body — which is exactly how the incident in arm C arose — still queues it silently.
-  "Writing a message that names a running plan produces an explicit undeliverable report" is therefore
-  true only of callers who already knew the message was aimed at a plan and said so. See G1.
+  appears **only** in the two orchestrator scripts, the two orchestrator docs, and the test file. Every
+  `inbox write` command block in the bundles was re-enumerated with its message **kind**, since the kind
+  is what decides whether a target flag is meaningful there:
+  `plan-orchestrator/SKILL.md:190-192` (the canonical synopsis — it **does** carry
+  `[--target-plan TARGET_PLAN]`, so the generic form advertises the flag),
+  `phase-6-finalize/standards/emit-landing.md:204` (`--kind landing`, self-addressed —
+  `landing-payload-spec.md:82` makes `plan_id` == `sender_id` a required key),
+  `phase-6-finalize/standards/finalize-step-preference-emitter.md:220` (`--kind candidate-lesson`,
+  own-run owed hint), `plan-retrospective/SKILL.md:338` (`--kind candidate-lesson`, own-run proposal),
+  and `phase-6-finalize/workflow/lessons-capture.md:103` (`--kind {kind}`, resolved by `:82` as
+  *"Every candidate lesson and every finding rides as `candidate-lesson`"*). Only the last can carry
+  content aimed at a plan other than the sender. No documented invocation writes `--kind finding` at all.
+  Nothing else supplies the value either: `orchestrator.py:2570-2582` declares it `required=False,
+  default=None` with no fallback, and `cmd_inbox_write` has no programmatic caller outside the argparse
+  wiring and the tests.
+- **Verdict:** PARTIAL — the mechanism exists, is correct on its own terms, is well tested, stays inside
+  the scope guard, and the contract is honest about its restriction (`inbox-envelope.md:35` states
+  *"The guard fires only when `--target-plan` is supplied"*). What is missing is an obligation: the one
+  documented stream that can carry a message aimed at another plan (`lessons-capture.md:103`) never
+  tells its writer to name the target, so the arm-C incident shape still queues silently. "Writing a
+  message that names a running plan produces an explicit undeliverable report" is therefore true only of
+  callers who already knew the message was aimed at a plan and said so. This is an incomplete
+  deliverable, not wrong behaviour. See G1.
 
 ### D5 — the doc-claim half self-seeds; cap on convergence, not on budget
 
@@ -262,10 +284,13 @@ Every factual claim in `report-01.md` was checked against the tree. All but one 
   > "Searched scope: the `CANDIDATE_LISTS` registry in `_self_review_patterns.py` (1 file, 23 entries,
   > 17 `in_total`)"
 
-  The registry has **22** entries, not 23 — re-derived at HEAD and at the landed commit `94bcddf` (both
-  22 entries / 17 `in_total`). The `17` is correct; the `23` is not. Notably the PR body for the same
-  claim says *"1 file, 17 `in_total` entries"* and states no total, so this error is confined to the run
-  report. It is also the one claim in the section whose whole purpose is to demonstrate D3's
+  The registry has **22** entries, not 23 — re-derived at HEAD (module import, `len(CANDIDATE_LISTS)`)
+  and at the landed commit `94bcddf` (AST over `git show`), both 22 entries / 17 `in_total`. The `17` is
+  correct; the `23` is not; a naive `grep -c 'CandidateList('` returns 23 because the 23rd match is the
+  `class CandidateList(NamedTuple):` declaration at `_self_review_patterns.py:502`. The PR body for the
+  same claim says *"the `CANDIDATE_LISTS` registry (1 file, 17 `in_total` entries)"* and states no total
+  — read directly from PR #1189 via the GitHub API in the adversarial pass — so this error is confined
+  to the run report. It is also the one claim in the section whose whole purpose is to demonstrate D3's
   scope-and-count discipline. See G7.
 - **True but now line-shifted (not a defect).** "`pre-submission-self-review.md:122` … line 122 now
   includes `scope_statement`" — that enumeration is now at `:146` after later plans inserted content,
@@ -285,9 +310,12 @@ Every factual claim in `report-01.md` was checked against the tree. All but one 
   argument.
 - **UNVERIFIABLE from this clone (not disputed).** The CI figures (`19241 passed, 14 skipped`,
   `mypy 395/717 files`, the 10m59s runtime), the per-commit gate results, the CodeRabbit and
-  `cuioss-review-bot` / `sourcery-ai` participation table, the wall-clock estimate, and the "93 passed"
-  targeted re-verification. These are records of a past CI/PR session; the brief forbids running
-  `./pw verify` and the PR surfaces are not in the tree. The individual commit SHAs
+  `cuioss-review-bot` / `sourcery-ai` participation table, and the "93 passed" targeted re-verification.
+  These are records of a past CI session; the brief forbids running `./pw verify`. The wall-clock
+  estimate *is* now corroborated: PR #1189's API record gives `created_at 2026-08-12T18:21:36Z` and
+  `merged_at 2026-08-12T19:36:08Z` — 1h14m, inside the report's "roughly 1–1.5 hours" — along with
+  `changed_files: 14`, `additions: 851`, `deletions: 58`, matching the squash stat exactly. The
+  individual commit SHAs
   (`53d49f3`, `5ae9848`, `cb577b2`, `89ddcbf`, `0c69f8b`, `2e68683`, `e08f23a`) are all absent from this
   clone, which is the expected consequence of the squash merge the report itself declares — not a
   discrepancy.
@@ -331,11 +359,12 @@ each edit and restored with `cp` from that snapshot afterwards — never `git ch
 Post-restore `md5sum` matches the snapshot for both files and `git status --porcelain` lists neither.
 (The working tree carries unrelated modifications from concurrent sessions; none are mine.)
 
-**What I could not check.** Everything that lives in the PR/CI record rather than the tree: the
-`./pw verify` totals, per-commit quality gates, the reviewer participation table, the CodeRabbit finding
-dispositions as posted, and the wall-clock figures. These are marked UNVERIFIABLE above rather than
-assumed to pass. The brief forbids the full verify run, and the individual branch commits no longer
-exist post-squash. The D5 "cold read" verification requirement I discharged myself by reading the
+**What I could not check.** Everything that lives in the CI record rather than the tree: the
+`./pw verify` totals, per-commit quality gates, the reviewer participation table, and the CodeRabbit
+finding dispositions as posted. These are marked UNVERIFIABLE above rather than assumed to pass. The
+brief forbids the full verify run, and the individual branch commits no longer exist post-squash. The PR
+*body* and its timestamps are not in the tree either, but the adversarial pass read them from PR #1189
+through the GitHub API rather than leaving them asserted — see § Report accuracy. The D5 "cold read" verification requirement I discharged myself by reading the
 termination section without first reading the report's account of it; I reached the same reading the
 report claims (the two closes are disjoint and non-collapsible), and the gaps I file against D5 are
 about *reachability from Step 4*, not about the distinction itself.
@@ -349,3 +378,43 @@ claim that `self-seeding` appears nowhere outside `:409-427` was drawn from the 
 plausibly carry it (the workflow doc, `phase-6-finalize/SKILL.md`, the ext-point contract). Each grep
 pattern was confirmed to return hits somewhere it was known to exist before any zero result was
 believed.
+
+## Adversarial review
+
+Independent review of this document and `gaps.md`. Attacks run: A1 false positives, A2 false
+negatives, A3 vacuous evidence, A4 counts and quotes, A5 actionability, A6 severity/topic,
+A7 coverage, A8 internal consistency.
+
+Re-derived at `9ae90b4` on the same branch. Nothing in this document or in `gaps.md` was accepted on
+the original auditor's word: every `path:line` was opened, every count recomputed, both claimed
+mutations re-run, and the PR record fetched from the GitHub API.
+
+| # | Attack | What was found | Correction applied |
+|---|---|---|---|
+| A1 | False positives | Every gap's citation was opened at `path:line`. **All ten gaps describe real conditions.** Verified in place: the `sibling-SKILL.md` clause at `ext-self-review-plan-marshall/SKILL.md:206` (G4, sole hit in `marketplace/bundles/`); `noun` reused for the plural demonstrative at `self_review.py:126-133` (G5); the unused `capsys` at `test_self_review_check_coverage.py:103` and the bare `print` at `:110` (G6); the `23`-vs-`22` registry figure at `report-01.md:127` (G7); the unconditional emit at `self_review.py:402` with no rejection path (G8); the empty-set fail-open at `_orchestrator_inbox.py:299-309` (G9); the unpinned block extraction at `:55`/`:65-78` (G10); `:407` vs `:418` in `pre-submission-self-review.md` (G3); Step 4 Branch B carrying no reference to `:409` (G2). No citation had drifted. | None needed for existence; three citations sharpened — G8's site (§ Output Schema `:79`, not "near `:64`" in § Post-Conditions), G10's attribution (the `#:` comment at `:49-51`, not `_numbered_check_block`'s docstring) and its preamble range (`:233-281`, not `:235-280`). |
+| A2 | False negatives | The two CONFIRMED verdicts (D1, D2) were re-derived from the shipped code, not from the audit's reasoning, and both hold: `_detect_count_prose:1078` calls the shared `_collect_skill_contract_sources:276-285`, which is also what the rule-6 detector calls at `:440`; the D2 population is genuinely derived from the registry (`:81-83`), guarded `> 0` (`:109`), and asserted per key (`:117-121`). One item the audit missed entirely — the stale `sibling-SKILL.md` rationale at `SKILL.md:206`, filed as G4 in `gaps.md` but traceable to nothing in this document (an A8 defect too). Separately, the **G1 attack the brief singled out**: the call-site enumeration was redone from scratch (`grep` for `inbox write` across the whole repo, then each block opened). Five blocks exist, and the audit's characterisation was materially wrong in two ways — the canonical synopsis at `plan-orchestrator/SKILL.md:190-192` **does** carry `[--target-plan TARGET_PLAN]`, and of the four operational blocks three are self-addressed by message kind (`landing`; two own-run `candidate-lesson`s), so their omission of the flag is correct rather than a defect. Only `lessons-capture.md:103` — `--kind {kind}`, resolved by `:82` as *"Every candidate lesson and every finding rides as `candidate-lesson`"* — can carry plan-directed content. No documented invocation writes `--kind finding` at all, so the audit's preferred remedy targeted a path with zero callers. Confirmed no other mechanism supplies the argument: `orchestrator.py:2570-2582` is `required=False, default=None` with no env/config fallback, and `cmd_inbox_write` has no programmatic caller. | D1's section gains the G4 finding (verdict stays CONFIRMED — it is outside the *Done when*). D4's § Checks run and § Verdict rewritten to enumerate call sites **by kind** and to name `lessons-capture.md:103` as the one site that owes the obligation; the D4 table row follows. G1 rewritten end to end. |
+| A3 | Vacuous evidence | Both claimed mutation sweeps were **re-run**, not re-read. D1: `_self_review_detectors.py:1078` → `for doc in [skill_dir / 'SKILL.md']:`, then `pytest …/test_self_review.py -k count_prose` → `2 failed, 3 passed`, the agreement test naming the two missing `standards/*.md` paths. D2: the single `` `discard_without_report` `` occurrence in the workflow doc (`:332`) → `DISCARDKEY`, then `pytest …/test_self_review_check_coverage.py` → `2 failed, 3 passed`. Both reproduce the audit's readings exactly. G6's own claim re-tested: `-s` prints `counted candidate lists (population size): 17`, plain `-q` prints nothing — the publication really is discarded on a green run. G10's structural premise re-derived from the live document: ordinals `[1 … 17]`, contiguous, zero headings inside the extracted block. | None — every "verified" in the document rests on something that came back different under mutation. Snapshot/restore protocol followed (`cp` to a scratch dir, `cp` back, md5 match, `git status --porcelain` clean for both files); no `git checkout`/`restore`/`stash` was used. |
+| A4 | Counts and quotes | Registry re-derived **twice by independent methods** — module import at HEAD and AST over `git show 94bcddf:…` — both **22 entries / 17 `in_total`**, confirming G7 and D2. Located the origin of the report's `23`: `grep -c 'CandidateList('` returns 23 because the class declaration at `:502` matches. `_format_scope_statement` exercised directly: `(delta,1)` returns `…covers only these file, NOT the full plan surface` — G5's quote is byte-exact. G2's grep-line list `{409,416,418,420,422,425,427}` for `self-seed|out of budget` reproduced exactly. `:407` and `:418` quoted verbatim. Landed commit re-stat'd: 14 files, `_self_review_patterns.py` absent from it. The one number stated but not measured was the PR body's wording, quoted in § Report accuracy while § Method declared PR surfaces unreachable. | PR #1189 fetched from the GitHub API: body confirms *"(1 file, 17 `in_total` entries)"* with no total; `changed_files 14 / +851 / -58` and `created_at 18:21:36Z → merged_at 19:36:08Z` (1h14m) corroborate the report's stat and wall-clock. § Report accuracy and § Method corrected so the document no longer both quotes and disclaims the PR. G7's evidence gains the two derivation methods and the `:502` explanation. |
+| A5 | Actionability | Nine of ten entries were executable as written. G1 was not: its *Done when* asked for a refusal "issued without any new flag by a caller following the documented invocation at `emit-landing.md:204`" — a `--kind landing` write whose payload names the sender's own plan, which is `running` at finalize time (`TERMINAL_PLAN_STATUSES` at `orchestrator.py:140` shows the row leaves `running` only on a later orchestrator act). Implemented literally, its arm (b) would refuse **every** landing write. Its arm (a) targeted `--kind finding`, which no documented block writes. | G1's Action and *Done when* replaced with a site-specific, checkable obligation at `lessons-capture.md:103` plus `inbox-envelope.md` § Write-side deliverability, and an explicit warning that a payload-side detector must exclude the sender's own plan id. Effort re-estimated M → S. |
+| A6 | Severity and topic | G1's **high** does not survive the calibration: the guard fires (four passing tests drive it), the contract states the opt-in restriction verbatim at `inbox-envelope.md:35`, and the canonical invocation advertises the flag — nothing is misreported and no guard is structurally unreachable. That is "an incomplete deliverable" → medium. Topics: G2/G3 own `phase-6-finalize/workflow/pre-submission-self-review.md`, a step's execution contract rather than narrative documentation; G8 owns `extension-api/standards/ext-point-self-review-surfacing.md`, the same class of bundle contract doc as G4. G5–G7, G9, G10 checked and correct. | G1 high → **medium**; the header tally now reads five medium / five low. G2, G3 `documentation-surface` → `dispatch/finalize`; G8 `documentation-surface` → `bundle-docs`. G7 stays `documentation-surface` (it edits the run report, not a bundle). |
+| A7 | Coverage | All five deliverables carry a detail section with the *Done when* quoted; all four out-of-scope exclusions are checked; report accuracy and the three-item residue list are covered; test adequacy is tabulated per deliverable. The plan's § Verification clauses are each discharged (negative controls, the population-publication requirement → G6, the D5 cold read, the self-binding D3 check) or explicitly marked unverifiable (`./pw verify`). No deliverable is silently unmentioned. | None. |
+| A8 | Internal consistency | Overall verdict follows from the rows (2 CONFIRMED / 3 PARTIAL → CONFIRMED WITH GAPS). Every gap traces to a finding here **except G4**, which appeared nowhere in this document. Two smaller inconsistencies: the D5 table row cited Step 4 Branch B as `:378-407` while the detail cited `:378-403` (the block body ends at `:403`; `:407` is the closing operator sentence); and § Report accuracy quoted the PR body while § Method declared PR surfaces out of reach. | G4's finding added to the D1 section. Table row harmonised to `:378-403, closing at :407`. The PR-body inconsistency resolved by actually fetching the PR (see A4). |
+
+**Residual doubt:** Two things a further round would most likely find. First, the workflow doc carries
+three independently-maintained "seventeen"s — the § Step 3 heading, the count of numbered-check openers,
+and `len(_counted_lists())` — and only the third is pinned to anything; their agreement today is partly
+coincidence, since several numbered checks consume non-`in_total` lists (check 6 → `contract_sources`,
+check 11 → `count_prose`) while several `in_total` keys share a check. A drift there is caught only by
+`count_prose` + check 11 firing during a future self-review round, which is a soft mechanism. Not filed
+as a gap because no contract requires the three numbers to be equal, so there is nothing to assert
+against. Second, this pass verified D3's self-binding against the run report and the PR body, and found
+one clause in the PR body (*"the flag is a plan id that never reaches the write path"*) that is an
+absence claim without a scope statement; it is left unfiled because the plan's rule targets residual and
+absence claims about the searched surface, not every sentence of a PR narrative, and the write-boundary
+claim was independently verified here.
+
+**Verdict on the audit:** SOUND AFTER CORRECTION — every gap it filed is real and both its mutation
+sweeps reproduce, but its headline HIGH mis-severitied an incomplete deliverable as a dead guard, its
+call-site enumeration mischaracterised four of five write sites by ignoring message kind, its prescribed
+G1 remedy would have refused every landing write, and one gap (G4) traced to nothing in the verification
+document.

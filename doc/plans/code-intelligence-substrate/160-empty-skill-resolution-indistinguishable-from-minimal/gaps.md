@@ -3,11 +3,15 @@
 The shipped change is real and its tests are non-vacuous in both directions, but the new signal is
 narrower than the plan and the report describe. The deterministic guard cannot fire for the shape the
 enrichment writers actually produce for "nothing resolved" (they omit the profile rather than writing
-an empty block), it is discarded wholesale on a fail-open branch whose own comment promises the
-opposite, and its message never enters the command's structured output. The escape hatch has a second
-edge: an ordinary `enrich add-domain` can leave `minimal: true` on a now-populated profile, which
-phase-4-plan then reads as "no skills" — silently discarding resolved skills, the same masking
-archetype this plan exists to close. Fifteen gaps follow, one per instance.
+an empty block), it is discarded on a fail-open branch whose own comment promises the opposite, and
+its message never enters the command's structured output. The escape hatch has a second edge, and it
+is the most consequential item here: **two supported CLI verbs in sequence — declare a profile
+`minimal: true`, then run `enrich add-domain` / `enrich all` — persist a populated block that still
+carries `minimal: true`, both steps returning `status: success` with no warning, and phase-4-plan then
+reads it as "no skills" and discards every resolved skill silently.** That was reproduced by
+execution, not inferred from reading; the run report's rejection of it as "nonsensical input" is
+factually wrong about how the state arises. It is the same masking archetype this plan exists to
+close, newly introduced by this plan. Fifteen gaps follow, one per instance.
 
 ## G1 — Stop discarding the unresolved-profile condition when the bundles root cannot be resolved
 
@@ -15,10 +19,19 @@ archetype this plan exists to close. Fifteen gaps follow, one per instance.
 - **Severity:** medium
 - **Topic:** architecture-core
 - **Where:** `marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/_cmd_client_query.py:543-549` (`_emit_skills_by_profile_staleness_warning`), with the false claim at `:428-431`
-- **Evidence:** the module comment states *"when the bundle root cannot be located … the stale-notation check is skipped, but the missing/empty and unresolved-profile checks still fire because they need no registry."* Executed with `marketplace_bundles.resolve_bundles_root` patched to raise, and `plan_logging.log_entry` captured: emitted `[]`, while `detect_stale_skills_by_profile` on the same map returned `["module 'm': profile 'module_testing' resolves no skills and is not declared minimal — …"]`. The control run (root resolvable) emitted both messages, so the empty result is the code, not the harness.
-- **Why it matters:** in any deployment layout `resolve_bundles_root` does not recognise, the whole read-path guard goes silent — including the two signals the comment guarantees are registry-independent. A consuming project with an unresolved profile gets exactly the silence this plan set out to end.
-- **Action:** restructure the emitter so `detect_stale_skills_by_profile` is always called: resolve the registry predicate defensively (fall back to `lambda _: True`, which disables only the stale-notation signal) instead of returning early.
-- **Done when:** with `resolve_bundles_root` raising, the emitter still logs the unresolved-profile and missing/empty conditions and logs no stale-notation condition; a test asserts it.
+- **Evidence:** the module comment states *"when the bundle root cannot be located … the stale-notation check is skipped, but the missing/empty and unresolved-profile checks still fire because they need no registry."* Measured with `marketplace_bundles.resolve_bundles_root` patched to raise and `plan_logging.log_entry` captured, four rows:
+
+  | Input `merged` | root resolves? | emitted |
+  |---|---|---|
+  | populated `implementation` + empty undeclared `module_testing` | yes | unresolved-profile **and** stale-notation messages |
+  | same | **raises** | **`[]`** |
+  | `{'skills_by_profile': {}}` | raises | `"skills_by_profile is missing or empty"` |
+  | `{}` (key absent) | raises | `"skills_by_profile is missing or empty"` |
+
+  The pure core `detect_stale_skills_by_profile` on the row-2 map returned the unresolved-profile message, so the empty emission is the emitter's early return (`:549`), not the harness. **Only the unresolved-profile signal is lost**: the missing/empty signal is reachable only through a falsy map, which takes the `else` branch at `:553` and never enters the guarded `try`. The comment is therefore false about one of the two signals it names, not both.
+- **Why it matters:** in any deployment layout `resolve_bundles_root` does not recognise, the one signal this plan added goes silent — a consuming project with an unresolved profile gets exactly the silence this plan set out to end, and the code comment tells the next maintainer the opposite.
+- **Action:** restructure the emitter so `detect_stale_skills_by_profile` is always called: resolve the registry predicate defensively (fall back to `lambda _: True`, which disables only the stale-notation signal) instead of returning early. Correct the module comment at `:428-431` in the same change if the behaviour is instead deliberately narrowed.
+- **Done when:** with `resolve_bundles_root` raising **and a non-empty `skills_by_profile` carrying an undeclared-empty profile**, the emitter logs the unresolved-profile condition and logs no stale-notation condition; a test asserts both halves. (The missing/empty condition already survives this branch — asserting it alone would not discriminate.)
 - **Effort:** S
 - **Risk if fixed:** modules in an unrecognised layout begin emitting per-profile WARNINGs that were previously suppressed — the intended behaviour, but new log volume.
 
@@ -28,8 +41,14 @@ archetype this plan exists to close. Fifteen gaps follow, one per instance.
 - **Severity:** high
 - **Topic:** architecture-core
 - **Where:** `marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/_cmd_enrich.py:332-348` (`enrich_add_domain`), consumed at `marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md:314-316`
-- **Evidence:** `existing = current.get(profile_name, {})` (`:332`), `merged = dict(existing)` (`:337`), `merged['defaults'].append(entry)` (`:344`) — the copy preserves `minimal: true` while adding skills. `enrich_add_domain` never calls `_validate_skills_by_profile_structure` (it runs only in `enrich_skills_by_profile`, `:469`). phase-4-plan then reads `IF skills_by_profile.{P} is present AND declared minimal … Set task.skills = []` **before** any emptiness test.
-- **Why it matters:** a profile legitimately declared minimal, later populated by `enrich add-domain` / `enrich all`, produces tasks with `skills: []` although the inventory resolved real skills — and the read-path guard is silent because it sees a populated block. Skills vanish with no signal at all: strictly worse than the defect this plan fixed. The run report dismissed this state as "nonsensical input"; the enrichment path makes it ordinary.
+- **Evidence — reproduced end-to-end, not inferred.** Against the repository's own `setup_test_project` fixture, two supported CLI verbs in sequence:
+  1. `enrich_skills_by_profile('module-a', {'module_testing': {'defaults': [], 'optionals': [], 'minimal': True}})` → `status: success`, **no warnings**. This is the state `architecture-persistence.md:455-459` documents as "Declared minimal" and `test_cmd_enrich.py:469` pins as correct.
+  2. `enrich_add_domain('module-a', 'general-dev')` → persisted block becomes
+     `{'defaults': [4 entries incl. plan-marshall:persona-module-tester], 'minimal': True, 'optionals': []}`.
+  3. `detect_stale_skills_by_profile('module-a', <that map>, all_live)` → **`[]`**.
+
+  Mechanism: `existing = current.get(profile_name, {})` (`:332`), `merged = dict(existing)` (`:337`), `merged['defaults'].append(entry)` (`:344`) — the copy carries `minimal: true` across while skills are appended. `enrich_add_domain` never calls `_validate_skills_by_profile_structure` (it runs only in `enrich_skills_by_profile`, `:469`). phase-4-plan then reads `IF skills_by_profile.{P} is present AND declared minimal … Set task.skills = []` **before** any emptiness test.
+- **Why it matters:** a profile legitimately declared minimal, later populated by `enrich add-domain` / `enrich all`, produces tasks with `skills: []` although the inventory resolved real skills — and the read-path guard is silent because it sees a populated block. Skills vanish with no signal at all: strictly worse than the defect this plan fixed, and **this plan is what introduced the state**, since `minimal` did not exist before it. The run report dismissed it as "nonsensical input"; no step in the reproduction above involves hand-written data, and no step warns.
 - **Action:** in `enrich_add_domain`, drop the `minimal` key whenever at least one entry is appended to a profile; and have `_validate_skills_by_profile_structure` flag `minimal: true` on a profile that carries any `defaults`/`optionals` as malformed.
 - **Done when:** enriching a `{"defaults": [], "optionals": [], "minimal": true}` profile with a domain that supplies skills yields a block with the skills and **no** `minimal` key; a test asserts both the persisted shape and the validator warning for the hand-written contradictory pair.
 - **Effort:** S
@@ -54,7 +73,7 @@ archetype this plan exists to close. Fifteen gaps follow, one per instance.
 - **Severity:** medium
 - **Topic:** tests
 - **Where:** `test/plan-marshall/manage-architecture/test_skills_by_profile_staleness_guard.py:122-152`, covering `marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/_cmd_client_query.py:462-470`
-- **Evidence:** mutation M1 — `return profile_data.get('minimal') is True` → `return bool(profile_data.get('minimal'))` — left the file at **9 passed**. No test feeds the guard a non-boolean `minimal`, although `enrich_skills_by_profile` persists `"minimal": "true"` (it only warns), so the value is reachable on disk.
+- **Evidence:** mutation M1 — `return profile_data.get('minimal') is True` → `return bool(profile_data.get('minimal'))` — left the guard file at **9 passed**, and, re-measured across the guard file plus `test_cmd_enrich.py` together, **48 passed**: no test anywhere in the manage-architecture suite catches the weakening. No test feeds the guard a non-boolean `minimal`, although `enrich_skills_by_profile` persists `"minimal": "true"` (it warns at `_cmd_enrich.py:198-202` but still writes the block at `:473-478`), so the value is reachable on disk and the guard's `is True` is the only thing that stops it laundering the signal.
 - **Why it matters:** the fail-closed identity check is the one thing preventing a malformed declaration from laundering the signal — the plan's stated design constraint — and it is currently free to regress silently.
 - **Action:** add guard tests asserting that an empty profile carrying `"minimal": "true"`, `1`, or `False` still surfaces the named condition, and that only the boolean `True` silences it.
 - **Done when:** mutating `is True` to a truthy test makes the guard test file go red.
@@ -103,11 +122,11 @@ archetype this plan exists to close. Fifteen gaps follow, one per instance.
 ## G8 — Correct the "always receive a non-empty skill list" claim in the steward reference
 
 - **Kind:** doc-defect
-- **Severity:** low
+- **Severity:** medium
 - **Topic:** bundle-docs
 - **Where:** `marketplace/bundles/plan-marshall/skills/marshall-steward/references/skill-domains-setup.md:84`
 - **Evidence:** *"Populate `skills_by_profile` for every module × every applicable extension so that downstream `phase-4-plan` tasks always receive a non-empty skill list."* `enrich_add_domain` skips profiles with no resolved skills (`_cmd_enrich.py:329`), and `applies_to_module` omits them upstream (`extension_base.py:1190`), so enrich-all guarantees no such thing.
-- **Why it matters:** a false guarantee in shipped documentation is exactly the "cheaper explanation wins" trap this plan describes — a reader who believes it will not look for an unresolved profile.
+- **Why it matters:** a false guarantee in shipped documentation is exactly the "cheaper explanation wins" trap this plan describes — a reader who believes it will not look for an unresolved profile. (Severity medium, not low: the calibration puts *a false claim in shipped documentation* at medium, and this sentence is read by the steward workflow that populates every project's inventory, not confined to a run record.)
 - **Action:** reword to state that enrich-all populates every profile an extension resolves skills for, and that a profile with none is either left absent (unresolved) or declared `"minimal": true`.
 - **Done when:** the sentence no longer promises a non-empty skill list.
 - **Effort:** S
@@ -119,7 +138,7 @@ archetype this plan exists to close. Fifteen gaps follow, one per instance.
 - **Severity:** medium
 - **Topic:** architecture-core
 - **Where:** `marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/_cmd_client_query.py:558-564` and `get_module_info`'s return at `:586-599`
-- **Evidence:** the condition is written via `log_entry('script', None, 'WARNING', …)`, which appends to a log file under the plans store (`manage-logging/scripts/plan_logging.py:287-314`); the dict `get_module_info` returns carries no warnings field, so the TOON payload a consumer reads is unchanged. The report describes this as the condition being *"surfaced … on the `architecture module` read"*.
+- **Evidence:** the condition is written via `log_entry('script', None, 'WARNING', …)`, which appends to a log file under the plans store (`manage-logging/scripts/plan_logging.py:285-314` — `def log_entry` at `:285`, the file append at `:308-309`); the dict `get_module_info` returns is `merge_module_data`'s output with only reasoning/packages/dependencies keys stripped (`_cmd_client_query.py:586-599`) and carries no warnings field, so the TOON payload a consumer reads is unchanged. The report describes this as the condition being *"surfaced … on the `architecture module` read"*.
 - **Why it matters:** the allocation-time consumer (phase-4-plan) reads the command's output, never the script log, so the deterministic signal reaches no decision-maker; the only surface that does is the LLM-executed prose branch.
 - **Action:** attach the guard's messages to the returned payload (e.g. a `warnings[]` field on `architecture module`, consistent with the enrich commands' `warnings[]`), keeping the log write.
 - **Done when:** `architecture module` output for a module with an undeclared-empty profile contains the named condition as a field, and a test asserts it; a declared-minimal profile's output does not.
@@ -182,12 +201,12 @@ archetype this plan exists to close. Fifteen gaps follow, one per instance.
 
 - **Kind:** incomplete
 - **Severity:** low
-- **Topic:** documentation-surface
-- **Where:** `marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/_cmd_client_render.py:143-160` (`_render_skills_by_profile_section`, `_count_profile_skills` at `:133-140`)
-- **Evidence:** both renderers print `- {profile}: {count} skill{s}`; `grep -rn "minimal" _cmd_client_render.py` → no hits. A declared-minimal profile and an undeclared-empty one both render `0 skills`. Recorded as deliberately deferred residue by the run report and still open.
+- **Topic:** architecture-core
+- **Where:** `marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/_cmd_client_render.py` — `_count_profile_skills` (`:127-140`) and its **two** call sites: `_render_skills_by_profile_section` (`:143-160`, emitting at `:157-158`) and `render_module_markdown` (emitting at `:314-315`)
+- **Evidence:** both call sites print `- {profile}: {count} skill{s}` from the same `_count_profile_skills`, which sums `defaults` + `optionals` and never reads `minimal`; `grep -rn "minimal" _cmd_client_render.py` → no hits. A declared-minimal profile and an undeclared-empty one both render `0 skills`. Recorded as deliberately deferred residue by the run report and still open. (Topic is `architecture-core`, not `documentation-surface`: the fix is a Python change in the manage-architecture render scripts, so it groups with the other guard/renderer work, not with the standards documents.)
 - **Why it matters:** the human-facing surface reproduces exactly the indistinguishability the plan removed from the machine-facing one, so an operator reading `architecture module --full` cannot tell the two apart.
 - **Action:** annotate a zero-count profile in the rendered output as `0 skills (declared minimal)` or `0 skills (unresolved)`.
-- **Done when:** the rendered deep-dive distinguishes the two zero-count states, with a test over the rendered lines.
+- **Done when:** both the overview section and the module deep-dive distinguish the two zero-count states in their rendered lines, with a test asserting each.
 - **Effort:** S
 - **Risk if fixed:** rendered-output assertions in existing render tests may need updating.
 

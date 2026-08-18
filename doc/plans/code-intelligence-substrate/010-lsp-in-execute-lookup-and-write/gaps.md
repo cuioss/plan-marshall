@@ -2,12 +2,18 @@
 
 The plan landed: the `lsp-client` skill exists, all four verbs work against a real language server,
 the coverage contract and the worsened-edit guard are both non-vacuous under mutation, and the opt-in
-degradation is byte-identical for an unconfigured project. What remains is twelve concrete defects
-found by reading the shipped code and then proving them by execution: two correctness holes that
-defeat a deliverable's stated purpose (a `workspace-symbol` result carries no file path; the post-edit
-diagnostics re-run can read the *pre-edit* set and pass a broken edit), four incompletenesses in the
-write and read paths, one test gap against D2's literal done-condition, and five documentation /
-report defects.
+degradation is byte-identical for an unconfigured project. What remains is fifteen concrete defects
+found by reading the shipped code and then proving them by execution against a live
+`pyright-langserver`: three correctness holes that defeat a deliverable's stated purpose (a
+`workspace-symbol` result carries no file path; `document-symbol` returns 1 of 43 symbols and reports
+that as a complete answer; the post-edit diagnostics re-run reads the *pre-edit* set and passes a
+broken edit), one more that reports an unanswered diagnostics query as a clean file, four
+incompletenesses in the write path, one test gap against D2's literal done-condition, and five
+documentation / report defects.
+
+`G1`, `G2`, `G5` and `G13` share one owning surface and one fix window: they are all in
+`lsp-client/scripts/`, and `G2` + `G13` are two faces of the same `wait_for_diagnostics` return
+contract. A later run should take them as one change, not four.
 
 ## G1 — Emit the file path on every `workspace-symbol` and `document-symbol` row
 
@@ -20,21 +26,27 @@ report defects.
   (`alpha.py` defining `class Widget`, `beta.py` importing it), calling the shipped
   `_run_lookup(..., 'workspace-symbol', ..., 'Widget')`:
   `"locations": [{"name": "Widget", "kind": 5, "line": 0, "character": 6}]` — `path keys present: False`.
-  The sibling helper `_location_rows` (`:122-144`) *does* emit `path` via `uri_to_path`, and pyright's
-  `SymbolInformation` carries `location.uri`, which `_symbol_rows` reads at `:152-154` only to take
-  the `range` and then discards.
+  The same probe dumped pyright's raw response in the same session: it carries
+  `location.uri = "file:///…/alpha.py"`. The path is **supplied by the server and discarded by the
+  client** — `_symbol_rows` reads `location` at `:152-154` only to take the `range`. Control taken in
+  the same session: `references` rows come back with keys
+  `{character, end_character, end_line, line, path}`, because the sibling helper `_location_rows`
+  (`:122-144`) emits `path` via `uri_to_path`. Reproduced independently twice.
 - **Why it matters:** `workspace-symbol` is the only lookup kind that spans files. Without a file
   path the answer is unusable — a leaf that asks "where is `Widget`?" gets a line number with no file
   and must fall back to `Grep`/`Read`, which is precisely the byte cost D1 exists to remove. D1's
   *Done when* ("a leaf obtains a symbol's **locations**") is not satisfied for this kind.
 - **Action:** in `_symbol_rows`, take `uri_to_path(location['uri'])` when a `location` is present and
   add a `path` key to the row; for `document-symbol` (no `location` in a hierarchical response) pass
-  the queried file's resolved path into the helper so every row carries `path`. Update
-  `lsp-client/SKILL.md` § Scripts and the user page's capability table to name `path` as part of the
-  row shape.
+  the queried file's resolved path into the helper so every row carries `path`. Neither
+  `lsp-client/SKILL.md` § Scripts nor the user page's capability table documents a row shape today, so
+  this is an addition to both, not a correction: state the `locations[]` row keys once, in
+  `lsp-client/SKILL.md` § Scripts, and have the user page's "Locate by coordinate" row say the
+  coordinates include the file.
 - **Done when:** a `lookup --kind workspace-symbol` payload's `locations[]` rows each carry a `path`
-  equal to the defining file, asserted by a real-server test that resolves a symbol defined in a file
-  *other* than any file the call opened.
+  equal to the defining file, asserted by a real-server test over a two-module sample project in which
+  the symbol is defined in a module the call never opens (`workspace-symbol` opens no file at all), and
+  asserting `row['path'] == str(that_module.resolve())` rather than merely that a `path` key exists.
 - **Effort:** S
 - **Risk if fixed:** none to existing consumers — the change is additive to the row shape; the only
   care needed is that `document-symbol` rows keep the same key set as `workspace-symbol` rows.
@@ -48,34 +60,50 @@ report defects.
   (`wait_for_diagnostics`), consumed by `lsp_client.py:239-247` (`_run_edit`'s `errors_after` loop)
 - **Evidence:** the wait breaks as soon as the inbound stream has been quiet for `settle` (2.0 s) and
   the URI has *any* cached entry (`:220`) — including the entry cached during the `errors_before` loop.
-  Reproduced with the real `StdioTransport` against a fake server that publishes a clean set on
-  `didOpen` and one Error diagnostic 4 s after `didChange`:
+
+  Reproduced **against a live `pyright-langserver`**, not a stand-in. The probe replays `_run_edit`'s
+  exact sequence (`open` → `diagnostics` → write the broken content to disk, as
+  `apply_workspace_edit` would → `change_to_disk` → `diagnostics` → `edit_verdict`) over a generated
+  12,003-line module whose re-analysis pyright cannot finish inside the settle window:
 
   ```
-  errors_before = 0
-  errors_after  = 0   (returned after 2.0s)
-  verdict       = success  <-- FAIL-OPEN (stale read)
-  truth (later) = 1 error(s) the server actually reported
+  diagnostics() #1 returned in 11349 ms -> 0 entries   [uri_in_cache=True  diag_seq=1]
+  <broken content written to disk; change_to_disk sent>
+  diagnostics() #2 returned in  2017 ms -> 0 entries   [uri_in_cache=True  diag_seq=1]
+  errors_before=0  errors_after=0  verdict=success     <-- FAIL-OPEN (stale read)
+  TRUTH after extra wait: 1 error(s)
   ```
+
+  `diag_seq` is the transport's own count of `publishDiagnostics` frames received. It is **identical**
+  either side of the edit, so no new publish arrived and `wait_for_diagnostics` returned the entry
+  cached before the edit, at the 2 s floor. Repeated at 24,003 lines with the same outcome; at 483
+  lines the guard verdicts `failed` correctly. The failure is therefore not hypothetical and not
+  fake-server-specific — it is the real server being slower than the window, and the guard fails
+  **open**, not closed.
 
   The module docstring already claims the correct behaviour and the code does not implement it
-  (`_lsp_jsonrpc.py:15-16`: *"`publishDiagnostics` tracked per URI so a post-edit re-diagnose can wait
+  (`_lsp_jsonrpc.py:14-15`: *"`publishDiagnostics` tracked per URI so a post-edit re-diagnose can wait
   for the **next** push"*).
 - **Why it matters:** this is D2's central guard. On any republish slower than 2 s — a large file, a
-  cold analysis, a loaded machine (a first `documentSymbol` measured 4.9 s quiet / 13.4 s loaded on
-  this same repository) — a rename that breaks the parse is compared against its own pre-edit
-  diagnostics, `edit_verdict` returns `success`, no rollback happens, and the verb reports
+  cold analysis, a loaded machine — a rename that breaks the parse is compared against its own
+  pre-edit diagnostics, `edit_verdict` returns `success`, no rollback happens, and the verb reports
   `status: success, applied: true`. "An edit nobody read is at minimum an edit the parser re-checked"
-  silently becomes "an edit nobody read".
+  silently becomes "an edit nobody read". Nothing in CI would catch a regression here either: mutating
+  `wait_for_diagnostics` to `return list(self._diagnostics.get(uri, []))` — deleting the settle
+  window, the freshness loop and the timeout outright — leaves the suite at **31 passed, 5 skipped**
+  on a runner without pyright.
 - **Action:** track a per-URI publish counter (not just the global `_diag_seq`) and give
   `wait_for_diagnostics` an `after_seq` / `min_seq` parameter; have `LspSession.change_to_disk` capture
   the URI's current counter and `LspSession.diagnostics` wait for a counter strictly greater than it.
   On timeout with no newer publish, return an explicit *unknown* rather than the cached set, and make
   `_run_edit` treat unknown as a failure-to-verify (roll back, `reason: diagnostics_unavailable`) —
   never as a pass.
-- **Done when:** a test drives the transport against a server whose post-`didChange` publish arrives
-  after the settle window and asserts that `_run_edit` returns `status: failed` (rolled back), not
-  `success`; and the same test fails if `wait_for_diagnostics` is reverted to the current logic.
+- **Done when:** a **CI-portable** test (fake server subprocess over the real `StdioTransport`, in the
+  shape of `test_lsp_transport.py`, so it does not skip without pyright) drives a server whose
+  post-`didChange` publish arrives after the settle window, and asserts that `_run_edit` returns
+  `status: failed` with the target file byte-identical to its pre-edit content — not `success`. The
+  same test must go red when `wait_for_diagnostics` is reverted to the current logic (state that check
+  as run, with the observed failure, in the fixing run's report).
 - **Effort:** M
 - **Risk if fixed:** a server that does not republish after `didChange` (or publishes only on error)
   would newly hit the unknown path and fail edits that previously passed; the timeout and the

@@ -31,7 +31,7 @@ stands.
   `subprocess.run([...'generate'], capture_output=True, text=True, check=True, timeout=120)`, and
   nothing after the `try/except` re-checks that `executor_path` now exists. `main()`
   (`generate_executor.py:2306-2419`) ends `print(serialize_toon(result)); return 0` with no branch on
-  `result['status']`, so `check=True` can never fire on a guard refusal. Measured three ways: a
+  `result['status']`, so `check=True` can never fire on any expected error. Measured three ways: a
   driver forcing Guard 5 printed `status: error` / `error: "Fail-open regeneration refused: …"` and
   exited `0`; `generate_executor.py verify` against a missing executor printed `status: error` and
   exited `0`; and the **unmocked CLI** against the real registry —

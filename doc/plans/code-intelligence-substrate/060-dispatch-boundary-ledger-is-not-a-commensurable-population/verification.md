@@ -240,12 +240,21 @@ Two defects and one dead symbol found; both defects reproduced by execution agai
    render".
 
 2. **`manage-metrics.py:615` + `:1798` + `:1793` — the agreement identity is unreachable where it
-   matters and unsound where it is reachable.** `max()` over `_DISPATCHED_MEASURE_FIELDS` resolves a
-   tie to `total_tokens`, and a `total_tokens` winner is never added to `reconciled_phases`, so a
-   same-population three-way exact agreement produces no annotation. The `equal` branch is therefore
-   reachable only when `total_tokens` was ruled ineligible as cross-population — and `beaten` is
-   that same cross-population figure, so "measures agree" is asserted across two populations the
-   module elsewhere refuses to compare.
+   matters, and every relation the clause does emit is cross-population.** `max()` over
+   `_DISPATCHED_MEASURE_FIELDS` resolves a tie to `total_tokens`, and a `total_tokens` winner is
+   never added to `reconciled_phases`, so a same-population three-way exact agreement produces no
+   annotation. The clause is therefore reached only when `total_tokens` was ruled ineligible as
+   cross-population (`:593`) — and `beaten` is that same cross-population figure, so `>`, `=` and
+   `<` alike compare a dispatched measure against a main-context one, under a preamble that calls
+   both "competing measures of the dispatched population". The `equal` case is the loudest
+   instance ("measures agree"), not the only one.
+
+3. **`manage-metrics.py:565-576` — `_boundary_measure_is_partial` has no production caller.** A
+   repository-wide search returns the definition and four test assertions
+   (`test_manage_metrics_record_dispatch_boundary.py:146`, `:153`, `:163`, `:166`) and nothing else,
+   while its docstring asserts it is "preserved for callers that only need the under-coverage bit".
+   Dead code carrying a false claim about its own callers, in a module whose subject is claims
+   matching their populations. See G8.
 
 No fail-open branch, unguarded `None`, or off-by-one was found in `_boundary_coverage_state` itself:
 both counts are `isinstance`-guarded (`:552-557`), `read_metrics_raw` coerces phase-row values to
@@ -287,8 +296,10 @@ Every substantive claim in `report-01.md` was checked. Findings:
   declared `larger` characterization arm)" — independently reproduced against `3f64b71^`; the
   characterization arm passes and the three regression scenarios fail, with the pre-fix render
   literally emitting `8 of 3 dispatch(es) recorded — complete`.
-- **True.** "Dispatch classes that exist: 9 / register a boundary: 3" as to the *registering* count;
-  the class count omits the change-type-heuristic LLM fallback dispatch (G6).
+- **True.** "Dispatch classes that exist: 9 / register a boundary: 3". The registering count is
+  exact. The class count of 9 folds the change-type-heuristic LLM fallback into `phase-3-outline`,
+  and the report's own class table declares that fold (`report-01.md:43`); what is missing is the
+  fold's restatement on the shipped surfaces (G6, low).
 - **True.** "The fork … REFUTED" — the direction argument holds and the accumulate-vs-window
   mechanism is visible in the code.
 - **True.** "no `record-dispatch-boundary` call added, no display clamping" — the landed diff
@@ -346,13 +357,14 @@ classifier correctly.
   three mutation probes, each loading a **copy** of the production module from
   `$TMPDIR/verify-060-mutsweep/` so the repository file was never written; a pre-fix reconstruction
   from `git show 3f64b71^:…` to reproduce the fail-first evidence.
-- **Counts re-derived at audit time:** 8 tests in the D5 file; 456 tests in the metrics suite; 3
-  `record-dispatch-boundary` call sites; 6 names in `DISPATCH_BOUNDARY_EXCLUDED_CLASSES`; 5 phase
-  envelopes + 4 shared workflows in the call graph.
+- **Counts re-derived at audit time, and again in the adversarial pass:** 8 tests in the D5 file
+  (299 lines); 456 tests in the metrics suite; **4** executable `record-dispatch-boundary`
+  invocation blocks resolving to **3** registering phases; 6 names in
+  `DISPATCH_BOUNDARY_EXCLUDED_CLASSES`; 5 phase envelopes + 4 shared workflows in the call graph.
 - **False-negative control:** before treating any "not found" as an absence, the same pattern was
-  confirmed to hit where the target is known to exist (`record-dispatch-boundary` returns the three
-  call sites; `DISPATCH_BOUNDARY_EXCLUDED_CLASSES` returns the constant, the render, the persist
-  site and the tests).
+  confirmed to hit where the target is known to exist (`record-dispatch-boundary` returns the four
+  invocation blocks; `DISPATCH_BOUNDARY_EXCLUDED_CLASSES` returns the constant, the render, the
+  persist site and the tests).
 - **Concurrency hazard, disclosed.** Sibling audit agents were mutating the same working tree during
   this audit; at one point `manage-metrics.py` carried a foreign `# MUTATED-050` edit at line 1426.
   Every finding reported here was re-confirmed against a pristine `git show HEAD:` copy after that

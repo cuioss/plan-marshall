@@ -140,10 +140,11 @@ changed under me — every citation below was re-read at the state reported here
 - **Checks run:** read `cmd_which_module` end to end
   (`_cmd_client_handlers.py:930-1040`) to confirm the seam runs unconditionally on every call, so the
   provenance pair is present on every response shape rather than only on rung-3 fallthrough.
-- **Verdict:** CONFIRMED against the literal *Done when* — but with two qualifications recorded as gaps:
-  the report's "and at the which-module reader" overstates what this run added (G6), and the discriminator
-  reused separates *capability presence* from *capability absence*, which in this repository is a constant
-  3 for every path (see § Correctness review and G2).
+- **Verdict:** CONFIRMED against the literal *Done when* — with two qualifications. One is recorded as a
+  gap: the report's "and at the which-module reader" overstates what this run added (G6). The other is
+  recorded without a gap: the discriminator reused separates *capability presence* from *capability
+  absence*, which in this repository is a constant 3 for every path — correct for the reused contract,
+  but it bounds what D4 bought (see § Correctness review, first structural observation).
 
 ### D5 — documentation
 
@@ -202,19 +203,32 @@ and `marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/_cmd_c
 - *Fail-open.* `resolve_path_attribution` degrades to `(None, [])` only on `ImportError`
   (`_architecture_core.py:1171-1174`); a misconfigured resolver still raises. Pre-existing, unchanged.
 
-**One structural observation, not a code defect** (recorded as G2): `attributor_count` discriminates
-"no attribution capability ran" from "attributors ran". In this repository the live attributor population
-is a constant 3, so **every** unclaimed path — `.github/**`, `.vscode/**`, an arbitrary untracked file —
-answers `module: null, attributor_count: 3`. The zero branch is reachable in the tests only by handing
-`merge()` an empty attributor list (`test_path_attribution.py:196`), never through the live path. And the
-claim does not put `.claude` into any module's *inventory*: `plugin_discover.py:506-510` builds
-`pm-plugin-development`'s `paths` from `marketplace/bundles/pm-plugin-development` only, while the crawl
-skips every dotfile directory (`_cmd_manage.py:362-367`, allowlist `_FILES_DOTFILE_ALLOWLIST` =
-`{'.gitignore', '.editorconfig'}` at `:85`). So `which-module` now answers for `.claude/**` while
-`files --module pm-plugin-development`, `find`, and `search --content` still cannot see those 47 files —
-including four production Python scripts under `.claude/skills/*/scripts/`. That is the half of the
-plan's own headline cost ("every query against an unclaimed path pays whole-tree prices") the plan did
-not scope, and the shipped prose does not say so at the point a reader would over-read it.
+**Two structural observations, neither a code defect.**
+
+*First — the discriminator is a property of the population, not of the path.* `attributor_count`
+separates "no attribution capability ran" from "attributors ran". Re-derived live at adversarial review:
+the attributor roster is `['documentation', 'plan-marshall', 'pm-plugin-development']`, a constant 3, and
+one report is emitted per *discovered* attributor regardless of the known-module set, so **every**
+unclaimed path — `.github/**`, `.vscode/**`, an arbitrary untracked file — answers
+`module: null, attributor_count: 3`. The zero branch is reachable in the tests only by handing `merge()`
+an empty attributor list (`test_path_attribution.py:196`), never through the live path. This is **correct
+for the contract that was reused**, not a defect: D4 asked for the caller to be able to tell "the index
+looked and found no owner" from "the index does not cover this path", and with the seam running
+unconditionally the honest answer for every path in this repository *is* "the index looked". **No gap is
+filed for it.** It is recorded because it bounds what D4 bought: the residue rules out an absent
+capability, it does not certify per-path coverage.
+
+*Second — attribution is not inventory (this is what G2 records).* The claim does not put `.claude` into
+any module's *inventory*. `pm-plugin-development`'s `paths` are built by
+`plugin_discover.py:503-512` from the bundle directory plus `test/pm-plugin-development` — no `.claude`
+entry — and the crawl skips every dotfile directory (`_cmd_manage.py:362-369`, allowlist
+`_FILES_DOTFILE_ALLOWLIST` = `{'.gitignore', '.editorconfig'}` at `:85`). So `which-module` now answers
+for `.claude/**` while `files --module pm-plugin-development`, `find`, and `search --content` still
+cannot see those 47 tracked files — including six production Python scripts under
+`.claude/skills/*/scripts/` (re-derived: `audit.py`, `era_stamp_fill.py`, `review_retrospective.py`,
+`list_bundles_and_versions.py`, `reconcile_daemon.py`, `sync.py`). That is the half of the plan's own
+headline cost ("every query against an unclaimed path pays whole-tree prices") the plan did not scope,
+and the shipped prose does not say so at the point a reader would over-read it.
 
 ## Test adequacy
 
@@ -222,7 +236,7 @@ not scope, and the shipped prose does not say so at the point a reader would ove
 |---|---|---|
 | D1 | `test_path_attribution.py:87-101` (opt-in, id, exact claim); `test_which_module_plan_claim.py:266-300` (live merge yields `.plan` only for plan-marshall, `.claude` only from pm-plugin-development) | Mutation of `claim_paths()` → `test_claims_the_bare_claude_root` and `test_claude_tree_moved_to_pm_plugin_development` both red |
 | D2 | Not test-covered by design — verified by cold read (above) | n/a |
-| D3 | `test_path_attribution.py:108-132`, `:135-150`, `:153-155`, `:158-166`; `test_which_module_plan_claim.py:226-243`; `test_files_inventory.py:708-770` | Mutation to `.claude/skills` → 6 tests red across two files, incl. both enumeration tests |
+| D3 | `test_path_attribution.py:108-132`, `:135-150`, `:153-155`, `:158-166`; `test_which_module_plan_claim.py:226-243`; `test_files_inventory.py:708-770` | Mutation to `.claude/skills` → 6 tests red across two files, incl. both enumeration tests. Re-run independently at adversarial review: identical 6-failed/14-passed split, same six test ids. The enumeration bites; its *population* does not (G7) |
 | D4 | `test_path_attribution.py:174-201` (seam pair), `:204-217` (positive control); `test_which_module_plan_claim.py:246-263` (reader, N side only) | The seam pair is real but weak: its `not_covered` arm is constructed by passing `merge([])` a synthetic empty list, so it exercises the contract, not the product's behaviour on any real path |
 | D5 | Indirectly by plugin-doctor (`broken-relative-link`), not re-run here; both SKILL.md links verified to resolve by hand | n/a |
 
@@ -252,7 +266,8 @@ Every substantive claim in `report-01.md` was re-checked against the tree. **Hel
 - "No production code branches on `.claude/skills → plan-marshall` specifically" — a repo-wide grep for
   `.claude/skills` in `marketplace/**/*.py` returns only *path-resolution* consumers (executor generation,
   skill discovery, manifest validation); none reads a `which-module` answer.
-- "47 files" — re-derived independently today: 47.
+- "47 files" — re-derived independently: 47 **git-tracked** files under `.claude`. The number the test
+  publishes is a live filesystem walk, which reads 52 on a working machine; see G7.
 - Findings 1, 2 and 3 are all present in the tree as described (`extension-architecture.adoc:29,31`;
   `extension-topology.svg:144-145`; `test_path_attribution_merge.py:641-654`).
 - "No core edit" — confirmed by the merge commit's file list.
@@ -272,11 +287,16 @@ Every substantive claim in `report-01.md` was re-checked against the tree. **Hel
 3. *(low, G4)* Every "Commit" cell cites a branch SHA (`935eaca`, `eef6a02`, `f741ba0`). All three are
    unreachable in a fresh clone (`git cat-file -t` → "Not a valid object name") because the PR was
    squash-merged as `cc923b6` and the branch deleted. A later reader cannot resolve any of them.
-4. *(low)* D2 row: "Verified by the sub-agent cold-read (below)" — no cold-read record appears below;
-   the only trace is one sentence after the findings table. Not false, but the pointer does not land.
-5. *(low)* The plan's § Notes obliges a **file-set** collision check before running concurrently with the
-   other plugin-development plans. The report records no such check anywhere. No harm is observable in
-   the tree, so this is a process-record omission only.
+4. *(low, **no gap filed**)* D2 row: "Verified by the sub-agent cold-read (below)" — no cold-read record
+   appears below; the only trace is one sentence after the findings table. Not false, but the pointer
+   does not land. No gap is filed because the claim it points at is independently CONFIRMED here by a
+   first-party cold read of all four records, so a later run has nothing to act on beyond re-wording a
+   historical document.
+5. *(low, **no gap filed**)* The plan's § Notes obliges a **file-set** collision check before running
+   concurrently with the other plugin-development plans. The report records no such check anywhere. No
+   gap is filed because the check is unrepeatable after the fact and no collision damage is observable:
+   `cc923b6` merged, and every file in its 13-file set reads as this plan intended (verified above,
+   deliverable by deliverable). This is a process-record omission with no residue a later run could fix.
 
 Claims I could **not** check: `mypy 396 files clean`, `ruff clean`, plugin-doctor marketplace-wide
 `0 issues`, `16342 passed / 1 skipped` for plan-marshall, `2241 passed` for pm-plugin-development, the

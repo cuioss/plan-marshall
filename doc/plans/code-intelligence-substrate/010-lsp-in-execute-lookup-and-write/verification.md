@@ -272,14 +272,38 @@ Defects found by reading the shipped code, each proved by execution where the br
    (`_lsp_workspace_edit.py:141-158`) writes file-by-file with no `try`/`except`. An error on the
    second of three files (permissions, a path the server named but that no longer exists, an encoding
    error) propagates out of `_run_edit`; `_with_session` catches only spawn failures
-   (`lsp_client.py:356-358`), so `safe_main` turns it into a `status: error` TOON and exit 1 — with
+   (`lsp_client.py:356-358`), so `safe_main` turns it into a `status: error` TOON and exit 1
+   (`tools-file-ops/scripts/file_ops.py:1664-1700`, the `except Exception` arm at `:1696-1698`) — with
    file one modified, no rollback, and no footprint reported.
-6. **Bounded, in-spec limitations worth recording** (no gap raised for the mechanism, only for the
+6. **An unanswered diagnostics query is reported as a clean file.** `wait_for_diagnostics` returns
+   `list(self._diagnostics.get(uri, []))` when its deadline expires (`_lsp_jsonrpc.py:223`), so "the
+   server never told us anything about this file" and "the server told us the file is clean" reach
+   `_run_diagnose` and `_run_edit` as the same empty list. `diagnose` then reports
+   `state: ok, provider_count: 1, error_count: 0` — the payload the coverage contract reserves for a
+   *real* positive answer — and `edit_verdict` scores every such edit `success`. Demonstrated by
+   driving the shipped `_run_diagnose` over a real `StdioTransport` against a server that answers
+   `initialize` and never pushes diagnostics (the pull-diagnostics server class): returned in 15001 ms
+   with `error_count: 0`. G13.
+7. **The worsened-set guard is a count comparison, and `new_diagnostics[]` is misnamed.**
+   `edit_verdict` (`_lsp_workspace_edit.py:172-179`) returns `'failed'` only when
+   `errors_after > errors_before`, so an edit that removes one error and introduces a different one
+   passes and lands (proved: pre `[Error A]` / post `[Error B]` → `status: success, applied: True`,
+   `bar = 1` left on disk). Separately, `_run_edit` builds `new_diagnostics[]` from *every* post-edit
+   Error without diffing the pre-edit set (`lsp_client.py:243-245`), so a pre-existing error is
+   reported as new (proved: pre `[A]` / post `[A, B]` → the payload lists both). G15.
+8. **Every `edit` call sends a duplicate `didOpen`.** `_run_edit` opens the rename target at
+   `lsp_client.py:214`, then re-opens each footprint file — including that same target — at `:232`.
+   Counted through an instrumented transport: `didOpen` twice for one URI with no `didClose` between,
+   then `didChange`. LSP forbids a second open notification without an intervening close, and
+   `LspSession.open` resets `_doc_versions[abs] = 1` each time, so the version sequence a strict
+   server sees is 1, 1, 2. pyright tolerates it; a different server need not, and the plan asked for a
+   client a second consumer can reuse (`lsp_harvest.py` already does). G14.
+9. **Bounded, in-spec limitations worth recording** (no gap raised for the mechanism, only for the
    documentation): the re-diagnose covers only the footprint files, and only severity `Error`
    (`_lsp_workspace_edit.py:167-169`); `diagnosticMode` is `openFilesOnly`
    (`_lsp_jsonrpc.py:57-68`), so breakage outside the edited set is invisible. `wait_until_idle`
    (`:225-243`) imposes a ≥1.5 s floor on every `workspace-symbol` call and `wait_for_diagnostics` a
-   ≥2 s floor on every `diagnose` (my re-measurement returned in exactly 2000.4 ms).
+   ≥2 s floor on every `diagnose` — re-measured independently at 2163.0 ms and 2000.3 ms respectively.
 
 What I read to conclude the rest is sound: all three shipped scripts end to end (`lsp_client.py` 457
 lines, `_lsp_jsonrpc.py` 379, `_lsp_workspace_edit.py` 180). The transport's reader-thread resilience
@@ -296,7 +320,9 @@ both ways (`test_apply_multiple_edits_bottom_up`). `select_language_server`
 Re-derived at audit time: `uv run python -m pytest test/plan-marshall/lsp-client/ -o addopts="" -q` →
 **36 passed in 23.27 s**, with `pyright-langserver` present at `/root/.local/bin/pyright-langserver`
 so the 5 real-server tests actually ran (they are `skipif`-guarded at
-`test_lsp_integration.py:43-44`).
+`test_lsp_integration.py:43-44`). Re-derived again independently in the adversarial pass:
+**36 passed in 23.74 s** with pyright on `PATH`, and **31 passed, 5 skipped** with pyright hidden —
+the latter is the CI shape, and it is the shape the mutation rows below are read against.
 
 | Deliverable | Covering tests | Adequacy |
 |---|---|---|
@@ -306,16 +332,24 @@ so the 5 real-server tests actually ran (they are `skipif`-guarded at
 | D2 verdict + rollback | `test_edit_worsened_fails_and_rolls_back`, `test_real_adversarial_defect_fails_and_rolls_back`, `test_edit_verdict_fails_on_worsened` | **Non-vacuous** — proved by mutation M1 (all three go red) |
 | D2 footprint | `test_capture_footprint_from_edit`, `test_apply_and_restore_round_trip` | Adequate for the pure helpers; **no test drives a multi-file edit through `_run_edit`/`cmd_edit`**, which is the literal done-condition (G6) |
 | D2 resource ops | `test_normalize_reports_resource_operation` | **Vacuous with respect to the shipped path** — it asserts a value that no caller consumes (G3) |
-| D3 | `test_diagnose_carries_boundary_note` | Adequate for the success path; the degraded path's missing note is unasserted |
+| D2 verdict semantics | `test_edit_verdict_passes_on_equal_or_improved` | **Locks in the defect**: it asserts `edit_verdict(3, 3) == 'success'`, which is exactly the same-count-different-error case that lets a worsened set land (G15). A test can be non-vacuous and still assert the wrong contract |
+| D3 | `test_diagnose_carries_boundary_note` | Adequate for the success path; the degraded path's missing note is unasserted, and no test asserts that a *timed-out* diagnose is distinguishable from a clean one (G13) |
 | D4 | `test_preflight_not_configured`, `test_preflight_unreachable`, `test_real_preflight_ready`, `test_edit_degraded_when_not_configured`, `test_run_config_language_server.py` | Adequate — both directions asserted |
 | Transport | `test_reader_survives_length_zero_junk_frame` | Adequate and CI-portable (fake server subprocess, no pyright) |
-| `wait_for_diagnostics` freshness | *none* | **Missing** — the fake transport pops a queue (`test_lsp_client.py:45-46`), so the real settle/staleness logic is never exercised (G2) |
+| `wait_for_diagnostics` freshness | *none in CI* | **Missing** — proved by mutation M3 (below). No test asserts staleness or freshness semantics; the settle *duration* is exercised only incidentally, by the one `skipif`-guarded real-server test (G2) |
 
-**Mutation evidence.** Snapshots of both mutated files were taken to
-`$TMPDIR/…/verify-010-mutsweep/` before any edit and restored by byte copy afterwards; `md5sum`
-matches the pre-mutation digests (`_lsp_workspace_edit.py` `2b815b14…`, `lsp_client.py` `665eee6b…`)
-and `git status --porcelain marketplace/bundles/plan-marshall/skills/lsp-client/` is empty. No
-`git checkout` / `restore` / `stash` was used.
+**Mutation evidence.** Three mutations, each re-run independently in the adversarial pass. Snapshots
+of all three scripts were taken to `$TMPDIR/…/adv-010-…-mutsweep/` before any edit and restored by
+byte copy afterwards; `md5sum` matches the pre-mutation digests (`lsp_client.py` `665eee6b…`,
+`_lsp_jsonrpc.py` `0856b4f0…`, `_lsp_workspace_edit.py` `2b815b14…`) and `git status --porcelain`
+lists no file under `marketplace/bundles/plan-marshall/skills/lsp-client/`. No `git checkout` /
+`restore` / `stash` was used.
+
+| Mutation | Change | Result |
+|---|---|---|
+| **M1** | `edit_verdict` forced to always return `'success'` | `3 failed, 33 passed` — `test_edit_worsened_fails_and_rolls_back`, `test_real_adversarial_defect_fails_and_rolls_back`, `test_edit_verdict_fails_on_worsened`. Reproduced verbatim, twice |
+| **M2** | the unreachable branch (`lsp_client.py:358`) returns `STATE_NOT_CONFIGURED` | `1 failed, 35 passed` — `test_three_states_are_distinguishable`, failing on `assert 2 == 3` with `{('degraded','not_configured',0),('success','ok',1)}`. Reproduced verbatim |
+| **M3** (new) | `wait_for_diagnostics` body replaced by `return list(self._diagnostics.get(uri, []))` — the settle window, the freshness loop and the timeout all deleted | With pyright installed: `1 failed, 35 passed` — only `test_real_adversarial_defect_fails_and_rolls_back`. **With pyright hidden (the CI condition): `31 passed, 5 skipped` — fully green.** The whole diagnostics-wait mechanism can be deleted and CI does not notice; the fake transport (`test_lsp_client.py:45-46`) pops a queue and never calls it |
 
 ## Report accuracy
 
@@ -326,11 +360,12 @@ Most claims in `report-01.md` hold against the tree now. The exceptions:
   the boundary in `boundary_note`"). Only the *success* diagnose payload carries it
   (`lsp_client.py:301`); a `degraded` return does not (`:109-119`). Correct statement: *every payload
   a running server produced*.
-- **The D0 latency table** (`report-01.md:20-30`) is accurate as a set of measurements but is used
+- **The D0 latency table** (`report-01.md:21-29`) is accurate as a set of measurements but is used
   (`:33`, `:40`) as the cost basis for the hosting decision without disclosing that the per-call
-  figures are warm-path. Re-measured here, the first query in a fresh session costs 4873 ms
-  (13384 ms on a loaded box), not 2.7 ms; the honest per-call cost of a one-shot lookup is cold start
-  **plus** first analysis.
+  figures are warm-path. Re-measured twice here, the first query in a fresh session costs 970 ms on a
+  quiet box (4873 ms in the first audit reading, 13384 ms under load) rather than 2.7 ms; the honest
+  per-call cost of a one-shot lookup is cold start **plus** first analysis, and for `diagnose` and
+  `workspace-symbol` **plus** a fixed settle floor that no amount of warmth removes.
 - **"⚠ Sync owed"** (`report-01.md:61`, `:127`) — stale against the current lane contract. `CLAUDE.md`
   § Standalone Plan Lane now states that a lane plan editing `marketplace/bundles/` *"neither performs
   a sync nor records one as owed"*. Harmless, confined to the report.
@@ -341,9 +376,12 @@ Most claims in `report-01.md` hold against the tree now. The exceptions:
   not treat the older numbers as current.
 - **Unverifiable from this clone:** the whole-tree `./pw verify` figures (`18714 passed, 14 skipped`,
   `mypy … 385 files`), the individual commit SHAs (`6a96ab0`, `f5ae40f`, `e4154aa`, `d46769e`,
-  `9dc172d`) and the wall-clock figure. The clone is shallow (`git rev-list --count HEAD` = 50, a
-  `.git/shallow` graft is present), so the plan's own commits are not present. The PR record is
-  consistent with them: PR #1140 reports 9 commits, 17 changed files, +2335/−3.
+  `9dc172d`) and the wall-clock figure. The clone is shallow — a `.git/shallow` graft is present, and
+  each of those five SHAs still returns `fatal: Not a valid object name`. (The history has since been
+  deepened: `git rev-list --count HEAD` reads **284** at `f49542c`, not the 50 recorded at the first
+  reading; the plan's own commits remain absent either way.) The PR record is consistent with them and
+  was re-read independently: PR #1140 reports 9 commits, 17 changed files, +2335/−3, opened
+  2026-08-10T15:20:50Z.
 
 Verified true: the shipped symbol and file names (`_run_lookup`, `_run_edit`, `capture_footprint`,
 `apply_workspace_edit`, `edit_verdict`, `restore_files`, `STATE_READY`, `DIAGNOSTICS_BOUNDARY_NOTE`,
@@ -385,6 +423,16 @@ No collateral change was found: the plan's PR touched 17 files and every surface
 (`lsp-client/`, its tests, `run_config.py` + its standard + tests, `execute-task/SKILL.md`,
 `doc/user/lsp-code-intelligence.adoc`, `doc/user/README.adoc`) is named in the plan's Expected surface
 or is the index entry for one that is.
+
+One registration surface the plan did **not** touch is worth recording, because it is where a reader
+auditing the bundle by its manifest would look for the new skill: the committed
+`marketplace/bundles/plan-marshall/.claude-plugin/plugin.json` declares **76** entries in `skills[]`
+while `marketplace/bundles/plan-marshall/skills/` holds **78** directories (counts re-derived
+independently at review time). The two absent are `lsp-client` — this plan's skill — and
+`recipe-surgical-fix`, which belongs to another plan. There is no runtime consequence: the Claude
+target regenerates the manifest with `skills: []` deliberately, because a declared array *adds to* the
+default folder scan and would double-load (`marketplace/targets/claude/plugin_json_gen.py:12-19`,
+`:134-150`). Recorded as G12.
 
 ## Method and coverage
 

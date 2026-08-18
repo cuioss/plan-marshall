@@ -14,7 +14,7 @@ squash-merge, and `09229c4` / `f043254` are confirmed as real head SHAs by the P
 | # | Deliverable (short) | Report claim | Ground truth | Verdict |
 |---|---|---|---|---|
 | D1 | GATE: population — how many plans carry no finalize handshake row | Corpus unreachable → blocked; source-side derivation shows the row is *universally* absent (no emitter), so D2 is a correctness fix | Re-derived at HEAD: still no `capture --phase 6-finalize` call site anywhere in `marketplace/`; the one new emitter is a `findings-check` (which writes no row). Population honestly reported as blocked | CONFIRMED |
-| D2 | The absence of a finalize-phase row is itself a blocking condition | Two firing sites: pre-merge `findings-check` (fail-closed) + completion `assert_finalize_findings_clean` (state); both consumers covered; negative controls fail pre-fix | Both sites exist and the completion assertion is genuinely non-vacuous (mutation-proven). But the state-armed site fires at `order: 1100`, **after** the merge at `order: 70`; the merge boundary itself is still armed by a call in a workflow doc; no row-existence assertion exists; and the completion refusal exits 0 with no caller parsing it | PARTIAL |
+| D2 | The absence of a finalize-phase row is itself a blocking condition | Two firing sites: pre-merge `findings-check` (fail-closed) + completion `assert_finalize_findings_clean` (state); both consumers covered; negative controls fail pre-fix | Both sites exist and the completion assertion is genuinely non-vacuous (mutation-proven). But the state-armed site fires at `order: 1100`, **after** the merge at `order: 70`; the merge boundary itself is still armed by a call in a workflow doc; no row-existence assertion exists; and the completion refusal is carried only in a TOON `status` that its one production caller never parses | PARTIAL |
 | D3 | Self-review loop-back resolves the findings whose fixes it lands | `qgate resolve-evidenced` resolves only evidenced fixes, leaves unevidenced pending; wired into the delta round; both directions asserted | Implemented and mutation-proven in both directions; wired at `pre-submission-self-review.md` Step 1. One correctness caveat: the evidence set is a two-dot diff across an anchor a loop-back rebase can orphan | CONFIRMED (with a correctness caveat, see § Correctness review) |
 
 ## Per-deliverable detail
@@ -136,25 +136,40 @@ squash-merge, and `09229c4` / `f043254` are confirmed as real head SHAs by the P
 
 Defects found by reading the shipped code and its calling workflow docs.
 
-1. **The completion gate's refusal exits 0 and no caller parses it** (high).
+1. **The completion gate's refusal is invisible at its one production caller** (high).
    `manage-status.py:836-838` is the entire exit-code contract:
    `if args.command == 'transition' and isinstance(result, dict) and verify_blocks_transition(result): return 1` / `return 0`.
    `verify_blocks_transition` (`_cmd_lifecycle.py:182-191`) returns True only for `status == 'drift'`
    or an error in `VERIFY_REFUSAL_ERRORS` (`_cmd_lifecycle.py:46-52`), a set that does **not** contain
    `blocking_findings_present`. So a refused `archive` and a refused `transition --completed
-   6-finalize` both exit **0**. Meanwhile `archive-plan.md:66-75` — the one production caller — issues
-   `manage-status archive` with **no status parsing at all**, and the very next block logs
-   `"[STATUS] … Plan archived: {plan_id}"` unconditionally; the step's own `mark-step-done --outcome
-   done` was already issued at `archive-plan.md:59-63`, *before* the archive. Consequence: on a real
-   refusal the plan directory is silently not moved, the step is recorded `done`, the log claims the
-   plan was archived, and the session-binding sweep runs against a plan that is still live. This is
+   6-finalize` both exit **0** — **measured**, not inferred: driving `main()` in-process for both
+   commands with a stubbed pending actionable finding emits the `blocking_findings_present` TOON,
+   leaves the plan directory in place, and raises `SystemExit: 0` in both cases (via `safe_main`,
+   `file_ops.py:1691`).
+   ⚠ **Exit 0 is the documented house contract, not the defect** —
+   `pm-plugin-development:plugin-script-architecture/standards/output-contract.md:64,77-87,215`
+   requires operation failures to carry `status: error` at exit 0. The defect is the consumption
+   side. `archive-plan.md:23-28` states a blanket convention whose exit-0 arm is *"parse the returned
+   TOON and use the value as the step describes"* — and § Archive (`:65-75`) **describes no use**: it
+   issues `manage-status archive`, then logs `"[STATUS] … Plan archived: {plan_id}"` unconditionally;
+   the step's own `mark-step-done --outcome done` was already issued at `:59-63`, *before* the
+   archive. The same document shows the correct shape one section earlier — the foreign-PR gate
+   (`:44-51`) parses `status` and carries an explicit *"STOP. Do NOT mark the step done and do NOT
+   archive."* branch. Consequence: on a real refusal the plan directory is silently not moved, the
+   step is recorded `done`, the log claims the plan was archived, and `phase-6-finalize/SKILL.md:1612`
+   renders the final output template regardless. It also falsifies the shipped claim at
+   `references/phase-handshake.md:253` that *"a missing call is no longer a silent pass"*. This is
    the plan's own archetype — a gate whose firing is indistinguishable from its passing — reproduced
    at the new gate's consumption site.
-2. **The state-armed gate fires only after the merge** (high). Orders re-read from frontmatter:
+2. **The state-armed gate fires only after the merge** (medium — see § Adversarial review A6).
+   Orders re-read from frontmatter:
    `pre-submission-self-review.md:7 → order: 7`, `branch-cleanup.md:7 → order: 70`,
    `archive-plan.md:7 → order: 1100`. Self-review findings are filed at 7; the merge happens at 70;
    the state assertion runs at 1100. A skipped or mis-parsed pre-merge `findings-check` still lets the
-   merge through, and the state gate can then only strand the plan post-merge.
+   merge through, and the state gate can then only strand the plan post-merge. Checked and *not*
+   found: the gate's nesting under the `state == open AND merge_consent == explicit_yes` barrier
+   (`branch-cleanup.md:683`) opens no conditional hole, because § "Merge PR (if not yet merged)"
+   (`:1248-1250`) carries the identical condition.
 3. **Fail-open branch inside the new gate** (medium). `_cmd_lifecycle.py:242-250`: when
    `assert_finalize_findings_clean` returns `None` (executor unreachable **or a partial query
    failure** — `_invariants.py:1442-1445`, `:1320-1323`), the boundary logs a WARNING and **proceeds**.
@@ -170,12 +185,15 @@ Defects found by reading the shipped code and its calling workflow docs.
    follows the help text turns the completion gate off. The report lists this as out-of-scope residue;
    it is materially more consequential post-fix than it was pre-fix.
 5. **D3's evidence set is a two-dot diff across an anchor a rebase can orphan** (medium).
-   `pre-submission-self-review.md:118-120` computes evidence as
+   `pre-submission-self-review.md:113` computes evidence as
    `git -C {worktree_path} diff --name-only {since_ref}..HEAD`, where `{since_ref}` is the *previous*
-   self-review round's `head_at_completion`. A loop-back re-enters finalize, and finalize's first
-   step is `finalize-step-sync-baseline` (`order: 3`), which rebases the feature branch onto a
-   freshly-fetched `origin/{base_branch}` (`phase-6-finalize/SKILL.md:161,217`). When the base
-   advanced, the anchor is no longer an ancestor of `HEAD`, and the two-dot diff then includes every
+   self-review round's `head_at_completion` (`:103-106`). Two rebases can orphan that anchor:
+   `finalize-step-sync-baseline` (`order: 3`, `presets: [full]` only) rebases the feature branch onto
+   a freshly-fetched `origin/{base_branch}` (`phase-6-finalize/SKILL.md:161,217`), and
+   `branch-cleanup` (`order: 70`, every preset, `advances_main_via_rebase: true`) performs the same
+   rebase before merging (`branch-cleanup.md:11,356`) — so the exposure is preset-independent. When
+   the base advanced, the anchor is no longer an ancestor of `HEAD`, and the two-dot diff (endpoint
+   comparison — `git diff A..B` is `git diff A B`) then includes every
    file the upstream advance touched. Those files enter `--changed-path`, and a pending self-review
    finding on any of them is marked `fixed` with detail *"evidenced by landed change … touching …"*
    though no loop-back fix touched it. That is precisely the *"finding marked `fixed` without a
@@ -190,6 +208,23 @@ Defects found by reading the shipped code and its calling workflow docs.
    completing it would invoke a helper hardcoded to evaluate `'6-finalize'`
    (`_invariants.py:1489`) — a finalize-named assertion at an unrelated boundary. The comment at
    `:369-377` names the distinction but the code still keys both on one set.
+7. **The refuted arming claim survives, unswept, in the findings-invariant test module** (low).
+   The run corrected the claim in six production/doc files but not in
+   `test/plan-marshall/plan-marshall/test_phase_handshake_findings.py`, which still attributes guards
+   to production boundaries D1 proved have no call site: the module docstring (`:9`), the section
+   header (`:571`), three test docstrings (`:581`, `:601`, `:621`) and two docstrings inside helper
+   prose (`:833`, `:868`) — plus **two further sites the word-keyed sweep would miss**, because they
+   carry the attribution in the test *name* without the string "intra-finalize":
+   `test_capture_blocks_automated_review_to_branch_cleanup_boundary` (`:156`, docstring `:159`) and
+   `test_capture_blocks_sonar_roundtrip_next_boundary` (`:171`, docstring `:174`). The tests
+   themselves are sound unit tests of `cmd_capture`'s predicate; only their attribution is false.
+   Filed as G7–G10.
+8. **The anchor-diff step has no documented failure branch** (low).
+   `pre-submission-self-review.md:112-118` issues `git diff --name-only {since_ref}..HEAD` and
+   `git rev-parse HEAD` with no stated handling for a non-zero exit. The file's own
+   `since_ref_unresolvable` halt (`:146`) governs the *surface* call, which runs after this
+   sub-step, so an anchor that no longer resolves fails here first with nothing said about it — an
+   undocumented failure in an LLM-executed workflow becomes an improvised one. Filed as G14.
 
 Nothing else in the shipped diff is wrong on the paths I read: the predicate is genuinely unchanged,
 the abandonment and already-complete exemptions are correctly scoped and tested, the pre-merge
@@ -204,7 +239,7 @@ write-result check closes the fail-open CodeRabbit found.
 | D2 completion gate (archive) | `:1899-1916` (negative), `:1918-1928` (positive), `:1930-1946` (`--reason` exemption), `:1948-1960` (dry-run), `:1962-1985` (already-complete cleanup exemption) | Gate disabled → `test_archive_refuses_when_actionable_finding_pending` FAILED (`assert 'success' == 'error'`) |
 | D2 assertion helper | `test_phase_handshake_findings.py:890-921` (raises on pending, 0 clean, None unevaluable) | Direct unit coverage of all three returns |
 | D2 pre-merge gate | `test_phase_handshake_findings.py:829-877` (envelope parity, worktree refusal, fail-closed `query_failed`) | The fail-closed test drives `_query_pending_count_for_type → None` and asserts `query_failed` |
-| D3 | `test_findings_store.py:904-1050` (7 cases), `test_manage_findings_cli.py:269-291` (CLI input shape) | Evidence test neutralised → 3 FAILED; write-check neutralised → 1 FAILED |
+| D3 | `test_findings_store.py:904-1050` (7 cases), `test_manage_findings_cli.py:269-291` (CLI input shape) | Evidence test forced TRUE → 3 FAILED (`…leaves_finding_whose_file_unchanged`, `…leaves_finding_with_no_file_path`, `…mixed_batch_partitions_by_evidence`); evidence test forced FALSE → 3 FAILED (`…transitions_finding_whose_file_changed`, `…mixed_batch_partitions_by_evidence`, `…premature_resolution_is_self_correcting`); write-check neutralised → 1 FAILED. **Both directions independently non-vacuous** |
 
 Two coverage gaps on load-bearing paths:
 
@@ -212,9 +247,12 @@ Two coverage gaps on load-bearing paths:
   with WARNING` path (`_cmd_lifecycle.py:242-250`) has no test. `grep -n "unevaluable\|query_failed"
   test/plan-marshall/manage-status/test_manage_status_transition.py` returns nothing; the only
   unevaluable coverage is at the `_invariants` and `findings-check` level.
-- **No exit-code / envelope test for the new refusal at the CLI boundary.** `grep -rn
-  "blocking_findings_present" test/` finds only in-process handler assertions — nothing asserts what
-  `manage-status archive` returns to a shell caller. That is the precise surface defect G1 names.
+- **No CLI-boundary test for the new refusal.** `grep -rn "blocking_findings_present" test/
+  --include=*.py` returns 14 hits, every one an in-process handler assertion (`result['error'] ==
+  …`); nothing drives `main()` and asserts what `manage-status archive` emits to a shell caller.
+  I supplied that measurement myself (§ Correctness review 1): the TOON is correct and the exit code
+  is 0 — which is contract-conformant, so the missing coverage is of the *TOON envelope at the CLI*,
+  not of an exit code. That is the surface defect G1 names.
 
 No vacuous or tautological guard was found among the tests this plan added: every negative control I
 mutated went red.
