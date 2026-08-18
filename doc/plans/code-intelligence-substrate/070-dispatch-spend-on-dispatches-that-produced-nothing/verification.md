@@ -359,11 +359,16 @@ Inaccurate, stale or overstated:
   `Sourcery review` / `auto-merge` skipped. So the outcome the report claims was correct on the
   real head. Two details of the sentence are still wrong: the SHA, and `review / review`, which the
   report lists as success but which does not appear among the final head's 7 check runs at all.
-- *"D5 reads `total_tokens` (column 3, produced), not these columns."* — Overstated. Column 3 is
-  *produced* only when the caller forwards `--total-tokens`; both producing workflows instruct
-  *"use `0` when the field is absent"* and the writer coerces a missing value to `0`
-  (`manage-metrics.py:3157`). The distinction D2 protects for columns 6-9 does not exist for the
-  column D5 publishes (G1, G2).
+- *"D5 reads `total_tokens` (column 3, produced), not these columns."* — **False**, not merely
+  overstated, and it is the report's load-bearing error. Column 3 is produced only when the caller
+  forwards `--total-tokens`, an optional flag; the writer coerces a missing value to `0`
+  (`manage-metrics.py:3157`). Two of the four call sites instruct *"use `0` when the field is
+  absent"* (`execution.md:219`, `planning-outline.md:468`) and the finalize call site
+  (`phase-6-finalize/SKILL.md:1109`) states no fallback at all, so the writer's default governs
+  there. Proven end-to-end in Correctness review defect 1: a `record-dispatch-boundary` call that
+  omits the flag writes `,error,0,0,0,unmeasured,unmeasured,unmeasured,unmeasured` — the same row
+  representing "not measured" correctly on columns 6-9 and fabricating a `0` on the column D5
+  publishes. The distinction D2 protects does not exist for that column (G1, G2).
 - The D4/D5 framing *"they raised a fatal `error` and returned nothing"* survives in the shipped
   rule document (`logging-gap-analysis.md:163-168`) although the report says the precision was
   tightened; the report describes the fix as covering *"the field's docstring/comment, the rendered

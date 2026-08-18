@@ -1,24 +1,26 @@
 # Verification — 060-dispatch-boundary-ledger-is-not-a-commensurable-population
 
 **Audited:** `plan.md`, `report-01.md`
-**Tree state:** `61a43e5` on `claude/code-intelligence-substrate-analysis-kah884`
+**Tree state:** `61a43e5` on `claude/code-intelligence-substrate-analysis-kah884`; every finding
+re-derived in an independent adversarial pass against the same `manage-metrics.py` bytes
+(md5 `b9c88ef9c59542e53a483498aaac4b03`, matching `git show HEAD:`) — see § Adversarial review.
 **Landed as:** `3f64b71 fix(manage-metrics): dispatch-boundary ledger is a declared, commensurable population (#1173)`
 **Overall verdict:** CONFIRMED WITH GAPS
 
 The plan landed. All five deliverables are present in the tree, the fail-first claim is
 independently reproducible from git history, and the out-of-scope boundaries were respected. Two
 correctness gaps remain in the shipped behaviour: the D2 failure verdict cannot fire on a whole
-class of rows, and D4's agreement signal — the deliverable's own headline — is unreachable for the
-same-population case it was written for.
+class of rows, and D4's agreement clause is emitted only in the one population where its claim is
+unsound, and never in the same-population case the deliverable was written for.
 
 ## Deliverable verdicts
 
 | # | Deliverable (short) | Report claim | Ground truth | Verdict |
 |---|---|---|---|---|
-| D1 | GATE: declare the population; class count and registering count as two source-derived figures | 9 classes exist, 3 register; fork REFUTED | Independently re-derived from `call-graph.md` + every `record-dispatch-boundary` call site: 3 register (4-plan, 5-execute, 6-finalize). The "9" folds the change-type-heuristic LLM fallback into `phase-3-outline`; counted separately it is 10 | PARTIAL |
+| D1 | GATE: declare the population; class count and registering count as two source-derived figures | 9 classes exist, 3 register; fork REFUTED | Independently re-derived from `call-graph.md` + every `record-dispatch-boundary` invocation block: 3 register (4-plan, 5-execute, 6-finalize). The "9" folds the change-type-heuristic LLM fallback into `phase-3-outline`, and `report-01.md:43` declares that fold in the class table; the fold is not carried onto the shipped surfaces | CONFIRMED |
 | D2 | An impossible ratio is a loud failure naming both populations; never `complete`; no clamping | `_boundary_coverage_state` + `over` → `FAILURE`, refused the maximum | Implemented at `manage-metrics.py:525-562`, `:600`, `:2204-2215`. But the whole bullet is gated on a truthy `dispatch_boundary_total` (`:2183`), so an over-covering row whose boundary sum is `0` renders **no verdict at all** | PARTIAL |
 | D3 | Every class registers, or the non-registering classes appear in an explicit exclusion list the coverage figure references | `DISPATCH_BOUNDARY_EXCLUDED_CLASSES`, 6 classes, rendered as a declaration | Constant at `:515-522`, rendered at `:2112-2122`, persisted at `:1941`. The list is a hand-maintained literal with no guard tying it to the call sites, is missing the change-type fallback, and the coverage figure does not reference it (the reference runs the other way) | PARTIAL |
-| D4 | Equal figures annotated as agreement; a test pins smaller/equal/larger | `_reconciliation_relation_clause` renders the true relation | Implemented at `:661-683`. But the `equal` branch is unreachable for a same-population row (the tie resolves to `total_tokens`, which suppresses the annotation entirely), and the only reachable path compares across populations | PARTIAL |
+| D4 | Equal figures annotated as agreement; a test pins smaller/equal/larger | `_reconciliation_relation_clause` renders the true relation | Implemented at `:661-683`. But the `equal` branch is unreachable for a same-population row (the tie resolves to `total_tokens`, which suppresses the annotation entirely), and the only rows that reach the clause at all are `inline`-population rows, where all three relations compare across populations | PARTIAL |
 | D5 | Three tests, each verified to FAIL pre-fix; characterization arm labelled | 8 tests; 7 failed / 1 passed pre-fix | 8 tests present and passing (`test_dispatch_boundary_ledger_population.py`, 299 lines). Fail-first reproduced independently against `3f64b71^`. The characterization arm is labelled. The D3 negative control the plan specified was not performed | CONFIRMED WITH GAPS |
 
 ## Per-deliverable detail

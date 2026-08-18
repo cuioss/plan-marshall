@@ -18,33 +18,56 @@ loop-back rebase can orphan. The remainder are low-severity doc and report resid
 - **Kind:** bug
 - **Severity:** high
 - **Topic:** dispatch/finalize
-- **Where:** `marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage-status.py:836-838`
+- **Where:** `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/archive-plan.md:23-28`
+  (the document's blanket exit-code convention), `:53-63` (`mark-step-done`), `:65-70` (the archive
+  call), `:72-75` (the unconditional "Plan archived" log) — the one production caller;
+  `marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage-status.py:836-838`
   (exit-code contract); `marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_lifecycle.py:46-52`
-  (`VERIFY_REFUSAL_ERRORS`); `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/archive-plan.md:59-75`
-  (the caller)
-- **Evidence:** the whole exit-code contract is
-  `if args.command == 'transition' and isinstance(result, dict) and verify_blocks_transition(result): return 1` / `return 0`.
+  (`VERIFY_REFUSAL_ERRORS`)
+- **Evidence:** *Measured, not read.* Driving `main()` in-process (`manage-status archive --plan-id X`
+  and `manage-status transition --plan-id X --completed 6-finalize`) with
+  `_query_pending_count_for_type` stubbed to a pending actionable finding: both emit the
+  `blocking_findings_present` TOON, the plan directory survives, and **both raise `SystemExit: 0`**
+  (`file_ops.py:1691` `safe_main` → `sys.exit(main_fn())`). The reason is structural: the whole
+  exit-code contract is
+  `if args.command == 'transition' and isinstance(result, dict) and verify_blocks_transition(result): return 1` / `return 0`,
+  so `archive` can never return non-zero at all, and for `transition`
   `verify_blocks_transition` fires only on `status == 'drift'` or an error in `VERIFY_REFUSAL_ERRORS`
-  — a five-member set that does not include `blocking_findings_present`. So a refused
-  `manage-status archive` exits **0**. `archive-plan.md:66-70` issues that call with no status
-  parsing, `:72-75` then logs `"[STATUS] (plan-marshall:phase-6-finalize) Plan archived: {plan_id}"`
-  unconditionally, and `:59-63` already recorded `mark-step-done --outcome done` *before* the archive.
-  `grep -rn "blocking_findings_present" test/` returns only in-process handler assertions — no test
-  asserts anything about the CLI surface.
+  — a five-member set that does not include `blocking_findings_present`.
+  ⚠ **Exit 0 is the correct house behaviour, not the defect.**
+  `pm-plugin-development:plugin-script-architecture/standards/output-contract.md:64,77-87,215`
+  mandates *"Operation failures use `status: error` with exit 0"*; the defect is entirely on the
+  consumption side. `archive-plan.md:27` states the exit-0 arm as *"parse the returned TOON and use
+  the value as the step describes"* — and § Archive (`:65-75`) **describes no use**: it issues the
+  call, then logs `"[STATUS] (plan-marshall:phase-6-finalize) Plan archived: {plan_id}"`
+  unconditionally, having already recorded `mark-step-done --outcome done` at `:59-63`. The same
+  document demonstrates the correct shape one section earlier — the foreign-PR gate at `:44-51` parses
+  `status` and has an explicit `status: blocked` → *"STOP. Do NOT mark the step done and do NOT
+  archive."* branch. `grep -rn "blocking_findings_present" test/ --include=*.py` returns 14 hits, all
+  in-process handler assertions (`result['error'] == ...`) — no test asserts anything about the CLI
+  surface.
 - **Why it matters:** on a real refusal the plan directory is not moved, the step is recorded `done`,
-  the log says the plan was archived, and the session-binding GC runs against a still-live plan. The
-  gate fires and nothing downstream can tell. This is the exact failure mode the plan exists to
-  remove, relocated from the arming side to the consumption side.
-- **Action:** add `blocking_findings_present` to the refusal classification so the CLI exits non-zero
-  for both `archive` and `transition` (widen `verify_blocks_transition` or add a sibling predicate —
-  keep one shared classifier so the in-process and CLI contracts cannot drift). Then amend
-  `archive-plan.md` § Archive to parse the returned TOON `status` before the "Plan archived" log,
-  with an explicit blocked branch (route the pending findings through `verification-feedback` /
-  loop-back, do not log the archive, do not run the sweep), and move `mark-step-done` so a refused
-  archive is not recorded `done`.
-- **Done when:** a test drives `manage-status archive` through `main()` with a pending actionable
-  finding and asserts a non-zero exit alongside the `blocking_findings_present` TOON; and
-  `archive-plan.md` contains a documented blocked branch for that status.
+  the log says the plan was archived, and `phase-6-finalize/SKILL.md:1612` then renders the final
+  output template regardless (*"This step ALWAYS runs"*). The gate fires and nothing downstream can
+  tell. This is the exact failure mode the plan exists to remove, relocated from the arming side to
+  the consumption side — and it falsifies the shipped claim at
+  `plan-marshall/references/phase-handshake.md:253` that *"a missing call is no longer a silent
+  pass"*, which holds only if the completion refusal is observable.
+- **Action:** amend `archive-plan.md` § Archive to parse the returned TOON `status` before the "Plan
+  archived" log, with an explicit `error: blocking_findings_present` branch modelled on the
+  foreign-PR gate at `:44-51` (route the pending findings through `verification-feedback` /
+  loop-back, do not log the archive, do not run the session-store sweep), and move `mark-step-done`
+  so a refused archive is not recorded `done`. ⚠ **Do not "fix" this by making the CLI exit
+  non-zero** as the primary remedy — that contradicts `output-contract.md:64,215`. If a non-zero exit
+  is wanted as a belt-and-braces second signal, it must be shipped as an *explicit, documented*
+  deviation of the same kind `transition`'s drift arm already is (widen `verify_blocks_transition`
+  or add a sibling predicate sharing one classifier, and state the deviation in
+  `output-contract.md`).
+- **Done when:** `archive-plan.md` § Archive contains a documented `blocking_findings_present`
+  branch that suppresses the archive log and the `done` outcome; and a test drives
+  `manage-status archive` through `main()` with a pending actionable finding and asserts the emitted
+  TOON carries `status: error` / `error: blocking_findings_present` (plus, only if the deviation
+  above is taken, the chosen exit code).
 - **Effort:** M
 - **Risk if fixed:** `mark-step-done` reordering interacts with the "archive invalidates the live
   path" constraint documented at `archive-plan.md:55` — the record must still land before the move.
