@@ -72,7 +72,7 @@ plan names, and `_cmd_qgate_mechanical.cmd_qgate_mechanical` runs them as checks
 | Plan's closure | Function | What it computes |
 |---|---|---|
 | **projection** | `compute_projection_gaps` | Every declared write path is targeted by a step of a task belonging to that deliverable. |
-| **referrer** | `compute_referrer_gaps` | Every non-verification step target is declared by its parent deliverable. `phase-4-plan/SKILL.md` § Step 5 already *stated* this ("Source each step's `intent` from the parent deliverable's `affected_files[N].intent`") and nothing checked it — *a stated invariant is not a checked invariant*, the generalisation the plan's Notes record. |
+| **referrer** | `compute_referrer_gaps` | Every non-verification step target is declared by its parent deliverable. `phase-4-plan/SKILL.md` § Step 6 already *stated* this — a step's `intent` is sourced from the parent deliverable's own declared entry for that path — and nothing checked it: *a stated invariant is not a checked invariant*, the generalisation the plan's Notes record. ⚠ Round 3 found this row quoting that sentence in its **pre-change** wording, which this branch itself rewrote, and citing § Step 5 where the sentence lives in § Step 6. |
 | **claim versus index** | `check_declared_scope_reconciliation` | Every declared glob expanded against the tree and reconciled with the enumerated declaration. |
 
 *Done when* — **met, after round 1 found the first version of this fixture vacuous.**
@@ -163,9 +163,11 @@ makes the suppression *more* likely.
 
 *Done when* — **met, verified adversarially.**
 `test_closure_check_runs_under_the_surgical_scope_bypass_shape` builds a plan satisfying B2 exactly
-(`scope_estimate: surgical` persisted in `references.json`, two declared affected files), **asserts
-that precondition positively** by counting the declared bullets in the fixture it just wrote, and
-then asserts the closure check still runs and still fires.
+(`scope_estimate: surgical` persisted in `references.json`, two declared affected files), **asserts both
+conjuncts positively as preconditions** — the persisted `scope_estimate`, and the declared
+cardinality re-derived through the same parser phase-4-plan uses (explicitly *not* by counting
+bullet lines) — and then asserts the closure check still runs and still fires. ⚠ An earlier version
+of this row said the opposite of the test it describes.
 
 ### D5 — tests, each verified to fail pre-fix, plus the characterization-corpus rule
 
@@ -181,8 +183,9 @@ proves the module did not exist and proves nothing about whether any guard detec
 is a weak red signal, so it was discarded in favour of a mutation campaign — each mutant reverting
 one specific behaviour, each run against only the guard that names it.
 
-**22 mutants, all detected**, re-derived by running the campaign at the moment of this claim. They
-cover: the survey/mutation headings going unparsed; the write-set excluding the mutation scope; the
+**27 mutants at the end of round 2, all detected**; round 3 then added its own independent campaign
+and the total moved again — the count is stated per round below rather than as one figure, because
+it moved three times and a single number went stale twice. Round 2's 27 cover: the survey/mutation headings going unparsed; the write-set excluding the mutation scope; the
 closure checks not being wired in; a home-relative glob reported as measured-empty; a referrer
 closure accepting a target a declared glob would `fnmatch`; a projection closure reporting a declared
 glob as unprojected; `population_complete` asserted rather than measured; the retrospective parser
@@ -194,8 +197,9 @@ its remainder; the outline validator rejecting the survey pair; a lone survey fi
 complete declaration; `extract_survey_scope` dropping its read default; and the survey pair being
 invisible to both the foreign annotator and the phase-6 landing gate.
 
-⛔ **The campaign found THREE vacuous guards across its two runs, which is why it was worth running
-rather than reasoning about.**
+⛔ **The campaign found three vacuous guards across its first three runs, and an independent
+round-3 campaign then found two more survivors it had missed** — which is why it was worth running
+rather than reasoning about.
 
 1. **Round 1's own build.** `compute_referrer_gaps` filtered globs out of the comparison set, and
    that filter was a **no-op** — membership is literal string equality, so a pattern can only match a
@@ -239,6 +243,34 @@ The `_ALL_CHECKS` tuple in that file is additionally cross-checked against the L
 set (`assert set(result['checks']) == set(_ALL_CHECKS)`), so a check added to the script without an
 entry here fails loudly instead of going silently unasserted. A hard-coded name list stops covering
 whatever is added after it; quantifying over the produced set does not.
+
+## Plan clauses dispositioned explicitly
+
+Two clauses of the plan are neither deliverables nor findings, and round 3 caught both going
+unrecorded. A clause the run silently did not answer is indistinguishable from one it answered
+"no", which is the disclosure defect this plan is about.
+
+**Verification bullet — "Each fixture carries the pre-fix text verbatim for the predicate axis."**
+**Not satisfied as literally written, deliberately, and here is the substitute.** That phrasing
+assumes a *content* detector — a check that flags bad TEXT, whose predicate axis is exercised by a
+negative fixture holding the offending string verbatim. Nothing this plan ships is one: all three
+closures are *set* computations over parsed structures, and their predicate axis is "does the
+comparison fire on an incomplete set", not "does a regex match a string". The equivalent evidence is
+the mutation campaign — for every guard, the production behaviour is reverted to its pre-fix form
+and the guard is shown to go red against exactly that defect, which is a strictly stronger check
+than a verbatim fixture (it proves the guard discriminates, not merely that a string is present).
+The one place a verbatim pre-fix text *does* apply is the retired declaration message, and
+`test_a_lone_survey_field_does_NOT_satisfy_the_section_requirement` asserts against the new message
+with a mutant pinning the old one.
+
+**Expected-surface HYPOTHESIS — `phase-3-outline/standards/consumer-sweep.md` as "the declared-sweep
+surface".** **REFUTED, and this states it rather than leaving D0 to imply it.** That file is a
+*procedure* for sweeping a symbol's consumers before a delete/rename deliverable is finalised; it
+carries no survey/mutation scope declaration and no glob-versus-enumeration reconciliation. The
+declared-sweep surface the plan describes is `outline-workflow-detail.md` §
+"Survey-scope vs mutation-scope declaration", which D0 sites and D2 fixes. `consumer-sweep.md` is
+therefore **untouched by this change** — its own sweep is symbol-driven and already documents its
+coverage-gap returns.
 
 ## Build gate
 

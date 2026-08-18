@@ -880,7 +880,7 @@ This is an LLM-driven outline check — prose the outline agent applies in-conte
 - `marketplace/bundles/plan-marshall/skills/manage-config/standards/config-schema.md`
 ```
 
-The title contains `Survey` and `classify`; both fields are present and share no path → the check passes.
+The title contains `Survey` and `classify`, and both fields are present → the check passes. ⚠ The two lists also share no path, as the disjointness requirement demands, but **this check does not test that** — it asserts presence only. Disjointness is an authoring rule the example honours, not a criterion the check applies.
 
 **Negative example (flagged)** — survey-style deliverable with a single flat list:
 

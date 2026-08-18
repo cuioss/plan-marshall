@@ -193,14 +193,13 @@ Each dispatched phase envelope (phases 2–6) runs the workflow doc inside the s
 │    /manage-solution-outline load-deliverables/   (script — Step 3)                 │
 │    /manage-tasks dependency-graph/               (script — Step 4)                 │
 │                                                                                    │
-│  Inside the dispatch (Steps 5+6+7 — task-creation loop iterates HERE):             │
+│  Inside the dispatch (Steps 5+6 — task-creation loop iterates HERE):               │
 │                                                                                    │
 │    LLM judgement loop, per deliverable                                             │
 │    ─────────────────────────────────                                               │
 │    • Step 5: create tasks from profiles (1:N, optional-skill LLM matching)         │
 │    • Step 6: anchoring, breaking-refactor split                                    │
 │                ?AskUserQuestion? when split decision is ambiguous                  │
-│    • Step 7: holistic verification tasks                                           │
 │                                                                                    │
 │  Orchestrator-side post:                                                           │
 │    /manage-tasks topological-sort/               (script — Step 7)                 │

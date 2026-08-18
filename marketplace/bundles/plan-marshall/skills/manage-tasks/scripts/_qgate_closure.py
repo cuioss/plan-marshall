@@ -23,7 +23,7 @@ incomplete:
 
 ``referrer``
     Every non-verification task step target is declared by its parent
-    deliverable. ``phase-4-plan/SKILL.md`` § Step 5 already states this as an
+    deliverable. ``phase-4-plan/SKILL.md`` § Step 6 already states this as an
     invariant — a step's ``intent`` is sourced from the parent deliverable's own
     declared entry for that path — and nothing checked it. A step target absent
     from every declared set is a path in no write-set — the exact shape the
@@ -278,10 +278,19 @@ def check_declared_set_closure(
     ``population`` publishes what was actually examined:
     ``deliverables_scanned``, ``declared_paths_scanned``,
     ``step_targets_scanned``, ``tasks_scanned``, ``unmapped_tasks``,
-    ``scanned_paths`` and ``population_complete``. ``population_complete`` is
-    False when any non-verification task names a deliverable the outline does
-    not contain, so an empty gap list computed over an incomplete population can
-    never be read as closure.
+    ``holistic_tasks``, ``scanned_paths`` and ``population_complete``.
+    ``population_complete`` is False when any non-verification task names a
+    deliverable the outline does not contain, so an empty gap list computed over
+    an incomplete population can never be read as closure.
+
+    ``tasks_scanned`` and ``step_targets_scanned`` count only what the closure
+    actually examined. A holistic task (``deliverable == 0``) is EXEMPT rather
+    than unmapped — it belongs to no deliverable, so no declared set exists to
+    check it against — and is published under ``holistic_tasks`` instead of
+    being folded into either the scanned counts or the unmapped list. Exempt,
+    scanned, and unmapped are three different facts about a task, and blurring
+    the first into the others is how a population comes to overstate what it
+    covered.
 
     ``scanned_paths`` carries the MEMBER IDENTITIES, sorted — not just the
     cardinality. A count answers "was the population non-empty?"; only the
@@ -295,25 +304,34 @@ def check_declared_set_closure(
     by_number = {int(d['number']): d for d in deliverables if str(d.get('number', '')).isdigit()}
     tasks_by_deliverable: dict[int, list[dict[str, Any]]] = {}
     unmapped_tasks: list[int] = []
+    holistic_tasks: list[int] = []
     tasks_scanned = 0
     step_targets_scanned = 0
 
     for task in tasks:
         if (task.get('profile') or '').strip() == _VERIFICATION_PROFILE:
             continue
-        tasks_scanned += 1
-        step_targets_scanned += len(_step_targets(task))
         number = _as_int(task.get('deliverable'))
         # ``deliverable == 0`` is the holistic-task sentinel, carved out by
-        # ``_check_coverage`` in the same script ("do not flag as orphan"). The
-        # closure pass MUST agree with it: counting the sentinel as unmapped
-        # would set ``population_complete: False`` and flip ``ambiguous``, which
-        # the caller reads as "the mechanical pass is not authoritative" — a
-        # whole re-dispatch triggered by a task that is correctly shaped. Two
-        # checks in one script disagreeing about the same sentinel is the drift
-        # this carve-out closes.
+        # ``_check_coverage`` in the same script ("do not flag as orphan"). A
+        # holistic task belongs to no deliverable, so there is no declared set
+        # to run the referrer closure against — it is EXEMPT, not unmapped, and
+        # counting it as unmapped would flip ``ambiguous`` on a correctly-shaped
+        # plan.
+        #
+        # ⛔ It is excluded from ``tasks_scanned`` / ``step_targets_scanned``
+        # too, and published under its own name. The carve-out must not
+        # inflate the scanned population with targets the closure never
+        # examined: a population claiming N targets while N-k entered the check,
+        # over a ``population_complete: True``, is precisely the
+        # measured-looking-verdict-over-an-unexamined-surface defect this module
+        # exists to report. Exempt and scanned are different facts and are
+        # published as different fields.
         if number == 0:
+            holistic_tasks.append(_as_int(task.get('number')) or 0)
             continue
+        tasks_scanned += 1
+        step_targets_scanned += len(_step_targets(task))
         if number is None or number not in by_number:
             unmapped_tasks.append(_as_int(task.get('number')) or 0)
             continue
@@ -386,6 +404,7 @@ def check_declared_set_closure(
         'tasks_scanned': tasks_scanned,
         'step_targets_scanned': step_targets_scanned,
         'unmapped_tasks': sorted(unmapped_tasks),
+        'holistic_tasks': sorted(holistic_tasks),
         'scanned_paths': published[:_MAX_SCANNED_PATHS_PUBLISHED],
         'scanned_paths_truncated': len(published) > _MAX_SCANNED_PATHS_PUBLISHED,
         'population_complete': not unmapped_tasks,

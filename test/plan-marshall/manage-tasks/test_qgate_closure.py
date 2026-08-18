@@ -651,8 +651,49 @@ def test_the_hit_list_names_a_bounded_set_and_discloses_the_remainder(monkeypatc
     )
 
     assert len(gaps) == 1
-    detail = gaps[0]['detail']
+    detail, title = gaps[0]['detail'], gaps[0]['title']
     assert f'+{len(hits) - 1} more' in detail
+    assert f'{len(hits)} of them appear in no declared list' in detail
+    # ⛔ The TITLE must state the same TOTAL, not the count it managed to name.
+    # This is the only place the two diverge — below the cap they are equal, so
+    # a fixture there cannot tell a total from a named count, and a mutant
+    # substituting one for the other survives it.
+    assert f'{len(hits)} fewer file(s)' in title
+    assert f'{len(hits) - 1} fewer file(s)' not in title
+
+
+def test_the_finding_names_every_hit_and_states_the_true_total():
+    """The hit list and the title are pinned against a REAL multi-hit glob.
+
+    Both other claim-vs-index tests are blind to this: one uses a glob that
+    expands to a single file (a population of one cannot see a slicing bug), and
+    the other lowers ``_MAX_HITS_NAMED`` by monkeypatch (which cannot see a
+    hard-coded slice). Two mutants survived the whole suite because of it —
+    ``unenumerated[:1]`` for the named list, and a title reporting the NAMED
+    count where it claims the total.
+
+    The title's number is the disclosure-integrity claim D2 makes about its own
+    finding text, so it is asserted against an independently derived total
+    rather than against the length of whatever the finding chose to name.
+    """
+    hits = _independent_expansion(_MULTI_HIT_GLOB)
+    assert len(hits) > 2, 'precondition: more hits than a slice-of-1 mutant would name'
+    assert len(hits) <= _closure._MAX_HITS_NAMED, (
+        'precondition: below the naming cap, so every hit must appear un-elided'
+    )
+
+    gaps, _population = check_declared_scope_reconciliation(
+        [_deliverable(1, survey=[_MULTI_HIT_GLOB])], PROJECT_ROOT
+    )
+
+    assert len(gaps) == 1
+    detail, title = gaps[0]['detail'], gaps[0]['title']
+    for hit in hits:
+        assert hit in detail, hit
+    assert 'more, not named here' not in detail, 'below the cap nothing is elided'
+    # The TOTAL, not the named count — the two coincide only below the cap, and
+    # a mutant substituting one for the other is what this pins.
+    assert f'{len(hits)} fewer file(s)' in title
     assert f'{len(hits)} of them appear in no declared list' in detail
 
 
@@ -720,30 +761,35 @@ def test_a_bracket_pattern_is_not_treated_as_a_declared_glob():
     assert compute_projection_gaps(deliverable, [_task(1, 1, [])]) == ['src/a[0-9].py']
 
 
-def test_a_holistic_task_does_not_flip_the_population_incomplete(plan_context):
-    """``deliverable == 0`` is the holistic sentinel, carved out here too. (B4)
+def test_a_holistic_task_is_exempt_and_not_counted_as_scanned():
+    """``deliverable == 0`` is EXEMPT — neither unmapped nor scanned.
 
-    ``_check_coverage`` already whitelists it ("do not flag as orphan"). Without
-    the same carve-out the closure pass counted it as unmapped, set
-    ``population_complete: False`` and flipped ``ambiguous`` — triggering a whole
-    LLM re-dispatch because of a task that is correctly shaped. The fixture uses
-    a NON-verification holistic task deliberately: a verification-profile one is
-    skipped earlier and so cannot reach the sentinel branch at all.
+    ``_check_coverage`` already whitelists the sentinel ("do not flag as
+    orphan"), and the closure pass must agree: a holistic task belongs to no
+    deliverable, so no declared set exists to check it against, and counting it
+    as unmapped would flip ``ambiguous`` on a correctly-shaped plan.
+
+    ⛔ But exemption must not INFLATE the scanned population. An earlier version
+    of this carve-out skipped the closure after the accounting had already
+    counted the task's targets, so the population claimed three targets scanned
+    while one entered the check — a ``population_complete: True`` over a surface
+    the closure never examined, which is the defect this module reports on
+    outlines. The three counts are asserted together for exactly that reason: a
+    regression that re-inflates them changes numbers this test reads.
     """
-    plan_dir = plan_context.plan_dir_for('closure-holistic')
-    _write_outline(
-        plan_dir,
-        f'### 1. One deliverable\n\n**Affected files:**\n- `{_REAL_A}` (read)\n',
-    )
-    _write_task_file(plan_dir / 'tasks', _task(1, 1, [_REAL_A]))
-    _write_task_file(plan_dir / 'tasks', _task(2, 0, [_REAL_A], profile='implementation'))
+    deliverables = [_deliverable(1, affected=[_REAL_A])]
+    mapped = _task(1, 1, [_REAL_A])
+    holistic = _task(2, 0, ['src/undeclared-a.py', 'src/undeclared-b.py'])
 
-    result = cmd_qgate_mechanical(Namespace(plan_id='closure-holistic', no_emit=True))
+    gaps, population = check_declared_set_closure([mapped, holistic], deliverables)
 
-    population = result['population']['declared_set_closure']
+    assert gaps == [], 'the holistic task owes no referrer closure'
+    assert population['holistic_tasks'] == [2], 'the exemption is published, not silent'
     assert population['unmapped_tasks'] == []
+    # Only the mapped task and its single target entered the closure.
+    assert population['tasks_scanned'] == 1
+    assert population['step_targets_scanned'] == 1
     assert population['population_complete'] is True
-    assert result['ambiguous'] is False
 
 
 def test_ambiguous_flips_when_the_closure_population_is_incomplete(plan_context):
@@ -804,10 +850,22 @@ def test_closure_check_runs_under_the_surgical_scope_bypass_shape(plan_context):
 
     # Precondition 2 — the deduplicated declared cardinality, re-derived through
     # the SAME parser phase-4-plan uses, never by counting bullet lines.
+    #
+    # This fixture declares only `Affected files:`, so the flat count and the
+    # widened declared-surface count B2 actually reads coincide here. They do
+    # NOT coincide for a survey-scope deliverable, which is why the surface is
+    # summed explicitly rather than reading `affected_files` alone: a fixture
+    # that later grew a survey pair would otherwise keep asserting a number the
+    # predicate no longer uses.
     outline = (plan_dir / 'solution_outline.md').read_text(encoding='utf-8')
     deliverables = extract_deliverables(parse_document_sections(outline)['deliverables'])
     affected_files_count = len(
-        {entry['path'] for d in deliverables for entry in d['affected_files']}
+        {
+            entry['path']
+            for d in deliverables
+            for field in ('affected_files', 'survey_scope', 'mutation_scope')
+            for entry in d[field]
+        }
     )
     assert affected_files_count <= 2, 'precondition: the fixture must satisfy the bypass predicate'
 
