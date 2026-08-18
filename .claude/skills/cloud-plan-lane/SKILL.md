@@ -509,6 +509,10 @@ Two gates, because the quality gate and the test suite have **different** trigge
 > verif[ies]* — so a docs-only change is built by the queue before it lands, and the local gate does
 > not duplicate that. Keep the gate keyed on `*.py`; the queue covers the rest.
 
+**This gate is run again at the merge gate when `main` has moved under the branch** — § Step 8
+condition 2, which re-runs it on the merged tree. The predicate and the commands are the ones stated
+here; what changes is only the tree they are run against.
+
 Both commands run from the repository root:
 
 ```bash
@@ -1205,10 +1209,10 @@ was trustworthy where the other two were not.
 read. A count from a surface you *can* read is the cheapest control available; take it, and record what
 it says.
 
-⭐ **`unreadable` blocks merge-gate condition 2, where `rate-limited` and `silent` do not.** The
-shortfall verdicts say a reviewer did not review — condition 2 is about whether every *comment* was
+⭐ **`unreadable` blocks merge-gate condition 3, where `rate-limited` and `silent` do not.** The
+shortfall verdicts say a reviewer did not review — condition 3 is about whether every *comment* was
 handled, and a reviewer who filed none leaves nothing to handle. An unreadable surface is different in
-kind: comments may exist and be unhandled, and the run cannot show otherwise. So condition 2 is **not
+kind: comments may exist and be unhandled, and the run cannot show otherwise. So condition 3 is **not
 established**, and a run that merges anyway is proceeding on an operator's instruction, not on a
 satisfied gate. Report it that way — "overridden", never "met".
 
@@ -1256,7 +1260,7 @@ Check whether the reviewer's workflow ran at all, and split on it:
   will change that. Record the run's conclusion as the reason and disclose.
 
 This adds a cheap recovery attempt before the disclosure. It is **not** a gate: if the trigger
-produces nothing, disclose the shortfall and carry on exactly as § Step 8 condition 4 says.
+produces nothing, disclose the shortfall and carry on exactly as § Step 8 condition 5 says.
 
 ⛔ **Query by `event`, never by head branch.** A **command**-triggered run (`issue_comment`) is
 attributed to the repository's **default** branch, because `issue_comment` is not a pull-request
@@ -1291,8 +1295,8 @@ review-side effects, and each has a defined handling so neither is misread:
 
 ## Step 8 — Merge gate
 
-**The merge is gated on conditions 1–3 below. Condition 4 is a disclosure the run performs before
-arming auto-merge — it is not a gate on the merge. Merge only when conditions 1–3 hold:**
+**The merge is gated on conditions 1–4 below. Condition 5 is a disclosure the run performs before
+arming auto-merge — it is not a gate on the merge. Merge only when conditions 1–4 hold:**
 
 1. **Every required context is present on the exact head SHA and concluded successfully** — not
    merely "all checks green." A repository's check set mixes two kinds of context: those the branch
@@ -1336,7 +1340,7 @@ arming auto-merge — it is not a gate on the merge. Merge only when conditions 
      reported is treated as unmet, never waved through, because a required context missing from the
      head is exactly the failure mode that nearly cost a merge.
    - A **non-required** context that is pending, failed, or absent **does not block** the merge but
-     **is disclosed** to the operator — the same disclose-not-block treatment condition 4 gives a
+     **is disclosed** to the operator — the same disclose-not-block treatment condition 5 gives a
      review-coverage shortfall. State it in words before arming auto-merge; never hold the merge for it.
 
    When `mergeStateStatus` is `BLOCKED`, derive **which** context blocks from (required contexts ∩
@@ -1348,9 +1352,43 @@ arming auto-merge — it is not a gate on the merge. Merge only when conditions 
    Derive the blocker from the intersection, and never promote a non-required pending status to "the
    blocker" in an operator disclosure.
 
-2. **Every PR comment is handled** — fixed or answered on the thread. No open, unaddressed comment.
+2. **A stale base is re-verified before arming.** When `origin/main` has advanced past the PR's merge
+   base, merge it into the branch and re-run § Step 5's gate on the **merged** tree.
 
-3. **The report is finalized and pushed** — run Step 9 now and commit its report artifacts (the
+   `mergeable_state: clean` reports the absence of a **textual** conflict and says nothing about a
+   **semantic** one — a renamed fixture, a moved constant, a widened rule, a guard that names a file
+   another slice owns. The PR's own CI cannot see it either: it verifies the base the branch was cut
+   from, so a green `verify / conclusion` on the head is a statement about a tree that no longer
+   exists. A run that arms on a stale base hands the merge queue a build nobody has run.
+
+   This is systematic for this lane rather than incidental. A cloud session can end at any point, and
+   the interval between "PR opened" and "PR armed" is exactly where `main` moves. An observed PR sat
+   `clean` with every check green while a sibling slice's rename had already reddened one of its
+   guards against merged `main`; the queue would have rejected it, and nothing in conditions 1, 3 or
+   4 could have caught it.
+
+   Read the gap from git, never from recollection or from `mergeable_state`:
+
+   ```bash
+   git fetch origin main
+   git rev-list --count HEAD..origin/main
+   ```
+
+   A non-zero count means the base has moved and this condition applies. **Re-run § Step 5's gate on
+   the merged tree** — the full one, by the same `*.py` predicate Step 5 uses, so a docs-only advance
+   costs nothing. Where the merged tree is green, whether you also **push** the merge is a judgement:
+   pushing it makes the PR's own CI verify what actually lands, at the cost of another CI cycle and a
+   base that may move again before it finishes. Either way the condition is met by having **run** the
+   gate on the merged tree, and the report records the result and which choice was made.
+
+   ⛔ **Re-running the gate is not optional when the count is non-zero, and "the queue re-verifies" is
+   not a substitute.** It does — on `merge_group`, after arming — and by then the branch is locked and
+   a rejection costs a bounced PR that nobody is watching, in a lane whose sessions do not survive to
+   watch it. The queue is the enforcer of last resort, not the first place a break should surface.
+
+3. **Every PR comment is handled** — fixed or answered on the thread. No open, unaddressed comment.
+
+4. **The report is finalized and pushed** — run Step 9 now and commit its report artifacts (the
    contract-check table and the "what have we learned" section) as the **last pre-merge commit**,
    *before* you arm auto-merge. This ordering is load-bearing, not cosmetic: the report lands *in
    this PR*, and the instant the branch enters the merge queue a protected-branch hook rejects every
@@ -1359,7 +1397,7 @@ arming auto-merge — it is not a gate on the merge. Merge only when conditions 
    record. So Step 9's report sections are written here; only the post-merge landing confirmation
    (below) happens after.
 
-4. **A review-coverage shortfall is disclosed to the operator — this is a disclosure step, not a
+5. **A review-coverage shortfall is disclosed to the operator — this is a disclosure step, not a
    merge condition.** From the per-reviewer participation record (§ Step 7), read the verdict of every
    expected reviewer. When **any** expected reviewer's verdict is not `reviewed`, state the shortfall
    and its reason to the operator, explicitly and in words, *before* arming auto-merge — carrying each
@@ -1379,7 +1417,7 @@ arming auto-merge — it is not a gate on the merge. Merge only when conditions 
    run that proceeds on partial coverage is fine; a run that proceeds on partial coverage *without
    saying so* is the failure. The shortfall therefore changes only what the run **says**, never
    whether it **merges**. Once the shortfall is stated, arm auto-merge exactly as full coverage would
-   — conditions 1–3 are the only gates on the merge itself.
+   — conditions 1–4 are the only gates on the merge itself.
 
 Then merge (the repository uses a merge queue, so enable auto-merge and let the queue land it):
 
@@ -1393,7 +1431,7 @@ protected-branch hook then rejects every further push ("Branches that are queued
 updated"). **Disabling auto-merge does not release the lock, and converting the PR to draft does not
 release it** — both were tried on one run, both left the branch queued. Two rules follow:
 
-- **Push everything that must land in this PR _before_ you arm** — the report above all (condition 3).
+- **Push everything that must land in this PR _before_ you arm** — the report above all (condition 4).
   After arming, nothing more can reach the PR.
 - **Invoking the auto-merge command _is_ arming — there is no dry run.** Do not run it to probe a merge
   flag or "see what happens": against a PR whose required checks are already green, it queues that PR
@@ -1430,7 +1468,7 @@ one.** Confirming `state: MERGED` assumes the run can wait for the queue to land
 cloud session often cannot: the self-wake tools (`send_later`, `subscribe_pr_activity`) may be
 approval-gated **or absent entirely**, and Bash cannot poll GitHub (§ Cloud session affordances), so
 there is no way to block-until-landed inside the session. When that is the case, the run has finished once it has (a) met
-conditions 1–3, (b) armed auto-merge, and (c) handed the `MERGED` confirmation to the orchestrator's
+conditions 1–4, (b) armed auto-merge, and (c) handed the `MERGED` confirmation to the orchestrator's
 collect step, which reads it from the PR merge event. Record the outcome as **completed with the
 landing delegated** — not `partial`, and not a failure. A run that armed a green PR into the queue and
 merely could not self-wake to watch it has done everything the lane asks; reading its own inability to
@@ -1444,8 +1482,8 @@ would strand a fully-ready PR indefinitely with no one to land it. On this merge
 admits a PR only when the ruleset's required contexts pass and re-verifies on `merge_group`, so arming
 auto-merge while the required build is still running does **not** merge a red PR — it defers the
 required-green gate to the queue, exactly as arming does when the PR is already green (§ Cloud session
-affordances, "Auto-merge arming"). The one ordering that stays non-negotiable: conditions 2–3 must be
-met and the report committed as the last pre-merge commit **before** arming (§ Step 8 condition 3),
+affordances, "Auto-merge arming"). The one ordering that stays non-negotiable: conditions 2–4 must be
+met and the report committed as the last pre-merge commit **before** arming (§ Step 8 condition 4),
 because arming locks the branch the instant the checks go green. Record it as arm-and-hand-off, noting
 the required check's in-progress state at arm time; an observed run armed with `verify` still running,
 and the queue landed the PR cleanly once `verify / conclusion` went green.
@@ -1463,7 +1501,7 @@ this paragraph only records that a still-live session need not hand off blind, w
 run drove a PR to a confirmed merge after both self-wake tools returned "requires approval".
 
 **Record the merge commit outside the in-PR report.** The squash merge SHA does not exist until the
-merge completes, so it cannot appear in a report that was committed before the merge (condition 3
+merge completes, so it cannot appear in a report that was committed before the merge (condition 4
 above). Read it from the PR merge event (`state,mergedAt,mergeCommit`) and report it to the operator;
 the orchestrator collects the landing from the PR itself, not from a SHA embedded in the report body.
 
@@ -1484,7 +1522,7 @@ The full rule, including how a row is created and later collected, is
 ## Step 9 — Final step: verify this contract was followed
 
 **The last committed action of every run.** Its report sections (this contract-check and the "what
-have we learned" below) are written and pushed at Step 8 condition 3, as the final pre-merge commit,
+have we learned" below) are written and pushed at Step 8 condition 4, as the final pre-merge commit,
 because they must land in the PR — a queued branch can no longer be pushed to. Only the merge-landing
 confirmation happens after, recorded to the operator rather than into the report. Re-read this skill
 and check each step against what actually happened, confirming both that the step was performed and
@@ -1500,8 +1538,8 @@ that its artifact exists on disk:
 | 4 Pushed | No unpushed commit remains (`git status -sb` reports no `ahead`) |
 | 5 Build gate | Report states the git-derived Python-change verdict and the build outcome |
 | 6 Verification sub-agent | Findings and dispositions in the report; **which of the two exits ended the loop** — named with the same `verifier-clear` / `budget-exhausted` token the report header carries, plus the `non-converging` qualifier where it applies (§ Report) — the **budget that applied** (five, or the plan's) with **every extension and who granted it**, and the round that stopped it. Where the budget ran out with an operator reachable, that the boundary question was **put to them** and what they answered; where it ran out headless, that fact and the fallback taken. On the verifier exit: **the verifier's own last answer** — never the author's verdict — and the **evidence stronger than a read** it rests on, named. On the budget exit: that fact, with everything A forbids **fixed** regardless and what closing each remaining B survivor would take. Either way: each survivor — and each behavioural finding left `deferred` — listed individually with its (a) proof or (b) bound and confirmation it was **re-put to the verifier** in the stopping round; whether the late rounds' findings were **narrower and not merely fewer**; the **residue to assume remains**; and `Outcome` still reporting the deliverables, not the loop (§ Step 6, "When the loop stops") |
-| 7 PR cycle | PR exists; every comment dispositioned in the report; the participation table carries a verdict **and** a `Reopens?` value per reviewer, and every `silent` verdict records what its recovery check found. An `unreadable` verdict means condition 2 is NOT established — the row is reported as **not done**, whatever the merge outcome |
-| 8 Merge gate | Conditions 1–3 met and auto-merge armed. Either `state: MERGED` was confirmed after arming, **or** the session could not self-wake to watch the queue (§ Cloud session affordances) and delegated the landing to the orchestrator's collect — both are completed, neither is partial (§ Step 8). The merge commit is recorded to the operator, not in the pre-merge report |
+| 7 PR cycle | PR exists; every comment dispositioned in the report; the participation table carries a verdict **and** a `Reopens?` value per reviewer, and every `silent` verdict records what its recovery check found. An `unreadable` verdict means condition 3 is NOT established — the row is reported as **not done**, whatever the merge outcome |
+| 8 Merge gate | Conditions 1–4 met and auto-merge armed; where the base had advanced, the report names the gate's result on the merged tree and whether the merge was pushed (condition 2). Either `state: MERGED` was confirmed after arming, **or** the session could not self-wake to watch the queue (§ Cloud session affordances) and delegated the landing to the orchestrator's collect — both are completed, neither is partial (§ Step 8). The merge commit is recorded to the operator, not in the pre-merge report |
 | 8 Bridge | No **status or bookkeeping** write landed under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan's directory was touched; a **declared-deliverable** edit to a shared lane doc (e.g. `cloud-bridge.md`, `README.md`, the plan template) is permitted — and the report carries the PR number and per-deliverable outcome the orchestrator will collect from |
 | 9 This check | Its result appended to the report |
 | 9 What have we learned | A contract-change proposal presented to the operator, or a recorded "none, because …" |
@@ -1608,6 +1646,11 @@ Per deliverable: what was done, in which commit, and its verification state.
 The `git diff --name-only origin/main...HEAD -- '*.py'` verdict, and the build result — or
 "no Python changes, build skipped".
 
+Then the stale-base re-verification (§ Step 8 condition 2): the `git rev-list --count HEAD..origin/main`
+figure at the gate, and — when it was non-zero — the gate's result on the **merged** tree and whether
+the merge was pushed. A zero count is recorded as the measurement it is ("base current at the gate"),
+not left unstated: an absent line is indistinguishable from a check that was never run.
+
 ## Findings
 Every finding from the verification sub-agent, from CI, and from PR review — each with source,
 description, and disposition (fixed / rejected-with-reason / deferred / **survivor**). An empty
@@ -1663,7 +1706,7 @@ a summary:
 State the coverage as N-of-M, and whether the § Step 8 shortfall disclosure fired and what it said.
 Where a `silent` verdict triggered the recovery check (§ Step 7), record what the check found and
 whether the reviewer was recovered. Where a verdict is `unreadable`, state plainly that merge-gate
-condition 2 was **not established** and say whether the merge proceeded anyway on an operator
+condition 3 was **not established** and say whether the merge proceeded anyway on an operator
 instruction — an overridden gate is reported as overridden, never as met.
 
 ## Cost
