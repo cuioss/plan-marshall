@@ -8,7 +8,6 @@ Tests the Python build operations including:
 """
 
 import itertools
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
@@ -20,9 +19,8 @@ from _resolve_project_dir_fixtures import (
     patch_query_worktree_path,
 )
 
-from conftest import BuildContext, load_script_module
+from conftest import PROJECT_ROOT, BuildContext, load_script_module
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 BUILD_SCRIPT = (
     PROJECT_ROOT
     / 'marketplace'

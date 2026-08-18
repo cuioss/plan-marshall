@@ -23,7 +23,7 @@ import types
 from pathlib import Path
 
 import pytest
-from conftest import get_script_path
+from conftest import get_script_path, load_script_module
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'plan-marshall', 'phase_handshake.py')
 SCRIPTS_DIR = SCRIPT_PATH.parent
@@ -378,13 +378,9 @@ def _load_phase_handshake_module():
     '__main__'`` guard is skipped, leaving ``main()`` callable from the
     test.
     """
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location('phase_handshake_under_test', SCRIPT_PATH)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.main
+    return load_script_module(
+        'plan-marshall', 'plan-marshall', 'phase_handshake.py', 'phase_handshake_under_test'
+    ).main
 
 
 def test_cli_strict_propagates_nonzero_exit_on_worktree_unresolved(

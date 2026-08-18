@@ -31,8 +31,6 @@ resolves to no registered module.
 """
 
 import fnmatch
-import importlib.util
-from pathlib import Path
 
 import pytest
 
@@ -44,6 +42,8 @@ from _test_scope_divergence import (
     classify_divergence,
     resolve_test_scope,
 )
+
+from conftest import get_scripts_dir, load_script_module
 
 # The Python build extension's real build_map globs (single-``*`` fnmatch, so a
 # ``*`` spans ``/``) - the same globs pre-push-quality-gate derivation filters
@@ -83,17 +83,7 @@ _SHARED_TEST_HELPER = 'test/_shared/_build_class_roster.py'
 #: A well-formed bundle path whose bundle token names no registered module.
 _UNREGISTERED_BUNDLE = 'marketplace/bundles/not-a-real-bundle/skills/foo/scripts/bar.py'
 
-_PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-_PYPROJECT_EXTENSION_FILE = (
-    _PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'build-pyproject'
-    / 'scripts'
-    / 'extension.py'
-)
+_PYPROJECT_EXTENSION_FILE = get_scripts_dir('plan-marshall', 'build-pyproject') / 'extension.py'
 
 
 def _load_pyproject_extension():
@@ -105,12 +95,10 @@ def _load_pyproject_extension():
     basename, which is what makes the cross-check below read the intended
     declaration.
     """
-    spec = importlib.util.spec_from_file_location(
-        'pyproject_extension_for_root_crosscheck', _PYPROJECT_EXTENSION_FILE
+    return load_script_module(
+        'plan-marshall', 'build-pyproject', 'extension.py',
+        'pyproject_extension_for_root_crosscheck',
     )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 @pytest.mark.parametrize(

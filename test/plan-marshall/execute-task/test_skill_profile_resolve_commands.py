@@ -23,15 +23,12 @@ that runs the per-task workflow; pinning these strings prevents silent drift
 back to the lax pre-lesson behaviour.
 """
 
-from pathlib import Path
 
 import pytest
 
-SKILL_PATH = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills'
-    / 'execute-task' / 'SKILL.md'
-)
+from conftest import MARKETPLACE_ROOT
+
+SKILL_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'execute-task' / 'SKILL.md'
 
 
 @pytest.fixture(scope='module')

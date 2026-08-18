@@ -26,17 +26,12 @@ relations keeps these tests green while a renumber that breaks one fails.
 
 # ruff: noqa: I001, E402
 
-import importlib.util
 import sys
 from pathlib import Path
 
-_BUNDLES = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-)
+from conftest import MARKETPLACE_ROOT, load_script_module
+
+_BUNDLES = MARKETPLACE_ROOT / 'plan-marshall' / 'skills'
 _CONFIG_SCRIPTS = _BUNDLES / 'manage-config' / 'scripts'
 _EXT_SCRIPTS = _BUNDLES / 'extension-api' / 'scripts'
 
@@ -45,21 +40,13 @@ for _d in (_CONFIG_SCRIPTS, _EXT_SCRIPTS):
         sys.path.insert(0, str(_d))
 
 
-def _load_module(name: str, path: Path):
-    spec = importlib.util.spec_from_file_location(name, path)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_config_defaults = _load_module(
-    '_config_defaults_for_preference_emitter_test', _CONFIG_SCRIPTS / '_config_defaults.py'
+_config_defaults = load_script_module(
+    'plan-marshall', 'manage-config', '_config_defaults.py',
+    '_config_defaults_for_preference_emitter_test',
 )
-_configurable_contract = _load_module(
+_configurable_contract = load_script_module(
+    'plan-marshall', 'extension-api', 'configurable_contract.py',
     '_configurable_contract_for_preference_emitter_test',
-    _EXT_SCRIPTS / 'configurable_contract.py',
 )
 
 _STEP_ID = 'default:finalize-step-preference-emitter'

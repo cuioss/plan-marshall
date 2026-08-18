@@ -21,7 +21,6 @@ available depending on the environment (CI runners have it, local may not).
 """
 
 import sys
-from pathlib import Path
 
 # Shared discovery helpers (test/plan-marshall/conftest.py adds parent to sys.path)
 from _discovery_fixtures import (
@@ -32,11 +31,10 @@ from _discovery_fixtures import (
     assert_valid_module,
 )
 
-from conftest import BuildContext
+from conftest import PROJECT_ROOT, BuildContext
 
 # Direct imports - conftest sets up PYTHONPATH
 # Import Extension class from the extension module
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 EXTENSION_DIR = PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'plan-marshall-plugin'
 sys.path.insert(0, str(EXTENSION_DIR))
 
