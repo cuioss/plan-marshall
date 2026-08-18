@@ -62,7 +62,7 @@ from this file and `gaps.md`.
 | D2 | Linter and type-check parity | Local rule set and file set both match CI's | n/a (no change) | yes | yes | yes | Single shared config confirmed: `pyproject.toml` `[tool.ruff.lint] select = ["E","W","F","I","B","C4","UP"]` (no `RUF`) and one `[tool.mypy]`; `.github/workflows/python-verify.yml` delegates to the reusable workflow with no goal override and `.github/project.yml` sets no `pyprojectx-verify-goals`; `build.py:632` `verify` chains `quality-gate → test-compile → module-tests` |
 | D3 | Divergence-gate branch integrity | No branch can report clean without stating what it examined | n/a (no change) | yes | yes | **no** | `_test_scope_divergence.py:255` `divergence_possible = len(scoped_modules) > 1 or shared_infra_touched or bool(unresolved_paths)`; branch 5 hard-ordered before branch 6 (`pre-push-quality-gate.md:292`); `marketplace/targets/**` → `_module_for_path` returns None → `unresolved_paths` → whole tree. The file is untouched by `819349fe` (dedup constraint honoured). Gap: the module-tests `whole_tree_available == false` honest-degradation branch still lands on Branch A's "module-tests green" detail — see G4 |
 | D4 | Freshness: an implausibly fast gate is a failure signal | Stale cache can no longer produce a clean verdict; implausible duration surfaced | yes | yes | **partly** | **no** | Cold run: `build.py:306` is the tree's only project mypy invocation and always carries `--no-incremental`; mutation of that line turns 4 tests red. Duration check: `_gate_coverage.py:86` `MAX_ANALYSIS_THROUGHPUT = 2000.0` — executed `classify_check_duration(660, 2.0)` and `(660, 5.0)` → **plausible=True**, i.e. the plan's own motivating incident is not flagged — see G1 |
-| D5 | The gate reports what it did NOT check | A partially-checked footprint produces a distinguishable verdict | yes | yes | yes | **no** | `CoverageBoundary` (`_gate_coverage.py:160`), `render_coverage_summary` (`:362`), threaded through `cmd_quality_gate` (`build.py:423`) and `cmd_verify` (`build.py:539`); `pre-push-quality-gate.md:50-73` + the DEGRADED `--display-detail` variant at `:355-370` (61 chars before `{N}` expands, inside the ≤80 ceiling in `external-step-contract.md:52`). Gaps: the only production caller of `record_degraded` is the freshness path (`build.py:317`); a `_skip_empty_mypy_scope` skip records nothing (G8); the module-tests degradation branch got no variant (G4) |
+| D5 | The gate reports what it did NOT check | A partially-checked footprint produces a distinguishable verdict | yes | yes | yes | **no** | `CoverageBoundary` (`_gate_coverage.py:160`), `render_coverage_summary` (`:362`), threaded through `cmd_quality_gate` (`build.py:423`) and `cmd_verify` (`build.py:539`); `pre-push-quality-gate.md:50-74` + the DEGRADED `--display-detail` variant at `:356-369` (64 chars literal, 61 before `{N}` expands, inside the ≤80 ceiling in `external-step-contract.md:52` — the file `:354` points at for that ceiling does not state it, see G9). Gaps: the only production caller of `record_degraded` is the freshness path (`build.py:317`); a `_skip_empty_mypy_scope` skip records nothing (G8); the module-tests degradation branch got no variant (G4) |
 | D6 | Tests, each verified to FAIL pre-fix | All hold and the report states each was seen red first | yes | yes | yes | **no** | 11 tests in `test_gate_coverage.py` at `819349fe` (re-counted: `git show 819349fe:… | grep -c '^def test_'` → 11), 5 new + 3 updated in `test_build_verify.py`; both files green today (22 / 25). Red-first re-confirmed for 4 of the 8 by mutation. `test_parity_population_is_non_empty` asserts a hand-written 9-tuple is non-empty — see G2 |
 
 **D1.** The table itself is sound and its citations check out against the pre-change tree. What it does not
@@ -129,8 +129,10 @@ Re-derived and **confirmed**:
    tool configuration on both sides", and `pre-push-quality-gate.md:71` states the population is "**derived, not
    hand-listed** (`_gate_coverage.parity_population`)". `parity_population()` (`_gate_coverage.py:434-457`) is a
    literal 9-tuple; nothing in it is computed from `pyproject.toml`, `build.py` or the workflow at run time, and
-   the function has no production consumer (grep for `parity_population` finds only the module itself, the doc
-   sentence, and the tests). The *analysis* was derived; the *artifact* is a transcription. See G2.
+   the function has no production consumer (a re-run grep for `parity_population`/`ParityCell` over
+   `*.py`/`*.md`/`*.toml`/`*.yml` finds the module itself, that doc sentence, the tests, one passing mention in
+   `doc/plans/multiplattform/reference/marketplace-audit.md:198`, and this plan directory — nothing that calls
+   it). The *analysis* was derived; the *artifact* is a transcription. See G2.
 2. **The coderabbit quote drifted.** The report records "Next review available in 41 minutes"; the stored
    comment body (last edited 2026-08-11T22:00:45Z) reads 30 minutes. The comment is bot-mutable, so this is a
    snapshot difference rather than a fabrication — noted for completeness, not raised as a gap.
@@ -168,13 +170,9 @@ Re-derived and **confirmed**:
 
 ## What could NOT be verified
 
-- **The CI half of the parity derivation.** `.github/workflows/python-verify.yml` pins
-  `cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@…v0.19.0`. That repository is
-  not reachable from this session (the GitHub MCP server refuses it: "repository … is not configured for this
-  session"), so the report's claims that the reusable workflow runs `./pw <verify-goals>` with `verify` as the
-  default, and that it restores only the uv package cache and never `.mypy_cache`, are **taken on the report's
-  word**. Everything downstream of "CI runs `./pw verify` from this repository's `pyproject.toml`" is verified;
-  the premise itself is not.
+- ~~**The CI half of the parity derivation.**~~ **Resolved during adversarial review — see § "Adversarial review".**
+  The pinned reusable workflow was fetched from `raw.githubusercontent.com` at its exact pinned SHA and read
+  directly; every claim it carried is confirmed.
 - **"Three mypy errors reached `verify` as a direct result"** and **"CI checked 660 files and found 2 real type
   errors"** — the plan itself labels both as REPORTED-not-re-derived, and neither is recoverable from this clone.
   They are used here only as the calibration target in G1, where the *stated* numbers are what matter.
@@ -186,3 +184,94 @@ Re-derived and **confirmed**:
   checkable from the tree.
 - **Whether the eight red-first failures were literal assertion failures rather than collection errors** — four
   are re-confirmable by mutation (done); the other four test symbols that did not exist pre-change.
+
+## Adversarial review
+
+**Reviewed by:** an independent agent that did not write this document. Ground truth re-taken from the tree at
+`f816f85cfed3ef9e72995a0db61c112626cb9216` (HEAD at review time; the header's `ac06e4fc` is an earlier commit,
+still reachable — no finding below turned on the difference).
+
+**Checked.** Every gap G1–G8, every deliverable row, and every "swept, clean" claim. By these means:
+
+- **Functions executed** against the real modules (not read): `classify_check_duration` at `(660, 2.0)`,
+  `(660, 3.0)`, `(660, 5.0)`, `(660, 0.33)`, `(660, 0.32)`, `(660, 0.05)`, `(660, 0.0)`, `(100, 0.0)`,
+  `(99, 0.0)` — reproducing the G1 numbers exactly and locating the first `False` at `(660, 0.32)` = 2062 files/s.
+  `build._mypy_collect_count` over `['marketplace/bundles']` → 408, `+ '.claude'` → 414, `['test']` → 772.
+- **Commands run end-to-end** (this is what re-severitied G6 and G8): `build.cmd_test_compile('pm-dev-python',
+  boundary=b)` → `rc=0` with an empty boundary and `render_coverage_summary(b)` = `coverage: COMPLETE …
+  checked over full scope: (nothing)`; `build.cmd_quality_gate('pm-code-intelligence')` → `rc=0`, `COMPLETE`,
+  and a `not run in this gate at all: mypy(production), mypy(test), plugin-doctor, module-tests` line naming two
+  dimensions the invocation did not "never perform".
+- **Measured** cold analysis throughput, which G1's fix previously only asserted: `uv run python build.py compile`
+  → `checked 414 source files` in **11.35 s** wall ≈ 37 files/s. (That run also surfaced one pre-existing mypy
+  error at `marketplace/bundles/plan-marshall/skills/manage-config/scripts/_cmd_effort.py:562`, unrelated to this
+  plan and not filed here.)
+- **Mutation, independently repeated.** Saved `build.py` bytes to the scratchpad, rewrote `:306` to drop
+  `--no-incremental`, re-ran `test/default/test_build_verify.py` → **4 failed** (`…_runs_mypy_cold_with_no_incremental`
+  plus the three argv assertions), restored from the saved bytes; `git diff --quiet -- build.py` exits 0.
+- **Sweeps re-run with broader patterns than the originals.** `parity_population|ParityCell` across
+  `*.py|*.md|*.toml|*.yml`; `record_degraded` across all `*.py`; `mypy_cache|mypy cache|incremental cache|clean
+  checkout` across `marketplace/`, `doc/concepts/`, `doc/developer/`, `.claude/`; `git log -S'"RUF"'` **and**
+  `git log -S'RUF'` on `pyproject.toml` (both empty — the asserted absence re-derives); a search for a second
+  ruff/mypy config (`ruff.toml`, `.ruff.toml`, `setup.cfg`, `.pre-commit-config.yaml`) → none exists.
+- **Counts re-derived, not accepted:** 22 / 25 tests green; 11 `def test_` in `test_gate_coverage.py` at
+  `819349fe` vs 22 today; 5 new `def test_` in the `test_build_verify.py` diff; 9 files / +1054 / −23 in
+  `git show --stat -M 819349fe`; `pyproject.toml:238` at `819349fe^` is indeed `select = [...]` (checked with
+  `awk 'NR==238'`, after a first mis-read).
+- **The premise this document had flagged as uncheckable was checked.** The pinned reusable workflow
+  `cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml@4c508c66…` (v0.19.0) is publicly
+  fetchable from `raw.githubusercontent.com` at that SHA. It confirms, verbatim: `verify-goals` has
+  `default: 'verify'` (line 30); it resolves `steps.config.outputs.pyprojectx-verify-goals || inputs.verify-goals`
+  (line 216) — and this repo's `.github/project.yml` sets no such key; it runs `./pw "$goal" $ARGS` (line 249);
+  and its only cache step is `setup-uv` with `enable-cache: true` keyed on `uv.lock` (lines 206–207), while
+  `.pytest_cache/` and `.mypy_cache/` appear **only** in an `upload-artifact` step gated on `failure()`
+  (lines 257–267) — never restored. CI is cold, exactly as the report claimed.
+- **GitHub state re-read** for PR #1174: 2 issue comments (coderabbit rate-limit, `cuioss-review-bot` "PR Reviewer
+  Guide"), 1 review (`sourcery-ai`, COMMENTED, weekly-rate-limit body). 1-of-3 confirmed; the coderabbit body now
+  reads "30 minutes" against the report's "41", consistent with this document's snapshot-drift reading.
+
+**Not re-checked** (unchanged from § "What could NOT be verified"): the `./pw verify` full-suite figure
+(19060 passed / 304 s) was not re-run; the D5 cold read and the Step-6 sub-agent remain transcript-only; the
+"three mypy errors" / "660 files, 2 errors" incident numbers remain unrecoverable from this clone. Also not
+re-checked: the plugin-doctor pass itself, the `_test_scope_divergence` test suite beyond the two named tests,
+and the four red-first failures whose symbols did not exist pre-change.
+
+| Item | Original claim | Verdict | Evidence |
+|---|---|---|---|
+| **Verdict** | `implemented-with-gaps` | **upheld** | No deliverable is unimplemented. D2/D3 are no-change-with-evidence dispositions the D1 mandate permits; D4's two mechanisms both exist, one miscalibrated. `partially-implemented` would overstate. |
+| G1 | Freshness backstop cannot fire on the incident it was built for; `high` | **upheld, strengthened** | Numbers reproduced by execution. A **second** vacuous guard found: the integration test `test_quality_gate_fails_closed_when_whole_tree_mypy_reports_implausibly_fast` drives `_ticks(100.0, 100.0)` — zero elapsed, infinite throughput — so it too clears the ceiling by 3–4 orders of magnitude. Cold throughput measured (37 files/s), so the Fix's "well under 100 files/s" is now a measurement, and the Done-when was tightened to pin both directions plus the constant's substrate. |
+| G2 | "derived" population is a hand-written literal; `medium` | **upheld** | `parity_population()` re-read (`:434-457`, a literal 9-tuple); broadened grep finds no caller. Grep clause corrected — it also hits `marketplace-audit.md:198`. |
+| G3 | `pyproject-impl.md:118` still presents the cache hazard as unmitigated; `medium` | **upheld** | Line 118 verbatim as quoted. Sweep re-run with a **broader** pattern than "incremental": it remains the only doc in `marketplace/`, `doc/concepts/`, `doc/developer/` or `.claude/` presenting the hazard as manual practice. |
+| G4 | module-tests honest-degradation branch has no detail variant; `medium` | **upheld, citations corrected** | Branch 3 (`:275`) routes to Mark Step Complete (Success); Branch A default at `:342-346`; the DEGRADED variant this plan added is at `:356-369`, **not** `:355-370`; the branch-5 variant is at `:348-352`, **not** `:288` (which is inside branch 4). The proposed variant was measured: 73 chars literal / 70 pre-expansion, inside the ≤80 ceiling. |
+| G5 | `build.py` and `marketplace/targets` are blind on both sides; `medium` | **upheld, over-claim trimmed** | Path lists re-read at `build.py:463`, `:339-357`, `:475`. Confirmed empirically: the real mypy run reports `checked 414 source files`, exactly the collected `[bundles, .claude]` set, so nothing is reached transitively. "Never mentions `build.py` at all" was too strong — the report names it as an SPDX path; corrected to "never as a lint-/type-check-blind dimension". |
+| G6 | not-run line falsely says "this gate never performs them"; `low` | **re-severitied `low` → `medium`** | Confirmed on a **real command**, not a synthetic boundary: `cmd_quality_gate('pm-code-intelligence')` prints the line naming `plugin-doctor` (which quality-gate does perform at `module is None`) **and** `mypy(production)` (which this very invocation attempted and skipped). The per-bundle sweep is what the finalize gate runs, so the false text ships routinely. `build.py:485` corrected to `:486-499`; the example dimension corrected from `mypy(test)` to the observed `mypy(production)`. |
+| G7 | duplicate `_pending_` `## Cost` in report-01.md; `low` | **upheld** | Two `## Cost` headings at `report-01.md:216` and `:228`; the second body is `_pending_`. |
+| G8 | a skipped mypy scope leaves the verdict COMPLETE; `low` | **re-severitied `low` → `medium`** | Executed, and worse than described: an empty boundary renders `coverage: COMPLETE over the dimensions below — checked over full scope: (nothing)`, with the structural-limit block suppressed as well. `record_degraded` re-grepped: `build.py:317` is still the only production caller. |
+| **G9 (new)** | — | **added, `low`** | `pre-push-quality-gate.md:354` sends the reader to `ref-workflow-architecture/standards/agents.md` for the `display_detail` ceiling; that file states no ceiling (grep for `80`/`character` → empty) and its only mention (`:162`) points back to `external-step-contract.md`, where `≤80 characters` actually lives (`:52`). This plan's added sizing sentence (`:368-369`) inherits the dangling pointer. |
+| **G10 (new)** | — | **added, `low`** | `CoverageBoundary.complete` is `not self.degraded`, so a boundary that recorded nothing is COMPLETE, and `_render_structural_limits` suppresses its block for an empty boundary — a bare fail-open in the module whose docstring claims to apply fail-closed rule (b). Latent today (production callers always record ≥1 dimension), hence `low`. |
+
+**Documents corrected.** *gaps.md*: open-item count 8 → 10; G6 and G8 re-severitied to `medium` with executed
+evidence replacing read evidence; G1's Fix and Done-when rewritten around the measured 37 files/s cold
+throughput and the second vacuous guard; G4's three wrong line citations fixed and its variant sized by
+measurement; G5's "never mentions `build.py`" over-claim trimmed; G2's grep clause completed; G9 and G10 added;
+a `## Refuted during adversarial review` section added recording that **nothing was refuted**, and why that is a
+claim with evidence behind it rather than a default. *verification.md*: the CI-half premise moved out of
+§ "What could NOT be verified" — it was fetched and read at its pinned SHA; the D5 row's `:355-370` and
+`50-73` citations corrected; the `parity_population` grep clause completed.
+
+**Residual doubt — what a third reviewer should look at first.**
+
+1. **G1's replacement ceiling is the one judgement call here.** Catching the *slow* end of the recorded incident
+   (660 files / 5.0 s = 132 files/s) requires a ceiling below 132, which is only ~3.5× the 37 files/s measured on
+   this container. A developer machine several times faster would sit close to that line, and the plan explicitly
+   warns that a check which cries wolf gets disabled. The Done-when pins 3.0 s (220 files/s) as the defensible
+   compromise; whether the 5.0 s end can be caught at all without false alarms is unresolved and should be
+   decided on measurements from more than one machine.
+2. **Whether D2/D3 as "no change, verified with evidence" is a pass at all.** Both rows are clean passes reached
+   by concluding the divergence was already closed. The reasoning re-derives (single shared `pyproject.toml`, no
+   second lint config, RUF absent from history on both sides, `bool(unresolved_paths)` distinguishing empty from
+   unresolved), but the deliverables were written expecting change, and a reviewer who reads "close the scope
+   divergences D1 finds" as mandating code will read these rows differently.
+3. **The `verify` module-scoped path.** Every execution above used `quality-gate`/`test-compile`; `cmd_verify`
+   with a module argument was not driven, and it is the caller that owns the consolidated boundary. G8 and G10
+   both live on that path.
