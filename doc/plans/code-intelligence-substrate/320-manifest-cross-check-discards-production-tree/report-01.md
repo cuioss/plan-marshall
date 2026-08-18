@@ -549,28 +549,36 @@ recovery check of that kind was owed; no verdict is `unreadable`, so merge-gate 
 `comments: 1` on the PR payload served as a positive control that bodies existed before any of them
 was read.
 
-⚠ **What `cuioss-review-bot` reviewed, precisely.** Its `review / review` check ran on head
-`8cd95a7`; there is no such check on the current head, so it did not re-run. The only change between
-those commits is `report-01.md` — `git diff --name-only 8cd95a7..622c052` returns that one file and
-**zero** `*.py`, bundle or test files — so its verdict covers the entire code surface of this PR.
-Stated rather than glossed either way: it is neither "reviewed the current head" nor stale.
+⚠ **Which head each reviewer actually saw, stated rather than glossed.** `cuioss-review-bot`
+reviewed `8cd95a7` and `coderabbitai` reviewed `622c052`; the head is now `ad14fee`. **Both are
+behind it, and by real code** — the commit closing `coderabbitai`'s six findings changed four bundle
+files and three test files, so neither verdict covers the current head in full. Neither re-ran:
+there is no `review / review` check on the new head, and `coderabbitai` states it "does not
+re-review already reviewed commits".
 
-⭐ **The two shortfalls are different in kind and the table shows it.** Both are `rate-limited`, and
-a run that reported only the verdict would render them identically — but one clears in 28 minutes and
-the other never clears at this diff size. Only the first is worth re-requesting.
+What that leaves is honest to say and worth saying plainly: **the delivered head carries changes no
+reviewer has seen**, all of them made in response to review, all covered by the local gate
+(`./pw verify`, 20695 passed) and by mutation-tested guards, but not re-reviewed. Pushing again to
+re-trigger would restart the same cycle against a head that would itself move; that is a reason to
+disclose the gap, not to hide it.
 
-**Actionable comments: none.** The one reviewer that reviewed reported no issues, and the inline
-review-thread surface is empty (`totalCount: 0`). There is nothing to fix or reply to; no comment was
-left unaddressed.
+⭐ **The one remaining shortfall does not reopen.** `sourcery-ai`'s refusal is a 150,000-character
+diff-size ceiling — a property of this diff, not of the clock. Re-requesting never succeeds at this
+size, so no recovery attempt is owed or was made. `coderabbitai`'s shortfall was the other kind and
+*was* recovered; recording both under a bare `rate-limited` would have hidden which was which.
 
-**Re-request.** `coderabbitai`'s window reopens ~28 minutes after 2026-08-18T00:42:52Z. Its own
-notice names two ways to re-trigger — a `@coderabbitai review` comment, or a push. The report records
-below whether the re-request was made and what it produced.
+**Actionable comments: 6, all from `coderabbitai`, all valid, all fixed and answered** — see
+§ PR review above for each finding and its disposition. Every thread received a reply naming the
+commit and what changed, and all six were resolved. None was rejected. The inline review-thread
+surface was empty at PR-open (`totalCount: 0`) and carried these six after the re-request; an earlier
+draft of this paragraph recorded the empty reading as final, which the re-request then falsified.
 
 **§ Step 8 condition 4 disclosure fired**, before arming auto-merge, in these words: *"Review
-coverage: 1 of 3 — `cuioss-review-bot` reviewed with no issues; `coderabbitai` rate-limited, reopens
-~28 minutes after 00:42:52Z; `sourcery-ai` rate-limited on a 150,000-character diff-size ceiling,
-does not reopen."* A run that merges on 1-of-3 must say 1-of-3.
+coverage: 2 of 3 — `cuioss-review-bot` reviewed with no issues (at head `8cd95a7`); `coderabbitai`
+reviewed after a re-request and filed 6 findings, all fixed (at head `622c052`); `sourcery-ai`
+rate-limited on a 150,000-character diff-size ceiling, which does not reopen. The delivered head
+`ad14fee` carries the fixes for those 6 findings and has not itself been re-reviewed."* A run that
+merges on 2-of-3 must say 2-of-3, and must say which head the 2 saw.
 
 ## Cost
 
@@ -608,7 +616,7 @@ exists on disk.
 | 4 Pushed | **done** | Pushed after every commit, not once at PR time. `git status -sb` reports no `ahead` at the final commit |
 | 5 Build gate | **done** | Git-derived verdict recorded (§ Build gate): `*.py` changed ⇒ full `./pw verify`; result `20695 passed, 14 skipped`, coverage COMPLETE over all six dimensions. Re-measured on the delivered tree each time the tree moved — round 3 caught this figure describing a superseded tree, and the PR-review round moved it again |
 | 6 Verification sub-agent | **done** | Four rounds, budget declared before the first dispatch. Findings and dispositions per instance above; the stop record names the **budget exit**, the round that ended it, round 4's own last answer, the evidence it rested on (a 2,871-path differential), that rounds 2–3's findings were **not** narrower and round 4's were, the single survivor with its (b) bound, and the residue to assume remains |
-| 7 PR cycle | see § Reviewer participation | PR [#1288](https://github.com/cuioss/plan-marshall/pull/1288). No `skip-bot-review` label: the diff touches `*.py` **and** `marketplace/bundles/**`, and a skill is code |
+| 7 PR cycle | **done** | PR [#1288](https://github.com/cuioss/plan-marshall/pull/1288). No `skip-bot-review` label: the diff touches `*.py` **and** `marketplace/bundles/**`, and a skill is code. All three surfaces read; participation table carries a verdict **and** a `Reopens?` value per reviewer; no `silent` verdict, so no recovery check of that kind was owed; no `unreadable` verdict, so condition 2 is established on evidence. `coderabbitai`'s 6 comments were each fixed, replied to naming the commit, and resolved |
 | 8 Merge gate | see below | |
 | 8 Bridge | **done** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan's directory touched. The report carries the PR number and a per-deliverable outcome for the orchestrator to collect |
 | 9 This check | **done** | This table |
@@ -690,4 +698,5 @@ residue in the strict sense: things a later reader should know, not work this ru
 | **`_footprint_resolver.py`'s `.plan/` clause** was corrected here because the file is in this diff, not because the plan reached it. Sibling modules may carry the same blanket "`.plan/` is git-ignored" premise | A `chore/` sweep for that premise across the tree, if anyone wants it. Out of this plan's scope |
 | **The oracle itself is unconsolidated.** This plan is one *consumer* adopting `build.map`; the plan's Out-of-scope says so explicitly. `resolve_route_role` is a consumer-side lookup, not the consolidation | Whichever plan owns oracle consolidation |
 | **Two more private copies of the canonical-verify `verify:` prefix knowledge** exist (`manage-config/scripts/_cmd_quality_phases.py::_CANONICAL_VERIFY_PREFIXES`, `tools-marketplace-inventory/scripts/_dep_detection.py::CANONICAL_COMMAND_PREFIXES`), and D3 added a third normalizer locally rather than sharing one. This is the same source-of-truth-duplication archetype as the defect this plan fixed, but for *step ids* rather than *paths*, so it fell outside D0's stated scope (`"is this path implementation"`) | A follow-up plan, scoped to step-id classification. Named here so it is not rediscovered from scratch |
-| **`coderabbitai`'s review** had not been obtained when the report was finalized; its window reopens ~28 minutes after PR creation | Recorded above under § Reviewer participation. The merge is not gated on it (§ Step 8 condition 4 is a disclosure, not a gate) |
+| **The delivered head `ad14fee` has not been re-reviewed.** Both reviewers that reviewed saw earlier heads, and the commit closing `coderabbitai`'s six findings changed four bundle files and three test files | Disclosed at § Reviewer participation and in the § Step 8 condition 4 statement. Covered by the local gate and by mutation-tested guards, but not by a reviewer. Re-triggering would restart the cycle against a head that would itself move |
+| **`sourcery-ai` never reviewed this diff** and cannot at this size — a 150,000-character ceiling, which does not reopen | Nothing to do here. A future plan wanting Sourcery coverage of this surface would have to land it in smaller pieces |
