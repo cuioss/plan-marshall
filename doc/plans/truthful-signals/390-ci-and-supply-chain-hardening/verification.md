@@ -44,20 +44,22 @@ What was actually done, in order:
   (`coderabbitai`, `sourcery-ai`, `cuioss-review-bot`).
 
 Not attempted: any GitHub API call for PR #1230's check-run history, and any re-run of `./pw verify`.
+(The check-run gap was closed later by the independent adversarial pass — see § Adversarial review. The
+`./pw verify` re-run was not.)
 
 ## Deliverable-by-deliverable
 
 | # | Deliverable | Done-when condition | Implemented? | As documented? | Correct? | Complete? | Evidence (file:line / symbol / command + result) |
 |---|---|---|---|---|---|---|---|
-| D1 | Close template-injection surface | No context expression inside any `run:` block in that workflow | Yes | Yes | Yes | Yes | `.github/workflows/claude-distribute.yml:120-142` — `env:` block (`DIST_TAG_PREFIX`, `REF_NAME`, `BRANCH_NAME`, `TARGET_NAME`) + quoted `"${REF_NAME}"`. `grep -n '\${{'` on that file: 17 hits, all in `name:`/`concurrency:`/`with:`/`env:`, none in a `run:` body. Runtime reproduction: old form fires `touch pwned`, new form does not. |
-| D2 | Least-privilege `permissions:` on generator-check | Declares read-only content access | Yes | Yes | Yes | Yes | `.github/workflows/opencode-generate-check.yml:9-12` — `permissions:\n  contents: read`. Mutation check (b) proves the guard catches its removal. |
-| D3 | Narrow distribution write scope | Workflow-level default is read | Yes | Yes | Yes | Yes | `.github/workflows/claude-distribute.yml:14-20` — `contents: read`. Both writes use the release-bot token: `:111` `personal_token:` and `:147` `github_token:` = `steps.release-token.outputs.token`. Tag is created locally (`:141-144`) before the push step. |
-| D4 | GATE — settle ruleset, decide 3 items | Ruleset requirements known and all three decided together | Partly (proposals) | Yes | Yes | Yes | Ruleset unreachable; run recorded three options-and-consequences proposals and made **no** blind change. Confirmed at HEAD: no `CODEOWNERS` (`git ls-files` → no match); `opencode-generate-check.yml:4-8` still path-filtered; `python-verify.yml:36-38` grants unchanged (`contents: read`, `pull-requests: read`). The plan's ⚠ explicitly permits the proposal path. |
+| D1 | Close template-injection surface | No context expression inside any `run:` block in that workflow | Yes | Yes | Yes | Yes | `.github/workflows/claude-distribute.yml:120-142` — `env:` block at `:128-132` (`DIST_TAG_PREFIX`, `REF_NAME`, `BRANCH_NAME`, `TARGET_NAME`) + quoted `"${REF_NAME}"` in the `run:` body at `:133-141`. `grep -n '\${{'` on that file: **18** matching lines (**19** occurrences — `:118` carries two), all in `name:`/`concurrency:`/`with:`/`env:`, none in a `run:` body. *(Corrected during adversarial review: the original figure of 17 does not re-derive, at HEAD or at `86d5298a`. The substance — none inside a `run:` body — holds.)* Runtime reproduction: old form fires `touch pwned`, new form does not. |
+| D2 | Least-privilege `permissions:` on generator-check | Declares read-only content access | Yes | Yes | Yes | Yes | `.github/workflows/opencode-generate-check.yml:12-13` — `permissions:` / `  contents: read` (`:9-11` is its explanatory comment). Mutation check (b) proves the guard catches its removal — but only its removal, not its widening (G5). |
+| D3 | Narrow distribution write scope | Workflow-level default is read | Yes | Yes | Yes | Yes | `.github/workflows/claude-distribute.yml:20-21` — `permissions:` / `  contents: read` (`:14-19` is its explanatory comment). Both writes use the release-bot token: `:111` `personal_token:` and `:147` `github_token:` = `steps.release-token.outputs.token`. Tag is created locally (`git tag -a` at `:139-141`) before the push step at `:143-149`. |
+| D4 | GATE — settle ruleset, decide 3 items | Ruleset requirements known and all three decided together | Partly (proposals) | Yes | Yes | Yes | Ruleset unreachable; run recorded three options-and-consequences proposals and made **no** blind change. Confirmed at HEAD: no `CODEOWNERS` (`git ls-files` → no match); `opencode-generate-check.yml:4-7` still path-filtered; `python-verify.yml:37-39` grants unchanged (`contents: read`, `pull-requests: read`). The plan's ⚠ explicitly permits the proposal path. D4.2's Option A now has direct empirical support — see § Adversarial review. |
 | D5 | Stop duplicate CI runs | One push produces one verify run | Yes, then **superseded** | Yes for the landed text; the stated *rationale* was wrong | **No** — see below | n/a | Landed `concurrency:` at `python-verify.yml` shared one group across push and `pull_request`. **Reverted in substance by `24271bca` (#1246), one day later**, after it planted a red required `verify / conclusion` on PR #1234 and blocked its merge. HEAD group key now includes `${{ github.event_name }}`. |
 | D6 | Fix vendored wrapper install fallback | The fallback works | Yes | Yes | Yes | Yes | `pw:211` — `curl --proto '=https' --tlsv1.2 -LsSf {release_base_url}/uv-installer.sh \| sh`; stray `irm` gone. `grep -n irm pw pw.bat` → one hit, the legitimate PowerShell branch at `pw:208`. Tree-wide `uv-installer.sh` sweep: the only surviving bad copy is `.pyprojectx/…/pw.py`, confirmed git-ignored (`git check-ignore -v` → `.gitignore:52`). |
 | D7 | Reconcile three private-contact channels | They cross-reference each other consistently | Yes | Yes | Yes | Yes | `LICENSE.md:11-17`, `README.md:114`, `.github/ISSUE_TEMPLATE/config.yml:4` all point at `https://tally.so/r/9qalQY`; `SECURITY.md:20-22` → LICENSE.md, `LICENSE.md:15-17` → SECURITY.md. Sweeps: `issues/new/choose` survives only inside this plan's own report; `tally.so` appears in exactly the 3 intended files; `doc/developer/why-this-license.adoc:38` defers to LICENSE.md rather than routing separately. |
 | D8 | Decide on a PR template | The decision is recorded either way | Yes (decision) | Mostly — one unsupported rationale clause | Yes | Yes | Decision "no PR template" recorded in report §D8. Confirmed absent at HEAD (`git ls-files \| grep -i pull_request_template` → no match). `CONTRIBUTING.md:22` says "Use issue templates if available" — the report's reading is correct. |
-| D9 | Workflow-lint control | A lint check asserts D1 and D2 rather than relying on review | Yes | Yes | Yes, with two false-negative shapes | Yes for the declared scope | `test/default/test_workflow_lint.py` — 8 tests, all pass; collected by `pyproject.toml:102` (`testpaths = ["test"]`). Both real-tree guards proven to go RED under mutation. Blind spots in G2. |
+| D9 | Workflow-lint control | A lint check asserts D1 and D2 rather than relying on review | Yes | Yes | Yes, with three false-negative shapes | Yes for the declared scope | `test/default/test_workflow_lint.py` — 8 tests, all pass (re-run: `8 passed`), collected by `pyproject.toml:102` (`testpaths = ["test"]`), 8 collected under the default `addopts`. Both real-tree guards proven non-vacuous: the D1 guard returns **3** violations against the real pre-fix bytes (`git show 86d5298a^:.github/workflows/claude-distribute.yml`) and **0** post-fix. Blind spots in G2 (wide dash), G4 (plain-scalar continuation) and G5 (permissions asserted present, not read-only). |
 
 ### D5 — the one deliverable that is not a clean pass
 
@@ -152,8 +154,8 @@ permissions change against an unknown ruleset.
 
 | Report residue | Status in today's tree |
 |---|---|
-| **D4 — three open points** (code-owners enforcement; whether the path-filtered generator check should be required; whether the reusable verify workflow needs write scope) | **Still open.** No `CODEOWNERS` (`git ls-files` → no match); `opencode-generate-check.yml:4-8` still path-filtered; `python-verify.yml:36-38` grants unchanged. Nothing in the tree records an operator answer. |
-| **D7 — owed:** confirm `contact@cuioss.de` is monitored | **Still owed.** Operator action; not settleable from the repository. `SECURITY.md:14` still names the mailbox. |
+| **D4 — three open points** (code-owners enforcement; whether the path-filtered generator check should be required; whether the reusable verify workflow needs write scope) | **Still open.** No `CODEOWNERS` (`git ls-files` → no match); `opencode-generate-check.yml:4-7` still path-filtered; `python-verify.yml:37-39` grants unchanged. Nothing in the tree records an operator answer. D4.2 now has empirical support for its recommended option (§ Adversarial review); D4.1 and D4.3 remain undecided. |
+| **D7 — owed:** confirm `contact@cuioss.de` is monitored | **Still owed.** Operator action; not settleable from the repository. `SECURITY.md:13` still names the mailbox. |
 | **D5 — runtime single-run observation deferred** | **Closed, adversely.** The next real push run did exercise it: #1246 measured the result and reverted the mechanism. |
 | **D6 — optional upstream pyprojectx bug report** | **Unknown/still open.** `pw:211` is hand-patched locally; whether an upstream report was filed is not visible from this repository. |
 
@@ -162,19 +164,130 @@ permissions change against an unknown ruleset.
 - **The branch-protection ruleset itself.** Not visible from the tree; D4's entire premise. Unchanged
   since the run.
 - **Whether the reusable workflow `cuioss/cuioss-organization/.github/workflows/reusable-pyprojectx-verify.yml`
-  needs `pull-requests: write` / `checks: write`** (D4.3), and **whether its `gate` job in fact
-  collapses the push/PR duplicate today** (the mechanism D5's done-when now rests on). Both live in
-  another repository. #1246's measured re-run is the best available evidence and is second-hand here.
+  needs `pull-requests: write` / `checks: write`** (D4.3). Still unverified: the workflow lives in
+  another repository, and a direct read was attempted during adversarial review and refused
+  (`Access denied: repository "cuioss/cuioss-organization" is not configured for this session`).
+  - **Superseded:** the sibling claim that **whether the `gate` job in fact collapses the push/PR
+    duplicate today** could not be verified. It can be, and was, from this repository's own check-run
+    history — see § Adversarial review. It is no longer second-hand.
 - **The `./pw verify` figures** in the report (`19624 passed, 14 skipped`, `mypy … 399` / `734` source
   files). Not re-run — a full verify is not a cheap check, and the tree has moved many commits since.
 - **The 11-commit / per-commit-gate / `Co-Authored-By`-trailer claims.** The branch
   `claude/ci-supply-chain-hardening-9xmggr` no longer exists locally or on any remote ref in this
   clone (`git branch -a --list '*ci-supply-chain*'` → empty), and the PR was squash-merged, so
   individual commits are unrecoverable.
-- **PR #1230's own check-run history** (the D5 own-PR fixture). No GitHub API call was made; the
-  report's disclosure that the fixture is degenerate on a `claude/*` branch is consistent with
-  `python-verify.yml:5`'s push allowlist, which does not list `claude/*`, and is accepted on that
-  basis.
+- ~~**PR #1230's own check-run history** (the D5 own-PR fixture).~~ **Now verified** during adversarial
+  review via `pull_request_read(get_check_runs)` — see § Adversarial review. The report's
+  degenerate-fixture disclosure is confirmed, not merely accepted.
 - **Whether `claude-distribute.yml` has run green since D3 narrowed its token.** Its triggers are
   `push: main` and `v*` tags; no run log is visible from the tree. The reasoning that no step needs
   default-token write was checked step by step and holds by inspection.
+
+## Adversarial review
+
+**Reviewed by:** an independent agent that did not write this document.
+
+**Checked.** Every `high` gap (there were none — the highest carried severity was `medium`), every
+deliverable row marked a clean pass, and every "swept the tree, clean" claim were re-derived. Concretely:
+
+*Figures re-derived from the tree, not repeated:* landed footprint (`git show --stat 86d5298a` → **11
+files, 546 insertions, 17 deletions** — upheld); `${{` count in `claude-distribute.yml` (**18** lines /
+19 occurrences, **not** 17 — corrected); `.github/workflows/` file count (**7** — upheld); `uv.lock`
+(**83078** bytes, **19** `[[package]]` — upheld); `author_login` registry population (**3**:
+`sourcery-ai`, `coderabbitai`, `cuioss-review-bot` — upheld); `.claude/skills/` count (**15** — upheld);
+test totals (`test_workflow_lint.py` → **8 passed**, 8 collected under default `addopts`;
+`test_branch_prefix_allowlist.py` + `test_merge_group_trigger.py` → **4 passed** — both upheld);
+supersession SHAs (`24271bca` = #1246, `bb858993` = #1275 which deleted `doc/refactor/` wholesale — both
+upheld). Every file:line citation in the deliverable table and the residue table was opened and
+corrected where it pointed at a comment line rather than the cited construct (D2, D3, D4, G1, G3, and
+`SECURITY.md`).
+
+*Mechanism clauses confirmed at their own file and symbol:* the landed concurrency key was read out of
+`git show 86d5298a:.github/workflows/python-verify.yml` (line 27) and matches the quoted expression
+exactly; `24271bca`'s full commit body was read and carries the 4s-cancel / 7s-gate / `405 Repository
+rule violations found` / "2 of the last 30 push runs" narrative verbatim; the `on:` blocks of
+`86d5298a` and `24271bca` were diffed and are byte-identical (the only difference inside lines 1–12 is
+a comment line **inside** the `concurrency:` block).
+
+*Functions executed, not read:* `_run_block_context_violations` and `_has_top_level_permissions` were
+loaded via `importlib` and **called** — on the two shapes G2 named, on a third shape (wide dash + block
+scalar), on two negative controls, on the **real pre-fix bytes** of `claude-distribute.yml`
+(`git show 86d5298a^:…` → 3 violations) and on the post-fix file (0 violations), and on
+`opencode-generate-check.yml` with its scope swapped to `contents: write` and to `write-all`. The
+proposed remedies for G2 and G4 were prototyped in a scratch copy and run against all 7 real workflows
+to confirm they introduce no false positive. The D1 runtime reproduction was **re-executed
+independently**: with `REF_NAME='v1.0"; touch pwned; echo "'` the env-passing form left `dist_tag`
+holding the full literal `claude/v1.0"; touch pwned; echo "` and created no marker; the old spliced
+form created `pwned`. Same outcome both ways.
+
+*Sweeps re-run with broader patterns than the originals:* the D8 clause was swept with
+`pull[_ -]?request[_ -]?template|PULL_REQUEST_TEMPLATE|\bPR template` **and** a bare `template` sweep
+over `CLAUDE.md` + `.claude/` — zero relevant hits either way. G3's sweep was widened from
+`template injection|script injection|interpolat` to
+`run:|\$\{\{|github\.ref_name|GitHub Actions context|workflow_run|pull_request_target` across the whole
+persona skill (zero hits) and then to the whole `marketplace/` tree (only generic `shell=True` guidance,
+never the Actions shape). `contents: write` was swept tree-wide (three hits, all legitimate:
+`dependabot-auto-merge.yml`'s job-level grant and two test fixtures). `tally.so` (3 intended files),
+`issues/new/choose` (only this plan's own documents), `uv-installer.sh` and `irm` (the sole surviving
+bad copy is the git-ignored `.pyprojectx/` cache, `git check-ignore -v` → `.gitignore:52`) all upheld.
+
+*New evidence gathered that this document had listed as unobtainable:* `pull_request_read(get_check_runs)`
+on PR **#1230** and PR **#1234**, plus `actions_get(get_workflow_run)` on run `31864317583`. See
+"Documents corrected" below.
+
+**Not re-checked.** The branch-protection ruleset (still not exposed by any available tool). The
+reusable workflow's own source — a read of `cuioss/cuioss-organization` was attempted and refused
+(`Access denied: repository … is not configured for this session`), so D4.3 stays open. The `./pw
+verify` figures (`19624 passed`, `mypy … 399`/`734` source files) — still not re-run. The 11-commit /
+per-commit-gate / trailer claims — the branch is still absent from every ref
+(`git branch -a --list '*ci-supply-chain*'` → empty). `report-01.md`'s reviewer-participation verdicts
+were not re-fetched from the PR's comment surfaces. No source file was mutated on disk at any point:
+`git diff --quiet` on `.github/workflows/opencode-generate-check.yml` returned 0 before and after, and
+its md5 is unchanged — every guard probe was done on in-memory copies instead.
+
+| Item | Original claim | Verdict | Evidence |
+|---|---|---|---|
+| **Verdict** | `implemented-with-gaps` | **upheld** | No deliverable is unimplemented: D1/D2/D3/D6/D7/D9 landed and hold at HEAD; D4 and D8 took the plan's own explicitly-authorised decision/proposal path; D5 landed and was then corrected by #1246. `partially-implemented` is reserved for an unimplemented deliverable and does not apply. |
+| D1 | Injection surface closed; no context expression in any `run:` block | **upheld, figure corrected** | Runtime reproduction re-executed independently (marker fires on the old form, not the new). Linter run on the real pre-fix bytes: 3 offending `run:` blocks; post-fix: 0. The `${{` count is 18 lines / 19 occurrences, not 17 — corrected in the D1 row. (The plan's "two context interpolations" re-derives as the two `github.ref_name` occurrences, pre-fix `:112` and `:117`; the other offending blocks interpolated trusted `matrix.*` values and were fixed too.) |
+| D2 | Declares read-only content access | **upheld, cite corrected** | `:12-13` at HEAD, not `:9-12` (`:9-11` is comment). Guard scope shortfall filed as G5. |
+| D3 | Workflow-level default is read; no step needs default-token write | **upheld, cites corrected** | `permissions:`/`contents: read` at `:20-21`; tag created locally at `:139-141` (not `:141-144`); both writes read `steps.release-token.outputs.token` at `:111` and `:147`. Every step re-inspected: checkout/generate/fetch are read-only, both pushes carry the release-bot token. |
+| D4 | Ruleset unreachable; proposals recorded, no blind change | **upheld, strengthened** | Absences re-derived (`git ls-files` → no `CODEOWNERS`, no PR template). D4.2's recommended option now has direct empirical support: PR #1230's check-run set contains no `opencode-generate-check` context (it touched none of the filtered paths) and the PR merged regardless — the path-filtered check is **not** currently required. D4.1 and D4.3 remain undecided; D4.3's blocker was re-confirmed by a refused cross-repo read. |
+| D5 | Landed, then superseded by #1246; done-when met by the pre-existing gate | **upheld, now first-hand** | #1246's commit body read in full and matches. The gate mechanism it relies on is no longer second-hand: on PR #1234's head SHA, workflow run `31864317583` (`event: "push"`, branch `dependabot/pip/ruff-gte-0.16.2`, `run_attempt: 2`) shows `verify / gate` **success in 7s**, `verify / verify` **skipped**, `verify / conclusion` **success**, while the `pull_request` run on the same SHA ran `verify / verify` to green over ~10 minutes. That is the gate collapsing the push/PR duplicate, measured from this repository, with the 7-second gate duration #1246 named. |
+| D6 | Fallback fixed; only surviving bad copy is git-ignored | **upheld** | `pw:211` carries the clean `curl … uv-installer.sh \| sh`; the sole `irm` hit is the legitimate PowerShell branch at `pw:208`; `.pyprojectx/…/pw.py:211` still splices `irm` and is ignored via `.gitignore:52`. |
+| D7 | Three channels cross-reference consistently | **upheld, cite corrected** | `tally.so` in exactly `LICENSE.md:13`, `README.md:114`, `.github/ISSUE_TEMPLATE/config.yml:4`; `SECURITY.md:20-22` → LICENSE.md; `LICENSE.md:15-17` → SECURITY.md; `why-this-license.adoc:38` defers. The mailbox is named at `SECURITY.md:13`, not `:14` — corrected in the residue table. |
+| D8 | Decision recorded; one unsupported rationale clause | **upheld** | Re-swept with a broader pattern and then with a bare `template` sweep over `CLAUDE.md` and all 15 `.claude/` skills: still zero. The clause is unsupported; the decision itself stands. |
+| D9 | Guard asserts D1 and D2; two false-negative shapes | **upheld, widened** | 8 tests pass and collect. Non-vacuousness re-proved against real pre-fix bytes rather than a synthetic mutation. Three blind spots, not two — see G2/G4/G5. |
+| G1 | Concurrency invariant unguarded, `medium` | **upheld, cite corrected** | `concurrency.group` is at `python-verify.yml:34`, not `:33`. A `grep` of the whole `test/` tree for `python-verify`/`concurrency` confirms no assertion over the `concurrency:` block; the two sibling guards touch only `on.push.branches` and `on.merge_group`. Severity `medium` is right: no wrong behaviour or false signal ships today — the key is correct at HEAD — so the `high` bar is not met. |
+| G2 | Two false-negative shapes, `low` | **re-severitied and split** | Both shapes reproduced by **executing** the function, and both parse under `yaml.safe_load` to a live injection. They are two independent defects with two independent fixes (a regex width; a missing body walk), so the plain-scalar half is now **G4** and G2 keeps the dash-width half. Both raised `low` → `medium`: this is the sole automated control over the plan's highest-severity finding, and it returns clean on valid-YAML instances of exactly the defect it names. Not `high` — the real tree contains none of these shapes, so no false signal is currently shipped. Cite corrected to `:36` (regex) + `:40-89` (function). |
+| G3 | Rule not codified in the security standard, `low` | **upheld, cite corrected and sweep widened** | The CI/CD list runs `:104-108` (five bullets), not `:104-105`. Two broader sweeps (whole persona skill for Actions-specific tokens; whole `marketplace/` tree) both confirm the absence. `low` is right — an omission in guidance, no wrong behaviour. |
+| **G4** *(new)* | — | **added** | Split out of G2: the non-block branch of `_run_block_context_violations` (`:83-88`) never walks a multi-line plain-scalar `run:` body. Executed, returns `[]` on a live injection. `medium`. |
+| **G5** *(new)* | — | **added** | `_has_top_level_permissions` (`:92-94`) is presence-only; executed, it returns `True` for `contents: write` and for `permissions: write-all`. D2's done-when names *read-only* access, and that half is unguarded. `low` — D2 currently holds, and the guard's own docstring claims no more than presence. |
+
+**Documents corrected.**
+
+*gaps.md* — G2 split into G2 (wide dash) + **G4** (plain-scalar continuation), both re-severitied
+`low` → `medium`, both carrying a Fix that was prototyped and validated against the real 7-workflow tree
+before being written down. **G5** added (D2's read-only half unguarded, `low`). File:line references
+corrected in G1 (`:33` → `:34`), G2 (`:36-38` → `:36` + `:40-89`) and G3 (`:104-105` → `:104-108`).
+G1's incidence figure re-attributed as a quote from `24271bca` rather than a re-derived measurement.
+Evidence strengthened in G1 (whole-`test/`-tree sweep) and G3 (two broader sweeps). Preamble reworded so
+D2 is no longer listed among the gap-free passes without qualification. `**Open items:**` 3 → **5**. A
+`## Refuted during adversarial review` section was added recording that nothing was refuted.
+
+*verification.md* — the `${{` count corrected 17 → 18 lines / 19 occurrences; six file:line citations
+corrected (D2, D3 ×2, D4 ×2, residue `SECURITY.md`); the D9 row widened from two blind spots to three
+and its non-vacuousness evidence upgraded from a synthetic mutation to the real pre-fix bytes; two
+entries removed from "What could NOT be verified" (PR #1230's check-run history, and whether the `gate`
+job collapses the duplicate — both now settled first-hand), while D4.3's entry was strengthened with the
+refused cross-repo read. The headline verdict is unchanged.
+
+**Residual doubt.** In priority order: (1) **D4.3** — the reusable workflow's actual permission needs
+remain unread, and a silently-degraded coverage comment or check annotation would be invisible from
+here; a reviewer with `cuioss/cuioss-organization` access should read
+`reusable-pyprojectx-verify.yml@4c508c66` and settle it. (2) **The ruleset itself** — D4.1 is still an
+inference from "PRs do merge", and no tool in this session exposes the rule set; the D4.2 conclusion
+above is an observation about one PR, not a read of the configuration. (3) **The `./pw verify` figures**
+in `report-01.md` (`19624 passed`, `mypy … 399`/`734`) — never re-derived by either reviewer, and the
+tree has moved many commits. (4) Whether `claude-distribute.yml` has actually run green on a `v*` tag
+since D3 narrowed the token — still inspection-only, and the first real release is where a missing grant
+would surface.
