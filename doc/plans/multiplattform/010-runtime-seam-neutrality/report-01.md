@@ -380,7 +380,7 @@ PR [#1291](https://github.com/cuioss/plan-marshall/pull/1291). Population derive
 
 | Reviewer | Verdict | Reopens? |
 |---|---|---|
-| `coderabbitai` | **rate-limited** — posted a limit notice instead of a review ("You've used all 1 included review currently available under your plan"), naming a 17-minute reset. | yes |
+| `coderabbitai` | **reviewed** on the second push, after a rate-limit window closed the first attempt. **11 actionable comments**, merge risk 🟡 Moderate. Four were real defects confirmed by reading the implementations and are fixed: the install-hook target mismatch, the `push-title-token` no-op/success contract, the unclosed-TOON-fence drop, and the inventory row misassigned to plan 010. Two more were real and are recorded as residue with the reason they are plans rather than review fixes (a single registration record; a content-level pin for the terminal-title inventory). The rest overlap residue this report already carried. Rate-limited again on the fix commit. | yes |
 | `sourcery-ai` | **declined on size** — "your pull request is larger than the review limit of 150000 diff characters". Measured: `git diff origin/main...HEAD \| wc -c` = **160 040**, over the limit by ~7%. | no |
 | `cuioss-review-bot` | **did not run** — no review, no comment, no check on this PR. | n/a |
 
@@ -434,9 +434,17 @@ mention — the build gate created them after the draft was written.
 
 ## What have we learned (Step 9)
 
-**A contract change was proposed, approved by the operator, and shipped as a separate PR** on
-`chore/cloud-plan-lane-round-budget`, cut from `main` and touching only
-`.claude/skills/cloud-plan-lane/SKILL.md`.
+**A contract change was proposed, approved by the operator, and opened as
+PR [#1292](https://github.com/cuioss/plan-marshall/pull/1292)** on `chore/cloud-plan-lane-round-budget`,
+cut from `main` and touching only `.claude/skills/cloud-plan-lane/SKILL.md`.
+
+An earlier draft of this section said the change was "shipped as a separate PR" while **no PR
+existed** — the branch was pushed and nothing more. That is the highest-consequence defect the
+run-report audit found, because it is the failure mode that loses work silently: an orchestrator
+collecting this report would have filed the contract change as delivered, and it would have sat
+unlanded on a branch drifting further behind `main` with nobody looking for it. The lesson is narrow
+and worth keeping: *pushed* is not *shipped*, and a report may only claim the step it can name the
+artifact for.
 
 *Evidence from this run:* the skill already mandated the multi-round loop, but left the round budget
 for the run itself to choose ("otherwise the run does, up front") and made the operator checkpoint
