@@ -6,11 +6,12 @@
 **Overall verdict:** CONFIRMED WITH GAPS
 
 The taxonomy widening (D1 code half), the D2 settlement, the D3 halt and the D4/D5 reader
-fields are all present in the tree and behave as the report describes. Three substantive gaps
+fields are all present in the tree and behave as the report describes. Four substantive gaps
 remain: the two published token figures sum a column whose "no measurement" case is a fabricated
-`0`, the finalize classification prose that D1 rerouted is guarded by no test, and the
-analyst-facing rule document still asserts the proven-waste claim that the run's own CR-7
-disposition removed everywhere else.
+`0` — demonstrated end-to-end here, writer to reader, not inferred; the cause-class partition those
+figures are computed over is hand-written and pinned to the enum by nothing; the finalize
+classification prose that D1 rerouted is guarded by no test; and the analyst-facing rule document
+still asserts the proven-waste claim that the run's own CR-7 disposition removed everywhere else.
 
 ## Deliverable verdicts
 
@@ -118,8 +119,10 @@ disposition removed everywhere else.
   blocked on corpus availability**; *"a halt with a clear statement of what was unreachable is a
   success; a share quoted from one run is a failure"*.
 - **Claimed (report):** blocked; no share computed; the retired figure not quoted.
-- **Found:** the landed diff contains no sweep, no corpus reader, no share arithmetic (the 14
-  changed files are the taxonomy, the two scripts, four docs and five test files). Repository-wide
+- **Found:** the landed diff contains no sweep, no corpus reader, no share arithmetic. Re-counted
+  from `git show --stat 1565a29`: the 14 changed files are the taxonomy (`manage-metrics.py`), the
+  two retrospective scripts, four docs, five test files, **and the two plan-directory files**
+  (`plan.md`, a pure rename with 0 line changes, and `report-01.md`, +126). Repository-wide
   search for the retired phrase returns exactly two hits — `plan.md:154` (labelled **RETIRED AS
   EVIDENCE**) and `report-01.md:39` (the sentence stating it is not quoted). No `.plan/` search
   artifacts exist in the diff.
@@ -389,7 +392,7 @@ Inaccurate, stale or overstated:
 |---|---|---|
 | **D3 measurement** — the finding-yield sweep over archived records (count, token cost, population size, share only against a settled denominator) | **Still open** | No sweep code and no measurement artifact anywhere in the tree; `grep -rln "error_total_tokens\|retryable_total_tokens" doc/plans/` returns only this plan's report and `truthful-signals/420-…/report-01.md`, whose D3 table records the fields as *"Safe, no change"* consumers — it did not measure them |
 | **D4's class shares** over archived records | **Still open** | Same evidence; additionally G1/G3 mean the retryable class would measure as `0` even where a corpus exists, so the corpus sweep alone will not close it |
-| Step-9 proposal: name the review-summary-bodies MCP call in the lane's gh↔MCP mapping (to be shipped as a separate `chore/` PR) | **Closed** | Shipped as `4a1936e` *"chore(cloud-plan-lane): map review-summary bodies to get_reviews (#1184)"*; the mapping row is present at `.claude/skills/cloud-plan-lane/SKILL.md:74` and the three-read-methods requirement at `:1171-1178` |
+| Step-9 proposal: name the review-summary-bodies MCP call in the lane's gh↔MCP mapping (to be shipped as a separate `chore/` PR) | **Closed** | Shipped as `4a1936e` *"chore(cloud-plan-lane): map review-summary bodies to get_reviews (#1184)"*; the mapping row is present at `.claude/skills/cloud-plan-lane/SKILL.md:74` and the three-read-methods surface table + requirement at `:1168-1180`, both re-read verbatim |
 
 ## Out-of-scope and collateral
 
@@ -424,7 +427,9 @@ four context-load flags; the consumer sweep for `termination_cause` across `mark
 test/plan-marshall/plan-retrospective/test_dispatch_waste_and_finalize_scope.py -o addopts=""`
 green at HEAD (6 passed) and red under a targeted mutation (3 failed / 3 passed), with the file
 restored from a byte snapshot under `/tmp/verify-070-mutsweep/` and `git status --porcelain`
-confirmed clean for it.
+confirmed clean for it. Both readings were reproduced independently during the adversarial review
+(same counts, same `assert 26000 == 10000` failure message), and a **first-party writer→disk→reader
+probe** was run there in addition — see § Adversarial review.
 
 **Not checked / unverifiable:**
 

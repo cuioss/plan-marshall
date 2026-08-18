@@ -1,62 +1,84 @@
 # Gaps — 100-self-review-surfacing-integrity
 
 D1 and D2 landed complete and correct, with negative controls this audit re-proved by mutation. What
-remains falls into three clusters. **D4's guard is opt-in and nothing opts in**, so the failure mode it
-was built for is unchanged in practice (G1). **D5's mechanism is unreachable from the step that would
-use it** — Step 4 never points at the termination section, and the remediation sentence that operators
-actually read still prescribes the correct-and-re-run cycle D5 identifies as the re-seeding mechanism
-(G2, G3). And a residue of stale or imprecise claims survives in shipped docs, in an operator-quotable
-string, in the coverage test's own publication of its population, and in the run report (G4–G10). Ten
-gaps: one high, four medium, five low.
+remains falls into three clusters. **D4's guard is opt-in, and no step doc obliges the one message
+stream that can carry plan-directed content to opt in**, so the failure mode it was built for is
+addressable but not addressed (G1). **D5's mechanism is unreachable from the step that would use it** —
+Step 4 never points at the termination section, and the remediation sentence that operators actually
+read still prescribes the correct-and-re-run cycle D5 identifies as the re-seeding mechanism (G2, G3).
+And a residue of stale or imprecise claims survives in shipped docs, in an operator-quotable string, in
+the coverage test's own publication of its population, and in the run report (G4–G10). Ten gaps: five
+medium, five low.
 
-## G1 — Make the undeliverable-to-running-plan guard reachable from the write sites that need it
+## G1 — Oblige the one plan-directed message stream to name its target plan
 
 - **Kind:** incomplete
-- **Severity:** high
+- **Severity:** medium
 - **Topic:** dispatch/finalize
-- **Where:** `marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py:936`
-  (`cmd_inbox_write`, the `if target_plan is not None:` branch); call sites at
-  `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/emit-landing.md:204`,
-  `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/finalize-step-preference-emitter.md:220`,
-  `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/lessons-capture.md:103`,
-  `marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md:338`
+- **Where:** `marketplace/bundles/plan-marshall/skills/plan-orchestrator/scripts/_orchestrator_inbox.py:936-953`
+  (`cmd_inbox_write`, the `if target_plan is not None:` branch);
+  `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/lessons-capture.md:103` (the one
+  invocation whose stream can carry plan-directed content, per `:82`);
+  `marketplace/bundles/plan-marshall/skills/plan-orchestrator/standards/inbox-envelope.md:33-44`
 - **Evidence:** The guard fires only when `--target-plan` is supplied — `target_plan =
-  getattr(args, 'target_plan', None)` followed by `if target_plan is not None:`. A content sweep of
-  `marketplace/bundles/` and `test/` for `target-plan|target_plan` returns hits **only** in
-  `_orchestrator_inbox.py`, `orchestrator.py`, `plan-orchestrator/SKILL.md`, `inbox-envelope.md` and
-  `test_inbox_channel_contract.py`. Every one of the five documented `orchestrator inbox write`
-  invocations in the bundles omits the flag, and `plan-orchestrator/SKILL.md:195` describes it as
-  "Optional". The tests confirm the shape:
-  `test_inbox_channel_contract.py:340` — `test_untargeted_write_is_unaffected_by_a_running_plan` —
-  asserts that an untargeted write **succeeds** while `plan-alpha` is running.
-- **Why it matters:** The originating incident (plan.md arm C) was a message aimed at a plan that was
-  already running, written by a sender who did not think of it as "targeted". Under the shipped guard
-  that message still queues silently, because the sender never passes `--target-plan`. The deliverable's
-  *Done when* — "writing a message that names a running plan produces an explicit undeliverable report"
-  — is satisfied only for senders who had already diagnosed the problem themselves. The guard is a
-  correct mechanism with no trigger.
-- **Action:** Give the guard a reachable trigger. Two viable arms, in preference order: (a) make
-  `--target-plan` **required** on the `--kind finding` write path (the kind that carries plan-directed
-  content), so a finding aimed at a plan must name it and is then adjudicated; or (b) add a payload-side
-  detection — scan the staged payload body for a plan id matching a `running` row and refuse, or at
-  minimum emit a warning naming the running plan. Whichever arm, add the obligation to
-  `inbox-envelope.md` § Write-side deliverability and to each of the four call-site docs above, so a
-  writer is told to name the target.
-- **Done when:** A write whose payload names a currently-running plan, issued without any new flag by a
-  caller following the documented invocation at `emit-landing.md:204` (or the `finding`-kind path),
-  produces `undeliverable_to_running_plan` — and a test drives that case end-to-end from the documented
-  invocation form rather than from a hand-constructed `--target-plan` argv.
-- **Effort:** M
-- **Risk if fixed:** Arm (a) is a breaking argument-surface change for existing `--kind finding` writers;
-  arm (b) risks false positives when a payload legitimately *mentions* a running plan without being
-  aimed at it, which would refuse a valid write. Arm (b) must therefore refuse only on an unambiguous
-  addressing form, or warn rather than refuse.
+  getattr(args, 'target_plan', None)` at `:936`, then `if target_plan is not None:` at `:937`. Nothing
+  else supplies the value: `orchestrator.py:2570-2582` declares the argument `required=False,
+  default=None` with no env or config fallback, and `cmd_inbox_write` has no programmatic caller —
+  `grep -rn cmd_inbox_write marketplace test` returns only its definition (`_orchestrator_inbox.py:890`),
+  two docstring mentions, the `orchestrator.py:109` import, the `set_defaults(handler=…)` wiring at
+  `orchestrator.py:2583`, and test call sites. Re-enumerated independently of the audit's list, the
+  bundles carry **five** `orchestrator inbox write` command blocks, and their message kinds are what
+  matters:
+  - `plan-orchestrator/SKILL.md:190-192` — the canonical synopsis. It **does** carry
+    `[--target-plan TARGET_PLAN]`, and `:195` explains when the refusal fires. So a writer who reaches
+    for the generic form *is* told the flag exists.
+  - `phase-6-finalize/standards/emit-landing.md:204` — `--kind landing`. Self-addressed by
+    construction: `landing-payload-spec.md:82` makes `plan_id` (== the message `sender_id`) a required
+    key.
+  - `phase-6-finalize/standards/finalize-step-preference-emitter.md:220` — `--kind candidate-lesson`,
+    an owed-hint about the sender's own run.
+  - `plan-retrospective/SKILL.md:338` — `--kind candidate-lesson`, a proposal about the sender's own run.
+  - `phase-6-finalize/workflow/lessons-capture.md:103` — `--kind {kind}`, resolved by `:82`:
+    *"Every candidate lesson and **every finding** rides as `candidate-lesson`"*. This is the **only**
+    documented stream whose payload can be aimed at a plan other than the sender.
+
+  No documented invocation writes `--kind finding` at all; the `finding` kind is consumed on the drain
+  side (`plan-orchestrator/workflow/analyze.md:158`) and used internally as `STREAM_END_KIND`
+  (`_orchestrator_inbox.py:116`). `test_inbox_channel_contract.py:340`
+  (`test_untargeted_write_is_unaffected_by_a_running_plan`) pins that an untargeted write **succeeds**
+  while `plan-alpha` is running.
+- **Why it matters:** The originating incident (plan.md arm C) was a requirement aimed at a plan that
+  was already running — the shape that rides the `lessons-capture.md:103` finding stream. That sender is
+  never told to name a target, so the message still queues silently and the incident recurs unchanged.
+  This is a genuinely incomplete deliverable rather than wrong behaviour: the guard fires, is tested
+  four ways, and the contract is honest about the restriction (`inbox-envelope.md:35` states verbatim
+  *"The guard fires only when `--target-plan` is supplied"*), so nothing over-claims. What is missing is
+  an obligation at the one write site that can produce an undeliverable message.
+- **Action:** Add the obligation where the plan-directed content is written, not everywhere. In
+  `lessons-capture.md` § Branch B4 (at `:103`), state that when an emitted item is **aimed at a named
+  plan** the write MUST pass `--target-plan {plan_id}`, and show the flag in the command block; add the
+  matching sentence to `inbox-envelope.md` § Write-side deliverability. Do **not** touch the other three
+  call sites — their messages are self-addressed and a target flag there is meaningless. If a
+  payload-side detection is preferred over an obligation, it MUST exclude the sender's own plan id:
+  every `emit-landing` payload names `plan_id`, and that plan's `status.json` row still reads `running`
+  at finalize time (the row transitions to `shipped`/`landed` only on the orchestrator's later act,
+  `orchestrator.py:140` `TERMINAL_PLAN_STATUSES`), so an unqualified payload scan would refuse every
+  landing write.
+- **Done when:** `lessons-capture.md`'s Branch B4 command block shows `--target-plan {plan_id}` with a
+  stated condition for supplying it, `inbox-envelope.md` § Write-side deliverability names
+  `lessons-capture` as the write site that owes the flag, and a test drives an
+  `undeliverable_to_running_plan` refusal through the argv shape that documented block produces.
+- **Effort:** S
+- **Risk if fixed:** A writer supplies `--target-plan` for a message that merely *mentions* a plan
+  rather than being aimed at it, turning a valid write into a refusal. Gate the obligation on the
+  message being addressed to the plan, and keep the flag optional in the argument surface so an
+  untargeted write is never broken.
 
 ## G2 — Wire the self-seeding classification into Step 4, where a non-clean round is actually processed
 
 - **Kind:** omission
 - **Severity:** medium
-- **Topic:** documentation-surface
+- **Topic:** dispatch/finalize
 - **Where:** `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md:378-403`
   (Step 4 Branch B), against `:409-427` (§ "Round-loop termination")
 - **Evidence:** `:420` states the obligation — *"Reporting is a `manage-logging decision --level WARNING`
@@ -90,7 +112,7 @@ gaps: one high, four medium, five low.
 
 - **Kind:** doc-defect
 - **Severity:** medium
-- **Topic:** documentation-surface
+- **Topic:** dispatch/finalize
 - **Where:** `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md:407`
 - **Evidence:** Verbatim: *"The operator must address every finding (amend the diff: rename, tighten
   regex, rewrite wording, delete duplicate section, fix contract drift), re-run the step, and only then
@@ -204,11 +226,15 @@ gaps: one high, four medium, five low.
 - **Topic:** documentation-surface
 - **Where:** `doc/plans/code-intelligence-substrate/100-self-review-surfacing-integrity/report-01.md:127`
 - **Evidence:** The report states: *"Searched scope: the `CANDIDATE_LISTS` registry in
-  `_self_review_patterns.py` (1 file, 23 entries, 17 `in_total`)"*. Re-derived by counting
-  `CandidateList(` constructions inside the `CANDIDATE_LISTS` tuple: **22** entries at HEAD and **22**
-  at the landed commit `94bcddf`; 17 `in_total` at both. The `17` is right, the `23` is wrong. The PR
-  body for the same claim says "1 file, 17 `in_total` entries" and gives no total, so the error is
-  confined to the report.
+  `_self_review_patterns.py` (1 file, 23 entries, 17 `in_total`)"*. Re-derived two independent ways:
+  importing the module and reading `len(CANDIDATE_LISTS)` at HEAD → **22 entries, 17 `in_total`**; and
+  by AST over `git show 94bcddf:…/_self_review_patterns.py` → **22 entries, 17 `in_total`** at the
+  landed commit. The `17` is right, the `23` is wrong. The likely origin of `23`: a naive
+  `grep -c 'CandidateList('` over the file returns 23, because the 23rd match is the
+  `class CandidateList(NamedTuple):` declaration at `:502`, outside the tuple. The PR body for the same
+  claim says *"the `CANDIDATE_LISTS` registry (1 file, 17 `in_total` entries)"* and gives no total —
+  read from PR #1189 via the GitHub API in the adversarial pass, not inferred — so the error is confined
+  to the report.
 - **Why it matters:** Low blast radius — the report is a record, not a contract — but this is the one
   section whose stated purpose is to demonstrate D3's scope-and-count discipline on the run's own
   claims. A demonstration of "publish your scope and your count" that publishes a wrong count
@@ -224,7 +250,7 @@ gaps: one high, four medium, five low.
 
 - **Kind:** incomplete
 - **Severity:** medium
-- **Topic:** documentation-surface
+- **Topic:** bundle-docs
 - **Where:** `doc/plans/code-intelligence-substrate/100-self-review-surfacing-integrity/plan.md:99`
   (D3 *Done when*) against
   `marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/scripts/self_review.py:402`
@@ -245,11 +271,13 @@ gaps: one high, four medium, five low.
   every other check in the workflow), but as it stands the contract documents an obligation with no
   consuming check, which is structurally the same shape as D2's original defect. Left unreconciled, a
   later reader of the ext-point believes the surface refuses scope-less absence claims.
-- **Action:** Do not build a validator. Instead record the boundary where a reader will meet it: add one
-  sentence to `ext-point-self-review-surfacing.md` § Output Schema (near `:64`) stating that
-  `scope_statement` is a **published** field and that the obligation to quote it in an absence claim is
-  enforced by the consumer workflow's cognitive review, not by the surfacer — so no consumer infers a
-  refusal path that does not exist.
+- **Action:** Do not build a validator. Instead record the boundary where a reader will meet it. The
+  precise site is `ext-point-self-review-surfacing.md:79`, the § Output Schema line for
+  `scope_statement`, which today reads *"published on every surface, empty ones included, so an absence
+  claim can never be made without it"* — the clause a reader most plausibly mistakes for a refusal path.
+  Amend it (and/or the § Post-Conditions echo-field line at `:64`) to state that `scope_statement` is a
+  **published** field and that the obligation to quote it in an absence claim is enforced by the
+  consumer workflow's cognitive review, not by the surfacer.
 - **Done when:** The ext-point contract states explicitly that the surfacer publishes but does not
   enforce the scope-quoting obligation, and names the workflow section that carries the obligation.
 - **Effort:** S
@@ -269,7 +297,10 @@ gaps: one high, four medium, five low.
   deliverability guard … does not fire on an unverifiable state"*) and in the contract at
   `inbox-envelope.md:41` (*"or `status.json` is unreadable / carries no queue | the write PROCEEDS"*).
   No test covers the unreadable-ledger case: `test_inbox_channel_contract.py:299-363` covers running,
-  landed, untargeted, and malformed-id, but never a corrupt or absent `status.json`.
+  landed, untargeted, and malformed-id, but never a corrupt or absent `status.json` on a write that
+  reaches the ledger read. `test_malformed_target_plan_is_rejected` (`:354`) happens to scaffold without
+  a `status.json`, but returns at the `_validate_identifier` branch (`_orchestrator_inbox.py:938-940`)
+  before `_running_plan_ids` is ever called, so it exercises nothing of the fail-open.
 - **Why it matters:** A corrupt epic ledger silently converts a refusal into a queue — the guard reports
   nothing and the caller cannot distinguish "target is not running" from "I could not tell". The
   fail-open is the right default (refusing on an unverifiable state would block legitimate writes), but
@@ -293,12 +324,14 @@ gaps: one high, four medium, five low.
 - **Where:** `test/pm-plugin-development/ext-self-review-plan-marshall/test_self_review_check_coverage.py:55`
   (`_NUMBERED_CHECK_OPENER`) and `:65-78` (`_numbered_check_block`)
 - **Evidence:** The block is `region[first_numbered_opener_match.start():]` — everything from the first
-  `^\d+\.\s` line to the region end. Its docstring states the assumption openly: *"The numbered checks
-  are the LAST thing in the Step-3 region before the dispatched-envelope output"*. That holds today
-  (verified: openers `1.` through `17.`, contiguous, nothing earlier in the region opens with a digit,
-  region terminates at `### Dispatched-envelope output`). Nothing pins it. A `####` subsection appended
-  after check 17, or a numbered list inserted into the region's preamble (which currently spans
-  `:235-280` and contains several `####` subsections), would widen the block — and the narrowing that
+  `^\d+\.\s` line to the region end. The `#:` comment attached to `_NUMBERED_CHECK_OPENER` (`:49-51`)
+  states the assumption openly: *"The numbered checks are the LAST thing in the Step-3 region before the
+  dispatched-envelope output"*. That holds today — re-derived by extracting the block from the real
+  document: ordinals `[1 … 17]`, contiguous from 1, zero markdown headings of any level inside the
+  block, region spanning doc lines 233-333 with the numbered block starting at 282. Nothing pins it. A
+  `####` subsection appended after check 17, or a numbered list inserted into the region's preamble
+  (which spans `:233-281` and carries four `####` subsections), would widen the block — and the
+  narrowing that
   `test_coverage_predicate_rejects_a_key_present_only_in_non_check_prose` exists to guarantee would stop
   applying to the real document while that synthetic test kept passing.
 - **Why it matters:** The narrowing is the whole strength of the invariant: without it, a counted key

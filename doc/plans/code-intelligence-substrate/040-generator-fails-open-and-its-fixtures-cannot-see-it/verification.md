@@ -103,8 +103,9 @@ because the validator short-circuits on a help spelling before reading the surfa
   `manage-contract.md`. The run substituted a defensible mechanism (`status: error` at exit 0) and
   then asserted the unavailable one as fact in four shipped places and in the report. A consumer that
   believes those statements — and one in this very repository does, `test/conftest.py:117-124` with
-  `check=True` — cannot see the refusal at all. The unconditional-line requirement is met for real
-  regenerations but not for the dry-run and template-skew paths.
+  `check=True` — cannot see a `status: error` at all (with the Guard-5 reachability caveat recorded
+  in *Correctness review* §1). The unconditional-line requirement is met for real regenerations but
+  not for the dry-run and template-skew paths.
 
 ### D2 — derive the fixture corpus from the real surface index
 
@@ -224,14 +225,24 @@ Read in full: `generate_executor.py` §§ surface-stats/derivation/guards/`cmd_g
 Defects found:
 
 1. **The refusal exits 0 — the fail-open guard is invisible to any exit-code consumer.**
-   `generate_executor.py:2306-2419` — `main()` ends `return 0` with no status branch. Measured above:
-   the guard trips, prints its stats line and error, and the process exits `0`. **The consequence is
-   live in this repository:** `test/conftest.py:117-124` bootstraps the executor with
+   `generate_executor.py:2306-2419` — `main()` ends `return 0` with no status branch. Measured above,
+   three times including once through the unmocked CLI: the guard trips, prints its stats line and
+   error, and the process exits `0`. **The consequence is live in this repository:**
+   `test/conftest.py:117-124` bootstraps the executor with
    `subprocess.run([... 'generate'], check=True, timeout=120)` — `check=True` is the *only* failure
-   detection it has, and it can never fire on a guard refusal. The bootstrap then falls through
+   detection it has, nothing afterwards re-checks that the executor now exists, and `check=True`
+   can never fire on **any** `status: error` the generator returns. The bootstrap then falls through
    silently with no executor written. This is structurally the same shape the plan set out to close
    ("a green regeneration that quietly stripped the whole set would leave the guard inert while every
    signal reads healthy"), relocated from the generator to its consumer.
+   ⚠ **Corrected in adversarial review:** the refusal this bootstrap is blind to is *not* Guard 5's.
+   `_ensure_executor_present` returns early when the executor already exists
+   (`test/conftest.py:94-96`), so it only ever invokes the generator with no previous executor on
+   disk; `read_previous_surfaces` then returns `{}` (`generate_executor.py:993-994`) and Guard 5's
+   `if previous_surfaces and …` predicate cannot be true. The blindness is real and covers the
+   template-missing return and Guards 1-4 plus `cmd_generate`'s base-path error — but Guard 5 is
+   precisely the one refusal it cannot hide, so the "fail-open shape relocated to the consumer"
+   reading is rhetorically apt and mechanically wrong.
 
 2. **Four shipped statements assert a non-zero exit that does not happen.**
    `generate_executor.py:868` ("turns that zero into a loud non-zero exit"), `:1366` ("it fails loudly

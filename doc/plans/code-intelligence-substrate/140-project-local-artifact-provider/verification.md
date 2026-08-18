@@ -14,7 +14,7 @@ changed under me — every citation below was re-read at the state reported here
 |---|---|---|---|---|
 | D1 | Project-local artifact claim through the seam, uniform over the surface | `pm-plugin-development` `Extension` opts into `PathAttributionBase`; `claim_paths()` returns bare-root `('.claude', 'pm-plugin-development')`; `plan-marshall` drops `.claude/skills`; no core edit | Both extensions read as claimed; live seam probe returns the single `.claude` claim; `git show --stat cc923b6` shows no `_architecture_core.py` in the diff | CONFIRMED |
 | D2 | Ownership decision recorded | Move from `plan-marshall` to `pm-plugin-development`, recorded in both docstrings, SKILL.md § Project-Local Artifact Ownership, and `code-intelligence.adoc` | All four records present and mutually consistent; a cold reader can state owner and rationale from any one of them | CONFIRMED |
-| D3 | Consistency verification by enumeration, publishing its count | `test_path_attribution.py` walks the real `.claude` tree (47 files), asserts every path → `pm-plugin-development`, publishes the count | The walk test exists and enumerates; re-derived population **is 47 today**; mutation of the claim turns it red. But the "publication" is a `print()` that pytest swallows on green, asserted by a self-referential `capsys` check | CONFIRMED (with a test-quality gap, G1) |
+| D3 | Consistency verification by enumeration, publishing its count | `test_path_attribution.py` walks the real `.claude` tree (47 files), asserts every path → `pm-plugin-development`, publishes the count | The walk test exists and enumerates; mutation of the claim turns it red (re-run independently: **6 failed, 14 passed**). But the walked population is whatever is on disk, not what the repository tracks — **47 git-tracked files, 52 on disk** at adversarial-review time (`settings.local.json` plus four `__pycache__` artifacts), so the published count is build-state-dependent (G7); and the "publication" itself is a `print()` that pytest swallows on green, asserted by a self-referential `capsys` check (G1) | CONFIRMED (with two test-quality gaps, G1 and G7) |
 | D4 | Resolver distinguishes "not covered" from "covered, no matches" | Reuses the shipped `attributor_count` contract; negative-control pair asserted at the seam and at the which-module reader | The pair exists at the seam (`test_path_attribution.py:174`). At the reader only the `attributor_count > 0` half was added by this run; the 0-vs-N pair at the reader lives in `test_cmd_client.py:1040`, a file this PR did not touch | CONFIRMED (report wording overstated — G6) |
 | D5 | Documentation: ownership contract + `code-intelligence.adoc` row | SKILL.md § Project-Local Artifact Ownership; adoc section; `ext-point-path-attribution.md` implementations table | All three present; both relative links from SKILL.md resolve; no stale `.claude/skills → plan-marshall` statement survives anywhere outside `doc/plans/` | CONFIRMED |
 
@@ -37,8 +37,13 @@ changed under me — every citation below was re-read at the state reported here
     line 131 read `return [('.claude/skills', 'plan-marshall'), ('.plan', 'plan-marshall')], []` — the plan's
     founding premise is real.
 - **Checks run:**
-  - Filesystem population: `.claude/` holds exactly `commands/`, `skills/`, `settings.json` — no third
-    subtree, so the report's "Refuted" verdict on that HYPOTHESIS is correct.
+  - Filesystem population: `.claude/` holds exactly two directories — `commands/` and `skills/` — so the
+    report's "Refuted" verdict on the third-*subtree* HYPOTHESIS is correct. The top-level *entry* list is
+    not stable, however: it is `commands/`, `skills/`, `settings.json` in a clean clone, and
+    `commands/`, `settings.json`, `settings.local.json`, `skills/` on a working machine, because
+    `.claude/settings.local.json` is git-ignored machine-local state. Neither the claim nor the
+    uniformity test is disturbed by that (everything under `.claude` resolves to the one owner), but the
+    enumeration's *count* is — see G7.
   - Live seam probe (script under `$TMPDIR`, all bundle `scripts/` dirs on `sys.path`, calling
     `_architecture_core._load_path_attribution_seam()` directly):
     `attributors: ['documentation', 'plan-marshall', 'pm-plugin-development']`;
@@ -90,8 +95,14 @@ changed under me — every citation below was re-read at the state reported here
   - `test/plan-marshall/manage-architecture/test_which_module_plan_claim.py:226-243` — the same closure
     at the `cmd_which_module` reader for skills / commands / settings.
 - **Checks run:**
-  - Population re-derived independently at audit time: 47 files under `.claude` (matching the report's
-    number today — re-measured, not copied).
+  - Population re-derived independently, twice. `git ls-files .claude | wc -l` → **47**, matching the
+    report's number. The *filesystem walk the test actually performs*
+    (`rglob('*')`, files only) → **47 at audit time, 52 at adversarial-review time**; the five extra
+    entries are `.claude/settings.local.json` and four `.pyc` files under `__pycache__`, all git-ignored
+    and all created by concurrent sessions after the audit measured. `git diff 62e3807 HEAD` over
+    `marketplace/`, `doc/concepts/`, `test/` and `.claude/` is empty, so no tracked file moved — the
+    delta is build state alone. The report's "47" is therefore right about the tracked corpus and the
+    test's published count is right about neither corpus reliably (G7).
   - Non-vacuity proved by mutation. Snapshot of
     `marketplace/bundles/pm-plugin-development/skills/plan-marshall-plugin/extension.py` written to
     `$TMPDIR/.../verify-140-mutsweep/pmpd_extension.py`; claim narrowed to `('.claude/skills', …)`;

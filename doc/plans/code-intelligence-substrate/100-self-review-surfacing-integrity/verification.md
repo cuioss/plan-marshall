@@ -1,7 +1,8 @@
 # Verification — 100-self-review-surfacing-integrity
 
 **Audited:** `plan.md`, `report-01.md` (the only two files in the plan directory)
-**Tree state:** `61a43e5` on `claude/code-intelligence-substrate-analysis-kah884`
+**Tree state:** `61a43e5` on `claude/code-intelligence-substrate-analysis-kah884`; the adversarial pass
+below re-derived every claim at `9ae90b4` on the same branch, and no cited line moved between the two.
 **Overall verdict:** CONFIRMED WITH GAPS
 
 The plan landed as squash commit `94bcddf` — `fix: self-review surfacing integrity — coverage, scope,
@@ -17,8 +18,8 @@ shipped as documented prose that the step's own execution path never points at.
 | D1 | Widen the count-prose detector at the resolver | Both detectors resolve one file set through `_collect_skill_contract_sources`; negative control fails pre-fix | `_self_review_detectors.py:1078` iterates the shared resolver; both new tests go red under a mutation restoring the pre-fix behaviour | CONFIRMED |
 | D2 | Tie registry membership to check coverage by an invariant | Population-derived test over `in_total` entries, publishes population size, checks 16+17 added, magnitude unchanged | `test_self_review_check_coverage.py`; population re-derived as 17; checks 16/17 at `pre-submission-self-review.md:330,332`; doc mutation drives the test red | CONFIRMED |
 | D3 | Every absence claim publishes scope + file count | `scope_statement` emitted unconditionally; rationale rule is workflow guidance (enforcement split declared) | `self_review.py:402` emits it on every success path including a zero-file surface; nothing anywhere *rejects* a scope-less absence claim | PARTIAL |
-| D4 | A message aimed at a running plan is reported undeliverable at write time | `--target-plan` refuses a write naming a `running` plan; 4 end-to-end tests | `_orchestrator_inbox.py:936-953`, tests pass — but the guard is opt-in and no write site in the bundles passes `--target-plan` | PARTIAL |
-| D5 | Cap the round loop on convergence, not budget | Doc-only "Round-loop termination" section; converged vs out-of-budget disjoint | `pre-submission-self-review.md:409-427` present and distinct; Step 4 Branch B (`:378-407`) never references it and still prescribes correction | PARTIAL |
+| D4 | A message aimed at a running plan is reported undeliverable at write time | `--target-plan` refuses a write naming a `running` plan; 4 end-to-end tests | `_orchestrator_inbox.py:936-953`, tests pass — but the guard is opt-in and no *step* doc obliges the one plan-directed stream (`lessons-capture.md:103`) to pass `--target-plan` | PARTIAL |
+| D5 | Cap the round loop on convergence, not budget | Doc-only "Round-loop termination" section; converged vs out-of-budget disjoint | `pre-submission-self-review.md:409-427` present and distinct; Step 4 Branch B (`:378-403`, closing at `:407`) never references it and still prescribes correction | PARTIAL |
 
 ## Per-deliverable detail
 

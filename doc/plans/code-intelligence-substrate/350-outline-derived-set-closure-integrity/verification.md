@@ -159,7 +159,7 @@ treats the merged text of those files as the claim under test.
   - `phase-4-plan/SKILL.md:932` states the self-reinforcing property explicitly and names exactly what
     B2 suppresses (`module-mapping-validator` / `scope-criterion-validator`), correcting round 1's
     invented rationale.
-  - `q-gate-validation.md:398` ("Their placement is the point, not an implementation detail").
+  - `q-gate-validation.md:403` ("Their placement is the point, not an implementation detail").
   - The adversarial test: `test_qgate_closure.py:834`
     `test_closure_check_runs_under_the_surgical_scope_bypass_shape` — writes `references.json` with
     `scope_estimate: surgical`, asserts **both** conjuncts as preconditions (:864 and :885, the second
@@ -233,8 +233,8 @@ Three real defects:
    `_qgate_closure.py:177` excludes patterns from the projection closure and delegates them to the
    reconciliation check; `:504` reports only *matches the deliverable does not enumerate*. A
    deliverable declaring `**Files expected to mutate:** - src/newthing/*.py` — a write-new surface,
-   which the validator accepts because check 3a walks `affected_files` only
-   (`manage-solution-outline.py:372-380`) — therefore produces:
+   which the validator accepts because check 3a's wildcard rejection walks `affected_files` only
+   (`manage-solution-outline.py:372-377`) — therefore produces:
 
    ```
    closure gaps: []  | pop_complete: True  | declared_scanned: 1

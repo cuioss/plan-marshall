@@ -1,7 +1,9 @@
 # Verification — 290-auditor-detector-integrity
 
-**Audited:** `plan.md`, `report-01.md` (the plan directory holds no other file)
-**Tree state:** `2d5da71` on `claude/code-intelligence-substrate-analysis-kah884`
+**Audited:** `plan.md`, `report-01.md` (the run produced no other artifact in this directory)
+**Tree state:** evidence gathered at `2d5da71` on `claude/code-intelligence-substrate-analysis-kah884`; the
+branch has since advanced with `doc/plans/` audit files only (no production change — `git show --name-status`
+on each later commit touches nothing outside `doc/plans/`)
 **Overall verdict:** CONFIRMED WITH GAPS
 
 Every deliverable is implemented, at the site the plan named, by the mechanism the plan asked for, and
@@ -91,7 +93,7 @@ handful of stale counts in the run report.
   `lock-*.log` probe, and `cross_merge_window_accounting` (`:8214-8217`) sets
   `measured = substrate_present or bool(rows)` — evidence beats the filename convention.
   `emit_merge_window_accounting_block` (`:8240-8252`) emits `status: unmeasured`, a reason, and the scanned
-  roots, and **no counts at all**. The summary metric is gated (`audit.py:9126-9132`) and the synthesis
+  roots, and **no counts at all**. The summary metric is gated (`audit.py:9280`) and the synthesis
   coupling renders `contended_plans=unmeasured` (`audit.py:8833`). `_locks_core.py` is absent from the plan's
   diff, so the emission half really was left alone.
 - **Checks run:** 12/12 tests green. Two mutations, both red: restricting `_LOCK_LOG_ROOTS` to

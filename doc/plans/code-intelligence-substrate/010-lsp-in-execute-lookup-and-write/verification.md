@@ -40,25 +40,39 @@ the server never answers is reported as `state: ok, error_count: 0` — a clean 
   exactly as recorded — `lsp_client.py:310-315` (`_session` spawns the configured command per call),
   `_lsp_jsonrpc.py:81-101` (`StdioTransport` = `subprocess.Popen` of the server), teardown at
   `_lsp_jsonrpc.py:245-270`. No daemon, no socket: `grep -n "lsp" marketplace/bundles/plan-marshall/skills/manage-build-server/**` finds nothing, so `marshalld` was not widened.
-- **Checks run:** I re-derived the figures against a live server on this machine
-  (`/root/.local/bin/pyright-langserver`), workspace scoped to `manage-architecture` as the report was:
+- **Checks run:** the figures were re-derived against a live server on this machine
+  (`/root/.local/bin/pyright-langserver`), workspace scoped to `manage-architecture` as the report was.
+  The adversarial pass re-took the whole set independently; both readings are shown, because the
+  spread between them is itself the finding:
 
-  | Operation | Re-measured (quiet box) | Re-measured (loaded box) | Report |
-  |---|---|---|---|
-  | cold start (spawn + `initialize`) | 571.3 ms | 2140.1 ms | 413.4 ms |
-  | **first** `documentSymbol` after `didOpen` | **4873.3 ms** | **13384.0 ms** | 2.7 ms |
-  | `documentSymbol` repeated in same session | 4.2 ms | — | 2.7 ms |
-  | `definition` | 3.1 ms | 32.3 ms | 2.6 ms |
-  | `references` | 2.8 ms | 12.3 ms | 11.9 ms |
-  | first diagnostics | 2000.4 ms | 2001.1 ms | 736.3 ms |
-  | `rename` → `WorkspaceEdit` | 11.9 ms | 42.4 ms | 4.9 ms |
+  | Operation | Audit (quiet box) | Audit (loaded box) | **Adversarial re-take** | Report |
+  |---|---|---|---|---|
+  | cold start (spawn + `initialize`) | 571.3 ms | 2140.1 ms | **394.3 ms** | 413.4 ms |
+  | **first** `documentSymbol` after `didOpen` | 4873.3 ms | 13384.0 ms | **970.5 ms** | 2.7 ms |
+  | `documentSymbol` repeated in same session | 4.2 ms | — | **2.3 ms** | 2.7 ms |
+  | `definition` | 3.1 ms | 32.3 ms | **1.7 ms** | 2.6 ms |
+  | `references` | 2.8 ms | 12.3 ms | **2.0 ms** | 11.9 ms |
+  | first diagnostics | 2000.4 ms | 2001.1 ms | **2000.3 ms** | 736.3 ms |
+  | `workspace/symbol` (via `wait_until_idle`) | — | — | **2163.0 ms** | 240.6 ms |
+  | `rename` → `WorkspaceEdit` | 11.9 ms | 42.4 ms | **2.3 ms** | 4.9 ms |
+
+  Two of these are **deterministic** rather than load-dependent, and they are the ones the conclusion
+  should rest on: `diagnose` returns at the `settle` floor (2000.3 ms, matching `settle=2.0` at
+  `_lsp_jsonrpc.py:204`) and `workspace-symbol` cannot return before `wait_until_idle`'s 1.5 s floor
+  (`:225`, invoked at `:349`). The analysis wait is **not** deterministic: the audit's 4873 ms
+  first-`documentSymbol` figure did **not** reproduce — the re-take measured 970.5 ms on the same
+  workspace. What *did* reproduce exactly is the **ordering effect**: issuing `documentSymbol` first in
+  a cold session costs 970.5 ms, and issuing it after `workspace/symbol` + diagnostics (the report's
+  own sequence) costs 4.7 ms. The report's 2.7 ms is therefore a warm figure; the magnitude of the cold
+  one is machine-state-dependent and must not be quoted as a constant.
 
 - **Verdict:** CONFIRMED — the premise holds and a live server was genuinely driven. The caveat is the
   *cost basis*: the report's per-call figures are **warm-path** figures (its sequence issued
   `workspace/symbol` and diagnostics before `documentSymbol`, so the analysis wait had already been
   paid). Under the shipped per-call hosting model, a one-shot lookup pays cold start **plus** the
-  first-query analysis — ~5.4 s here, not the ~0.42 s the "per-call boot is cheap" rationale uses. See
-  G7.
+  first-query analysis plus, for two of the four verbs, a fixed multi-second settle floor — order of
+  1.4 s for a cold `document-symbol` and ≥2.5 s for a cold `workspace-symbol` on a quiet box, not the
+  ~0.42 s the "per-call boot is cheap" rationale uses. See G7.
 
 ### D1 — the read side
 
@@ -76,17 +90,31 @@ the server never answers is reported as `state: ok, error_count: 0` — a clean 
   - Mutation M2 — `lsp_client.py:358` changed so the unreachable path returns `STATE_NOT_CONFIGURED`.
     `test_three_states_are_distinguishable` went red (`assert 2 == 3 … {('degraded','not_configured',0),('success','ok',1)}`). The negative control the plan demanded is real.
   - Live probe of the payload shape against pyright over a two-file project
-    (`class Widget: def spin/def stop` in `alpha.py`, imported by `beta.py`):
+    (`class Widget: def spin/def stop` in `alpha.py`, imported by `beta.py`), driving the **shipped**
+    `_run_lookup`. Re-run independently in the adversarial pass, identical result both times:
     - `workspace-symbol` for `Widget` → `locations: [{"name":"Widget","kind":5,"line":0,"character":6}]` — **no `path` key at all** (`path keys present: False`).
+    - The same probe dumped pyright's **raw** `workspace/symbol` result: each row carries
+      `location.uri = file:///…/alpha.py`. The path is supplied by the server and discarded by the
+      client — the information is not missing, it is thrown away.
+    - Control in the same session: `references` rows carry
+      `{character, end_character, end_line, line, path}`, so the omission is specific to `_symbol_rows`.
     - `document-symbol` over `alpha.py` → `['Widget', 'top_level']`; `Widget.spin` and `Widget.stop`
       are absent.
+  - Scale of the `document-symbol` loss, measured on this repository's own
+    `manage-architecture/scripts/architecture.py` (576 lines): pyright's hierarchical response carries
+    **43** symbols; the shipped verb returns **1** row (`main`) and reports `location_count: 1` — a
+    positive, apparently-complete answer that omits 98% of what the server said.
 - **Verdict:** PARTIAL. The coverage contract is fully delivered and non-vacuously tested. The literal
   *Done when* ("obtains a symbol's **locations**") is not met for `workspace-symbol`: a name plus a
   line number without a file is not a location, so the one lookup kind that spans files cannot locate
   anything (`_symbol_rows`, `lsp_client.py:147-162`, emits only `name`/`kind`/`line`/`character`, while
-  the sibling `_location_rows` at `:122-144` does emit `path`). `document-symbol` is likewise
-  incomplete: `initialize` advertises `hierarchicalDocumentSymbolSupport: true`
-  (`_lsp_jsonrpc.py:290`) but `_symbol_rows` never recurses into `children`. See G1 and G5.
+  the sibling `_location_rows` at `:122-144` does emit `path`). `document-symbol` is worse than
+  incomplete — it is *silently* incomplete: `initialize` advertises
+  `hierarchicalDocumentSymbolSupport: true` (`_lsp_jsonrpc.py:290`), `_symbol_rows` never recurses into
+  `children`, and nothing in the payload records that anything was dropped, so a 1-of-43 result is
+  indistinguishable from a file that genuinely holds one symbol. That is the archetype D1's ⛔ names
+  ("a silent empty result is the archetype this epic exists to remove"), one step short of empty. See
+  G1 and G5.
 
 ### D2 — the write side, applied through the recorded path
 
@@ -107,16 +135,26 @@ the server never answers is reported as `state: ok, error_count: 0` — a clean 
     the real-server adversarial one: `test_edit_worsened_fails_and_rolls_back`,
     `test_real_adversarial_defect_fails_and_rolls_back`, `test_edit_verdict_fails_on_worsened`
     (`3 failed, 33 passed`). The adversarial control is genuine, not positive-only.
-  - Live repro of the post-edit read path (`StdioTransport` against a fake server that publishes a
-    clean set on `didOpen` and an Error diagnostic **4 s** after `didChange`):
+  - Live repro of the post-edit read path — **against real `pyright-langserver`**, not a fake server.
+    The sequence mirrors `_run_edit` exactly (`open` → `diagnostics` → write the broken content to
+    disk → `change_to_disk` → `diagnostics` → `edit_verdict`), over a generated 12,003-line module
+    whose analysis pyright cannot finish inside the 2 s settle window:
 
     ```
-    errors_before = 0
-    errors_after  = 0   (returned after 2.0s)
-    verdict       = success  <-- FAIL-OPEN (stale read)
-    truth (later) = 1 error(s) the server actually reported
+    diagnostics() #1 returned in 11349 ms -> 0 entries      [uri_in_cache=True diag_seq=1]
+    <broken content written to disk; change_to_disk sent>
+    diagnostics() #2 returned in  2017 ms -> 0 entries      [uri_in_cache=True diag_seq=1]
+    errors_before=0 errors_after=0 verdict=success
+    MECHANISM: diag_seq unchanged since the pre-edit read -> the PRE-EDIT entry was returned
+    TRUTH after extra wait: 1 error(s)
     ```
 
+    The instrumented `diag_seq` is the proof, not an inference: it is the transport's own count of
+    `publishDiagnostics` frames received, and it is **identical** before and after — no new publish
+    arrived, so `wait_for_diagnostics` returned the entry cached before the edit, at the 2 s floor.
+    Reproduced a second time at 24,003 lines with the same outcome. A smaller module (483 lines)
+    verdicts `failed` correctly, so the guard works exactly until the server is slower than the
+    settle window and then fails **open**, not closed.
   - Multi-file coverage: `test_real_clean_rename_edit` asserts `file_count == 1`
     (`test_lsp_integration.py:102`); `test_edit_clean_applies_and_captures_footprint` uses a
     single-file edit (`test_lsp_client.py:186-197`). The only two-file exercise
@@ -126,11 +164,21 @@ the server never answers is reported as `state: ok, error_count: 0` — a clean 
     (`:97` and `:149`, `changes, _notes = …`), and
     `grep -n "notes" lsp_client.py SKILL.md doc/user/lsp-code-intelligence.adoc` returns **nothing**
     (control: the same grep finds 8 hits in `_lsp_workspace_edit.py`).
+  - Verdict semantics, probed through `_run_edit` with a fake transport:
+    - pre-edit `[Error A]`, post-edit `[Error B]` (a *different* error, same count) →
+      `status: success, applied: True`, and `bar = 1` is left on disk. An edit that swapped one error
+      for another is not a worsened **set** by `edit_verdict`'s bare count comparison.
+    - pre-edit `[Error A]`, post-edit `[Error A, Error B]` → the failure payload's `new_diagnostics[]`
+      lists **both**, including the pre-existing one. The field name overstates what it holds
+      (`lsp_client.py:237-245` appends every post-edit Error and never diffs against the pre-edit set,
+      which is only counted, never retained). See G15.
 - **Verdict:** PARTIAL. The recorded design rule is genuinely shipped and its central guard is
-  non-vacuous. Against the literal *Done when* it falls short in three ways — the worsened-set guard
-  fails open on a slow republish (G2), the footprint is not honest for an edit carrying resource
-  operations (G3), and the *multi-file* half of the done-condition has no test (G6). A mid-apply
-  exception additionally leaves a half-applied edit with no rollback (G4).
+  non-vacuous. Against the literal *Done when* it falls short in four ways — the worsened-set guard
+  fails open when the server is slower than the settle window (G2, reproduced against real pyright),
+  the guard compares error **counts** rather than sets so a swapped error passes (G15), the footprint
+  is not honest for an edit carrying resource operations (G3), and the *multi-file* half of the
+  done-condition has no test (G6). A mid-apply exception additionally leaves a half-applied edit with
+  no rollback (G4), and every `edit` call sends a duplicate `didOpen` for the rename target (G14).
 
 ### D3 — diagnostics as a pre-build correctness signal
 
@@ -148,9 +196,19 @@ the server never answers is reported as `state: ok, error_count: 0` — a clean 
   capability; none phrases the signal as sufficient. I cannot re-run the *original* cold read (it was
   a sub-agent judgement at the time), but the text as it stands admits only the "supplements" reading:
   the negative is explicit, not implied.
-- **Verdict:** CONFIRMED. One precision defect, not a boundary defect: the "every payload" phrasing is
-  false for a `degraded` diagnose return, which carries no `boundary_note` (`lsp_client.py:389-392` →
-  `_with_session` → `_degraded`). See G8.
+- **Verdict:** CONFIRMED against its literal *Done when*, which is a condition on the **text**: the
+  capability is stated together with the boundary, and the text as it stands admits only the
+  "supplements" reading. Two defects sit outside that condition and are recorded rather than allowed
+  to change the verdict:
+  - the "every payload" phrasing is false for a `degraded` diagnose return, which carries no
+    `boundary_note` (`lsp_client.py:389-392` → `_with_session` → `_degraded`) — G8;
+  - the verb itself reports an **unanswered** diagnostics query as a clean file. Driven through the
+    shipped `_run_diagnose` over a real `StdioTransport` against a server that answers `initialize`
+    and never pushes `publishDiagnostics`, the verb returns after the 15 s timeout with
+    `status: success, state: ok, provider_count: 1, error_count: 0` and a `boundary_note` — a payload
+    identical in every field to "the server ran and found the file clean". `wait_for_diagnostics`
+    returns `list(self._diagnostics.get(uri, []))` on timeout (`_lsp_jsonrpc.py:223`), and no caller
+    can tell that from an empty published set — G13.
 
 ### D4 — opt-in configuration, no-op degradation, documentation
 
@@ -185,19 +243,24 @@ Defects found by reading the shipped code, each proved by execution where the br
    (`wait_for_diagnostics`) breaks out of its wait as soon as the *inbound stream* has been quiet for
    `settle` (2.0 s) **and** the URI has *any* entry — including the entry cached before the edit
    (`:220`). It does not wait for a publish newer than the change, despite the module docstring
-   claiming exactly that (`:15-16`: *"`publishDiagnostics` tracked per URI so a post-edit re-diagnose
+   claiming exactly that (`:14-15`: *"`publishDiagnostics` tracked per URI so a post-edit re-diagnose
    can wait for the **next** push"*). `_run_edit` (`lsp_client.py:239-247`) therefore compares
    `errors_after` computed from pre-edit data, `edit_verdict` returns `'success'`, and a broken edit
-   lands with `status: success, applied: true`. Reproduced above against a real `StdioTransport`
-   whose server republished 4 s after `didChange`.
+   lands with `status: success, applied: true`. Reproduced above **against live
+   `pyright-langserver`** on a 12,003-line module, with the transport's own `publishDiagnostics`
+   counter proving no new publish arrived between the two reads.
 2. **`workspace-symbol` results are unaddressable.** `lsp_client.py:147-162` (`_symbol_rows`) drops the
    URI entirely, even though pyright returns `SymbolInformation` objects carrying `location.uri` — the
-   code reads `location` only to take its `range` (`:152-154`). Consequence: the payload names a
-   symbol and a line but not a file, so the leaf must fall back to `Grep`/`Read` to find it, which is
-   the cost D1 exists to remove.
-3. **Nested symbols are invisible to `document-symbol`.** `_symbol_rows` iterates the top level only;
-   pyright's hierarchical response nests methods under `children`. A leaf cannot locate
-   `ClassName.method` with this verb.
+   code reads `location` only to take its `range` (`:152-154`). Confirmed by dumping the raw server
+   response alongside the shipped payload in one session: the server sent
+   `location.uri = file:///…/alpha.py`; the row that reached the caller had keys
+   `{name, kind, line, character}`. Consequence: the payload names a symbol and a line but not a file,
+   so the leaf must fall back to `Grep`/`Read` to find it, which is the cost D1 exists to remove.
+3. **Nested symbols are silently dropped by `document-symbol`.** `_symbol_rows` iterates the top level
+   only; pyright's hierarchical response nests methods under `children`. Measured on this repository's
+   `manage-architecture/scripts/architecture.py`: 43 symbols in the server's response, **1** row in the
+   payload, `location_count: 1`. A leaf cannot locate `ClassName.method` with this verb, and — worse —
+   nothing in the payload distinguishes "this file has one symbol" from "42 were discarded".
 4. **A `WorkspaceEdit` carrying resource operations is applied partially and reported as complete.**
    `_lsp_workspace_edit.py:71-74` records the dropped create/rename/delete ops in `notes`, then both
    `capture_footprint` (`:97`) and `apply_workspace_edit` (`:149`) throw the notes away, and no payload

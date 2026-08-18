@@ -213,7 +213,7 @@ was never located (G6), four checks whose semantics this plan changed without bu
 - **Where:** `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py:394`
   (`"global-log-analysis": "#1260"`)
 - **Evidence:** rounds 3-5 of plan 290 gave this check the `unmeasured` contract, a `logs_readable` substrate
-  probe (`:2928`) and a gated summary metric (`:9128-9132`). Its stamp still names #1260, the cost-rollup PR.
+  probe (`:2928`) and a gated summary metric (`:9128`). Its stamp still names #1260, the cost-rollup PR.
 - **Why it matters:** the check's `genuine_signal_count` and `error_count` now have a state in which they are
   absent rather than zero; a cross-run diff under an unchanged stamp presents pre- and post-contract runs as
   commensurable.

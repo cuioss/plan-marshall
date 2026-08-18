@@ -5,8 +5,9 @@ preserves the previous executor, the population-derived test is genuinely unsamp
 `children` strip, and the D3 smoke runs clean verbatim against the current tree. What remains falls
 into three clusters. **First**, the guard's refusal exits `0`, not non-zero: the plan's literal *Done
 when* is unmet, four shipped statements assert the non-zero exit anyway, and one consumer in this very
-repository (`test/conftest.py`, `check=True`) is therefore blind to the refusal it exists to raise —
-the original fail-open shape, relocated to the consumer. **Second**, 72.6% of D2's corpus is
+repository (`test/conftest.py`, `check=True`) is therefore blind to **every** expected error the
+generator can report — though not, as first written, to the fail-open refusal specifically, which
+that bootstrap cannot reach (see the narrowing in G1). **Second**, 72.6% of D2's corpus is
 surface-insensitive: measured by mutation with the refusals partitioned by half, 0 of 1750 help
 checks refuse against a surface stripped of every attribute, because the validator short-circuits on
 a help spelling before reading the surface. **Third**, a handful of measurement and documentation
@@ -37,12 +38,25 @@ stands.
   `PLAN_TRACKED_CONFIG_DIR=<tmp with a one-entry SCRIPT_SURFACES executor> PM_SURFACE_BUDGET_SECONDS=0 python3 …/generate_executor.py generate --marketplace --marketplace-root .`
   → `surface-stats: scripts_registered=158 surfaces_derived=0 surfaces_reused=0 surfaces_not_derivable=158`,
   `status: error`, `EXIT=0`.
-- **Why it matters:** this is the plan's own failure shape one layer out. A regeneration that Guard 5
-  correctly refuses is reported to the test harness as a success; the bootstrap returns having written
-  nothing, and downstream tests fail with unrelated diagnostics or (where they guard on absence) go
-  vacuously green. Observed here: the D2 population test failed with
+- **Why it matters:** the bootstrap's single failure detector cannot fire on **any** expected error.
+  Every `generate` refusal is `status: error` at exit `0`: template not found
+  (`generate_executor.py:1218-1219`), Guard 1 template-format skew (`:1296-1307`), Guard 2
+  placeholder residue (`:1393-1402`), Guard 3 `py_compile` (`:1407-1416`), Guard 4 emitted-path
+  provenance, the fail-open Guard 5 (`:1372-1386`), and `cmd_generate`'s unresolvable-base-path
+  error. On each, the bootstrap returns having written nothing and having raised nothing; downstream
+  tests then fail with unrelated diagnostics or (where they guard on absence) go vacuously green.
+  Observed in the first audit round: the D2 population test failed with
   `Failed: no .plan/execute-script.py under /home/user/plan-marshall` after a bootstrap that raised
   nothing.
+  ⚠ **One narrowing, established in adversarial review.** The first round framed this as "the plan's
+  own failure shape one layer out — a regeneration Guard 5 correctly refuses is reported to the
+  harness as a success." That specific coupling is **not reachable through this bootstrap**:
+  `_ensure_executor_present` returns early when the executor already exists (`test/conftest.py:94-96`),
+  so it only ever runs the generator with **no** previous executor on disk;
+  `read_previous_surfaces` then returns `{}` at `generate_executor.py:993-994`, and Guard 5's
+  predicate `if previous_surfaces and …` cannot be true. Guard 5 is therefore the one refusal this
+  bootstrap can never hide. The gap stands on the other six paths, which it can and does hide — but a
+  fix plan should not be sold the Guard-5 story.
 - **Action:** stop relying on the exit code. Drop `check=True`, capture stdout, and treat a
   non-success generation as the failure — printing the generator's `error` and its `surface-stats`
   counts in the warning. Two mechanisms, either acceptable, and the second is the cheap floor:

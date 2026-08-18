@@ -76,43 +76,66 @@ loop-back rebase can orphan. The remainder are low-severity doc and report resid
 ## G2 — Arm the merge boundary itself on a state, not on a workflow-doc call
 
 - **Kind:** incomplete
-- **Severity:** high
+- **Severity:** medium
 - **Topic:** dispatch/finalize
 - **Where:** `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md:7`
-  (`order: 70`) and `:691-708` (the pre-merge gate);
+  (`order: 70`) and `:691-708` (the pre-merge gate, quote at `:702`);
   `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/archive-plan.md:7`
-  (`order: 1100`)
+  (`order: 1100`);
+  `marketplace/bundles/plan-marshall/skills/tools-integration-ci/scripts/ci_base.py:981-999`
+  (the `pr safe-merge` parser — note it takes **no** `--plan-id`)
 - **Evidence:** the plan's D2 requires *"the merge boundary asserts a state that must hold rather than
   trusting a call that must happen"*. The state assertion
-  (`_cmd_lifecycle.py:528-531` → `_invariants.py:1459`) is reached only from `archive-plan`, which
-  runs 1030 order-units after the merge. The merge is gated only by
+  (`_cmd_lifecycle.py:528-531` → `_invariants.py:1459`) is reached, in the orchestrated lane, only
+  from `archive-plan` — `phase-6-finalize/SKILL.md:1610` forbids the `transition` arm — which runs
+  1030 order-units after the merge. The merge is gated only by
   `phase_handshake findings-check --phase 6-finalize`, an instruction in a markdown workflow whose
-  verdict an LLM must parse (`branch-cleanup.md:701-706` — *"parse `status`, never the exit code"*).
+  verdict an LLM must parse (`branch-cleanup.md:702` — *"parse `status`, never the exit code"*).
   A skipped, mis-parsed, or reordered step re-opens exactly the original defect.
+  ⚠ **What was checked and did *not* hold:** the gate is nested under
+  *"### Pre-Merge Review-Completeness Barrier"*, whose activation condition is
+  `state == open AND {merge_consent} == explicit_yes` (`:683`) — but § "Merge PR (if not yet merged)"
+  (`:1248-1250`) carries the identical condition, so the nesting opens no path on which this step
+  merges without the gate having been reached. The `state == merged` re-entry path (`:282`) skips
+  both. The residual exposure is therefore the LLM-executed call itself, not a conditional hole.
 - **Why it matters:** the plan's Problem statement is about a plan that **merged** with nineteen
   pending findings. After this fix that merge is still possible; only the subsequent archive is
   refused, which strands the plan post-merge instead of preventing the bad merge.
-- **Action:** move the assertion inside the merge action rather than beside it — have the merge-side
-  helper (`ci pr safe-merge` / `merge-queue enqueue` path, or a small pre-merge assertion entry point
-  in `phase_handshake`) evaluate the blocking-findings state itself and refuse non-zero, so the merge
-  cannot proceed without the predicate having been evaluated. The workflow-doc call then becomes
-  advisory rather than load-bearing.
-- **Done when:** a negative control shows the merge action itself refusing on a pending actionable
-  finding **without** any workflow-doc `findings-check` call having been issued, and a positive
-  control shows a clean plan merging.
+- **Severity rationale (medium, not high):** the calibration puts *"an incomplete deliverable"* at
+  medium and reserves high for wrong shipped behaviour or a guard that cannot fire. Both guards here
+  fire; the merge path went from *no gate at any point* to *a gate at a fixed point in a
+  top-to-bottom step document*, and a skipped call is now caught (late) by the completion assertion
+  rather than passing silently. ⚠ **That last clause depends on G1**: while the completion refusal is
+  unobservable, G1 + G2 together do reconstruct the original archetype, which is why G1 carries the
+  high severity and this entry does not.
+- **Action:** make the merge action itself unable to proceed without the predicate having been
+  evaluated, rather than beside it. The concrete shape that also settles G6: have
+  `phase_handshake findings-check --phase 6-finalize` persist a HEAD-bound clean-attestation row on a
+  clean pass, and have the merge routing refuse without a valid attestation for the current HEAD —
+  either by threading a new `--plan-id` / `--require-findings-attestation` pair into
+  `ci pr safe-merge` and `ci pr merge-queue` (`ci_base.py:981-999`; note these verbs are today
+  deliberately plan-agnostic, so this is the architectural cost of the change), or by interposing a
+  single `phase_handshake pre-merge-assert` executor that performs the attestation check and the
+  merge dispatch as one step. The workflow-doc call then becomes advisory rather than load-bearing.
+- **Done when:** a negative control shows the merge dispatch refusing on a pending actionable
+  finding **with no prior workflow-doc `findings-check` call having been issued in that run**, and a
+  positive control shows a clean plan merging; and `branch-cleanup.md` § "Pre-merge blocking-findings
+  store gate" names the attestation as the load-bearing artifact.
 - **Effort:** L
 - **Risk if fixed:** the merge path is operator-consent-bound and already carries several barriers
   (`branch-cleanup.md:683-690`); an extra fail-closed predicate there can strand a merge on an
   unevaluable store. The `query_failed` disposition must be routed to the existing
-  "UNKNOWN disposition" path rather than to a hard halt.
+  "UNKNOWN disposition" path rather than to a hard halt. Threading plan identity into `ci pr` verbs
+  couples the provider-generic CI abstraction to plan state — the interposed-executor variant avoids
+  that and is the cheaper option if the coupling is judged unacceptable.
 
 ## G3 — Remove `normal_completion` from the `--reason` help, or stop letting `--reason` disarm the gate
 
 - **Kind:** bug
 - **Severity:** medium
 - **Topic:** bundle-docs
-- **Where:** `marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage-status.py:322-334`
-  (help text, `normal_completion` at `:329`);
+- **Where:** `marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage-status.py:323-335`
+  (the `--reason` `add_argument`, `normal_completion` at `:329`);
   `marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_lifecycle.py:528`
   (`getattr(args, 'reason', None) is None and …`)
 - **Evidence:** the help text reads *"Optional structured reason string recorded alongside the archive
@@ -127,7 +150,8 @@ loop-back rebase can orphan. The remainder are low-severity doc and report resid
 - **Action:** drop `normal_completion` from the help enumeration (a genuine normal completion passes
   no `--reason`); optionally tighten the exemption to a closed abandonment vocabulary so an arbitrary
   string cannot bypass.
-- **Done when:** `grep -rn "normal_completion" marketplace/` returns nothing, and a test asserts that
+- **Done when:** `grep -rn "normal_completion" marketplace/ --include=*.py --include=*.md` returns
+  nothing (it returns exactly one source hit today, `manage-status.py:329`), and a test asserts that
   the gate still fires for at least one non-abandonment `--reason` value if the vocabulary is closed.
 - **Effort:** S
 - **Risk if fixed:** if any operator runbook or archived status.json already carries
@@ -171,19 +195,24 @@ loop-back rebase can orphan. The remainder are low-severity doc and report resid
 - **Kind:** bug
 - **Severity:** medium
 - **Topic:** dispatch/finalize
-- **Where:** `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md:112-126`
-  (the `git -C {worktree_path} diff --name-only {since_ref}..HEAD` evidence computation);
+- **Where:** `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md:110-128`
+  — the anchor diff is at `:113`, `git rev-parse HEAD` at `:117`, the resolve call at `:123-126`;
   consumed by `_findings_core.resolve_qgate_findings_by_evidence`
   (`marketplace/bundles/plan-marshall/skills/manage-findings/scripts/_findings_core.py:831`)
-- **Evidence:** `{since_ref}` is the previous self-review round's `head_at_completion`. A loop-back
-  re-enters finalize, whose `order: 3` step `finalize-step-sync-baseline` rebases the feature branch
-  onto a freshly-fetched `origin/{base_branch}` (`phase-6-finalize/SKILL.md:161,217`). When the base
-  advanced, `{since_ref}` is no longer an ancestor of `HEAD` and the two-dot diff includes every file
-  the upstream advance touched. Those paths enter `--changed-path`, and `:831`
+- **Evidence:** `{since_ref}` is the previous self-review round's `head_at_completion` (`:103-106`).
+  Two rebases can rewrite the history that anchor points into, so the exposure is
+  preset-independent: `finalize-step-sync-baseline` at `order: 3` rebases the feature branch onto a
+  freshly-fetched `origin/{base_branch}` (`phase-6-finalize/SKILL.md:161,217`) — but it is
+  `presets: [full]` only — and `branch-cleanup` at `order: 70` performs the same rebase
+  (`advances_main_via_rebase: true`, `branch-cleanup.md:11,356`) on **every** preset, so a loop-back
+  issued from the pre-merge barrier reaches a delta round whose anchor was already rewritten. When
+  the base advanced, `{since_ref}` is no longer an ancestor of `HEAD`; `git diff A..B` is endpoint
+  comparison (identical to `git diff A B`), so the diff then includes every file the upstream advance
+  touched. Those paths enter `--changed-path`, and `:831`
   (`if file_path and file_path in changed`) then marks the matching pending finding `fixed` with
-  detail *"evidenced by landed change {sha} touching {file}"*. `grep -n
-  "merge-base\|is-ancestor\|rebase"` on the workflow file returns **nothing** — there is no ancestry
-  check.
+  detail `f'evidenced by landed change {detail_sha} touching {file_path}'` (`_findings_core.py:838`).
+  `grep -n "merge-base\|is-ancestor\|rebase"` on the workflow file returns **nothing** — there is no
+  ancestry check.
 - **Why it matters:** the plan states in D3 that *"a finding marked `fixed` without a landed change is
   strictly worse than one left `pending`"*. This path produces exactly that, on the ordinary
   loop-back route, whenever `main` moved during the loop-back. The docstring's self-correction
@@ -218,12 +247,17 @@ loop-back rebase can orphan. The remainder are low-severity doc and report resid
   underlying state rather than a proxy for it. But the plan's Problem section warns that *"anything
   reading it as one — including any audit counting 'plans that merged clean' — is reading a number
   nobody computed"*, and that remains true: no finalize row exists for a retrospective to read. No
-  consumer reads one today (`grep -rln "pending_findings_blocking_count"` finds no
-  retrospective/audit script), so this is latent, not live.
+  consumer reads one today — `grep -rln "pending_findings_blocking_count" --include=*.py .` outside
+  `test/` returns only the handshake machinery itself (`_invariants.py`, `_handshake_commands.py`,
+  `phase_handshake.py`, `_handshake_store.py`), and the retrospective skill
+  (`.claude/skills/audit-archived-plan-retrospectives/`) contains no `handshake` / `blocking_count`
+  reference at all — so this is latent, not live.
 - **Action:** decide explicitly — either have the completion boundary persist a finalize-phase
   attestation row on a clean pass (so a retrospective can distinguish "evaluated clean" from "never
   evaluated"), or state in `references/phase-handshake.md` that no `6-finalize` row is ever written
-  and that the absence carries no meaning.
+  and that the absence carries no meaning. ⭐ **Fix G2 first**: G2's proposed HEAD-bound
+  clean-attestation row *is* the row this entry asks for, so taking that route settles both and this
+  entry collapses into it.
 - **Done when:** `references/phase-handshake.md` states the chosen contract, and if a row is written,
   a test asserts it exists after a clean completion and is absent after a refusal.
 - **Effort:** M
@@ -236,10 +270,14 @@ loop-back rebase can orphan. The remainder are low-severity doc and report resid
 - **Severity:** low
 - **Topic:** tests
 - **Where:** `test/plan-marshall/plan-marshall/test_phase_handshake_findings.py:574-591`
-  (`test_pending_pr_comment_blocks_automated_review_to_branch_cleanup`, docstring at `:581`)
-- **Evidence:** the docstring reads *"automatic-review → branch-cleanup intra-finalize re-capture."*
+  (`test_pending_pr_comment_blocks_automated_review_to_branch_cleanup`, docstring at `:581`) and
+  `:156-168` (`test_capture_blocks_automated_review_to_branch_cleanup_boundary`, docstring at `:159`)
+- **Evidence:** the docstrings read *"automatic-review → branch-cleanup intra-finalize re-capture."*
+  (`:581`) and *"automatic-review → branch-cleanup boundary is guarded via re-capture."* (`:159`).
   This plan's D1 established that no such boundary re-capture exists or ever existed; the run swept
-  the same claim out of six production/doc files but left the test file untouched.
+  the same claim out of six production/doc files but left the test file untouched. ⚠ The `:159` site
+  carries the claim in a test **name** as well as a docstring and does not contain the string
+  "intra-finalize", so a sweep keyed on that word alone misses it.
 - **Why it matters:** the test is a fine unit test of `cmd_capture`'s predicate, but its name and
   docstring assert a production scenario the codebase does not have. A reader auditing the arming
   question next will find "evidence" of the wiring in the test suite.
@@ -255,10 +293,12 @@ loop-back rebase can orphan. The remainder are low-severity doc and report resid
 - **Severity:** low
 - **Topic:** tests
 - **Where:** `test/plan-marshall/plan-marshall/test_phase_handshake_findings.py:594-611`
-  (`test_pending_sonar_issue_blocks_sonar_roundtrip_to_next`, docstring at `:601`)
-- **Evidence:** docstring: *"sonar-roundtrip → next intra-finalize re-capture."* The run report
+  (`test_pending_sonar_issue_blocks_sonar_roundtrip_to_next`, docstring at `:601`) and `:171-183`
+  (`test_capture_blocks_sonar_roundtrip_next_boundary`, docstring at `:174`)
+- **Evidence:** docstrings: *"sonar-roundtrip → next intra-finalize re-capture."* (`:601`) and
+  *"sonar-roundtrip → next boundary is guarded via re-capture."* (`:174`). The run report
   itself records (§ D1) that `phase-6-finalize/workflow/sonar-roundtrip.md` contains **no**
-  `phase_handshake` call.
+  `phase_handshake` call. As at G7, the `:174` site does not contain "intra-finalize".
 - **Why it matters:** same as G7 — a named production boundary that does not exist, preserved in the
   suite after the doc sweep corrected it everywhere else.
 - **Action:** rename/re-document to the predicate it actually pins (pending `sonar-issue` blocks a
@@ -304,8 +344,10 @@ loop-back rebase can orphan. The remainder are low-severity doc and report resid
 - **Action:** replace with the two real firing sites (pre-merge `findings-check`, completion-boundary
   state assertion), matching the corrected wording already in `_handshake_commands.py:662` and
   `references/phase-handshake.md:244-253`.
-- **Done when:** `grep -rn "intra-finalize" test/` returns nothing, or returns only text that
-  describes the claim as historical.
+- **Done when:** `grep -rn "intra-finalize" test/ --include=*.py` returns nothing, or returns only
+  text that describes the claim as historical — **and**, per G7/G8, no test name or docstring in the
+  file attributes a guard to a production boundary that has no call site, whether or not it uses the
+  word "intra-finalize".
 - **Effort:** S
 - **Risk if fixed:** none.
 
@@ -378,10 +420,10 @@ loop-back rebase can orphan. The remainder are low-severity doc and report resid
 - **Kind:** omission
 - **Severity:** low
 - **Topic:** dispatch/finalize
-- **Where:** `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md:118-126`
-- **Evidence:** the doc issues `git -C {worktree_path} diff --name-only {since_ref}..HEAD` and
-  `git rev-parse HEAD` with no stated handling for a non-zero exit. The surfacer's own
-  `since_ref_unresolvable` refusal (documented further down the same file) applies to the *surface*
+- **Where:** `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md:112-118`
+- **Evidence:** the doc issues `git -C {worktree_path} diff --name-only {since_ref}..HEAD` (`:113`)
+  and `git rev-parse HEAD` (`:117`) with no stated handling for a non-zero exit. The surfacer's own
+  `since_ref_unresolvable` refusal (`:146`, further down the same file) applies to the *surface*
   call, which happens **after** this resolve sub-step, so an anchor that no longer resolves fails
   here first with no documented branch.
 - **Why it matters:** an undocumented failure in an LLM-executed workflow becomes an improvised one.

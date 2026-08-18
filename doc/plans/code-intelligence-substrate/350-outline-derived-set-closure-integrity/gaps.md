@@ -187,7 +187,7 @@ being codified anywhere a later run would find it (G17).
                      directories_matched: 0, population_complete: True
   ```
 
-  The validator accepts the shape: `manage-solution-outline.py:372-380`'s wildcard rejection (check 3a)
+  The validator accepts the shape: `manage-solution-outline.py:377`'s wildcard rejection (check 3a)
   walks `affected_files` only, deliberately, and `_plan_parsing.py:503` puts the raw pattern into the
   write-set (`deliverable_write_set` returns `['src/newthing/*.py']`).
 - **Why it matters:** The one deliverable class whose mutation set is least knowable at authoring time —
@@ -469,7 +469,9 @@ being codified anywhere a later run would find it (G17).
 - **Kind:** report-defect
 - **Severity:** low
 - **Topic:** plan-lane-contract
-- **Where:** `report-01.md:73, 331`; `report-02.md:99, 110, 169-174, 222, 252, 402, 450, 458`; `actual-state.md:4, 168`
+- **Where:** every citation site, re-derived by grepping the eleven SHAs across the three documents —
+  `report-01.md:73, 331`; `report-02.md:99, 110, 134, 135, 169, 222, 355, 356, 401, 423, 453, 458`;
+  `actual-state.md:4, 168`
 - **Evidence:** `git cat-file -t` reports MISSING for every one of `3b57b7e`, `9d257dd`, `4ec39fd`,
   `51829af`, `4f7ab38`, `f11e8b7`, `8486214`, `117d351`, `f2a7cd9`, `501ce21`, `d898934`. Branch
   `claude/derived-set-closure-integrity-3i53aj` is absent from `git branch -r`; the PR was squash-merged
