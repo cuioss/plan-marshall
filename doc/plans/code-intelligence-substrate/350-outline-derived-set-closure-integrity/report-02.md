@@ -94,7 +94,129 @@ verification sub-agent's mutation campaign was running on the same tree at the t
 
 ## Findings
 
-_Pending round 4._
+Round 4 was dispatched as the final round of run 01's 4-round budget, read-only, with the beyond-diff
+sweep, the sweep-and-count rule, the invented-rationale rule, the vacuous-guard rule and the stop
+question all put to it explicitly, and with rounds 1–3's own fixes named as a first-class surface. It
+returned **fourteen condition-A findings and four condition-B**, recorded per instance below.
+
+⭐ **Eight of the fourteen A findings are in the shipped surface, not in the run's records.** Round 4
+was not narrower than round 3 — see § "Stop record".
+
+### A — false statements (fixed; A is not subject to the budget)
+
+| # | Site | What was false | Disposition |
+|---|---|---|---|
+| A1 | `report-01.md` § D5 | Three false figures in one sentence: **33** tests in `test_qgate_closure.py` (34), "one added to each" of two suites (1 and **2**), total **47** (49). None held even at run 01's own head, and `actual-state.md` already said 49 — the two documents contradicted each other. | **Fixed** in `f11e8b7`; re-derived with `grep -c '^def test_'` against HEAD *and* `origin/main` for the two pre-existing suites. |
+| A2 | `report-01.md` § D5 | A promise the document does not keep — "the count is stated per round below" — and round 3's mutant count stated nowhere. | **Fixed.** Round 3's figure (32) and round 4's (19 run, 17 detected, 2 survived) are now stated. |
+| A3 | `report-01.md` § D5 | The lead-in "Round 2's **27** cover:" introduces a list of 22 items. | **Fixed** by removing the count from the lead-in: the list enumerates the *behaviours* those mutants reverted, which is not a count of mutants, and it now says so. |
+| A4 | `actual-state.md` § 7 vs `report-01.md` § Build gate | The two documents disagree on the branch gate — "ran **four** times" against a three-row table. One is false and a past run's invocation count is not re-derivable from the tree. | **Fixed** by making `report-01.md`'s table the record and removing the restated total, rather than guessing which number was right. |
+| A5 | `actual-state.md` § 7 | "The final run's result is recorded in `report-01.md` § Build gate" — that section explicitly declines to record one ("pending a clean re-run"). | **Fixed**; the pointer now names `report-02.md` § Build gate, where run 02 records the gate it actually ran. |
+| A6 | `report-02.md` § Bridge | **This run's own defect.** "A sweep … returns nothing outside `plan.md`'s own front matter." Run verbatim it returns one hit, and `plan.md` contains no occurrence of the string and has no front matter naming it. Written from expectation rather than from the command's output. | **Fixed**, and the correction states what the sweep actually returns and that the earlier claim was written without running it. |
+| A7 | `report-01.md` § D2 | "emits one finding per declared glob" — a fully enumerated glob emits none, which `test_declared_glob_fully_enumerated_is_closed` pins by asserting `gaps == []`. The owning standard states it correctly; the report was the n−1 site. | **Fixed.** |
+| A8 | `report-01.md` § D5 | The exclusion table's lead-in — "every fixture that does **NOT** declare the path its task targets" — excludes its own second row, which does declare exactly that path and deviates because the path is deliberately absent from disk. | **Fixed.** |
+| A9 | `_qgate_closure.py::check_declared_set_closure`, projection `detail` | A mechanism clause falsified by execution: "the file exists, so the files_exist check passes". `_check_files_exist` iterates task **step targets**, so a declared path no task targets is never examined and its existence is never consulted — which the module's own top docstring states correctly. Operator-facing string. | **Fixed**; the text now says why `files_exist` cannot see it. |
+| A10 | `_qgate_closure.py::check_declared_scope_reconciliation`, `unexpandable_glob` `detail` | An under-enumerated cause list: "absolute, escapes the repository root, the matcher rejected it, or matched only directories". A home-relative pattern (`~/x/*.py`) is none of the four — it is caught by the explicit `~` guard the module comment calls "the load-bearing half". The message told the author four wrong things about the one case the code says matters most. | **Fixed**; the home-relative cause is now first in the list. |
+| A11 | `ref-workflow-architecture/standards/call-graph.md:451` | "phase-4-plan **Steps 5+6+7** task creation", 255 lines below the same file's diagram which **this diff edited** to "Steps 5+6". | **Fixed.** Found independently by this run before round 4 reported, and confirmed by round 4. |
+| A12 | `extension-api/standards/dispatch-granularity.md` ×2 (lines 70, 154) | The same "Steps 5+6+7" claim, two further sites. Round 4 named one; the sweep-and-count grep found both. | **Fixed** — both. |
+| A13 | `plan-marshall/standards/effort-roles.md:47` | "plan-all-tasks; Steps 5+6+7 bundled" — a fourth site of the same claim, named by neither round 4 nor rounds 1–3, found by grepping the claim before fixing any instance of it. | **Fixed.** |
+| A14 | `manage-solution-outline/standards/authoring-guide.md:74` | "derive from the union of `affected_files` across all deliverables" — this diff widened that exact rule in `solution-outline-standard.md`, the file this line cites as authoritative, and did not reach the sibling in the same skill. | **Fixed**, carrying the ⛔ that reading `affected_files` alone bands a survey-scope plan `none`. |
+| A15 | `plan-retrospective/references/request-result-alignment.md` ×2 (lines 34, 40) | The coverage population and the scope-creep population both still read `Affected files` only, while the identical rule in the same skill's `SKILL.md` § Coverage contract was widened by this diff. An LLM following this doc drops a survey-scope deliverable's whole mutation surface out of the denominator **and then counts those same files as scope creep**. The clause "a bullet with no annotation states no intent and is counted" is also now false for `Files to survey:`, whose heading supplies `read`. | **Fixed** — all three statements, with the heading-default precedence spelled out. |
+
+⚠ **The row numbering here is this report's, not round 4's, and the two counts differ for three
+stated reasons.** Round 4 reported fourteen condition-A findings; this table has fifteen rows and one
+finding sits outside it:
+
+- Round 4's second finding bundled two defects in one paragraph — an unkept promise and a count that
+  does not match its own list. They are **separate instances**, so they are separate rows (A2, A3);
+  a finding is recorded per instance, not bundled.
+- Round 4 reported the "Steps 5+6+7" claim as two findings (one touched file, one untouched). The
+  sweep-and-count grep found **four** sites, recorded here as A11–A13 by file — so one row is a site
+  round 4 did not name.
+- Round 4's fourteenth finding is the undeclared collateral change, which is a **disclosure** gap
+  rather than a false sentence in a file. It is discharged in § "Undeclared collateral, now declared"
+  below and is deliberately not a row here.
+
+**Ground truth for A11–A13 was established before correcting anything:**
+`phase-4-plan/SKILL.md` § "Dispatched workflows vs inline steps" already read "Steps 5+6" **on
+`origin/main`**, and its Step 7 is *Determine Execution Order*. So all four sites were stale before
+this branch existed; the branch corrected one of them and left three. A post-fix sweep for
+`5+6+7` / `5, 6, 7` / `5 + 6 + 7` across `marketplace/`, `doc/` and `.claude/` returns only unrelated
+aspect numbering in a recipe skill.
+
+### Checked and found clean — recorded because a negative result is only useful if it was looked for
+
+- **`phase-5-execute/SKILL.md:576`** says the scope-creep helper "subtracts the union of
+  `affected_files`", which looked like a sixteenth stale site. It is not: `scope_creep_check.py::_collect_declared_files` genuinely reads `references.affected_files` **and every `TASK-*.json` step
+  target**, so the doc matches the code. The mutation surface reaches the denominator through the task
+  targets, and the new referrer/projection closures are what force those targets to cover it — the
+  gap is closed upstream by this plan's own D1.
+- **The referrer finding's `detail` string** in `_qgate_closure.py` appeared to contain a garbled
+  sentence ("Task steps are sourced from the means the declared set is incomplete"). Reading the
+  source rather than a regex dump showed the sentence is intact and correct — the extraction dropped a
+  double-quoted continuation line. No defect; recorded so the negative is not re-derived later.
+
+### B — behavioural findings
+
+| # | Finding | Disposition |
+|---|---|---|
+| B1 | `check-artifact-consistency.py::_extract_bullet_entries` — the docstrings added by rounds 1–3, and `artifact-consistency.md:53`, assert "the heading supplies a default, never an override". Inverting `intent or default_intent` left **the entire `plan-retrospective` suite green (949 passed)**. Under the inversion an explicitly marked `(write-replace)` survey bullet is silently downgraded to `read` and drops out of the recall denominator — *raising* recall by shrinking what it is measured against. | **CLOSED, not characterised.** `test_an_explicitly_marked_survey_bullet_reaches_the_recall_denominator` asserts the denominator as exactly 3 and the excluded pool as exactly 1; the inversion reaches 2 and 2 — the opposite verdict on both numbers. Mutation-verified red. |
+| B2 | `_plan_parsing.deliverable_write_set` — the docstring added by rounds 1–3 says "a path declared under both fields contributes one write-set member". Deleting the `seen` set left `manage-tasks`, `manage-solution-outline`, `plan-retrospective` and `phase-6-finalize` **all green**. The identical defensive dedupe in `foreign_pr_gate._foreign_paths_by_deliverable` *did* get its own guard. | **CLOSED, not characterised.** Two guards: the exact list (a concatenating regression yields the path twice, which a membership assertion would accept) and the document order the docstring promises. Mutation-verified red. |
+| B3 | `manage-lessons/scripts/_lessons_query.py::_derive_components` reads `deliverable['affected_files']` only, so a survey-scope deliverable contributes zero components and zero `unmapped_paths[]`. `manage-lessons consult` surfaces no lesson for the skills it will actually edit, and `manage-lessons/SKILL.md` step 3's promise that "narrowing is visible rather than silent" does not hold for it. | **SURVIVOR — see § Stop record for its (b) bound.** |
+| B4 | `test_qgate_closure.py::test_the_finding_names_every_hit_and_states_the_true_total` asserts `len(hits) <= _MAX_HITS_NAMED` as a precondition, where `hits` is the live `manage-tasks/scripts/*.py` set (14 today, cap 20). Adding 7 scripts to that directory turns this into a hard failure of an unrelated change. | **SURVIVOR — see § Stop record for its (b) bound.** |
+
+**Both mutants that survived round 4 were closed rather than characterised**, because both are the
+class round 4 was told to hunt: documented behaviour added by an earlier round to explain that round's
+own fix, with no guard anywhere. Leaving them open under a (b) bound would have been permitted and
+would have been the weaker choice.
+
+### Mutation verification of the two new guards
+
+Run by this run, after committing everything the sweep must not lose, with each file's bytes
+snapshotted by the harness itself (`shutil.copy2` to a unique `run02-mutsweep-main` scratch path) and
+restored in a `finally` — **never** `git checkout` / `git restore` / `git stash`, which rewrite from
+the index and would have discarded uncommitted work:
+
+| Mutant | Result |
+|---|---|
+| `'intent': intent or default_intent` → `default_intent or intent` | **DETECTED** — 1 failed, 4 passed |
+| `if … and path not in seen:` → `if … and path:` | **DETECTED** — 2 failed, 8 passed |
+
+`git status --porcelain` was empty after the sweep, so no mutation survived into the tree.
+
+## Stop record
+
+**Which exit ended the loop: the exhausted round budget (exit ii), at round 4.** Run 01 declared a
+4-round budget before its first dispatch; rounds 1–3 ran under run 01 and round 4 under run 02. This
+is **not** the verifier's all-clear exit — round 4 was asked the stop question and answered
+**"Yes, for A"**: fourteen false statements remained that condition A forbids leaving open.
+
+Every one of those fourteen is **fixed** regardless of the budget, because A is not subject to it.
+
+**Round 4's own answer on condition B**, quoted rather than paraphrased: *"all four may be left open,
+each with a (b) bound supplied."* Run 02 closed B1 and B2 anyway. The two it left open:
+
+| Survivor | (b) — the bound, and the promise it stays outside of |
+|---|---|
+| **B3** — `manage-lessons` does not read the survey pair | Confined to lesson **surfacing**, which is advisory. It cannot change a Q-Gate verdict, a write-set, a recall figure, or the phase-6 landing gate — the four surfaces this plan's deliverables are stated in terms of. The plan's goal is that completeness checks are closure-based and that a closure claim cannot license skipping verification; a lesson that fails to surface changes neither. Closing it means widening `_derive_components` to the write-set, in a skill no deliverable names. |
+| **B4** — a live-directory precondition in one test | Deterministic and **loud**: an `assert` carrying its own message, never a silent pass. It cannot produce a false green, only a false red, and only when someone adds seven scripts to one directory. It changes no deliverable's verdict and no other test's meaning. |
+
+Both were re-put to round 4 as part of its stop question and are recorded with its answer, not carried
+forward unread.
+
+**Were the late rounds' findings narrower? No — and this is stated as the observation it is, not as a
+licence.** Round 4's own words: *"the round-1-through-3 signature held for a fourth consecutive round
+— each fix landed at the site the finding named and not at the sites restating the same claim."* Eight
+of its fourteen A findings are in the shipped change rather than the run's records, including two
+false clauses inside Q-Gate text an operator reads. Round 3 also found more shipped-surface defects
+than round 2. The rate did not decay.
+
+**Residue to assume remains.** Read the deliverables as **still carrying defects of the kinds round 4
+found** — a claim corrected at n−1 of n sites, a rationale clause asserting a mechanism nobody
+executed, and a guard whose fixture cannot distinguish the defect it names. That is not a hypothetical:
+it is the measured, four-times-repeated behaviour of this change under audit, and round 4's fixes are
+themselves young unreviewed prose that no fifth round has read.
+
+`Outcome` in this report's header reports the **deliverables**, not the loop.
 
 ## Reviewer participation
 
@@ -110,8 +232,94 @@ _Recorded before the merge gate._
 
 ## What have we learned (Step 9)
 
-_Recorded before the merge gate._
+Two proposals, both carrying evidence this run produced. **Neither is self-approved**; both are put to
+the operator, and on approval each ships as a separate `chore/` PR touching only the skill — never in
+this plan's diff.
+
+### Proposal 1 — the contract has no procedure for resuming a halted run in a NEW session
+
+**Evidence, from this run.** Run 01 was halted on harness-assigned branch
+`claude/derived-set-closure-integrity-g7n8x2` with nine commits pushed and no PR. Run 02 began in a
+different cloud session, bound to a *different* harness-assigned branch,
+`claude/derived-set-closure-integrity-3i53aj`. § Step 2 covers exactly two arrivals — "a first run
+creates the branch" and "a **resumed** run checks the existing branch out" — and the second assumes
+the resumed run is bound to the *same* branch name. It is silent on the arrival that actually
+happened, and the two rules that do apply point in opposite directions: *keep your assigned branch*
+(for resumability) and *the remote is the only durable storage* (so the prior work must be carried
+forward, not abandoned).
+
+The run had to derive the procedure itself: rebase the prior branch's commits onto current
+`origin/main` — a plain checkout was impossible, because the two had diverged once `main` took a
+commit the older branch predates — push to the assigned branch, and leave the old branch untouched on
+the remote.
+
+⭐ **And the consequence the contract never warns about: a rebase falsifies every commit SHA the prior
+run's report quotes.** `report-01.md` and `actual-state.md` between them named nine commits, none of
+which existed on the branch under review afterwards. That is a **condition-A** defect — a report
+figure that is false — manufactured by following the contract's own durability rule, and nothing in
+§ Step 9's re-verification list would have caught it, because its re-check covers *tree* claims and
+*diff* claims, not *history* claims.
+
+**Proposed edit:** a third arrival in § Step 2 ("a run resumed in a new session on a different
+assigned branch"), stating the rebase-and-keep-the-assigned-name procedure, and a line in § Step 9's
+re-verification paragraph adding **history claims** — commit SHAs quoted in any prior run document —
+to the set a run must re-derive when it rebases.
+
+### Proposal 2 — a non-converging loop is not a first-class outcome
+
+**Evidence.** Run 01 raised this and never got to present it; run 02 confirms it with a fourth data
+point. Four rounds ran. Round 4 found **more shipped-surface defects than round 3** (eight of fourteen
+A findings in the shipped change), and the round-1-through-3 signature — *each fix lands at the site
+the finding named and not at the sites restating the same claim* — held for a fourth consecutive
+round. Round 3 had already found a regression round 2's fix introduced.
+
+A run that stops on the exhausted budget currently records the same `Outcome` as one that stops on a
+verifier's all-clear. The difference lives in a stop record a reader has to go looking for, and
+`Outcome: completed` is what a collector reads. The useful signal is not "verification finished" but
+**"each round is still finding defects at the same rate, and the rate is not decaying"**.
+
+**Proposed edit:** require the report **header** to carry the loop's exit alongside `Outcome` — e.g.
+`Outcome: completed (verification: budget-exhausted, non-converging)` — so a non-converging loop is
+visible without reading the stop record. `Outcome` keeps its meaning (a verdict on the deliverables);
+the header simply stops hiding which exit produced it.
+
+### Secondary, small
+
+§ Step 6's mutation-sweep instruction tells a run to put scratch under `$TMPDIR` and says nothing
+about collisions. Run 01 had two independent sub-agents clobber each other's mutation harness by
+choosing the same filename. Run 02 avoided it only by instructing its sub-agent to prefix its scratch
+paths and by using a distinct prefix itself — neither of which the contract asks for. **Proposed
+edit:** one line — *scratch paths are unique per agent*.
 
 ## Residue
 
-_Recorded before the merge gate._
+Run 01's residue table (`actual-state.md` § 5, R1–R5) carries forward unchanged except where noted.
+What run 02 adds or re-derives:
+
+| # | Item | Disposition |
+|---|---|---|
+| R3 (re-derived) | Sites saying the execution manifest is composed at **`phase-4-plan` Step 8b**; canonical is **Step 7b**. `actual-state.md` estimated "~14"; re-derived at the moment of this claim it is **13** — the grep returns 15, of which `phase-1-init/SKILL.md:907` names phase-1-init's *own* Step 8b and `phase-4-plan/SKILL.md:61` is correct (Step 7b composes, Step 8b is the LLM Q-Gate). | **Still residue, deliberately.** Two were corrected where this diff already touched them. The remaining 13 were false on `origin/main` before this branch existed, this change did not make them false, and **round 4 read R3 and did not raise them** as condition-A findings — the contract makes that the verifier's call, not the author's. Fixing them means editing eight further files no deliverable names, which is itself the undeclared-collateral defect § "Undeclared collateral" exists to prevent. |
+| B3 | `manage-lessons` does not read the survey pair (§ Findings). | **Open, bounded.** Next step: widen `_derive_components` to `deliverable_write_set`. |
+| B4 | A live-directory precondition in `test_qgate_closure.py` (§ Findings). | **Open, bounded.** Next step: derive the expectation from the directory rather than asserting a cap. |
+| New | `doc/plans/code-intelligence-substrate/250-footprint-read-outside-its-window/report-01.md:100` restates the pre-widening coverage rule. | **Deliberately not corrected.** It is another plan's **run report** — a dated record of what that run did, not a live specification. Editing it would falsify the record rather than repair a claim. |
+
+## Undeclared collateral, now declared
+
+Round 4 found that the diff carries a change no deliverable D0–D5 asks for and no run document
+disclosed. Declaring it here is the fix.
+
+**The phase-4-plan step renumbering.** Three navigation documents are brought into line with
+`phase-4-plan/SKILL.md`'s canonical numbering — `ref-workflow-architecture/standards/call-graph.md`,
+`phase-4-plan/references/task-creation-flow.md`, and the hand-edited
+`doc/resources/diagrams/call-graph.svg`. The renumbering is `5..7`→`5+6`, `8`→`7`, `8b`→`7b`, `9`→`8`,
+`10`→`9`, `11`→`10`, plus deletion of a "Step 7: holistic verification tasks" line describing a step
+that does not exist. ⚠ **These documents were stale against `origin/main` before this branch** — the
+canonical numbering was already `5/6/7/7a/7b/8/8b/9/10` there. The change is a correction, not a
+renumbering of the workflow itself: no step moved.
+
+**Distinguish it from what is NOT collateral in the same files.** The `q-gate-validation` arrow in
+`call-graph.md` and `call-graph.svg` changed from *"always / unconditional"* to *"unless B1/B2
+suppress it"*. That is **D4's finding**, not collateral: D0 confirmed the surgical-scope bypass
+suppresses the dispatched validator, and D4 is the deliverable that says a closure claim must not
+carry that authority. A diagram asserting the dispatch is unconditional was false, and correcting it
+was doing D4's work.
