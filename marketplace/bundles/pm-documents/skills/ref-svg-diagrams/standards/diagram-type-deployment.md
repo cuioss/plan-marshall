@@ -7,9 +7,10 @@ rather than the column, the lifeline or the stage.
 Reference implementation: none in this repository. No diagram of this type is authored here; the
 specification and the skeleton template stand on their own.
 
-This type layers on top of the shared visual language. Palette, typography, stroke widths, corner
-radii, arrow-marker geometry and the 8-pixel grid are defined once in
-[`visual-language.md`](visual-language.md) and are **not** restated here. Theme
+This type layers on top of the shared visual language — palette, typography, stroke widths, corner
+radii, arrow-marker geometry and the 8-pixel grid — which [`visual-language.md`](visual-language.md)
+defines once. The values this type fixes for itself are given below; the palette is the one thing it
+does not touch. Theme
 handling follows [`theme-handling.md`](theme-handling.md); every diagram of this
 type uses **Strategy A (theme-neutral)**, the single `#6e7681` token, because a deployment diagram
 carries more strokes per unit area than any other type and the theme-aware variants diverge visibly
@@ -97,7 +98,7 @@ in the orchestrated one. The innermost tier is flat at 4 rather than continuing 
 contained container at 4 are the one place two nested corners share a radius, and the 16 px inset
 keeps them from reading as parallel.
 
-Depth 4 is the nesting floor, and the reason is legibility rather than geometry. Space is not the
+Depth 4 is the nesting ceiling, and the reason is legibility rather than geometry. Space is not the
 constraint: in the smallest `viewBox` (`0 0 1000 620`) a depth-5 box still has roughly 820 × 330 px
 after the 24 px outer margin, four 16 px insets and four 44 px label bands, so it clears the
 120 × 48 px minimum with room to spare. What runs out is the reader's ability to track containment
@@ -169,7 +170,7 @@ peer, and an arrow into it implies a flow.
 Mounted material is drawn as a **tag pill attached to the consuming box's bottom edge**:
 
 ```svg
-<line class="mount-stem" x1="140" y1="280" x2="140" y2="292"/>
+<line class="mount-stem" x1="144" y1="280" x2="144" y2="292"/>
 <rect class="stroke" x="96" y="292" width="96" height="18" rx="4"/>
 <text x="104" y="305" class="mount">certificates/</text>
 ```
@@ -373,5 +374,6 @@ Placeholders the author does not need are **deleted, not left in place**. A skel
 survives into a real diagram unedited is worse than an absent one: it reads as a claim about the
 topology.
 
-The skeleton lives under `templates/` rather than `diagrams/` because `asciidoc-embedding.md`
-requires `diagrams/` to remain a flat catalogue of actual diagrams, and a skeleton is not a diagram.
+The skeleton lives under `templates/` rather than `diagrams/` because a skeleton is not a diagram,
+and `diagrams/` is the catalogue of actual diagrams — which
+[`asciidoc-embedding.md`](asciidoc-embedding.md) keeps flat.

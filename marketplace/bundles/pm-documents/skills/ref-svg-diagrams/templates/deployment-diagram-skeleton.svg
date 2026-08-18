@@ -62,7 +62,7 @@
        ============================================================ -->
   <line class="trust" x1="470" y1="152" x2="470" y2="496"/>
   <text x="458" y="144" class="trust-lbl" text-anchor="end">unauthenticated</text>
-  <text x="482" y="144" class="trust-lbl">authenticated — name what changes, not the mechanism</text>
+  <text x="482" y="144" class="trust-lbl">authenticated</text>
 
   <!-- ============================================================
        depth 3 — first-party component with mounted material

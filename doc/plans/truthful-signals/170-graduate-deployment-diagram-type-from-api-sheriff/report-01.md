@@ -62,9 +62,11 @@ therefore belongs in the table. (That list is also where a pre-existing falsehoo
 ### D2 — the standard and the template landed
 
 `marketplace/bundles/pm-documents/skills/ref-svg-diagrams/standards/diagram-type-deployment.md`
-(376 lines, from a 437-line source) and
+(graduated from a 437-line source) and
 `marketplace/bundles/pm-documents/skills/ref-svg-diagrams/templates/deployment-diagram-skeleton.svg`
-(133 lines, from a 129-line source), first landed in commit `21267da`.
+(graduated from a 129-line source), first landed in commit `21267da`.
+Line counts are deliberately omitted: they went stale in three consecutive rounds, and the files are
+in the diff.
 
 Every difference from the source, and why:
 
@@ -287,7 +289,7 @@ The sub-agent had the two tables and nothing else — no repository access, no c
 | F26 | Two rows both claim "topology" — `diagram-type-graph.md` is *"Graph / topology"* and the new row is *"Deployment / topology"* — and *"nothing in either row distinguishes when a topology belongs to one versus the other"* | **Fixed** — the deployment row now names the discriminator the standard itself states: *"Containment is what separates it from the graph type."* |
 | F27 | The new Templates row was the most itemized cell in its table — six enumerated features against two-to-four for its neighbours | **Fixed** — trimmed to its neighbours' level of detail |
 | F28 | `diagram-type-state.md` has a standard and a reference implementation but **no template**, while every other indexed type has one. The tables present the deployment gap (annotated) and the state gap (silent) inconsistently | **Not fixed — residue.** Authoring a state skeleton is a new diagram-type deliverable, well outside this plan and outside the operator's authorisation. Recorded in § Residue |
-| F29 | The deployment row states the *fact* of having no reference implementation but not its *consequence* — whether a reader should pattern-match against the skeleton instead | **Partially addressed** — the skeleton is named in the Templates row directly beneath, and the standard's § Annotated template says copy-rename-fill is the whole workflow. Judged not worth a further sentence in a table cell; recorded so the judgement is visible rather than silent |
+| F29 | The deployment row states the *fact* of having no reference implementation but not its *consequence* — whether a reader should pattern-match against the skeleton instead | **Partially addressed** — the skeleton is named in the Templates row directly beneath, and the standard's § Annotated template points at it. (That section's wording has since changed — see R3-A2 — which is why this cell now describes it rather than quoting it.) Judged not worth a further sentence in a table cell; recorded so the judgement is visible rather than silent |
 
 ### Operator escalation
 
@@ -323,7 +325,7 @@ this report's sequence:
 | # | Site | Finding | Disposition |
 |---|---|---|---|
 | F32 | `templates/deployment-diagram-skeleton.svg` `<desc>` | *"Left of a trust boundary sits a first-party **gateway**"* — no element in the diagram is a gateway; the box is labelled `first-party component`. "Gateway" is the source repository's subject noun, inherited unchanged. The standard makes `<desc>` normative | **Fixed** — "a first-party component". This is the instance D2's *"written to graft unchanged — verify rather than assume"* was aimed at, and the run's own sweep missed it |
-| F33 | `standards/diagram-type-deployment.md` § Layout grid | *"Positions and sizes snap to multiples of 8, per the shared grid rule."* The shared rule (`visual-language.md`) says *"wherever practical, except for centred text"*; the restatement dropped the qualifier and so asserts more than its source. Contradicted by this type's own 28 and 44 px label bands and its 12 px label inset, none a multiple of 8, and by 50 off-grid attribute values in the shipped skeleton | **Fixed** — qualifier restored, and the exceptions named as what sets them (the label baselines in § Enclosure labels). ⭐ This is the **same defect class** as F18, at a site the run's own audit stopped short of |
+| F33 | `standards/diagram-type-deployment.md` § Layout grid | *"Positions and sizes snap to multiples of 8, per the shared grid rule."* The shared rule (`visual-language.md`) says *"wherever practical, except for centred text"*; the restatement dropped the qualifier and so asserts more than its source. Contradicted by this type's own 28 and 44 px label bands and its 12 px label inset, none a multiple of 8, and by 50 off-grid attribute values in the shipped skeleton | **Fixed in `e7d3f78`**, then twice revised — see R2-16 and R3-A9 for what the sentence became and why each intermediate form was itself defective. ⭐ Same defect class as F18, at a site the run's own audit stopped short of |
 | F34 | `standards/diagram-type-deployment.md` § Annotated template | *"Dashed `8 4` at 2.0 px running the **full height** of the network"*. Measured: the trust line is `y=152…496` (344 px) inside a network of `y=116…512` (396 px) — 36 px short at the top, 16 at the bottom | **Fixed** — *"running vertically through the network's content area"* |
 | F35 | `templates/deployment-diagram-skeleton.svg` header comment | *"exercises **every** affordance of the type:"* introducing a list of **six**, while the standard's affordance table names **eight**. The "every" claim is false as enumerated | **Fixed** — replaced with a pointer to that table, which cannot drift, plus the containment depth as a standalone fact |
 | F36 | `report-01.md` § Deliverables, D2 table | The stated reason for moving the render output off `.plan/temp/` was that it is *"a plan-marshall-specific path"* — inverted at the destination, since `CLAUDE.md` mandates `.plan/temp/` for temp files **in this repository**. The change is right; the reason given was not | **Fixed** — restated on the two grounds that hold: the skill ships to consumer repositories with no `.plan/`, and the path was inside the repository |
@@ -352,11 +354,11 @@ template.
   skipping the cheap one. Round 2's classification is also correct: an unconditional instruction that
   cannot be followed for one of seven indexed types is a **false statement**, and condition A does not
   admit a bound.
-- **Fixed**, at both sites — the state row in the Standards table now says it is the one type with no
-  skeleton and names its starting point, and § Workflow Step 3 (the instruction round 2 identified as
-  unfollowable) now says so at the point of use, with the caution that the diagram's content must be
-  replaced rather than left in place. **Authoring a state skeleton remains out of scope** and is
-  recorded in § Residue.
+- **Fixed** — at the two sites round 2 identified (the Standards row and § Workflow Step 3), and at a
+  third that round 3 found still unconditional (the note under the Templates table, R3-A12). Round 3
+  also removed an unsourced rationale clause the round-2 fix had added (R3-A8), and round 4 scoped all
+  three to the topology the source actually covers (R4-A12). **Authoring a state skeleton remains out
+  of scope** and is recorded in § Residue.
 
 **Scope finding — F42, not A- or B-governed, but it must not ship silently.** The verifier's judgement
 was that the inset rewrite (F18) and the five sibling-standard edits (F3–F12) are *"good changes on the
@@ -397,7 +399,7 @@ round edited the SVG again, which is why it is a ledger now.
 | `21267da` | The graduated skeleton, first landed | `#ffffff`, `#0d1117` at 1200 px | Both full PNGs, plus the 12 px footer caption re-rendered at 2.4× on both because the full render could not resolve it |
 | `e7d3f78` | XML comment block and `<desc>` only — **no drawn node** | Both re-rendered | Both came back byte-identical to the `21267da` renders. That is a *check* on the claim, not proof of it; the proof is the diff, which touches no drawn node. ⚠ And identical rasters are the weaker signal here — the standard makes `<desc>` normative, so this edit was a real semantic change no PNG could show |
 | `03b0b5e` | **Drawn geometry**: mount pill `x 176→168`, `width 72→64`, stem `x 212→200`, label `x 184→176` | Both re-rendered | Both full PNGs read back, plus the mount strip at 2.4× on both backgrounds to confirm `config/` sits inside its narrowed pill with padding on both sides |
-| this commit | **Drawn geometry**: a second `trust-lbl` added at `x=458`, `text-anchor="end"` | Both re-rendered | Both full PNGs read back; the new label clears the `first-party component` box (ends at 458, box ends at 344) and neither label collides with the other or with the `network` enclosure label |
+| this commit | **Drawn geometry**: a second `trust-lbl` added at `x=458`, `text-anchor="end"` | Both re-rendered | Both full PNGs read back. The labels sit at `y=144` and the topmost box at `y=176`, so no horizontal overlap with a component box is geometrically possible at any label width — an earlier draft argued this from the right-anchored label's `x=458`, which is its *right* end and the wrong comparison. The two labels are 24 px apart and neither collides with the `network` enclosure label |
 
 ### Independent verification sub-agent — round 2
 
@@ -431,7 +433,7 @@ failure inside round 1's own fix.**
 | R2-13 | `standards/diagram-type-deployment.md` § Crowded diagrams | *"11 px monospace is the floor at which the rasterised result stays legible on both backgrounds"* — while the same document prescribes monospace **10 px** for mount labels and **10 px** for numbered-leg glyphs, the second only three lines later. This run's own D5 checklist ticked those 10 px labels as legible, refuting the floor from inside this report | **Fixed** — scoped to what it actually governs: *"11 px is the floor for an edge label"* |
 | R2-14 | `standards/diagram-type-deployment.md` § Mounted material vs the skeleton | *"Multiple mounts stack horizontally … with **8 px** between pills"*, while the shipped pills leave **16 px**; and *"width = label width + 16"*, while the `config/` pill is 72 px against a measured label width of 42.2 px. One of the two had to be false | **Fixed on both sides.** The label widths were **measured** in the render engine rather than estimated (`certificates/` 78.3 px, `config/` 42.2 px at monospace 10 px). The skeleton's second pill moves to `x=168 w=64` — an 8 px gap, and 42.2 + 16 rounded up to the 8-grid — with its stem re-centred; the rule gains *"rounded up to the 8-grid"*, which is now true of both pills (78.3 + 16 → 96) |
 | R2-15 | `standards/diagram-type-deployment.md` § Collapsed groups | The worked example puts an `encl-sub` baseline at `y="202"` on a box at `y="160"`; § Enclosure labels fixes it at `box_top + 40` = **200**. Every other worked example and all six skeleton enclosures obey the rule exactly | **Fixed** — 200 |
-| R2-16 | `standards/diagram-type-deployment.md` § Layout grid | ⭐ **The n−1-of-n failure inside round 1's fix for an n−1-of-n failure.** Round 1 restored the 8-grid qualifier and added *"the label bands (28 and 44) and the 12 px label inset are this type's **standing exceptions**"* — presented as complete, while the same document normatively fixes pill height 18, stem length 12, offsets 8 and 13, wrap-row 22, leg radius 9, trust-cross radius 3.5 and a 14 px crowding threshold. It also called a 12 px `x` inset a *"baseline"*, which is wrong in kind | **Fixed** — the enumeration is gone entirely; the qualifier is restored and the sentence now says only that an explicitly-given size governs. Round 2 confirmed the *rationale* half was sound (`visual-language.md` does read "wherever practical", and 28/44 do follow the stated baselines); it was the enumeration around it that failed |
+| R2-16 | `standards/diagram-type-deployment.md` § Layout grid | ⭐ **The n−1-of-n failure inside round 1's fix for an n−1-of-n failure.** Round 1 restored the 8-grid qualifier and added *"the label bands (28 and 44) and the 12 px label inset are this type's **standing exceptions**"* — presented as complete, while the same document normatively fixes pill height 18, stem length 12, offsets 8 and 13, wrap-row 22, leg radius 9, trust-cross radius 3.5 and a 14 px crowding threshold. It also called a 12 px `x` inset a *"baseline"*, which is wrong in kind | **Fixed in `03b0b5e`** — the enumeration removed, the qualifier restored. The replacement clause was itself invented normative text and was corrected again in round 4's commit (R3-A9); the sentence's current wording is in the diff, not quoted here. Round 2 confirmed the *rationale* half was sound (`visual-language.md` does read "wherever practical", and 28/44 do follow the stated baselines); it was the enumeration around it that failed |
 
 **Clean verdicts round 2 reached, with what it read.** All **eight** affordance-table rows measured
 against the shipped SVG coordinates, not just the one that was wrong — seven pass outright and the
@@ -497,6 +499,63 @@ previous one could not see."* Round 2 found 16 (5 shipped / 11 report); round 3 
 6 report). The shipped-skill share did **not** fall. This run's findings are **not narrower** than the
 previous round's, and this report does not claim they are.
 
+## How the verification loop stopped
+
+**The loop ended on exit (ii): the round budget was exhausted.** It did **not** end on a verifier
+saying nothing remained — no round ever said that, and this report does not imply one did.
+
+- **Budget: 4 rounds, declared before the first dispatch** and stated to the operator at that point,
+  so it could not be a number chosen at the moment of wanting to stop.
+- **Round 4 stopped it**, and its answer to the stop question was **"Yes — things remain that
+  condition A forbids leaving open"**, listing 16 of them.
+- **Everything condition A forbids was fixed anyway.** A is not subject to the budget: exhausting it
+  bounds how often the run *verifies*, never whether it *fixes* what verification already found. All
+  16 of round 4's A-findings are fixed in the final commit, as were all 6 of round 1's, all 16 of
+  round 2's and all 12 of round 3's — 50 in total.
+- **No condition-B survivor is left uncharacterised.** Round 1's only survivor (F41) was reclassified
+  as A-governed by round 2 and fixed. Every B item found since is in § Residue with its bound, and
+  round 4's judgement on each recorded bound was applied: three it called inadequate were rewritten,
+  and the nine it found unbounded were given bounds.
+
+**Were the late rounds' findings narrower? No — and this report does not claim they were.** The
+per-round split, shipped skill vs this report:
+
+| Round | A-findings | In the shipped skill | In this report |
+|---|---|---|---|
+| 1 | 6 | 4 | 2 |
+| 2 | 16 | 5 | 11 |
+| 3 | 12 | 6 | 6 |
+| 4 | 16 | 6 | 10 |
+
+The shipped-skill share did not fall across four rounds. Round 3 named the reason — *"the surface is
+not shrinking. It is rotating: each round exhausts the lens it used and the next round's lens finds a
+comparable number of defects in what the previous one could not see"* — and round 4 sharpened it:
+part of the surface was **actively regenerating**, and the generator was this report's own habit of
+quoting mutable text in disposition cells. That generator is now closed (see round 4 above), which
+should bend the report-side curve; nothing closes the shipped-skill side but more lenses.
+
+### What residue a reader should assume remains
+
+⛔ **Not "none".** Round 4's estimate, which this run adopts rather than softening: **ten to twenty
+condition-A statements likely remain, and the count should not be expected to fall.** By class:
+
+- **Report claims about files the report did not open.** Round 4 found two false populations in the
+  first § Residue rows it checked. Highest density per unit of effort, and fully mechanisable. Expect
+  one to three more.
+- **Source-inherited claims never measured against the document's own tables** — the F32 / R2-12 /
+  R2-13 / R2-14 / R2-15 / R4-A9 / R4-A13 family. Four rounds found seven; round 4 found two on a first
+  pass. Expect two to five more.
+- **n−1-of-n survivors of this run's own fixes.** Every round found this shape and every round left new
+  instances — R4-A10 and R4-A11 are round 3's fixes leaking at the adjacent line. Expect one to three
+  per fix commit until fixes are applied by sweeping the class rather than the site.
+
+**Three lenses no round used**, named so a follow-up does not have to rediscover them: mechanical
+claim extraction (pull every number, quantifier and quoted string and re-derive each — it would have
+found R4-A2, R4-A7 and R4-A8 without judgement, and it is the cheapest remaining lens); the
+**consumer-repository maintainer** who installs this marketplace skill with no plan-marshall tree
+(untested, and F17 proves the lens is productive); and reading the five sibling **skeletons** against
+their own standards.
+
 ## Residue
 
 Anything left open, and where it should go next.
@@ -505,10 +564,97 @@ Anything left open, and where it should go next.
 |---|---|---|
 | **The downstream retirement (D4)** | A different repository, with its own PR flow, and no operator here to approve it. The plan forbids attempting it from this run | The proposal in § D4 above — two files to delete, four referrer files to repoint, upstream-first, and a whole-repository sweep still owed because the four are a best enumeration, not proof |
 | **No `state-diagram-skeleton.svg`** | Authoring one is a new diagram-type deliverable — a second unreviewed SVG in a PR whose reviewers are checking a graduation. The **disclosure** gap it caused is fixed at all three `SKILL.md` sites; only the artifact is missing | A follow-up plan. It is the only indexed type without a starter |
-| **The skeleton's `<title>` / `<desc>` do not satisfy their own rules** (round 3, condition B) | `<title>` names no environment and `<desc>` neither enumerates a collapsed-group membership nor names the boundary, though the standard makes both mandatory. **Bound:** the `<desc>` text instructs the author to do both, so the failure needs an author who renames and reads nothing. It changes no rule and misleads no one who follows the standard | A follow-up, together with the item below — both are "make the skeleton satisfy the standard it ships beside" |
-| **The skeleton's footer caption is an author instruction, not diagram content** (round 3, condition B) | It ships as content unless the author reads the deletion rule elsewhere in the standard; all five sibling skeletons use that slot for a type-descriptive caption. **Bound:** cosmetic and self-announcing — the caption literally reads "Skeleton only" | Same follow-up |
+| **The skeleton's `<title>` / `<desc>` do not satisfy their own rules** (round 3, condition B) | `<title>` names no environment and `<desc>` neither enumerates a collapsed-group membership nor names the boundary, though the standard makes both mandatory. **Bound:** the `<desc>` instructs the author on **one** of the three — enumerating a collapsed group. It is silent on naming the boundary in `<desc>` and on `<title>` naming the environment, so those two need an author who reads § Naming and file conventions. It changes no rule and misleads no one who does | A follow-up, together with the item below — both are "make the skeleton satisfy the standard it ships beside" |
+| **The skeleton's footer caption is an author instruction, not diagram content** (round 3, condition B) | It ships as content unless the author reads the deletion rule elsewhere in the standard; four of the five sibling skeletons use that slot for a type-descriptive caption, and `block-diagram-skeleton.svg` has no footer-caption element at all. **Bound:** cosmetic and self-announcing — the caption literally reads "Skeleton only" | Same follow-up |
 | **No rule for the mount stem's horizontal position** (round 3, condition B) | The skeleton centres both stems on their pills; the standard's worked example does not, and neither states a rule. **Bound:** an author copying the skeleton inherits the centred convention and violates nothing, because no rule exists to violate. Writing one is new normative text this graduation is not entitled to add | A follow-up to the type standard |
-| **`.caption` is 12 px across all six templates** where `visual-language.md` says 11 px | Pre-existing across the whole template set, including the five this run did not touch. Fixing it here would be exactly the unrelated diagram churn the plan's out-of-scope forbids | A follow-up covering all six templates together |
+| **`.caption` is 12 px in five of the six templates** where `visual-language.md`'s typography table gives captions 11 px | Deployment, flow, graph, sequence and stack define `.caption` at 12 px; `block-diagram-skeleton.svg` defines no `.caption` and uses `.col-sub` at 11 px, so it already conforms — which is evidence the divergence is fixable rather than intended. Four of the five are templates this run did not touch, and fixing them here would be exactly the unrelated diagram churn the plan's out-of-scope forbids | A follow-up covering the five |
 | **Ordinals in `diagram-type-block.md` and `diagram-type-sequence.md`** | Removed by this run under the operator's authorisation. Nothing open — recorded so a later reader knows they were deliberate, not missed | — |
+| **No trust-label placement rule for the open-path boundary form** (round 4) | § Trust boundaries places the label *"8 px above its top-left corner"* — a `<line>` has no corner, so now that the standard mandates two labels on an open path, it specifies the placement of neither. **Bound:** an author copying the skeleton inherits `y = line_top − 8` with anchors at ±12 px and violates nothing, because no rule exists to violate. It reaches only an author writing from the document rather than the skeleton | A follow-up to the type standard, with the mount-stem `x` rule below |
+| **No sibling standard routes a reader to the deployment type** (round 4) | The deployment standard names all five siblings as alternatives; not one names it back. Most acute for `diagram-type-graph.md` — "Graph / Topology" against "Deployment / Topology" — whose alternatives list never mentions containment. F26's fix reached the `SKILL.md` index row and not the standard. **Bound:** a reader who reaches either the index or the deployment standard is redirected correctly; only one who opens the graph standard first and never returns to the index is stranded. Editing five sibling "use a different type when" lists is the diagram churn the plan's out-of-scope forbids | A follow-up covering all six type standards' alternatives lists together |
+| **The container-rasteriser recipe is homed in one type standard** (round 4) | The "no rasteriser installed → run one in a container" recipe, with its two load-bearing gotchas, is type-independent knowledge that lives only in the deployment standard. **Bound:** no author is misled; the cost is discoverability for the other six types | A follow-up moving it to `SKILL.md` § Step 4 or `visual-qa.md` |
+| **Six affordances specified in the standard have no skeleton placeholder beyond the four now named** (round 4) | Vertical edge-label placement, crowding remedy 1, the mount wrap-to-second-row, the orchestrated `cluster → namespace → pod → container` ladder, the omit-`:port` form, and omitting `own-bar` entirely. **Bound:** § Annotated template no longer claims the skeleton covers everything (R3-A2), so each costs a lookup in a document the author is told to read. The most material is the vertical edge-label rule, which is a row of a placement table | Same follow-up as the `<title>`/`<desc>` and caption items |
+| **No § CSS additions section for nine type-specific classes** (round 4) | Sequence and state standards both have one; deployment introduces more classes than any other type and consolidates them nowhere. **Bound:** every class is defined in the skeleton's `<style>` block, so a copying author is unaffected | A follow-up to the type standard |
+| **The skeleton's trust geometry puts the external component on the authenticated side** (round 4) | As the type's one worked example of trust geometry it teaches the arrangement backwards. **Bound:** a placeholder asserts nothing about the world, and every label is marked for replacement | Same follow-up |
+| **`SKILL.md` § Related names one of six templates** (round 4) | F31 fixed its ordinal and left the incompleteness. **Bound:** the Templates table lists all six eleven lines earlier; § Related is decorative | Trivial; fold into any later `SKILL.md` edit |
+| **`diagram-type-sequence.md` has a template but no § Annotated template section** (round 4) | The only type in that state. Pre-existing and untouched by this run | The template-set follow-up |
+| **§ D2's source→destination difference table is complete for `21267da`, not for HEAD** (round 4) | Eight further divergences landed in rounds 1–4. **Bound:** every one is individually recorded under an F or R number in § Findings, so nothing is lost — the table's scope needed stating, not its content changing | Stated here; no further action |
 | **The plan's own premise that "five" diagram types exist** | Six existed on `main`. The plan is the input; correcting a landed plan is not this run's business | Noted for whoever authors the next plan in this epic |
+
+### Independent verification sub-agent — round 4 (final round of the declared budget)
+
+Round 4 chose its own lens and stated it: **peer reviewer checking house-form consistency across the
+five sibling standards and six sibling skeletons, plus a re-derived diff against the upstream source
+at `f236406`.** Rounds 1–3 all read from *inside* the two deployment files; this lens reads them
+against their neighbours, which is where a graduation's integration defects live and where every
+"all five / all six / every template" claim can be falsified mechanically. It found two defects in
+round 3's own § Residue on the first pass.
+
+It found **16 condition-A statements**. All are fixed — condition A is not subject to the round
+budget, so exhausting the budget bounds how often this run *verifies*, never whether it *fixes* what
+verification already found.
+
+**In the shipped skill.**
+
+| # | Site | Finding | Disposition |
+|---|---|---|---|
+| R4-A1 | `standards/diagram-type-deployment.md` preamble | *"Palette, typography, stroke widths, corner radii, arrow-marker geometry and the 8-pixel grid … are **not** restated here."* False on five of its six items: typography is restated three times and **overridden** once (monospace-upright edge labels against the shared sans-italic arrow label), stroke widths and radii are fixed throughout, and round 3's own R3-A9 fix *completed* the grid restatement it denies. Palette is the only item the claim holds for | **Fixed** — the preamble now says what is true: the shared language is defined once elsewhere, the values this type fixes are given here, and the palette is the one thing it does not touch |
+| R4-A9 | `standards/diagram-type-deployment.md` § Containment nesting | *"Depth 4 is the nesting **floor**"* — the table two sections above calls it *"Maximum nesting depth"*, and the paragraph's own conclusion is to split into a second diagram beyond it. The same document uses "floor" to mean *minimum* three times, one of them written by this run | **Fixed** — "ceiling". Inherited verbatim from the source; three rounds read past it |
+| R4-A10 | `templates/deployment-diagram-skeleton.svg` trust label | `authenticated — name what changes, not the mechanism` **violates the rule it is the worked placeholder for** — § Trust boundaries says name the state, not the mechanism, and the trailing clause names neither. ⭐ R3-A3's own defect class at the site R3-A3's fix had just touched | **Fixed** — the pair is now `unauthenticated` / `authenticated`, which are the standard's own example values, so the placeholder exemplifies the rule instead of breaking it. Both renders read back |
+| R4-A11 | `standards/diagram-type-deployment.md` § Mounted material | With the pill corrected to 96 px (R3-A1), its centre is 144 and the stem still read `x=140` — centred on nothing, off the 8-grid the same document mandates, and inconsistent with both skeleton stems. ⭐ R3-A1's class at the sibling attribute **in the same three-line code block** | **Fixed** — 144 |
+| R4-A12 | `SKILL.md`, all three state-disclosure sites | Each presents the state redirect unconditionally. Its source scopes it to *"any **sequential-with-back-edge lifecycle** diagram"* — one of four topologies that standard's own `viewBox` table offers. An author of a branching or hub-and-spoke state diagram was sent somewhere that names no starting point for them. **This report quoted the qualifier correctly in F41's bound, so the run knew and the shipped skill did not say** | **Fixed** at all three sites |
+| R4-A13 | `standards/diagram-type-deployment.md` § Annotated template | *"`asciidoc-embedding.md` **requires** `diagrams/` to remain a flat catalogue of actual diagrams"* — the cited rule forbids sub-directories beneath `diagrams/` and says nothing about non-diagram files. ⭐ F36's class: right conclusion, over-read reason | **Fixed** — the conclusion stands on "a skeleton is not a diagram", and the citation is scoped to what it actually says |
+
+**In the run report — and this is where round 4 earned its keep.**
+
+R4-A2 through R4-A6 and R4-A14/A15 are nine false statements, of which **six exist only because round
+3 fixed something**. Round 4 diagnosed the mechanism rather than the instances:
+
+⛔ **The report's disposition cells were a self-falsifying surface.** Roughly forty finding rows quoted
+the post-fix *text* of a site, or a figure derived from a mutable file. Every round edits three to six
+of those sites and does not sweep the rows quoting them. The report therefore **manufactured three to
+five new condition-A statements per round, mechanically** — and would have done it again on this
+commit. The line counts are the clearest case: stale in three consecutive rounds, including under an
+R2-10 disposition that claimed they were *"re-derived programmatically at the moment of the claim."*
+
+**The class is fixed, not just the instances:**
+
+- **Line counts deleted.** They carry nothing a reviewer needs and have a perfect record of going stale. The source figures (437 / 129) stay — they name a fixed commit and cannot move.
+- **Disposition cells now cite a commit and a finding ID instead of quoting current text.** F29, F33, F41 and R2-16 were rewritten this way. A cell that says "fixed in `e7d3f78`, then revised — see R2-16 and R3-A9" stays true no matter what the sentence becomes.
+
+| # | Finding | Disposition |
+|---|---|---|
+| R4-A2 | `§ D2` line counts false at HEAD for the third consecutive round | **Fixed by deletion** — the class fix above |
+| R4-A3 | F29's cell quoted *"copy-rename-fill is the whole workflow"*, removed by R3-A2 | **Fixed** — describes, does not quote |
+| R4-A4 | F33's cell quoted the *"label baselines"* rationale, superseded twice | **Fixed** — cites `e7d3f78`, R2-16, R3-A9 |
+| R4-A5 | F41 quoted a clause R3-A8 removed, and said *"at both sites"* when there are three | **Fixed** — all three named, with the later corrections |
+| R4-A6 | R2-16's cell quoted *"an explicitly-given size governs"*, removed by R3-A9 as invented text | **Fixed** — cites the commits |
+| R4-A7 | § Residue's `.caption` row carried three false populations: *"all six templates"* (five), *"the five this run did not touch"* (four), *"all six together"* (five). `block-diagram-skeleton.svg` defines no `.caption` and conforms at 11 px via `col-sub` | **Fixed** — populations re-derived by me independently of round 4 before editing, and block's conformance recorded as evidence the divergence is fixable |
+| R4-A8 | § Residue's footer-caption row: *"all five sibling skeletons use that slot"* — four do; block has no footer-caption element | **Fixed** — verified by element count |
+| R4-A14 | The render ledger argued the new label's clearance from its `x=458`, which is a right-anchored label's **right** end — the wrong comparison, and unnecessary: the labels sit 32 px above the topmost box, so no overlap is possible at any width | **Fixed** — the correct and sufficient reason given |
+| R4-A15 | § Residue's `<title>`/`<desc>` row: *"the `<desc>` instructs the author to do **both**"*. It instructs on one of three obligations. ⛔ **The bound itself was false** — which is what a condition-B disclosure rests on | **Fixed** — the bound now says which one is covered and which two are not |
+
+⭐ **Round 3 authored § Residue and asserted facts about sibling templates without opening them.** Two
+of its first two checkable rows were wrong. That is worth stating plainly in a report whose subject is
+signals that look more informative than they are: **the disclosure section was itself an untruthful
+signal**, and it took a lens aimed at the neighbours to see it.
+
+**Nine condition-B items round 4 found with no bound recorded at all** are now in § Residue with
+bounds. **Two structural gaps it named are there too:** no sibling standard routes a reader *to* the
+deployment type — most acutely `diagram-type-graph.md`, titled "Graph / Topology" against the new
+"Deployment / Topology", whose own alternatives list never mentions it (F26's fix reached the index
+and not the standard); and the container-rasteriser recipe is homed in this one type standard though
+it is type-independent knowledge every author needs.
+
+**Clean verdicts round 4 reached:** the D2 source→destination difference table is complete for
+`21267da` (verified by a full re-diff against the clone); the D4 downstream enumeration **reproduces
+exactly**; source line counts 437/129 confirmed; all six named reference implementations exist; the
+skeleton is well-formed with no coordinate outside its `viewBox`; the depth-5 rationale's arithmetic
+re-derives; no fourth site implies every type has a template; and the sibling § Annotated template
+sections carry **no** equivalent over-claim, so R3-A2's defect class is confirmed absent elsewhere.
+
+**Blocker verdict: none.** Round 4's judgement, and this run adopts it: nothing found blocks the
+merge. Nothing executes; the SVG is well-formed and renders inside its `viewBox`; `python-verify.yml`
+takes its docs-only path. *"The worst outcome any finding here produces is a reader who loses a
+minute."* Its two "would not let ship" items — § Residue's false population rows and § D2's line
+counts — are both fixed above, and condition A compelled them regardless.
 
