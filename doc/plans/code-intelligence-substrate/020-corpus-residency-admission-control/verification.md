@@ -45,7 +45,9 @@ work, no collateral.
     The only tracked `.plan/` content carries no metrics field.
   - `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py:2720,4923,4990,9374` — the
     archived-plan audit walks `.plan/local/archived-plans`, which is absent. Report claim 2 exact.
-  - `git grep -l exploration_doc_residency_bytes` → 6 paths, of which one is `report-01.md` itself;
+  - `git grep -l exploration_doc_residency_bytes` → 6 paths at `61a43e5`, of which one is
+    `report-01.md` itself (10 at `57c63a8` — these audit documents inflate it, so the durable form of
+    the claim is the five non-audit files, not the count);
     the other **five** are `manage-metrics/standards/data-format.md`,
     `platform-runtime/scripts/runtime_base.py`, `platform-runtime/standards/contract.md`,
     `test/plan-marshall/manage-metrics/test_manage_metrics.py`,
@@ -59,7 +61,7 @@ work, no collateral.
     **`Outcome: blocked (D0 gate → outcome (b))`** on 2026-08-12, two days *after* this run, so no
     sibling has since landed a population.
 - **Verdict:** **CONFIRMED.** Outcome (b) is the correct answer, was correct when reported, and is
-  still correct at `61a43e5`. The run halted, reported blocked, and did not substitute a stand-in —
+  still correct at `57c63a8`. The run halted, reported blocked, and did not substitute a stand-in —
   exactly what `plan.md:62-65` demands. Per `plan.md:139-141` this is a **success at D0**.
 - **Prohibition respected:** `plan.md:129` forbids going looking for the machine-local measurement.
   The run established structural absence via `git ls-files` and a top-level `ls .plan` — the same two

@@ -85,9 +85,12 @@ stands.
   unsatisfiable against a contract the suite was already enforcing three files away, and nobody
   reconciled the two. Pinning the new path closes that loop.
 - **Action:** add one subprocess-level test that runs `generate_executor.py` through `safe_main` on a
-  forced fail-open scenario and asserts the observed pair — exit `0` **with** `status: error` and the
-  `surface-stats:` line on stdout — pinning the actual contract so a future change to either half is
-  caught.
+  forced fail-open scenario and asserts the observed triple — exit `0` **with** `status: error` and
+  the `surface-stats:` line on stdout — pinning the actual contract so a future change to any part is
+  caught. A reproducible forcing recipe already exists: stage a previous executor carrying one
+  `SCRIPT_SURFACES` entry under a tmp `PLAN_TRACKED_CONFIG_DIR` and set
+  `PM_SURFACE_BUDGET_SECONDS=0`. Place it beside the three exit-code tests at
+  `test_generate_executor.py:225-259` so the four state one contract together.
 - **Done when:** a test asserts the (exit code, `status`, stats-line-present) triple for the fail-open
   refusal, and fails if any one of the three changes.
 - **Effort:** S
@@ -175,17 +178,26 @@ stands.
 - **Severity:** medium
 - **Topic:** bundle-docs
 - **Where:** `marketplace/bundles/plan-marshall/skills/manage-config/standards/provisioning-fail-closed-audit.md:96`
-- **Evidence:** "| `generate_executor` | (a) | **JUSTIFY.** Runs **four** deterministic guards
-  (format-version handshake, placeholder-residue, `py_compile` self-check, emitted-path provenance)
-  and commits atomically…". The fifth (fail-open) guard appears in neither the count nor the list.
+  **and** `test/plan-marshall/tools-script-executor/test_generate_executor.py:1906`
+- **Evidence:** two sites, found by a whole-tree sweep for the phrase.
+  (1) `provisioning-fail-closed-audit.md:96` — "| `generate_executor` | (a) | **JUSTIFY.** Runs
+  **four** deterministic guards (format-version handshake, placeholder-residue, `py_compile`
+  self-check, emitted-path provenance) and commits atomically…". The fifth (fail-open) guard appears
+  in neither the count nor the list.
+  (2) `test_generate_executor.py:1906` — "# generate_executor() runs four deterministic guards on the
+  substituted content BEFORE any write". This one heads the shape-guard test section and is narrower
+  (Guard 5 runs on the derivation outcome, before substitution), but it carries the same stale count.
 - **Why it matters:** this document is the standing fail-closed justification for the generator. Its
   justification is now incomplete in the one dimension that changed, and `report-01.md` finding F3
   explicitly asserts "guard count migrated four→five **consistently**" — a claim this line refutes.
-- **Action:** update the count to five and add the fail-open guard to the enumeration, noting it is a
-  semantic guard on the derivation outcome rather than a shape guard, and that it refuses with
-  `status: error` while preserving the previous executor.
-- **Done when:** a whole-tree grep for `four deterministic guards` returns nothing, and the audit row
-  enumerates all five.
+- **Action:** at site (1), update the count to five and add the fail-open guard to the enumeration,
+  noting it is a semantic guard on the derivation outcome rather than a shape guard, and that it
+  refuses with `status: error` while preserving the previous executor. At site (2), say "four
+  deterministic **shape** guards on the substituted content (Guard 5 is the semantic fail-open guard
+  on the derivation outcome, covered in `test_generate_executor_behavior.py`)" — the count there is
+  correct once it is scoped, so the fix is to scope it, not to renumber it.
+- **Done when:** a whole-tree grep for `four deterministic guards` returns exactly one hit, the
+  scoped comment at `test_generate_executor.py:1906`; the fail-closed audit row enumerates all five.
 - **Effort:** S
 - **Risk if fixed:** none.
 

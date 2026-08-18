@@ -19,7 +19,7 @@ disposition removed everywhere else.
 | D1 | Taxonomy member for a productive non-completion + widen the audit rule | DONE | Member present (`manage-metrics.py:102`), finalize 5c table routes `loop_back → returned_with_findings` (`phase-6-finalize/SKILL.md:1100`), rule doc widened (`logging-gap-analysis.md:10,106-115`), all full-enum mirrors in sync and guarded. But the routing prose itself is pinned by no test, and the plan's Verification section demands the routing be shown, not just the writer's acceptance | PARTIAL |
 | D2 | Populate or drop the four context-load columns; measured vs unproduced distinguishable | SETTLED by prior `unmeasured` work; no code change | Re-derived: the writer writes the `unmeasured` literal for an omitted flag (`manage-metrics.py:3185-3188`), the retrospective reader reads four ways (`analyze-logs.py:1042-1070`), `test_record_model_representability.py` pins writer + both readers; a repository sweep finds the four flags only in the writer's argparse, `data-format.md`, `SKILL.md` and a test fixture — no producer | CONFIRMED (via a third arm the plan's literal *Done when* does not name) |
 | D3 | Re-derive the non-productive population, first-party | BLOCKED on corpus | No sweep/measurement code anywhere in the landed diff; no share figure quoted; the retired "a third of finalize dispatch spend" string appears only in `plan.md:154` labelled RETIRED and in the report's own statement that it is not quoted | CONFIRMED (correctly ships nothing) |
-| D4 | Separate RETRYABLE from TERMINAL | code DONE; class shares blocked | `_RETRYABLE_CAUSES` / `_TERMINAL_WASTE_CAUSES` (`analyze-logs.py:1025-1026`), summed and returned separately (`analyze-logs.py:1241-1254`), test proves they never fold. But `retryable_total_tokens` sums `total_tokens`, which callers are instructed to write as `0` when the dispatched agent produced no `<usage>` — the systematic case for a cancelled/restarted dispatch — and the finalize dispatcher's 5c gate excludes timed-out steps entirely, so the finalize ledger cannot carry a retryable row at all | PARTIAL |
+| D4 | Separate RETRYABLE from TERMINAL | code DONE; class shares blocked | `_RETRYABLE_CAUSES` / `_TERMINAL_WASTE_CAUSES` (`analyze-logs.py:1025-1026`), summed and returned separately (`analyze-logs.py:1241-1254`), test proves they never fold. But `retryable_total_tokens` sums `total_tokens`, which the writer defaults to `0` on an omitted flag — the systematic case for a cancelled/restarted dispatch, demonstrated end-to-end below (G1); and the two cause-class tuples are hand-picked strings with no guard tying them to `DISPATCH_TERMINATION_CAUSES`, so a future member falls into neither figure (G13) | PARTIAL |
 | D5 | Make the waste a reported figure | DONE | `error_total_tokens` emitted (`analyze-logs.py:1241-1253`) and rendered (`compile-report.py:357-379`), tested RED-before. But the renderer defaults an absent key to `0` (`compile-report.py:373-375`, pinned by `test_compile_report.py:876`), and the summed column carries fabricated zeros, so a published "0 waste" is not distinguishable from "never measured" | PARTIAL |
 
 ## Per-deliverable detail
@@ -144,13 +144,15 @@ disposition removed everywhere else.
   `26000 = int(26000)` against the expected `10000`. File restored from a byte snapshot in
   `/tmp/verify-070-mutsweep/`; `git status --porcelain` clean for it afterwards.
 - **Verdict:** PARTIAL — the split is real and non-vacuously tested at the reader, but the
-  retryable figure has no path to a real value: (a) the finalize dispatcher's 5c gate fires "only
+  retryable figure has no path to a real value: (a) on the finalize ledger the 5c gate fires "only
   when the step ran as a Task agent and did NOT time out" (`phase-6-finalize/SKILL.md:1093`) while
   its own `blocked_session_restart` row is defined as *"a session restart, harness cancellation, or
-  the per-agent timeout budget firing"* (`:1102`) — the excluded case (G3); and (b) where a
-  retryable row can be written (`workflow/execution.md:213`), the caller is instructed to
-  *"use `0` when the field is absent"* (`:217-219`) for the very `<usage>` a cancelled dispatch
-  never produces (G1).
+  the per-agent timeout budget firing"* (`:1102`), so one of the three sub-cases the row claims
+  can never write a row at all, and `harness_cancellation` is absent from the finalize value list
+  (`:1110`) (G3); and (b) wherever a retryable row *is* written, its `total_tokens` is `0` unless
+  the caller measured it — proven end-to-end below — for the very `<usage>` a cancelled dispatch
+  never produces (G1); and (c) nothing pins the two cause-class tuples to the enum they partition
+  (G13).
 
 ### D5 — make the waste a reported figure
 
