@@ -5,10 +5,9 @@
   theme-handling: A (theme-neutral)
   see  pm-documents:ref-svg-diagrams/standards/theme-handling.md
 
-  Placeholder content exercises every affordance of the type: three-level
-  containment nesting, a trust boundary with crossing glyphs, protocol+port
-  edge labels, a first-party / external distinction, mounted material, and a
-  collapsed group.
+  Placeholder content exercises every affordance the type standard's
+  § Annotated template table names; that table maps each one to its placeholder
+  below. Containment here is three levels deep: host / network / components.
   See  pm-documents:ref-svg-diagrams/standards/diagram-type-deployment.md
   for placement conventions and  visual-language.md  for palette / typography.
 -->
@@ -16,7 +15,7 @@
      role="img" aria-labelledby="title desc"
      font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
   <title id="title">Deployment diagram skeleton, placeholder topology</title>
-  <desc id="desc">A placeholder deployment topology used as an authoring skeleton. A host contains one network. Left of a trust boundary sits a first-party gateway with mounted certificate and configuration material, and a collapsed group standing in for N identically-shaped instances. Right of the boundary sit a first-party service and an external component. Two edges cross the trust boundary and are marked with crossing glyphs. Replace every placeholder label, and enumerate the members of any collapsed group in this description.</desc>
+  <desc id="desc">A placeholder deployment topology used as an authoring skeleton. A host contains one network. Left of a trust boundary sits a first-party component with mounted certificate and configuration material, and a collapsed group standing in for N identically-shaped instances. Right of the boundary sit a first-party service and an external component. Two edges cross the trust boundary and are marked with crossing glyphs. Replace every placeholder label, and enumerate the members of any collapsed group in this description.</desc>
 
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"

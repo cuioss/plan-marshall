@@ -76,7 +76,7 @@ Every difference from the source, and why:
 | `pm-documents:ref-svg-diagrams/standards/*.md` → relative Markdown links | The sibling standards use relative links; the source itself named this substitution as the mechanical graduation step |
 | `pm-documents:ref-svg-diagrams/SKILL.md § Step 4` → `../SKILL.md` § Step 4 | Same |
 | `doc/resources/templates/deployment-diagram-skeleton.svg` → `../templates/deployment-diagram-skeleton.svg` | Matches `diagram-type-stack.md`'s form exactly |
-| Container render recipe: output path `.plan/temp/` → a mounted `/out` scratch volume | `.plan/temp/` is a plan-marshall-specific path *inside the repository*. `/tmp` alone would not work — the container is `--rm`, so the PNG must land on a mounted volume to be read back. Mounting a scratch directory also makes the section's own closing sentence ("write it under a scratch directory") true of the recipe, which it was not before |
+| Container render recipe: output path `.plan/temp/` → a mounted `/out` scratch volume | Two grounds, neither of them "`.plan/temp/` is the wrong temp directory" — in *this* repository it is the mandated one (`CLAUDE.md` § Workflow Discipline). First, this is a **marketplace skill**: it ships to consumer repositories, which have no `.plan/` at all, so a recipe hard-coding that path is broken for most of its readers. Second, the path is *inside the repository*, which contradicts the section's own closing sentence ("write it under a scratch directory"); the mounted volume makes that sentence true of the recipe, which it was not before. `/tmp` alone would not do — the container is `--rm`, so an unmounted path is discarded before the read-back |
 | `(integration-test-topology.svg)` file-naming example → `({subject}-topology.svg)` | Named a file that exists only downstream |
 | Inset rule reworded — see F4 | A truth correction; the numbers are unchanged |
 | Template header comment restructured to the sibling templates' form; nesting depth corrected; a derived y-coordinate corrected | See F5, F6 |
@@ -196,7 +196,7 @@ artifact. Each verdict below was derived by this run at the moment of the claim.
 |---|---|---|
 | The skill requires per-type standards under `standards/diagram-type-{name}.md` | **CONFIRMED** | `SKILL.md` § Enforcement, by quoted phrase: *"Per-diagram-type standards live under `standards/diagram-type-{name}.md`."* |
 | Every templates-table row names its owning standard in the second column | **CONFIRMED** | The `Pairs with` column; 6 of 6 rows after the change, 5 of 5 before |
-| Every type row names a reference implementation living in this repository | **CONFIRMED** — and each named file exists | All five pre-existing rows named one; `findings-pipeline.svg`, `plan-worktree-topology.svg`, `post-execute-shipping-flow.svg`, `audit-trail-layers.svg`, `build-dispatch-sequence.svg` and `phase-lifecycle.svg` all present in `doc/resources/diagrams/`. D1(a)'s asymmetry concern therefore stands |
+| Every type row names a reference implementation living in this repository | **CONFIRMED** — and each named file exists | All five pre-existing rows named one — `findings-pipeline.svg`, `plan-worktree-topology.svg`, `post-execute-shipping-flow.svg`, `audit-trail-layers.svg`, `build-dispatch-sequence.svg` — and all five files are present in `doc/resources/diagrams/`, as is `phase-lifecycle.svg` for the state row this run added. D1(a)'s asymmetry concern therefore stands |
 | The source standard is ~429 lines and the template ~129 | **REFUTED / CORRECTED** — 437 and 129 | `wc -l` on the api-sheriff clone at `f236406` |
 | The standard covers five affordances plus naming, theme strategy and a render recipe | **REFUTED** — the affordance table carries **eight** rows | The § Annotated template table: containment nesting, enclosure labels, trust boundary, trust crossings, protocol + port edge labels, first-party vs external, mounted material, collapsed group |
 | The standard contains a graduation statement that must be dropped | **CONFIRMED** | `## Upstream graduation`, 24 lines, source lines 17–40 |
@@ -251,7 +251,7 @@ widening is disclosed here and was disclosed to the operator in the run's user-f
 | F14 | source standard § Reference implementation | Names the api-sheriff integration-test and compose-sample topologies | **Fixed** — dropped |
 | F15 | source standard line 7 | `Reference implementation: doc/resources/diagrams/integration-test-topology.svg` — names a file absent from this repository | **Fixed** — replaced with an explicit "none in this repository", per D1(a). Verified independently that no diagram here is of this type: `extension-topology.svg` and `context-isolation.svg` both declare `diagram-type-block`, and `plan-worktree-topology.svg` is the graph type's reference implementation |
 | F16 | source standard § Naming and file conventions | File-naming example `(integration-test-topology.svg)` names a downstream file | **Fixed** — genericised to `({subject}-topology.svg)` |
-| F17 | source standard § Render verification | The container recipe wrote PNGs to `.plan/temp/` — a plan-marshall-specific path, *inside the repository*, contradicting the section's own closing line ("write it under a scratch directory") | **Fixed** — mounts a scratch volume and writes to `/out`. `/tmp` alone would not do: the container is `--rm`, so an unmounted path is discarded before the read-back |
+| F17 | source standard § Render verification | The container recipe wrote PNGs to `.plan/temp/` — a path that does not exist in the consumer repositories this marketplace skill ships to, and that is *inside the repository*, contradicting the section's own closing line ("write it under a scratch directory") | **Fixed** — mounts a scratch volume and writes to `/out`. `/tmp` alone would not do: the container is `--rm`, so an unmounted path is discarded before the read-back |
 | F18 | source standard § Layout grid | *"Inset — child box edge to parent box inner edge: **16 px** on every side, at every level"* is not met exactly by any artifact of this type. Measured: in the skeleton, leaf boxes sit 24 px from the network's left edge and 40–64 px above its bottom; in the type's own reference implementation (`compose-sample-topology.svg`) the same 24 px left inset appears. The exact reading is unachievable, because a label band and stacked content govern the vertical clearances | **Fixed** — reworded to *"**At least 16 px** on every side, at every level — a floor, not a target. A larger clearance is not a defect."* The numbers are unchanged; only the false exactness is |
 | F19 | source standard § Annotated template | The affordance table described the components as sitting *"at the standard 16 px inset"* — the same false exactness, second site | **Fixed** — *"at or above the standard 16 px inset"* |
 | F20 | source template header comment | *"two-level containment nesting"*, while the standard counts the identical `host → network → container` ladder as three levels | **Fixed** — "three-level" |
@@ -306,4 +306,64 @@ two further ordinals (F11, F12). The run corrected all of them rather than the t
 on the lane's sweep-and-count rule, and disclosed the widening to the operator in its next reply
 rather than letting it pass silently. The operator has not been asked to ratify the widening; if it
 is unwanted, F3–F12 are a self-contained revert that leaves the graduation and the state fix intact.
+
+### Independent verification sub-agent — round 1
+
+Dispatched read-only against the plan, the diff, and the two api-sheriff sources, with instructions
+to account for every source→destination difference and to sweep by consumer kind. It read the diff,
+all 11 standards, all 6 templates, `visual-language.md`, `pm-documents/README.md`, the `test/` tree,
+`plan-marshall-plugin/extension.py`, and three plugin-doctor analysers. Its findings, renumbered into
+this report's sequence:
+
+| # | Site | Finding | Disposition |
+|---|---|---|---|
+| F32 | `templates/deployment-diagram-skeleton.svg` `<desc>` | *"Left of a trust boundary sits a first-party **gateway**"* — no element in the diagram is a gateway; the box is labelled `first-party component`. "Gateway" is the source repository's subject noun, inherited unchanged. The standard makes `<desc>` normative | **Fixed** — "a first-party component". This is the instance D2's *"written to graft unchanged — verify rather than assume"* was aimed at, and the run's own sweep missed it |
+| F33 | `standards/diagram-type-deployment.md` § Layout grid | *"Positions and sizes snap to multiples of 8, per the shared grid rule."* The shared rule (`visual-language.md`) says *"wherever practical, except for centred text"*; the restatement dropped the qualifier and so asserts more than its source. Contradicted by this type's own 28 and 44 px label bands and its 12 px label inset, none a multiple of 8, and by 50 off-grid attribute values in the shipped skeleton | **Fixed** — qualifier restored, and the exceptions named as what sets them (the label baselines in § Enclosure labels). ⭐ This is the **same defect class** as F18, at a site the run's own audit stopped short of |
+| F34 | `standards/diagram-type-deployment.md` § Annotated template | *"Dashed `8 4` at 2.0 px running the **full height** of the network"*. Measured: the trust line is `y=152…496` (344 px) inside a network of `y=116…512` (396 px) — 36 px short at the top, 16 at the bottom | **Fixed** — *"running vertically through the network's content area"* |
+| F35 | `templates/deployment-diagram-skeleton.svg` header comment | *"exercises **every** affordance of the type:"* introducing a list of **six**, while the standard's affordance table names **eight**. The "every" claim is false as enumerated | **Fixed** — replaced with a pointer to that table, which cannot drift, plus the containment depth as a standalone fact |
+| F36 | `report-01.md` § Deliverables, D2 table | The stated reason for moving the render output off `.plan/temp/` was that it is *"a plan-marshall-specific path"* — inverted at the destination, since `CLAUDE.md` mandates `.plan/temp/` for temp files **in this repository**. The change is right; the reason given was not | **Fixed** — restated on the two grounds that hold: the skill ships to consumer repositories with no `.plan/`, and the path was inside the repository |
+| F37 | `report-01.md` § Claim labels | *"All **five** pre-existing rows named one"* followed by **six** file names — the sixth belongs to the state row this run added | **Fixed** — five named and attributed, the sixth attributed separately |
+| F38 | `SKILL.md` § When to use this skill (as committed at `21267da`) | The replacement bullet enumerated all seven type names beside the table it mirrors | **Already fixed** in `b06a62f`, before the verifier reported; it read the earlier commit. Same finding as F25 |
+| F39 | `standards/diagram-type-deployment.md` § Layout grid | The first F18 rewording's mechanism clause named only top and bottom | **Already fixed** in `b06a62f`. Same finding as F23 |
+| F40 | Plan premise | The plan's out-of-scope says the graduation *"does not revisit the **five** that exist"*. **Six** diagram-type standards existed on `main` — `diagram-type-state.md` was on disk, merely unindexed. The plan's own count was a casualty of the same defect this run fixed | **Recorded, not fixable here** — the plan is the input, and correcting a landed plan's premise is not this run's business. Noted so the count is not repeated |
+
+**Survivor (condition B), with its bound — F41.** `diagram-type-state.md` is now indexed as one of
+seven types, but `templates/` holds six skeletons: there is no `state-diagram-skeleton.svg`. Before
+this change the state type was declared a future placeholder, so no author reached § Workflow Step 3
+("Copy the matching template from `templates/`") for it; after it, one indexed type of seven has no
+template.
+
+- **The bound.** The only reachable consequence is an author following Step 3 for a state diagram and
+  finding no file to copy. That path is already closed by the state standard itself, whose
+  § Reference implementation ends *"Use it as the template for any sequential-with-back-edge lifecycle
+  diagram"* — verified by reading that line, not inferred. So the reader is redirected to
+  `phase-lifecycle.svg` by the type's own standard, and the gap costs a redirect, not a dead end.
+- **Why it stays open.** Authoring a state skeleton is a new diagram-type deliverable. It is outside
+  the plan, outside the operator's authorisation, and would put a second unreviewed SVG in a PR whose
+  reviewers are checking a graduation. It is recorded in § Residue as the natural next plan.
+- Re-put to the verifier in the stopping round (see below).
+
+**Scope finding — F42, not A- or B-governed, but it must not ship silently.** The verifier's judgement
+was that the inset rewrite (F18) and the five sibling-standard edits (F3–F12) are *"good changes on the
+evidence I measured"* and are nonetheless real scope beyond the plan's Deliverables and against its
+explicit out-of-scope line — so they must appear in the **PR description** as declared scope, with the
+operator authorisation named, *"otherwise reviewers checking a graduation meet unexplained normative
+churn"*. **Actioned:** both are declared in the PR description, and the escalation is recorded above.
+
+**On the plugin-doctor green — recorded because it bears on what D5 actually proves.** The verifier
+audited the analysers rather than trusting the summary: of roughly fifty, exactly one
+(`broken-relative-link`) could fire on a defect class this change can introduce, and it passes.
+`literal-count-drift` is hard-coded to the `extension-api` and `persona-security-expert` surfaces and
+cannot see a stale count in `ref-svg-diagrams`; `historical-prose-in-skills` matches seven narrow
+regexes and would not have matched *"The first per-diagram-type standard"* or *"## Upstream
+graduation"*; nothing reads SVG geometry, so F32–F34 were structurally unreachable by the gate. **The
+gate's green says the links resolve and the frontmatter is well-formed. It says nothing about whether
+the graduated prose is true.** For this change the verification sub-agent, not the lint, is the only
+guard that covers the real defect classes — which is worth stating plainly in an epic about signals
+that look more informative than they are.
+
+**Render re-verification after the round-2 edits.** F32 and F35 changed the template. Both PNGs were
+re-rendered on `#ffffff` and `#0d1117` and came back **byte-identical** to the round-1 renders that
+were read back — which proves, more strongly than a second read-back could, that the edits touched
+only non-rendering nodes (an XML comment and `<desc>`).
 

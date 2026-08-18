@@ -54,7 +54,9 @@ wrong type.
 | Wide strip | `0 0 1200 520` | A single network with many peer containers and shallow nesting. |
 | Dense stack | `0 0 1200 900` | One network carrying eight or more components at full nesting depth. The tallest shape; reach for a second diagram before reaching past it. |
 
-Positions and sizes snap to multiples of 8, per the shared grid rule.
+Positions and sizes snap to multiples of 8 wherever practical, per the shared grid rule. The label
+bands below (28 and 44) and the 12 px label inset are this type's standing exceptions: they are set
+by the label baselines in § Enclosure labels, not by the grid.
 
 | Spacing | Value | Notes |
 |---------|-------|-------|
@@ -360,7 +362,7 @@ diagram:
 |------------|-----------------------------|
 | Containment nesting | `host` (depth 1, `rx="8"`, 44 px label band) containing `network` (depth 2, `rx="6"`, 28 px band) containing the components (depth 3, `rx="4"`), at or above the standard 16 px inset |
 | Enclosure labels | Top-left on every box, with one optional `encl-sub` line |
-| Trust boundary | Dashed `8 4` at 2.0 px running the full height of the network, with its upright weight-600 label above the top of the line |
+| Trust boundary | Dashed `8 4` at 2.0 px running vertically through the network's content area, with its upright weight-600 label above the top of the line |
 | Trust crossings | Two `trust-cross` glyphs, one on each edge that crosses the boundary |
 | Protocol + port edge labels | `HTTPS :8443` and `gRPC :9000` on single-segment edges, `TCP :5432` on an orthogonal cross-container edge, labelled on its longest segment |
 | First-party vs external | Three boxes carry the `own-bar` left accent; the external component is the same box without it |
