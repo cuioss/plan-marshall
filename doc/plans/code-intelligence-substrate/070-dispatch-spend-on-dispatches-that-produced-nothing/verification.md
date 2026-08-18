@@ -166,13 +166,14 @@ disposition removed everywhere else.
   (module preamble), `:1087-1093` (docstring) and the rendered column label `:357`. Section gating
   is `present: true`-conditional (`report-structure.md:17`).
 - **Checks run:** the six-test file above (green at HEAD, red under mutation); render assertions
-  re-read at `test_compile_report.py:945-948` (`| 6-finalize | 0 | 10000 | 16000 | 2 | 0 | 0 |`) and
-  `test_compile_report_behavior.py:133-135`.
+  re-read at `test_compile_report.py:948` (`| 6-finalize | 0 | 10000 | 16000 | 2 | 0 | 0 |`,
+  verbatim) and `test_compile_report_behavior.py:143`
+  (`| 5-execute | 2 | 10000 | 16000 | 2 | 1 | 3 |`, verbatim).
 - **Verdict:** PARTIAL — emitted, rendered, tested. Two properties of the published figure fall
   short of the standard this plan itself argues for: the renderer manufactures a `0` from an absent
-  key (`compile-report.py:373-375`, and `test_compile_report.py:876` pins that behaviour with the
-  comment *"This fixture carries none of the new figures, so they default to 0"*) — G6; and the
-  summed column itself admits fabricated zeros — G2. The owning-module relocation (into
+  key (`compile-report.py:373-375`, and `test_compile_report.py:876` pins that behaviour, under the
+  comment at `:875` — *"This fixture carries none of the new figures, so they default to 0"*) — G6;
+  and the summed column itself admits fabricated zeros — G2. The owning-module relocation (into
   `plan-retrospective` rather than the hypothesised `manage-metrics`) is sanctioned by the plan's
   *"resolve the owning module at outline"* and is well reasoned in the report; not a finding.
 
@@ -186,29 +187,71 @@ and the `DISPATCH_TERMINATION_CAUSE` rule (`logging-gap-analysis.md:105-176`).
 
 Defects found:
 
-1. **A fabricated `0` enters both published cause-class sums.**
-   `manage-metrics.py:3157-3159` — `total_tokens = args.total_tokens if args.total_tokens is not
-   None else 0`; and the two producing call sites instruct the caller to
-   *"use `0` when the field is absent"* (`workflow/execution.md:219`,
-   `workflow/planning-outline.md:468`). `error_total_tokens` and `retryable_total_tokens` sum that
-   column (`analyze-logs.py:1241-1246`). Consequence: a dispatch that terminated without emitting
-   `<usage>` — the normal case for `harness_cancellation` / `blocked_session_restart`, and a real
-   case for `error` — contributes `0` to a *published* spend figure that is presented as measured.
-   This is exactly the measured-zero-vs-unproduced asymmetry D2 exists to prevent, on the two
-   columns D4/D5 shipped, and no `unmeasured`-style representation exists for the legacy five
-   columns (the writer's own docstring at `manage-metrics.py:3126-3128` says so: *"The legacy five
-   columns are unchanged: they keep their `0` default, because nothing downstream distinguishes an
-   absent from a zero on those"* — which is no longer true now that D4/D5 sum them).
+1. **A fabricated `0` enters both published cause-class sums — demonstrated end-to-end, not
+   inferred.** `manage-metrics.py:3157-3159` — `total_tokens = args.total_tokens if
+   args.total_tokens is not None else 0`; `--total-tokens` is optional (`default=None`,
+   `manage-metrics.py:3832-3837`), so the coercion is reachable from every call site.
+   `error_total_tokens` and `retryable_total_tokens` sum that column
+   (`analyze-logs.py:1241-1246`), which parses it as a bare `int(parts[2])` (`:1143`) with no
+   unmeasured state.
 
-2. **`retryable_total_tokens` has no populating path on the finalize ledger.**
+   **First-party probe (writer → disk → reader, no fixtures; command log in the Adversarial review
+   section).** Three rows written into a real `6-finalize` ledger: an `error` with `--total-tokens`
+   omitted, an `error` carrying `7000`, and a `blocked_session_restart` with the flag omitted. The
+   bytes on disk:
+
+   ```text
+   2026-08-18T20:47:19Z,error,0,0,0,unmeasured,unmeasured,unmeasured,unmeasured
+   2026-08-18T20:47:20Z,error,7000,3,20000,unmeasured,unmeasured,unmeasured,unmeasured
+   2026-08-18T20:47:20Z,blocked_session_restart,0,0,0,unmeasured,unmeasured,unmeasured,unmeasured
+   ```
+
+   The reader then returns `error_total_tokens = 7000` and `retryable_total_tokens = 0`. Row 1 is
+   the defect in its purest form: **the same row** says `unmeasured` on the four columns D2
+   protected and `0` on the one column D4/D5 publish. Row 3 shows the retryable figure reading `0`
+   for a dispatch that was genuinely blocked. Nothing downstream can tell either from a measured
+   zero.
+
+   The writer's own docstring at `manage-metrics.py:3126-3128` still justifies the default —
+   *"The legacy five columns are unchanged: they keep their `0` default, because nothing downstream
+   distinguishes an absent from a zero on those"* — which is precisely what this plan made untrue.
+   The run's own test suite writes such a row without noticing:
+   `test_returned_with_findings_subprocess_accepted_by_argparse`
+   (`test_manage_metrics_record_dispatch_boundary.py:572`) invokes the writer with no token flags
+   at all.
+
+   **Correction to the earlier reading of the call sites.** There are **four**
+   `record-dispatch-boundary` invocations across **three** documents, not two:
+   `workflow/execution.md:212` (5-execute, carries *"use `0` when the field is absent"* at `:219`),
+   `workflow/execution.md:257` (a synthesised `clean_exit_queue_empty` row that passes
+   `--total-tokens 0` deliberately — a licit fabricated zero, reaching **neither** sum),
+   `workflow/planning-outline.md:463` (4-plan, same *"use `0`"* instruction at `:468`), and
+   `phase-6-finalize/SKILL.md:1109` — which carries **no** `0`-fallback instruction at all, only
+   *"Forward the `<usage>` totals captured by 5b"*. So the finalize ledger — the phase this plan
+   was written about, and the only one that can carry `blocked_session_restart` — reaches the
+   fabricated `0` through the **writer's default alone**. That makes `manage-metrics.py:3157` the
+   root cause binding all sites, and a fix confined to the two workflow documents insufficient.
+
+2. **The finalize 5c gate and the cause it classifies describe different populations.**
    `phase-6-finalize/SKILL.md:1093` gates 5c on the step having *"did NOT time out"*, while
-   `:1102` defines `blocked_session_restart` as precisely the timeout / restart / cancellation
-   case; `harness_cancellation` is not in the finalize invocation's value list at all (`:1110`).
-   So on `metrics-dispatch-boundaries-6-finalize.toon` — the file this plan widened the audit rule
-   to read, and where the mis-stamping was measured — the retryable class is structurally empty and
-   the rendered column will always read `0`. The contradiction predates the plan (both lines are
-   unchanged in `git show 1565a29 -- …/phase-6-finalize/SKILL.md`), but D4 built a reported figure
-   on top of it without noting it.
+   `:1102` defines `blocked_session_restart` as *"a session restart, harness cancellation, or the
+   per-agent timeout budget firing (timeout block at item 5 above)"* — three sub-cases, one of
+   which the gate structurally excludes. A timed-out finalize step therefore writes **no boundary
+   row at all** (5b/5c are both skipped; the timeout path at item 5 only logs ERROR and marks the
+   step `failed` — `:1055-1057`), so the finalize ledger under-counts its own dispatched
+   population as well as its retryable spend. `harness_cancellation` is additionally absent from
+   the finalize invocation's value list (`:1110`).
+
+   ⚠ **Correction to an earlier reading:** this is a *narrowing and a self-contradiction*, not a
+   structural impossibility. The remaining two sub-cases — a session restart or a harness
+   cancellation that still returns control to the dispatcher — are not excluded by the gate, and
+   the writer imposes **no** phase/cause coupling: the probe above wrote a `blocked_session_restart`
+   row onto a `6-finalize` ledger and the writer accepted it (`choices` is the whole 12-member
+   enum, checked again in-function at `manage-metrics.py:3147-3155`, with no phase cross-check).
+   So `retryable_total_tokens` on the finalize file is reachable in principle and reads `0` in
+   practice for the G1 reason, not because no row can exist. The contradiction predates the plan
+   (both lines are unchanged in `git show 1565a29 -- …/phase-6-finalize/SKILL.md`), but D4 built a
+   reported figure on top of it without noting it.
 
 3. **The renderer defaults an absent key to `0`.** `compile-report.py:373-375`
    (`phase_data.get('error_total_tokens', 0)` and siblings). A `dispatch_boundaries` fragment
@@ -225,22 +268,46 @@ Defects found:
    proxy, finding-yield deferred to D3"; this document — the one the retrospective agent actually
    follows when emitting findings — was not.
 
+5. **The cause-class partition is unanchored to the enum it partitions.**
+   `_TERMINAL_WASTE_CAUSES` / `_RETRYABLE_CAUSES` / `_RETURNED_WITH_FINDINGS_CAUSE`
+   (`analyze-logs.py:1025-1027`) are hand-written string literals in a *different bundle* from
+   `DISPATCH_TERMINATION_CAUSES` (`manage-metrics.py:79-103`). A repository-wide search for all
+   three names returns only their definitions and their three use sites inside `analyze-logs.py`
+   — **no test, and no structural relationship to the enum**. The enum's documentation mirrors are
+   each guarded by a structural-equality test with an executable negative control
+   (`test_manage_metrics.py:3870/3905`, `:4016/4027`, `:4048/4053`); this partition, which decides
+   what two *published* figures are computed over, is guarded by nothing. A member added to
+   `DISPATCH_TERMINATION_CAUSES` falls into neither class and is silently absent from both figures.
+   The plan warned against exactly this shape — D3: *"⛔ **Derive the terminal-state vocabulary from
+   the schema**, not from the two names that happened to be observed — they are a sample, not the
+   enum"* — and `_RETRYABLE_CAUSES` is literally those two names. Recorded as G13.
+
+6. **The CR-7 relabelling missed three surfaces inside the shipped code and its tests.**
+   The rendered header is `error_total_tokens (terminal-error)` (`compile-report.py:357`), but the
+   local it feeds is still `wasted = phase_data.get('error_total_tokens', 0)` (`:373`), and three
+   test comments still name the quantity by the retired framing —
+   `test_compile_report.py:873` and `:943` (*"error_total_tokens (wasted)"*), `:947`
+   (*"the genuinely-wasted vs retryable split"*), and
+   `test_compile_report_behavior.py:140` (*"the genuinely-wasted vs retryable spend split"*).
+   Cosmetic individually; together they are the same overclaim CR-7 removed, surviving beside the
+   code that no longer makes it. Recorded as G8.
+
 No other defect was found: the reader's guards (`len(parts) < 5` floor, per-column parsing, the
 two-pass zero-provenance gate) all fire on their stated inputs, the cause-class tuples contain no
-overlap, the absent-file path returns every key, and the new member cannot be written without
-passing both the argparse `choices` and the in-function membership check
-(`manage-metrics.py:3147-3155`).
+overlap **with each other** (their gap against the enum is defect 5), the absent-file path returns
+every key, and the new member cannot be written without passing both the argparse `choices` and the
+in-function membership check (`manage-metrics.py:3147-3155`).
 
 ## Test adequacy
 
 | Deliverable | Covering tests | Adequacy |
 |---|---|---|
 | D1 enum half | `test_manage_metrics.py:2808-2822` (`test_enum_contains_exactly_twelve_values`, `test_enum_contains_returned_with_findings_cause`), `test_manage_metrics_record_dispatch_boundary.py:532-589` | Adequate; the writer test asserts the exact row bytes `,returned_with_findings,73000,21,210000` on the 6-finalize file |
-| D1 mirror sync | `test_manage_metrics.py:3870,3907,4016,4029,4048,4055` — each positive guard paired with a negative control that drops one value and requires the guard to raise | Strong; the negative controls are executable, not commentary |
-| D1 routing half | *none* | **Gap (G5)** — proven by construction, not only by grep: the sole full-enum doc guard parses manage-metrics' own SKILL.md, the plugin-doctor rule scans `## Canonical invocations` blocks, and no test in `test/plan-marshall/phase-6-finalize/` mentions a termination cause |
-| D1 rule-scope half | `test_dispatch_waste_and_finalize_scope.py:200-216` | Adequate — asserts both the per-phase artifact name and `6-finalize` |
+| D1 mirror sync | `test_manage_metrics.py:3870/3905`, `:4016/4027`, `:4048/4053` — each positive guard paired with a negative control that drops one value and requires the guard to raise (line numbers re-taken at the `def`, correcting an earlier off-by-two that cited the docstrings) | Strong; the negative controls are executable, not commentary |
+| D1 routing half | *none* | **Gap (G5)** — proven by construction, not only by grep: the sole full-enum doc guard parses manage-metrics' own SKILL.md, the plugin-doctor rule scans `## Canonical invocations` blocks, and no test in `test/plan-marshall/phase-6-finalize/` mentions a termination cause — though that directory does ship `test_loop_back_outcome.py`, a markdown-contract test over this very SKILL.md, so the shape G5 asks for already exists next door |
+| D1 rule-scope half | `test_dispatch_waste_and_finalize_scope.py:200-216` | Adequate **for the RED-before regression** — both asserted strings were absent pre-change. Containment-only, however: it asserts the doc *names* `metrics-dispatch-boundaries-{phase}.toon` and `6-finalize`, not that the precondition no longer scopes to execute alone, so a later re-narrowing that left the Inputs line intact would stay green |
 | D2 | `test_record_model_representability.py:406,428,455,783,816,899,910` | Strong — writer + both readers + the measured-zero negative control |
-| D4/D5 | `test_dispatch_waste_and_finalize_scope.py:78-144`, `test_compile_report.py:901-948`, `test_compile_report_behavior.py:120-140` | Non-vacuous at the reader: the conflation mutation turned 3 of 6 red (evidence above). The renderer test at `:876` however *pins* the manufactured-zero default rather than rejecting it (G6) |
+| D4/D5 | `test_dispatch_waste_and_finalize_scope.py:78-144`, `test_compile_report.py:901-948`, `test_compile_report_behavior.py:126-144` | Non-vacuous at the reader: the conflation mutation turned 3 of 6 red, reproduced independently (evidence above). Two holes: the renderer test at `:876` *pins* the manufactured-zero default rather than rejecting it (G6), and no test in the set exercises a row whose `total_tokens` was never measured — every fixture row carries a measured value, which is why G1 ships green (G1) |
 
 Vacuity probe performed: one mutation (`_TERMINAL_WASTE_CAUSES` widened to swallow the retryable
 causes) → 3 failed / 3 passed, restored from a byte snapshot at

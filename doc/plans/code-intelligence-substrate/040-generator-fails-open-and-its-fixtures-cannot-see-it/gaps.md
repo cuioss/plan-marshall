@@ -206,11 +206,11 @@ stands.
 - **Kind:** report-defect
 - **Severity:** low
 - **Topic:** documentation-surface
-- **Where:** `doc/plans/code-intelligence-substrate/040-generator-fails-open-and-its-fixtures-cannot-see-it/report-01.md:30-31`
+- **Where:** `doc/plans/code-intelligence-substrate/040-generator-fails-open-and-its-fixtures-cannot-see-it/report-01.md:30-32`
 - **Evidence:** "added a fifth guard (previous non-empty ∧ emitted `derived+reused == 0` ⇒
-  `status: error`, **non-zero exit**, nothing written)". The same claim appears in the merged PR body
-  of `a3a4da6` ("exits `status: error` (non-zero)") and in its D1 verification line ("a regeneration
-  forced to derive zero against a non-empty previous **exits non-zero**").
+  `status: error`, **non-zero exit**, nothing written)". The same claim appears in the merged commit
+  message of `a3a4da6` — verified verbatim there: "it exits `status: error` (non-zero) and" (body
+  line 27) and "against a non-empty previous exits non-zero" (body line 35).
 - **Why it matters:** the report is the record a later plan reads to decide whether D1 is closed. As
   written it certifies a *Done when* clause that was never met, so the gap is invisible to anyone who
   trusts the report.
@@ -226,7 +226,11 @@ stands.
 ## G9 — Stop publishing `scripts_registered: 0` on the dry-run path
 
 - **Kind:** bug
-- **Severity:** medium
+- **Severity:** high — re-calibrated from medium in adversarial review. A shipped payload states a
+  count that is false (`scripts_registered: 0` beside `scripts_discovered: 158`), which is squarely
+  "a measurement misreports" and "shipped behaviour is wrong". Confined to `--dry-run`, and no
+  consumer of the field was found, which is why it was first read as medium — but neither fact makes
+  the published number true.
 - **Topic:** measurement/metrics
 - **Where:** `marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py:1271-1286`
   (`generate_executor`, dry-run early return)
@@ -303,9 +307,11 @@ stands.
 
   Measured by mutation — with `argparse_surface._node_to_dict` patched in-process to return `{}` (every
   attribute gone: `flags`, `children`, `required_flags`, `flag_arity`, `alias_of`, both confidence
-  markers), the test reported `help_checks=1750 flag_invocation_checks=662` and
-  **`refused 622 valid invocation(s)`** — 622 ≤ 662, so **not one of the 1750 help checks refused**
-  against a totally empty surface.
+  markers), the population is `help_checks=1750 flag_invocation_checks=662` and **622** valid
+  invocations are refused. Re-run in adversarial review through a driver that **counts the two halves
+  separately** (the arithmetic `622 ≤ 662` does not by itself establish the split): `help_refusals=0
+  flag_refusals=622`. Not one of the 1750 help checks refuses against a totally empty surface. The
+  same partitioning across every single-attribute strip gives `help_refusals=0` in all eight runs.
 - **Why it matters:** 1750 of 2412 checks (72.6%) cannot fail for any derivation reason. They are
   presented — in the test docstring, in the report's D2 entry, and in the published count — as part of
   a population-derived corpus that "fails the moment the derivation drops an attribute". A reader
@@ -330,13 +336,17 @@ stands.
 - **Where:** `test/plan-marshall/tools-script-executor/test_population_derived_surface_guard.py:197-202`
 - **Evidence:** the count is emitted with a bare `print(...)`. `pyproject.toml:110` sets
   `addopts = ["-v", "--tb=short", "--strict-markers", "--strict-config", "--durations=25"]` — no `-s`,
-  no `-rA` — so pytest captures and discards it on a pass. I had to add `-rA` to observe
-  `surface-guard population: registered=158 derivable=114 help_checks=1770 flag_invocation_checks=672`.
+  no `-rA` — so pytest captures and discards it on a pass. Confirmed by running it both ways:
+  `uv run python -m pytest test/plan-marshall/tools-script-executor/test_population_derived_surface_guard.py`
+  with the repo's own flags → `1 passed in 10.04s`, and the string `surface-guard population` appears
+  nowhere in the output; adding `-rA` surfaces
+  `surface-guard population: registered=158 derivable=114 help_checks=1750 flag_invocation_checks=662`.
 - **Why it matters:** the plan marks this ⛔ ("**Publish the population size** in the test's output"),
   and the report claims it done. The purpose is that a reader can tell a full corpus from a collapsed
-  one without reading the source; under the repo's own invocation that reader sees nothing. A silent
-  shrink from 114 derivable to 58 would pass unnoticed, checked only by the `>= len(notations) // 2`
-  floor at lines 151-155.
+  one without reading the source; under the repo's own invocation that reader sees nothing. The only
+  automatic backstop is the `assert len(derivable) >= len(notations) // 2` floor at lines 151-155,
+  which today admits any derivable count down to **79** — so a silent shrink from 114 to 79 (a third
+  of the corpus gone) passes green and invisible.
 - **Action:** emit the counts through a channel pytest surfaces on a pass — a
   `record_property`/`record_testsuite_property` entry, a `warnings.warn` visible in the summary, or a
   written artifact under `.plan/temp/` — rather than captured stdout. Whichever channel is chosen,
@@ -356,11 +366,22 @@ stands.
 - **Evidence:** the module docstring says "a derivation that drops an attribute fails a test here
   instead of shipping". `_node_to_dict`
   (`marketplace/bundles/plan-marshall/skills/script-shared/scripts/argparse_surface.py:433-444`)
-  serializes seven attributes. The test can redden on `flags` and `children` only:
-  `required_flags` is disclosed in F2 as uncovered (stripping it only makes the validator more
-  permissive); `flag_arity` is unreachable because the test never supplies a flag *value*;
-  `alias_of` affects only corrective text; and `flags_confident` / `children_confident` stripped to
-  their permissive defaults produce no refusal. F2 names only two of the five uncovered cases.
+  serializes seven attributes. **Measured, one mutation per attribute**, over
+  `registered=158 derivable=114 help_checks=1750 flag_checks=662`:
+
+  | attribute stripped from `_node_to_dict` | refusals (help / flag) |
+  |---|---|
+  | `flags` | 0 / **622** |
+  | `children` | 0 / **509** |
+  | `required_flags` | 0 / 0 |
+  | `flag_arity` | 0 / 0 |
+  | `alias_of` | 0 / 0 |
+  | `flags_confident` + `children_confident` | 0 / 0 |
+
+  So the test reddens on `flags` and `children` only. The reasons are as read: stripping
+  `required_flags` only makes the validator more permissive; `flag_arity` is unreachable because the
+  test never supplies a flag *value*; `alias_of` affects only corrective text; and the two confidence
+  markers fall back to permissive defaults. F2 names one of the five uncovered cases.
 - **Why it matters:** the docstring is the honesty surface a later reader uses to decide whether this
   guard already covers a class before writing another test. Overstated, it will suppress a needed
   test.
@@ -404,7 +425,11 @@ stands.
 ## G15 — Distinguish "previous had no surfaces" from "previous unreadable" in the fail-open guard
 
 - **Kind:** bug
-- **Severity:** low
+- **Severity:** medium — re-calibrated from low in adversarial review. `low` is reserved for a stale
+  claim in the run report, a cosmetic doc inconsistency, or a harmless unstated deviation, and this
+  is none of those: it is a guard that cannot fire on a real input class. It is not `high` because
+  the guard does fire on the ordinary class — only a previous executor that exists but whose
+  `SCRIPT_SURFACES` block is unreadable slips past.
 - **Topic:** architecture-core
 - **Where:** `marketplace/bundles/plan-marshall/skills/tools-script-executor/scripts/generate_executor.py:983-1017`
   (`read_previous_surfaces`) feeding the Guard 5 predicate at `:1372`

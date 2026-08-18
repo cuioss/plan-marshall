@@ -1,15 +1,21 @@
 # Verification — 010-lsp-in-execute-lookup-and-write
 
 **Audited:** `plan.md`, `report-01.md` (the only two files in the plan directory)
-**Tree state:** `61a43e5` on `claude/code-intelligence-substrate-analysis-kah884`
+**Tree state:** `61a43e5` on `claude/code-intelligence-substrate-analysis-kah884`, re-verified at
+`f49542c` on the same branch (the adversarial pass; `git diff 61a43e5..HEAD` over every audited
+surface — `lsp-client/`, its tests, `manage-run-config`, `phase-5-execute`,
+`doc/user/lsp-code-intelligence.adoc` — is **empty**, so no citation below moved between the two
+readings)
 **Overall verdict:** CONFIRMED WITH GAPS
 
 All five deliverables landed as real, reachable code with real tests, and D0's premise was settled
-against a genuine language server that is still reachable from this clone. Two correctness holes were
-found by reading and then proved by execution: the read side's only cross-file lookup kind returns
-coordinates with **no file path**, and the write side's post-edit diagnostics re-run can return the
-**pre-edit** diagnostic set, so D2's "a worsened diagnostic set fails the step" guard fails open on a
-slow republish.
+against a genuine language server that is still reachable from this clone. Four correctness holes were
+found by reading and then proved by execution against a live `pyright-langserver`: the read side's
+only cross-file lookup kind returns coordinates with **no file path**; `document-symbol` returns 1 of
+43 symbols on this repository's own `architecture.py` and reports that as a complete positive answer;
+the write side's post-edit diagnostics re-run returns the **pre-edit** diagnostic set on a large real
+module, so D2's "a worsened diagnostic set fails the step" guard fails open; and a diagnostics query
+the server never answers is reported as `state: ok, error_count: 0` — a clean file.
 
 ## Deliverable verdicts
 

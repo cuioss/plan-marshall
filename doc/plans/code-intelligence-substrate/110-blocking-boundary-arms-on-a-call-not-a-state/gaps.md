@@ -3,14 +3,15 @@
 The plan's core mechanism landed and is non-vacuous: `assert_finalize_findings_clean` is self-arming,
 both lifecycle completion verbs call it, and every negative control goes red when the guard is
 removed (mutation-proven). What remains is that the conversion stopped one step short of the boundary
-the plan named. The state-armed site runs at `order: 1100`, after the merge at `order: 70`, so the
-**merge** boundary is still armed by a call an LLM must issue; and the new refusal exits 0 into a
-workflow doc that never reads it, so the gate's firing is once again indistinguishable from its
-passing — the plan's own archetype, reproduced at the new gate's consumption site. Two further
-substantive gaps: the completion gate fails open on an unevaluable query with no test, and a
-documented `--reason` value silently disarms it. D3's evidence gate is correct in both directions but
-computes its evidence set from an anchor a loop-back rebase can orphan. The remainder are low-severity
-doc and report residue.
+the plan named. The refusal is carried in the TOON `status` while the process exits 0 (the house
+`manage-*` output contract), and the one production caller never parses it — so the gate's firing is
+once again indistinguishable from its passing, the plan's own archetype reproduced at the new gate's
+consumption site (G1, the load-bearing gap). The state-armed site also runs at `order: 1100`, after
+the merge at `order: 70`, so the **merge** boundary is still armed by a call an LLM must issue (G2).
+Two further substantive gaps: the completion gate fails open on an unevaluable query with no test, and
+a documented `--reason` value silently disarms it. D3's evidence gate is correct in both directions —
+both directions independently mutation-proven — but computes its evidence set from an anchor a
+loop-back rebase can orphan. The remainder are low-severity doc and report residue.
 
 ## G1 — Make the completion-gate refusal observable at its one production caller
 
