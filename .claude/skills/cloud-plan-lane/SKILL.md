@@ -177,6 +177,40 @@ git checkout {prefix}/{plan-name}
 Determine which case you are in before acting (`git rev-parse --verify --quiet {prefix}/{plan-name}`
 succeeds when the branch exists).
 
+### A run resumed in a NEW session, on a DIFFERENT assigned branch
+
+The two arrivals above are "first run" and "resumed run", and the second silently assumes the resumed
+run is bound to the **same** branch name. A cloud session halted mid-run and picked up later is not:
+the replacement session is pre-assigned its **own** `claude/{slug}-{hash}`, while the work sits on the
+previous session's branch. Neither arrival covers that, and the two rules that do apply point in
+opposite directions — *keep your assigned branch* (§ "A cloud session MUST keep its harness-assigned
+branch") and *the remote is the only durable storage* (so the earlier work must be carried forward,
+not abandoned).
+
+**Resolve it in favour of both: carry the work onto the branch this session is bound to.**
+
+```bash
+git fetch origin main {previous-branch}
+git checkout -B {assigned-branch} origin/{previous-branch}
+git rebase origin/main
+git push -u origin {assigned-branch}
+```
+
+A plain checkout of the previous branch is not an option — it leaves every later commit somewhere this
+session's harness cannot find after a VM reclaim. A fast-forward often is not available either: once
+`main` has taken any commit the older branch predates, the two have diverged and `merge --ff-only`
+refuses. **Leave the previous branch on `origin` untouched**; it costs nothing and is the only copy of
+the pre-rebase history.
+
+⛔ **A rebase falsifies every commit SHA the earlier run's documents quote, and that is a condition-A
+defect the run itself manufactured.** A prior `report-NN.md` naming commits `a1b2c3d`… now names
+commits on no branch under review. Rewrite each quoted SHA to its rebased counterpart as part of this
+step, and say in the new run's report that you did — do not leave a reader to discover that the
+report's own citations resolve to nothing. Match old to new by commit **subject**, in order
+(`git log --format="%h %s"` on each branch), never by position alone.
+
+Record in the report which arrival this run was.
+
 ### Get the branch onto the remote before any work
 
 **The invariant, independent of how the branch came to be: no work proceeds until the branch exists
@@ -708,6 +742,11 @@ So, before recording a finding closed:
     `finally` — which covers a normal return and any exception but **not** a killed process, so
     re-check `git status` when the sweep ends and treat a surviving mutation as a failed sweep rather
     than a result.
+  - ⛔ **Scratch paths are unique per agent.** Put the snapshot under a path carrying the agent's own
+    name or role (`$TMPDIR/{agent}-mutsweep/…`), never a shared generic one. A run's mutation sweeps
+    can be in flight concurrently — the author's and a dispatched verifier's — and two agents choosing
+    the same filename clobber each other's snapshot, so the `finally` restores the *other* agent's
+    bytes. An observed run had exactly this collision between two independent sub-agents.
 - **Assert the verdict positively.** `assert x == expected`, never only `assert wrong not in x`.
 - **Check the fixture reaches the state by the route the test claims**, and pin that precondition with
   its own assertion where a second route exists.
@@ -786,6 +825,26 @@ and neither sweep caught either:
 |---|---|---|
 | a run report's findings table | nine test stubs "supply a non-empty path, which the state machine maps to `materialized`" | True of the path; the stubs return a **boolean** as the tuple's first element. `True == 'materialized'` is `False`, so every one of them silently took the fallback branch. The build failed 12 tests |
 | a docstring, inside the check written to prevent this exact class | `documentation_only` "is the only bucket checkable without the build extensions" | Calling the aggregator on a config-only write-set returns `documentation_only`. The check was **rejecting three shapes the classifier accepts**, blocking valid outlines |
+
+⛔ **When the clause asserts something ENVIRONMENT-DERIVED, running it once is not enough — run it
+against a second shape it will actually meet.** A path's depth below `/`, a hostname, a user, a home
+directory, a locale, a CPU count, a temp-dir location: each is a property of the *machine*, not of the
+code, so executing the claim where it was written confirms it by construction — the same failure this
+rule already names, one level up. The check is to evaluate it against a shape CI will present, not
+merely a representative one.
+
+This is the class the local build gate **structurally cannot** catch, which is what makes it worth its
+own paragraph. An observed run's test hard-coded `../../../etc` to escape the repository and asserted
+the result was `/etc`. That holds only from a checkout three levels below `/`; the authoring machine's
+was, a GitHub Actions checkout at `/home/runner/work/{repo}/{repo}` is five. `./pw verify` reported
+`SUCCESS` with the whole suite green **on the exact commit CI rejected**, and the test's own docstring
+stated the false premise as a fact — *"`PROJECT_ROOT` is three levels below `/`"* — so test and prose
+agreed, both derived from the same unexamined assumption. Four verification rounds read the file.
+
+⭐ **And such a fix is verified by DERIVATION, not by re-running**, because the machine that must
+confirm it is the one that cannot reproduce the failure. Evaluate the corrected expression against
+several shapes — the authoring path, CI's actual path, a degenerate one — and show it holds for each.
+A green local re-run proves only that the machine still agrees with itself.
 
 Both were one function call from being falsified, and both were expensive to find: a full build, and
 a dispatched sub-agent. The second is the sharper warning — the sentence violating this rule sat
@@ -1418,8 +1477,18 @@ very tree the report describes. No gate can catch this, because the claim is abo
 rather than the code: the suite stays green while the sentence goes false. An observed report stated
 that `.plan/` carried only `marshal.json` and `project-architecture`, with no `logs/` and no `local/`.
 That was true when written; by the time the build gate had run, the same tree held
-`.plan/execute-script.py`, `.plan/temp/`, and a file under `.plan/local/logs/`. Only tree claims need
-this re-check — diff claims are already covered.
+`.plan/execute-script.py`, `.plan/temp/`, and a file under `.plan/local/logs/`.
+
+**Re-verify every HISTORY claim too, whenever this run rebased.** A commit SHA quoted anywhere — a
+prior `report-NN.md`, this run's own report, a commit message, the PR description — is a claim about
+the branch under review, and a rebase makes every one of them false at once (§ Step 2, "A run resumed
+in a NEW session"). It is the same shape as the tree claim above and equally invisible: the suite
+stays green, the diff is unchanged, and only the citations rot. An observed run rebased nine commits
+and left two documents naming SHAs that existed on no branch under review. Re-derive each against the
+current branch at the moment of the claim.
+
+So three claim classes, and only one is covered for free: **diff** claims are re-derived by the § Step
+6 sweeps; **tree** and **history** claims are not, and are re-checked here.
 
 ### What have we learned
 
@@ -1476,6 +1545,9 @@ Required content:
 
 **Date (UTC):** …    **Branch:** …    **PR:** …    **Outcome:** completed | partial | blocked
 
+> **Verification loop exit:** `verifier-clear` | `budget-exhausted` — and when the late rounds' findings
+> did not narrow, **`non-converging`** alongside it.
+
 ## Skills loaded
 …
 
@@ -1515,6 +1587,16 @@ Then the stop record (§ Step 6, "When the loop stops"):
   reports the deliverables, not the loop.
 
 A run that fixed everything says so, and has no survivor rows.
+
+⭐ **The exit belongs in the report HEADER, not only in this stop record.** `Outcome` reports the
+deliverables and says nothing about the loop, so a run that stopped because it ran out of rounds
+carries the same `Outcome: completed` as one that stopped on a verifier's all-clear — and `Outcome` is
+what a collector reads. Naming the exit in the header (above) costs one line and makes the difference
+visible without hunting for this section. **A `non-converging` loop is the case that most needs
+saying**: the useful signal is not "verification finished" but *"each round is still finding defects at
+the same rate, and the rate is not decaying."* An observed run reached its fourth round finding **more**
+shipped-surface defects than its third, and a fifth party — an automated reviewer — then found a
+fail-open none of the four had caught.
 
 ## Reviewer participation
 The expected reviewer population **derived from configuration** — the `author_login` of each
