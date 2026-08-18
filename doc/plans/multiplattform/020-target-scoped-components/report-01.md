@@ -225,10 +225,28 @@ It surfaced two wording gaps, both fixed rather than waved through:
 
 ### Stop record
 
-**Which exit ended the loop: the BUDGET, not the verifier.** The budget was the contract's default of
-**five rounds**; the plan set none. No round returned "nothing remains" — round 5 answered the stop
-question **"Yes, condition A is violated at 13 sites"**, and those 13 were then fixed, as condition A
-requires regardless of budget. What the budget ended is the *verifying*, never the *fixing*.
+**The loop has not ended. The first budget was spent and the operator extended it.**
+
+The budget was the contract's default of **five rounds**; the plan set none. No round returned
+"nothing remains" — round 5 answered the stop question **"Yes, condition A is violated at 13 sites"**,
+and those 13 were fixed, as condition A requires regardless of budget. What a spent budget ends is the
+*verifying*, never the *fixing*.
+
+### Budget escalation
+
+An operator was reachable in this session, so the contract's boundary ask was an obligation rather
+than an option, and it was put to them with: the rounds run and their counts, the non-convergence
+evidence below, every survivor with its bound, and the four options (stop and open the PR; another
+five rounds; stop and hand the branch over; or narrow the loop to one named surface).
+
+| | |
+|---|---|
+| **Asked at** | End of round 5, after all 13 of its condition-A findings were fixed and pushed |
+| **Answer** | **"Another five rounds"** — granted on identical terms |
+| **Terms** | Rounds 6–10; the same boundary question when they run out; the same autonomous fallback if the operator has become unreachable by then |
+
+This record exists because a conversation event is not a committed artifact — the report is its only
+durable trace.
 
 **Rounds and what they found:** 12, 17, 12, 17, 19. Two further round-5 dispatches died to server-side
 API errors (one mid-response, one a 529) before doing any work; neither is counted as a round, because
@@ -240,9 +258,6 @@ narrowed — round 3: 9/12 in the shipped change; round 4: 10/17; round 5: 9/19.
 *"merely fewer, and barely … the share has fallen only because the report grew a Round 3 and a Round 4
 section this round — the denominator moved, not the numerator."* Two of its findings sat in the same
 docstring pair rounds 3 and 4 had each rewritten and each got wrong.
-
-**The operator was asked at the boundary** (§ Budget escalation below), because an operator is
-reachable in this session and the contract makes the ask an obligation rather than an option there.
 
 **Evidence stronger than another read** — all obtained in round 5, none of which the branch previously
 carried:
