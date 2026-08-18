@@ -204,9 +204,8 @@ class TestExemptionInInlineCodeSpan:
         """Only the span-internal occurrence is exempt; the bare one is flagged."""
         content = 'Use `$(cmd)` not $(cmd) directly.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_shell_substitution_in_skills(marketplace_root)
         # The bare $(cmd) after "not" is outside the span and must be flagged
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_shell_substitution_in_skills, marketplace_root, [RULE_ID])
 
 
 # ===========================================================================

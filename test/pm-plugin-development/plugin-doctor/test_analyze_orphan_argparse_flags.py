@@ -200,8 +200,7 @@ class TestMixedFlags:
             '    print(args.output)\n'  # reads output, ignores verbose
         )
         script = _write_script(tmp_path, src)
-        findings = analyze_orphan_argparse_flags(script)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_orphan_argparse_flags, script, [RULE_ID])
         assert findings[0]['flag_name'] == '--verbose'
 
 

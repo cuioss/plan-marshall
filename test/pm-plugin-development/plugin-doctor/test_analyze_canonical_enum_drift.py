@@ -115,8 +115,7 @@ def test_passes_correct_enum(tmp_path):
 def test_flags_invented_value(tmp_path):
     """A documented member absent from choices= is flagged as not_in_choices."""
     _write_bundle(tmp_path, doc_enum='x|y|z|w', script_body=_SCRIPT_LITERAL_CHOICES)
-    findings = analyze_canonical_enum_drift(tmp_path)
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [RULE_ID])
     assert findings[0]['details']['not_in_choices'] == ['w']
 
 
@@ -268,6 +267,5 @@ if __name__ == '__main__':
     main()
 '''
     _write_bundle(tmp_path, doc_enum='x|y', script_body=script)
-    findings = analyze_canonical_enum_drift(tmp_path)
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [RULE_ID])
     assert findings[0]['details']['missing_from_doc'] == ['z']

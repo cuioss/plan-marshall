@@ -196,8 +196,7 @@ class TestRoleFieldMissing:
             scoped / 'c.md',
             '---\nname: default:c\ndescription: c step\norder: 30\nrole: quality-gate\n---\n',
         )
-        findings = analyze_role_field(tmp_path)
-        assert len(findings) == 2
+        findings = assert_analyzer_findings(analyze_role_field, tmp_path, [RULE_ID] * 2)
         snippets = {f['snippet'] for f in findings}
         assert snippets == {'a', 'b'}
 
@@ -221,8 +220,7 @@ class TestRoleFieldEmpty:
             'role:\n'  # bare key with empty value
             '---\n',
         )
-        findings = analyze_role_field(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_role_field, tmp_path, [RULE_ID])
         assert findings[0]['file'] == str(path)
 
     def test_whitespace_only_role_value_produces_finding(self, tmp_path: Path) -> None:
@@ -236,8 +234,7 @@ class TestRoleFieldEmpty:
             'role:    \n'  # whitespace-only after the colon
             '---\n',
         )
-        findings = analyze_role_field(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_role_field, tmp_path, [RULE_ID])
         assert findings[0]['file'] == str(path)
 
     def test_empty_quoted_role_value_produces_finding(self, tmp_path: Path) -> None:
@@ -251,8 +248,7 @@ class TestRoleFieldEmpty:
             scoped / 'b.md',
             '---\nname: default:b\ndescription: b\norder: 20\nrole: \'\'\n---\n',
         )
-        findings = analyze_role_field(tmp_path)
-        assert len(findings) == 2
+        assert_analyzer_findings(analyze_role_field, tmp_path, [RULE_ID] * 2)
 
 
 # ===========================================================================
@@ -353,8 +349,7 @@ class TestCanonicalVerifyExemption:
             'order: 20\n'
             '---\n',
         )
-        findings = analyze_role_field(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_role_field, tmp_path, [RULE_ID])
         assert findings[0]['file'] == str(legacy)
         assert findings[0]['snippet'] == 'quality_check'
 

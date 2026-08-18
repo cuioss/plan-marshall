@@ -86,8 +86,7 @@ class TestRelativeTempGitCDetected:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID])
         assert findings[0]['temp_path'] == '.plan/temp/{plan_id}-commit-msg.txt'
 
     def test_relative_temp_in_sh_fence(self, tmp_path):
@@ -97,8 +96,7 @@ class TestRelativeTempGitCDetected:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID])
         assert findings[0]['temp_path'] == '.plan/temp/msg.txt'
 
     def test_relative_temp_with_concrete_worktree_path(self, tmp_path):
@@ -108,8 +106,7 @@ class TestRelativeTempGitCDetected:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID])
         assert findings[0]['temp_path'] == '.plan/temp/commit-msg.txt'
 
 
@@ -256,8 +253,7 @@ class TestFindingShape:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID])
         assert findings[0]['line'] == 4
 
     def test_file_path_is_absolute(self, tmp_path):
@@ -267,8 +263,7 @@ class TestFindingShape:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID])
         assert Path(findings[0]['file']).is_absolute()
 
 
@@ -286,8 +281,7 @@ class TestMultipleFindings:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert len(findings) == 2
+        findings = assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID] * 2)
         temp_paths = {f['temp_path'] for f in findings}
         assert temp_paths == {'.plan/temp/a.txt', '.plan/temp/b.txt'}
 
@@ -305,8 +299,7 @@ class TestAgentAndCommandScanned:
             '```\n'
         )
         _make_agent_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID])
 
     def test_command_md_is_scanned(self, tmp_path):
         content = (
@@ -315,8 +308,7 @@ class TestAgentAndCommandScanned:
             '```\n'
         )
         _make_command_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID])
 
 
 # ---------------------------------------------------------------------------

@@ -46,6 +46,8 @@ from pathlib import Path
 import pytest
 from conftest import MARKETPLACE_ROOT, load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -159,11 +161,8 @@ class TestBundleViolating:
         )
         md = _write_bundle_skill(bundles_root, content)
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(scan_finalize_step_token, bundles_root, [RULE_ID])
         f = findings[0]
-        assert f['rule_id'] == RULE_ID
         assert f['file'] == str(md)
         assert f['details']['documented_token'] == _SKILL
         assert f['details']['expected_step_id'] == _BUNDLE_REF
@@ -176,9 +175,7 @@ class TestBundleViolating:
         content = '# Skill\n\n' + _mark_step_done_block(f'project:{_SKILL}')
         _write_bundle_skill(bundles_root, content)
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(scan_finalize_step_token, bundles_root, [RULE_ID])
         assert findings[0]['details']['expected_step_id'] == _BUNDLE_REF
 
 
@@ -195,9 +192,7 @@ class TestBundleClean:
         content = '# Skill\n\n' + _mark_step_done_block(_BUNDLE_REF)
         _write_bundle_skill(bundles_root, content)
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert findings == []
+        assert_analyzer_findings(scan_finalize_step_token, bundles_root, [])
 
     def test_out_of_registry_bundle_skill_is_not_scanned(
         self, tmp_path: Path, monkeypatch
@@ -210,9 +205,7 @@ class TestBundleClean:
             bundles_root, content, bundle='pm-dev-java', skill='some-step'
         )
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert findings == []
+        assert_analyzer_findings(scan_finalize_step_token, bundles_root, [])
 
 
 # ===========================================================================
@@ -230,9 +223,7 @@ class TestSkipContext:
         )
         _write_bundle_skill(bundles_root, content)
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert findings == []
+        assert_analyzer_findings(scan_finalize_step_token, bundles_root, [])
 
     def test_mark_step_done_wrong_phase_is_skipped(
         self, tmp_path: Path, monkeypatch
@@ -245,9 +236,7 @@ class TestSkipContext:
         )
         _write_bundle_skill(bundles_root, content)
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert findings == []
+        assert_analyzer_findings(scan_finalize_step_token, bundles_root, [])
 
 
 # ===========================================================================
@@ -272,9 +261,7 @@ class TestEqualsForm:
         )
         _write_bundle_skill(bundles_root, content)
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(scan_finalize_step_token, bundles_root, [RULE_ID])
         assert findings[0]['details']['documented_token'] == _SKILL
 
     def test_equals_form_matching_token_is_clean(self, tmp_path: Path, monkeypatch) -> None:
@@ -289,9 +276,7 @@ class TestEqualsForm:
         )
         _write_bundle_skill(bundles_root, content)
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert findings == []
+        assert_analyzer_findings(scan_finalize_step_token, bundles_root, [])
 
 
 # ===========================================================================
@@ -311,9 +296,7 @@ class TestProjectLocal:
         content = '# Deploy Target\n\n' + _mark_step_done_block(name)
         bundles_root, md = _write_project_skill(tmp_path, content, name=name)
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(scan_finalize_step_token, bundles_root, [RULE_ID])
         f = findings[0]
         assert f['file'] == str(md)
         assert f['details']['documented_token'] == name
@@ -328,9 +311,7 @@ class TestProjectLocal:
         )
         bundles_root, _ = _write_project_skill(tmp_path, content, name=name)
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert findings == []
+        assert_analyzer_findings(scan_finalize_step_token, bundles_root, [])
 
     def test_project_local_without_handshake_is_skipped(
         self, tmp_path: Path, monkeypatch
@@ -339,9 +320,7 @@ class TestProjectLocal:
         content = '# Deploy Target\n\nNo finalize handshake here.\n'
         bundles_root, _ = _write_project_skill(tmp_path, content, name=name)
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert findings == []
+        assert_analyzer_findings(scan_finalize_step_token, bundles_root, [])
 
     def test_bundle_and_project_findings_combine(self, tmp_path: Path, monkeypatch) -> None:
         """Findings from the bundle tree and ``.claude/skills`` combine."""
@@ -359,9 +338,7 @@ class TestProjectLocal:
             encoding='utf-8',
         )
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert len(findings) == 2
+        findings = assert_analyzer_findings(scan_finalize_step_token, bundles_root, [RULE_ID] * 2)
         files = {f['file'] for f in findings}
         assert any(f.endswith(f'{_SKILL}/SKILL.md') for f in files)
         assert any(f.endswith(f'{proj_name}/SKILL.md') for f in files)
@@ -380,11 +357,8 @@ class TestFindingShape:
         content = '# Skill\n\n' + _mark_step_done_block(_SKILL)
         md = _write_bundle_skill(bundles_root, content)
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(scan_finalize_step_token, bundles_root, [RULE_ID])
         f = findings[0]
-        assert f['rule_id'] == RULE_ID
         assert f['type'] == FINDING_TYPE
         assert f['rule'] == RULE_NAME
         assert f['file'] == str(md)
@@ -411,9 +385,7 @@ class TestFindingShape:
         )
         _write_bundle_skill(bundles_root, content)
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(scan_finalize_step_token, bundles_root, [RULE_ID])
         assert findings[0]['line'] == 6
 
 

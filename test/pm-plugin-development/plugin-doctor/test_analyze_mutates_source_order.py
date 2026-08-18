@@ -143,9 +143,7 @@ class TestSettleBandOrdering:
             tmp_path, 'test-bundle:test-step', 4, mutates_source=True
         )
 
-        findings = analyze_mutates_source_order(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_mutates_source_order, tmp_path, [])
 
     def test_mutating_step_just_below_merge_gate_produces_no_finding(
         self, tmp_path: Path
@@ -159,9 +157,7 @@ class TestSettleBandOrdering:
             mutates_source=True,
         )
 
-        findings = analyze_mutates_source_order(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_mutates_source_order, tmp_path, [])
 
 
 # ===========================================================================
@@ -181,11 +177,8 @@ class TestPostMergeOrdering:
             tmp_path, 'test-bundle:test-step', 996, mutates_source=True
         )
 
-        findings = analyze_mutates_source_order(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_mutates_source_order, tmp_path, [RULE_ID])
         finding = findings[0]
-        assert finding['rule_id'] == RULE_ID
         assert finding['type'] == FINDING_TYPE
         assert finding['rule'] == RULE_NAME
         assert finding['severity'] == 'error'
@@ -212,9 +205,7 @@ class TestPostMergeOrdering:
             mutates_source=True,
         )
 
-        findings = analyze_mutates_source_order(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_mutates_source_order, tmp_path, [RULE_ID])
         assert findings[0]['details']['merge_gate_order'] == _MERGE_GATE_ORDER
 
     def test_merge_gate_order_is_read_not_hardcoded(self, tmp_path: Path) -> None:
@@ -229,9 +220,7 @@ class TestPostMergeOrdering:
             tmp_path, 'test-bundle:test-step', 30, mutates_source=True
         )
 
-        findings = analyze_mutates_source_order(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_mutates_source_order, tmp_path, [RULE_ID])
         assert findings[0]['details']['merge_gate_order'] == 20
 
     def test_project_local_step_is_in_scope(self, tmp_path: Path) -> None:
@@ -251,9 +240,7 @@ class TestPostMergeOrdering:
         )
         (step_dir / 'SKILL.md').write_text(content, encoding='utf-8')
 
-        findings = analyze_mutates_source_order(bundles_root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_mutates_source_order, bundles_root, [RULE_ID])
         assert findings[0]['details']['step_name'] == 'project:finalize-step-demo'
 
 
@@ -281,11 +268,8 @@ class TestNoMutatesSourceClaim:
             tmp_path, 'test-bundle:test-step', 996
         )
 
-        findings = analyze_mutates_source_order(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_mutates_source_order, tmp_path, [RULE_ID])
         finding = findings[0]
-        assert finding['rule_id'] == RULE_ID
         assert finding['type'] == FINDING_TYPE_DECLARATION_MISSING
         assert finding['rule'] == RULE_NAME
         assert finding['severity'] == 'error'
@@ -310,9 +294,7 @@ class TestNoMutatesSourceClaim:
             tmp_path, 'test-bundle:test-step', _MERGE_GATE_ORDER - 1
         )
 
-        findings = analyze_mutates_source_order(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_mutates_source_order, tmp_path, [])
 
     def test_missing_key_at_merge_gate_order_is_flagged(
         self, tmp_path: Path
@@ -327,9 +309,7 @@ class TestNoMutatesSourceClaim:
             tmp_path, 'test-bundle:test-step', _MERGE_GATE_ORDER
         )
 
-        findings = analyze_mutates_source_order(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_mutates_source_order, tmp_path, [RULE_ID])
         assert findings[0]['type'] == FINDING_TYPE_DECLARATION_MISSING
         assert findings[0]['details']['merge_gate_order'] == _MERGE_GATE_ORDER
 
@@ -342,9 +322,7 @@ class TestNoMutatesSourceClaim:
             tmp_path, 'test-bundle:test-step', 996, mutates_source=False
         )
 
-        findings = analyze_mutates_source_order(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_mutates_source_order, tmp_path, [])
 
     def test_doc_without_ext_point_declaration_is_not_scanned(
         self, tmp_path: Path
@@ -358,9 +336,7 @@ class TestNoMutatesSourceClaim:
             encoding='utf-8',
         )
 
-        findings = analyze_mutates_source_order(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_mutates_source_order, tmp_path, [])
 
     def test_commented_out_ext_point_declaration_is_not_scanned(
         self, tmp_path: Path
@@ -406,9 +382,7 @@ class TestUndiscoverableMergeGate:
             tmp_path, 'test-bundle:test-step', 996, mutates_source=True
         )
 
-        findings = analyze_mutates_source_order(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_mutates_source_order, tmp_path, [])
 
     def test_empty_marketplace_yields_no_findings(self, tmp_path: Path) -> None:
         """An empty tree is tolerated without raising."""

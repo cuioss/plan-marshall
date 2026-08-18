@@ -366,8 +366,7 @@ class TestDocstringSkip:
             '"""Doc: .plan/plans/{id} legacy form."""\n\n'
             'plan_dir = ".plan/plans/" + plan_id\n',
         )
-        findings = analyze_plan_path_in_scripts(mp)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_plan_path_in_scripts, mp, [RULE_ID])
         assert findings[0]['category'] == 'production_script'
         # Line 3 holds the code-literal hit (line 1 is the docstring).
         assert findings[0]['line'] == 3

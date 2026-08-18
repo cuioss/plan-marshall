@@ -67,8 +67,7 @@ class TestFlagsNonAllowlisted:
             _NON_ALLOWLISTED,
             'import sys\nsys.path.append("x")\n',
         )
-        findings = analyze_sys_path_bootstrap(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_sys_path_bootstrap, tmp_path, [RULE_ID])
         assert findings[0]['call'] == 'sys.path.append'
 
     def test_multiple_mutations_each_flagged(self, tmp_path):
@@ -77,8 +76,7 @@ class TestFlagsNonAllowlisted:
             _NON_ALLOWLISTED,
             'import sys\nsys.path.insert(0, "a")\nsys.path.append("b")\n',
         )
-        findings = analyze_sys_path_bootstrap(tmp_path)
-        assert len(findings) == 2
+        assert_analyzer_findings(analyze_sys_path_bootstrap, tmp_path, [RULE_ID] * 2)
 
 
 class TestExemptAllowlisted:

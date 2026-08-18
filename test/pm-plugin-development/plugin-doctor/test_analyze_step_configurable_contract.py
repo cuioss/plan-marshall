@@ -47,6 +47,8 @@ from pathlib import Path
 import pytest
 from conftest import MARKETPLACE_ROOT, load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -224,9 +226,7 @@ class TestMalformedFires:
         bundles_root = _bundles_root(tmp_path)
         doc = _write_builtin_doc(bundles_root, _frontmatter(block))
 
-        findings = scan_step_configurable_contract(bundles_root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(scan_step_configurable_contract, bundles_root, [RULE_ID])
         assert findings[0]['file'] == str(doc)
         assert findings[0]['rule_id'] == RULE_ID
 
@@ -241,18 +241,14 @@ class TestMalformedFires:
         )
         _write_builtin_doc(bundles_root, _frontmatter(block))
 
-        findings = scan_step_configurable_contract(bundles_root)
-
-        assert len(findings) == 1
+        assert_analyzer_findings(scan_step_configurable_contract, bundles_root, [RULE_ID])
 
     def test_no_frontmatter_with_configurable_is_ownerless(self, tmp_path: Path) -> None:
         """A doc with no frontmatter fence is ownerless (no block to validate)."""
         bundles_root = _bundles_root(tmp_path)
         _write_builtin_doc(bundles_root, _frontmatter(None, with_fm=False))
 
-        findings = scan_step_configurable_contract(bundles_root)
-
-        assert findings == []
+        assert_analyzer_findings(scan_step_configurable_contract, bundles_root, [])
 
 
 # ===========================================================================
@@ -267,18 +263,14 @@ class TestCleanAndOwnerless:
         bundles_root = _bundles_root(tmp_path)
         _write_builtin_doc(bundles_root, _frontmatter(_VALID_BLOCK))
 
-        findings = scan_step_configurable_contract(bundles_root)
-
-        assert findings == []
+        assert_analyzer_findings(scan_step_configurable_contract, bundles_root, [])
 
     def test_frontmatter_without_configurable_is_ownerless(self, tmp_path: Path) -> None:
         """Frontmatter present but no ``configurable:`` key → ownerless, skipped."""
         bundles_root = _bundles_root(tmp_path)
         _write_builtin_doc(bundles_root, _frontmatter(None))
 
-        findings = scan_step_configurable_contract(bundles_root)
-
-        assert findings == []
+        assert_analyzer_findings(scan_step_configurable_contract, bundles_root, [])
 
     def test_standards_subdir_is_scanned(self, tmp_path: Path) -> None:
         """A malformed block in ``standards/`` is scanned, not just ``workflow/``."""
@@ -292,9 +284,7 @@ class TestCleanAndOwnerless:
             bundles_root, _frontmatter(block), subdir='standards', name='branch-cleanup'
         )
 
-        findings = scan_step_configurable_contract(bundles_root)
-
-        assert len(findings) == 1
+        assert_analyzer_findings(scan_step_configurable_contract, bundles_root, [RULE_ID])
 
 
 # ===========================================================================
@@ -314,26 +304,20 @@ class TestProjectLocal:
         )
         md = _write_project_doc(tmp_path, _frontmatter(block))
 
-        findings = scan_step_configurable_contract(bundles_root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(scan_step_configurable_contract, bundles_root, [RULE_ID])
         assert findings[0]['file'] == str(md)
 
     def test_project_local_ownerless_is_skipped(self, tmp_path: Path) -> None:
         bundles_root = _bundles_root(tmp_path)
         _write_project_doc(tmp_path, _frontmatter(None))
 
-        findings = scan_step_configurable_contract(bundles_root)
-
-        assert findings == []
+        assert_analyzer_findings(scan_step_configurable_contract, bundles_root, [])
 
     def test_project_local_valid_is_clean(self, tmp_path: Path) -> None:
         bundles_root = _bundles_root(tmp_path)
         _write_project_doc(tmp_path, _frontmatter(_VALID_BLOCK))
 
-        findings = scan_step_configurable_contract(bundles_root)
-
-        assert findings == []
+        assert_analyzer_findings(scan_step_configurable_contract, bundles_root, [])
 
     def test_builtin_and_project_findings_combine(self, tmp_path: Path) -> None:
         """Findings from the built-in tree and ``.claude/skills`` combine."""
@@ -345,9 +329,7 @@ class TestProjectLocal:
             tmp_path, _frontmatter(project_block), name='finalize-step-plugin-doctor'
         )
 
-        findings = scan_step_configurable_contract(bundles_root)
-
-        assert len(findings) == 2
+        findings = assert_analyzer_findings(scan_step_configurable_contract, bundles_root, [RULE_ID] * 2)
         files = {f['file'] for f in findings}
         assert str(builtin) in files
         assert str(project) in files
@@ -366,11 +348,8 @@ class TestFindingShape:
         block = 'configurable:\n  - key: foo\n    default: bar\n'  # missing desc
         doc = _write_builtin_doc(bundles_root, _frontmatter(block))
 
-        findings = scan_step_configurable_contract(bundles_root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(scan_step_configurable_contract, bundles_root, [RULE_ID])
         f = findings[0]
-        assert f['rule_id'] == RULE_ID
         assert f['type'] == FINDING_TYPE
         assert f['rule'] == RULE_NAME
         assert f['file'] == str(doc)
@@ -388,9 +367,7 @@ class TestFindingShape:
         block = 'configurable:\n  - key: foo\n    default: bar\n'  # missing desc
         _write_builtin_doc(bundles_root, _frontmatter(block))
 
-        findings = scan_step_configurable_contract(bundles_root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(scan_step_configurable_contract, bundles_root, [RULE_ID])
         assert findings[0]['line'] == 4
 
 
@@ -408,9 +385,7 @@ class TestParserUnavailable:
         block = 'configurable:\n  - key: foo\n    default: bar\n'  # malformed
         _write_builtin_doc(bundles_root, _frontmatter(block))
 
-        findings = scan_step_configurable_contract(bundles_root)
-
-        assert findings == []
+        assert_analyzer_findings(scan_step_configurable_contract, bundles_root, [])
 
 
 # ===========================================================================

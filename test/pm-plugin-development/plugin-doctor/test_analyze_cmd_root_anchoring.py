@@ -150,8 +150,7 @@ class TestMissingFlag:
             '    p_fix.set_defaults(func=cmd_fix)\n'
         )
         script = _write_script(tmp_path, src)
-        findings = analyze_cmd_root_anchoring(script)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_cmd_root_anchoring, script, [RULE_ID])
         f = findings[0]
         assert f['missing'] == 'flag'
         assert f['function_name'] == 'cmd_fix'
@@ -179,8 +178,7 @@ class TestMissingBoth:
             '    p_rep.set_defaults(func=cmd_report)\n'
         )
         script = _write_script(tmp_path, src)
-        findings = analyze_cmd_root_anchoring(script)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_cmd_root_anchoring, script, [RULE_ID])
         f = findings[0]
         assert f['missing'] == 'both'
         assert f['function_name'] == 'cmd_report'

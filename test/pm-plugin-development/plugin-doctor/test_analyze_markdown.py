@@ -29,6 +29,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -410,11 +412,7 @@ class TestAggregatorWiring:
             '# F\n\nSee [x](standards/x.md).\n\n```python\nok = 1\n```\n',
         )
 
-        findings = analyze_markdown_mirror_rules(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_markdown_mirror_rules, tmp_path, [])
 
     def test_empty_root_returns_no_findings(self, tmp_path: Path) -> None:
-        findings = analyze_markdown_mirror_rules(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_markdown_mirror_rules, tmp_path, [])

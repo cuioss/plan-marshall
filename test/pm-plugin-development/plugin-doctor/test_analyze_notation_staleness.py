@@ -26,6 +26,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 # ---------------------------------------------------------------------------
 # Module loader — spec-load the analyzer directly from the marketplace tree.
 # Underscore-prefixed analyzers are not importable through the executor.
@@ -103,11 +105,8 @@ def test_stale_notation_flagged(tmp_path):
         '```\n',
     )
 
-    findings = analyze_notation_staleness([skill_dir])
-
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_notation_staleness, [skill_dir], [RULE_ID])
     finding = findings[0]
-    assert finding['rule_id'] == RULE_ID
     assert finding['type'] == RULE_ID
     assert finding['severity'] == 'error'
     assert finding['fixable'] is False
@@ -128,9 +127,7 @@ def test_canonical_hint_when_flipped_form_resolves(tmp_path):
         'python3 .plan/execute-script.py plan-marshall:manage-metrics:manage_metrics generate\n',
     )
 
-    findings = analyze_notation_staleness([skill_dir])
-
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_notation_staleness, [skill_dir], [RULE_ID])
     hint = findings[0]['details']['canonical_hint']
     assert 'plan-marshall:manage-metrics:manage-metrics' in hint
 
@@ -172,9 +169,7 @@ def test_consistent_notation_silent(tmp_path):
         'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status read\n',
     )
 
-    findings = analyze_notation_staleness([skill_dir])
-
-    assert findings == []
+    assert_analyzer_findings(analyze_notation_staleness, [skill_dir], [])
 
 
 def test_unknown_bundle_skipped(tmp_path):
@@ -192,9 +187,7 @@ def test_unknown_bundle_skipped(tmp_path):
         'Unrelated text with some-bundle:some-skill:some-script in prose.\n',
     )
 
-    findings = analyze_notation_staleness([skill_dir])
-
-    assert findings == []
+    assert_analyzer_findings(analyze_notation_staleness, [skill_dir], [])
 
 
 def test_rules_filter_deselects_rule(tmp_path):
@@ -230,9 +223,7 @@ def test_file_entry_resolves_marketplace_root(tmp_path):
         encoding='utf-8',
     )
 
-    findings = analyze_notation_staleness([md_path])
-
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_notation_staleness, [md_path], [RULE_ID])
     assert findings[0]['details']['notation'] == (
         'plan-marshall:manage-status:manage_status'
     )

@@ -302,9 +302,7 @@ def test_single_action_script_skips_verb_check(tmp_path):
         'python3 .plan/execute-script.py pkg:skill:single some-positional --baz value\n',
     )
 
-    findings = analyze_script_call_drift(bundles)
-    # No findings — single-action scripts skip verb checking, and --baz is valid.
-    assert findings == []
+    assert_analyzer_findings(analyze_script_call_drift, bundles, [])
 
 
 def test_help_and_audit_plan_id_flags_exempt(tmp_path):
@@ -339,10 +337,7 @@ def test_caching_one_help_call_per_unique_notation(tmp_path, monkeypatch):
 
     monkeypatch.setattr(_ascd, '_run_help', counting_run_help)
 
-    findings = analyze_script_call_drift(bundles)
-
-    # No findings expected (all verbs and flags are valid).
-    assert findings == []
+    assert_analyzer_findings(analyze_script_call_drift, bundles, [])
     # Expected calls: 1 for notation choices + 2 for (multi, alpha) and (multi, bravo) flags.
     # The two `alpha` invocations share the (notation, verb) cache entry.
     assert call_count['n'] == 3

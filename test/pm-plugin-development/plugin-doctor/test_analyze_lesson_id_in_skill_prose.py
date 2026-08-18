@@ -748,10 +748,9 @@ class TestClaudeSkillsTree:
         """
         content = 'See lesson 2026-04-17-012 for context.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_lesson_id_in_skill_prose(marketplace_root)
         # Exactly the one markdown finding; the absent .claude/skills tree
         # contributes nothing and does not raise.
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_lesson_id_in_skill_prose, marketplace_root, [RULE_ID])
 
     def test_claude_and_bundles_findings_combine(self, tmp_path: Path) -> None:
         """Findings from both the bundles tree and ``.claude/skills`` combine."""
@@ -912,9 +911,7 @@ class TestHousekeepingPromotionForm:
             self._PROMOTED_RULE_BODY, encoding='utf-8'
         )
 
-        findings = analyze_lesson_id_in_skill_prose(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_lesson_id_in_skill_prose, tmp_path, [])
 
     def test_pre_reconciliation_citation_form_still_produces_finding(
         self, tmp_path: Path
@@ -940,10 +937,7 @@ class TestHousekeepingPromotionForm:
             encoding='utf-8',
         )
 
-        findings = analyze_lesson_id_in_skill_prose(tmp_path)
-
-        assert len(findings) == 1
-        assert findings[0]['rule_id'] == RULE_ID
+        assert_analyzer_findings(analyze_lesson_id_in_skill_prose, tmp_path, [RULE_ID])
 
 
 # ===========================================================================

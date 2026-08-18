@@ -28,6 +28,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -99,9 +101,7 @@ class TestModePresent:
         root = _bundles_root(tmp_path)
         _write_skill(root, 'my-bundle', 'manage-foo', _frontmatter('knowledge'))
 
-        findings = analyze_skill_mode(root)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_skill_mode, root, [])
 
     def test_every_enum_member_silent(self, tmp_path: Path) -> None:
         """Each member of the closed enum is accepted with no finding."""
@@ -109,34 +109,26 @@ class TestModePresent:
         for index, mode in enumerate(sorted(_VALID_MODES)):
             _write_skill(root, 'my-bundle', f'skill-{index}', _frontmatter(mode))
 
-        findings = analyze_skill_mode(root)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_skill_mode, root, [])
 
     def test_quoted_mode_value_accepted(self, tmp_path: Path) -> None:
         """A double-quoted ``mode:`` scalar is accepted after quote-strip."""
         root = _bundles_root(tmp_path)
         _write_skill(root, 'my-bundle', 'manage-foo', _frontmatter('"workflow"'))
 
-        findings = analyze_skill_mode(root)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_skill_mode, root, [])
 
     def test_skill_without_skill_md_is_exempt(self, tmp_path: Path) -> None:
         """A skill directory with no SKILL.md is not this rule's concern."""
         root = _bundles_root(tmp_path)
         (root / 'my-bundle' / 'skills' / 'skill-empty').mkdir(parents=True)
 
-        findings = analyze_skill_mode(root)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_skill_mode, root, [])
 
     def test_empty_root_returns_no_findings(self, tmp_path: Path) -> None:
         root = _bundles_root(tmp_path)
 
-        findings = analyze_skill_mode(root)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_skill_mode, root, [])
 
 
 # ===========================================================================
@@ -151,11 +143,8 @@ class TestModeMissing:
         root = _bundles_root(tmp_path)
         md = _write_skill(root, 'my-bundle', 'manage-foo', _frontmatter(None))
 
-        findings = analyze_skill_mode(root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_skill_mode, root, [RULE_ID])
         finding = findings[0]
-        assert finding['rule_id'] == RULE_ID
         assert finding['type'] == RULE_ID
         assert finding['severity'] == 'error'
         assert finding['fixable'] is False
@@ -173,9 +162,7 @@ class TestModeMissing:
         _write_skill(root, 'my-bundle', 'skill-b', _frontmatter(None))
         _write_skill(root, 'my-bundle', 'skill-c', _frontmatter('manifest'))
 
-        findings = analyze_skill_mode(root)
-
-        assert len(findings) == 2
+        findings = assert_analyzer_findings(analyze_skill_mode, root, [RULE_ID] * 2)
         skills = {f['details']['skill'] for f in findings}
         assert skills == {'skill-a', 'skill-b'}
 
@@ -192,11 +179,8 @@ class TestModeInvalid:
         root = _bundles_root(tmp_path)
         md = _write_skill(root, 'my-bundle', 'manage-foo', _frontmatter('reference'))
 
-        findings = analyze_skill_mode(root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_skill_mode, root, [RULE_ID])
         finding = findings[0]
-        assert finding['rule_id'] == RULE_ID
         assert finding['severity'] == 'error'
         assert finding['file'] == str(md)
         details = finding['details']
@@ -219,9 +203,7 @@ class TestFrontmatterEdges:
         body = '---\n---\n\n# Some Skill\n'
         md = _write_skill(root, 'my-bundle', 'manage-foo', body)
 
-        findings = analyze_skill_mode(root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_skill_mode, root, [RULE_ID])
         assert findings[0]['file'] == str(md)
         assert findings[0]['details']['reason'] == 'mode_missing'
         assert 'declared_mode' not in findings[0]['details']
@@ -232,9 +214,7 @@ class TestFrontmatterEdges:
         body = '# Some Skill\n\nProse with no frontmatter fence.\n'
         md = _write_skill(root, 'my-bundle', 'manage-foo', body)
 
-        findings = analyze_skill_mode(root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_skill_mode, root, [RULE_ID])
         assert findings[0]['file'] == str(md)
         assert findings[0]['details']['reason'] == 'mode_missing'
 
@@ -244,11 +224,9 @@ class TestFrontmatterEdges:
         body = '---\nname: some-skill\nmode: knowledge\n\n# Some Skill\n'
         md = _write_skill(root, 'my-bundle', 'manage-foo', body)
 
-        findings = analyze_skill_mode(root)
-
         # The closing ``---`` never appears, so the parser returns None and the
         # mode is considered absent.
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_skill_mode, root, [RULE_ID])
         assert findings[0]['file'] == str(md)
         assert findings[0]['details']['reason'] == 'mode_missing'
 
@@ -267,9 +245,7 @@ class TestClaudeSkillsTree:
         root = tmp_path / 'marketplace' / 'bundles'
         md = _write_claude_skill(tmp_path, 'local-skill', _frontmatter(None))
 
-        findings = analyze_skill_mode(root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_skill_mode, root, [RULE_ID])
         assert findings[0]['file'] == str(md)
         assert findings[0]['details']['skill'] == 'local-skill'
         assert findings[0]['details']['reason'] == 'mode_missing'
@@ -279,6 +255,4 @@ class TestClaudeSkillsTree:
         root = tmp_path / 'marketplace' / 'bundles'
         _write_claude_skill(tmp_path, 'local-skill', _frontmatter('script-executor'))
 
-        findings = analyze_skill_mode(root)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_skill_mode, root, [])

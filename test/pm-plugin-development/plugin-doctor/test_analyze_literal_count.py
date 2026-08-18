@@ -234,15 +234,11 @@ class TestCleanCounts:
             ],
         )
 
-        findings = analyze_literal_count(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_literal_count, tmp_path, [])
 
     def test_missing_governed_file_returns_no_findings(self, tmp_path: Path) -> None:
         # No extension-api SKILL.md exists at all.
-        findings = analyze_literal_count(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_literal_count, tmp_path, [])
 
 
 # ===========================================================================
@@ -259,11 +255,8 @@ class TestStaleAstHookCount:
         _write_bundle_extension(tmp_path, 'bundle-b', {'provides_recipes': '[]'})  # default
         skill_md = _write_extension_api_table(tmp_path, [('`provides_recipes()`', '4')])
 
-        findings = analyze_literal_count(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_literal_count, tmp_path, [RULE_ID])
         finding = findings[0]
-        assert finding['rule_id'] == RULE_ID
         assert finding['type'] == RULE_ID
         assert finding['severity'] == 'warning'
         assert finding['fixable'] is False
@@ -280,9 +273,7 @@ class TestStaleAstHookCount:
         _write_bundle_extension(tmp_path, 'bundle-a', {})  # no overrides
         skill_md = _write_extension_api_table(tmp_path, [('`discover_modules()`', '2')])
 
-        findings = analyze_literal_count(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_literal_count, tmp_path, [RULE_ID])
         assert findings[0]['details'] == {'hook': 'discover_modules', 'stated': 2, 'actual': 0}
         assert findings[0]['file'] == str(skill_md)
 
@@ -301,9 +292,7 @@ class TestStaleProviderCount:
         _write_provider(tmp_path, 'plan-marshall', 'workflow-integration-github', 'github')
         _write_extension_api_table(tmp_path, [('`*_provider.py`', '4')])
 
-        findings = analyze_literal_count(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_literal_count, tmp_path, [RULE_ID])
         details = findings[0]['details']
         assert details['hook'] == '*_provider.py'
         assert details['stated'] == 4
@@ -323,9 +312,7 @@ class TestBoundaryConditions:
         # so its count (however wrong) is never checked.
         _write_extension_api_table(tmp_path, [('`some_other_hook()`', '99')])
 
-        findings = analyze_literal_count(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_literal_count, tmp_path, [])
 
     def test_prose_count_outside_table_is_ignored(self, tmp_path: Path) -> None:
         skill_dir = tmp_path / 'plan-marshall' / 'skills' / 'extension-api'
@@ -339,18 +326,14 @@ class TestBoundaryConditions:
             encoding='utf-8',
         )
 
-        findings = analyze_literal_count(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_literal_count, tmp_path, [])
 
     def test_non_integer_implementations_cell_is_ignored(self, tmp_path: Path) -> None:
         _write_bundle_extension(tmp_path, 'bundle-a', {'provides_triage': '"t"'})
         # The Implementations cell is prose, not a bare integer → not checkable.
         _write_extension_api_table(tmp_path, [('`provides_triage()`', 'several')])
 
-        findings = analyze_literal_count(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_literal_count, tmp_path, [])
 
     def test_persona_security_expert_absent_contributes_nothing(self, tmp_path: Path) -> None:
         # Only the extension-api surface exists; the standards-index surface is
@@ -358,9 +341,7 @@ class TestBoundaryConditions:
         _write_bundle_extension(tmp_path, 'bundle-a', {'provides_triage': '"t"'})
         _write_extension_api_table(tmp_path, [('`provides_triage()`', '1')])
 
-        findings = analyze_literal_count(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_literal_count, tmp_path, [])
 
     def test_multiple_stale_rows_co_occur(self, tmp_path: Path) -> None:
         # provides_triage: actual 1, stated 3 (stale). *_provider.py: actual 1,
@@ -376,9 +357,7 @@ class TestBoundaryConditions:
             ],
         )
 
-        findings = analyze_literal_count(tmp_path)
-
-        assert len(findings) == 2
+        findings = assert_analyzer_findings(analyze_literal_count, tmp_path, [RULE_ID] * 2)
         by_hook = {f['details']['hook']: f['details'] for f in findings}
         assert set(by_hook) == {'provides_triage', '*_provider.py'}
         assert by_hook['provides_triage']['stated'] == 3
@@ -448,9 +427,7 @@ class TestPersonaSecurityExpertIndex:
             tmp_path, self._POPULATION, load_listed=['alpha.md', 'beta.md']
         )
 
-        findings = analyze_literal_count(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_literal_count, tmp_path, [RULE_ID])
         details = findings[0]['details']
         assert details['surface'] == 'Available Standards'
         assert details['missing'] == ['gamma.md']
@@ -462,9 +439,7 @@ class TestPersonaSecurityExpertIndex:
             tmp_path, self._POPULATION, reference_listed=[*self._POPULATION, 'ghost.md']
         )
 
-        findings = analyze_literal_count(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_literal_count, tmp_path, [RULE_ID])
         details = findings[0]['details']
         assert details['surface'] == 'Standards Reference'
         assert details['missing'] == []
@@ -495,9 +470,7 @@ class TestPersonaSecurityExpertFailsClosed:
         # against, so the check must NOT report agreement.
         _write_persona_security_expert(tmp_path, [], prose='zero')
 
-        findings = analyze_literal_count(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_literal_count, tmp_path, [RULE_ID])
         assert findings[0]['details'] == {'surface': 'population', 'population_size': 0}
 
     def test_missing_index_section_is_flagged(self, tmp_path: Path) -> None:
@@ -505,9 +478,7 @@ class TestPersonaSecurityExpertFailsClosed:
             tmp_path, ['alpha.md', 'beta.md'], prose='two', include_reference_section=False
         )
 
-        findings = analyze_literal_count(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_literal_count, tmp_path, [RULE_ID])
         details = findings[0]['details']
         assert details['surface'] == 'Standards Reference'
         assert details['missing'] == ['alpha.md', 'beta.md']
@@ -548,11 +519,8 @@ class TestPersonaSecurityExpertFailsClosed:
         skill_md = _write_persona_security_expert(tmp_path, ['alpha.md', 'beta.md'], prose='two')
         skill_md.write_bytes(b'# Persona: Security Expert\n\xff\xfe not valid utf-8\n')
 
-        findings = analyze_literal_count(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_literal_count, tmp_path, [RULE_ID])
         finding = findings[0]
-        assert finding['rule_id'] == RULE_ID
         assert finding['type'] == RULE_ID
         assert finding['file'] == str(skill_md)
         assert finding['severity'] == 'warning'
@@ -565,9 +533,7 @@ class TestPersonaSecurityExpertFailsClosed:
         # not verified-clean.
         _write_persona_security_expert(tmp_path, ['alpha.md', 'beta.md'], prose=None)
 
-        findings = analyze_literal_count(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_literal_count, tmp_path, [RULE_ID])
         details = findings[0]['details']
         assert details['surface'] == 'prose'
         assert details['stated'] is None
