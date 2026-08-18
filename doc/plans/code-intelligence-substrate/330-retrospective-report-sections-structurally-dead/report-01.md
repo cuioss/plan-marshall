@@ -498,25 +498,32 @@ comment body, never from a check state.
 | Reviewer (`author_login`) | Verdict | Reopens? | Body evidence |
 |---|---|---|---|
 | `cuioss-review-bot` | `reviewed` | — | "PR Reviewer Guide 🔍 — PR contains tests / No security concerns identified / No major issues detected". A review artifact against the diff with an explicit nothing-to-report. |
-| `coderabbitai` | `rate-limited` | **yes** | "Review limit reached … **Next review available in: 38 minutes**". Its `CodeRabbit` commit status reads `Review rate limited`. |
+| `coderabbitai` | `reviewed` (after re-request) | — | Initially `rate-limited` ("Review limit reached … Next review available in: 38 minutes"). After the `@coderabbitai review` re-request it published a substantive body over this diff: *"Reviewed the PR. I found no actionable issues. The focused invariant is enforced in both render paths. For dict fragments, `_fragment_renders_empty()` delegates to `_fragment_has_payload()`. This keeps the written/omitted boundary consistent with the omitted/dropped boundary."* It also confirmed the `chat-history-analysis` carve-out still precedes the status guard, and that the metadata append validates before mutating. ⚠ **Caveat recorded rather than smoothed over:** the same comment's footer reads "⚠️ Action not completed — Review rate limited", and CodeRabbit notes it "does not re-review already reviewed commits". So its analysis ran and reported, while its incremental-review action was still limited — its coverage of the diff may be partial, and this row says so rather than claiming a clean full review. |
 | `sourcery-ai` | `rate-limited` | **no** | "your pull request is larger than the review limit of **150000 diff characters**". A ceiling on *this diff*, not on the clock — the same request never succeeds at this size, so waiting is futile. Its check run concluded `skipped`. |
 
-**Coverage: 1 of 3.** No surface errored, so no verdict is `unreadable` and merge-gate condition 2 is
-established on evidence rather than on an unread surface: all three comment surfaces were read
-(`get_comments`, `get_reviews`, `get_review_comments`) and the inline-thread surface returned a
-genuine empty set. There were no findings to handle — the one review reports none, and the two
-refusals are notices about the review rather than feedback about the code.
+**Coverage: 2 of 3**, after re-requesting the one reviewer whose limit was on a clock. No surface
+errored, so no verdict is `unreadable` and merge-gate condition 2 is established on evidence rather
+than on an unread surface: all three comment surfaces were read (`get_comments`, `get_reviews`,
+`get_review_comments`), re-read after the second review round, and the inline-thread surface returned
+a genuine empty set both times. **There were no findings to handle from any reviewer** — both reviews
+report none, and the remaining refusal is a notice about the review rather than feedback about the
+code.
 
 ⭐ **Two reviewers refused the same PR at the same moment for opposite reasons**, which is exactly why
-the `Reopens?` column exists: `coderabbitai` is behind a clock that clears, `sourcery-ai` behind a
+the `Reopens?` column exists: `coderabbitai` was behind a clock that cleared, `sourcery-ai` behind a
 size ceiling that never will. A record without that column would have rendered them identically and
-left a reader unable to tell which was worth re-requesting.
+left a reader unable to tell which was worth re-requesting — and re-requesting the right one is what
+turned 1-of-3 into 2-of-3.
 
-**The reopening reviewer is being re-requested rather than merged past.** A `@coderabbitai review`
-comment is scheduled for after its window clears, on a deliberately stable head — the report is
-committed *before* that point precisely so no later push aborts the review it is waiting for. The
-merge is armed only after that round completes, and the § Step 8 condition-4 disclosure will state
-the final coverage as N-of-3.
+**The reopening reviewer was re-requested rather than merged past.** The re-request was posted using
+the `trigger_comment` the registry declares (`@coderabbitai review`), on a deliberately stable head:
+this report's preceding section was committed *before* it, precisely so no later push would abort the
+review it was waiting for.
+
+**The one remaining shortfall is structural, and it is disclosed rather than waited out.**
+`sourcery-ai` cannot review a diff this size at any time, so there is nothing to wait for. Per
+§ Step 8 condition 4 that is a disclosure, never a block: the merge proceeds on **2-of-3** and says
+so.
 
 ## Cost
 
@@ -542,8 +549,8 @@ the final coverage as N-of-3.
 | 4 Pushed | **Done** — no unpushed commit; `git status -sb` reports no `ahead` |
 | 5 Build gate | **Done** — 14 `*.py` files changed, so the full gate applies; `./pw verify` re-run each round, last `=== verify: SUCCESS ===`, 20723 passed |
 | 6 Verification sub-agent | **Done** — four rounds, budget declared before the first dispatch; findings, dispositions and the stop record above |
-| 7 PR cycle | **Done** — PR #1287; no `skip-bot-review` (the diff touches `*.py` and `marketplace/bundles/**`, and a skill is code); participation table carries a verdict **and** a `Reopens?` value per reviewer; no `silent` verdict arose, so no recovery check was owed; no surface was `unreadable` |
-| 8 Merge gate | **Pending at the time of writing** — armed only after the re-requested review round, per § Reviewer participation |
+| 7 PR cycle | **Done** — PR #1287; no `skip-bot-review` (the diff touches `*.py` and `marketplace/bundles/**`, and a skill is code); participation table carries a verdict **and** a `Reopens?` value per reviewer; no `silent` verdict arose, so no recovery check was owed; no surface was `unreadable`; the one reviewer whose limit was on a clock was re-requested and then reviewed |
+| 8 Merge gate | **Done** — conditions 1–3 met on head `2dd1b31` (`verify / conclusion` success; every comment handled, there being none; this report committed as the last pre-merge commit), the condition-4 shortfall disclosed as 2-of-3, then auto-merge armed |
 | 8 Bridge | **Done** — nothing was written under `doc/plans/` outside this plan's own directory: no ledger, no status file, no other plan touched. The report carries the PR number and the per-deliverable outcome |
 | 9 This check | **Done** — this table |
 | 9 What have we learned | **Done** — below |
