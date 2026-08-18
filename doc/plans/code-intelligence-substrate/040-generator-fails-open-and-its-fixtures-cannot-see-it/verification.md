@@ -8,9 +8,17 @@
 All three deliverables are present in the tree and their central mechanisms work. Two of the plan's
 literal *Done when* clauses are not met, and the run report states both as met:
 
-- D1's refusal **does not exit non-zero** — it exits `0` with `status: error`. Measured, twice.
-- D2's population-derived corpus is **72% tautological**: 1750 of its 2412 checks pass against a
-  surface stripped of every attribute. Measured by mutation.
+- **D1 — "exits non-zero".** The refusal exits `0` with `status: error`. Measured live through the
+  real CLI, twice, and again independently during adversarial review.
+- **D2 — "⛔ publish the population size in the test's output".** The count is `print`ed, and the
+  repo's own pytest `addopts` capture and discard it on a pass. Measured: a default
+  `uv run python -m pytest <file>` passes in 10.04s and shows the number nowhere.
+
+A third finding is a coverage overstatement rather than an unmet clause: **72.6% of D2's corpus is
+surface-insensitive** — 1750 of its 2412 checks pass against a surface stripped of every attribute,
+because the validator short-circuits on a help spelling before reading the surface. D2's literal
+"fails when an attribute is stripped" clause *is* met (by the declared-flag half, for `flags` and
+`children`); what is overstated is how much of the published population that clause covers.
 
 ## Deliverable verdicts
 
@@ -64,6 +72,15 @@ literal *Done when* clauses are not met, and the run report states both as met:
     error: "Fail-open regeneration refused: the previous executor carried 1 derived surface(s) …"
     EXIT_CODE_FROM_SAFE_MAIN= 0
     ```
+
+  - **Exit-code probe re-taken during adversarial review, with nothing mocked.** A fake previous
+    executor carrying one `SCRIPT_SURFACES` entry was staged in a temp dir and the real CLI run
+    against the real registry with the derivation budget exhausted:
+    `PLAN_TRACKED_CONFIG_DIR=<tmp> PM_SURFACE_BUDGET_SECONDS=0 python3 …/generate_executor.py generate --marketplace --marketplace-root .`
+    → `surface-stats: scripts_registered=158 surfaces_derived=0 surfaces_reused=0 surfaces_not_derivable=158`,
+    `status: error`, the full fail-open message, the four counts flattened into the TOON — and
+    `EXIT=0`. The staged previous executor was byte-identical afterwards and no probe file
+    survived, so "writes nothing / preserves the previous" is confirmed on the real path too.
 
   - Independent confirmation on a second error path:
     `python3 …/generate_executor.py verify` with `PLAN_BASE_DIR` pointed at a missing directory →
@@ -120,25 +137,50 @@ literal *Done when* clauses are not met, and the run report states both as met:
     `children`.**
   - **Mutation 2 — serialize every node as `{}`** (every attribute gone: `flags`, `children`,
     `required_flags`, `flag_arity`, `alias_of`, both confidence markers): → FAILED with **622**
-    refusals over `help_checks=1750 flag_invocation_checks=662`. **622 ≤ 662 ⇒ every refusal came from
-    the declared-flag half; not one of the 1750 help checks refused, against a completely empty
-    surface.**
+    refusals over `help_checks=1750 flag_invocation_checks=662`.
+  - **Mutation sweep re-run under adversarial review, with the refusals PARTITIONED by half.** The
+    original reading inferred the split arithmetically (`622 ≤ 662`), which does not follow — 622
+    total is equally consistent with, say, 100 help refusals and 522 flag refusals. The sweep was
+    therefore re-run through a standalone driver that replicates the test exactly but counts the two
+    halves separately, once per serialized attribute. Every run: `registered=158 derivable=114
+    help_checks=1750 flag_checks=662`.
+
+    | `_node_to_dict` mutation | help refusals | flag refusals |
+    |---|---|---|
+    | none (baseline) | 0 | 0 |
+    | drop `flags` | **0** | **622** |
+    | drop `children` | **0** | **509** |
+    | drop `required_flags` | 0 | 0 |
+    | drop `flag_arity` | 0 | 0 |
+    | drop `alias_of` | 0 | 0 |
+    | drop `flags_confident` + `children_confident` | 0 | 0 |
+    | return `{}` (every attribute gone) | **0** | **622** |
+
+    So the conclusion the original inference reached for free is now **measured directly**: not one
+    of the 1750 help checks refuses under any attribute strip, including a total one. The table also
+    converts the audit's *read* of which attributes are covered (see G13) into a measurement: only
+    `flags` and `children` redden anything.
   - The mechanism is visible in the source: `templates/execute-script.py.template:1088-1089` —
     `if _mentions_help(script_args): return None` — short-circuits before any surface content is read,
     and the only preceding surface access (`_surface_for`, lines 800-809 and 1078-1080) returns `None`
     ⇒ "spawn" for a missing root. So no derivation defect whatsoever can redden a help check.
   - Publication visibility: `pyproject.toml:110` sets `addopts = ["-v", "--tb=short", "--strict-markers", "--strict-config", "--durations=25"]`
     — no `-s`, no `-rA`. Under the repo's own invocation the `print` is captured and discarded on a
-    green run; I had to pass `-rA` to see it.
+    green run; I had to pass `-rA` to see it. **Confirmed by execution under adversarial review:**
+    `uv run python -m pytest test/plan-marshall/tools-script-executor/test_population_derived_surface_guard.py`
+    with no extra flags → `1 passed in 10.04s` (warm cache), and the string `surface-guard population`
+    appears nowhere in the output.
   - First attempt in this clone **failed outright**: `Failed: no .plan/execute-script.py under /home/user/plan-marshall`
     (test line 77). The root conftest bootstrap had run and produced nothing; see Correctness review.
 - **Verdict:** **PARTIAL.** The test is genuinely population-derived, genuinely unsampled, correctly
-  tiered, and demonstrably non-vacuous for the two attributes the flag half exercises. But the plan's
-  "⛔ **Publish the population size** in the test's output" is defeated by the repo's own default
-  capture, and the deliverable's stated purpose — "fails the moment the derivation drops an
-  attribute" — holds for `flags` and `children` only. 72.6% of the corpus is a tautology with respect
-  to that purpose, which the test docstring (lines 21-22: "a derivation that drops an attribute fails
-  a test here instead of shipping") and report finding F2 both overstate.
+  tiered, and measurably non-vacuous for the two attributes the flag half exercises — so the *Done
+  when*'s "fails when an attribute is stripped from the derivation" clause is met. Two things are
+  not. (i) The plan's "⛔ **Publish the population size** in the test's output" is defeated by the
+  repo's own default capture — measured, not inferred. (ii) The deliverable's stated purpose — "fails
+  the moment the derivation drops an attribute" — holds for `flags` and `children` only, and 1750 of
+  the 2412 checks (72.6%) are surface-insensitive by construction. That is a coverage overstatement,
+  not an unmet clause, but the test docstring (lines 21-22: "a derivation that drops an attribute
+  fails a test here instead of shipping") and report finding F2 both assert the broader reading.
 
 ### D3 — required regenerate-and-dispatch live smoke
 
@@ -150,7 +192,7 @@ literal *Done when* clauses are not met, and the run report states both as met:
   - Requiredness: "**MUST** be preceded by" (line 298); "a **required step, not a reviewer's
     discretion**" and "it is **not** satisfied by a green unit suite" (lines 299-300); "A change that
     has not run it clean is not ready to ship, regardless of the suite's colour" (lines 303-304); "The
-    change does not ship on a red smoke" (line 355). Unambiguous on a cold read.
+    change does not ship on a red smoke" (lines 353-354). Unambiguous on a cold read.
   - Both shapes named and justified: the long `--help` and the short `-h` "on a leaf that carries
     required flags" (lines 327-338); the "leading top-level flag before the verb" (lines 340-349).
   - The D1 shape is folded into step 1: "Confirm it exits `status: success` **and** that the
@@ -167,7 +209,11 @@ literal *Done when* clauses are not met, and the run report states both as met:
     `status: success`, `count: 2686` — the value-taking leading flag is stepped over correctly.
   - No pre-spawn refusal on any of the three. Clean smoke.
 - **Verdict:** **CONFIRMED.** Present, unambiguously required, both shapes named, and the prescribed
-  commands work verbatim against the current tree.
+  commands work verbatim against the current tree. Independently re-run under adversarial review:
+  `manage-tasks --help` prints usage, `manage-tasks read -h` prints
+  `usage: manage-tasks.py read [-h] --plan-id PLAN_ID --task-number TASK_NUMBER`, and the
+  leading-`--project-dir` call returns `status: success` / `count: 2686` — the same three readings,
+  taken independently.
 
 ## Correctness review
 
@@ -211,12 +257,17 @@ Defects found:
    (`:1218-1219`) and Guard 1's template-format-skew refusal (`:1296-1307`). A consumer that greps for
    the line and finds none is back to inferring from an absence on exactly those paths.
 
-5. **A stale guard-count enumeration survived the F4 sweep.**
+5. **Two stale guard-count enumerations survived the F4 sweep.**
    `marketplace/bundles/plan-marshall/skills/manage-config/standards/provisioning-fail-closed-audit.md:96`
    still reads "Runs **four** deterministic guards (format-version handshake, placeholder-residue,
    `py_compile` self-check, emitted-path provenance)". The fifth (fail-open) guard is absent from both
-   the count and the enumeration. F4 claimed to have corrected every statement the new guard
-   falsified; this one was missed.
+   the count and the enumeration. A whole-tree sweep for the phrase under adversarial review found a
+   **second** site the first pass missed:
+   `test/plan-marshall/tools-script-executor/test_generate_executor.py:1906` — "generate_executor()
+   runs four deterministic guards on the substituted content BEFORE any write". That one is narrower
+   (it heads the shape-guard test section, and Guard 5 does run before substitution rather than on
+   the substituted content), but it carries the same stale count in the same words. F4 claimed to
+   have corrected every statement the new guard falsified; both of these were missed.
 
 6. **`read_previous_surfaces` cannot distinguish "no previous surfaces" from "previous unreadable".**
    `generate_executor.py:983-1017` returns `{}` on an `OSError`, a missing block, a malformed literal,
@@ -240,17 +291,22 @@ flagless fixtures the report cites, was not touched by this PR).
 
 | Deliverable | Tests | Non-vacuity evidence |
 |---|---|---|
-| D1 guard | `test_generate_executor_behavior.py:372-393` (adversarial refusal), `:396-412` (empty-previous negative control), `:415-432` (derived-or-reused no-false-trip, parametrised), `test_generate_executor.py:2865-2894` (real-path total collapse, driven by a genuinely broken script) | Structurally adversarial: 372-393 forces a zero derivation against a non-empty previous, which a guard-less generator answers with `status: success`. The pre-state at `a3a4da6^` confirms that was the behaviour. |
-| D1 stats line | `test_generate_executor_behavior.py:435-462` asserts the line in the refusal **and** the success case; `:465-473` asserts every bucket is named; `:476-507` asserts the error-path flattening | Meets the plan's "a test that would fail if the line were emitted only when non-empty" — the zero case asserted is the refusal path. |
-| D1 exit code | **none** | ⚠ No test asserts the process exit status on any path. Every assertion is on `result['status']`. That is why the substituted mechanism went unnoticed. |
-| D2 | `test_population_derived_surface_guard.py:127-210` | Proven red by mutation (509 refusals on a `children` strip). |
-| D2 help half | same file, lines 177-182 | **Proven tautological.** Under a total-strip mutation, 0 of 1750 help checks refused. These 1750 checks can only detect a regression in `_mentions_help` itself, never a derivation defect. |
-| D3 | none (documentation) | Verified by execution instead — I ran the smoke; see D3 above. |
+| D1 guard | `test_generate_executor_behavior.py:372-393` (adversarial refusal), `:396-412` (empty-previous negative control), `:415-432` (derived-or-reused no-false-trip, parametrised), `test_generate_executor.py:2864-2894` (real-path total collapse, driven by a genuinely broken script) | **Proven red by mutation** (adversarial review): neutralising Guard 5's predicate to `if False and previous_surfaces and …` turned the 7-test selection into `2 failed, 5 passed` — `test_fail_open_guard_refuses_zero_surfaces_against_nonempty_previous` reporting `- error / + success`, exactly the pre-guard behaviour the pre-state at `a3a4da6^` carried. |
+| D1 stats line | `test_generate_executor_behavior.py:435-462` asserts the line in the refusal **and** the success case; `:465-473` asserts every bucket is named; `:476-507` asserts the error-path flattening | **The plan's clause tested literally** (adversarial review): guarding the emission as `if surfaces_derived + surfaces_reused: print(...)` — i.e. emitting the line only when non-empty — turns the selection red (`1 failed, 6 passed`) on `assert 'surface-stats:' in ''`. So this is a test that would fail if the line were emitted only when non-empty, measured rather than argued. |
+| D1 exit code | `test_generate_executor.py:225-259` — `test_verify_requires_executor`, `test_drift_requires_executor`, `test_paths_requires_executor` each subprocess the CLI and assert `returncode == 0` with the message "Expected exit 0 (error in TOON output)". No such test covers the **fail-open refusal** path. | ⚠ Non-vacuous for the paths they cover — and they pin the OPPOSITE of what the report claims. The suite's own pre-existing contract is exit 0 on an expected error; nobody reconciled the plan's "exits non-zero" clause against it. The gap is a missing assertion on the new path (G2), not an absent exit-code discipline. |
+| D2 | `test_population_derived_surface_guard.py:127-210` | Proven red by mutation, twice independently: 509 refusals on a `children` strip, 622 on a `flags` strip. |
+| D2 help half | same file, lines 177-182 | **Proven surface-insensitive by partitioned measurement.** Across eight mutations (baseline, six single-attribute strips, and a total strip), help refusals were **0** in every one. These 1750 checks can only detect a regression in `_mentions_help` or in the short-circuit's position — never a derivation defect. |
+| D3 | none (documentation) | Verified by execution instead — the smoke was run twice, once per audit round; see D3 above. |
 
-Mutations were applied **in-process** via throwaway pytest plugins under
-`$TMPDIR/.../verify-040/`, never by editing tracked files, because ~13 concurrent pytest runs share
-this working tree and an on-disk mutation would have corrupted them. `git status --porcelain` shows
-no modification to any file this audit touched.
+Mutations in the original round were applied **in-process** via throwaway pytest plugins under
+`$TMPDIR/.../verify-040/`, never by editing tracked files, because ~13 concurrent pytest runs shared
+this working tree at the time and an on-disk mutation would have corrupted them. The adversarial
+round re-ran the D2 sweep the same way (a standalone driver patching `argparse_surface._node_to_dict`
+in-process) and additionally mutated `generate_executor.py` on disk for the two D1 mutations — taken
+only after confirming `ps` showed **0** concurrent pytest processes, from a byte snapshot under
+`$TMPDIR/adv-040-mutsweep/`, restored by `cp` (never `git checkout`/`restore`/`stash`) and verified
+by md5 (`07df38311e04f2826a551c8cedf9d8fa` before and after). `git status --porcelain` afterwards
+lists no file this audit touched.
 
 ## Report accuracy
 
@@ -261,11 +317,12 @@ no modification to any file this audit touched.
 | D1: "The emission contract … is stated normatively on `format_surface_stats_line`, not as a code comment" (lines 35-37) | TRUE | `generate_executor.py:855-878`. |
 | D1: "7 targeted tests pass" (line 38) | TRUE | Re-measured: `7 passed, 32 deselected`. |
 | D1 self-exercise: "`surfaces_derived=2 surfaces_reused=107`" (line 39) | Historical, not re-derivable | Today's live regeneration: `surfaces_derived=100 surfaces_reused=0 surfaces_not_derivable=58` over 158 registered (cold cache, so nothing to reuse). |
-| D2: "`registered=151 derivable=109 help_checks=1696 flag_invocation_checks=649`" (line 43) | Historical; tree has grown | Today: `registered=158 derivable=114 help_checks=1750-1770 flag_invocation_checks=662-672`. Not a defect — the run's numbers were true of its tree. |
+| D2: "`registered=151 derivable=109 help_checks=1696 flag_invocation_checks=649`" (line 43) | Historical; tree has grown | Today: `registered=158 derivable=114 help_checks=1750 flag_invocation_checks=662` — eight independent adversarial-review runs, all identical. The report's figures are internally consistent (1696 help checks = 2 × the 848 nodes its claim table names), so they were true of its tree. Not a defect. |
+| — (audit's own reading) | **Corrected** | The first audit round recorded a *clean* run at `help_checks=1770 flag_invocation_checks=672` and a *mutated* run at `1750/662`, and reported the spread as a range. Re-measurement pins 1750/662 across all eight runs. The 20/10 spread is 10 extra parser nodes, consistent with a concurrently-edited script in the shared tree changing one notation's derived surface between the two readings — the published population tracks working-tree state, so it is only comparable within a single tree state. |
 | D2: "**Publishes the population count**" (line 46) | **OVERSTATED** | It `print`s it, but `pyproject.toml:110` addopts carry no `-s`/`-rA`, so on a green run the count is captured and discarded. Visible only when a reader already passes an extra flag. |
 | D2: "stripping `children` … produced **498 refusals**, then reverted clean" (lines 47-49) | TRUE in substance | Reproduced: 509 refusals on today's larger population. |
-| F2: "the test catches serializer (`to_dict`) strips … but not an upstream *parse-layer* strip nor a `required_flags` strip" (line 94) | **INCOMPLETE** | It also cannot catch a `flag_arity`, `alias_of`, `flags_confident` or `children_confident` strip, and — the large one — its 1750 help checks catch **no** strip of any kind. |
-| F3: "guard count migrated four→five consistently" (line 95) | **FALSE** | `manage-config/standards/provisioning-fail-closed-audit.md:96` still says "four deterministic guards" and enumerates only the shape guards. |
+| F2: "the test catches serializer (`to_dict`) strips … but not an upstream *parse-layer* strip nor a `required_flags` strip" (line 94) | **INCOMPLETE** | Measured per attribute (see the sweep table under D2): of the seven keys `_node_to_dict` serializes, only `flags` (622 refusals) and `children` (509) redden the test. `required_flags`, `flag_arity`, `alias_of`, `flags_confident` and `children_confident` each redden **nothing** — F2 discloses one of those five. And its 1750 help checks catch **no** strip of any kind. |
+| F3: "guard count migrated four→five consistently" (line 95) | **FALSE** | Two sites still carry the old count: `manage-config/standards/provisioning-fail-closed-audit.md:96` ("four deterministic guards", enumerating only the shape guards) and `test/plan-marshall/tools-script-executor/test_generate_executor.py:1906` ("runs four deterministic guards on the substituted content"). In fairness to F3, its sentence sits inside a D3 cold-read row and may have been scoped to the diff; as written it is unqualified, and unqualified it is false. |
 | F4: "Four statements still described the pre-guard-5 contract … **Fixed** in commit `7738921`" (line 96) | TRUE for the four named; sweep incomplete | The four named statements are corrected in the tree (`:814-819`, `:1041-1043`, `:1979-1989`, and the SKILL.md prose). The sweep missed the audit doc above, and it introduced/retained four *new* false statements about the exit code (`:868`, `:1366`, `:1964-1965`, `SKILL.md:263-264`). |
 | F5 reconciliation (lines 97) | TRUE | `test_failed_rederivation_drops_the_entry_rather_than_reusing_the_cached_one` (`:2820-2863`) is the reconciled two-script form and cross-references the new sibling; `test_total_surface_collapse_against_a_populated_previous_fails_open` (`:2865-2894`) exists. |
 | Claim table: "Generator … returned `{'status':'success','surface_stats':…}` even when `surfaces` was empty" | TRUE | Verified against `a3a4da6^`: the success return was reachable with `surfaces == {}`, and the OSError degradation fell through to it. |
@@ -295,15 +352,20 @@ permanent commit message of `a3a4da6`.
 
 - Every deliverable's literal *Done when*, clause by clause, against the shipped source at
   `path:line`.
-- The exit-code question by two independent live measurements (a driver forcing Guard 5, and the
-  `verify` subcommand on a missing executor) plus a read of `main()`, `safe_main`, and the repo's
-  `manage-contract.md`.
-- The D1 test set by execution (`7 passed`).
-- The D2 test by execution (green, 131.96s) and by **two in-process mutations** — a `children` strip
-  (red, 509 refusals) and a total attribute strip (red, 622 refusals, help half silent). The second
-  mutation is what converts "the help checks look tautological when I read the short-circuit" into a
-  measurement.
-- The D3 smoke by running all four of its commands live against a freshly regenerated executor.
+- The exit-code question by **three** independent live measurements (a driver forcing Guard 5; the
+  `verify` subcommand on a missing executor; and, in adversarial review, the unmocked CLI against the
+  real 158-script registry with `PM_SURFACE_BUDGET_SECONDS=0` and a staged one-surface previous)
+  plus a read of `main()`, `safe_main`, and the repo's `manage-contract.md`.
+- The D1 test set by execution (`7 passed`) and, in adversarial review, by **two on-disk mutations
+  restored from a byte snapshot** — neutralising Guard 5 (2 failed) and making the stats line
+  conditional on a non-empty emission (1 failed). Those two convert "structurally adversarial" into a
+  measured red.
+- The D2 test by execution (green, 131.96s cold under contention; 10.04s warm at repo defaults) and
+  by **eight in-process mutations** — baseline, each of the six serialized attribute groups, and a
+  total strip — with the refusals **partitioned into the help and declared-flag halves**, which is
+  what makes "the help half is surface-insensitive" a measurement rather than an inference from a
+  single total.
+- The D3 smoke by running its commands live against the tree, twice, in two independent rounds.
 - The pre-state at `a3a4da6^` for every "this did not exist before" claim.
 - The residue items by reading the current analyzer, the marker registry, and git ancestry.
 - Counts re-derived at the moment of writing: 158 registered scripts (152 marketplace + 6 local),

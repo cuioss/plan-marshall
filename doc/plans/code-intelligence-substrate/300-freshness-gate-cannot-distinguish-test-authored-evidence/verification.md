@@ -1,7 +1,9 @@
 # Verification — 300-freshness-gate-cannot-distinguish-test-authored-evidence
 
 **Audited:** `plan.md`, `report-01.md` (the only two files in the plan directory)
-**Tree state:** `2d5da71` on `claude/code-intelligence-substrate-analysis-kah884`
+**Tree state:** audited at `2d5da71` on `claude/code-intelligence-substrate-analysis-kah884` (concurrent
+audit agents share this working tree and have since advanced `HEAD` with `doc/plans/`-only commits;
+no file this audit examined changed)
 **Landed as:** `e2b6665` — *fix(manage-tasks): cross-check freshness-gate evidence against resolved builds (#1279)*
 **Overall verdict:** CONFIRMED WITH GAPS
 
