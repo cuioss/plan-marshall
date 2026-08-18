@@ -31,7 +31,7 @@ implements:
 **Execution mode**: Select a mode (finalize-step live, user-invocable live, archived) from the Input Contract, dispatch the 14 aspect references in the documented order, compile the report, then record proposals per Step 5b's orchestration branch — to the global lessons store when `orchestrated: false`, to the epic inbox as `kind: candidate-lesson` messages when `orchestrated: true` — and emit the mode-appropriate termination (mark-step-done tail for finalize-step mode only).
 
 **Prohibited actions**:
-- Never re-run invariant capture. Read `status.metadata.phase_handshake` or `status.metadata.invariants` directly — invariants are already captured by phase transitions.
+- Never re-run invariant capture. Read `{plan_dir}/handshakes.toon` directly — invariants are already captured by phase transitions.
 - Never write to archived plan directories. Archived mode writes the report next to the archived plan, but the plan state itself is read-only.
 - Never call `mark-step-done` in archived mode or user-invocable live mode — only the finalize-step mode emits the handshake tail.
 - Never call `manage-lessons add` in orchestration context (`orchestrated: true`). Step 5b routes every proposal to the epic inbox on that branch, and the `already_closed` deletion path does not run — deleting a global lesson is a corpus mutation the orchestrator owns.

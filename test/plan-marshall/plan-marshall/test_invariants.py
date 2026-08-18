@@ -1089,7 +1089,7 @@ def test_capture_main_dirty_files_reports_tracked_plan_state(
     """
     repo = _repo_with_committed_plan_file(tmp_path)
     (repo / '.plan' / 'marshal.json').write_text('{"schema": 1, "dirty": true}\n', encoding='utf-8')
-    monkeypatch.setattr(inv, '_repo_root', lambda: repo)
+    monkeypatch.setattr(inv, '_main_repo_root', lambda: repo)
 
     result = inv._capture_main_dirty_files('any-plan', {}, '5-execute')
 
@@ -1113,7 +1113,7 @@ def test_capture_main_dirty_files_exempts_untracked_plan_state(
     untracked = repo / '.plan' / 'local' / 'status.json'
     untracked.parent.mkdir(parents=True, exist_ok=True)
     untracked.write_text('{"phase": "5-execute"}\n', encoding='utf-8')
-    monkeypatch.setattr(inv, '_repo_root', lambda: repo)
+    monkeypatch.setattr(inv, '_main_repo_root', lambda: repo)
 
     result = inv._capture_main_dirty_files('any-plan', {}, '5-execute')
 
@@ -1131,12 +1131,12 @@ def test_capture_main_dirty_files_only_untracked_dot_plan_paths_returns_empty_li
 
     A tracked ``.plan/`` file would be RETAINED (see
     ``test_capture_main_dirty_files_reports_tracked_plan_state``); the exemption
-    is trackedness-based, so ``_repo_root`` is stubbed to a controlled repo where
+    is trackedness-based, so ``_main_repo_root`` is stubbed to a controlled repo where
     the two dirty paths are genuinely untracked, rather than relying on the
     ambient checkout's tracked-``.plan/`` set.
     """
     repo = _repo_with_committed_plan_file(tmp_path)
-    monkeypatch.setattr(inv, '_repo_root', lambda: repo)
+    monkeypatch.setattr(inv, '_main_repo_root', lambda: repo)
     monkeypatch.setattr(
         inv,
         'git_dirty_files',

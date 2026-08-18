@@ -13,7 +13,6 @@ This module imports only shared script-shared modules and stdlib, so the entry
 module can re-import these names without an import cycle.
 """
 
-import os
 from pathlib import Path
 from typing import NamedTuple
 
@@ -21,7 +20,7 @@ from constants import DIR_LESSONS
 from file_ops import parse_markdown_metadata
 from input_validation import COMPONENT_RE
 from marketplace_paths import (
-    _override_is_set,
+    base_dir_override_active,
     main_anchored_store_owns_bundle,
     resolve_main_anchored_path,
 )
@@ -88,22 +87,18 @@ def resolve_lesson_store(subpath: str | Path = DIR_LESSONS) -> LessonStore:
     through a cwd-keyed resolver is the wrong-store failure direction, exactly
     as an unreachable corpus is the could-not-look one.
 
-    The override branch is detected by MIRRORING the condition
-    :func:`marketplace_paths.resolve_main_anchored_path` branches on
-    (``PLAN_BASE_DIR`` set, or a ``file_ops.set_base_dir()`` override
-    installed), so the reported provenance describes the path actually
-    returned. The mirror is a duplicated expression, not a shared predicate:
-    the agreement is maintained by hand, NOT guaranteed structurally. Were the
-    resolver's condition to change without this one following, the handle would
-    report a provenance the returned path does not have — a resolved-looking
-    value naming a substrate that was not the one reached, which is exactly
-    what :data:`STORE_RESOLUTIONS` exists to make impossible. The agreement is
-    therefore pinned behaviourally by
-    ``test_lesson_store_resolution_fail_open.TestOverridePredicateMirroring``,
+    The override branch is detected by CALLING
+    :func:`marketplace_paths.base_dir_override_active` — the same predicate
+    :func:`marketplace_paths.resolve_main_anchored_path` branches on — so the
+    reported provenance describes the path actually returned. This was formerly
+    a hand-maintained duplicate expression whose agreement nothing structural
+    guaranteed; it is now one shared predicate, so the resolver's condition and
+    this provenance label cannot drift apart by construction. The agreement
+    stays pinned behaviourally by
+    ``test_lesson_store_resolution_fail_open.TestOverridePredicateAgreement``,
     which asserts the two sites branch together under each form of the
-    condition. (Importing that sibling private mirrors the existing convention
-    in this foundation — ``file_ops`` imports ``_find_plan_root_from_cwd`` from
-    the same module for the same reason.)
+    condition — worth keeping, because sharing the predicate does not by itself
+    prove this site reads it the same way round.
 
     Args:
         subpath: Path under the main checkout's ``.plan/local`` to resolve;
@@ -114,7 +109,7 @@ def resolve_lesson_store(subpath: str | Path = DIR_LESSONS) -> LessonStore:
         returned as the ``unresolved`` resolution so the caller can report it,
         rather than as an exception that a caller might swallow into a zero.
     """
-    resolution = 'override' if (os.environ.get('PLAN_BASE_DIR') or _override_is_set()) else 'main_anchored'
+    resolution = 'override' if base_dir_override_active() else 'main_anchored'
 
     try:
         path = resolve_main_anchored_path(subpath)
