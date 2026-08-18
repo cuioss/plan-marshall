@@ -74,7 +74,7 @@ deliberately-scoped edit; each is stated here with the concrete change that sett
   context cell — `analyze-logs.py` drops the whole row (`:1140-1148`), `audit.py` keeps it, degrades
   `total_tokens` to `0` via `_to_int`, sums the context cell and dates the row; (c) a missing `rows[]{…}:`
   header line — `audit.py` returns `{}` because `in_rows` is never set (`:7346`), `analyze-logs.py` parses
-  the row because its skip list is prefix-based (`:1130`). A reordered header additionally transposes values
+  the row because its skip list is prefix-based (`:1126`). A reordered header additionally transposes values
   between the two.
 - **Why it matters:** the plan's stated goal is that "the two parallel readers of one ledger stop
   disagreeing about the same bytes". That now holds for the fingerprint gate and not for the surrounding
