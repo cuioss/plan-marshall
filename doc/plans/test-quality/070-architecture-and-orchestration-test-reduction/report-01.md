@@ -1,6 +1,6 @@
 # Run report — 070-architecture-and-orchestration-test-reduction (run 01)
 
-**Date (UTC):** 2026-08-18    **Branch:** `claude/architecture-orchestration-test-reduction-iuthfe` (harness-assigned; kept as-is per the lane contract)    **PR:** _see below_    **Outcome:** **completed** — D1, D3's B7 half, D4's B3 half and D5 delivered; D2 correctly not built (premise refuted); D3's B6 half and D4's B5 remainder reported not done
+**Date (UTC):** 2026-08-18    **Branch:** `claude/architecture-orchestration-test-reduction-iuthfe` (harness-assigned; kept as-is per the lane contract)    **PR:** [#1290](https://github.com/cuioss/plan-marshall/pull/1290)    **Outcome:** **completed** — D1, D3's B7 half, D4's B3 half and D5 delivered; D2 correctly not built (premise refuted); D3's B6 half and D4's B5 remainder reported not done
 
 ## Skills loaded
 
@@ -717,7 +717,18 @@ changing no behaviour — and it is owned by a follow-up run of this plan.
 
 ## Reviewer participation
 
-_Recorded after the PR is opened and the three comment surfaces are read._
+**PR [#1290](https://github.com/cuioss/plan-marshall/pull/1290).** The expected reviewer population is
+**derived from configuration**, not transcribed here: the `author_login` of every
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc
+carrying such a data block. That read yields **three** — `coderabbitai` (`coderabbit.md`),
+`cuioss-review-bot` (`pr-agent.md`), `sourcery-ai` (`sourcery.md`). `bot-participation-contract.md`
+carries no `author_login` block of its own and is the contract, not a registry entry.
+
+The PR was opened **without** `skip-bot-review`: the diff is 53 `*.py` files under `test/`, which is
+code, so it keeps its review.
+
+_Verdicts, each derived from the stored comment bodies across all three surfaces
+(`get_comments`, `get_reviews`, `get_review_comments`), recorded below as they arrive._
 
 ## Cost
 
