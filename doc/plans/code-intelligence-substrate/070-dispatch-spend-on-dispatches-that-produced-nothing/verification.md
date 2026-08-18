@@ -348,12 +348,17 @@ Verified true against the tree now:
 Inaccurate, stale or overstated:
 
 - *"On head `dc8e352` the required `verify / conclusion` check concluded success … `mergeStateStatus`
-  reported `clean`."* — `dc8e352` was **not** the final head. The report-finalization commit
-  `f45bae2` followed it (the PR's own review threads show CodeRabbit re-reviewing `f45bae2` at
-  16:24Z, and `pull_request_read get_status` reports `sha: f45bae2…`, overall state `success`). The
-  CI evidence in the report is quoted one commit behind the head the merge gate actually acted on.
-  Low severity — the merge queue re-verified, and the head that merged did carry a green overall
-  status — but the quoted head is wrong (G10).
+  reported `clean`."* — `dc8e352` was **not** the final head. `pull_request_read get_status` on
+  #1180 reports `sha: f45bae2e751a111bc0e27b84347527ce56be93ef`, the report-finalization commit.
+  The CI evidence in the report is quoted one commit behind the head the merge gate acted on (G10).
+  Re-derived independently here: `get_status` alone is *not* sufficient evidence — it returns
+  `total_count: 1`, carrying only CodeRabbit's *"Review rate limited"* commit status. The green
+  claim is established instead by `get_check_runs`, which on `f45bae2` returns **7** check runs
+  with `verify / conclusion` = `success` (completed 16:36:31Z), alongside `verify / verify`,
+  `verify / gate`, `dependency-review / dependency-review` and `generate-check` all success and
+  `Sourcery review` / `auto-merge` skipped. So the outcome the report claims was correct on the
+  real head. Two details of the sentence are still wrong: the SHA, and `review / review`, which the
+  report lists as success but which does not appear among the final head's 7 check runs at all.
 - *"D5 reads `total_tokens` (column 3, produced), not these columns."* — Overstated. Column 3 is
   *produced* only when the caller forwards `--total-tokens`; both producing workflows instruct
   *"use `0` when the field is absent"* and the writer coerces a missing value to `0`
