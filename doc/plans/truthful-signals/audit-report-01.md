@@ -171,23 +171,32 @@ count inside them, are the highest-risk text in this diff.
 ## Reviewer participation
 
 Expected reviewer population **derived from configuration**, by reading the `author_login` of each
-registry doc under `marketplace/bundles/plan-marshall/skills/automatic-review/standards/`:
+registry doc under `marketplace/bundles/plan-marshall/skills/automatic-review/standards/`. Verdicts
+are taken from the stored comment bodies across all three surfaces (`get_comments`, `get_reviews`,
+`get_review_comments`), not from a check state:
 
 | Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
 |---|---|---|---|
-| `coderabbitai` | not requested | n/a | `skip-bot-review` applied at PR creation |
-| `cuioss-review-bot` | not requested | n/a | `skip-bot-review` applied at PR creation |
-| `sourcery-ai` | not requested | n/a | `skip-bot-review` applied at PR creation |
+| `cuioss-review-bot` | `reviewed` | — | Issue comment "PR Reviewer Guide 🔍" against the diff: *No relevant tests · No security concerns identified · No major issues detected*. A review artifact with an explicit nothing-to-report verdict |
+| `coderabbitai` | `rate-limited` | yes | Issue comment: *"Review skipped — Auto reviews are limited based on label configuration. Excluded labels (none allowed): `skip-bot-review`"*. It engaged and declined; the notice carries a retry checkbox and names `@coderabbitai review` as the manual trigger, so the refusal clears on demand |
+| `sourcery-ai` | `rate-limited` | **no** | Review summary body: *"your pull request is larger than the review limit of 150000 diff characters"*. A property of this diff's size, not of the clock — the same request never succeeds at 24,114 added lines, so waiting is futile |
 
-Coverage: **0 of 3, by deliberate suppression rather than shortfall.** The lane contract reserves
-`skip-bot-review` for a diff with no `*.py`, no `.claude/skills/**` and no `marketplace/bundles/**`;
-this diff is 98 files, every one under `doc/plans/truthful-signals/`, so it is exactly that case.
-Bot-review capacity is contended in this repository and a diff with nothing a reviewer can act on
-spends budget another PR needs.
+Coverage: **1 of 3 reviewed.** Inline review threads: zero (`get_review_comments` returned an empty
+set, `totalCount: 0`) — a genuine empty read, not an unreadable surface. No comment required action:
+two are refusal notices and the third reports no findings.
 
-This is a suppression, not a silent gap, and it is stated here so a reader is not left inferring
-review that did not happen. A reader who disagrees with the suppression should read the ten new
-plans first: they are the part of this diff with genuine reviewable judgement in it.
+⚠ **This table corrects an earlier draft of this report**, which recorded all three as "not requested"
+on the assumption that `skip-bot-review` suppresses the reviewers outright. It does not. The label
+suppresses `coderabbitai` (which says so in its own notice) and the `Sourcery review` check concluded
+`skipped`, but `cuioss-review-bot` reviewed anyway and `sourcery-ai` posted a size-ceiling refusal.
+The draft was a prediction of reviewer behaviour written before the bodies were read — the precise
+defect this epic files against, committed in this report's own participation record. It is corrected
+here rather than silently overwritten.
+
+**§ Step 8 condition 4 disclosure fired**, and it said: *review coverage 1 of 3 — `cuioss-review-bot`
+reviewed with no findings; `coderabbitai` declined on the `skip-bot-review` label, reopens on demand;
+`sourcery-ai` refused on a 150,000-character size ceiling, does not reopen.* The shortfall is
+disclosed, not blocked on — condition 4 changes what the run says, never whether it merges.
 
 ## Build gate
 
@@ -199,8 +208,8 @@ verifies docs-only changes before they land.
 ## Cost
 
 - **Tokens:** not available to the agent in this session.
-- **Wall-clock:** the run's first and last commits are 2026-08-18T14:12:25Z and 2026-08-18T15:50:57Z
-  — roughly 1 h 40 min, source: `git log --format=%ad`. This excludes the pre-commit analysis phase.
+- **Wall-clock:** the run's first and last commits are 2026-08-18T14:12:25Z and 2026-08-18T16:05:29Z
+  — roughly 1 h 53 min, source: `git log --format=%ad`. This excludes the pre-commit analysis phase.
 - **Agents dispatched:** 44 verification + 44 adversarial + 10 authoring + 1 pre-PR verification = 99.
 - **Population:** this single Claude Code cloud session's dispatch tree, as the session counts it.
   ⛔ **Not comparable to a plan-marshall `metrics.toon` total**, which counts an
@@ -278,19 +287,19 @@ rather than semantic; and it did not check this PR's CI status.
 | 1 Skills loaded | done | Named under § Skills loaded, with the deliberate omissions and their reason |
 | 2 Branch | done | `claude/truthful-signals-verification-051sba` — the **harness-assigned** form, kept as-is per § Step 2; pushed to `origin` before the first edit |
 | 3 Plan directory | **n/a** | No `plan.md` was handed to this run; the operator's brief is the plan. Recorded as a deviation at the top of this report rather than narrated as complete |
-| 4 Implement | done | 84 commits, each carrying the `Co-Authored-By` trailer, no "Generated with Claude Code" footer |
+| 4 Implement | done | 85 commits, each carrying the `Co-Authored-By` trailer, no "Generated with Claude Code" footer |
 | 4 Per-commit gate | **n/a** | No commit touched a `*.py`; the gate's trigger surface was never entered |
 | 4 Pushed | done | Every commit pushed on creation; `git status -sb` reports no `ahead` |
 | 5 Build gate | done | `git diff --name-only origin/main...HEAD -- '*.py'` → zero files; "no buildable footprint, build skipped" |
 | 6 Verification sub-agent | done | Recorded in full above: findings, dispositions, the exit taken, the budget, the verifier's own last answer, and the residue to assume remains |
 | 7 PR cycle | done | PR [#1298](https://github.com/cuioss/plan-marshall/pull/1298), `skip-bot-review` applied at creation. Participation table records the suppression as suppression, not as coverage |
-| 8 Merge gate | see below | Conditions 1–3 assessed at arming time; condition 4 disclosed under § Reviewer participation |
+| 8 Merge gate | done | Condition 1: every required context concluded on head `1c0b9864` — `verify / conclusion` **success**, `verify / gate` **success**, `dependency-review` **success**; `verify / verify` concluded `skipped` by the docs-only footprint gate, exactly as § Step 5 describes. Condition 2: all three comment surfaces read, no comment unaddressed. Condition 3: this report committed as the last pre-merge commit. Condition 4 disclosed under § Reviewer participation |
 | 8 Bridge | done | No status or bookkeeping write landed outside this run's own artifacts. The `verification.md` / `gaps.md` pairs are deliverables of the brief; no ledger, no status file, no other epic touched. **One deviation:** this report sits at the epic root, for the reason given at the top |
 | 9 This check | done | This table |
 | 9 What have we learned | done | Below |
 
 **Re-verified against the working tree, not recalled:** the tree is clean, the diff is 99 files all
-under `doc/plans/truthful-signals/`, and no `*.py` appears in it. A cloud run neither performs nor
+under `doc/plans/truthful-signals/` (24,114 insertions, no deletions), and no `*.py` appears in it. A cloud run neither performs nor
 owes a `/sync-plugin-cache`; none is recorded.
 
 ## What have we learned (Step 9)
