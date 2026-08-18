@@ -61,7 +61,7 @@ from conftest import load_script_module
 
 import argparse_surface as surf
 
-from _fixtures import assert_analyzer_findings
+from _plugin_doctor_fixtures import assert_analyzer_findings
 
 # ---------------------------------------------------------------------------
 # Module loader — load the analyzer directly from the marketplace scripts dir.
