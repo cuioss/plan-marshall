@@ -37,7 +37,7 @@ found — so the sensor's "I found nothing to bound this with" is consumed as "I
 change". The same branch defines its residue by exclusion (`not in _DEEP_SCOPE_ESTIMATES and not in
 _NARROW_SCOPE_ESTIMATES`), so every unrecognised, empty or whitespace-padded band also de-escalates,
 while the comment directly above it asserts the residue "is exactly `{single_module}`" and "adapts
-automatically if the band set changes". Fifty lines further down, the `low_confidence` flag is
+automatically if the band set changes". Further down in the same function, the `low_confidence` flag is
 `signals_null > signals_resolved` over a seven-member vector in which two members are booleans that are
 never `None` — so it needs 4 of the 5 nullable fields null and can no longer fire for the
 orchestrator-launched population it was built for.
@@ -93,18 +93,24 @@ minutes-long derivation whose failure would invalidate D5, D6 and D7 as well; it
    editing anything that depends on them, and **write neither as a hand-maintained list**:
    - **(a) The unresolvable-canonical set.** Evaluate `_check_step_resolvable(f'verify:{verb}',
      'phase_5')` over every entry of `ALL_CANONICAL_COMMANDS`
-     (`marketplace/bundles/script-shared/scripts/extension/_extension_constants.py`) at HEAD and record
+     (`marketplace/bundles/plan-marshall/skills/script-shared/scripts/extension/_extension_constants.py`;
+     `_check_step_resolvable` lives in
+     `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/_manifest_validation.py`)
+     at HEAD and record
      which canonicals have no phase-5 verify gate. **Do not trust any count in this plan** — the gap
      that motivated it recorded seven of fourteen at its own authoring time, and the set moves whenever
      a canonical gains or loses a gate. Re-derive it at the moment of the edit.
    - **(b) The `baseline-reconcile` consumer set.** Sweep `marketplace/` for documents that instruct a
      reader to parse `conflict_count` from a `baseline-reconcile` return, and record which of them
-     branch on `status` first. The gap that motivated this names two documents; the authoring sweep
-     also surfaced `plan-marshall/standards/execution-recovery.md` and
-     `plan-marshall/workflow/execution.md` as files mentioning both tokens — establish for each
-     whether it is a consumer of this return or an unrelated mention, and record the verdict per file.
-     Exclude `phase-6-finalize/standards/archive-plan.md`, whose `conflict_count` belongs to a
-     different script.
+     branch on `status` first. **The candidate set is what the sweep returns, not what this plan
+     lists** — the gap that motivated this names only the two `phase-5-execute` documents, and a sweep
+     at authoring time found several further `.md` files carrying both tokens (under `phase-6-finalize/`,
+     `phase-2-refine/` and `plan-marshall/`), so the population is materially larger than the gap's two
+     and its exact membership must be re-derived at the moment of the edit. For **every** file the sweep
+     returns, establish whether it is a consumer of this return (it dispatches `baseline-reconcile` and
+     reads `conflict_count` from the result) or an unrelated mention (it describes the field, or reads a
+     different script's `conflict_count`), and record the verdict per file. Exclude
+     `phase-6-finalize/standards/archive-plan.md`, whose `conflict_count` belongs to a different script.
    **HALT condition:** if either population cannot be derived from the tree — the constant is
    unimportable, the resolvability check cannot be executed, the sweep cannot be scoped to a decidable
    set — **stop the run and report it blocked**, naming which derivation failed. Do not substitute a
@@ -134,10 +140,11 @@ minutes-long derivation whose failure would invalidate D5, D6 and D7 as well; it
 
 3. **D3 — The planning-lane router de-escalates only on measured evidence, and reports its own
    confidence** *(closes 240/G2 — `high` —, 240/G5, 240/G1)*
-   All three edits land in `evaluate_signals_pure`
+   The three behavioural edits (a)–(c) land in `evaluate_signals_pure`
    (`marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_planning_lane.py`) and its
-   surrounding comments; they are one deliverable because they rewrite the same two blocks and the same
-   false comment.
+   caller `_evaluate_signals` in the same file; (d) corrects the prose around them, in that file and in
+   `manage-status/SKILL.md`; (e) moves the existing tests those edits invalidate. They are one
+   deliverable because they rewrite the same two blocks and the same false comment.
    - **(a) Require a measured band (240/G2).** `classify_scope_pure` already returns `band_rule`, and
      `_evaluate_signals` computes it but attaches it to the result only after the decision is made. Add
      an optional `scope_band_rule: str | None = None` parameter to `evaluate_signals_pure`, pass
@@ -153,22 +160,43 @@ minutes-long derivation whose failure would invalidate D5, D6 and D7 as well; it
      discriminating inputs rather than a bare majority of the seven-member dict: exclude
      `planning_lane_override` from the denominator (its absence is the normal state, not an unresolved
      read) and flag when two or more of `plan_source`, `scope_estimate`, `change_type`, `compatibility`
-     are null. No existing test pins the current threshold in either direction, so the new tests are
-     what give the change teeth.
-   - **(d) Correct the prose that (a) and (b) falsify.** The corroboration comment block, the module
-     docstring, the `confidence` docstring, and
-     `marketplace/bundles/plan-marshall/skills/manage-status/SKILL.md` all currently assert that "a
-     genuinely large change is unaffected because it fires a corroborating signal (S2/S3/S4/S5)" and
-     that the residue "adapts automatically". A pathless, concretely-worded, non-generative,
-     non-breaking request that declares its own scale fires none of those four — state the narrowed
-     rule and say the residue is enumerated, not derived.
+     are null. Three existing assertions in
+     `test/plan-marshall/manage-status/test_planning_lane_corroboration.py` already read
+     `confidence['low_confidence']` (`test_d3c_several_nulls_reported_low_confidence`,
+     `test_confidence_high_when_most_signals_resolve`, and the control
+     `test_d3d_control_deep_warranting_vector_still_routes_deep`) — re-read all three at HEAD and state
+     for each whether the new predicate keeps its expected value or the expectation has to move.
+   - **(d) Correct the prose that (a), (b) and (c) falsify.** These texts describe the two blocks being
+     rewritten, and each states something narrower or wider than the code will:
+     the **corroboration comment block** above `scope_resolved_noncommittal` — the only site asserting
+     both that the residue "is exactly `{single_module}`" and that it "adapts automatically if the band
+     set changes", and that "A genuinely large change is unaffected: it fires a corroborator"; the
+     **module docstring**'s corroboration paragraph and its confidence paragraph; `evaluate_signals_pure`'s
+     own docstring bullets for `suppressed_signals` and `confidence`; and the **prose-only corroboration**
+     and **signal-resolution confidence** paragraphs of
+     `marketplace/bundles/plan-marshall/skills/manage-status/SKILL.md` § planning-lane — the SKILL.md
+     asserting "a genuinely large change is unaffected because it fires a corroborating signal", but
+     making no "adapts automatically" claim. A pathless, concretely-worded, non-generative,
+     non-breaking request that declares its own scale fires no corroborator at all (not S2, S3, S4 or
+     S5), so the "genuinely large change is unaffected" reassurance is exactly what fails — state
+     the narrowed rule, say the residue is enumerated rather than derived, and restate the
+     `low_confidence` predicate to match (c). Re-read each site before editing it: only rewrite the
+     sentences that are actually there.
+   - **(e) Move the tests that pin the pre-(a) behaviour.**
+     `test/plan-marshall/manage-status/test_planning_lane_corroboration.py`'s
+     `test_d3a_recorded_vector_does_not_route_deep` calls `evaluate_signals_pure` with **no** band rule
+     and asserts `lane == 'light'` with `suppressed_signals == ['S7:risk_prose']` — under (a) that call
+     no longer suppresses, so the test must be updated to pass the measured band rule (and its module
+     docstring's coverage list with it) rather than left to fail. Re-read the whole file for any other
+     assertion (a)–(c) move, and report each one moved.
    *Done when:* an S7-alone request whose `single_module` band came from `pathless_non_empty_body`
    routes `deep` with `suppressed_signals == []`; a `path_count_middle_band` case (4–7 distinct paths,
    no fan-out marker) still routes `light`; a parametrized test over `['module_pair', '',
    ' single_module']` shows each routes `deep` with an empty `suppressed_signals`; and
    `evaluate_signals_pure` reports `low_confidence: True` for the post-bridge motivating vector
    (`plan_source` non-null, `scope_estimate='single_module'`, `change_type=None`, `compatibility=None`,
-   `override=None`) — every one of the four pinned by a test.
+   `override=None`) — every one of the four pinned by a test; and `test/plan-marshall/manage-status/`
+   passes in full, with no test left asserting the pre-(a) suppression.
 
 4. **D4 — The reconciliation refusal is auditable, and its test can tell the two scopes apart**
    *(closes 350/G4, 350/G2)*
@@ -213,9 +241,11 @@ minutes-long derivation whose failure would invalidate D5, D6 and D7 as well; it
 
 6. **D6 — The execution-manifest contract documents describe the code beside them** *(closes 340/G3,
    302/G6, 100/G8, 100/G9, 330/G4, 050/G3)*
-   Six statements in the `manage-execution-manifest` bundle assert something its own code contradicts.
-   Each is a small, independent edit; they are one deliverable because they land in one bundle's
-   documents and one reviewer reads them together.
+   Six items around the `manage-execution-manifest` skill: five statements that assert something the
+   code beside them contradicts, plus one shim that carries no marker. Each is a small, independent
+   edit; they are one deliverable because they land in that skill's documents and its two immediate
+   neighbours (`phase-4-plan/SKILL.md` for (a), the `plugin-script-architecture` shim convention for
+   (f)'s classified-out branch), and one reviewer reads them together.
    - **(a) 340/G3 — the build-phase-canonical carve-out.** `decision-rules.md`,
      `marketplace/bundles/plan-marshall/skills/phase-4-plan/SKILL.md` and the `_VERB_TO_PHASE_5_STEP`
      comment in `_manifest_rules.py` each render the predicate with an inline parenthetical
@@ -417,7 +447,8 @@ Files this plan is expected to touch. Anything else changing is collateral and i
   `planning-lane` subparser description.
 - `marketplace/bundles/plan-marshall/skills/manage-status/SKILL.md` — D3(d); D8(e).
 - `marketplace/bundles/plan-marshall/skills/manage-status/standards/status-lifecycle.md` — D8(e).
-- `test/plan-marshall/manage-status/test_planning_lane_corroboration.py` — D3 tests; D8(a).
+- `test/plan-marshall/manage-status/test_planning_lane_corroboration.py` — D3's new tests and D3(e)'s
+  updates to the existing ones; D8(a).
 - `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py`
   — D2, D4(a), D5(a).
 - `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/_manifest_decide.py` —
@@ -443,9 +474,10 @@ Files this plan is expected to touch. Anything else changing is collateral and i
 - `marketplace/bundles/plan-marshall/skills/phase-3-outline/SKILL.md`,
   `.../manage-solution-outline/standards/solution-outline-standard.md`,
   `.../manage-solution-outline/templates/deliverable-template.md` — D8(e).
-- Possibly `marketplace/bundles/plan-marshall/skills/plan-marshall/standards/execution-recovery.md`
-  and `.../plan-marshall/workflow/execution.md` — **only** if D1(b) establishes them as
-  `baseline-reconcile` consumers.
+- Possibly further `.md` files under `marketplace/bundles/plan-marshall/skills/` — **only** those
+  D1(b)'s sweep establishes as `baseline-reconcile` consumers that read `conflict_count` without
+  branching on `status`. This entry is deliberately open because D1(b), not this list, settles the
+  membership; the run names every file it added here and every candidate it classified out.
 
 ## Claim labels
 
@@ -462,7 +494,7 @@ Files this plan is expected to touch. Anything else changing is collateral and i
 | 302/G6 reproduces: `terminal_emission_dropped` appears in `manage-execution-manifest.py` and in no `.md` under `marketplace/` | OBSERVED (asserted absence — re-verify by sweeping `marketplace/` for the token before editing) | the compose return dict in `manage-execution-manifest.py`; `manage-execution-manifest/SKILL.md`; `decision-rules.md` § Outputs |
 | 100/G8, 100/G9, 330/G4, 050/G3, 310/G2, 310/G7, 210/G1, 300/G6, 300/G7, 240/G3, 240/G4, 350/G3 each reproduce at HEAD | OBSERVED | the file and symbol each gap names, all git-tracked under `marketplace/`, `test/` and `.claude-plugin/`; and the full entry in the source `doc/plans/truthful-signals/{plan}/gaps.md` |
 | The build-phase-canonical carve-out currently covers more than the two canonicals the three sites name | HYPOTHESIS | D1(a): evaluate `_check_step_resolvable(f'verify:{verb}', 'phase_5')` over `ALL_CANONICAL_COMMANDS` at HEAD. The source gap recorded seven of fourteen at its authoring time — **treat that as a lead, not a count**, and re-derive |
-| The `baseline-reconcile` consumer set that reads `conflict_count` without branching on `status` is exactly the two `phase-5-execute` documents 310/G7 names | HYPOTHESIS | D1(b): the authoring sweep found `plan-marshall/standards/execution-recovery.md` and `plan-marshall/workflow/execution.md` also mention both tokens, so the population is larger than two candidate files and must be classified per file before D7(a) edits anything |
+| The `baseline-reconcile` consumer set that reads `conflict_count` without branching on `status` is exactly the two `phase-5-execute` documents 310/G7 names | HYPOTHESIS — expected **false** | D1(b): an authoring sweep of `marketplace/` found several further `.md` files carrying both tokens (under `phase-6-finalize/`, `phase-2-refine/` and `plan-marshall/`), so the population is materially larger than the gap's two candidate files. Re-derive the membership and classify every returned file before D7(a) edits anything — do not treat the gap's two as the set |
 | The expected surface above is complete | HYPOTHESIS | the two "possibly" entries are settled by D1(b); everything else is the union of the files the twenty-two gap entries name, re-checked as each deliverable opens its files. Collateral change outside this list is reported, not absorbed |
 | No gap in this plan is already closed at HEAD | OBSERVED | every gap above was opened at its named file and symbol during authoring and reproduced; the run re-checks each before editing and records any that no longer reproduces as already-closed rather than fixing it |
 
@@ -525,7 +557,7 @@ Beyond each deliverable's *Done when*:
   are *text inside a document, a comment or a test fixture*, never a file to open. Do not go looking
   for a `.plan/` tree, and do not invoke `python3 .plan/execute-script.py`; the tests build their own
   synthetic repositories under `tmp_path`.
-- **Two deliverables are cross-coupled and must land in order.** D3(d) rewrites the corroboration
+- **Three orderings are forced by cross-coupling.** D3(d) rewrites the corroboration
   prose that D8(b) then has to match; write D8(b) against D3's rule, not the pre-D3 one. Similarly D6(a)
   cites D1(a)'s derivation, and D7(a)'s consumer list is D1(b)'s output.
 - **Adversarial-review dispositions carried across.** No gap assigned to this plan was refuted. Three

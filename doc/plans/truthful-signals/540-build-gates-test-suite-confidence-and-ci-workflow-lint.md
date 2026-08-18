@@ -78,14 +78,14 @@ hand-maintained list, because a hand-maintained population is the defect class t
      `git_dirty_files`, from `grep -rn 'partition_plan_state_exemption\|git_dirty_files'
      --include=*.py marketplace/ test/`. The two sites this plan expects are
      `marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/post_run_source_guard.py` and
-     `marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_invariants.py`; a third consumer
-     is in D1's scope and is reported.
+     `marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_invariants.py`; any further
+     consumer the sweep returns is in D1's scope and is reported.
    - **(b) D2's status vocabulary** — every `STATUS_*` constant in
      `marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/_build_result.py` that
      names a *result* status (lead: five — `success`, `error`, `timeout`, `killed`, `indeterminate`).
    - **(c) D3's production-source population** — the file count of
      `marketplace/bundles/**/skills/**/scripts/**/*.py` excluding `__pycache__`, and the count of the
-     narrower `**/skills/**/scripts/*.py` the test uses today (leads: 412 and 386).
+     narrower `**/skills/**/scripts/*.py` the test uses today (leads: 413 and 387).
    - **(d) D5's workflow set** — every file under `.github/workflows/`, and for each, its top-level
      `permissions:` scopes (lead: 7 workflows, all read-only-by-default except `pr-agent.yml`).
    - **(e) D6's targets module set** — every non-`__init__` `.py` module under `marketplace/targets/`,
@@ -148,9 +148,15 @@ hand-maintained list, because a hand-maintained population is the defect class t
      **The choice is made here, not by the run:** add an explicit `indeterminate` row mapping onto the
      existing terminal failure wire status, and make `wire_status_from_result` **raise** on a status
      with no row rather than pass it through. Adding a fifth *wire* status is deliberately not taken —
-     see Out of scope. Update the three sites in that module that still enumerate a four-value
-     `_build_result` vocabulary (the table comment, `wire_status_from_result`'s `Args`, and
-     `LogVerdict.status`'s docstring).
+     see Out of scope. **The inverse map is not a free by-product of that row:**
+     `_WIRE_STATUS_TO_RESULT` is built by inverting `_RESULT_STATUS_TO_WIRE`, so a second result status
+     mapping onto `failure` silently rebinds `failure` to whichever row comes last and makes
+     `result_status_from_wire('failure')` stop returning `error`. Build the inverse from an explicit
+     wire→result table (or exclude the non-canonical row from the inversion) and keep
+     `TestVocabularyTranslationIsTotal.test_translation_round_trips` green for all four canonical
+     statuses. Update the three sites in that module that still enumerate a four-value `_build_result`
+     vocabulary (the table comment, `wire_status_from_result`'s docstring — its prose mapping *and* its
+     `Args` — and `LogVerdict.status`'s docstring).
    - **Derive the totality population (430/G3).** `TestVocabularyTranslationIsTotal` in
      `test/plan-marshall/script-shared/test_non_finish_discrimination.py` parametrises a literal
      four-tuple, so it is blind to the one omission that exists. Derive the population from
@@ -218,9 +224,12 @@ hand-maintained list, because a hand-maintained population is the defect class t
    - **(G1) Recalibrate the freshness backstop.** `MAX_ANALYSIS_THROUGHPUT` is `2000.0` files/s. The
      incident it exists to catch is 660 files in 2–5 s — 132–330 files/s — which the constant rates
      `plausible`. Lower it to a value in the low hundreds that separates cache-answered throughput from
-     cold-analysis throughput, and **record in the constant's own comment the measured cold throughput
-     the ceiling was derived from, re-measuring it on this tree during the run** (lead, do not trust
-     it: `uv run python build.py compile` reported ~414 files in ~11.35 s, ~37 files/s — re-derive and
+     cold-analysis throughput; the verdict keys on `throughput > MAX_ANALYSIS_THROUGHPUT`, so the new
+     constant must be **strictly below 220.0** (= 660 / 3.0) or this deliverable's own *Done when* is
+     unreachable — pick it inside that ceiling with headroom over the cold throughput measured below,
+     and **record in the constant's own comment the measured cold throughput the ceiling was derived
+     from, re-measuring it on this tree during the run** (lead, do not trust it:
+     `uv run python build.py compile` reported ~414 files in ~11.35 s, ~37 files/s — re-derive and
      write the figure you actually observe). Add a unit test pinning
      `classify_check_duration(660, 3.0).plausible is False`, and re-key
      `test_quality_gate_fails_closed_when_whole_tree_mypy_reports_implausibly_fast`
@@ -455,7 +464,9 @@ Production sources:
 - `marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_git_helpers.py` — D1 porcelain
   encoding
 - `marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/post_run_source_guard.py` — D1,
-  only if the shared `parse_porcelain_z` is extracted to `script-shared`
+  only if the shared `parse_porcelain_z` is extracted to `script-shared`; that extraction also adds
+  or edits one module under `.../script-shared/scripts/` (name it in the run report), which is
+  expected surface under that option and not collateral change
 - `marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_invariants.py` — D1 layer-D capture,
   if the encoding change surfaces there
 - `marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/_build_shared.py`,
@@ -476,7 +487,9 @@ Standards and documentation:
 
 Tests:
 
-- `test/plan-marshall/script-shared/test_plan_state_exemption.py`, and the layer-D capture test — D1
+- `test/plan-marshall/script-shared/test_plan_state_exemption.py`, and the layer-D capture test in
+  `test/plan-marshall/plan-marshall/test_invariants.py` (beside
+  `test_capture_main_dirty_files_reports_tracked_plan_state`) — D1
 - `test/plan-marshall/build-pyproject/test_build_findings_store.py`,
   `test/plan-marshall/script-shared/test_non_finish_discrimination.py`, plus the two suites that drive
   `cmd_parse_common` (`test/plan-marshall/build-maven/test_maven_cmd_parse.py`,
@@ -512,7 +525,7 @@ Every count in this table is a lead. Re-derive it at the moment you use it.
 | Each remaining gap in D2–D7 reproduces at HEAD | OBSERVED (read at HEAD) | The file and symbol each gap entry names, under `doc/plans/truthful-signals/{160,330,360,370,380,390,430}-*/gaps.md` — all git-tracked and readable from the clone |
 | No gap in this plan's set was already closed by a later commit | OBSERVED | Every one of the 31 was opened at the file and symbol it names and the defect was present; nothing is carried as already-closed |
 | The five populations in D0 are derivable from the tree by the commands D0 names | HYPOTHESIS | D0 itself settles it: each command is run and its result recorded, and the plan HALTS on any that cannot be derived |
-| The four D0 counts stated as leads (412 / 386 recursive-vs-narrow scripts, 5 result statuses, 7 workflows) match the clone | HYPOTHESIS | Re-derivation in D0; a mismatch is recorded and the derived value used |
+| The four D0 counts stated as leads (413 / 387 recursive-vs-narrow scripts, 5 result statuses, 7 workflows) match the clone | HYPOTHESIS | Re-derivation in D0; a mismatch is recorded and the derived value used |
 | The expected surface above is the set this plan touches | HYPOTHESIS | The PR diff at verification time — any file outside it is collateral change and is reported |
 | `.plan/` holds nothing this plan needs | OBSERVED | `.plan/` is git-ignored and **absent from the clone**. Do not go looking for it, do not invoke `.plan/execute-script.py`, and do not treat its absence as a blocker. Every path this plan names is git-tracked |
 
@@ -536,6 +549,9 @@ Beyond each deliverable's *Done when*:
    verification sub-agent to read each of the following **cold** — without this plan, without the gap
    documents — and report *which reading it took*. A wrong reading means the wording failed, however
    complete the change looks:
+   - D3's rewritten `test_executor_version_split_regression.py` prose: does the reader conclude that
+     the marker is **never consulted** and selection is eligibility plus version ordering alone — and
+     not that some pin still protects the newest directory?
    - the three rendered clauses from D4's `_render_structural_limits`: does the reader distinguish
      "not performed at this scope" from "not performed by this gate at all" from "attempted, nothing
      in scope", and can they say which remedy each implies?

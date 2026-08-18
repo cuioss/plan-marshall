@@ -35,18 +35,19 @@ declaration key was added with a both-direction conformance guard that reads a s
 implementors do not have, so it is vacuous for them; the same commit shipped a dispatcher extension
 slot that the guard rejects. Nine hand-written `[DISPATCH]` emission blocks sit at real dispatch
 sites in a tree whose own standard calls that shape forbidden and calls the resolve seam "the sole
-permitted dispatch-emission shape". And five separate guards — over step ordering, over the push
-barrier's re-fire mapping, over the verdict-currency refusal table, over the declared `verdict_inputs`
-globs, and over the two canonical `destroys` declarations — were each demonstrated, by mutation, to
-stay green against exactly the defect they were written to catch.
+permitted dispatch-emission shape". And four separate areas — step ordering, the push barrier's
+re-fire mapping, the verdict-currency refusal table, and the declared `verdict_inputs` globs — were
+each demonstrated, by a recorded mutation, to leave the suite **green** against exactly the defect
+the guard over them names. A fifth, the two canonical `destroys` declarations, is an asserted
+unpinnedness that D2 re-verifies by mutation before it adds the guard.
 
 The mechanism is common to all of them: **a fact is declared in one place and restated in another,
 and nothing derives the second from the first.** `test_step_prompt_fields_contract.py` reads
 carriage from `prompt: |` blocks while `ext-point-finalize-step.md:130` names the step's *input
 table* as the declaration surface; `test_verdict_currency.py:565` asserts a refusal heading with a
 bare substring search over the whole file, so a cross-reference to the other step's section satisfies
-it; `test_git_workflow.py:632` defines its own RE-FIRE/SKIP oracle three lines above the assertion
-that checks it. Each restatement is individually plausible and collectively unbound, which is why
+it; `test_git_workflow.py:632` opens its test body with its own RE-FIRE/SKIP oracle and then asserts
+against that oracle. Each restatement is individually plausible and collectively unbound, which is why
 the drift is invisible until someone re-derives the population by hand.
 
 ## Goal
@@ -77,7 +78,8 @@ two, D4 two, D5 one.
 
 *(closes 040/G3)*
 
-Three later deliverables scope themselves by a population that must be **derivable from the tree**.
+Five later deliverables — D2, D3, D5, D7 and D8 — scope themselves by a population that must be
+**derivable from the tree**.
 Derive all four first, in the run report, naming the exact command used for each. **If (a) or (c)
 cannot be derived, stop and report the plan blocked** — do not substitute a hand-maintained list,
 because a hand-maintained population is the defect class several of these gaps already are.
@@ -93,9 +95,17 @@ because a hand-maintained population is the defect class several of these gaps a
   which is not in this plan's scope.)
 - **(b) The tree-wide hand-written `[DISPATCH]` emission population** — every occurrence of a
   `manage-logging work` call carrying a `[DISPATCH]` message under `marketplace/` and `.claude/`,
-  split into *dispatch sites* (the file also contains an `effort resolve-target` command block) and
-  *doc-echoes* (it does not). D5's scope is exactly this split. The gap body records 11 matches in 7
-  files, 9 blocks across 5 dispatch-site files — **re-derive it; do not trust those numbers**.
+  split into *dispatch sites* (the file also contains an `effort resolve-target` call inside a fenced
+  command block) and *doc-echoes* (it does not). ⛔ Two exclusions the derivation MUST apply, because
+  a bare grep gets both wrong: **(i)** `ref-workflow-architecture/standards/dispatch-logging.md` is
+  the standard that forbids the shape and quotes it to forbid it (§ "Anti-pattern (forbidden)" and
+  the emission-contract prose) — it is never a member of this population and is never edited by D5;
+  **(ii)** the split is decided by a fenced, executable `effort resolve-target` command block, **not**
+  by the string appearing in prose — the two doc-echoes each mention `manage-config effort
+  resolve-target …` inline while describing what the *dispatcher* does, and a string-match split
+  misclassifies both as dispatch sites. D5's scope is exactly this split. The gap body records 11
+  matches in 7 files, 9 blocks across 5 dispatch-site files — **re-derive it; do not trust those
+  numbers**.
 - **(c) The per-implementor input-table `Required` row population** — for each implementor doc, the
   rows of any prompt-body-field table under a `Required` column whose key falls outside the generic
   dispatch contract. Parse the table header to locate the `Required` column; never assume a column
@@ -137,7 +147,7 @@ deliverable item whose red was not observed is reported as **not done**, never a
    fail.
 2. **310/G4 — the push barrier's re-fire mapping is self-asserted.**
    `test/plan-marshall/workflow-integration-git/test_git_workflow.py::test_verdict_token_drives_refire_skip_mapping`
-   defines its own `verdict()` oracle three lines above the assertion. **This plan pre-decides the
+   opens its body with a local `def verdict(state)` and then asserts against it. **This plan pre-decides the
    gap's option (a)**, so the run makes no mid-run call: add a pure helper
    `push_barrier_action(state) -> 're-fire' | 'skip'` to
    `marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py`, have
@@ -247,9 +257,11 @@ the matching `requires_prompt_fields` entry turns a test in
 `test_step_prompt_fields_contract.py` **red** (observed, then reverted byte-identically); adding
 `requires_prompt_fields: [<field>]` to a generically-dispatched step with no own `prompt:` block
 leaves the suite **green**; a synthetic block carrying `caller_phase` is exercised and asserted
-not step-specific; `grep -rn "cannot send a step-specific one\|cannot carry a step-specific field"
-marketplace/ test/` returns zero hits; and the fixed link's display text resolves to an existing file
-when joined to its own directory.
+not step-specific; `grep -rn "send a step-specific one\|carry a step-specific field" marketplace/
+test/ .claude/` returns zero hits — note the pattern deliberately omits the leading "cannot", because
+one of the four sites (the module docstring) writes it as `**structurally cannot** send`, which a
+`"cannot send …"` pattern silently misses, so each of the four sites is re-read as well as grepped;
+and the fixed link's display text resolves to an existing file when joined to its own directory.
 
 ---
 
@@ -336,10 +348,13 @@ set of surviving violations, split into dispatch sites and doc-echoes.
    to add flags to one — that instruction is uncarryable here and was corrected in 280's own
    adversarial review.
 
-*Done when:* the population-(b) derivation, **re-run after the edits**, returns zero matches across
-`marketplace/` and `.claude/`; every `effort resolve-target` in the former dispatch-site files carries
-`--workflow`; and no sentence in `plan-marshall/workflow/planning.md` instructs a hand-written
-`[DISPATCH]` emission.
+*Done when:* the population-(b) derivation, **re-run after the edits** with its two D1 exclusions
+applied, returns zero matches across `marketplace/` and `.claude/` — the only surviving occurrences
+anywhere in those trees are the ones inside `ref-workflow-architecture/standards/dispatch-logging.md`,
+which quotes the shape in order to forbid it and is excluded by construction, so a sweep that counts
+them is reporting on the wrong population rather than on unfinished work; every `effort
+resolve-target` in the former dispatch-site files carries `--workflow`; and no sentence in
+`plan-marshall/workflow/planning.md` instructs a hand-written `[DISPATCH]` emission.
 
 ---
 
@@ -620,7 +635,7 @@ collateral and must be explained in the run report.
 - `.../phase-6-finalize/standards/emit-landing.md` — D7, D8
 - `.../phase-6-finalize/standards/finalize-step-print-phase-breakdown.md` — D7
 - `.../phase-6-finalize/standards/disposition-to-hint-routing.md` — D8
-- `.../phase-6-finalize/workflow/create-pr.md`, `.../pre-submission-self-review.md` — D3, D7
+- `.../phase-6-finalize/workflow/create-pr.md` — D7; `.../pre-submission-self-review.md` — D3, D5.1
 - `.../phase-6-finalize/workflow/lessons-capture.md`, `.../adr-propose.md` — D5.2
 - `.../phase-2-refine/standards/refine-workflow-detail.md` — D6
 - `.../phase-3-outline/standards/outline-workflow-detail.md` — D5.1
@@ -651,7 +666,7 @@ Every confirm/refute artifact below is **git-reachable from a fresh clone**. No 
 | 260/G1 reproduces: the guard reads carriage only from `prompt:` literal blocks, never from the input table | OBSERVED | `test/plan-marshall/phase-6-finalize/test_step_prompt_fields_contract.py` — `_step_specific_fields`, `_prompt_blocks`; `extension-api/standards/ext-point-finalize-step.md` § "Step-specific prompt-body fields" naming the input table as the declaration surface |
 | 260/G2 reproduces: the extension slot and the ∃-direction contradict | OBSERVED | `phase-6-finalize/SKILL.md` generic-template paragraph (`<plus every step-specific field …>` slot, "a floor, not a ceiling", "the dispatcher MUST forward every declared field", "a step's extras live in its own dispatch body") vs `test_step_prompt_fields_contract.py::test_no_orphan_prompt_field_declaration` and its assertion message |
 | 280/G2 reproduces: hand-written `[DISPATCH]` blocks survive at real dispatch sites | OBSERVED | `plan-marshall/workflow/planning-outline.md`, `.../planning.md`, `workflow-pr-doctor/SKILL.md`, `phase-6-finalize/workflow/pre-submission-self-review.md`, `phase-3-outline/standards/outline-workflow-detail.md` — each carries a `manage-logging work --message "[DISPATCH]…"` block; `ref-workflow-architecture/standards/dispatch-logging.md` § "Anti-pattern (forbidden)" forbids the shape |
-| 310/G4 reproduces: the re-fire mapping test defines its own oracle | OBSERVED | `test/plan-marshall/workflow-integration-git/test_git_workflow.py::test_verdict_token_drives_refire_skip_mapping` — the local `def verdict(state)` three lines above the assertion it checks |
+| 310/G4 reproduces: the re-fire mapping test defines its own oracle | OBSERVED | `test/plan-marshall/workflow-integration-git/test_git_workflow.py::test_verdict_token_drives_refire_skip_mapping` — the local `def verdict(state)` opening the test body, and the `assert verdicts == {…}` block built from it |
 | 440/G6 reproduces: the refusal guard is a bare substring check | OBSERVED | `test/plan-marshall/phase-6-finalize/test_verdict_currency.py::test_every_tabled_refusal_carries_its_section` — `assert _REFUSAL_HEADING in body` over the whole doc; the phrase occurs twice in each tabled step's doc |
 | No gap in this plan's set was already closed at authoring time | OBSERVED | Every gap listed in a deliverable heading was opened at its cited file and symbol and reproduces; the per-gap artifacts are the `Where` clauses of the source `gaps.md` entries |
 | Population (a) — the implementor set and its frontmatter — is derivable from `implements:` frontmatter | HYPOTHESIS | D1 settles it: the derivation either returns a non-empty set carrying the named keys, or the plan HALTS |
@@ -672,8 +687,10 @@ Beyond each deliverable's own *Done when*:
    row per mutation: the file mutated, the mutation, the test id that failed, the failure message,
    and the restore confirmation (`git diff --quiet` clean, bytes identical). **A guard whose red was
    not observed is reported as not done.** This is the one verification the plan cannot substitute
-   anything for: five of these six guards were each demonstrated green against their own defect
-   before this plan existed.
+   anything for: four of these six (230/G2, 310/G4, 440/G6, 440/G1) carry a recorded mutation in
+   their source `gaps.md` that left the suite green against their own defect before this plan
+   existed, and the remaining two (300/G1, 302/G8) are asserted-unpinned rather than demonstrated —
+   which makes observing their red the only evidence this plan will have.
 2. **Cold reads — four deliverables whose value is what a later reader DOES with the text.** Dispatch
    the pre-PR verification sub-agent (`cloud-plan-lane` § Step 6) with an *interpretation* brief, not
    a conformance brief: give the reader the changed text with no context from this plan, and have it

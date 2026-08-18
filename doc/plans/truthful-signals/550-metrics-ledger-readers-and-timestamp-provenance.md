@@ -112,7 +112,8 @@ it produces; if a population cannot be derived, D1 does **not** invent a fallbac
    - **(b)** Tighten `test_knob_symbols_never_reach_a_store_or_compare_site`
      (`test/plan-marshall/manage-run-config/test_display_timezone_guard.py`) from file-granular to
      **site-granular** for declared RENDER files: add a `render_call_budget` integer to each
-     `render_sites` entry in `timestamp_render_classification.json` and assert
+     RENDER-classified `render_sites` entry in `timestamp_render_classification.json` — D8(a) adds
+     further entries whose `classification` is `STORE`, and those carry no budget — and assert
      `text.count('render_timestamp(') == budget` per RENDER file instead of exempting the file
      wholesale. Re-derive each budget from the tree — do not copy a number from this plan.
    *Done when:* **each mutation below turns its guard RED and the guard is confirmed GREEN on the
@@ -208,8 +209,10 @@ it produces; if a population cannot be derived, D1 does **not** invent a fallbac
      0 stamps `unknown`. Leave the correct statement in
      `marketplace/bundles/plan-marshall/skills/ref-code-quality/standards/error-handling.md`
      untouched.
-   - **(c)** Add an `error` arm to `cmd_classify_outcome`'s verdict chain in
-     `marketplace/bundles/plan-marshall/skills/manage-change-ledger/scripts/manage-change-ledger.py`,
+   - **(c)** Add an `error` arm to `run_classify_outcome`'s verdict chain in
+     `marketplace/bundles/plan-marshall/skills/manage-change-ledger/scripts/manage-change-ledger.py`
+     (430/G5 spells the symbol `cmd_classify_outcome`; no such name exists — the shipped handler is
+     `run_classify_outcome`),
      returning a verdict distinct from `undecidable` with a message naming the reported failures, and
      extend the `undecidable` docstring and the `manage-change-ledger` SKILL's classify-outcome
      section accordingly. ⛔ **Do not retire the verb** — the gap offers retirement as an alternative,
@@ -258,13 +261,17 @@ it produces; if a population cannot be derived, D1 does **not** invent a fallbac
      what the row demonstrates rather than counting states, and add to the composed round-trip test
      an assertion that `indeterminate_columns == []` on every row of its fixture, so the test asserts
      the state its new name claims. No assertion is removed and no fixture changes.
-   *Done when:* both lock-step lists say five surfaces and both name the check doc, and a search for
-   "four surfaces" / "FOUR surfaces" across the two files returns nothing; no sentence in
+   *Done when:* both lock-step lists say five surfaces and both name the check doc, a search for
+   "four surfaces" / "FOUR surfaces" across the two files returns nothing, and the mirror comment's
+   closing "editing all four by reading the list" says five; no sentence in
    § Per-Dispatch Context-Load Attribution or in either reader docstring assigns the short-row case to
-   *unrecognised*; a search for `three_ways` / `three-way distinction` across
-   `test/plan-marshall/manage-metrics/` returns nothing except the unrelated `metrics.toon`
-   old-schema comparison (which requires a case-insensitive search to match at all); and the
-   `manage-metrics` representability suite passes.
+   *unrecognised*; a search for `three_ways` / `three-way distinction` in
+   `test/plan-marshall/manage-metrics/test_record_model_representability.py` returns nothing — the
+   file's remaining `THREE-way comparison` line is the unrelated `metrics.toon` old-schema comparison
+   and only a case-insensitive search matches it, and the `three-way distinction` hits in the sibling
+   `test_dispatch_boundary_ledger_population.py` are the reconciliation comparator's
+   smaller/equal/larger relation, which is correct and out of scope; and the `manage-metrics`
+   representability suite passes.
 
 7. **D7 — The two dispatch-boundary readers resolve columns the same way** *(closes 460/G3)*
    `_parse_dispatch_boundary_totals` in `audit.py` resolves the four context-load columns **by name
@@ -424,7 +431,7 @@ the architecture inventory's crawl.
 
 | Claim | Label | Confirm/refute artifact |
 |---|---|---|
-| 150/G1 (`high`) reproduces: the D6(c) test asserts only the `Z` suffix, a literal inside the format string | OBSERVED | `test/plan-marshall/manage-run-config/test_display_time_render.py` → `test_stored_timestamp_is_utc_under_any_knob_value`; `.../tools-file-ops/scripts/file_ops.py` → `now_utc_iso` |
+| 150/G1 (`high`) reproduces: plan 150's own D5(c) storage-invariant test asserts only the `Z` suffix, a literal inside the format string | OBSERVED | `test/plan-marshall/manage-run-config/test_display_time_render.py` → `test_stored_timestamp_is_utc_under_any_knob_value`; `.../tools-file-ops/scripts/file_ops.py` → `now_utc_iso` |
 | 150/G5 (`high`) reproduces: the guard's `allowed` set is file-granular, and neither `_guard_granularity` nor `render_call_budget` exists in the classification artifact | OBSERVED | `test/plan-marshall/manage-run-config/test_display_timezone_guard.py` → `test_knob_symbols_never_reach_a_store_or_compare_site`; `.../timestamp_render_classification.json` (asserted absence, verified by searching the file for both key names) |
 | 220/G1 (`high`) reproduces: `build_share` is gated on `wall_clock_seconds > 0` alone | OBSERVED | `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py` → `_sequence_build_minimality_plan`, the `build_share` expression |
 | 220/G2 + 430/G8 reproduce and are the **same site**: `summarize_build_ledger` tallies `unknown` and omits it from its return dict | OBSERVED | `.../plan-retrospective/scripts/analyze-logs.py` → `summarize_build_ledger` |
@@ -434,7 +441,7 @@ the architecture inventory's crawl.
 | 420/G1 + 460/G4 reproduce and name the **same three sites** | OBSERVED | `test/plan-marshall/manage-metrics/test_record_model_representability.py` — the comment and the two `…_reads_three_ways_in_the_retrospective_reader` test names |
 | 420/G2, 420/G3, 460/G1, 460/G2 reproduce | OBSERVED | `.../manage-metrics/standards/data-format.md` (cell-read table's *unrecognised* row; the byte-identity sentence under the format example; § "Restating surfaces") and the `LOCK-STEP OBLIGATION` comment in `analyze-logs.py` — neither list names `checks/billing-composition.md` |
 | 460/G3 reproduces: the two readers use name-resolution and positional resolution respectively | OBSERVED | `audit.py` → `_parse_dispatch_boundary_totals` (`columns.index(ledger_field)`) vs `analyze-logs.py` → `_parse_dispatch_boundary_file` (`_LEGACY_COLUMN_COUNT + offset`) |
-| 430/G1, 430/G5, 110/G1, 050/G6, 060/G1, 150/G2, 150/G4, 220/G3 reproduce | OBSERVED | respectively: the `derived-only` comment in `test_executor_runtime.py`; `cmd_classify_outcome`'s verdict chain with no `error` arm; the two-way conjunction in `manage-change-ledger/SKILL.md` § Entry Shapes vs the three-conjunct `if` in `execute-script.py.template`; the marker-free `posture_cutoff_legacy_aggregate` entry; `manage-locks` absent from `060`'s `report-01.md`; `scan_regex` in the classification JSON matching neither `now_utc_iso` nor `format_timestamp`; `display_timezone` absent from `manage-metrics/standards/data-format.md`; the `pyproject_build run` docstring claim and the `.plan/temp/` prototype sentence in `audit.py` |
+| 430/G1, 430/G5, 110/G1, 050/G6, 060/G1, 150/G2, 150/G4, 220/G3 reproduce | OBSERVED | respectively: the `derived-only` comment in `test_executor_runtime.py`; `run_classify_outcome`'s verdict chain with no `error` arm; the two-way conjunction in `manage-change-ledger/SKILL.md` § Entry Shapes vs the three-conjunct `if` in `execute-script.py.template`; the marker-free `posture_cutoff_legacy_aggregate` entry; `manage-locks` absent from `060`'s `report-01.md`; `scan_regex` in the classification JSON matching neither `now_utc_iso` nor `format_timestamp`; `display_timezone` absent from `manage-metrics/standards/data-format.md`; the `pyproject_build run` docstring claim and the `.plan/temp/` prototype sentence in `audit.py` |
 | 220/G6 is **partially closed at HEAD**: the absent-is-not-zero sentence already exists; the TOON annotation and the third-rule placement do not | OBSERVED | `.../plan-retrospective/references/plan-efficiency.md` § "Build time is READ from the change-ledger" carries the sentence; the `totals.total_build_seconds` line of the TOON fragment carries only the FLOOR note. The sentence landed with plan 220 itself (`8620ab0b`, PR #1224) |
 | D8(c)'s Done-when as the gap wrote it is **vacuous**: the shim analyzer already reports zero findings tree-wide, so "returns `[]`" holds before and after | OBSERVED | running `analyze_shim_marker(Path('marketplace/bundles'))` from `.../plugin-doctor/scripts/_analyze_shim_marker.py` returned `0` findings while authoring; re-derive it in the run rather than trusting this |
 | The three D1 populations are derivable by search alone, with no `.plan/` state | HYPOTHESIS | D1 itself settles it: each derivation is a search over `marketplace/bundles/` — a git-tracked tree present in every clone. If one fails, D1's stop condition fires and the dependent deliverable is skipped |
@@ -532,10 +539,12 @@ paragraph has moved, adjust rather than duplicate it.
 
 **Sequencing against the epic.** No gap here is a defect in another plan's deliverables; all are
 residue, incomplete sweeps and stale statements left behind by landed work. Nothing in this plan
-depends on another `truthful-signals` plan landing first. Two files are shared with sibling fix-out
-plans in the same wave — `audit.py` and `data-format.md` — so if a merge conflict appears on either,
-rebase and re-read the conflicting paragraph rather than resolving it mechanically: both files carry
-lock-step obligations that a textual merge will not honour.
+depends on another `truthful-signals` plan landing first. One file is shared with a sibling fix-out
+plan in the same wave — `audit.py`, which plan 510 also edits — so if a merge conflict appears on it,
+rebase and re-read the conflicting paragraph rather than resolving it mechanically: it carries
+lock-step obligations a textual merge will not honour (the hand-copied `_BC_LEDGER_*` constants
+against `data-format.md`, and the `CHECK_ERA` table against its test mirror). Re-derive the shared
+set rather than trusting this sentence: the wave's plans are the other files in this directory.
 
 **A machine-local path that appears in this plan's text.** `.plan/temp/sequence_analysis.py` and
 `.plan/temp/build_minimality.py` are named in D3(c) **only as strings to delete from a comment**.

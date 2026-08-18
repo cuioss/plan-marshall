@@ -121,9 +121,12 @@ change and write the re-derived value, not the one written here.**
    future or reserved — re-derive that site set with a `PLAN-48` sweep over `marketplace/` rather than
    trusting the four sites the gap names.
    *Done when:* the guard test passes against the edited file **and has been seen RED** against the
-   pre-edit `{"auto_emit": false}` block; and a `PLAN-48` sweep over `marketplace/` returns no hit that
-   describes `auto_emit` as reserved or future, and no sweep hit presents the seeded orchestrator block
-   as empty or the seeded `parallelization_scope` as absent.
+   pre-edit `{"auto_emit": false}` block; a `PLAN-48` sweep over `marketplace/` returns no hit that
+   describes `auto_emit` as reserved or future; and a SECOND sweep over `marketplace/`, for the
+   "empty `{}` block is legal" / "empty `{}` legal" / "when unset the ask keeps" phrasings, returns no
+   hit that presents the seeded orchestrator block as empty or the seeded `parallelization_scope` as
+   absent. Two sweeps, not one: the PLAN-48 hits and the empty-block hits are on different lines, so
+   neither sweep settles the other's half.
 
 3. **D3 — A degraded landing fact is missing, and the spec claims only what the check enforces**
    *(closes 302/G1, 302/G2, 302/G9)* — three parts, all in the landing-payload contract.
@@ -175,9 +178,13 @@ change and write the re-derived value, not the one written here.**
    `test/plan-marshall/plan-orchestrator/test_orchestrator_compact.py`
    `TestNarrativeSurvivesVerbatim::test_every_hand_authored_section_survives_verbatim`: its closing
    `assert after == text or after == _epic_text(plan_context)` re-reads bytes nothing wrote between the
-   two reads, so the second disjunct is true by construction. Either perform the second `_run()` the
-   comment claims and assert byte-identity across it, or delete the disjunctive assertion and fix the
-   two comments that describe operations the test never performs.
+   two reads, so the second disjunct is true by construction. **The choice is made here, so the run
+   makes no judgement call:** perform the second `_run()` the comment claims, re-read, and assert
+   byte-identity across THAT pass — deleting the disjunct instead would leave the narrative-idempotence
+   coverage its comment promises unwritten. Then correct the two comments that describe operations the
+   test does not perform: the `# after regeneration` label sits on a read taken BEFORE the first
+   `_run()`, and "A second pass changes nothing at all" stands above an assertion that never performed
+   one.
    (iv) Extract the branch body shared by `_invariant_queue_spec` and `_corpus_signal` into one helper
    returning a neutral `(state, evidence, population)` triple, with each caller mapping it into its own
    vocabulary; keep both public shapes unchanged so the existing suites pass unedited.
@@ -232,9 +239,11 @@ change and write the re-derived value, not the one written here.**
    exists.
 
 6. **D6 — What the epic tree holds, how a pre-marker `epic.md` gets migrated, and what the lane's
-   dispatch emits** *(closes 180/G3, 180/G7, 180/G2, 280/G7)* — four parts, all in
+   dispatch emits** *(closes 180/G3, 180/G7, 180/G2, 280/G7)* — four parts. (i), (ii) and (iv) land in
    `persona-plan-orchestrator/standards/orchestration-model.md` and
-   `plan-orchestrator/workflow/cleanup.md`.
+   `plan-orchestrator/workflow/cleanup.md`; (iii) reaches those two AND
+   `plan-orchestrator/scripts/orchestrator.py` plus
+   `test/plan-marshall/plan-orchestrator/test_orchestrator_compact.py`, as the Expected surface records.
    (i) Declare `settled.md` where the standard says what an epic tree contains: add it to the
    tree-layout code block between `history.md` and `references.json`, commented as relocated settled
    narrative written mid-life by the compact stage with pointers in `epic.md` resolving there, and add
@@ -323,8 +332,9 @@ change and write the re-derived value, not the one written here.**
    sub-item of D8 proceeds regardless.
    (iii) `doc/plans/truthful-signals/250-…/report-01.md` — delete the duplicated tail of `_pending_`
    sections (`## Cost`, `## Contract check (Step 9)`, `## What have we learned (Step 9)`, `## Residue`
-   appear a second time, unfilled, after all four were filled earlier in the file) and correct the two
-   stated test counts to the values a re-run produces. ⚠ D5 and D7 change these suites, so re-derive the
+   appear a second time, unfilled, after all four were filled earlier in the file) and correct EACH
+   stated test count to the value a re-run produces — re-derive the site set from the report rather
+   than trusting the two the gap names. ⚠ D5 and D7 change these suites, so re-derive the
    counts **at the merge-base state the report describes**, not from your own working tree, and say
    which state the corrected figure was taken at.
    (iv) `doc/plans/truthful-signals/300-…/report-01.md` — the stale-restatement figure appears at more
@@ -421,13 +431,17 @@ this plan was authored against a tree that may have moved.
 
 Beyond each deliverable's *Done when*:
 
-- **Build gate.** D2–D8 change `*.py` under `marketplace/bundles/` and `test/`, so the lane's Python
-  build gate applies; run it and read the result rather than the exit code.
-- **Red-first, explicitly.** Four guards must be **seen RED before their fix lands**, and the run
+- **Build gate.** D2–D7 change `*.py` under `marketplace/bundles/` and `test/` (D8 changes only
+  `plugin.json` and three run reports), so the lane's Python build gate applies; run it and read the
+  result rather than the exit code.
+- **Red-first, explicitly.** EVERY guard below must be **seen RED before its fix lands**, and the run
   report records the failing output for each: D2's committed-config guard against the pre-edit block;
-  D3's all-`n/a` completeness case; D4's `TestMarkersAbsent` treatment case; D4's repaired narrative
-  assertion with only its first disjunct; D5's post-closure `write` refusal and double-`close-stream`
-  idempotence; and D7(i)'s rejection-code contract test with one code deleted from the section. A guard
+  D3's degraded-fact completeness case — `total_tokens` / `steps` / `deliverables_*` set to `n/a` with
+  `schema` and the remaining keys real; ⛔ **not** an all-`n/a` block, which at HEAD already returns
+  `(False, ['schema'])` through the preceding schema branch and is therefore GREEN before the fix and
+  no evidence at all; D4's `TestMarkersAbsent` treatment case; D4's repaired narrative assertion with
+  only its first disjunct; D5's post-closure `write` refusal and, separately, its double-`close-stream`
+  idempotence case; and D7(i)'s rejection-code contract test with one code deleted from the section. A guard
   never seen red is not evidence, and 180/G1 is on this plan precisely because a green assertion was
   carrying no weight.
 - **Three cold reads.** Each of the following is text whose whole value is what a later reader *does*
@@ -474,11 +488,11 @@ Beyond each deliverable's *Done when*:
   and corrects the claim; D5(ii) keeps the archive-drain refusal and corrects its reason. In both cases
   the alternative is recorded in the run report as a proposal for the operator. No deliverable in this
   plan requires a mid-run judgement call.
-- **Sequencing within the plan.** D5 and D7 both edit `orchestrator.py`, `_orchestrator_inbox.py`,
-  `SKILL.md` and `inbox-envelope.md`; D4 and D6 both edit `orchestrator.py`, `cleanup.md` and
-  `orchestration-model.md`. Land them in the stated order so the later edit sees the earlier one, and
-  keep the marker-migration text (D6(ii)) and the `replaced_body` field (D6(iii)) in one commit — they
-  are the two halves of one migration story.
+- **Sequencing within the plan.** D5 and D7 both edit `_orchestrator_inbox.py`, `SKILL.md` and
+  `inbox-envelope.md` (`orchestrator.py` is D7's alone — D5 touches none of it); D4 and D6 both edit
+  `orchestrator.py`, `cleanup.md` and `orchestration-model.md`. Land them in the stated order so the
+  later edit sees the earlier one, and keep the marker-migration text (D6(ii)) and the `replaced_body`
+  field (D6(iii)) in one commit — they are the two halves of one migration story.
 - **Two commits that must not be split apart.** D2(i) and D2(ii) land together: the guard test asserts
   against the committed file, so a commit carrying one without the other is red. Likewise D5(iii)'s new
   error code and its documentation.

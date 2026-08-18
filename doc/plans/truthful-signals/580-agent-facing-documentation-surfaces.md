@@ -104,19 +104,24 @@ entirely, that is a finding: record it and say so, do not invent a substitute si
      `"./skills/tools-integration-ci"`. Drop the parenthetical. Then sweep for the **class**, not the
      phrasing: `grep -rniE "(not|never|must not be) registered in .?plugin\.json" marketplace/bundles/
      --include=*.md`. For every hit, check whether the named skill is registered in its own bundle's
-     `plugin.json`. Fix each that is; leave hits that are about *project* registration with the build
-     server, or that name no skill at all, and **name each survivor and its reason in the run report**
-     rather than asserting the sweep came back clean.
+     `plugin.json`, and **name every hit and its disposition in the run report** rather than asserting
+     the sweep came back clean. **Fix only the `tools-integration-ci` hit.** The sweep is otherwise a
+     *reporting* instrument here, not a licence to edit: hits about *project* registration with the
+     build server, and hits naming no skill at all, are correct and stay; and the
+     `manage-execution-manifest/SKILL.md` variant — which asserts the skill *MUST NOT* be registered
+     while the same `plugin.json` registers it — is **gap 100/G9, assigned to another plan and out of
+     scope here** (see § Out of scope). Record it as a known, owned survivor; do not edit that file,
+     which is not in § Expected surface.
 
    *Done when:* the type set on the `Types:` line and the set of `{type}.jsonl` rows in the storage
    tree each equal the `FINDING_TYPES` tuple recovered by the gating derivation, element for element;
    `grep -c "arch-constraint" marketplace/bundles/plan-marshall/skills/manage-findings/SKILL.md` is
    non-zero; every `--category` enum in `manage-lessons/SKILL.md` lists all `LESSON_CATEGORIES`
-   members; and the class sweep in (c) returns no file that claims a skill is unregistered while its
-   own bundle `plugin.json` registers it, with every remaining hit listed in the report with its
-   reason for surviving.
+   members; and the class sweep in (c) has been run with every hit listed in the report against its
+   disposition — `tools-integration-ci/SKILL.md` fixed, the `manage-execution-manifest` variant
+   recorded as 100/G9 and left untouched, and each remaining hit named with its reason for surviving.
 
-2. **D2 — Configuration truth on the four consumer-facing `doc/user/` pages**
+2. **D2 — Configuration truth on the five consumer-facing `doc/user/` pages**
    (closes 190/G1 **high**, 190/G2, 190/G3, 190/G8, 200/G8)
 
    - **(a) Delete the dead merge knob.** `doc/user/parallelism-and-locking.adoc` (near `:55`) carries
@@ -280,14 +285,19 @@ entirely, that is a finding: record it and say so, do not invent a substitute si
      `marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/agents.md` is the
      declared SSOT for build-tier ownership on the leaf boundary and says the opposite in two
      directions: an `execution_tier: orchestrator` build MUST NOT be run by a leaf inline **or**
-     backgrounded, and the `await-long-running` seam is the one component permitted to background a
-     build, which it does with `run_in_background: true`. Scope the closing instruction: state that it
-     governs a build the caller runs itself — an `execution_tier: per_task` build — and that an
-     `execution_tier: orchestrator` build is neither foregrounded nor backgrounded by the caller but
-     handed to the `await-long-running` seam. Cross-link
+     backgrounded, and the `await-long-running` seam "is the ONLY component permitted to background a
+     build" — quote and confirm that clause in `agents.md` before relying on it. Scope the closing
+     instruction: state that it governs a build the caller runs itself — an `execution_tier: per_task`
+     build — and that an `execution_tier: orchestrator` build is neither foregrounded nor backgrounded
+     by the caller but handed to the `await-long-running` seam. Cross-link
      `../../ref-workflow-architecture/standards/agents.md` § "Leaf cannot reap a backgrounded build"
-     as the owning contract. **No sentence in the section may forbid the backgrounding
-     `await-long-running` mandates.**
+     as the owning contract. **No sentence in the section may forbid the backgrounding `agents.md`
+     sanctions.** Note that `await-long-running.md` itself opens by stating the build consumer does
+     **not** use its detach-and-notify seam (an orchestrator-tier build routes to the `marshalld`
+     build server instead) — so take the permission clause from `agents.md`, which is the declared
+     SSOT, and do not attribute a `run_in_background` build detach to `await-long-running.md`. If the
+     two still disagree at run time, record the disagreement in the run report; reconciling them is a
+     change to `agents.md` or `await-long-running.md` and is not in this deliverable.
    - **(b) Reconcile the two framings of harness auto-backgrounding** (110/G3). The same section
      presents auto-backgrounding as the thing that "preserved the job every time";
      `marketplace/bundles/plan-marshall/skills/persona-plan-marshall-agent/SKILL.md` presents the same
@@ -339,7 +349,8 @@ entirely, that is a finding: record it and say so, do not invent a substitute si
    `_mentions_help` matches, as re-derived from that function; the conditions section enumerates five
    statuses and states the `indeterminate`/`unknown` two-layer naming; and the foreground instruction
    names the `execution_tier` it applies to and cross-links `agents.md`, with no sentence in the
-   section forbidding the backgrounding `await-long-running.md` mandates.
+   section forbidding the backgrounding `agents.md` § "Leaf cannot reap a backgrounded build"
+   sanctions.
 
 6. **D6 — The deployment diagram standard and its skeleton**
    (closes 170/G1, 170/G2, 170/G3)
@@ -391,7 +402,11 @@ entirely, that is a finding: record it and say so, do not invent a substitute si
 
    - **(a) The `#1027` narration in three normative automatic-review documents** (130/G4). The
      sentence *"on #1027 PR-Agent posted its Guide — valid participation — while reporting 'no major
-     issues' on a diff in which CodeRabbit found two Major defects"* appears verbatim in
+     issues' on a diff in which CodeRabbit found two Major defects"* appears in three places. **The
+     wording is near-identical, not byte-identical** — one site reads "published … under its record"
+     where the others read "posted" — so **locate the three sites by the `#1027` reference, not by an
+     exact-string match**, and treat a failed exact match as an expected variance rather than an
+     absent site. The three are
      `marketplace/bundles/plan-marshall/skills/automatic-review/SKILL.md`,
      `marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md`,
      and the module docstring of
@@ -446,11 +461,13 @@ entirely, that is a finding: record it and say so, do not invent a substitute si
      `marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/dispatch-logging.md`
      § "Field semantics" gives the `role` row's Source as *"The `--role` argument the caller passed to
      `effort resolve-target`"*. The implemented seam falls back `--role` → `--phase` → the resolver
-     payload's `role` → the literal `default`, and both landed migrated callers rely on that fallback
-     by passing only `--phase`. A caller reading the table concludes `--role` is required and may add
-     a wrong one, changing the label the dispatch audit rosters on. Restate the Source cell as the
+     payload's `role` → the literal `default`, and landed migrated callers rely on that fallback by
+     passing only `--phase`. A caller reading the table concludes `--role` is required and may add a
+     wrong one, changing the label the dispatch audit rosters on. Restate the Source cell as the
      fallback chain. **Re-derive the chain from the implementing function before writing it** — the
-     `emission_role` composition in the effort command module — rather than copying this paragraph.
+     `emission_role` composition and the `role_display` fallback in
+     `marketplace/bundles/plan-marshall/skills/manage-config/scripts/_cmd_effort.py` (read-only; not
+     edited by this plan) — rather than copying this paragraph.
    - **(b) Codify the shell-interpolation rule where it can travel** (390/G3).
      `marketplace/bundles/plan-marshall/skills/persona-security-expert/standards/dependency-supply-chain.md`
      carries a CI/CD pipeline-hardening bullet list covering SHA-pinning, least privilege, OIDC,
@@ -502,15 +519,18 @@ Each exclusion carries its reason, because with no operator watching, this writt
 only thing holding the line against a tempting adjacent change.
 
 - **Every other gap in the ten source `gaps.md` files.** Those documents carry gaps this plan does not
-  name — among them 100/G3, G5, G6, G7, G8, G9, G10; 110/G1, G4, G5; 130/G2, G3, G5; 190/G4, G5, G6,
-  G7; 200/G1–G7; 280/G1–G4, G6; 390/G1, G2, G4; 430/G1–G5, G7. They are assigned to other plans in
+  name — 100/G3, G5, G6, G7, G8, G9, G10; 110/G1, G4, G5; 130/G2, G3, G5; 190/G4, G5, G6,
+  G7; 200/G1–G7; 280/G1–G4, G6, G7; 390/G1, G2, G4, G5; 430/G1–G5, G7, G8, G9 (re-derive this list
+  from the ten `gaps.md` files rather than trusting it). They are assigned to other plans in
   this epic and several touch the same files this plan does. Fixing one here produces a conflicting
   diff against a concurrent run and, worse, closes it in a report that the plan actually assigned to
   it will not see. **Read a source `gaps.md` only for the entries this plan names.**
-- **The `.caption` 12 px divergence in the other five diagram templates.** D6(c) fixes only the
-  deployment skeleton, which is the instance this gap set owns. The others are templates no plan in
-  this set touched, each needs its own render-and-read-back verification, and changing them here is
-  exactly the unrelated diagram churn plan 170's own out-of-scope forbade.
+- **The `.caption` 12 px divergence in the other diagram templates.** Five of the six skeletons under
+  `ref-svg-diagrams/templates/` define `.caption` at 12 px — re-derive that population rather than
+  trusting this count. D6(c) fixes only the deployment skeleton, which is the instance this gap set
+  owns. The rest are templates no plan in this set touched, each needs its own render-and-read-back
+  verification, and changing them here is exactly the unrelated diagram churn plan 170's own
+  out-of-scope forbade.
 - **Writing a rule for the mount stem's horizontal position.** D8(c) corrects a false *justification*
   in a residue row; the residue stays open. Writing the rule is new normative text in a diagram-type
   standard, which is a different kind of change from the corrections this plan makes, and it belongs
@@ -534,8 +554,9 @@ only thing holding the line against a tempting adjacent change.
 
 ## Expected surface
 
-Twenty-seven files across five bundles plus `doc/user/`. Grouped by deliverable so a concurrency check
-against another plan can be made per group.
+Twenty-seven files: twenty-one across four bundles (`plan-marshall`, `pm-dev-java`, `pm-documents`,
+`pm-plugin-development`), five under `doc/user/`, and one in a sibling plan directory. Grouped by
+deliverable so a concurrency check against another plan can be made per group.
 
 - `marketplace/bundles/plan-marshall/skills/manage-findings/SKILL.md` — D1(a), the type enum and the
   storage tree.
@@ -638,9 +659,10 @@ answer means the wording failed, however complete the change looks** — fix the
 
 ### Executed checks
 
-- **Every *Done when:* grep and sweep in D1–D8, run and its output recorded** — not asserted. Where a
-  sweep is expected to return survivors (D1(c), D7(c)), list each survivor and its reason; a bare
-  "clean" is not evidence.
+- **Every *Done when:* grep and sweep in D1–D8, run and its output recorded** — not asserted. D1(c)'s
+  class sweep is expected to return survivors and every one of them is listed with its disposition;
+  D7(c)'s dated-narration sweep may legitimately come back with none, in which case the report carries
+  the command and its empty output. Either way a bare "clean" is not evidence.
 - **The build gate.** D7(a) touches `review_completeness.py`, so the lane's Python-change gate fires
   and `./pw verify` runs — see `cloud-plan-lane` for the gate condition and how the run reports its
   result. The change is a docstring, so a failure is a signal about the tree, not about this diff:
