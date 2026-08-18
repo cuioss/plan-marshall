@@ -414,8 +414,8 @@ Every finding, per instance.
 | # | Source | Finding | Disposition |
 |---|---|---|---|
 | F1 | D1 re-derivation | `060`'s "27 blocked on a missing seam" is **wrong**: `manage-providers`' 12 were never seam-blocked — `credentials.py` resolves seam 2 on unmodified `main` | Recorded; D1 scoped to the 15 genuinely blocked, and the `credentials.py` change reported as a seam **upgrade**, not an unblock |
-| F2 | D2 derivation | `060`'s "two that remain" is a slice figure; the whole-tree skill-root `extension.py` set is **14 findings** | Recorded; D2 sized against 14 |
-| F3 | D3 derivation | `060`'s "three latent" registrations is a slice figure; the tree carries **19 live collisions** | Recorded; guard shaped as a growth check against a pinned baseline of 19 |
+| F2 | D2 derivation | `060`'s "two that remain" is a slice figure; the whole-tree skill-root `extension.py` set is far larger | Recorded. The first round sized D2 against **14**, which V2 below refuted; the derived figure is **20** |
+| F3 | D3 derivation | `060`'s "three latent" registrations is a slice figure; the tree carries many more, and they are live rather than latent | Recorded. The first round counted **19**, which V1 below refuted; the derived figure is **23**, and the guard is a growth check against a baseline of 23 |
 | F4 | D3 guard, on this run's own diff | The first D1 test module registered `_build_cli`, colliding with `test_build_execute_factory.py`'s plain import — a 20th collision created by this plan | **Fixed**, not baselined: `register=False` at every new call site |
 | F5 | Own mutation sweep | `register=False` was **unpinned** — mutating `_exec_module_from_path` to ignore it left the whole suite green | **Fixed**: three guards added (default registers, `register=False` does not, `parse_ns` forwards it), each mutation-proven |
 | F6 | Own mutation sweep | The first probe module for those guards (`sensible_number`) is itself plainly imported, so the control created a real collision | **Fixed**: probe switched to `credentials.py`, which nothing plain-imports |
