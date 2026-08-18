@@ -53,15 +53,18 @@ What was actually done, in order:
 Note: the working tree carried three unrelated uncommitted modifications from a concurrent session
 (`_display_time.py`, `effort_presets.py`, `git-workflow.py`). None touches a shim marker; the
 `effort_presets.py` diff deletes three lines in `_LEGACY_PRESETS` classification, well away from its
-`SHIM(A)` block at line 233. Results above were computed against that state.
+`SHIM(A)` block at line 233. Results above were computed against that state. The adversarial review
+below re-ran every measurement at `9afba956` with those modifications gone; `git log ac06e4fc..HEAD
+-- marketplace/ test/` is empty, so the scanned tree is byte-identical and every figure reproduced
+unchanged.
 
 ## Deliverable-by-deliverable
 
 | # | Deliverable | Done-when condition | Implemented? | As documented? | Correct? | Complete? | Evidence (file:line / symbol / command + result) |
 |---|---|---|---|---|---|---|---|
-| D0 | GATE: re-derive the inventory, population-derived | derived inventory + method stated + survived/dropped/new partition reported | Yes | Yes | Yes | **No** | `report-01.md` § D0 states method, discriminator, volume-vs-coverage split, and the three-way partition. STOP CONDITION fired (24 vs 11) and was reported. But an unmarked category-B site survives: `_manifest_decide.py:31` `_LEGACY_CI_WAIT` |
+| D0 | GATE: re-derive the inventory, population-derived | derived inventory + method stated + survived/dropped/new partition reported | Yes | Yes | Yes | **No** | `report-01.md` § D0 states method, discriminator, volume-vs-coverage split, and the three-way partition. STOP CONDITION fired (24 vs 11) and was reported. But an unmarked category-B site survives: `_manifest_decide.py:31` `_LEGACY_CI_WAIT`, dated to `d04ac98e` (#1066, 2026-07-30) — eleven days before the plan landed, so a genuine sweep miss (G3) |
 | D1 | Shim-marker convention | convention documented + D0-confirmed category-A sites carry a conforming marker | Yes | Yes | Mostly | Yes | `shim-marker-convention.md` (99 lines) + `plugin-script-architecture/SKILL.md:54-57`; 5 `SHIM(A)` markers in the landed diff, 6 at HEAD; analyzer reports 0 `shim_marker_malformed` over 412 scripts (all three fields non-empty everywhere). Two markers sit on sites with no actual tolerate-branch (see below) |
-| D2 | plugin-doctor rule flagging an unmarked shim | rule ships with tests in both directions + publishes the population size examined | Yes | **Partly** | Yes, within its stated precision-first design | **No** | `_analyze_shim_marker.py`; 28 tests pass (9 positive-indicator params, 5 negative-boundary params, 2 malformed, suppression, derivation, population, empty-population ×3, shape, 2 real-tree). Population published in `details.population_size`; executed → 412. **Not wired into `analyze`** (`_runner.py:329-378` has no `analyze_shim_marker` call), contradicting the report. Measured recall over the tree's own shims: **4 of 25** |
+| D2 | plugin-doctor rule flagging an unmarked shim | rule ships with tests in both directions + publishes the population size examined | Yes | **Partly** | Yes, within its stated precision-first design | **No** | `_analyze_shim_marker.py`; 28 tests pass (9 positive-indicator params, 5 negative-boundary params, 2 malformed, suppression, 2 cover-window, out-of-scope-dir, derivation, population, empty-population ×3, shape, 2 real-tree = 28). Population published in `details.population_size`; executed → 412. **Not wired into `analyze`** (`_runner.py:329-378` has no `analyze_shim_marker` call), contradicting the report. Measured recall over the tree's own shims: **4 of 25** — and the miss is not theoretical: commit `7951ada9` (#1276, 2026-08-17) landed a new unmarked category-B shim (`check-routing-decisions.py:170`) a week after the guard shipped, past a green gate (G6) |
 | D3 | Retirement sweep over surviving category-B sites | every surviving category-B site marked or deleted; each deletion cites extinction evidence | Yes | Yes | Yes | Relative to D0's inventory, yes | 19 `SHIM(B)` markers in the landed diff; 19 in production at HEAD (B7+B9 consolidated into `_footprint_resolver.py:158` by a later refactor, `claude_runtime.py:1585` added by a later plan). Zero deletions, so the "cite the evidence" obligation is vacuously satisfied and the report explains why (persisted state, not showable extinct) |
 
 **D0 — incomplete sweep.** `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/_manifest_decide.py:29-31`
@@ -82,7 +85,9 @@ identically"*, and the tolerance is emergent from `if key not in live`. There is
 delete when `shim-remove-when` fires. `_invariants.py:747` is the weaker sibling: the marker sits on
 the constant `_REFERENCES_REQUIRED_KEYS`, where the tolerance is the *absence* of `modified_files`
 from a tuple. The report itself flagged both as "⚠ borderline / soft"; the convention explicitly says
-marking a non-shim "is as wrong as leaving a real shim unmarked — it dilutes the signal".
+marking a non-shim "is as wrong as leaving a real shim unmarked — it dilutes the signal"
+(`shim-marker-convention.md:29-30`). These are two distinct sites in two bundles, so they are filed
+per instance: G4 (`_cmd_sync_defaults.py`) and G7 (`_invariants.py`).
 
 **D2 — wiring and recall.** The rule is wired into `run_quality_gate` (`_runner.py:206`) with
 `severity='error'`, so it is genuinely build-failing — the destructive mutation confirmed the gate
@@ -94,9 +99,22 @@ block and only 4 of 25 sites produce a `shim_unmarked` finding — `_cmd_mark_st
 `_cmd_assert_step_recorded.py`, `gitignore_setup.py`, `upgrade.py`. The design is deliberately
 precision-first and both the module docstring and the convention doc say so ("a backstop, not a
 substitute"), so this is not a hidden defect — but the test at
-`test_analyze_shim_marker.py:342-348` asserts in its own docstring that *"A regression on either side
+`test_analyze_shim_marker.py:343-349` asserts in its own docstring that *"A regression on either side
 (a new unmarked shim, or an over-broad indicator) turns this red"*, which the measurement contradicts
-for 21 of the 25 known shim shapes.
+for 21 of the 25 known shim shapes. The same docstring also asserts *"Every migration/back-compat
+shim in the tree carries a conforming marker"*, which `_LEGACY_CI_WAIT` (G3) and
+`posture_cutoff_legacy_aggregate` (G6) each falsify.
+
+**D2 — the guard has already let one through.** `check-routing-decisions.py:170` defines a
+`_REMOVAL_CAUSE_PATTERNS` entry named `posture_cutoff_legacy_aggregate`, commented *"LEGACY — the
+RETIRED aggregate `lane_resolution` shape, kept for ARCHIVED decision logs only. The composer stopped
+emitting this when it moved to one line per dropped step."* That is a category-B shim by the
+convention's own discriminator, it carries no marker, and it landed in `7951ada9` (#1276,
+2026-08-17) — after `1296ede1` (2026-08-10) shipped the build-failing rule whose stated purpose is
+that "the next shim cannot land unmarked". The gate was green through it. It is in `plan-retrospective`,
+a bundle D0 *did* sweep, so this is a recall failure of the running guard rather than an unreached
+corner. The convention is otherwise being adopted — `#1181` and `#1287` each added a conforming
+marker to a new shim in the same period.
 
 ## Report accuracy
 
@@ -163,6 +181,88 @@ change. The "build one detector pattern, not two" boundary was respected.
 - **The `population_size` value at landing time as the rule itself reported it.** Re-derived from git
   as 387; the report's 386 could only be reconciled by re-running the analyzer against a checkout of
   `1296ede1`, which was not done.
-- **Whether the sweep is now exhaustive.** The independent vocabulary sweep found one credible miss;
-  it read every strong candidate by symbol but is itself vocabulary-bounded, so it cannot certify
-  that no further unmarked shim exists — only that the ones it surfaced were classified.
+- **Whether the sweep is now exhaustive.** Two independent vocabulary sweeps — the one above and the
+  adversarial review's deliberately broader re-run (412 scripts, comment tokens only, 181 hits across
+  78 files) — each found a credible miss (`_LEGACY_CI_WAIT`, G3; `posture_cutoff_legacy_aggregate`,
+  G6). Both read every strong candidate by symbol, but both are vocabulary-bounded, so neither can
+  certify that no further unmarked shim exists — only that the ones they surfaced were classified.
+  That two independent sweeps each found a *different* miss is itself evidence the boundary is not
+  yet established.
+
+## Adversarial review
+
+**Reviewed by:** an independent agent that did not write this document.
+
+**Checked.** Re-derived at HEAD `9afba956`; `git log ac06e4fc..HEAD -- marketplace/ test/` is empty,
+so the scanned tree is identical to the one this document was written against (34 unrelated commits
+in between, all under `doc/plans/`).
+
+- **Re-executed, not re-read.** Imported `_analyze_shim_marker` and ran `enumerate_script_files` +
+  `analyze_shim_marker` over `marketplace/bundles` → **population 412, findings 0**. Wrote an
+  independent mutation script (own anchor regex, own field-line stripper) and re-ran the recall sweep
+  over all **25** production marker anchors → **4 fire, 21 silent**, the same four files. Ran
+  `pytest test_analyze_shim_marker.py -o addopts="" -q` → **28 passed**; `--collect-only` → 28 ids.
+- **Counts re-derived.** `# SHIM(A):` / `# SHIM(B):` at HEAD → **6 + 19** in production scripts plus
+  2 doc-example occurrences in the analyzer. Landed diff `1296ede1` → **5 + 19 = 24**, and
+  `--stat` confirms **28 files, 1347 insertions, 0 deletions**, `_runner.py` **+2**.
+  `git ls-tree -r 1296ede1 | grep -cE '…/scripts/.*\.py$'` → **387**; at `1296ede1^` → **386**.
+  `run_analyze_marketplace_rules` (`_runner.py:329-378`) → **29** `issues.extend` calls, none of them
+  `analyze_shim_marker`. The 6→19→24→412→387/386→28→29 chain all reproduces.
+- **Line references opened.** `_cmd_mark_step.py:363,563`; `manage-metrics.py:2709`;
+  `_manifest_decide.py:29-31,175,221`; `_cmd_sync_defaults.py:290-293`; `_invariants.py:739-751`;
+  `_analyze_shim_marker.py:442-483` (file is 483 lines); `test_analyze_shim_marker.py:191,337,342-350`;
+  `_fixtures.py:468`; `test_runner.py:82`; `rule-catalog.md:231`; `rule-provenance.md:156`;
+  `plugin-script-architecture/SKILL.md:54-57`; `shim-marker-convention.md:29-30` (99 lines);
+  `_analyze_simplicity.py:52`; `outline-workflow-detail.md:806`. All accurate.
+- **"Swept, clean" re-run with a broader pattern.** An independent comment-token sweep over the same
+  412 scripts with a deliberately wider vocabulary than D0's (adding `deprecat`, `obsolet`,
+  `grandfather`, `superseded`, `stop-gap`, `no longer written/emitted/produced`, `historical
+  shape/form`, `before this change/field/key … existed`) → **181 hits in 78 files**. Every strong
+  candidate was read by symbol; the classifications are recorded in gaps.md § "Refuted during
+  adversarial review". This surfaced one new shim (G6) that both the D0 sweep era and the running
+  detector missed.
+- **Provenance dated.** `git log -S` established that `_LEGACY_CI_WAIT` predates the plan
+  (`d04ac98e`, 2026-07-30) while `posture_cutoff_legacy_aggregate` postdates it (`7951ada9`,
+  2026-08-17), and that the two later markers at HEAD came from `#1181` and `#1287`.
+
+**Not re-checked.** The destructive mutation of `_cmd_mark_step.py` (method step 8) was **not**
+repeated — no source file was modified during this review; the guard's liveness rests instead on the
+25-site mutation sweep, which exercises the same `_scan_file` path in a temp copy. The landing-time
+build numbers (18808 passed / 14 skipped, `./pw quality-gate`) were not re-run. The D1 cold-read
+remains a transcript artifact. `report-01.md`'s claim that four sub-agents performed the D0
+classification is unverifiable from the tree. The `~18` NOT-A-SHIM negatives were not individually
+re-classified — only the ones the broader sweep re-surfaced.
+
+| Item | Original claim | Verdict | Evidence |
+|---|---|---|---|
+| G1 | Real-tree test's docstring overstates recall; measured 4 of 25 | **upheld, evidence strengthened** | Recall reproduced independently (4 fire / 21 silent, same four files). Severity `high` confirmed against the rubric: this is a guard that passes against the defect it names. Added the empirical falsification (`7951ada9`) and a second false docstring sentence ("every shim … carries a conforming marker"); corrected the docstring line span to 343-349 |
+| G2 | `analyze_shim_marker` absent from `run_analyze_marketplace_rules` | **upheld unchanged** | 29 `issues.extend` calls at `_runner.py:329-378`, none of them the shim rule; `analyze_thinking_directive_in_workflow_docs` present in both methods; landed hunk is +2 lines (import + gate emit), so it was never wired. `rule-catalog.md:231` does claim `cmd_analyze`. Severity `medium` correct — the gate is genuinely build-failing, so no shipped false *behaviour*, only a false doc line and a missing edit-time surface |
+| G3 | `_LEGACY_CI_WAIT` is an unmarked category-B shim D0 missed | **upheld, evidence strengthened** | Symbol read at `_manifest_decide.py:29-31`, consumed as `drop=` at 175/221; `decision-rules.md:628` confirms `ci-wait` is retired as a phase-6 step id; the drop is silent accommodation, not a refusal. Dated to `d04ac98e` (2026-07-30) — before the plan landed, so a genuine sweep miss and not a later regression |
+| G4 | Two markers sit on sites with no shim code to delete | **split (per-instance) and narrowed** | Both sites confirmed by reading the code: `_deep_merge_missing`'s body has no `{}` branch; `_REFERENCES_REQUIRED_KEYS` is a bare tuple. Two distinct sites in two bundles are two findings — G4 now covers `_cmd_sync_defaults.py:290-293` only, G7 covers `_invariants.py:747-750`. Severity `low` upheld for both (dilution, no wrong behaviour) |
+| G5 | `population_size` is unreadable on a clean run | **upheld unchanged** | `emit` in `run_quality_gate` records only `{'rule', 'findings'}`; a clean tree returns `[]`, so the 412 appears nowhere. `_analyze_shim_marker.py:442-483` and the `>= 100` floor at `test_analyze_shim_marker.py:337` both confirmed |
+| G6 | *(new)* `posture_cutoff_legacy_aggregate` is an unmarked category-B shim that landed after the guard | **added, medium** | `check-routing-decisions.py:170-183`, comment names the RETIRED aggregate `lane_resolution` shape kept for archived logs; introduced by `7951ada9` (#1276, 2026-08-17), a week after the rule shipped, past a green quality gate |
+| G7 | *(new, split from G4)* `_REFERENCES_REQUIRED_KEYS` marker has no deletable code | **added, low** | Marker at `_invariants.py:747-750` sits on `('base_branch', 'branch')`; the tolerance is the absence of `modified_files` from the tuple, so `shim-remove-when` can never trigger a removal |
+| Verdict | `implemented-with-gaps` | **upheld** | All four deliverables are implemented and each done-when condition is met on its own terms; the defects are completeness and honesty-of-claim, not an unbuilt deliverable. `partially-implemented` would be wrong |
+
+**Documents corrected.** In `gaps.md`: open items 5 → **7**; G1 gained the empirical falsification, the
+second false docstring sentence, per-site line numbers and a corrected docstring span; G3 gained the
+retirement evidence, the refusal-class exclusion, and the commit date proving it is a sweep miss; G4
+was narrowed to one site and G7 added for the other; G6 added; a `## Refuted during adversarial
+review` section records that no gap was refuted and lists five candidate sites checked and rejected
+as non-shims, so they are not re-litigated. In `verification.md`: the D0 and D2 rows gained the new
+provenance and the G6 instance; a new "D2 — the guard has already let one through" paragraph; the
+docstring reference corrected from `342-348` to `343-349`; the 28-test enumeration completed (it named
+25 of 28); the concurrent-modification note updated to record that every figure reproduced on a clean
+tree; and "Whether the sweep is now exhaustive" updated to reflect two independent sweeps each finding
+a different miss. The verdict is unchanged.
+
+**Residual doubt — what a third reviewer should look at first.** (1) The `~18` NOT-A-SHIM negatives
+from D0 were never re-classified individually by anyone; a false *negative* there is invisible to
+every sweep run so far, because a site classified out is a site nobody re-reads. (2) Both sweeps are
+comment-vocabulary-bounded and read only `bundles/*/skills/*/scripts/**/*.py`; a shim whose comment
+uses none of the vocabulary, or one living outside that population (`marketplace/targets/`, `test/`,
+`.claude/`), is out of reach of the method entirely — the rule's own population derivation shares that
+blind spot. (3) `_cmd_quality_phases.py:61` `_CANONICAL_VERIFY_PREFIXES = ('default:verify:',
+'verify:')` was judged too soft to file: its comment calls the bare form "legacy", while
+`check-manifest-consistency.py:386-390` says the same form is still produced today. One of those two
+comments is wrong, and settling which would decide whether a marker is owed.
