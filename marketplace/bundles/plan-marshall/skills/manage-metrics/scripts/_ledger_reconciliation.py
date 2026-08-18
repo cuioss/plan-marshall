@@ -55,11 +55,16 @@ turn every boundary row into an orphan and read as a catastrophic divergence.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from toon_parser import parse_toon
+
+#: Sort placeholder for a row whose timestamp did not parse. Such rows sort last
+#: via the leading boolean, so this value is never compared against a real one;
+#: it exists only to keep the key's two branches the same type.
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 #: The manifest holding ``execution_log[]``, at the plan directory root.
 MANIFEST_FILENAME = 'execution.toon'
@@ -168,7 +173,10 @@ def execution_rows_for_phase(rows: list[dict[str, Any]], phase: str) -> list[dic
         }
         for row in selected
     ]
-    return sorted(normalised, key=lambda row: (row['parsed_timestamp'] is None, row['timestamp'] or ''))
+    return sorted(
+        normalised,
+        key=lambda row: (row['parsed_timestamp'] is None, row['parsed_timestamp'] or _EPOCH),
+    )
 
 
 def load_boundary_rows(path: Path) -> list[dict[str, Any]]:
@@ -203,7 +211,10 @@ def load_boundary_rows(path: Path) -> list[dict[str, Any]]:
                 'total_tokens': _as_int(columns[2].strip()),
             }
         )
-    return sorted(rows, key=lambda row: (row['parsed_timestamp'] is None, row['timestamp']))
+    return sorted(
+        rows,
+        key=lambda row: (row['parsed_timestamp'] is None, row['parsed_timestamp'] or _EPOCH),
+    )
 
 
 def pair_rows(
@@ -211,13 +222,27 @@ def pair_rows(
     boundary_rows: list[dict[str, Any]],
     window_seconds: int,
 ) -> tuple[list[tuple[dict, dict]], list[dict], list[dict]]:
-    """Pair the two ledgers' rows on timestamp proximity, greedily and in order.
+    """Pair the two ledgers' rows on timestamp proximity, MAXIMALLY.
 
     The boundary row carries no ``step_id``, so the timestamp window is the only
-    join available. Each execution-log row claims its NEAREST unclaimed boundary
-    row within the window; ties resolve to the earlier boundary row, which makes
-    the pairing deterministic under any input order. A row on either side with no
-    partner is returned unpaired, and becomes one finding.
+    join available. Every execution-log row is eligible to pair with every
+    boundary row inside the window, and this returns a pairing of **maximum
+    size** — the fewest possible unpaired rows on both sides.
+
+    ⛔ Maximum matching rather than nearest-first greedy, because the unpaired
+    rows are what this module REPORTS. Greedy lets a row take a closer partner
+    that another row needed, stranding both and emitting two findings where a
+    perfect pairing exists: with boundary rows at t=0 and t=250 and execution
+    rows at t=240 and t=500 inside a 300 s window, t=240 takes t=250 (gap 10)
+    over t=0 (gap 240), and both remaining rows are reported absent although each
+    has a legal partner. A finding that is an artefact of the pairing order is a
+    false signal about the ledgers — precisely the class this verb exists to
+    surface, manufactured by the verb itself.
+
+    Determinism does not depend on input order: both row lists arrive sorted, and
+    augmenting paths are explored in index order, so one input yields one result.
+    Among maximum matchings the specific pairing chosen is unspecified — only the
+    SIZE is guaranteed, and only the unpaired sets are reported.
 
     Args:
         execution_rows: This phase's normalised execution-log rows.
@@ -227,35 +252,55 @@ def pair_rows(
     Returns:
         ``(pairs, unpaired_execution, unpaired_boundary)``.
     """
-    claimed: set[int] = set()
-    pairs: list[tuple[dict, dict]] = []
-    unpaired_execution: list[dict] = []
-
+    # Eligibility: a row with no parsable timestamp can never pair, and is left
+    # for the caller to report — the honest outcome for a row whose position
+    # nothing can establish.
+    candidates: list[list[int]] = []
     for execution_row in execution_rows:
         execution_time = execution_row['parsed_timestamp']
         if execution_time is None:
-            unpaired_execution.append(execution_row)
+            candidates.append([])
             continue
-        best_index: int | None = None
-        best_gap: float | None = None
+        eligible = []
         for index, boundary_row in enumerate(boundary_rows):
-            if index in claimed:
-                continue
             boundary_time = boundary_row['parsed_timestamp']
             if boundary_time is None:
                 continue
-            gap = abs((execution_time - boundary_time).total_seconds())
-            if gap > window_seconds:
-                continue
-            if best_gap is None or gap < best_gap:
-                best_index, best_gap = index, gap
-        if best_index is None:
-            unpaired_execution.append(execution_row)
-        else:
-            claimed.add(best_index)
-            pairs.append((execution_row, boundary_rows[best_index]))
+            if abs((execution_time - boundary_time).total_seconds()) <= window_seconds:
+                eligible.append(index)
+        candidates.append(eligible)
 
-    unpaired_boundary = [row for index, row in enumerate(boundary_rows) if index not in claimed]
+    # Kuhn's algorithm: for each execution row, try to find an augmenting path
+    # through the eligibility graph, displacing earlier matches where doing so
+    # frees a partner for them elsewhere. Row counts per phase are small, so the
+    # O(V·E) cost is irrelevant beside the correctness of the reported set.
+    matched_boundary: dict[int, int] = {}
+
+    def _augment(execution_index: int, visited: set[int]) -> bool:
+        for boundary_index in candidates[execution_index]:
+            if boundary_index in visited:
+                continue
+            visited.add(boundary_index)
+            holder = matched_boundary.get(boundary_index)
+            if holder is None or _augment(holder, visited):
+                matched_boundary[boundary_index] = execution_index
+                return True
+        return False
+
+    for execution_index in range(len(execution_rows)):
+        _augment(execution_index, set())
+
+    matched_execution = {ex: bd for bd, ex in matched_boundary.items()}
+    pairs = [
+        (execution_rows[ex], boundary_rows[bd])
+        for ex, bd in sorted(matched_execution.items())
+    ]
+    unpaired_execution = [
+        row for index, row in enumerate(execution_rows) if index not in matched_execution
+    ]
+    unpaired_boundary = [
+        row for index, row in enumerate(boundary_rows) if index not in matched_boundary
+    ]
     return pairs, unpaired_execution, unpaired_boundary
 
 

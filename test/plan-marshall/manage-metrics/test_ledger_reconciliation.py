@@ -17,7 +17,7 @@ reconciliation that fires on agreement is worse than none.
 """
 
 import importlib.util
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from _manage_metrics_fixtures import (
@@ -244,8 +244,8 @@ class TestTheTwoPartialityShapes:
         """`boundary_never_closed` and `row_absent_*` are different findings.
 
         Collapsing them would report a whole unclosed phase as a pile of orphan
-        rows, hiding that the ROWS are present and the aggregate is what is
-        missing.
+        rows, hiding that the ROWS are present and that what no close recorded is
+        the phase's own summary of them.
         """
         plan_id = 'recon-unclosed'
         cmd_start_phase(ns_start_phase(plan_id, '6-finalize'))
@@ -413,3 +413,70 @@ def test_reconciliation_execution_log_phases_match_writer():
     )
 
     assert tuple(_ledger.EXECUTION_LOG_PHASES) == tuple(core.VALID_RECORD_PHASES)
+
+
+class TestPairingIsMaximal:
+    """An unpaired row is a real absence, never an artefact of the pairing order."""
+
+    @staticmethod
+    def _row(offset_seconds: int, label: str) -> dict:
+        stamp = datetime(2026, 1, 1, tzinfo=UTC) + timedelta(seconds=offset_seconds)
+        return {
+            'step_id': f'{label}{offset_seconds}',
+            'timestamp': stamp.isoformat(),
+            'parsed_timestamp': stamp,
+            'total_tokens': 0,
+            'outcome': 'executed',
+            'termination_cause': 'step_complete',
+        }
+
+    def test_a_nearer_partner_is_given_up_when_another_row_needs_it(self):
+        """The case greedy nearest-first gets wrong, and reports twice.
+
+        Boundary rows at t=0 and t=250, execution rows at t=240 and t=500, window
+        300 s. Nearest-first lets t=240 take t=250 (gap 10) over t=0 (gap 240),
+        stranding t=500 and t=0 although each has a legal partner — two findings
+        where a perfect pairing exists. Both ledgers agree here, so the honest
+        answer is no finding at all.
+        """
+        execution_rows = [self._row(240, 'e'), self._row(500, 'e')]
+        boundary_rows = [self._row(0, 'b'), self._row(250, 'b')]
+
+        pairs, unpaired_execution, unpaired_boundary = _ledger.pair_rows(
+            execution_rows, boundary_rows, 300
+        )
+
+        assert len(pairs) == 2
+        assert unpaired_execution == []
+        assert unpaired_boundary == []
+
+    def test_a_genuine_absence_is_still_reported(self):
+        """The negative control: maximal pairing does not mean pairing everything.
+
+        Without it, a `pair_rows` that paired every row unconditionally would
+        satisfy the test above while destroying the verb's whole purpose.
+        """
+        execution_rows = [self._row(0, 'e'), self._row(10000, 'e')]
+        boundary_rows = [self._row(0, 'b')]
+
+        pairs, unpaired_execution, unpaired_boundary = _ledger.pair_rows(
+            execution_rows, boundary_rows, 300
+        )
+
+        assert len(pairs) == 1
+        assert [row['step_id'] for row in unpaired_execution] == ['e10000']
+        assert unpaired_boundary == []
+
+    def test_the_pairing_does_not_depend_on_input_order(self):
+        """One corpus, one result — reversing either side changes no verdict."""
+        execution_rows = [self._row(240, 'e'), self._row(500, 'e')]
+        boundary_rows = [self._row(0, 'b'), self._row(250, 'b')]
+
+        forward = _ledger.pair_rows(execution_rows, boundary_rows, 300)
+        reversed_inputs = _ledger.pair_rows(
+            list(reversed(execution_rows)), list(reversed(boundary_rows)), 300
+        )
+
+        assert len(forward[0]) == len(reversed_inputs[0])
+        assert forward[1] == reversed_inputs[1] == []
+        assert forward[2] == reversed_inputs[2] == []

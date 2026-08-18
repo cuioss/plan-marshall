@@ -230,7 +230,7 @@ class TestPersistedAggregate:
         assert result[manage_metrics._TOTALS_DENOMINATOR_FIELD] == 6
 
     def test_a_later_write_invalidates_the_aggregate_rather_than_stranding_it(self, plan_context):
-        """The aggregate is present iff the most recent write computed it.
+        """The row-derived aggregate is present iff the most recent write computed it.
 
         Only `generate` computes the totals; every other writer moves the phase
         rows underneath them. Left in place they would silently stop summing the
@@ -253,13 +253,18 @@ class TestPersistedAggregate:
         cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
         cmd_end_phase(ns_end_phase(plan_id, '5-execute', total_tokens=999000))
 
-        # Every aggregate key is gone — no stale value survives to be quoted.
+        # Every row-derived key is gone — no stale value survives to be quoted.
         store = _store(plan_context, plan_id)
         for field in manage_metrics._TOTALS_FIELDS.values():
             assert _top_level_field(store, field) is None
             assert _top_level_field(store, f'{field}{manage_metrics._POPULATION_COUNT_SUFFIX}') is None
         assert _top_level_field(store, manage_metrics._TOTALS_DENOMINATOR_FIELD) is None
         assert _top_level_field(store, manage_metrics._TOTALS_SAMPLED_AT_FIELD) is None
+        # `dispatch_boundary_excluded_classes` is deliberately NOT dropped: it derives
+        # from a module constant rather than from the rows, so it cannot go stale
+        # against them. Asserted so the scope of the invalidation is pinned, not
+        # merely described.
+        assert _top_level_field(store, manage_metrics._BOUNDARY_EXCLUDED_CLASSES_FIELD) is not None
         # The phase rows themselves are untouched by the invalidation.
         assert _phase_field(store, '5-execute', 'total_tokens') == '999000'
 
@@ -603,3 +608,105 @@ def test_four_field_persistence_walks_the_canonical_label_set():
     # The literal tuple this loop used to spell out must not have come back.
     assert not re.search(r"for field in \(\s*'input_tokens'", enrich_body)
     assert 'for field in _FOUR_FIELD_USAGE_FIELDS:' in enrich_body
+
+
+class TestOverCoveringBoundaryIsNotCalledAFloor:
+    """A sum the module classifies as `over` is folded, but never labelled a floor.
+
+    `_boundary_coverage_state` calls `over` — more recorded boundary rows than
+    sampled dispatches — impossible for a single population and potentially
+    double-counted across a resume, and `_eligible_dispatched_measures` refuses
+    it the reconciliation maximum for exactly that reason. The unclosed-phase
+    fold bypasses eligibility on purpose (the alternative is rendering nothing
+    for a phase that demonstrably spent something), so the marker is what has to
+    stay honest: `floor` asserts a lower bound the classification denies.
+    """
+
+    @staticmethod
+    def _drive_over_covering_unclosed(plan_id: str) -> None:
+        """An unclosed phase with 3 boundary rows but only 1 sampled dispatch."""
+        cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
+        for tokens in (300000, 300000, 300000):
+            cmd_record_dispatch_boundary(
+                ns_record_dispatch_boundary(plan_id, '5-execute', 'step_complete', total_tokens=tokens)
+            )
+        raw = manage_metrics.read_metrics_raw(plan_id)
+        raw['phases']['5-execute']['total_tokens'] = 10000
+        raw['phases']['5-execute']['subagent_samples'] = 1
+        manage_metrics.write_metrics(plan_id, raw)
+
+    def test_the_coverage_state_is_over(self, plan_context):
+        """Precondition — without it the rest of this class proves nothing.
+
+        Read AFTER `generate`, because `dispatch_boundary_rows_recorded` — the
+        numerator `_boundary_coverage_state` compares — is written by `generate`
+        from the boundary file, not by the boundary writer itself.
+        """
+        plan_id = 'over-precondition'
+        self._drive_over_covering_unclosed(plan_id)
+        cmd_generate(ns_generate(plan_id))
+
+        raw = manage_metrics.read_metrics_raw(plan_id)
+        assert manage_metrics._boundary_coverage_state(raw['phases']['5-execute']) == 'over'
+
+    def test_the_cell_is_not_marked_a_floor(self, plan_context):
+        """The lower-bound label is withheld from a figure that may double-count."""
+        plan_id = 'over-not-floor'
+        self._drive_over_covering_unclosed(plan_id)
+
+        cmd_generate(ns_generate(plan_id))
+
+        report = _report(plan_context, plan_id)
+        row = next(line for line in report.splitlines() if line.startswith('| 5-execute'))
+        assert '900,000' in row
+        assert '(boundary floor)' not in row
+        assert '(boundary sum, over-covering)' in row
+
+    def test_the_marker_carries_its_own_key(self, plan_context):
+        """A marker without a key is one the reader cannot interpret."""
+        plan_id = 'over-key'
+        self._drive_over_covering_unclosed(plan_id)
+
+        cmd_generate(ns_generate(plan_id))
+
+        report = _report(plan_context, plan_id)
+        assert 'Marked `(boundary sum, over-covering)`' in report
+        assert 'may double-count and is **not** a floor' in report
+
+    def test_the_provenance_is_persisted_distinctly(self, plan_context):
+        """The store separates the two cases, not only the rendered text."""
+        plan_id = 'over-provenance'
+        self._drive_over_covering_unclosed(plan_id)
+
+        cmd_generate(ns_generate(plan_id))
+
+        store = _store(plan_context, plan_id)
+        assert _phase_field(store, '5-execute', 'tokens_cell_source') == 'unclosed_boundary_over_covering'
+
+    def test_a_partial_coverage_row_still_gets_the_floor_marker(self, plan_context):
+        """The negative control: `floor` is withheld only from `over`.
+
+        Same shape, but with more sampled dispatches than recorded rows — a
+        genuine under-count, where a lower bound IS what the figure is.
+        """
+        plan_id = 'over-control-partial'
+        cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
+        cmd_record_dispatch_boundary(
+            ns_record_dispatch_boundary(plan_id, '5-execute', 'step_complete', total_tokens=900000)
+        )
+        raw = manage_metrics.read_metrics_raw(plan_id)
+        raw['phases']['5-execute']['total_tokens'] = 10000
+        raw['phases']['5-execute']['subagent_samples'] = 5
+        manage_metrics.write_metrics(plan_id, raw)
+
+        cmd_generate(ns_generate(plan_id))
+
+        # Precondition, read after generate: this row's coverage is `partial`,
+        # so the ONLY difference from the over-covering case is the classification.
+        assert manage_metrics._boundary_coverage_state(
+            manage_metrics.read_metrics_raw(plan_id)['phases']['5-execute']
+        ) == 'partial'
+        report = _report(plan_context, plan_id)
+        row = next(line for line in report.splitlines() if line.startswith('| 5-execute'))
+        assert '(boundary floor)' in row
+        assert 'over-covering' not in row

@@ -339,11 +339,20 @@ _TOKENS_CELL_SOURCE_FIELD = 'tokens_cell_source'
 #: only evidence. Where neither is present the cell renders ``-``.
 TOKENS_SOURCE_UNCLOSED_BOUNDARY = 'unclosed_boundary_floor'
 
-#: Its cell suffix. Deliberately NOT a ``TOKEN_POPULATIONS`` member: the figure
-#: measures the dispatched population like any other boundary sum. What it
-#: qualifies is COVERAGE, not population — this skill consumes the population
+#: The same fold on a row whose boundary coverage is ``over`` — more recorded
+#: rows than sampled dispatches. The figure is still the best available account
+#: of what the phase spent, but it is NOT a floor: ``_boundary_coverage_state``
+#: classifies ``over`` as impossible for a single population and potentially
+#: double-counted across a resume, so a lower-bound label would assert exactly
+#: what that classification denies.
+TOKENS_SOURCE_UNCLOSED_BOUNDARY_OVER = 'unclosed_boundary_over_covering'
+
+#: Their cell suffixes. Deliberately NOT ``TOKEN_POPULATIONS`` members: the figure
+#: measures the dispatched population like any other boundary sum. What they
+#: qualify is COVERAGE, not population — this skill consumes the population
 #: vocabulary and never extends it.
 _UNCLOSED_BOUNDARY_CELL_SUFFIX = ' (boundary floor)'
+_UNCLOSED_BOUNDARY_OVER_CELL_SUFFIX = ' (boundary sum, over-covering)'
 
 # The four raw ``message.usage`` fields rendered per phase, with their bullet
 # labels, in report order. Module-level so the render loop and the contract test
@@ -1734,6 +1743,10 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # Phases whose Tokens cell is a never-closed phase's dispatch-boundary floor,
     # collected so the annotation under the table can name them and their marker.
     unclosed_boundary_phases: list[tuple[str, int]] = []
+    # The same fold on a row whose boundary coverage is `over`. Collected
+    # separately because the two carry different claims: one is a lower bound,
+    # the other explicitly is not.
+    unclosed_boundary_over_phases: list[tuple[str, int]] = []
 
     # Two-pass build: first collect all rows as tuples, then pad to uniform per-column width.
     header_row: tuple[str, ...] = (
@@ -1825,8 +1838,21 @@ def cmd_generate(args: argparse.Namespace) -> dict:
                 tokens_str = f'{floor:,}'
                 cell_source = 'dispatch_boundary_total'
             if cell_source == 'dispatch_boundary_total':
-                cell_source = TOKENS_SOURCE_UNCLOSED_BOUNDARY
-                unclosed_boundary_phases.append((phase_name, floor))
+                # The marker states the figure's COVERAGE, so it must match what
+                # the coverage classification actually says. A sum whose rows
+                # exceed the phase's sampled dispatches is `over` — which this
+                # module elsewhere calls impossible for one population and an
+                # inflated / double-counted figure — so calling it a FLOOR would
+                # assert a lower bound the classification denies. The fold still
+                # happens (the alternative is rendering `-` for a phase that
+                # demonstrably spent something), but it is labelled for what it
+                # is, and the two markers are never interchangeable.
+                if _boundary_coverage_state(phase) == 'over':
+                    cell_source = TOKENS_SOURCE_UNCLOSED_BOUNDARY_OVER
+                    unclosed_boundary_over_phases.append((phase_name, floor))
+                else:
+                    cell_source = TOKENS_SOURCE_UNCLOSED_BOUNDARY
+                    unclosed_boundary_phases.append((phase_name, floor))
 
         # Persist the cell's provenance so a consumer reads it off the row rather
         # than re-running the comparison or parsing the rendered annotation.
@@ -1857,6 +1883,8 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             # it covers the whole phase), and a cell can legitimately carry both.
             if cell_source == TOKENS_SOURCE_UNCLOSED_BOUNDARY:
                 tokens_str += _UNCLOSED_BOUNDARY_CELL_SUFFIX
+            elif cell_source == TOKENS_SOURCE_UNCLOSED_BOUNDARY_OVER:
+                tokens_str += _UNCLOSED_BOUNDARY_OVER_CELL_SUFFIX
 
         tool_uses = _numeric(phase.get('tool_uses'))
         tool_uses_str = str(int(tool_uses)) if tool_uses is not None else '-'
@@ -2030,6 +2058,21 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # it says the figure is a floor without saying why — so the key is rendered
     # wherever the marker appears, and states BOTH what was folded in and what was
     # deliberately not.
+    if unclosed_boundary_over_phases:
+        over_folded = ', '.join(f'{name} → {value:,}' for name, value in unclosed_boundary_over_phases)
+        lines.append(
+            '> Marked `(boundary sum, over-covering)` — the phase was never closed, and the '
+            'sum of its dispatch-boundary rows is the largest measure available for it, but '
+            'that file holds MORE rows than the phase had sampled dispatches: '
+            f'{over_folded}. The two counts are drawn from different populations (a resumed '
+            'or re-entered phase appends rows the single-window enrich walk never re-counts), '
+            'so the figure may double-count and is **not** a floor — it is shown because the '
+            'alternative is rendering nothing for a phase that demonstrably spent something. '
+            'Treat it as an upper-bounded estimate whose coverage is a known failure, and see '
+            'the per-phase Dispatch-boundary total bullet for both counts.'
+        )
+        lines.append('')
+
     if unclosed_boundary_phases:
         folded = ', '.join(f'{name} → {value:,}' for name, value in unclosed_boundary_phases)
         lines.append(
