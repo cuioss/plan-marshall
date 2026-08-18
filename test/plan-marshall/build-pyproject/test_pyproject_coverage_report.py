@@ -3,7 +3,7 @@
 """Tests for pyproject coverage-report subcommand.
 
 The backend-invariant cases run through
-``build_test_helpers.run_coverage_report_case``; the low-coverage class-name
+``_build_extension_fixtures.run_coverage_report_case``; the low-coverage class-name
 check is pyproject-specific (it pins the Cobertura fixture's ``legacy`` entry)
 and stays here.
 """
@@ -11,7 +11,7 @@ and stays here.
 from pathlib import Path
 
 import pytest
-from build_test_helpers import (
+from _build_extension_fixtures import (
     COVERAGE_REPORT_CASES,
     assert_coverage_has_low_items,
     run_coverage_report_case,

@@ -41,46 +41,25 @@ Two findings the fixture exposes, both recorded here rather than smoothed over:
    DISTINCT module names publishing one coordinate.
 """
 
-import importlib.util
 from pathlib import Path
+
+from _build_extension_fixtures import load_build_extension
 
 from conftest import load_script_module
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 FIXTURES_DIR = Path(__file__).parent / 'fixtures'
 MULTI_MODULE_FIXTURE = FIXTURES_DIR / 'multi-module-project'
-
-EXTENSION_FILE = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'build-maven'
-    / 'scripts'
-    / 'extension.py'
-)
 
 _maven_cmd_discover = load_script_module(
     'plan-marshall', 'build-maven', '_maven_cmd_discover.py', '_maven_cmd_discover'
 )
 discover_maven_modules = _maven_cmd_discover.discover_maven_modules
 
-
-def _load_maven_build_extension():
-    """Load the build-maven BuildExtension by explicit file path.
-
-    Every build skill ships an ``extension.py`` sharing the module basename
-    ``extension``; loading via ``spec_from_file_location`` against the explicit
-    path avoids the cross-skill ``import extension`` collision.
-    """
-    spec = importlib.util.spec_from_file_location('maven_build_extension', EXTENSION_FILE)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-BuildExtension = _load_maven_build_extension().BuildExtension
+# ``test_maven_extension.py`` loads the same skill under this same name. The load
+# does not enter ``sys.modules``, so the two copies stay independent and neither
+# displaces the other; the shared name is a ``__name__`` label, not a
+# registration.
+BuildExtension = load_build_extension('build-maven', 'maven_build_extension')
 
 
 # =============================================================================

@@ -5,14 +5,14 @@
 npm is the odd backend out: its fixtures live in ``coverage/`` (not
 ``fixtures/coverage/``) and its reports are Istanbul JSON and LCOV rather than
 XML. Only the two format-agnostic cases (``missing_file``, ``high``) route
-through ``build_test_helpers.run_coverage_report_case``; the JSON-summary,
+through ``_build_extension_fixtures.run_coverage_report_case``; the JSON-summary,
 LCOV, and low-coverage-file assertions are npm-specific and stay here.
 """
 
 from pathlib import Path
 
 import pytest
-from build_test_helpers import assert_coverage_has_low_items, run_coverage_report_case
+from _build_extension_fixtures import assert_coverage_has_low_items, run_coverage_report_case
 from toon_parser import parse_toon
 
 from conftest import get_script_path, run_script

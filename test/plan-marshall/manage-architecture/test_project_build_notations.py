@@ -21,27 +21,11 @@ Two properties get particular attention:
   project-wide while the record still reported a pass.
 """
 
-import importlib.util
-import sys
-from pathlib import Path
 
-_REPO_ROOT = Path(__file__).parent.parent.parent.parent
-_SCRIPTS_DIR = (
-    _REPO_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-architecture' / 'scripts'
-)
+from conftest import PROJECT_ROOT, load_script_module
 
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_cmd_client_build = _load_module('_cmd_client_build', '_cmd_client_build.py')
-_cmd_client_query = _load_module('_cmd_client_query', '_cmd_client_query.py')
+_cmd_client_build = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client_build.py', '_cmd_client_build')
+_cmd_client_query = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client_query.py', '_cmd_client_query')
 
 build_notation_for_executable = _cmd_client_build.build_notation_for_executable
 resolve_project_build_notations = _cmd_client_query.resolve_project_build_notations
@@ -196,8 +180,8 @@ def test_the_live_repository_resolves_its_own_build_notation() -> None:
     This case is the one that would.
 
     ⛔ It does **not** cover an import-path fault. The module is loaded here by
-    absolute path through ``_load_module``,
-    which bypasses ``sys.path`` entirely, so a missing ``PYTHONPATH`` entry is
+    absolute path through ``conftest.load_script_module``, which bypasses
+    ``sys.path`` entirely, so a missing ``PYTHONPATH`` entry is
     invisible from this case by construction. The
     runtime import is exercised by the sibling gate-level case
     ``test_freshness_notation_crosscheck.test_the_real_resolution_path_refuses_and_corroborates_against_this_repository``,
@@ -209,7 +193,7 @@ def test_the_live_repository_resolves_its_own_build_notation() -> None:
     today, and pinning that would turn adding a second build system into a test
     failure for no reason.
     """
-    notations = resolve_project_build_notations(str(_REPO_ROOT))
+    notations = resolve_project_build_notations(str(PROJECT_ROOT))
 
     assert notations, (
         'the live crawl resolved no build notation for this repository; the '

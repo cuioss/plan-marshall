@@ -7,7 +7,7 @@ across all build systems (Maven, Gradle, npm, Python). Ensures consistent
 contract compliance checking without duplicating assertions in each test file.
 
 Usage (add test/plan-marshall/ to sys.path first):
-    from discovery_test_helpers import assert_valid_module, assert_module_paths
+    from _discovery_fixtures import assert_valid_module, assert_module_paths
 """
 
 

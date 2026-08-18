@@ -20,7 +20,7 @@ detect_stale_skills_by_profile = _cmd_client_query.detect_stale_skills_by_profil
 _iter_skill_notations = _cmd_client_query._iter_skill_notations
 
 
-# A retired ID (lesson 2026-07-07-16-001) that no longer resolves in the registry.
+# A retired ID that no longer resolves in the registry.
 _STALE_NOTATION = 'plan-marshall:dev-agent-behavior-rules'
 _LIVE_NOTATION = 'plan-marshall:persona-plan-marshall-agent'
 

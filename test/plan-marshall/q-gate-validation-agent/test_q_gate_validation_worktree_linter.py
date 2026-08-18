@@ -781,8 +781,8 @@ def test_stale_auto_routing_scripts_cross_reference_is_gone(agent_text: str) -> 
 
 
 # -----------------------------------------------------------------------------
-# Self-pin — the file's own location is named verbatim in TASK-13 of plan
-# lesson-2026-05-07-11-001. A future restructure should update this
+# Self-pin — the file's own location is named verbatim by the plan artifact this
+# module validates. A future restructure should update this
 # assertion deliberately rather than silently.
 # -----------------------------------------------------------------------------
 

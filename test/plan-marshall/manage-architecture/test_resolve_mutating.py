@@ -2,8 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the authored ``mutating`` signal on ``resolve_command``.
 
-Pins deliverable 4 of the architecture-resolution plan (lesson
-2026-07-16-17-013 recommendation 3): a resolved canonical derived from an
+A resolved canonical derived from an
 operator-authored mutating profile carries ``mutating: true``; an unmarked
 canonical omits the field entirely (authored-true vs unknown stays
 distinguishable — no inferred ``mutating: false`` ever).
@@ -14,25 +13,11 @@ that persisted shape directly and assert ``resolve_command`` surfaces it on
 both the module-level and root-cascade resolution paths.
 """
 
-import importlib.util
-import sys
-from pathlib import Path
 
-_REPO_ROOT = Path(__file__).parent.parent.parent.parent
-_SCRIPTS_DIR = _REPO_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-architecture' / 'scripts'
+from conftest import load_script_module
 
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_architecture_core = _load_module('_architecture_core', '_architecture_core.py')
-_cmd_client_query = _load_module('_cmd_client_query', '_cmd_client_query.py')
+_architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
+_cmd_client_query = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client_query.py', '_cmd_client_query')
 
 save_project_meta = _architecture_core.save_project_meta
 save_module_derived = _architecture_core.save_module_derived
@@ -87,7 +72,7 @@ def _seed(project_dir: str, root_commands: dict, leaf_commands: dict | None = No
 
 
 def test_resolve_surfaces_mutating_true_on_authored_canonical(tmp_path):
-    """Lesson 2026-07-16-17-013 rec. 3: a mutating canonical resolves with mutating: true."""
+    """A mutating canonical resolves with ``mutating: true``."""
     _seed(str(tmp_path), {'quality-gate': _MUTATING_GATE, 'verify': _PLAIN_VERIFY})
 
     result = resolve_command('quality-gate', 'root-mod', str(tmp_path))

@@ -9,9 +9,8 @@ which would shadow the per-bundle isolation we want here. ``_fixtures.py``
 is imported explicitly by the tests that need it.
 
 Lessons referenced in these fixtures are *real* IDs sourced from the
-production ``manage-lessons list`` inventory (see lesson 2026-04-29-10-001
-on live-anchored test data — hand-typed lesson IDs in fixtures get out of
-sync with the inventory and produce silent green tests).
+production ``manage-lessons list`` inventory. Hand-typed lesson IDs in
+fixtures get out of sync with the inventory and produce silent green tests.
 """
 
 from __future__ import annotations
@@ -90,8 +89,8 @@ def seed_lesson_inventory(base_dir: Path, lesson_ids: tuple[str, ...] = REAL_LES
     Each file is written with a single ``# Title`` line so ``manage-lessons
     list`` reports a non-empty inventory (the live-anchor check counts the
     rows in that listing, not the file contents). The IDs come from the
-    production inventory by default — see ``REAL_LESSON_IDS`` above and
-    lesson 2026-04-29-10-001 for why hand-typed shapes are forbidden.
+    production inventory by default — see ``REAL_LESSON_IDS`` above for why
+    hand-typed shapes are forbidden.
 
     Returns the lessons directory path so tests can extend the seed if a
     case needs an additional lesson.

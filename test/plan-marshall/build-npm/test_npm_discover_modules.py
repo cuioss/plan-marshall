@@ -22,12 +22,10 @@ Structure validated per build-project-structure.md:
 # Use importlib to avoid module naming conflicts with other Extension classes
 import importlib.util
 import json
-from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import BuildContext
+from conftest import PROJECT_ROOT, BuildContext
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 EXTENSION_FILE = (
     PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'plan-marshall-plugin' / 'extension.py'
 )

@@ -19,8 +19,10 @@ role — only a script outside every claimed tree falls through to config.
 The four build skills (build-pyproject, build-maven, build-gradle, build-npm)
 each ship a ``BuildExtension`` subclass; each ``extension.py`` lives under the
 respective skill's ``scripts/`` directory and shares the module basename
-``extension``, so the class is loaded via ``importlib.util.spec_from_file_location``
-against the explicit file path to avoid the cross-skill module-name collision.
+``extension``, so the class is loaded through
+``_build_extension_fixtures.load_build_extension`` under an explicit distinct
+module name, which avoids the cross-skill collision without entering the module
+in ``sys.modules``.
 
 The base-class default contract, the aggregator's longest-glob-wins overlap
 resolution, and the route deriver / completeness validator are covered separately
@@ -28,8 +30,7 @@ in test/plan-marshall/script-shared/test_extension_base_classify_paths.py — th
 module covers only the concrete Maven BuildExtension's claims.
 """
 
-import importlib.util
-from pathlib import Path
+from _build_extension_fixtures import load_build_extension
 
 # extension_base is importable: conftest._setup_marketplace_pythonpath() adds
 # script-shared/scripts/extension/ to sys.path.
@@ -41,36 +42,7 @@ from extension_base import (
     BuildExtensionBase,
 )
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-EXTENSION_FILE = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'build-maven'
-    / 'scripts'
-    / 'extension.py'
-)
-
-
-def _load_maven_build_extension():
-    """Load the build-maven BuildExtension class by explicit file path.
-
-    Every build skill ships an ``extension.py`` sharing the module basename
-    ``extension``; loading via ``spec_from_file_location`` against the explicit
-    path avoids the cross-skill ``import extension`` collision.
-    """
-    spec = importlib.util.spec_from_file_location(
-        'maven_build_extension', EXTENSION_FILE
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-_EXTENSION_MODULE = _load_maven_build_extension()
-BuildExtension = _EXTENSION_MODULE.BuildExtension
+BuildExtension = load_build_extension('build-maven', 'maven_build_extension')
 
 
 def test_build_extension_subclasses_build_extension_base():
@@ -383,14 +355,14 @@ def test_classify_globs_uses_single_star_not_recursive():
         assert '**' not in pattern
 
 
-# --- Failsafe IT routing: lesson 2026-07-16-16-001 issue 1 -------------------
+# --- Failsafe IT routing -----------------------------------------------------
 #
 # Maven's generic */src/test/*.java route claims *IT.java / IT*.java /
 # *ITCase.java files under role test, whose base default maps to module-tests —
 # the plain Surefire test goal. Surefire's default includes EXCLUDE the IT
-# naming patterns, so the derived gate executed zero of the changed tests and
-# reported success. IT-signature paths must route to the Failsafe-bound verify
-# build_class instead.
+# naming patterns, so a gate derived as module-tests executes zero of the
+# changed tests and still reports success. IT-signature paths must route to
+# the Failsafe-bound verify build_class instead.
 
 
 def test_it_suffix_java_under_src_test_resolves_verify_build_class():

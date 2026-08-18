@@ -11,7 +11,6 @@ auto-resolve the worktree via its two-state contract — while leaving Bucket A
 `--plan-id`, and commands carrying a legacy explicit `--project-dir` untouched.
 """
 
-from pathlib import Path
 
 import pytest
 
@@ -20,19 +19,10 @@ import pytest
 # marketplace/bundles/plan-marshall/skills/execute-task/scripts.
 from inject_project_dir import inject_project_dir  # noqa: E402
 
-from conftest import run_script  # noqa: E402
+from conftest import get_scripts_dir, run_script  # noqa: E402
 
 # Path to the script for CLI subprocess tests
-SCRIPT_PATH = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'execute-task'
-    / 'scripts'
-    / 'inject_project_dir.py'
-)
+SCRIPT_PATH = get_scripts_dir('plan-marshall', 'execute-task') / 'inject_project_dir.py'
 
 # Plan identifier used across tests
 PLAN_ID = 'demo-plan-id'

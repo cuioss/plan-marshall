@@ -30,16 +30,19 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _build_extension_fixtures import build_scripts_dir, execute_config
 from conftest import get_script_path
 
 # --- sys.path: the script-shared build library + its sibling deps ------------
-_SHARED_SCRIPTS = get_script_path('plan-marshall', 'script-shared', 'marketplace_paths.py').parent
-_BUILD_DIR = _SHARED_SCRIPTS / 'build'
+# The build directory comes from the shared bootstrap; this module additionally
+# drives the queue-slot and file-ops seams, whose directories are not part of the
+# extension-contract surface and so stay local.
+_SHARED_SCRIPTS = build_scripts_dir().parent
 _WORKFLOW_DIR = _SHARED_SCRIPTS / 'workflow'
 _LOCKS_SCRIPTS = get_script_path('plan-marshall', 'manage-locks', 'build_queue.py').parent
 _FILE_OPS_SCRIPTS = get_script_path('plan-marshall', 'tools-file-ops', 'file_ops.py').parent
 
-for _dep in (_BUILD_DIR, _SHARED_SCRIPTS, _WORKFLOW_DIR, _LOCKS_SCRIPTS, _FILE_OPS_SCRIPTS):
+for _dep in (_SHARED_SCRIPTS, _WORKFLOW_DIR, _LOCKS_SCRIPTS, _FILE_OPS_SCRIPTS):
     if str(_dep) not in sys.path:
         sys.path.insert(0, str(_dep))
 
@@ -124,20 +127,14 @@ def _make_live_plan(main_repo: Path, plan_id: str) -> None:
     (main_repo / '.plan' / 'local' / 'plans' / plan_id).mkdir(parents=True, exist_ok=True)
 
 
-def _config(**overrides: Any) -> factory.ExecuteConfig:
-    """A minimal ExecuteConfig for driving cmd_run in tests."""
-    base: dict[str, Any] = {
-        'tool_name': 'maven',
-        'unix_wrapper': 'mvnw',
-        'windows_wrapper': 'mvnw.cmd',
-        'system_fallback': 'mvn',
-        'capture_strategy': CaptureStrategy.TOOL_LOG_FLAG,
-        'build_command_fn': factory.default_build_command_fn,
-        'scope_fn': lambda a: 'default',
-        'command_key_fn': factory.default_command_key_fn,
-    }
-    base.update(overrides)
-    return factory.ExecuteConfig(**base)
+def _config(**overrides: Any):
+    """A minimal ExecuteConfig for driving cmd_run in tests.
+
+    Unannotated return: ``factory`` is loaded at runtime, so
+    ``factory.ExecuteConfig`` is a value rather than a statically known type and
+    an annotation naming it checks nothing.
+    """
+    return execute_config(factory, CaptureStrategy.TOOL_LOG_FLAG, **overrides)
 
 
 # =============================================================================

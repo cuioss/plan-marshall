@@ -901,7 +901,6 @@ def test_worktree_orphan_invariant_removed() -> None:
 # ``main_checkout_dirtied_during_plan`` enforcement. Companion to the
 # integration-level scenarios in test_phase_handshake_worktree_assertion.py
 # which exercise the full cmd_capture / cmd_verify path.
-# Origin: deliverable D2 of plan ``lesson-2026-05-08-08-001``.
 # =============================================================================
 
 

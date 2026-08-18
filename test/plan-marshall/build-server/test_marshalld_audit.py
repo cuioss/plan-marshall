@@ -306,7 +306,7 @@ def test_submit_dispatch_records_project_attribution(home, tmp_path):
     drive the two seams it needs directly: the scheduler assigns a real job_id
     (enqueue only — no ``admit_next``, no ``_execute``) and ``_audit_interaction``
     writes the record. Mirrors ``test_interaction_audit_correlation.py``'s
-    ``_daemon_submit``; see lesson 2026-07-20-20-001.
+    ``_daemon_submit``.
     """
     audit = audit_mod.InteractionAudit()
     daemon = _daemon(tmp_path, audit)

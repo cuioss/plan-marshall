@@ -688,8 +688,8 @@ def test_cmd_which_module_root_exact_hit_degrades_to_containment_fallback():
     (``paths.module == '.'``, a whole-tree crawl artifact), that hit must NOT be
     treated as "more specific than the root". Normalizing ``'.'`` to prefix
     length 0 lets the more-specific ``paths.sources`` containment fallback win
-    for the owning sub-module. Regression for gemini-code-assist PR #887 finding
-    (``'.'.rstrip('/')`` is still ``'.'``, length 1, which short-circuited step 2).
+    for the owning sub-module. ``'.'.rstrip('/')`` is still ``'.'`` — length 1,
+    not 0 — which short-circuits step 2 unless the normalization is explicit.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         modules = {

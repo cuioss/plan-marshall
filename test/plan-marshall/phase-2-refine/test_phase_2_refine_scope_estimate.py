@@ -29,13 +29,12 @@ behaviour, which lives in
 
 from __future__ import annotations
 
-import importlib.util
 from argparse import Namespace
 from pathlib import Path
 
 import pytest
 
-from conftest import MARKETPLACE_ROOT
+from conftest import MARKETPLACE_ROOT, load_script_module
 
 # -----------------------------------------------------------------------------
 # Tier 2 direct import — load manage-references CRUD module via importlib so
@@ -43,18 +42,11 @@ from conftest import MARKETPLACE_ROOT
 # Step 13 invokes via the executor.
 # -----------------------------------------------------------------------------
 
-_REFS_SCRIPTS_DIR = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'manage-references' / 'scripts'
-
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _REFS_SCRIPTS_DIR / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_crud = _load_module('_p2refine_refs_crud', '_references_crud.py')
+# Loaded under a name used nowhere else in the tree, so the registration the
+# shared loader performs cannot displace another module's copy.
+_crud = load_script_module(
+    'plan-marshall', 'manage-references', '_references_crud.py', '_p2refine_refs_crud'
+)
 cmd_create = _crud.cmd_create
 cmd_get = _crud.cmd_get
 cmd_set = _crud.cmd_set

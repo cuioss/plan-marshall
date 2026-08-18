@@ -200,8 +200,7 @@ def test_api_init_missing_project_meta_returns_error():
 def test_api_discover_preserves_enrichment(monkeypatch):
     """api_discover(force=True) preserves curated enriched.json for known modules.
 
-    Regression test for lesson 2026-05-01-21-001: prior to the fix,
-    re-running ``architecture discover --force`` overwrote every module's
+    Without this contract, re-running ``architecture discover --force`` overwrites every module's
     ``enriched.json`` with the empty stub, silently destroying LLM-authored
     responsibility / key_packages / skills_by_profile content. The current
     contract is: if a module already has an ``enriched.json`` (even one
