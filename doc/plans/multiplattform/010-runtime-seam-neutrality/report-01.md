@@ -172,17 +172,20 @@ before the verification rounds added a test file.
 
 ## Findings
 
-**Eight verification dispatches ran, labelled 1–9 with no round 5.** An earlier draft of this section
-said "nine rounds"; that was the highest label, not a count, and the table below has always had eight
-rows. Round 4's findings were reported under the label "round 5" and every later label inherited the
-off-by-one, which the row label recorded but the surrounding prose never reconciled.
+**Nine verification dispatches ran in total: eight before the PR opened, labelled 1–9 with no round
+5, plus one during the PR cycle labelled 10.** An earlier draft said "nine rounds" of the pre-PR loop
+alone; that was the highest *label*, not a count, and the pre-PR table had eight rows. Round 4's
+findings were reported under the label "round 5" and every later label inherited the off-by-one,
+which the row label recorded but the surrounding prose never reconciled.
 
-The report **cannot** rule out that a ninth dispatch ran and went unrecorded — nothing in git
+The report **cannot** rule out that a ninth pre-PR dispatch ran and went unrecorded — nothing in git
 distinguishes "eight dispatches mislabelled" from "nine dispatches, one row missing", and the run's
 own commit messages disagree (`0af667e` calls itself "a third verification round"; `dca6e6f` calls
-itself "a fifth" while auditing "round 4's own corrections"). Eight is what the evidence supports and
-is what is claimed here. A tenth dispatch ran after this section was first written and is recorded
-below.
+itself "a fifth" while auditing "round 4's own corrections"). Eight is what the evidence supports for
+the pre-PR loop and is what is claimed here.
+
+Round 10 ran after this section was first written, against the report itself and the then-unreviewed
+contract-change branch; its row is the table's ninth. Every correction in this section came from it.
 
 Every round **after the first** found defects in the previous round's fixes; round 1 was a cold read
 of the ABC with no previous round to audit. Findings are recorded per instance below, grouped by
@@ -397,7 +400,8 @@ and `contract.md` (165/110, the deliverable itself). Dropping neither is possibl
 ## Cost
 
 - **Tokens:** not available to the agent in this session — the harness exposes no token counter to the
-  running agent, so no figure is stated rather than an estimated one. Nine verification sub-agents ran;
+  running agent, so no figure is stated rather than an estimated one. Nine verification sub-agents ran
+  (eight pre-PR, one during the PR cycle);
   their individual usages were reported to the orchestrating session but are not aggregated here,
   because a partial sum presented as a total is the defect this section exists to avoid.
 - **Wall-clock:** run start 2026-08-17 ~18:54 UTC (container clone timestamp) through finalisation.
@@ -417,7 +421,7 @@ and `contract.md` (165/110, the deliverable itself). Dropping neither is possibl
 | 4 Per-commit gate | **done** — see the Build gate caveat: this is a process claim the tree does not record |
 | 4 Pushed | **done** — no unpushed commit remains |
 | 5 Build gate | **done** — 11 `*.py` files changed; `./pw verify` green at finalisation |
-| 6 Verification sub-agent | **done** — nine rounds, stop record above |
+| 6 Verification sub-agent | **done** — nine dispatches (eight pre-PR labelled 1–9 with no 5, plus round 10 during the PR cycle); stop record above names exit (i) with grant unspent |
 | 7 PR cycle | **done** — PR [#1291](https://github.com/cuioss/plan-marshall/pull/1291). The row first read "pending at write time", on the reasoning that the report cannot carry a number that does not exist yet; that is true of the first commit and stops being true once the PR is open, so the row is updated in place rather than left as a snapshot. Review cycle recorded under Reviewer participation: CodeRabbit reviewed on the second push after a rate-limit window, `sourcery-ai` declined on diff size, `cuioss-review-bot` never ran |
 | 8 Merge gate | **pending** — conditions 1–3 evaluated after CI settles on the review-fix commit |
 | 8 Bridge | **done** — no status or bookkeeping write landed under `doc/plans/` outside this plan's directory. The `coupling-inventory.md` and epic `README.md` edits are operator-directed deliverables, recorded above as outside the plan's Expected surface |
