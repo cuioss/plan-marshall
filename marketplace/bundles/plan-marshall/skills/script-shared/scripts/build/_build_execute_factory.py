@@ -111,6 +111,37 @@ _TOOL_NOTATIONS = {
 }
 
 
+def build_parser():
+    """Publish the ``run`` subcommand's parser as a seam for this module.
+
+    ``cmd_run`` -- the handler :func:`create_execute_handlers` produces -- reads
+    a namespace whose shape is declared by ``_build_cli.add_run_subparser``, not
+    here. Publishing that same registration under the builder name a test harness
+    resolves lets a caller obtain the namespace from the real parser, carrying
+    ``--timeout``'s ``None`` sentinel and the ``--mode`` / ``--format`` /
+    ``--execution-mode`` defaults, instead of hand-building one that carries only
+    the attributes its author remembered.
+
+    The registration is imported rather than restated so this seam cannot drift
+    from the ``run`` surface production actually parses. Only ``run`` is
+    registered: it is the one subcommand this module implements. The shared
+    surface across every build subcommand is ``_build_cli.build_parser``.
+
+    Returns:
+        A parser whose sole subcommand is ``run``.
+    """
+    import argparse as _argparse
+
+    from _build_cli import add_run_subparser
+
+    parser = _argparse.ArgumentParser(
+        description='Build execute (run) command surface', allow_abbrev=False
+    )
+    subparsers = parser.add_subparsers(dest='command', required=True)
+    add_run_subparser(subparsers)
+    return parser
+
+
 def routable_notations() -> tuple[str, ...]:
     """Return the sorted executor notations the daemon may re-run.
 

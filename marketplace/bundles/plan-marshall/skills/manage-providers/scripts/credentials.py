@@ -25,8 +25,22 @@ import sys
 from file_ops import safe_main
 
 
-@safe_main
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """Construct the credential-management CLI parser.
+
+    Published at module level as the parser seam a test harness resolves, so a
+    namespace for any subcommand below can be produced by the real parser
+    instead of hand-built. A hand-built namespace carries only the attributes
+    its author remembered, so a flag added here with a default would break
+    production while every hand-built namespace kept passing.
+
+    :func:`main` calls this and parses with the result, which is what keeps the
+    published parser and the one production uses the same object rather than
+    two declarations that can drift.
+
+    Returns:
+        The parser for every ``credentials.py`` subcommand.
+    """
     parser = argparse.ArgumentParser(
         description='Credential management for external tool authentication', allow_abbrev=False
     )
@@ -129,7 +143,12 @@ def main() -> int:
         allow_abbrev=False,
     )
 
-    args = parser.parse_args()
+    return parser
+
+
+@safe_main
+def main() -> int:
+    args = build_parser().parse_args()
 
     # Route to command module (prefixed _cred_ to avoid PYTHONPATH namespace collisions)
     if args.command == 'configure':

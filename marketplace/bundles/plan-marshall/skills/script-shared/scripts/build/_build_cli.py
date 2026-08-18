@@ -555,6 +555,77 @@ def register_standard_subparsers(
     return fns
 
 
+def build_cli_parser(description: str, subparser_fns: list[Callable]):
+    """Construct a build wrapper's parser from its subparser registrations.
+
+    The single construction site for every build-class parser: :func:`build_main`
+    parses with the result, and :func:`build_parser` calls it to publish the
+    shared surface. Extracted so the published parser and the one production
+    parses with are the same construction rather than two that can drift.
+
+    Args:
+        description: Parser description (e.g., 'Maven build operations').
+        subparser_fns: List of callables that each add one subparser.
+
+    Returns:
+        The wrapper's ``ArgumentParser``, with every subcommand registered.
+    """
+    import argparse as _argparse
+
+    parser = _argparse.ArgumentParser(
+        description=description,
+        formatter_class=_argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    for register_fn in subparser_fns:
+        register_fn(subparsers)
+
+    return parser
+
+
+def build_parser():
+    """Publish the SHARED build-class subcommand surface as a parser seam.
+
+    The zero-argument builder a test harness resolves to produce a namespace
+    from the real parser rather than by hand. It carries the subcommands every
+    build wrapper inherits from this module -- ``run``, ``parse``,
+    ``coverage-report``, ``check-warnings`` and ``discover`` -- with the flags,
+    defaults and choices declared by the ``add_*_subparser`` helpers above, so a
+    ``run`` namespace built through it carries ``--timeout``'s ``None`` sentinel,
+    ``--mode``'s ``actionable``, ``--format``'s ``toon``, ``--execution-mode``'s
+    ``auto`` and the ``--project-dir`` / ``--plan-id`` pair without the caller
+    having to remember any of them.
+
+    Two bounds on what this seam can serve, both load-bearing:
+
+    * The surface is the SHARED one. A wrapper's tool-specific flags are
+      contributed at its own registration site through ``extra_args_fn`` (npm's
+      ``--env``, for example) and are therefore absent here; a namespace that
+      needs one comes from that wrapper's own script instead.
+    * No handler is bound. This builds the argument surface, not a dispatch
+      table, so ``args.func`` is whatever registration leaves behind rather than
+      a production handler -- absent for ``run`` and ``coverage-report``, whose
+      helpers leave ``func`` to their caller, and a registration-time closure or
+      ``None`` for the three that call ``set_defaults`` themselves. A caller
+      that dispatches on ``args.func`` wants its wrapper's own parser, not this.
+
+    Returns:
+        A parser carrying the shared build-class subcommands.
+    """
+    return build_cli_parser(
+        'Shared build-class command surface',
+        [
+            lambda subparsers: add_run_subparser(subparsers),
+            lambda subparsers: add_parse_subparser(subparsers, None),
+            lambda subparsers: add_coverage_subparser(subparsers),
+            lambda subparsers: add_check_warnings_subparser(subparsers, None),
+            lambda subparsers: add_discover_subparser(subparsers, None),
+        ],
+    )
+
+
 def build_main(
     description: str,
     subparser_fns: list[Callable],
@@ -573,17 +644,7 @@ def build_main(
     Returns:
         Exit code from the dispatched handler.
     """
-    import argparse as _argparse
-
-    parser = _argparse.ArgumentParser(
-        description=description,
-        formatter_class=_argparse.RawDescriptionHelpFormatter,
-        allow_abbrev=False,
-    )
-    subparsers = parser.add_subparsers(dest='command', required=True)
-
-    for register_fn in subparser_fns:
-        register_fn(subparsers)
+    parser = build_cli_parser(description, subparser_fns)
 
     args = parser.parse_args()
 
