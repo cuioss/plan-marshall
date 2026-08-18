@@ -41,6 +41,17 @@ _ACCEPTED_FORMS = {
         {'claude', 'opencode'},
     ),
     'flow-opened-on-its-own-line': ('targets: [\n  claude\n  ]', {'claude'}),
+    # Both continuation lines below start at column 0 and contain a colon, so
+    # a boundary test that looked for a colon rather than a KEY rejected them.
+    # Both are ordinary YAML.
+    'flow-continuation-with-a-url-comment': (
+        'targets: [claude,\nopencode] # see https://example.com',
+        {'claude', 'opencode'},
+    ),
+    'flow-continuation-quoting-a-colon': (
+        'targets: [claude,\n"opencode"]',
+        {'claude', 'opencode'},
+    ),
 }
 
 # Values whose ``#`` does NOT open a token, so it is part of the name rather

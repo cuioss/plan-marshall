@@ -149,6 +149,16 @@ def test_a_hash_that_opens_no_token_is_not_a_comment(value, expected):
             ['[claude'],
             id='unclosed-does-not-swallow-the-following-fields',
         ),
+        pytest.param(
+            'targets: [claude,\nopencode] # see https://example.com',
+            ['claude', 'opencode'],
+            id='continuation-with-a-url-comment',
+        ),
+        pytest.param(
+            'targets: [claude,\n"opencode"]',
+            ['claude', 'opencode'],
+            id='continuation-quoting-a-colon',
+        ),
     ],
 )
 def test_a_flow_sequence_spanning_lines_is_read_whole(block, expected):
@@ -220,6 +230,10 @@ def test_unknown_target_name_is_flagged(tmp_path):
     assert finding['details']['unknown_targets'] == ['cluade']
     assert finding['details']['registered_targets'] == ['claude', 'opencode']
     assert 'cluade' in finding['description']
+    # The text an operator reads must not claim the component still ships to
+    # SOME targets — the build rejects the declaration and ships it nowhere.
+    assert 'the build fails rather than shipping the component anywhere' in finding['description']
+    assert 'ships to fewer targets' not in finding['description']
 
 
 def test_one_valid_name_does_not_excuse_an_unknown_one(tmp_path):

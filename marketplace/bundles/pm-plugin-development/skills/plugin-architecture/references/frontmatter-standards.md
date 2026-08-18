@@ -197,7 +197,7 @@ user-invocable: true
 
 ### Optional Fields
 
-Skills do not use `model`, `color`, or `tools`/`allowed-tools` fields. The skill fields **this document specifies** are: `name`, `description`, `user-invocable`, `mode`, `implements`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`, `profiles`, `priming_preamble`, `composes`, `targets`.
+Skills do not use `model`, `color`, or `tools`/`allowed-tools` fields. The skill fields **this document names** are: `name`, `description`, `user-invocable`, `mode`, `implements`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`, `profiles`, `priming_preamble`, `composes`, `targets`.
 
 ⛔ **That is not the whole set of frontmatter a skill may carry, and this document is not the register of it.** A field belongs to whichever contract declares it, and several are declared elsewhere: `scope:` by [`plan-marshall:ref-workflow-architecture` § manage-contract](../../../../plan-marshall/skills/ref-workflow-architecture/standards/manage-contract.md), `lane:` by [`ext-point-lane-element`](../../../../plan-marshall/skills/extension-api/standards/ext-point-lane-element.md), and a finalize-step's `order` / `default_on` / `presets` / `mutates_source` and their siblings by [`ext-point-finalize-step`](../../../../plan-marshall/skills/extension-api/standards/ext-point-finalize-step.md). Read the owning contract before concluding a field is unsupported — an enumeration here would go stale the moment a contract adds one, which is why this one does not claim to be exhaustive.
 
@@ -324,7 +324,7 @@ composes: [plan-marshall:persona-implementer, plan-marshall:persona-module-teste
 
 **metadata** (optional):
 
-A nested mapping that is the supported **escape hatch** for declaring well-known keys the closed top-level skill schema does not define. Because the top-level skill frontmatter schema is closed (see the supported-field list above), a bare top-level key the schema does not name is silently ignored — keys that are not first-class top-level fields are carried under `metadata:` instead, where they are recognized.
+A nested mapping that is the supported **escape hatch** for a well-known key that no contract declares as a top-level field. A bare top-level key that is neither named above nor declared by an owning contract is ignored, so such a key is carried under `metadata:` instead, where it is recognized. A key that DOES have an owning contract (`scope:`, `lane:`, a finalize-step's `order:`) stays top-level and is read from there — `metadata:` is the home for the leftovers, not for everything the list above omits.
 
 - **Field name**: `metadata`
 - **Format**: a YAML mapping of recognized sub-keys.
@@ -431,7 +431,13 @@ targets: [claude]
 
 - **Field absent ⇒ every target.** This is the default and the overwhelmingly common case. Omitting the field is how an author says "ship everywhere"; nearly every component in the marketplace omits it.
 - **Field present ⇒ only the targets named.** On every other target the component is simply **absent** — no stub, no runtime no-op, no empty file.
-- **Format**: a YAML list, inline (`targets: [claude]`) or block form. Values are build-target registry names — derive the live set from `TARGET_REGISTRY` in `marketplace/targets/__init__.py`; it is the source of truth and is never enumerated in prose.
+- **Format**: a YAML list, inline (`targets: [claude]`) or block form. Values are build-target registry names. The live set is never enumerated in prose because it would go stale; ask the tooling for it instead:
+
+  ```bash
+  python3 marketplace/targets/generate.py --help
+  ```
+
+  The `--target` choices it prints are the registry as it stands at the moment you run it, derived from `TARGET_REGISTRY` in `marketplace/targets/__init__.py`, plus the literal `all` — a run-every-target convenience, not a target name and not a valid `targets:` value.
 - **Scope of one declaration**: an agent's or a command's declaration governs that one file. A skill's declaration lives on its `SKILL.md` and governs the **whole skill directory**, its `standards/`, `references/`, `templates/`, and `scripts/` sub-trees included. Files *inside* a skill are not individually scopable.
 
 **Validation** — every one of these **fails the build**, because a component silently shipping to fewer targets than intended is exactly the defect the field exists to prevent:
@@ -442,7 +448,7 @@ targets: [claude]
 | `targets: []` | Build fails — a component shipped nowhere is an authoring error, not an intent |
 | Only targets that emit no component tree | Build fails — such a declaration also ships the component nowhere |
 
-The plugin-doctor `targets-scope-invalid` rule reports the first two at authoring time so the defect surfaces before the build. The third needs each target's `emits_bundle_tree` capability and is checked by the build alone.
+The plugin-doctor `targets-scope-invalid` rule reports the unknown-name and empty-list cases at authoring time, so those surface before the build. The ships-nowhere case needs each target's `emits_bundle_tree` capability and is checked by the build alone.
 
 ### Admission test — when a target-scoped component is the right answer
 
@@ -529,7 +535,7 @@ Agents must not declare `Task` — the host platform restricts Task from sub-age
 
 ### Issue 4: Unsupported Fields in Skills
 
-Skills must not declare `allowed-tools` or `tools`. For the fields a skill MAY carry, see [Skill Frontmatter → Optional Fields](#optional-fields-2) — and note that the list there is what this document specifies, not the whole set: a field may be declared by its own owning contract instead. A field that is neither specified here nor declared by a contract is ignored — carry it under `metadata:` if it needs to be recognized, or remove it.
+Skills must not declare `allowed-tools` or `tools`. For the fields a skill MAY carry, see [Skill Frontmatter → Optional Fields](#optional-fields-2) — and note that the list there is what this document names, not the whole set: a field may be declared by its own owning contract instead. A field that is neither specified here nor declared by a contract is ignored — carry it under `metadata:` if it needs to be recognized, or remove it.
 
 ### Issue 5: Invalid Tool Names
 

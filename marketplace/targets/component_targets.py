@@ -85,9 +85,16 @@ from pathlib import Path
 #: Frontmatter field a component uses to declare the targets it ships to.
 TARGET_SCOPE_FIELD = 'targets'
 
-#: A non-indented ``key:`` line — the boundary an unclosed flow sequence
-#: must not be folded past.
-_TOP_LEVEL_KEY_RE = re.compile(r'^[^\s#][^:]*:')
+#: A non-indented line that OPENS A YAML KEY — an identifier at column 0
+#: followed by a colon. It bounds the fold of an unclosed flow sequence.
+#:
+#: The identifier is what makes it a key test rather than a colon test. A
+#: looser ``^[^\s#][^:]*:`` matched any non-indented line containing a colon
+#: anywhere, which broke two VALID declarations: a continuation line carrying
+#: a trailing comment with a URL in it, and one whose value is a quoted string
+#: containing a colon. Both are ordinary YAML, and both were then rejected
+#: naming a target nobody wrote — the defect the fold exists to prevent.
+_TOP_LEVEL_KEY_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_.-]*\s*:')
 
 #: Bundle sub-directories holding single-file components, keyed to nothing
 #: else: the file itself is both the declaration site and the emission unit.
@@ -201,8 +208,12 @@ def _join_flow_sequence(value: str, rest: list[str]) -> str:
     A sequence that never closes is malformed YAML, and folding in the rest
     of the block would make the diagnostic name the following FIELDS as
     targets — the same "names a target nobody wrote" defect one shape over.
-    So the fold stops at the next top-level key, leaving the unclosed value
-    to be rejected on its own terms.
+    So the fold stops at the first line that OPENS A KEY: an identifier at
+    column 0 followed by a colon (:data:`_TOP_LEVEL_KEY_RE`), leaving the
+    unclosed value to be rejected on its own terms. The test is the key
+    shape rather than the mere presence of a colon, so a continuation line
+    carrying a URL in a trailing comment, or a quoted value containing a
+    colon, is still folded in — both are valid YAML.
     """
     head = _strip_comment(value)
     if not head.startswith('[') or ']' in head:

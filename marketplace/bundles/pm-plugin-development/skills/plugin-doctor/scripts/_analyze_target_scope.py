@@ -81,9 +81,16 @@ TARGET_SCOPE_FIELD = 'targets'
 #: the targets' own registration, which is the source of truth for the set.
 _REGISTER_TARGET_RE = re.compile(r'register_target\(\s*[\'"]([^\'"]+)[\'"]')
 
-#: A non-indented ``key:`` line — the boundary an unclosed flow sequence
-#: must not be folded past.
-_TOP_LEVEL_KEY_RE = re.compile(r'^[^\s#][^:]*:')
+#: A non-indented line that OPENS A YAML KEY — an identifier at column 0
+#: followed by a colon. It bounds the fold of an unclosed flow sequence.
+#:
+#: The identifier is what makes it a key test rather than a colon test. A
+#: looser ``^[^\s#][^:]*:`` matched any non-indented line containing a colon
+#: anywhere, which broke two VALID declarations: a continuation line carrying
+#: a trailing comment with a URL in it, and one whose value is a quoted string
+#: containing a colon. Both are ordinary YAML, and both were then rejected
+#: naming a target nobody wrote — the defect the fold exists to prevent.
+_TOP_LEVEL_KEY_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_.-]*\s*:')
 
 _DESCRIPTION_UNKNOWN = (
     'component `targets:` frontmatter names a target that is not registered — the '
@@ -136,8 +143,10 @@ def _join_flow_sequence(value: str, rest: list[str]) -> str:
     Mirrors ``component_targets._join_flow_sequence``: a ``targets: [claude,``
     continued on the next line is one value, and reading only the first
     physical line would report ``[claude`` as an unknown target. The fold
-    stops at the next top-level key, so an unclosed sequence cannot absorb
-    the fields that follow it.
+    stops at the first line that opens a key — an identifier at column 0
+    followed by a colon (:data:`_TOP_LEVEL_KEY_RE`) — so an unclosed
+    sequence cannot absorb the fields that follow it, while a continuation
+    line that merely contains a colon is still folded in.
     """
     head = _strip_comment(value)
     if not head.startswith('[') or ']' in head:

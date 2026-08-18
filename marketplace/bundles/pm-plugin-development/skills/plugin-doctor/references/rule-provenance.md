@@ -259,7 +259,7 @@ Five rules added by the `reference-resolution-linting-gaps-declared-vs-dis` plan
 
 ### Target-scope rule
 
-Deliberately its own section rather than a member of the reference-resolution rules above: every rule there catches a gap that resolves to a dead reference at runtime and is analyze-only, while this one catches a build-time authoring error and is build-failing under `quality-gate`. The same split is made in `rule-catalog.md`.
+Its own section rather than a member of the reference-resolution rules above, because it is not a reference-resolution rule: it catches a build-time authoring error rather than a gap that resolves to a dead reference at runtime, and it is build-failing under `quality-gate` as well as active under `analyze`. `rule-catalog.md` makes the same split.
 
 | Rule ID | Class | Emitter | Source |
 |---------|-------|---------|--------|

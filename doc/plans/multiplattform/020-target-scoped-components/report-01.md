@@ -36,14 +36,14 @@ The plan's claim table required re-derivation. All were re-checked against the t
 
 | Deliverable | What was done | Commit | Verification state |
 |---|---|---|---|
-| **D1 — filter mechanism** | New `marketplace/targets/component_targets.py` parses the `targets:` declaration and answers `emits_to(path, target_name)`. Both component-tree-emitting targets consult it: the Claude verbatim emitter (`excluded_emission_roots` + `is_under_any`, skipping a scoped-out file or a whole scoped-out skill directory) and its manifest generator (`plugin_json_gen` drops the same entries), and the OpenCode emitter (per-skill / per-agent / per-command skip). The governed set is derived from `TARGET_REGISTRY` filtered by each target's `emits_bundle_tree` capability — never enumerated. Absent field still means every target. | `fab9611` | `test_component_targets.py` (37 collected), `test_target_scoped_emission.py` (14 collected) |
+| **D1 — filter mechanism** | New `marketplace/targets/component_targets.py` parses the `targets:` declaration and answers `emits_to(path, target_name)`. Both component-tree-emitting targets consult it: the Claude verbatim emitter (`excluded_emission_roots` + `is_under_any`, skipping a scoped-out file or a whole scoped-out skill directory) and its manifest generator (`plugin_json_gen` drops the same entries), and the OpenCode emitter (per-skill / per-agent / per-command skip). The governed set is derived from `TARGET_REGISTRY` filtered by each target's `emits_bundle_tree` capability — never enumerated. Absent field still means every target. | `fab9611` | `test_component_targets.py` (41 collected), `test_target_scoped_emission.py` (14 collected) |
 | **D2 — fail-closed validation** | `_validate` rejects an unknown target name, an empty list, and a list naming only non-component-tree targets. Every message names the component path and the offending value. Validation fires wherever the emission predicate is CALLED: both component-tree targets' emit paths, and the Claude target's validate-only mode (which re-walks each bundle's components for this check alone). Reading a component is not the same as validating it — a `pr-agent`-only run opens skill manifests to harvest rule text, yet never asks whether a component is in scope, because it emits no component. The doctor rule is the authoring-time net there. | `fab9611` | `test_component_targets.py` + `test_target_scoped_emission.py::test_generation_fails_*` |
 | **D3 — first consumer** | `marketplace/bundles/plan-marshall/commands/tools-fix-intellij-diagnostics.md` declares `targets: [claude]`. | `fab9611` | Asserted by generation-output listing (below) |
-| **D4 — authoring surface** | New `targets-scope-invalid` plugin-doctor rule (`_analyze_target_scope.py`), registered in `_rule_registry.py` and wired into both the quality gate and analyze mode, with rows in `rule-provenance.md` and `rule-catalog.md` and a firing positive fixture in `_fixtures.py`. The field, its semantics, its validation table, and the three-condition admission test are documented in `plugin-architecture/references/frontmatter-standards.md` § "Target Scoping". | `fab9611` | `test_analyze_target_scope.py` (24 collected); the doctor runs clean over the real tree with D3's declaration in place |
+| **D4 — authoring surface** | New `targets-scope-invalid` plugin-doctor rule (`_analyze_target_scope.py`), registered in `_rule_registry.py` and wired into both the quality gate and analyze mode, with rows in `rule-provenance.md` and `rule-catalog.md` and a firing positive fixture in `_fixtures.py`. The field, its semantics, its validation table, and the three-condition admission test are documented in `plugin-architecture/references/frontmatter-standards.md` § "Target Scoping". | `fab9611` | `test_analyze_target_scope.py` (27 collected); the doctor runs clean over the real tree with D3's declaration in place |
 
 ### D3 generation-output listing (the plan's own "Done when" evidence)
 
-`python3 marketplace/targets/generate.py --target all --output {dir}` exits **0** (re-derived at `dcd7a2e`):
+`python3 marketplace/targets/generate.py --target all --output {dir}` exits **0**:
 
 ```text
 claude: produced 1166 entries
@@ -63,20 +63,20 @@ pr-agent: produced 1 entries
 recorded below, so the gate applies.
 
 `./pw verify` — **SUCCESS**, all three sub-steps clean. Re-run after every commit that changed a
-Python file; the figures below are from the run at `dcd7a2e`, the last such commit, with the working
-tree clean at the time (`git status --porcelain` empty):
+Python file. The figures below are from the LAST such run, recorded at the commit named in the
+Contract check below; every earlier run is superseded rather than reported here:
 
 - quality-gate: `ruff … All checks passed!`, `mypy … Success: no issues found in 415 source files`,
   `SPDX-header check passed`, plugin-doctor `total_issues: 0`
 - test-compile: mypy over 775 test files, clean
-- module-tests: **21035 passed, 14 skipped** — 0 failed, 0 errors
+- module-tests: **21042 passed, 14 skipped** — 0 failed, 0 errors
 
 No lockfile churn: `git status --porcelain` was empty after the build, and every commit staged
 explicit deliverable paths (never `git add -A`).
 
 ## Findings
 
-Source key: **V1** / **V2** = pre-PR verification sub-agent, rounds 1 and 2. **S** = self-found
+Source key: **V1**–**V4** = pre-PR verification sub-agent, rounds 1 to 4. **S** = self-found
 (mutation sweep or my own re-read). One row per instance.
 
 ### Round 1 — all fixed
@@ -118,6 +118,68 @@ Source key: **V1** / **V2** = pre-PR verification sub-agent, rounds 1 and 2. **S
 | R2-15 | V2 | "**the other four** are marketplace-wide passes wired into `cmd_analyze`" — five, after the insertion. | **Fixed** — promoted out. |
 | R2-16 | V2 | `claude/emitter.py`'s new paragraph claimed the manifest entry is dropped in lock-step for every scoped-out component; a skill has none to drop, which `plugin_json_gen.py`'s docstring states correctly. The two contradicted each other. | **Fixed** |
 | R2-17 | V2 | `marketplace/targets/__init__.py` carries a second "adding a new target" checklist that round 1 did not update, so an author reading only the package docstring got four steps and no filter obligation. | **Fixed** |
+
+### Round 3 — all fixed
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| F1 | V3 | The "closed set of supported top-level skill fields" claim — introduced by round 1, "fixed" by round 2 adding one field — is false by **eleven** more. The verifier derived the real set by scanning every `SKILL.md`'s top-level keys: `scope` (20 skills, and MANDATORY for `manage-*` under `manage-contract.md`), `lane` (11, declared by `ext-point-lane-element`), `allowed-tools`, `order`, `mutates_source`, `default_on`, `presets`, `requires`, `head_dependent`, `configurable`, `post_run_review`. | **Fixed by withdrawal, not enumeration.** The document cannot hold a true list of fields it does not declare, so it now states what it names, points at the owning contracts, and says plainly it is not the register. |
+| F2 | V3 | The Issue-4 restatement carried the same exhaustiveness. | **Fixed** — defers to the section above it. |
+| F3 | V3 | A **third** copy in `doc/developer/marketplace-build.adoc`, which no earlier round had touched, despite this branch editing that file. | **Fixed** |
+| F4 | V3 | `core-principles.md` lists `allowed-tools` and `model` as optional skill fields, contradicting `frontmatter-standards.md`. Pre-existing; the branch's closedness assertion is what made it a contradiction. | **Resolved by F1** — with the assertion withdrawn it reverts to a pre-existing inconsistency this plan does not own. Recorded in Residue. |
+| F5 | V3 | `_join_flow_sequence`'s docstring said an unclosed sequence "is left as-is". Running it showed the fold consuming every remaining line of the block, so the diagnostic named the following FIELDS as targets. | **Fixed** — the fold is bounded, and the docstring describes what it does. (The first bound was itself wrong; see R4-3/R4-4.) |
+| F6 | V3 | `emitter.py`'s docstring named two of the four `EXCLUDED_DIR_NAMES` members — and round 2 had just made that docstring the authoritative list. | **Fixed** — it defers to the constant rather than copying it. |
+| F7 | V3 | The report's D2 row asserted validation fires on every path that READS components, one sentence before observing that `pr-agent` reads components and does not validate. | **Fixed** |
+| F8 | V3 | Round 2 promoted the rule out of the reference-resolution pack in `rule-catalog.md` but left the row inside the matching section of `rule-provenance.md`, whose lead-in says those rules are NOT quality-gate-wired while the row says build-failing. | **Fixed** — the row has its own section. |
+| F9 | V3 | That row's Emitter cell named only `cmd_quality_gate`; the rule is wired into `cmd_analyze` too. | **Fixed** |
+| F10 | V3 | `principles.md` §6 carries a **third** "adding a target" checklist with no filter obligation. | **Not fixed — judged not-false by the verifier**: the `emits_to` call lands inside its item 2, and its "Nothing else" scopes to other files needing edits. Recorded in Residue. |
+| F11 | V3 | The doctor's operator-facing `_DESCRIPTION_UNKNOWN` said an unknown target means the component "ships to fewer targets"; the build rejects it and ships nothing. | **Fixed**, and now pinned by an assertion on the text. |
+| F12 | V3 | A findings heading counted 12 over a 13-row table. | **Fixed** — the headings name what they cover instead of counting. |
+
+### Round 4 — all fixed
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| R4-1 | V4 | A **fourth** copy of the withdrawn closed-schema claim, in the `metadata` paragraph of the very file round 3 edited — and named in round 1's own A5 row, which left it. | **Fixed.** A tree-wide grep for the claim now returns nothing. |
+| R4-2 | V4 | `ext-point-verify.md` cites "the skill frontmatter schema is closed", naming as its authority the document that now says it is not the register — a contradiction round 3's edit CREATED. | **Fixed** — it states the true reason (`verification_profile` has no owning contract). |
+| R4-3 | V4 | The docstrings round 3 wrote to explain its own guard were false of the code: `^[^\s#][^:]*:` matches any non-indented line containing a colon anywhere, not "a top-level key". | **Fixed** — the docstrings describe the real test. |
+| R4-4 | V4 | **A behavioural regression round 3 introduced.** That loose boundary broke two VALID declarations: a continuation line with a URL in a trailing comment, and one whose value is a quoted string containing a colon. Both are ordinary YAML; both were rejected naming `[claude` — the very defect the fold exists to prevent. | **Fixed** — the boundary is now a key test (`^[A-Za-z_][A-Za-z0-9_.-]*\s*:`), both shapes are restored, and both are pinned in both suites. |
+| R4-5 | V4 | The provenance lead-in round 3 wrote asserts the reference-resolution rules are "analyze-only" — false for three of that section's eight rows, which are quality-gate-ONLY. | **Fixed** — it states only what is true of this rule. |
+| R4-6 | V4 | "The skill fields **this document specifies**" — four of the fourteen appear exactly once, inside the list, and are not specified anywhere. | **Fixed** — "names" rather than "specifies", at both sites. |
+| R4-7 | V4 | The adoc's "**Further** optional fields (`implements`, …, `targets`)" listed two fields that are the bullets immediately above it. | **Fixed** |
+| R4-8 | V4 | The `#optional-fields-2` anchor ordinal is unguarded — `broken-relative-link` does not check pure-anchor links. | **Not fixed.** Correct today (headings at 80/149/198). Recorded in Residue; guarding it means changing a doctor rule's scope, which is out of this plan. |
+| R4-9 | V4 | The doctor's finding strings had no test, so round 3's correction could regress silently. | **Fixed** — the unknown-target test now asserts the corrected clause is present and the retired one absent. |
+| R4-10 | V4 | The new provenance lead-in is unguarded prose — the provenance test checks only that a row exists. | **Not fixed.** Same class as R4-8; recorded in Residue. |
+| R4-11 | V4 | `test_component_targets.py` count stale (37 → 39 at that HEAD). | **Fixed** — re-derived (41) at the commit named in the Contract check. |
+| R4-12 | V4 | `test_analyze_target_scope.py` count stale (24 → 25). | **Fixed** — re-derived (27). |
+| R4-13 | V4 | "the figures below are from the run at `dcd7a2e`, **the last such commit**" — false once a later commit changed Python files. **Verbatim recurrence of R2-04**, whose disposition read "Fixed". | **Fixed differently**, because naming a commit inline is what keeps going stale: the figures now name no commit of their own and defer to the Contract check, which is written last. |
+| R4-14 | V4 | The module-test count was stale by exactly the tests the previous fix commit added. **Third occurrence of this class** (A3, R2-03). | **Fixed** — re-derived (21042), same deferral as R4-13. |
+| R4-15 | V4 | The report carried no Round 3 section at all, while its headings claimed "all fixed" — a completed-state claim the branch's own HEAD commit contradicted. | **Fixed** — this section and the Round 4 section below it. |
+| R4-16 | V4 | The plan's cold-read semantics check had no recorded result. | **Fixed** — performed and recorded under "Cold read" below. |
+| R4-17 | V4 | PR / Outcome fields still `pending`. | **Fixed at close** — filled in before the merge gate. |
+
+### Cold read (the plan's § Verification requirement)
+
+A sub-agent that had seen no implementation, no test and no git history read **only** the
+`## Target Scoping` section and answered the plan's two questions:
+
+- *What does an absent `targets:` field mean?* → **"the component ships to every build target"**
+- *What happens on an unknown value?* → **"fails the build, with an error naming both the component
+  and the unknown value"**
+
+Both are the required answers, and the reader reported guessing at neither. The plan's check
+therefore **passes**.
+
+It surfaced two wording gaps, both fixed rather than waved through:
+
+1. "The plugin-doctor rule reports **the first two**" forced the reader to count table rows to learn
+   which defects the linter catches. The cases are now named, not counted.
+2. The section refused to enumerate valid target names (correctly — a prose list rots) but gave the
+   reader no other route, so the only reason they could write `claude` was that the worked example
+   happened to use it. *"If the question had been 'ship only to OpenCode', the section would have
+   left me unable to answer."* The section now names the command that prints the live set. Writing
+   that sentence introduced a falsity of its own — the command also prints `all`, which is not a
+   target name — caught by running it before the claim shipped.
 
 ## Reviewer participation
 
