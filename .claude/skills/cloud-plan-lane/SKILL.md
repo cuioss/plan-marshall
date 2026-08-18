@@ -693,6 +693,14 @@ So, before recording a finding closed:
 
 - **Mutation-test the new guard against the defect the finding names.** Not against a plausible
   neighbouring defect — that one.
+  - ⛔ **Restore the mutated file from a snapshot the harness took itself — NEVER with `git checkout`.**
+    `git checkout -- <path>` restores the file from the **index**, so it discards every *unstaged*
+    change in it, not just the mutation. Mutating a file the run has edited but not committed therefore
+    reverts the run's own work, and every red count the sweep goes on to report is measured against
+    reverted code — a clean matrix that means nothing. An observed run lost a whole round's fixes this
+    way and caught it only because the next mutation's anchor happened not to match; looser anchors
+    would have left it undetected. Commit before the sweep, and have the harness hold each file's
+    original contents itself (in memory or a copy) and write them back in a `finally`.
 - **Assert the verdict positively.** `assert x == expected`, never only `assert wrong not in x`.
 - **Check the fixture reaches the state by the route the test claims**, and pin that precondition with
   its own assertion where a second route exists.
