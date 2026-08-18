@@ -79,7 +79,7 @@ Scope limits:
 
 - Expected-by-construction drift on a sanctioned loop-back re-entry is the ONLY auto-resolved case. Drift WITHOUT the marker keeps the blocking behavior unchanged — the operator-facing drift protocol below applies only to unscheduled drift.
 - The marker never survives past the first guarded boundary check after the loop-back — it is consumed on that check's outcome either way (recapture on drift, plain clear on clean).
-- The worktree-resolution, dirty-boundary and self-contradictory-row refusals (`VERIFY_REFUSAL_ERRORS`: `worktree_unresolved`, `worktree_metadata_drift`, `main_checkout_dirtied_during_plan`, `worktree_dirty_at_boundary`, `main_capture_read_the_worktree`) are NEVER bypassed by the marker — only invariant drift is auto-resolved.
+- The worktree-resolution, dirty-boundary and main-capture-misresolution refusals (`VERIFY_REFUSAL_ERRORS`: `worktree_unresolved`, `worktree_metadata_drift`, `main_checkout_dirtied_during_plan`, `worktree_dirty_at_boundary`, `main_capture_read_the_worktree`) are NEVER bypassed by the marker — only invariant drift is auto-resolved.
 - A failed re-capture blocks the transition (fail closed) with the re-capture's error payload.
 
 ### `findings-check`

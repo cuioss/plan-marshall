@@ -184,28 +184,30 @@ false minutes later. The load-bearing fact is narrower and stable — **`.plan/l
 not tidied away.
 
 **The documented rule shipped** in `plan-retrospective/references/invariant-check-summary.md`, beside
-the existing `main_sha`-drift severity rule that is the interpretation site. It went through two
-corrections, both from verification, and the second reversed the first's central claim:
+the existing `main_sha`-drift severity rule that is the interpretation site. It took **four
+corrections**, each from a verification round, and each reversed part of the last:
 
-- **Round 1 (F10)** removed two universals the tree contradicts — that the artifact always appears at
-  `4-plan → 5-execute`, and that other boundaries are therefore correct. `workflow/execution.md`
-  re-anchors cwd into the worktree in its Step 0 preflight and *then* **upserts** the `4-plan` row, so
-  a cross-session re-entry moves the false entry back a boundary. The rule stopped keying on the
-  boundary and keyed on the row instead.
-- **Round 2 (F13)** then refuted the row-level rule as written. It claimed the fingerprint
-  (`main_sha == worktree_sha`) beside a drift entry *proves* the artifact, on the reasoning that the
-  benign commit-less-branch case "writes the same value at every boundary and therefore emits no
-  drift entry". **Both halves are false, shown by execution**: `main_sha` is main's HEAD *at each
-  boundary*, and main moves whenever a sibling plan merges — so a commit-less-branch plan does emit a
-  genuine drift entry with the fingerprint present. The rule was therefore telling a retrospective to
-  discard the exact signal `main_sha` exists to carry.
+| Round | What it found | What changed |
+|---|---|---|
+| 1 (F10) | The rule asserted the artifact always appears at `4-plan → 5-execute` and that other boundaries are correct. `workflow/execution.md` re-anchors cwd and *then* **upserts** the `4-plan` row, so a cross-session re-entry moves it back a boundary. | Stopped keying on the boundary; keyed on the row |
+| 2 (F13) | The row-level rule claimed the benign commit-less-branch case "emits no drift entry", so a drift entry beside the fingerprint proved the artifact. **Both halves false** — `main_sha` is main's HEAD *at each boundary*, and main moves when a sibling merges. | Added **branch containment** as the discriminator |
+| 3 (F20) | Containment returns the **inverted** verdict at the moment the rule is read: this summary is a `post_run_review` step (`order: 995`) running after the merge gate, and the default PR merge strategy is a **merge commit**, which makes feature commits ancestors of main. | **Withdrew** containment; verdict became `unverifiable` |
+| 4 (F31, F34, F37) | `unverifiable` was itself too weak — `captured_at` **is** a stored column, so the era is determinate. And the rule was **unactionable by its declared reader**: `summarize-invariants.py` emits invariant *names*, never per-row values, and strips `captured_at`. § Inputs also named two `status.metadata` keys that exist nowhere in the tree. | Rewrote as a two-step check against `handshakes.toon`, and corrected § Inputs |
 
-**The shipped rule now states what the corpus can and cannot settle.** The fingerprint marks a row as
-**ambiguous** — its `main_sha` is either the mislabelled feature-branch HEAD or a legitimately equal
-commit — and the stored rows carry nothing that separates the two. The discriminator is **branch
-containment**: a recorded `main_sha` that never reached main is the artifact and its drift entry is
-false; one that is on main means the row is sound and the entry is a real signal. A post-fix row needs
-no check at all, because `main_sha` is read main-anchored.
+**The shipped rule is now a procedure, not a verdict.** Step 1 reads the fingerprint (`main_sha ==
+worktree_sha` on a row carrying both); Step 2 reads `captured_at` and compares it against when this
+fix landed. `captured_at` is the discriminator that works, and it works *because* `capture` upserts —
+the row is re-stamped when re-written, so the timestamp dates the write whose resolution semantics
+produced the value, which is exactly the question. The rule names the three discriminators that fail
+(the boundary, the fingerprint alone, containment) with the reason for each, and — because the check
+needs two column values the summary output does not carry — instructs the reader to open
+`handshakes.toon` directly.
+
+⚠ **A code-level alternative was available and not taken:** `summarize-invariants.py` could surface
+the fingerprint and `captured_at` in its own output, making the quarantine self-executing rather than
+an instruction. It was not, because D4 asks for a documented rule and the plan's Out-of-scope list
+bounds this work to assessing and documenting; changing the summariser's output contract is a
+different deliverable. The choice is recorded here rather than left implicit.
 
 ⚠ **When the refusal actually fires, stated plainly because two earlier drafts got it wrong in opposite
 directions.** In the **default** configuration it does not: `_main_repo_root()` resolves via
@@ -291,7 +293,7 @@ The plan's three named cases:
   `test_cmd_capture_returns_structured_refusal_and_writes_no_row`,
   `test_cmd_verify_returns_the_same_refusal_rather_than_raising`), the gate-predicate test
   (`test_the_gate_is_the_persisted_path_not_the_use_worktree_flag`), the `VERIFY_REFUSAL_ERRORS`
-  membership test, and the strict-exit pair (positive plus negative control). D3's sixth listed test,
+  membership test, and the strict-exit pair (positive plus negative control). D3's fourth listed test,
   `test_a_commit_less_feature_branch_is_captured_not_refused`, lives in the **resolution** module
   because it needs that module's real-repo fixtures — so it is counted there, not here.
 - **(c)** `test_summariser_sees_no_main_sha_drift_across_the_execute_boundary` — the rows are built
@@ -458,6 +460,40 @@ Python, and its four campaigns are the strongest evidence this run has produced.
 The recurring shape across rounds 2 and 3 is **n−1-of-n**: a claim corrected where the finding pointed
 and left standing elsewhere (F14, F22, F24, F26, F27 are all instances). Round 3's verifier judged that
 pattern to be relocating rather than converging, and that judgement is recorded here as it was given.
+
+### Round 4 — the final budgeted round. 9 findings, all fixed
+
+| # | Source / site | Finding | Disposition |
+|---|---|---|---|
+| F29 | `report-01.md` D4 narrative | ⛔ The report's own account of what D4 ships stated the **withdrawn** rule: containment as "the discriminator", and "a post-fix row needs no check at all" — the two things rounds 3's F20 and F21 had just reversed. It contradicted itself 17 lines below. Round 3 fixed the shipped file and its findings table, and not the narrative of the same rule. | **Fixed** — replaced by a four-row correction history stating what each round reversed, and what the rule now is |
+| F30 | `_invariants.py` `MainCaptureReadTheWorktree` docstring | (a) "the row disproves itself **with no external reference**" — the sibling site of F26, fixed in `phase-handshake.md` and left standing here. (b) "a `main_sha` that **provably never reached main**" — refuted by execution: under an override, a commit-less-branch plan trips the refusal on a value that **is** main's HEAD. | **Fixed** — both: the evidence is named as the resolved paths (live probe + metadata, not row columns), and the refused value is no longer claimed to be off-main |
+| F31 | `invariant-check-summary.md` | "**What would settle it is not in the corpus**" — false. `handshakes.toon` rows carry **`captured_at`** (`HANDSHAKE_FIELDS[1]`, stamped on every write). The era *is* recorded; only the cutoff is external. And because `capture` upserts, `captured_at` dates the write whose resolution semantics produced the value — the property that defeats the boundary discriminator is what makes this one work. | **Fixed** — the rule's verdict moves from `unverifiable` to a determinate two-step check; `captured_at` is now the named discriminator |
+| F32 | same file | "a rebase or fast-forward merge does the same … only squash preserves the distinction" — false. Executed across six merge shapes: rebase **rewrites** the SHAs whenever main moved, so it preserves the distinction. Only the default merge-commit strategy inverts. The rule's *conclusion* survives; the enumeration was wrong. | **Fixed** — corrected to name squash and rebase as both preserving it, with the default as the case that does not |
+| F33 | `test_phase_handshake_validators.py` `test_list_subcommand_canonical_plan_id` | **Fourth** instance of the `tmp_path`-is-outside-the-repo premise — 30 lines from the sibling docstring round 3 had just rewritten, and cross-referencing it. | **Fixed** — states that only the executor lookup is isolated, with the pointer to the corrected sibling note |
+| F34 | `invariant-check-summary.md` § Inputs **and** `plan-retrospective/SKILL.md` | Both said the summariser reads `status.metadata.phase_handshake` / `.invariants`. **Neither key exists anywhere in the tree**; the script reads `{plan_dir}/handshakes.toon`, as its own module docstring says. Pre-existing, but in the D4 deliverable's own file, load-bearing for what the reader's fact source is, and the direct cause of F37. | **Fixed at both sites** |
+| F35 | `report-01.md` D5(b) | "D3's **sixth** listed test" — it is the fourth. Introduced by round 3's own F24 fix to this sentence. | **Fixed** |
+| F36 | `phase-handshake.md` | "self-contradictory-row refusals" — last surviving use of the retired framing in bundle prose. | **Fixed** |
+| F37 | `invariant-check-summary.md` (**behavioural**) | ⛔ **The rule was unactionable by its declared reader, so D4 shipped as a no-op.** The aspect declares its facts come from `summarize-invariants.py`, which emits invariant **names** per phase and strips `captured_at` — so an LLM given those facts cannot evaluate the fingerprint at all. | **Fixed, not characterised** — condition B offers neither a proof nor a bound for a finding that stops the deliverable working. The rule now instructs the reader to open `handshakes.toon` and names both fields to read; § Inputs states what the summary output does and does not carry |
+
+**Verified clean by round 4, recorded so the negatives are distinguishable:** D1's populations
+re-derived at HEAD (registry 15, main-named 3, `_run_script` 10 call sites → 7 registry captures — all
+report figures correct); round 3's commit proved **docstring-only** by AST comparison, so its four
+campaigns remain valid; 570/570 tests pass in the owning directory; every report enumeration
+independently counted, including the D5(b) list now naming exactly the right nine tests; the plan's
+**Out of scope** holds (no second explicit-tree argument at the capture site, no corpus rewrite); the
+subdirectory refusal-miss reproduced; both new xrefs open onto sections that say what the citations
+imply; and **no consumer of the `main_*` columns is unexamined** — `summarize-invariants.py` is the
+only one, `execution-recovery.md`'s `main_sha` is the `status.metadata` namespace D1 excluded, and the
+archived-plan audit skill does not read handshake rows.
+
+**One plan claim-label disposition was missing and is now recorded.** *"A commit recorded in the
+main-named field provably never reached main — OBSERVED, verified by branch containment."* **This run
+does not carry that claim forward.** It was settleable only against the machine-local corpus, which is
+unreachable here; and round 3 showed branch containment is not sound evidence for it after a
+merge-commit merge, while round 4 showed the converse — a refused `main_sha` can be main's own HEAD.
+The plan's own note that "the mechanism above supersedes the need for it" is what this run relied on:
+the defect was reproduced from the resolver's behaviour under a pinned directory, which needs no
+containment argument.
 
 ## Reviewer participation
 

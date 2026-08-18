@@ -174,8 +174,14 @@ def test_list_subcommand_canonical_plan_id(tmp_path):
     Pins ``cwd=tmp_path`` for the same isolation reason documented on
     ``test_canonical_inputs_dont_trigger_invalid_field``: although ``list``
     itself does not fan out to invariant captures, running every canonical
-    happy-path invocation against an isolated, non-git cwd keeps the parse-
-    time validator assertion free of any dependency on the real repo tree.
+    happy-path invocation from ``tmp_path`` keeps the parse-time validator
+    assertion free of any dependency on the real repo tree *for the executor
+    lookup*.
+
+    ⚠ ``tmp_path`` is NOT a non-git cwd — see that sibling's isolation note:
+    ``build.py`` pins pytest's ``--basetemp`` inside this repository, so git
+    probes still resolve this worktree. Sufficient here, because these
+    assertions concern PARSE-time validation only.
     """
     result = run_script(
         SCRIPT_PATH,

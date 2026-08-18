@@ -215,12 +215,24 @@ class MainCaptureReadTheWorktree(Exception):
     """Raised by :func:`capture_all` when the ``main_*`` columns were read from
     the plan's own worktree instead of from main.
 
-    The persisted row disproves itself with no external reference: ``main_sha``
-    equals ``worktree_sha`` **and** the two columns resolved to the same
-    directory, so one tree is being reported under two names. That is a capture
-    bug, not a valid row, so ``cmd_capture`` surfaces a structured error and
-    refuses to persist rather than writing a ``main_sha`` that provably never
-    reached main.
+    ``main_sha`` equals ``worktree_sha`` **and** the two columns resolved to the
+    same directory, so one tree is being reported under two names. That is a
+    capture bug, not a valid row, so ``cmd_capture`` surfaces a structured error
+    and refuses to persist.
+
+    ⚠ **The evidence is the resolved PATHS, not the row.** The comparison reads
+    :func:`_main_repo_root` (a live git probe) and ``metadata.worktree_path``;
+    neither is a stored column. So this refusal is available at capture time and
+    NOT to a later reader of the persisted row, for whom an equal pair is merely
+    ambiguous — see ``plan-marshall:plan-retrospective`` →
+    ``references/invariant-check-summary.md`` for what such a reader can do
+    instead.
+
+    ⚠ **The refused ``main_sha`` is not necessarily a commit that never reached
+    main.** Under a base-dir override the resolver follows the working
+    directory, so a plan whose feature branch carries no commit can trip this
+    refusal on a value that IS main's HEAD. The defect being refused is the
+    mis-resolution, not the commit.
 
     ⛔ **Equal commits alone are NOT the trigger** — the same-tree resolution is.
     Two DISTINCT trees can legitimately hold one commit: a worktree-backed plan
