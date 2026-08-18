@@ -35,7 +35,7 @@ Twenty-four operations covering the full platform lifecycle:
 | `project install-hook` | Install the terminal-title hook bundle; with the orthogonal `--enforcement` opt-in, install ONLY the PreToolUse enforcement hook entry without touching the terminal-title wiring |
 | `layout skill-roots` | Resolve the ordered project-local skill root directories for the active target |
 | `layout bundle-cache-root` | Resolve the deployed-bundle cache root directories for the active target |
-| `session capture` | Persist current session id via `manage-status`; no-op on OpenCode |
+| `session capture` | APPEND current session id to `status.metadata.session_ids` via `manage-status`; no-op on OpenCode |
 | `permission configure` | Write raw permission list to platform settings |
 | `permission analyze` | Read-only audit of permission hygiene, redundancy, and missing-steps |
 | `permission fix` | Apply hygienic fixes: normalize, add, remove, ensure, consolidate |

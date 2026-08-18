@@ -187,11 +187,114 @@ def cmd_progress(args: argparse.Namespace) -> dict[str, Any] | None:
     }
 
 
+def _cmd_metadata_append(args: argparse.Namespace) -> dict[str, Any]:
+    """Append ``--value`` to a LIST-valued metadata field, atomically.
+
+    Exists because some plan identities are inherently multi-valued and a scalar
+    field modelling one of them gets CLOBBERED rather than extended: the second
+    writer has nowhere to put its value except on top of the first. The session
+    identity is the motivating case — a plan can legitimately span several
+    sessions (any resume), so every later writer overwrote the identity of the
+    session that came before it.
+
+    The read-modify-write runs inside ``rmw_json``'s O_EXCL critical section, the
+    same guard ``cmd_title_token`` and ``write_status`` commit through. A plain
+    ``require_status`` → mutate → ``write_status`` would carry a check-then-act
+    window between the snapshot read and the commit, and losing an append in that
+    window is precisely the defect this verb exists to prevent — see
+    ``ref-code-quality/standards/code-organization.md`` § TOCTOU /
+    Check-Then-Act Hazards.
+
+    Semantics:
+
+    - field absent      → the field becomes ``[value]``
+    - field is a list   → ``value`` is appended, unless already present (append
+      is idempotent, so a re-run of the same capture does not grow the list)
+    - field is NOT a list → ``metadata_field_not_a_list`` error, and the document
+      is left BYTE-IDENTICAL (``rmw_json`` commits unconditionally, so the
+      mutator returns the state it was handed, untouched — including
+      ``updated``). The value is not coerced into a list: silently rewriting a
+      caller's scalar into a container is a type change made on a guess, and a
+      field genuinely migrating to a list should be renamed so its plurality is
+      visible to every reader.
+    """
+    outcome: dict[str, Any] = {}
+
+    def _apply(current: dict[str, Any]) -> dict[str, Any]:
+        metadata = normalize_metadata(current)
+        existing = metadata.get(args.field)
+        if existing is not None and not isinstance(existing, list):
+            outcome['error'] = type(existing).__name__
+            return current
+        values: list[Any] = list(existing) if isinstance(existing, list) else []
+        already = args.value in values
+        if not already:
+            values.append(args.value)
+        metadata[args.field] = values
+        current['metadata'] = metadata
+        current['updated'] = now_utc_iso()
+        outcome['values'] = values
+        outcome['already_present'] = already
+        return current
+
+    rmw_json(get_status_path(args.plan_id), _apply)
+
+    if 'error' in outcome:
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'field': args.field,
+            'error': 'metadata_field_not_a_list',
+            'message': (
+                f"Metadata field '{args.field}' holds a {outcome['error']}, not a list — "
+                f'--append cannot extend it. Nothing was written.'
+            ),
+        }
+
+    if not outcome['already_present']:
+        log_entry(
+            'work',
+            args.plan_id,
+            'INFO',
+            f'[MANAGE-STATUS] Metadata append: {args.field}+={args.value}',
+        )
+
+    return {
+        'status': 'success',
+        'plan_id': args.plan_id,
+        'field': args.field,
+        'value': outcome['values'],
+        'appended': not outcome['already_present'],
+    }
+
+
 def cmd_metadata(args: argparse.Namespace) -> dict[str, Any] | None:
-    """Get or set a metadata field in status.json."""
+    """Get, set, or append to a metadata field in status.json."""
+    if args.set and getattr(args, 'append', False):
+        if args.value is None:
+            return {
+                'status': 'error',
+                'plan_id': args.plan_id,
+                'error': 'missing_value',
+                'message': '--value is required for --set --append',
+            }
+        # Guard the plan's existence on the same seam every other branch uses,
+        # BEFORE opening the critical section.
+        if require_status(args) is None:
+            return None
+        return _cmd_metadata_append(args)
+
     status = require_status(args)
     if status is None:
         return None
+
+    if getattr(args, 'append', False):
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'error': 'append_without_set',
+            'message': '--append is a modifier for --set; pass --set --append --field F --value V',
+        }
 
     if args.set:
         # Set metadata

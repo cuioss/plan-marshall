@@ -16,6 +16,7 @@ Usage:
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status progress --plan-id EXAMPLE-PLAN
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata --plan-id EXAMPLE-PLAN --set --field change_type --value feature
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata --plan-id EXAMPLE-PLAN --get --field change_type
+    python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata --plan-id EXAMPLE-PLAN --set --append --field session_ids --value SESSION-ID
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-context --plan-id EXAMPLE-PLAN
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status list
     python3 .plan/execute-script.py plan-marshall:manage-status:manage-status transition --plan-id EXAMPLE-PLAN --completed 1-init
@@ -184,6 +185,15 @@ def main() -> int:
     metadata_parser.add_argument('--set', action='store_true', help='Set metadata field')
     add_field_arg(metadata_parser)
     metadata_parser.add_argument('--value', help='Metadata field value (required for --set)')
+    metadata_parser.add_argument(
+        '--append',
+        action='store_true',
+        help=(
+            'Modifier for --set: append --value to the field as a LIST instead of '
+            'replacing it. Idempotent (a value already present is not re-appended). '
+            'Errors without writing when the field already holds a non-list.'
+        ),
+    )
     metadata_parser.add_argument(
         '--store',
         choices=['plans', 'orchestrator'],

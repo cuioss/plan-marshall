@@ -4,7 +4,7 @@
 
 Covers every method defined by the Runtime ABC:
   1.  project_initial_setup       — creates dirs, writes marshal.json, installs hook
-  2.  session_capture             — reads $CLAUDE_CODE_SESSION_ID, stores via manage-status
+  2.  session_capture             — reads $CLAUDE_CODE_SESSION_ID, appends via manage-status
   3.  session_render_title        — resolves session → plan → OSC emit
   4.  session_push_title_token    — binds the session and persists the token state for
       the next render event (icon optional); it performs no terminal write of its own
@@ -4666,3 +4666,103 @@ class TestBuildJobPoll:
         payload = {"status": "failure", "duration_seconds": 12}
         with patch("claude_runtime._build_job_call", lambda request, timeout: payload):
             assert claude_runtime.build_job_poll("job-7", 42) == payload
+
+
+# =============================================================================
+# Session identity is a LIST (D4)
+# =============================================================================
+
+
+class TestSessionIdentityIsAList:
+    """The plan's session identity is append-only, not a single overwritable slot.
+
+    A plan legitimately spans multiple sessions — any resume, and any observing
+    process that captures against the plan it is measuring. As a scalar the field
+    had one slot, so the second writer destroyed the first identity, and the
+    surviving value was well-formed so no downstream consumer could reject it.
+    """
+
+    @staticmethod
+    def _reads(monkeypatch, responses):
+        """Stub ``_read_metadata_field`` with a {field: value} map, recording reads."""
+        import claude_runtime as _cr
+
+        seen = []
+
+        def _fake(plan_id, field):
+            seen.append(field)
+            return responses.get(field)
+
+        monkeypatch.setattr(_cr, "_read_metadata_field", _fake)
+        return seen
+
+    def test_store_appends_to_the_session_ids_list(self, monkeypatch):
+        """The capture APPENDS — it never issues a plain overwriting --set."""
+        import claude_runtime as _cr
+
+        captured = {}
+
+        class _Result:
+            returncode = 0
+
+        def _fake_run(argv, **kwargs):
+            captured["argv"] = argv
+            return _Result()
+
+        monkeypatch.setattr(_cr.subprocess, "run", _fake_run)
+        assert _cr._manage_status_store_session("plan-a", "sess-9") is True
+
+        argv = captured["argv"]
+        assert "--append" in argv, "the capture must append, not overwrite"
+        assert "--set" in argv
+        # The field written is the LIST field, and the value is this session.
+        assert argv[argv.index("--field") + 1] == _cr.SESSION_IDS_FIELD
+        assert argv[argv.index("--value") + 1] == "sess-9"
+
+    def test_read_returns_the_most_recent_entry(self, monkeypatch):
+        import claude_runtime as _cr
+
+        self._reads(monkeypatch, {_cr.SESSION_IDS_FIELD: ["sess-first", "sess-second", "sess-newest"]})
+        assert _cr._manage_status_read_session("plan-a") == "sess-newest"
+
+    def test_a_single_entry_list_reads_like_a_scalar_did(self, monkeypatch):
+        import claude_runtime as _cr
+
+        self._reads(monkeypatch, {_cr.SESSION_IDS_FIELD: ["sess-only"]})
+        assert _cr._manage_status_read_session("plan-a") == "sess-only"
+
+    def test_empty_list_is_no_identity(self, monkeypatch):
+        import claude_runtime as _cr
+
+        self._reads(monkeypatch, {_cr.SESSION_IDS_FIELD: []})
+        assert _cr._manage_status_read_session("plan-a") is None
+
+    def test_falsy_trailing_entries_are_skipped(self, monkeypatch):
+        import claude_runtime as _cr
+
+        self._reads(monkeypatch, {_cr.SESSION_IDS_FIELD: ["sess-real", "", None]})
+        assert _cr._manage_status_read_session("plan-a") == "sess-real"
+
+    def test_legacy_scalar_is_still_readable(self, monkeypatch):
+        """SHIM(B): a status.json written before the list existed still resolves."""
+        import claude_runtime as _cr
+
+        seen = self._reads(monkeypatch, {_cr.LEGACY_SESSION_ID_FIELD: "sess-legacy"})
+        assert _cr._manage_status_read_session("plan-a") == "sess-legacy"
+        # The list field is consulted FIRST; the legacy scalar is the fallback.
+        assert seen == [_cr.SESSION_IDS_FIELD, _cr.LEGACY_SESSION_ID_FIELD]
+
+    def test_the_list_wins_over_a_stale_legacy_scalar(self, monkeypatch):
+        import claude_runtime as _cr
+
+        self._reads(
+            monkeypatch,
+            {_cr.SESSION_IDS_FIELD: ["sess-new"], _cr.LEGACY_SESSION_ID_FIELD: "sess-stale"},
+        )
+        assert _cr._manage_status_read_session("plan-a") == "sess-new"
+
+    def test_no_identity_at_all_returns_none(self, monkeypatch):
+        import claude_runtime as _cr
+
+        self._reads(monkeypatch, {})
+        assert _cr._manage_status_read_session("plan-a") is None

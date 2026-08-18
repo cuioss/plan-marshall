@@ -271,7 +271,11 @@ class ClaudeRuntime(Runtime):
     # ------------------------------------------------------------------
 
     def session_capture(self, plan_id: str) -> str:
-        """Read $CLAUDE_CODE_SESSION_ID and store via manage-status."""
+        """Read $CLAUDE_CODE_SESSION_ID and APPEND it via manage-status.
+
+        The identity is a list, so a session captured here never displaces the
+        identity of a session that captured earlier against the same plan.
+        """
         session_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
         if not session_id:
             return toon_error(

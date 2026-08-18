@@ -76,14 +76,14 @@ See [references/workflow-overview.md](references/workflow-overview.md) for the v
 
 ### How to obtain session_id
 
-**session_id**: the platform-runtime `session capture` operation stores the session id in the plan's `status.json` at plan-init time. Read it back via:
+**session_id**: the platform-runtime `session capture` operation APPENDS the session id to the plan's `status.metadata.session_ids` list at plan-init time, and again on any later capture. It is a LIST because a plan legitimately spans several sessions: each resume contributes an additional identity rather than replacing one, so a capture appends and never overwrites. Read it back via:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
-  --plan-id {plan_id} --get --field session_id
+  --plan-id {plan_id} --get --field session_ids
 ```
 
-Parse `value` from the TOON output. On `status: error` or empty `value`, the orchestrator's `session_id` resolver (in `plan-marshall/workflow/execution.md`) does NOT abort immediately — it first attempts exactly one `platform-runtime session capture --plan-id {plan_id}` retry and re-reads the metadata field. An absent `session_id` at finalize entry is therefore recoverable as long as the platform session is still live. Only when that single late capture also fails (`status: error` or `value` still empty) does the resolver abort finalize with a clear message — do **not** invent a filler value.
+Parse `value` from the TOON output and take its **last** entry — the most recent session to capture against this plan, which is the one whose transcript `enrich` must read. A plan whose `status.json` predates the list carries the retired scalar `session_id` instead; fall back to that field only when `session_ids` is absent. On `status: error` or empty `value`, the orchestrator's `session_id` resolver (in `plan-marshall/workflow/execution.md`) does NOT abort immediately — it first attempts exactly one `platform-runtime session capture --plan-id {plan_id}` retry and re-reads the metadata field. An absent session identity at finalize entry is therefore recoverable as long as the platform session is still live. Only when that single late capture also fails (`status: error` or `value` still empty) does the resolver abort finalize with a clear message — do **not** invent a filler value.
 
 **token enrichment**: `manage-metrics enrich` never parses a session transcript itself — it forwards the `session_id` (and the plan's phase windows) to the platform-runtime `metrics normalized-tokens` op, which owns the entire transcript engine for the active target. On Claude the op walks the session transcript and returns the normalized per-phase token categories; on OpenCode (no transcript) it returns a `no-op` with `transcript_not_found`. `enrich` degrades gracefully on that `no-op` — it skips enrichment and the final report simply carries no transcript-sourced session tokens.
 

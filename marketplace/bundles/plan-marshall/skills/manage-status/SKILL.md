@@ -70,7 +70,7 @@ JSON format for storage:
 | `current_phase` | string | Current active phase |
 | `title_token` | object (optional) | Transient title-token record `{owner, state, set_at}`. `state` ∈ `lock-waiting`, `lock-owned` (lock-coordination states surfaced as ⏳/🔒 glyphs), `build-busy` (the orchestration-busy state surfaced as a 🔨 icon-slot override, NOT a glyph). `owner` ∈ `build-hook`, `merge-lock`, `cli`. `set_at` is a UTC ISO-8601 instant and is the input to the 3600-second staleness rule — a record older than that reads as absent, and any writer may then overwrite it. Written by `title-token set` (last writer wins); removed by `title-token clear`, which is owner-scoped. Absent when no token is active. Consumed by the `manage-terminal-title` composer for glyph/icon selection; not a persisted plan field — it is ephemeral session state. `build-busy` is set/cleared by the `build-hook` render assist bracketing a Bash build window — see `manage-terminal-title/standards/terminal-title-architecture.md` § Channel Delivery Contract ruling (c) for the record contract. |
 | `phases` | list | Phase objects with name and status |
-| `metadata` | table | Key-value metadata (common fields: `change_type`, `confidence`, `domain`, `use_worktree`, `worktree_path`, `worktree_branch`) |
+| `metadata` | table | Key-value metadata (common fields: `change_type`, `confidence`, `domain`, `use_worktree`, `worktree_path`, `worktree_branch`, `session_ids`) |
 | `created` | string | ISO timestamp of creation |
 | `updated` | string | ISO timestamp of last update |
 
@@ -262,7 +262,7 @@ progress:
 
 ### metadata
 
-Get or set metadata fields.
+Get, set, or append to metadata fields.
 
 **Set metadata**:
 ```bash
@@ -272,6 +272,19 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metada
   --field {field_name} \
   --value {value}
 ```
+
+**Append to a list-valued metadata field** (`--append` is a modifier for `--set`):
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
+  --plan-id {plan_id} \
+  --set --append \
+  --field {field_name} \
+  --value {value}
+```
+
+Use this for any identity a plan can legitimately hold more than one of — the session identity (`session_ids`) is the canonical case, since every resume adds a session rather than correcting the previous one. A scalar field modelling such an identity does not merely lose precision, it is DESTRUCTIVE: the field has one slot, so the second writer overwrites the first, and the surviving value is well-formed enough that no consumer downstream can tell.
+
+Semantics: an absent field becomes `[value]`; an existing list gains `value` unless it is already present (so a repeated capture is idempotent); a field already holding a NON-list returns `error: metadata_field_not_a_list` and leaves the document **byte-identical** — the scalar is never silently coerced into a container. The read-modify-write runs inside the same `rmw_json` critical section every other `status.json` writer commits through, so a concurrent append cannot be lost.
 
 **Get metadata**:
 ```bash
@@ -1194,7 +1207,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status progre
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
   --plan-id PLAN_ID --field FIELD \
-  (--get | --set --value VALUE) \
+  (--get | --set [--append] --value VALUE) \
   [--store {plans|orchestrator}]
 ```
 
