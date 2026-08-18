@@ -13,6 +13,7 @@ Usage:
     credentials.py verify [--skill <name>] [--scope global|project]
     credentials.py discover-and-persist
     credentials.py list-providers
+    credentials.py find-by-category --category <name>
     credentials.py list [--scope global|project|all]
     credentials.py remove [--skill <name>] [--scope global|project]
     credentials.py ensure-denied [--target global|project]

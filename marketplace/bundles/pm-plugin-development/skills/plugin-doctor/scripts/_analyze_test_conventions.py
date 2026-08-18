@@ -95,15 +95,18 @@ PARENT_CHAIN_MIN_DEPTH = 3
 #: ⛔ The bare alternative is bounded on three sides, and every bound answers a
 #: false positive a cold read of this corpus actually returned:
 #:
-#: 1. ``(?<=[^\w#\-])`` requires a preceding character that is not a word
-#:    character, another ``#``, or a hyphen. The word-character half keeps the
-#:    bare alternative off ``plan-marshall#123``, which the reference analyzer
-#:    already owns. The hyphen half keeps it off a compound token that embeds a
-#:    number — ``pre-#812`` is a schema-state literal the corpus asserts on, not
-#:    a citation of 812. Requiring a preceding character AT ALL is what keeps it
-#:    off the start of a comment: a comment segment arrives from ``tokenize``
-#:    with its ``#`` delimiter attached, so ``#123 note`` would otherwise read as
-#:    a citation when the ``#`` is punctuation the tokenizer supplied.
+#: 1. ``(?<![\w#\-])`` rejects a preceding word character, ``#``, or hyphen. The
+#:    word-character half keeps the bare alternative off ``plan-marshall#123``,
+#:    which the reference analyzer already owns. The hyphen half keeps it off a
+#:    compound token that embeds a number — ``pre-#812`` is a schema-state
+#:    literal the corpus asserts on, not a citation of 812.
+#:
+#:    ⛔ It is a NEGATIVE lookbehind, so it SUCCEEDS at position 0, and that is
+#:    deliberate: a docstring may open with its citation, and a lookbehind
+#:    demanding a preceding character would silence exactly those. The comment
+#:    case that motivates a start-of-segment bound is handled where it belongs
+#:    instead — :func:`_iter_prose_segments` strips a comment's ``#`` delimiter,
+#:    so ``#123 note`` reaches the matchers as ``123 note`` and offers no ``#``.
 #: 2. ``\d{2,}`` — the BARE form requires at least two digits. A one-digit
 #:    ``#1`` is overwhelmingly intra-document enumeration ("mis-attribution
 #:    #1"), not a record id. This bound is affordable precisely because it is
@@ -112,7 +115,7 @@ PARENT_CHAIN_MIN_DEPTH = 3
 #: 3. ``\b`` after the digits keeps it off an identifier that merely starts with
 #:    digits.
 _PR_REFERENCE_RE = re.compile(
-    r'\b(?:PR|pull request)\s*#\d+|(?<=[^\w#\-])#\d{2,}\b',
+    r'\b(?:PR|pull request)\s*#\d+|(?<![\w#\-])#\d{2,}\b',
     re.IGNORECASE,
 )
 
@@ -830,8 +833,10 @@ def _build_preamble_finding(path: Path, node: ast.AST, kind: str, depth: int | N
         description = (
             'hand-rolled spec_from_file_location preamble — use '
             'conftest.load_script_module(bundle, skill, filename) for a module under '
-            "scripts/, or conftest.load_skill_module(bundle, skill, filename) for one "
-            'at the skill root (a bundle extension.py); both resolve by identity '
+            'scripts/, or conftest.load_skill_module(bundle, skill, filename, '
+            'module_name) for one at the skill root (every bundle ships an '
+            'extension.py, so pass a distinct module_name — or register=False — or '
+            'they displace each other); both resolve by identity '
             "instead of by the test file's own location"
         )
     else:
@@ -963,6 +968,12 @@ def _iter_prose_segments(source: str, path: Path) -> list[tuple[int, str]]:
 
     Only these two contexts carry prose. Every other string in a test module is
     data the test operates on.
+
+    A comment's text is returned WITHOUT its leading ``#``: the delimiter is
+    punctuation the tokenizer supplies rather than something the author wrote, and
+    leaving it attached makes every comment look like it opens with a
+    ``#``-prefixed token. A docstring is returned verbatim, so a citation sitting
+    at its very first character is still there to be matched.
     """
     segments: list[tuple[int, str]] = []
     try:
@@ -985,7 +996,14 @@ def _iter_prose_segments(source: str, path: Path) -> list[tuple[int, str]]:
     try:
         for token in tokenize.generate_tokens(io.StringIO(source).readline):
             if token.type == tokenize.COMMENT:
-                segments.append((token.start[0], token.string))
+                # Strip the ``#`` delimiter the tokenizer supplies. It is
+                # punctuation rather than prose, and leaving it attached makes
+                # every comment appear to open with a ``#``-prefixed token, which
+                # a bare record-number matcher reads as a citation. Stripping it
+                # here is what lets those matchers use a plain negative lookbehind
+                # and so stay able to fire at the start of a DOCSTRING, where a
+                # citation legitimately can sit.
+                segments.append((token.start[0], token.string[1:]))
     except (tokenize.TokenError, IndentationError, SyntaxError):
         # A module that does not tokenize still yields its parsed docstrings.
         pass

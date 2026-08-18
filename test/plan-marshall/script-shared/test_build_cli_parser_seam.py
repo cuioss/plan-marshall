@@ -18,6 +18,8 @@ being written by hand. These pin:
 """
 
 import argparse
+import sys
+from unittest import mock
 
 import pytest
 
@@ -67,24 +69,64 @@ def test_shared_run_seam_carries_production_defaults(shared_run_ns, attribute, e
     assert getattr(shared_run_ns, attribute) == expected
 
 
-def test_shared_seam_registers_the_shared_build_subcommands():
-    """``build_parser`` publishes the subcommand set every build wrapper inherits."""
+def _subcommands(parser: argparse.ArgumentParser) -> set[str]:
+    """Return the subcommand names ``parser`` accepts."""
+    actions = [a for a in parser._actions if isinstance(a, argparse._SubParsersAction)]
+    assert len(actions) == 1, f'expected exactly one subparsers action, got {len(actions)}'
+    return set(actions[0].choices)
+
+
+def _wrapper_subcommands(skill: str, script: str) -> set[str]:
+    """Return the subcommands a build wrapper's production parser accepts.
+
+    Captured by intercepting the wrapper's own ``main()`` at its ``parse_args``
+    call, so it is the parser production builds rather than a restatement of it.
+    """
+    module = load_script_module(BUNDLE, skill, script, register=False)
+    captured: list[argparse.ArgumentParser] = []
+
+    def _intercept(self, args=None, namespace=None):
+        captured.append(self)
+        raise SystemExit(0)
+
+    saved = sys.argv
+    sys.argv = [script]
+    try:
+        with mock.patch.object(argparse.ArgumentParser, 'parse_args', _intercept):
+            with pytest.raises(SystemExit):
+                module.main()
+    finally:
+        sys.argv = saved
+
+    assert captured, f'{script} did not reach parse_args'
+    return _subcommands(captured[0])
+
+
+#: The one subcommand this module registers that the seam cannot carry: its
+#: registration takes the wrapper's own ``ExecuteConfig``, and the exposed key must
+#: round-trip against the one ``cmd_run`` persists, so a zero-argument builder has
+#: nothing correct to pass.
+CONFIG_BOUND_SUBCOMMAND = 'run-config-key'
+
+
+def test_seam_publishes_every_shared_subcommand_but_the_config_bound_one():
+    """The seam carries exactly the subcommands all wrappers share, less the config-bound one.
+
+    The expected set is DERIVED by intersecting the four wrappers' live parsers
+    rather than listed here, so a subcommand added to the shared surface and wired
+    into every wrapper — but not into the seam — fails this instead of passing
+    against a stale literal.
+    """
     cli = load_script_module(BUNDLE, SKILL, CLI_SCRIPT, register=False)
 
-    subparser_actions = [
-        action
-        for action in cli.build_parser()._actions
-        if isinstance(action, argparse._SubParsersAction)
-    ]
+    shared = set.intersection(
+        *(_wrapper_subcommands(skill, script) for skill, script in WRAPPER_SCRIPTS)
+    )
 
-    assert len(subparser_actions) == 1
-    assert set(subparser_actions[0].choices) == {
-        'run',
-        'parse',
-        'coverage-report',
-        'check-warnings',
-        'discover',
-    }
+    assert CONFIG_BOUND_SUBCOMMAND in shared, (
+        'the exclusion below is only meaningful while every wrapper registers it'
+    )
+    assert _subcommands(cli.build_parser()) == shared - {CONFIG_BOUND_SUBCOMMAND}
 
 
 def test_execute_factory_seam_yields_the_shared_run_namespace(shared_run_ns):

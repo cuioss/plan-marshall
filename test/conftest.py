@@ -372,8 +372,8 @@ def get_skill_dir(bundle: str, skill: str) -> Path:
     is the narrower accessor for the ``scripts/`` subtree and raises for a skill that
     has none; this one resolves the skill itself, so a module at the skill ROOT is
     addressable. The bundle ``plan-marshall-plugin`` skills are the shape that needs
-    it: their only module is a root-level ``extension.py``, and most of them ship no
-    ``scripts/`` directory at all.
+    it: each ships a root-level ``extension.py``, and most of them ship no ``scripts/``
+    directory at all for the scripts-relative accessor to resolve against.
 
     Args:
         bundle: Bundle name (e.g. ``'pm-dev-python'``).
@@ -503,6 +503,13 @@ def load_skill_module(
     for one had no option but the per-module ``spec_from_file_location`` preamble the
     house style exists to remove.
 
+    ⛔ **Pass ``module_name`` for that shape, or ``register=False``.** EVERY bundle
+    ships its extension under the same filename, so the default name — the stem — is
+    ``extension`` for all of them, and loading a second displaces the first. The
+    hand-rolled preambles this replaces each pass a distinct name for exactly that
+    reason, and nothing imports ``extension`` plainly, so the registration guard
+    cannot see the collision either.
+
     Args:
         bundle: Bundle name (e.g. ``'pm-dev-python'``).
         skill: Skill name (e.g. ``'plan-marshall-plugin'``).
@@ -540,7 +547,7 @@ def _exec_module_from_path(path: Path, module_name: str | None, register: bool):
     import importlib.util
 
     if not path.is_file():
-        raise FileNotFoundError(f'Script not found: {path}')
+        raise FileNotFoundError(f'Module not found: {path}')
 
     name = module_name or path.stem
     spec = importlib.util.spec_from_file_location(name, path)
@@ -756,7 +763,8 @@ def parse_ns(
     :class:`ParserSeamNotFound` rather than degrading.
 
     Cost: this re-executes the script module on every call (via
-    :func:`load_script_module`, which also re-registers it in ``sys.modules``). A
+    :func:`load_script_module`, which by default also re-registers it in
+    ``sys.modules`` — pass ``register=False`` to suppress that). A
     test that builds many namespaces should hoist the call into a fixture or a
     module-level constant rather than calling it per assertion, and should not
     assume the module object the parser came from is the same instance the test

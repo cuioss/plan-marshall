@@ -598,7 +598,16 @@ def build_parser():
     ``auto`` and the ``--project-dir`` / ``--plan-id`` pair without the caller
     having to remember any of them.
 
-    Two bounds on what this seam can serve, both load-bearing:
+    ⛔ ``run-config-key`` is the one subcommand this module registers that the seam
+    does NOT carry, and the omission is forced rather than chosen:
+    :func:`add_run_config_key_subparser` takes an ``ExecuteConfig`` instance, and the
+    contract is that it must be *the same object* ``cmd_run`` uses so the exposed key
+    matches the persisted one. A zero-argument builder has no such object and
+    inventing one would publish a key that round-trips against nothing. All four
+    wrappers do register it, so a namespace for it comes from the wrapper's own
+    script.
+
+    Two further bounds on what this seam can serve, both load-bearing:
 
     * The surface is the SHARED one. A wrapper's tool-specific flags are
       contributed at its own registration site through ``extra_args_fn`` (npm's

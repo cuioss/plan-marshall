@@ -42,8 +42,10 @@ It is the single shared surface, on `sys.path` for every test, and it owns:
 
 | Surface | What it gives you |
 |---|---|
-| `load_script_module(bundle, skill, script)` | Import a marketplace script as a module. **Use this instead of hand-rolling `spec_from_file_location`.** |
+| `load_script_module(bundle, skill, script)` | Import a marketplace script as a module, addressed from the skill's `scripts/` directory. **Use this instead of hand-rolling `spec_from_file_location`.** Pass `register=False` when only the returned object is needed, so the load cannot displace a name another module imports plainly. |
+| `load_skill_module(bundle, skill, file)` | The same, addressed from the SKILL ROOT — for a file that is not under `scripts/`, such as a bundle's `plan-marshall-plugin/extension.py`. Pass a distinct `module_name`: every bundle ships that file under the same stem. |
 | `get_scripts_dir` / `get_script_path` | Resolve a skill's `scripts/` directory. **Use this instead of `Path(__file__).parent.parent…` arithmetic.** |
+| `get_skill_dir(bundle, skill)` | Resolve the skill directory itself, for a skill that ships no `scripts/` tree. |
 | `add_skill_scripts_to_path` | The narrow escape hatch for sibling modules that import each other by bare name. |
 | `run_script(...)` → `ScriptResult` | Run a script as a subprocess. |
 | `parse_ns(bundle, skill, script, *argv)` | Build an `argparse.Namespace` **from the script's own parser**, so it carries the parser's defaults. Use instead of `argparse.Namespace(...)`. |
@@ -60,7 +62,11 @@ It is the single shared surface, on `sys.path` for every test, and it owns:
 - **Assertion helpers for one domain.** `assert_valid_module` and friends live in
   the subtree that has modules.
 - **A second way to do something it already does.** If `load_script_module`
-  nearly fits, extend the call, do not add a parallel loader.
+  nearly fits, extend the call, do not add a parallel loader. `load_skill_module`
+  is not an exception to that rule but an application of it: the two resolve
+  against **different roots**, which is a different question rather than a second
+  answer to the same one. Making one loader guess the root from what happens to
+  exist on disk is what the pair exists to avoid — the caller says which it means.
 - **Nested `conftest.py` files.** There is exactly one, and
   `test_conftest_discipline.py` enforces that. A sibling conftest shadows others
   during discovery and leaks fixtures across unrelated modules.

@@ -393,6 +393,29 @@ def test_number_inside_a_hyphenated_compound_is_not_flagged(tmp_path):
     assert analyze_test_docstring_prose(tmp_path) == []
 
 
+def test_record_number_opening_a_docstring_is_flagged(tmp_path):
+    """A citation at the very first character of a docstring is flagged.
+
+    The bound that keeps a comment's own ``#`` delimiter from reading as a citation
+    must not also silence a docstring that opens with one — the two look identical
+    to a lookbehind, and only one of them is punctuation.
+    """
+    _write(
+        tmp_path,
+        'test_opening.py',
+        '''
+        def test_x():
+            """#1014 regression: the refusal is seen only because it is filed as data."""
+            assert True
+        ''',
+    )
+
+    findings = analyze_test_docstring_prose(tmp_path)
+
+    assert [f['details']['kind'] for f in findings] == ['pr_reference']
+    assert findings[0]['details']['matched'] == '#1014'
+
+
 def test_comment_delimiter_does_not_read_as_a_record_number(tmp_path):
     """A comment whose text begins with digits is not a citation of that number.
 

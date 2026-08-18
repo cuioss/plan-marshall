@@ -5,10 +5,9 @@
 Two contracts of ``test/conftest.py``'s loader pair:
 
 * **Reach** — ``load_skill_module`` / ``get_skill_dir`` address a module at a
-  skill's ROOT. Without them the only module a bundle's ``plan-marshall-plugin``
-  skill ships, its ``extension.py``, is unreachable through the shared helpers,
-  because most such skills have no ``scripts/`` directory for the scripts-relative
-  pair to resolve against.
+  skill's ROOT. Without them a bundle's ``plan-marshall-plugin`` ``extension.py`` is
+  unreachable through the shared helpers, because most such skills have no
+  ``scripts/`` directory for the scripts-relative pair to resolve against.
 * **Registration** — a module loaded by file is published in ``sys.modules`` under
   its stem, which REPLACES whatever that name held. A test module that imports the
   same name plainly then holds a copy no longer reachable through ``sys.modules``,
@@ -17,16 +16,13 @@ Two contracts of ``test/conftest.py``'s loader pair:
   with and fails when that set of collisions grows.
 """
 
-import ast
 import sys
-from collections import defaultdict
-from pathlib import Path
 
 import pytest
+from _loader_contract_fixtures import _scan_test_tree
 
 from conftest import (
     MARKETPLACE_ROOT,
-    TEST_ROOT,
     get_scripts_dir,
     get_skill_dir,
     load_script_module,
@@ -37,14 +33,10 @@ from conftest import (
 #: The skill every bundle uses for its plan-marshall extension entry point.
 EXTENSION_SKILL = 'plan-marshall-plugin'
 
-#: Helpers whose call publishes a module in ``sys.modules``. ``parse_ns`` belongs
-#: here because it loads the script through ``load_script_module`` to reach the
-#: parser, so it registers exactly as the direct call does.
-REGISTERING_HELPERS = frozenset({'load_script_module', 'load_skill_module', 'parse_ns'})
-
 #: How many loader call sites the walker cannot resolve statically today. Asserted
-#: as a ceiling so the guard's blind spot is a visible, non-growing quantity rather
-#: than an unstated narrowing of what it checks.
+#: from BOTH sides so the guard's blind spot stays a truthful quantity: it may not
+#: grow (that widens what the guard cannot see) and it may not silently shrink
+#: (that leaves the constant overstating the gap).
 UNRESOLVED_CALL_SITE_BOUND = 88
 
 #: Names a file-load registers that some test module ALSO imports plainly.
@@ -71,6 +63,10 @@ KNOWN_REGISTRATION_COLLISIONS = frozenset({
     '_gradle_execute',
     '_maven_execute',
     '_pyproject_execute',
+    'lsp_client',
+    'permission_doctor',
+    'permission_fix',
+    'platform_runtime',
     'effort_presets',
     'finalize_step_presets',
     'github_pr',
@@ -80,107 +76,6 @@ KNOWN_REGISTRATION_COLLISIONS = frozenset({
     'review_completeness',
     'run_config',
 })
-
-
-def _module_level_string_constants(tree: ast.Module) -> dict[str, str]:
-    """Return the module-level ``NAME = 'literal'`` bindings in ``tree``.
-
-    Loader arguments are frequently hoisted into module constants, so resolving
-    them is what keeps the enumeration below from silently missing those call sites.
-    """
-    constants: dict[str, str] = {}
-    for node in tree.body:
-        if not isinstance(node, ast.Assign):
-            continue
-        if not (isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)):
-            continue
-        for target in node.targets:
-            if isinstance(target, ast.Name):
-                constants[target.id] = node.value.value
-    return constants
-
-
-def _string_value(node: ast.AST | None, constants: dict[str, str]) -> str | None:
-    """Resolve ``node`` to a string, through a module-level constant if need be."""
-    if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return node.value
-    if isinstance(node, ast.Name):
-        return constants.get(node.id)
-    return None
-
-
-def _opts_out_of_registration(call: ast.Call) -> bool:
-    """Return whether ``call`` passes a literal ``register=False``.
-
-    The single reading of that argument, so the name resolution below and the
-    unresolved-site tally cannot disagree about which calls publish anything.
-    """
-    for keyword in call.keywords:
-        if keyword.arg == 'register' and isinstance(keyword.value, ast.Constant):
-            return keyword.value.value is False
-    return False
-
-
-def _registered_name(call: ast.Call, constants: dict[str, str]) -> str | None:
-    """Return the ``sys.modules`` name ``call`` publishes, or ``None``.
-
-    ``None`` covers both a call that publishes nothing (``register=False``) and one
-    whose name cannot be resolved statically; the two are separated by the caller.
-    """
-    if _opts_out_of_registration(call):
-        return None
-    keywords = {kw.arg: kw.value for kw in call.keywords}
-    explicit = keywords.get('module_name') or (call.args[3] if len(call.args) > 3 else None)
-    if explicit is not None:
-        return _string_value(explicit, constants)
-    if len(call.args) > 2:
-        script = _string_value(call.args[2], constants)
-        return Path(script).stem if script else None
-    return None
-
-
-def _scan_test_tree() -> tuple[dict[str, set[str]], dict[str, set[str]], list[str]]:
-    """Return (names registered by a file-load, names imported plainly, unresolved sites).
-
-    Both mappings are derived by walking every module under the test tree, so a call
-    site added later is covered without anyone remembering to list it.
-    """
-    registered: dict[str, set[str]] = defaultdict(set)
-    plain: dict[str, set[str]] = defaultdict(set)
-    unresolved: list[str] = []
-
-    for path in sorted(TEST_ROOT.rglob('*.py')):
-        rel = str(path.relative_to(TEST_ROOT))
-        try:
-            tree = ast.parse(path.read_text(encoding='utf-8', errors='replace'), filename=rel)
-        except SyntaxError:
-            continue
-        constants = _module_level_string_constants(tree)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call):
-                func = node.func
-                name = (
-                    func.attr
-                    if isinstance(func, ast.Attribute)
-                    else func.id
-                    if isinstance(func, ast.Name)
-                    else None
-                )
-                if name not in REGISTERING_HELPERS:
-                    continue
-                registered_as = _registered_name(node, constants)
-                if registered_as:
-                    registered[registered_as].add(rel)
-                elif not _opts_out_of_registration(node):
-                    unresolved.append(f'{rel}:{node.lineno}')
-            elif isinstance(node, ast.Import):
-                for alias in node.names:
-                    if '.' not in alias.name:
-                        plain[alias.name].add(rel)
-            elif isinstance(node, ast.ImportFrom):
-                if node.level == 0 and node.module and '.' not in node.module:
-                    plain[node.module].add(rel)
-    return registered, plain, unresolved
 
 
 @pytest.fixture(scope='module')
@@ -316,6 +211,12 @@ def test_the_scan_finds_the_loader_call_sites(tree_scan):
     assert any(site.endswith('build_test_helpers.py') for site in loaders), loaders
     assert 'conftest.py' in plain['_build_execute_factory']
 
+    # A parse_ns site too, because it resolves by a different rule: parse_ns takes
+    # no module_name, so its fourth positional is an argv token. A control over
+    # load_script_module alone cannot see that rule being applied to the wrong helper.
+    assert 'test_shared_harness.py' in registered['platform_runtime'], registered['platform_runtime']
+    assert 'run' not in registered, sorted(registered)[:20]
+
 
 def test_no_new_shared_registration_collision(tree_scan):
     """No name beyond the pinned set is both loaded by file and imported plainly.
@@ -371,4 +272,10 @@ def test_unresolved_call_sites_are_reported_not_hidden(tree_scan):
         f'the {UNRESOLVED_CALL_SITE_BOUND} this bound was set against. The guard cannot '
         'see these, so a collision introduced at one is invisible: hoist the argument '
         'into a module-level constant, or pass a literal.'
+    )
+    assert len(unresolved) >= UNRESOLVED_CALL_SITE_BOUND, (
+        f'only {len(unresolved)} call sites are now unresolvable, below the '
+        f'{UNRESOLVED_CALL_SITE_BOUND} this bound records — good, but retune the '
+        'constant. Left alone it overstates the blind spot, which is the same rot the '
+        'collision baseline is guarded against in the opposite direction.'
     )
