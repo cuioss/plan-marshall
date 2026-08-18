@@ -60,8 +60,8 @@ the wrong directory under the versioned plugin-cache layout
 returned ``None`` and the four augmentation fields were dropped. The case
 constructs exactly that versioned layout from the real build skill
 scripts, points ``_MARKETPLACE_BUNDLES_DIR`` at it, and asserts all four
-fields survive — failing on the pre-#515 arithmetic, passing on the
-post-#515 ``resolve_bundle_path`` rerouting.
+fields survive, which an index-arithmetic anchor cannot do and
+``resolve_bundle_path`` can.
 """
 
 import shutil
@@ -134,12 +134,13 @@ _PYPROJECT_VERIFY_EXECUTABLE = (
 )
 
 # Canonical Bucket B executable shape for a MAVEN command. Maven declares a
-# 300s outer floor (``MAVEN_OUTER_FLOOR_SECONDS``) against pyproject's 600s, so
-# ``max(learned, 300) + 30`` stays under the 600s ceiling for modest learned
-# values — this is the only engine family that still yields a ``per_task``
-# verdict, and therefore the only one that can keep the per_task hint template
-# under exact-match coverage. ``default_command_key_fn`` normalises the
-# ``--command-args`` value to the persisted key ``maven:test__pl_core``.
+# 300s outer floor (``MAVEN_OUTER_FLOOR_SECONDS``) against pyproject's 330, so
+# ``max(learned, 300) + 30`` stays under the 600s CEILING for modest learned
+# values and the verdict can be ``per_task``. Both engine families reach that
+# verdict — the pyproject floor case below asserts it too — so the per_task hint
+# template is under exact-match coverage from more than one direction.
+# ``default_command_key_fn`` normalises the ``--command-args`` value to the
+# persisted key ``maven:test__pl_core``.
 _MAVEN_TEST_EXECUTABLE = (
     'python3 .plan/execute-script.py plan-marshall:build-maven:maven '
     'run --command-args "test -pl core"'
@@ -204,7 +205,7 @@ def isolated_run_config(monkeypatch, tmp_path):
 
 
 # =============================================================================
-# Case (a): Bucket B notation, short duration -> floored to orchestrator tier
+# Case (a): Bucket B notation, learned value below the engine floor -> per_task
 # =============================================================================
 
 
@@ -467,8 +468,8 @@ def _build_cache_tree(base: Path, version: str = '0.1-BETA') -> Path:
 
     Copies each skill's ``scripts/`` directory from the live marketplace
     source into ``<base>/plan-marshall/<version>/skills/<skill>/scripts`` —
-    the installed-plugin-cache shape whose depth differs from the
-    marketplace-source shape the pre-#515 ``parents[N]`` anchor assumed.
+    the installed-plugin-cache shape, whose depth differs from the
+    marketplace-source shape a ``parents[N]`` index anchor assumes.
 
     Returns the bundles-root anchor (``<base>``) suitable for assignment to
     ``_cmd_client._MARKETPLACE_BUNDLES_DIR``: ``resolve_bundle_path(base,
@@ -491,11 +492,12 @@ def test_cmd_resolve_cache_tree_layout_emits_augmentation(isolated_run_config, m
     timeout above the ceiling, all four augmentation fields MUST be present
     and carry the orchestrator-tier values.
 
-    Pre-#515 the ``parents[4]`` anchor resolved the build-config module path
-    to a non-existent directory under this layout, so ``_load_build_config``
-    returned ``None`` and the four fields were silently dropped — this case
-    failed. Post-#515 ``resolve_bundle_path`` reroutes through the versioned
-    subdir and the fields are emitted.
+    A ``parents[4]`` anchor resolves the build-config module path to a
+    non-existent directory under this layout, so ``_load_build_config`` returns
+    ``None`` and the four fields are dropped SILENTLY — no error, just a
+    legacy-shaped result, and precisely where the product is installed rather
+    than run from source. ``resolve_bundle_path`` reroutes through the
+    ``<version>`` subdir instead, which is what keeps the fields emitted.
     """
     _set_persisted_timeout(isolated_run_config, 'python:verify_plan_marshall', 800)
 
@@ -506,8 +508,8 @@ def test_cmd_resolve_cache_tree_layout_emits_augmentation(isolated_run_config, m
         with tempfile.TemporaryDirectory() as cache_dir:
             cache_base = _build_cache_tree(Path(cache_dir))
             # Repoint the bundles-root anchor at the versioned cache tree. This is
-            # the value pre-#515 arithmetic mis-resolved; resolve_bundle_path()
-            # must now find the build-config module under the <version> subdir.
+            # the value index arithmetic mis-resolves; resolve_bundle_path()
+            # must find the build-config module under the <version> subdir.
             monkeypatch.setattr(_cmd_client, '_MARKETPLACE_BUNDLES_DIR', cache_base)
 
             with tempfile.TemporaryDirectory() as project_dir:

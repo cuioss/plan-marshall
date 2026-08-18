@@ -155,9 +155,10 @@ def test_classify_changed_path_nested_pom_matches_bare_basename_route():
 
     The bare-basename regime of the shared matcher (``route_matches``) matches
     a route with no ``/`` against the path's basename anywhere in the tree —
-    the semantics the aggregator has always used. The pre-fix deriver matched
-    the full path with ``fnmatch.fnmatch``, which leaves every nested descriptor
-    on a multi-module reactor unclaimed (``classified_count: 0``).
+    the semantics the aggregator uses. Matching a bare route against the full
+    path with ``fnmatch.fnmatch`` instead leaves every nested descriptor on a
+    multi-module reactor unclaimed (``classified_count: 0``), so the deriver
+    sees nothing to verify.
     """
     merged = {
         'java': [
@@ -263,10 +264,10 @@ def test_resolve_module_for_path_prefers_domain_affine_sibling():
     the same physical path, so the tie is genuine and the fallback is
     alphabetical. ``test_resolve_module_for_path_alphabetical_fallback_without_affinity``
     resolves this exact ``.js`` path to the MAVEN sibling when no discriminating
-    domain is supplied — ``maven`` sorts before ``npm``. So without affinity every
-    JavaScript change under a shared path is attributed to the Maven wrapper, and
-    the module the deriver then verifies is the one that cannot build the file
-    that changed.
+    domain is supplied — ``maven`` sorts before ``npm``. Without affinity, then,
+    every JavaScript change under a shared physical path is attributed to the
+    sibling that sorts first rather than to the one whose technology claims the
+    file, and the deriver goes on to verify that module instead.
     """
     with tempfile.TemporaryDirectory() as tmp:
         project = Path(tmp) / 'project'
@@ -316,9 +317,10 @@ def test_production_js_under_maven_wrapper_derives_npm_compile():
     compile — not the wrapper's Maven goal.
 
     The derived command is what a caller actually runs to verify the change, so
-    resolving the wrong sibling here does not merely mislabel it: the executable
-    would name ``e-2-e-playwright-maven`` and run a Maven build against a
-    JavaScript edit. The assertions therefore pin BOTH halves — that the npm
+    resolving the wrong sibling here does not merely mislabel it: the emitted
+    executable would be scoped to ``e-2-e-playwright-maven``, and the JavaScript
+    edit would be verified against the sibling module rather than the one whose
+    technology claims it. The assertions therefore pin BOTH halves — that the npm
     module's ``compile`` is present and that no executable names the Maven
     sibling — because a run that emitted both would still look green.
     """
@@ -528,11 +530,14 @@ def test_it_route_stamped_verify_derives_failsafe_gate():
     """A seeded IT route stamped build_class=verify derives the module's verify
     executable — not the Surefire test goal — for a changed *IT.java artifact.
 
-    ``module-tests`` is the plain Surefire goal, and Surefire's default includes
-    EXCLUDE the IT naming patterns. A gate derived as ``module-tests`` for an
-    ``*IT.java`` change therefore executes zero of the tests that changed and
-    still reports success — a green build that verified nothing. The
-    Failsafe-bound ``verify`` class is what actually runs them.
+    Route precedence is the whole contract: the narrower IT route and the broad
+    ``*/src/test/*.java`` route both match, and the stamped ``verify`` class must
+    win. What makes that precedence load-bearing is asserted where the Maven
+    extension is tested — ``build-maven/test_maven_extension.py`` pins that an
+    IT-signature path resolves the Failsafe-bound class rather than the plain
+    test goal, because the plain goal does not run IT-named tests and so reports
+    success having executed none of them. Here the concern is only that the
+    deriver honours the stamp; this fixture's executables are engine-agnostic.
     """
     with tempfile.TemporaryDirectory() as tmp:
         project = Path(tmp) / 'project'
