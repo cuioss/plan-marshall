@@ -1,6 +1,13 @@
 # Verification — 300-the-operator-report-is-an-evidence-surface-the-inbox-cannot-see
 
-**Verified against:** commit `af417166dd9f64704fe738720d716c38515061be`   **Landed as:** PR #1211, commit `308528d67472c8efaba7abd3ce5d6b696a8c0967`   **Verdict:** fully-implemented
+**Verified against:** commit `af417166dd9f64704fe738720d716c38515061be`   **Landed as:** PR #1211, commit `308528d67472c8efaba7abd3ce5d6b696a8c0967`   **Verdict:** implemented-with-gaps
+
+> **Verdict corrected during adversarial review** (was `fully-implemented`). D0, D2 and D3 are clean
+> passes. D1 is not: its own deliverable text — `finalize-step-order-bands.md` — carries two defects
+> (G2, the Settle band's insertion-room remedy names only ranges a pre-push step cannot use; G4, three
+> `mutates_source` restatements in a doc that declares it restates none). The deliverable table already
+> scored D1 "Mostly" on both *Correct?* and *Complete?*; `fully-implemented` did not follow from that
+> row.
 
 ## Method
 
@@ -47,7 +54,7 @@
 
 | # | Deliverable | Done-when condition | Implemented? | As documented? | Correct? | Complete? | Evidence (file:line / symbol / command + result) |
 |---|---|---|---|---|---|---|---|
-| D0 | GATE: derive population + semantics from the composer's source | Population derived; per-phase-vs-global and tie-break answered from the composer | Yes (mutates nothing) | Yes | Yes | Yes | Population re-derived by executing `find_implementors` → 26 steps, all orders distinct; the report's 25-row table matches exactly once `default:emit-landing` (added later by plan 302, PR #1215) is excluded. Per-phase: `extension_discovery.py:1383` sorts one ext-point population; the phase-5 verify population is a separate list of 1 (`default:verify`, order 10) that today shares order 10 with `default:architecture-refresh` and does **not** trip the collision test — a live proof of the per-phase claim. Tie-break: `_manifest_validation.py:399-409` builds `sortable` in list order and calls `sortable.sort(key=lambda pair: pair[0])` — stable, so list position wins; `_check_ascending_order` (`:443`) uses `order < max_order`, so equal orders are *not* flagged. `archive-plan runs last` confirmed at `_manifest_core.py:289-294`. |
+| D0 | GATE: derive population + semantics from the composer's source | Population derived; per-phase-vs-global and tie-break answered from the composer | Yes (mutates nothing) | Yes | Yes | Yes | Population re-derived by executing `find_implementors` → 26 steps, all orders distinct; the report's 25-row table is **membership**-identical to today's 26 once `default:emit-landing` (added later by plan 302, PR #1215, commit `5a5446d3`) is excluded. Three of its *order values* legitimately differ — `architecture-refresh` 9→10, `push` 10→11, `archive-plan` 1000→1100 — because D0 is a pre-change snapshot and D1/D2 renumbered exactly those three. Per-phase: `extension_discovery.py:1383` sorts one ext-point population; the phase-5 verify population is a separate list of 1 (`default:verify`, order 10) that today shares order 10 with `default:architecture-refresh` and does **not** trip the collision test — a live proof of the per-phase claim. Tie-break: `_manifest_validation.py:399-409` builds `sortable` in list order and calls `sortable.sort(key=lambda pair: pair[0])` — stable, so list position wins; `_check_ascending_order` (`:443`) uses `order < max_order`, so equal orders are *not* flagged. `archive-plan runs last` confirmed at `_manifest_core.py:289-294`. |
 | D1 | Banded allocation contract with reserved gaps + `reads`/`destroys` keys | Contract documented with insertion room in every band; ordering key can express `reads`/`destroys` | Yes | Yes | Mostly — see below | Mostly — see below | New `marketplace/bundles/plan-marshall/skills/extension-api/standards/finalize-step-order-bands.md` (108 lines): six bands, owners, reserved gaps, collision rule, `reads`/`destroys`. `ext-point-finalize-step.md:49-50` adds both keys to the frontmatter contract table; `:262` cross-links the band doc. `archive-plan.md:7-10` → `order: 1100` + `destroys: [plan-directory]`; `branch-cleanup.md:7-9` → `destroys: [worktree]`. Terminal slot 1000–1099 was empty at landing and is now occupied by `emit-landing` (order 1000, PR #1215) — the reservation worked. Cross-epic citation present (`finalize-step-order-bands.md:11-18` links `source-edit-pushability.md` and `ext-point-finalize-step.md` § Implementor Frontmatter). |
 | D2 | Resolve the live same-phase collision, intended order established first | Two steps have distinct orders and the intended order was established first | Yes | Yes | Yes | Yes | `finalize-step-security-audit.md:9` → `order: 9`; `architecture-refresh.md:7` → `order: 10`; `push.md:7` → `order: 11`. The intended order is **pre-existing documentation**, not invented: the pre-change `phase-6-finalize/SKILL.md` line already read "`architecture-refresh` (9, derived-state — sorts LAST in the settle band …)" (visible in the `308528d6` diff `-` side), and `find_implementors` sorts `(order, name)` (`extension_discovery.py:1383`), so at equal order 9 `architecture-refresh` sorted *before* `security-audit` — the documented intent inverted. Executed sort at HEAD confirms `security-audit (9) → architecture-refresh (10) → push (11)`; architecture-refresh is the highest order below `push`, i.e. last in the settle band. |
 | D3 | A collision check that FAILS, seen to fire on the live collision before D2 | Verified to fire on the live collision BEFORE D2 fixed it | Yes | Yes | Yes | Yes | `test_finalize_orchestration_routing.py:847` `TestNoTwoFinalizeStepsShareAnOrder` — extends the existing step-discovery file (no competing checker), derives its population from `find_implementors(_EXT_POINT)`, carries an anti-vacuity `test_discovery_is_non_empty`. 64 passed at HEAD. **Mutation-reproduced**: restoring `architecture-refresh` to order 9 makes it fail with the exact message the report preserves. |
@@ -79,13 +86,24 @@ D1 file list and the `destroys` declarations; the D2 intended-order claim and it
 masking a real ordering bug" analysis; every row of the 11-stale-restatement disposition table; both
 "correctly excluded" fixtures; both residue items; and the ext-point Current-Implementations table.
 
-One contradiction found:
+Two contradictions found:
 
 - **"11 stale order restatements" is not what the report's own table enumerates.** § Findings →
   Pre-PR verification sub-agent states "11 stale order restatements survived" and "Disposition — all
   11 fixed", but the eight-row table beneath it enumerates **13** statements once its own
   multiplicities are summed (`×2 + ×2 + 1 + 1 + 1 + ×4 + 1 + 1`). The 13 fixes are all real and all
-  present in the landed diff — the count is wrong, not the work. Recorded as G5.
+  present in the landed diff — the count is wrong, not the work. Recorded as G5. **Correction from
+  adversarial review:** the figure appears at **four** sites (`report-01.md:226`, `:230`, `:303`,
+  `:315`), not the two the original text implied.
+- **The stale-restatement sweep was itself incomplete, and so was this document's re-sweep.** A
+  broader re-sweep during adversarial review (`grep -rn '\b61\b' … | grep -i 'order\|emitter'` over
+  `marketplace/`, `.claude/`, `test/`) found **six** sites citing `finalize-step-preference-emitter` at
+  `order: 61` when it declares `order: 992` — the three this document recorded (G6) plus three it did
+  not: `test_validate_loadable.py:309-312`, `test_declared_step_contract_regression.py:430`, and
+  `manage-execution-manifest.py:2282`. Two of those three are in files the D2 sweep **did** edit
+  (`308528d6` changed `push=10`→`11` in `test_validate_loadable.py` and `archive-plan # order 1000`→
+  `# order 1100` two rows above the missed line in `test_declared_step_contract_regression.py`).
+  Recorded as G7, G8, G9.
 
 Everything else checks out. Specifically confirmed rather than assumed:
 
@@ -101,7 +119,8 @@ Everything else checks out. Specifically confirmed rather than assumed:
   synthetic (`lessons-capture` 50, `record-metrics` 990); `test_steps_sort.py:33-38` `_FAKE_ORDER` is
   a table feeding a monkeypatched `_resolve_step_order` (`ci-verify` 30, `archive-plan` 50).
 - The `test_finalize_step_print_phase_breakdown.py` pre-existing-stale-docstring fix landed and is
-  correct at HEAD (`:97-103`, now naming 998 / 1000-1099 / 1100).
+  correct at HEAD (the comment block is `:99-103`, not `:97-103` — corrected in adversarial review —
+  plus the module docstring at `:15`; both now name 998 / 1000-1099 / 1100).
 - `19459 passed, 14 skipped` and the "green CI on head `83d422b`" claim were **not** re-derived (see
   below).
 
@@ -152,3 +171,110 @@ of the two renumbers:
   the mandated cold read happened is missing. Not raised as a gap, because no change follows from it.
 - **Whether any consumer repository pins an order D1 would break.** Unreadable from this clone, as the
   plan and the report both state. Left explicitly unresolved rather than assumed either way.
+
+## Adversarial review
+
+**Reviewed by:** an independent agent that did not write this document.
+
+**Checked.** Every gap G1–G6 (all six), every deliverable row (all four, including the three clean
+passes), the verdict, and every "swept, clean" claim.
+
+*Files opened at HEAD:* `finalize-step-order-bands.md` (whole file), `ext-point-finalize-step.md`
+§ Implementor Frontmatter (rows `order` `:38`, `mutates_source` `:42`, `post_run_review` `:47`, `reads`
+`:49`, `destroys` `:50`, cross-link `:262`), `extension_discovery.py`
+(`_IMPLEMENTOR_FRONTMATTER_KEYS` `:889`, `_build_implementor_record` `:1030-1091`, the sort at `:1383`),
+`_manifest_validation.py` (`_sort_steps_by_frontmatter_order` `:399-417`, `_check_ascending_order`
+`:420-...` with the `order < max_order` test at `:443`), `_manifest_core.py:285-294`,
+`phase-6-finalize/SKILL.md:217` and `:1214`, `record-metrics.md:37`, `emit-landing.md:7,80,89,93`,
+`decision-rules.md:461,463`, `manage-execution-manifest.py:2275-2292`,
+`test_finalize_orchestration_routing.py:60-107,612-745,840-900`,
+`test_manage_execution_manifest_validate.py:425-440`, `test_validate_loadable.py:300-322`,
+`test_declared_step_contract_regression.py:50,418-440`, `test_steps_sort.py:25-45,78-130`,
+`test_finalize_step_print_phase_breakdown.py:90-110`, `report-01.md:38-110,218-250`, `plan.md` in full.
+
+*Commands run:* `git log -1` on both cited SHAs (both resolve; `308528d6` is the PR #1211 squash);
+`git show --stat 308528d6` (re-derived **34 files, +972/−192**); `git show 308528d6 --` on
+`phase-6-finalize/SKILL.md`, `terminal-title-architecture.md`, `test_validate_loadable.py`,
+`test_declared_step_contract_regression.py`; `git log -- emit-landing.md` (single commit `5a5446d3`,
+PR #1215); `grep -rn '^reads:'` over `marketplace/` + `.claude/` (**zero**, re-confirmed);
+`grep -rn destroys` over `marketplace/`, `.claude/`, `test/` (no test asserts either declaration);
+four **broadened** sweeps beyond the ones this document ran — `\b61\b` × order/emitter, `order.{0,3}25`,
+`\b(990|991|992|995|998|999)\b` × order, `archive-plan` × `1000|990|991` — and a frontmatter audit of
+every step at or after the merge gate for `mutates_source` / `post_run_review`.
+
+*Functions executed:* `find_implementors('…ext-point-finalize-step')` → **26** records, all orders
+distinct, printed with order + source (the exact list D0's table plus `emit-landing` predicts);
+`find_implementors('…ext-point-build-verify-step')` → **1** record (`default:verify`, order 10),
+confirming the cross-phase coincidence with `architecture-refresh` (10) is real and uncaught by design.
+`_sort_steps_by_frontmatter_order(list(DEFAULT_PHASE_6_STEPS))` → the 12-step sequence is already
+ascending and resolves to exactly `8, 9, 11, 20, 22, 30, 40, 62, 70, 991, 998, 1100` — the figure the
+Method section states, re-derived rather than repeated.
+
+*Mutations applied (independently, not trusting the original):* `git diff --quiet` on
+`architecture-refresh.md` (clean) → bytes saved to `$TMPDIR` → **(a)** `order: 10` → `order: 9`:
+`TestNoTwoFinalizeStepsShareAnOrder` → `1 failed, 1 passed`, assertion text
+`Colliding orders: {9: ['default:architecture-refresh', 'default:finalize-step-security-audit']}`, and
+`test_discovery_is_non_empty` still PASSED — the guard is neither vacuous nor a tautology; **(b)** a
+*new* probe the original did not run, `order: 10` → `order: "9"`, to test whether a non-int order lets
+a collision slip past the `isinstance(record['order'], int)` filter in `_orders_by_name` — it does not:
+discovery raises `TypeError` at `extension_discovery.py:1383` and **both** tests fail loudly, so there
+is no silent-skip hole. Restored from the saved bytes both times (never `git checkout`);
+`git diff --quiet` clean and the full file back to **64 passed** afterwards.
+
+| Item | Original claim | Verdict | Evidence |
+|---|---|---|---|
+| **Verdict** | `fully-implemented` | **re-verdicted → `implemented-with-gaps`** | The D1 row scores "Mostly" on *Correct?* and *Complete?*, and two gaps (G2, G4) are defects in D1's own delivered text. Epic-wide vocabulary confirms the three-value scale is in use (4 `fully-implemented`, 37 `implemented-with-gaps`, 3 `partially-implemented`). |
+| **D0** | 26-step population, per-phase, list-position tie-break | **upheld** | `find_implementors` executed → 26 records, orders `3,4,5,6,7,8,9,10,11,20,21,22,30,40,62,70,81,85,990,991,992,995,998,999,1000,1100`, all distinct. Verify ext-point → 1 record at order 10. Tie-break re-read at source: `sortable.sort(key=lambda pair: pair[0])` (`_manifest_validation.py:409`) is stable and `_check_ascending_order` (`:443`) tests `order < max_order`, so equal orders pass. One imprecision corrected: D0's table matches on *membership*, not on order values. |
+| **D1** | Contract with insertion room + `reads`/`destroys` keys | **upheld with the two recorded defects** | Band doc read whole; `ext-point-finalize-step.md:49-50` and `:262` confirmed; `archive-plan.md:7-10` and `branch-cleanup.md:7-10` confirmed; terminal band 1000–1099 confirmed occupied by `emit-landing` at 1000. Insertion room verified free in every insertable band (Settle 1–2 + 12–19/23–29/31–39/41–61/63–69; 71–899 all but 81/85; 900–989 + 993/994/996/997; 1001–1099). |
+| **D2** | Distinct orders, intended order established first | **upheld** | `security-audit` 9 / `architecture-refresh` 10 / `push` 11 at HEAD. The "intended order is pre-existing documentation" clause was the one most likely to be fabricated, so it was checked at the diff: `git show 308528d6 -- phase-6-finalize/SKILL.md` shows the **`−` side** already reading "`architecture-refresh` (9, derived-state — sorts LAST in the settle band …)". Genuine, not invented. |
+| **D3** | Check fails on the live collision; not vacuous | **upheld, independently reproduced** | Mutation (a) above reproduced the failure byte-for-byte; mutation (b) proved there is no non-int escape hatch. `64 passed in 0.68s` re-derived. Class at `:847`, anti-vacuity test at `:874`. |
+| **G1** | `destroys` anchors unasserted anywhere | **upheld, `medium` kept**; `Where` corrected | `grep -rn destroys` over `test/` returns 12 hits, none on either declaration. `_IMPLEMENTOR_FRONTMATTER_KEYS` re-read at `:889` — 7 keys, neither `reads` nor `destroys`. Fix confirmed actionable: the test file already resolves step-doc paths (`_candidate_doc_paths` `:99-107`, `record['path']` `:739`). Citation fixed: the declarations are YAML block sequences at `:9-10`, not inline lists at `:9`. |
+| **G2** | Settle band's remedy names only post-push ranges | **upheld, rewritten** | Occupancy re-derived by execution: 3–10 occupied, `push` at 11, only 1–2 free. `SKILL.md:217` confirmed as the settle-before-push contract. **But the original *What is wrong* elided the bullet's second remedy** ("and, if ever needed, a deliberate re-space of the sub-cluster") behind an ellipsis, which overstated the defect. Rewritten to state both remedies and that only the second is available. Severity `medium` kept — the contract text misdirects, but no behaviour is wrong. |
+| **G3** | `reads` shipped with no instance | **re-severitied `medium` → `low`** | The sweep is upheld (`^reads:` → zero, re-run). But D1's *Done when* is "the ordering key **can express**" the keys, which `ext-point-finalize-step.md:49-50` satisfies, and `plan.md` § Scope-after-the-split assigns application to plan 302 explicitly. As a charge against plan 300 this sits on the plan's own declared boundary; kept as a live seam item at `low`. |
+| **G4** | Three `mutates_source` restatements in a "does not restate" doc | **upheld, `low` kept** | All three located at `:37`, `:39`, `:40` and each checked against its owner row (`:42`, `:47`) — all currently correct, so it is duplication risk, not contradiction. Strengthened: `:39` and `:40` sit at/after the merge gate, where the band doc's own `:14-16` says the *other* contract governs `mutates_source`. |
+| **G5** | Report says 11, table sums to 13 | **upheld, `Fix`/`Done when` rewritten** | Multiplicities re-summed from `report-01.md:232-239`: `2+2+1+1+1+4+1+1 = 13`. All 13 fixes present in `308528d6`. **The gap's own figure was wrong:** it said "both occurrences"; `grep -n` finds **four** (`:226`, `:230`, `:303`, `:315`). Fix and Done-when now name all four and give a checkable command. |
+| **G6** | Three stale order comments | **upheld, and shown to be a 6-instance class** | `test_manage_execution_manifest_validate.py:431,432` and `decision-rules.md:463` all confirmed verbatim; both fixture comments confirmed pre-existing via the `308528d6` diff. `finalize-step-preference-emitter.md:93` checked and **excluded** — it is explicitly framed as history. |
+| **G7 (new)** | — | **added, `low`** | `test_validate_loadable.py:309-312` claims the emitter "now sits pre-merge at order 61 (the settle band)"; it declares `order: 992`, `post_run_review: true`. The D2 sweep edited this file (`push=10`→`11` at `:277`) and missed it. |
+| **G8 (new)** | — | **added, `low`** | `test_declared_step_contract_regression.py:430` `_EMITTER: None, # order 61` (`_EMITTER` defined `:50`); the sweep edited `archive-plan # order 1000`→`1100` **two rows above** in the same literal. |
+| **G9 (new)** | — | **added, `low`** | `manage-execution-manifest.py:2282` names the incident step as "order 61"; the code-side twin of `decision-rules.md:463`, contradicted by `phase-6-finalize/SKILL.md:1214` ("order 992, post-merge"). |
+
+**Not re-checked** (stated so the coverage of this review is not overclaimed):
+
+- `19459 passed, 14 skipped` and the CI-green claim on head `83d422b` — still not re-derived; a
+  whole-tree `./pw verify` remained out of proportion, and the PR's check runs are unreadable from the
+  tree. Only `test_finalize_orchestration_routing.py` was executed (64 passed).
+- The **D3-fired-before-D2 ordering**. The unreachability of `feba50d` / `08e8da6` was re-confirmed
+  only indirectly (the branch is absent from `git log --all`); the substance was re-established by an
+  independent mutation instead, as the original did.
+- The `.claude/skills/` and `test/` sweeps were broadened for the `order` classes named above, but no
+  sweep was run for stale statements about `default_on`, `presets`, or `head_dependent` — those are
+  outside this plan's surface.
+- Whether any **consumer repository** pins an order. Still unreadable from this clone; left open, as
+  both the plan and the original verification did.
+- `report-01.md`'s narrative sections outside § D0, § Findings and the step-by-step table.
+
+**Documents corrected.** `verification.md`: verdict `fully-implemented` → `implemented-with-gaps` with
+the reason stated inline; the D0 "matches exactly" clause narrowed to *membership* (the three
+renumbered order values necessarily differ); the `test_finalize_step_print_phase_breakdown.py` line
+reference `:97-103` → `:99-103` (+ `:15`); "One contradiction found" → "Two", with the second
+contradiction — this document's own incomplete re-sweep — written out; this section appended.
+`gaps.md`: open items `6` → `9`; the intro rewritten (it claimed all four deliverables "are correct",
+which the D1 row contradicts); G1's `Where` corrected to the YAML block `:9-10`; G2's *What is wrong*
+rewritten to stop eliding the doc's second remedy; G3 re-severitied `medium` → `low` with the reason;
+G4 given its owner-row line references and the `:14-16` self-contradiction; G5's `Where`, `Fix` and
+`Done when` corrected from two occurrences to four with a checkable command; G6 annotated with the
+class total; **G7, G8, G9 added**; a `## Refuted during adversarial review` section added recording
+that nothing was refuted, and why.
+
+**Residual doubt — what a third reviewer should look at first.**
+
+1. **The `19459 passed` figure is still a quoted number nobody has re-derived**, and it is the single
+   largest unverified claim attached to this plan. It is also exactly the shape of defect the epic
+   names. A reviewer with the budget for one `./pw verify` should spend it there.
+2. **G6/G7/G8/G9 are four instances found by one sweep pattern.** The pattern searched for `61`. The
+   same class almost certainly exists for other superseded values (`80`, `25`, `1000`, `991`) in files
+   this review sampled rather than enumerated — `test_config_defaults.py` (56 changed lines) and
+   `test_manage_execution_manifest_compose.py` (37) were spot-checked, not swept exhaustively.
+3. **G2's fix is the only one that edits the contract a third party reads.** Whoever applies it should
+   re-derive the pre-push occupancy at that moment rather than trusting the `3–10` recorded here — the
+   band is one new settle step away from having no free integer at all.
