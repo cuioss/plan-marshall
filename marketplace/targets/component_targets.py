@@ -112,6 +112,14 @@ _SKILLS_DIR = 'skills'
 _SKILL_MANIFEST = 'SKILL.md'
 
 
+class _MultilinePlainScalar(Exception):
+    """Internal marker: the value is a plain scalar continued across lines.
+
+    Raised by the parser, which has no component path, and turned into a
+    :class:`TargetScopeError` by :func:`read_target_scope`, which does.
+    """
+
+
 class TargetScopeError(RuntimeError):
     """Raised when a component's ``targets:`` declaration is invalid.
 
@@ -226,13 +234,15 @@ def _join_flow_sequence(value: str, rest: list[str]) -> str:
     holding a token no registered name matches — an absorbed ``2fa: no``, or
     a truncated ``[claude`` — so :func:`_validate` rejects it and the build
     stops. A misread can widen or truncate the text that gets REJECTED; it
-    cannot produce a scope the author did not write. Directed differential
-    sweeps totalling tens of thousands of bracketed shapes found no
-    accept/reject divergence from PyYAML *arising from this fold*, and no
-    input that smuggled a valid scope through a misread. That says nothing
-    about divergences from other causes — a duplicate top-level key resolves
-    to the first declaration here and to the last in YAML, and both spellings
-    may be bracketed.
+    cannot produce a scope the author did not write, and the reason is
+    structural rather than statistical: a fold that runs too far absorbs a
+    fragment containing a colon, which is never split on and never stripped,
+    so the token cannot match a registry name; a fold that stops too early
+    leaves the value opening ``[`` with no closing ``]``, which
+    :func:`_split_inline` therefore does not unwrap, so the token keeps its
+    bracket. Both land outside the registry. That is a property of THIS fold
+    only — a duplicate top-level key resolves to the first declaration here
+    and to the last in YAML, and both spellings may be bracketed.
     """
     head = _strip_comment(value)
     if not head.startswith('[') or ']' in head:
@@ -304,6 +314,24 @@ def _unquote_key(key: str) -> str:
     return key
 
 
+def _has_continuation(rest: list[str]) -> bool:
+    """Whether the next meaningful line continues the value rather than ending it.
+
+    An indented line after a plain-scalar value is YAML's multi-line plain
+    scalar: ``targets: claude,`` / ``  opencode`` is the single value
+    ``claude, opencode``. Reading only the first physical line yields
+    ``claude`` alone — the declared scope SILENTLY NARROWED by one target,
+    which is the one direction this module must never fail in. Detecting it
+    is what lets the caller reject rather than guess.
+    """
+    for line in rest:
+        stripped = line.strip()
+        if not stripped or stripped.startswith('#'):
+            continue
+        return line[:1].isspace() and not stripped.startswith('-')
+    return False
+
+
 def _declared_tokens(text: str) -> list[str] | None:
     """Return the raw ``targets:`` tokens declared by ``text``, or ``None``.
 
@@ -325,6 +353,8 @@ def _declared_tokens(text: str) -> list[str] | None:
         value = value.strip()
         rest = lines[index + 1:]
         if value:
+            if not _strip_comment(value).startswith('[') and _has_continuation(rest):
+                raise _MultilinePlainScalar
             return _split_inline(_join_flow_sequence(value, rest))
         return _collect_block_items(rest)
     return None
@@ -387,7 +417,15 @@ def read_target_scope(path: Path) -> frozenset[str] | None:
         text = path.read_text(encoding='utf-8')
     except (OSError, UnicodeDecodeError):
         return None
-    tokens = _declared_tokens(text)
+    try:
+        tokens = _declared_tokens(text)
+    except _MultilinePlainScalar:
+        raise TargetScopeError(
+            f'{path}: `{TARGET_SCOPE_FIELD}:` is a plain scalar continued across lines. '
+            f'That is one YAML value, but this parser reads only its first line, which '
+            f'would silently narrow the declared scope. Write the list explicitly — '
+            f'`{TARGET_SCOPE_FIELD}: [a, b]` or a `- ` block — so what ships is what you wrote.'
+        ) from None
     if tokens is None:
         return None
     return _validate(tokens, path)

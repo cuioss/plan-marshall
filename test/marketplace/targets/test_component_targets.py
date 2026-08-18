@@ -291,6 +291,48 @@ def test_a_hash_that_opens_no_token_is_not_a_comment(frontmatter, expected):
     assert _declared_tokens(f'---\nname: demo\n{frontmatter}\n---\n\n# Body\n') == expected
 
 
+@pytest.mark.parametrize(
+    'frontmatter',
+    [
+        pytest.param('targets: claude,\n  opencode', id='comma-continued'),
+        pytest.param('targets: claude\n  opencode', id='space-continued'),
+        pytest.param('targets: claude,\n\n  opencode', id='blank-line-between'),
+    ],
+)
+def test_a_plain_scalar_continued_across_lines_is_rejected(tmp_path, frontmatter):
+    """Silent NARROWING is the one direction this mechanism must never fail in.
+
+    ``targets: claude,`` / ``  opencode`` is a single YAML value naming two
+    targets. Reading only the first physical line yielded ``{claude}`` — the
+    component shipped to one target where its author declared two, with
+    nothing reported. It is rejected now, so the author is told rather than
+    silently obeyed in part.
+    """
+    with pytest.raises(TargetScopeError, match='continued across lines'):
+        read_target_scope(_component(tmp_path, frontmatter))
+
+
+@pytest.mark.parametrize(
+    ('frontmatter', 'expected'),
+    [
+        pytest.param('targets: claude, opencode', {'claude', 'opencode'}, id='single-line-bare'),
+        pytest.param('targets: [claude,\n  opencode]', {'claude', 'opencode'}, id='flow-across-lines'),
+        pytest.param('targets:\n  - claude', {'claude'}, id='block-form'),
+        pytest.param('targets: claude\ndescription: d', {'claude'}, id='bare-then-next-key'),
+        pytest.param('targets: claude\n# note\ndescription: d', {'claude'}, id='bare-then-comment'),
+    ],
+)
+def test_the_continuation_check_does_not_disturb_any_supported_form(
+    tmp_path, frontmatter, expected
+):
+    """The rejection above must catch the continued scalar and nothing else.
+
+    A guard that also refused the block form, or a bare value followed by the
+    next field, would trade a silent defect for a loud one.
+    """
+    assert read_target_scope(_component(tmp_path, frontmatter)) == expected
+
+
 def test_absent_field_means_every_target(tmp_path):
     """A component with no declaration ships everywhere — the default."""
     path = tmp_path / 'demo.md'

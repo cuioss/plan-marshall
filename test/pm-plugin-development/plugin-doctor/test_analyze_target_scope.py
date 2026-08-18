@@ -213,7 +213,11 @@ def test_a_quoted_key_reaches_the_rule_itself(tmp_path, value):
     [pytest.param('targets"', id='trailing-quote-only'), pytest.param('"targets', id='leading-quote-only')],
 )
 def test_a_mismatched_quote_is_not_the_targets_key(tmp_path, value):
-    """A mismatched quote is a different key, so there is nothing to flag."""
+    """A mismatched quote is a different key — or no key at all — so nothing is flagged.
+
+    ``targets"`` is a distinct key to YAML; ``"targets`` is not well-formed
+    YAML at all. Either way the component declares no scope here.
+    """
     bundles = _marketplace(tmp_path)
     _component(bundles, 'commands/mismatched.md', f'{value}: [cluade]')
 
@@ -241,6 +245,26 @@ def test_the_fold_boundary_misreads_exactly_where_it_is_documented_to(block, exp
 
     assert declaration is not None
     assert declaration[0] == expected
+
+
+def test_a_plain_scalar_continued_across_lines_is_flagged(tmp_path):
+    """The authoring-time net reports the shape the build rejects."""
+    bundles = _marketplace(tmp_path)
+    _component(bundles, 'commands/multiline.md', 'targets: claude,\n  opencode')
+
+    findings = analyze_target_scope(bundles)
+
+    assert len(findings) == 1
+    assert findings[0]['details']['reason'] == 'targets_multiline_scalar'
+    assert 'continued across lines' in findings[0]['description']
+
+
+def test_a_supported_form_is_not_flagged_as_a_continued_scalar(tmp_path):
+    """The block form is indented too; it must not trip the continuation check."""
+    bundles = _marketplace(tmp_path)
+    _component(bundles, 'commands/block.md', 'targets:\n  - claude')
+
+    assert analyze_target_scope(bundles) == []
 
 
 # ---------------------------------------------------------------------------

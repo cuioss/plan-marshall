@@ -74,6 +74,12 @@ RULE_DESCRIPTOR = RuleDescriptor(
 )
 RULE_NAME = 'analyze_target_scope'
 
+#: Sentinel token list marking a plain scalar continued across lines. It is
+#: not a target name and cannot collide with one — the build rejects this
+#: shape outright, and the rule reports it rather than reading line one and
+#: silently narrowing the scope.
+_MULTILINE_SCALAR = ['\x00multiline-plain-scalar']
+
 #: Frontmatter field under inspection.
 TARGET_SCOPE_FIELD = 'targets'
 
@@ -100,6 +106,12 @@ _DESCRIPTION_UNKNOWN = (
     'component `targets:` frontmatter names a target that is not registered — the '
     'multi-target build rejects the declaration, so until it is fixed the build fails '
     'rather than shipping the component anywhere.'
+)
+
+_DESCRIPTION_MULTILINE = (
+    'component `targets:` frontmatter is a plain scalar continued across lines. That is one '
+    'YAML value, but the build reads only its first line, so the declared scope would be '
+    'silently narrowed. Write the list explicitly — `targets: [a, b]` or a `- ` block.'
 )
 
 _DESCRIPTION_EMPTY = (
@@ -222,6 +234,22 @@ def _unquote_key(key: str) -> str:
     return key
 
 
+def _has_continuation(rest: list[str]) -> bool:
+    """Whether the next meaningful line continues the value rather than ending it.
+
+    Mirrors ``component_targets._has_continuation``. An indented line after a
+    plain-scalar value is YAML's multi-line plain scalar; reading only the
+    first physical line would silently narrow the declared scope, which the
+    build rejects outright.
+    """
+    for line in rest:
+        stripped = line.strip()
+        if not stripped or stripped.startswith('#'):
+            continue
+        return line[:1].isspace() and not stripped.startswith('-')
+    return False
+
+
 def declared_targets(text: str) -> tuple[list[str], int] | None:
     """Return ``(tokens, line_number)`` for a top-level ``targets:`` declaration.
 
@@ -245,6 +273,8 @@ def declared_targets(text: str) -> tuple[list[str], int] | None:
         value = value.strip()
         rest = lines[index + 1:]
         if value:
+            if not _strip_comment(value).startswith('[') and _has_continuation(rest):
+                return _MULTILINE_SCALAR, line_number
             return _split_inline(_join_flow_sequence(value, rest)), line_number
         return _collect_block_items(rest), line_number
     return None
@@ -317,6 +347,21 @@ def _scan_component(path: Path, registered: frozenset[str] | None) -> list[dict]
     if declaration is None:
         return []
     tokens, line_number = declaration
+
+    if tokens is _MULTILINE_SCALAR:
+        return [
+            Finding(
+                type=RULE_ID,
+                file=str(path),
+                line=line_number,
+                severity='error',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=_DESCRIPTION_MULTILINE,
+                details={'reason': 'targets_multiline_scalar'},
+                extra={'rule': RULE_NAME},
+            ).to_dict()
+        ]
 
     if not tokens:
         return [
