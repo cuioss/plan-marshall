@@ -328,7 +328,7 @@ status: success
 operation: permission configure
 scope: project
 permissions_written: 3
-target_file: .claude/settings.local.json
+target_file: /repo/.claude/settings.local.json
 ```
 
 **Error**:
@@ -384,7 +384,14 @@ checks_run[2]:
   - redundant
   - suspicious
 total_findings: 0
+findings[0]:
+summary:
+  high: 0
+  medium: 0
+  info: 0
 ```
+
+`findings[]` and `summary` are emitted whether or not anything was found — a zero here is a measured zero, not an absent field.
 
 **Error**:
 ```toon
@@ -417,7 +424,7 @@ operation: permission fix
 scope: project
 fix_operation: normalize
 dry_run: false
-target_file: .claude/settings.local.json
+target_file: /repo/.claude/settings.local.json
 changes_applied: 4
 ```
 
@@ -428,7 +435,7 @@ operation: permission fix
 scope: project
 fix_operation: add
 dry_run: true
-target_file: .claude/settings.local.json
+target_file: /repo/.claude/settings.local.json
 changes_applied: 0
 proposed_additions[1]:
   - Bash(python3 scripts/*.py)
@@ -468,7 +475,7 @@ dry_run: false
 bundles_scanned: 10
 wildcards_added: 3
 wildcards_already_present: 7
-target_file: .claude/settings.local.json
+target_file: /repo/.claude/settings.local.json
 ```
 
 **Error**:
@@ -505,7 +512,7 @@ dry_run: false
 steps_scanned: 8
 permissions_added: 2
 permissions_already_present: 6
-target_file: .claude/settings.local.json
+target_file: /repo/.claude/settings.local.json
 ```
 
 **Success (dry-run)**:
@@ -585,7 +592,7 @@ scope: project
 dry_run: false
 domains_added: 2
 domains_removed: 1
-target_file: .claude/settings.local.json
+target_file: /repo/.claude/settings.local.json
 ```
 
 **Error**:
