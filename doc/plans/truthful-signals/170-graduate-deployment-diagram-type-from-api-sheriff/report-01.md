@@ -750,8 +750,18 @@ run's fault was a fix committed on its own rather than folded into the final rep
 pushing of it.
 
 The abort is **not** counted as coverage: an aborted review is never `reviewed`. The run re-requested
-on a stable head, after the final report commit had landed, and the outcome of that second request is
-recorded in § Merge gate.
+on a stable head at `2902ba3`, after the final report commit had landed.
+
+**The second re-request was refused: *"Action not completed. Review rate limited."*** The window the
+first re-request had opened was spent on the review this run aborted, and no further one was
+available. So the recovery attempt was made, twice, and coverage is 1 of 3 regardless — which is the
+outcome the § Merge gate disclosure reports.
+
+⭐ The sequence is worth reading as a whole, because it is the epic's own theme applied to this run's
+process: a reviewer's *availability* is not the same as a review, an *accepted* trigger is not the
+same as a completed review, and a run that recorded "re-requested successfully" after the first
+acceptance would have been recording a signal that never became coverage. Each step was read back from
+the bodies rather than inferred from the step before it.
 
 ⚠ **A coverage limit worth recording even for a reviewer that does report.** CodeRabbit's notice lists
 the files it would have processed and states that `templates/deployment-diagram-skeleton.svg` **is
@@ -863,8 +873,9 @@ reviewer's `Reopens?` value, because that is what tells a reader whether the gap
 
 > **Review coverage: 1 of 3.** `cuioss-review-bot` reviewed and reported no major issues.
 > `coderabbitai` was rate-limited on a 12-minute window, was re-requested after it cleared, accepted,
-> and had its review aborted by this run's own push; it was re-requested a second time on a stable
-> head. `sourcery-ai` is rate-limited on a **weekly** 500,000-diff-character quota that reopens on its
+> and had its review aborted by this run's own push. A second re-request on a stable head was refused
+> — *"Review rate limited"* — because the abort had consumed the window. **It never reviewed this
+> diff**, and the two recovery attempts are recorded as attempts, not as coverage. `sourcery-ai` is rate-limited on a **weekly** 500,000-diff-character quota that reopens on its
 > own but names no reset time, and this diff would exhaust it again regardless — so waiting for it was
 > never a path to coverage on this PR.
 >
