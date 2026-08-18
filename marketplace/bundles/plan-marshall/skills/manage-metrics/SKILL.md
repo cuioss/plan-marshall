@@ -567,6 +567,46 @@ the same agent dispatches the on-disk totals are independent of `enrich`'s
 per-phase subagent fields, so double-counting does not occur in the closed-phase
 row (`total_tokens`), which is filled from the accumulator at `end-phase` time.
 
+### reconcile-ledgers
+
+**Read-only.** Reconcile the plan's two ROW ledgers against each other and
+against the per-phase aggregate, emitting one finding per row present in one
+ledger and absent from the other. Pure arithmetic — it reserves no judgement for
+itself.
+
+A run writes three token ledgers, and no two cover the same population.
+`execution.toon`'s `execution_log[]` holds one row per `record-step` call and its
+writer accepts **only** `5-execute` and `6-finalize`. Each
+`work/metrics-dispatch-boundaries-{phase}.toon` holds one row per dispatch
+termination, for the dispatch classes that call `record-dispatch-boundary` — the
+rest are excluded by declaration. `work/metrics.toon` holds a per-phase
+**aggregate** across all six canonical phases, so it stores sums rather than rows
+and cannot express a repeat count at all.
+
+The two row ledgers are written by independent call sites with no shared
+transaction and no shared key — a boundary row carries no `step_id` — so a
+dispatch can land in one and not the other **in both directions**. A step that
+ran four times can appear twice in one and three times in the other, and only
+their union shows all four. The result therefore publishes `union_rows` per phase
+and in total: that is the count a reader should take, and nothing else says so.
+
+The join is on phase plus a timestamp window (`--window-seconds`, default 300),
+because the missing `step_id` leaves no other key. Findings:
+
+| Finding | Meaning |
+|---------|---------|
+| `row_absent_from_boundary_ledger` | A `record-step` row with no dispatch-boundary partner in the window |
+| `row_absent_from_execution_log` | A dispatch that recorded its usage at termination but that no `record-step` row names — spend invisible to any `execution_log` sum |
+| `boundary_never_closed` | The phase recorded dispatch rows but its `metrics.toon` row carries no `end_time`. The rows are present; the **aggregate** is what is missing — deliberately a different finding from an absent row |
+| `phase_re_entered` | `close_count > 1`, so the aggregate is cumulative across closes while both row ledgers are append logs |
+
+Two states are reported rather than counted as divergence. A phase outside the
+execution log's accepted set is `structurally_excluded`: every boundary row there
+is absent from the log **by construction**, and reporting each one would bury the
+real findings. An unreadable `execution.toon` degrades the affected phases to
+`not_evaluated` with a reason — never to a clean verdict, which is what a missing
+manifest would otherwise produce by turning every boundary row into an orphan.
+
 ## Storage
 
 ```text
@@ -700,6 +740,13 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics reco
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics enrich \
   --plan-id PLAN_ID --session-id SESSION_ID
+```
+
+### reconcile-ledgers
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics reconcile-ledgers \
+  --plan-id PLAN_ID [--window-seconds N]
 ```
 
 ## Expected Workflow

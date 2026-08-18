@@ -24,6 +24,9 @@ Usage:
 
     Enrich from JSONL transcript (per-phase subagent <usage>):
         python3 manage-metrics.py enrich --plan-id <id> --session-id <sid>
+
+    Reconcile the row ledgers against each other (read-only):
+        python3 manage-metrics.py reconcile-ledgers --plan-id <id> [--window-seconds N]
 """
 
 import argparse
@@ -36,6 +39,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from _display_time import render_timestamp
+from _ledger_reconciliation import (
+    DEFAULT_WINDOW_SECONDS,
+    EXECUTION_LOG_PHASES,
+    execution_rows_for_phase,
+    load_boundary_rows,
+    load_execution_log,
+    reconcile_phase,
+)
 from _plan_parsing import extract_deliverable_headings, parse_document_sections
 from constants import FILE_STATUS, FILE_WORK_METRICS, PHASES
 from file_ops import (
@@ -2809,6 +2820,80 @@ def cmd_boundary_status(args: argparse.Namespace) -> dict:
     }
 
 
+def cmd_reconcile_ledgers(args: argparse.Namespace) -> dict:
+    """Reconcile this plan's row ledgers against each other. Mutates NOTHING.
+
+    Joins ``execution.toon``'s ``execution_log[]`` against each phase's
+    ``work/metrics-dispatch-boundaries-{phase}.toon`` on phase and timestamp
+    window, and emits one finding per row present in one ledger and absent from
+    the other. The two partiality shapes are labelled distinctly — a phase whose
+    boundary never closed is not the same defect as an absent row — and a phase
+    the execution log structurally cannot cover is DECLARED rather than reported
+    as a pile of divergences.
+
+    See :mod:`_ledger_reconciliation` for the ledger populations and why they
+    cannot agree by construction.
+
+    The result publishes ``union_rows`` per phase and in the totals: neither
+    ledger's own row count is the number of times a phase's steps ran, and
+    without the union nothing tells a reader which count to take.
+    """
+    plan_id = require_valid_plan_id(args)
+
+    guard_error = _guard_plan_exists(plan_id)
+    if guard_error is not None:
+        return guard_error
+
+    plan_dir = get_plan_dir(plan_id)
+    execution_rows, execution_log_reason = load_execution_log(plan_dir)
+    data = read_metrics_raw(plan_id)
+    phases = data.get('phases', {})
+
+    phase_blocks: list[dict] = []
+    findings: list[dict] = []
+    for phase_name in PHASE_NAMES:
+        boundary_rows = load_boundary_rows(_dispatch_boundary_path(plan_id, phase_name))
+        metrics_row = phases.get(phase_name) or {}
+        if not boundary_rows and not metrics_row and not execution_rows:
+            continue
+        phase_rows = (
+            None if execution_rows is None else execution_rows_for_phase(execution_rows, phase_name)
+        )
+        block = reconcile_phase(
+            phase_name,
+            phase_rows,
+            boundary_rows,
+            metrics_row,
+            args.window_seconds,
+            execution_log_reason,
+        )
+        if (
+            block['execution_log_rows'] == 0
+            and block['boundary_rows'] == 0
+            and not block['findings']
+        ):
+            continue
+        phase_blocks.append(block)
+        findings.extend(block['findings'])
+
+    return {
+        'status': 'success',
+        'plan_id': plan_id,
+        'window_seconds': args.window_seconds,
+        'execution_log_readable': execution_rows is not None,
+        'execution_log_reason': execution_log_reason,
+        'execution_log_population': ','.join(EXECUTION_LOG_PHASES),
+        'phases': phase_blocks,
+        'findings': findings,
+        'findings_count': len(findings),
+        # The union is the count a reader should take: neither ledger alone
+        # observed every dispatch, and they diverge in both directions.
+        'union_rows': sum(block['union_rows'] for block in phase_blocks),
+        'execution_log_rows': sum(block['execution_log_rows'] for block in phase_blocks),
+        'boundary_rows': sum(block['boundary_rows'] for block in phase_blocks),
+    }
+
+
 def cmd_accumulate_agent_usage(args: argparse.Namespace) -> dict:
     """Persist running per-phase totals of subagent <usage> data.
 
@@ -3504,6 +3589,38 @@ def main() -> int:
     bs.add_argument('--prev-phase', default=None, help='Phase that should have been closed (optional)')
     bs.add_argument('--next-phase', required=True, help='Phase being entered on resume')
     bs.set_defaults(func=cmd_boundary_status)
+
+    # reconcile-ledgers
+    rl = subparsers.add_parser(
+        'reconcile-ledgers',
+        help='Reconcile the row ledgers against each other (read-only)',
+        description=(
+            'Deterministic cross-ledger reconciliation. Joins execution.toon\'s '
+            'execution_log[] against each phase\'s '
+            'work/metrics-dispatch-boundaries-{phase}.toon on phase and timestamp '
+            'window, emitting one finding per row present in one ledger and '
+            'absent from the other. The two partiality shapes are labelled '
+            'distinctly: boundary_never_closed (the rows exist, the phase '
+            'aggregate is missing) versus row_absent_from_* (a specific row has '
+            'no partner). A phase the execution log structurally cannot cover is '
+            'DECLARED, not reported as divergences. Publishes union_rows because '
+            'neither ledger alone observed every dispatch. Mutates nothing.'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
+    )
+    add_plan_id_arg(rl)
+    rl.add_argument(
+        '--window-seconds',
+        type=int,
+        default=DEFAULT_WINDOW_SECONDS,
+        help=(
+            'Maximum timestamp gap for pairing a row across the two ledgers '
+            f'(default: {DEFAULT_WINDOW_SECONDS}). The boundary row carries no '
+            'step_id, so the window is the only join available.'
+        ),
+    )
+    rl.set_defaults(func=cmd_reconcile_ledgers)
 
     # accumulate-agent-usage
     acc = subparsers.add_parser(
