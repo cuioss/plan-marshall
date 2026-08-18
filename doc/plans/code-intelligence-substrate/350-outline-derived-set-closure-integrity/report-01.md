@@ -1,7 +1,12 @@
 # Run report — 350-outline-derived-set-closure-integrity (run 01)
 
 **Date (UTC):** 2026-08-18    **Branch:** `claude/derived-set-closure-integrity-g7n8x2` (harness-assigned)
-**PR:** _pending_    **Outcome:** _in progress_
+**PR:** none — not opened    **Outcome:** **partial — stopped by operator instruction before the PR cycle**
+
+⚠ **Read [`actual-state.md`](actual-state.md) first.** It records how the run ended and what is NOT
+done. In particular: the verification loop did **not** converge — a 4-round budget was declared, three
+ran, and the fourth was interrupted. This report's per-deliverable record is accurate for what was
+built; it is not a clean bill of health.
 
 ## Verification round budget — declared before the first dispatch
 
@@ -62,7 +67,14 @@ sentence resolved, and the behaviour claim did not hold.
 
 ## Deliverables
 
-D1–D5 land across four commits: `d9f9534` (the closure module, the parser widening, the first test suites), `46f919c` and `0702530` (the round-1 fixes — the non-vacuous D1 fixture, the three unmeasured-scope repairs, the D3 positive-population guards, three previously-uncovered behaviours), and the round-2 fix commit (the population/heading guards, the holistic-task carve-out, and the bypass-predicate widening). D0 mutated nothing and is recorded above. ⚠ Figures in this report are re-derived at the moment of the claim; an earlier version of this line attributed all five deliverables to the first commit.
+D1–D5 land across five deliverable-bearing commits, named rather than counted so the list cannot go stale the way this sentence already did twice:
+
+- `d9f9534` — the closure module, the parser widening, the first test suites;
+- `46f919c` + `0702530` — the round-1 fixes: the non-vacuous D1 fixture, the three unmeasured-scope repairs, the D3 positive-population guards, three previously-uncovered behaviours;
+- `a583652` — the round-2 fixes: the population and heading guards, the first holistic-task carve-out, the bypass-predicate widening;
+- `0f10d16` — the round-3 fixes: the carve-out regression repair, the hit-list total guard, the `scope_estimate` derivation widening.
+
+D0 mutated nothing and is recorded above. ⚠ Every figure in this report is re-derived at the moment of the claim; this line has been wrong twice — once attributing all five deliverables to the first commit, once counting four commits when there were five.
 
 ### D1 — outline completeness is CLOSURE, not existence
 
