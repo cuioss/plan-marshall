@@ -179,7 +179,7 @@ are taken from the stored comment bodies across all three surfaces (`get_comment
 |---|---|---|---|
 | `cuioss-review-bot` | `reviewed` | — | Issue comment "PR Reviewer Guide 🔍" against the diff: *No relevant tests · No security concerns identified · No major issues detected*. A review artifact with an explicit nothing-to-report verdict |
 | `coderabbitai` | `rate-limited` | yes | Issue comment: *"Review skipped — Auto reviews are limited based on label configuration. Excluded labels (none allowed): `skip-bot-review`"*. It engaged and declined; the notice carries a retry checkbox and names `@coderabbitai review` as the manual trigger, so the refusal clears on demand |
-| `sourcery-ai` | `rate-limited` | **no** | Review summary body: *"your pull request is larger than the review limit of 150000 diff characters"*. A property of this diff's size, not of the clock — the same request never succeeds at 24,114 added lines, so waiting is futile |
+| `sourcery-ai` | `rate-limited` | **no** | Review summary body: *"your pull request is larger than the review limit of 150000 diff characters"*. A property of this diff's size, not of the clock — the diff is an order of magnitude past that ceiling, so the same request never succeeds and waiting is futile |
 
 Coverage: **1 of 3 reviewed.** Inline review threads: zero (`get_review_comments` returned an empty
 set, `totalCount: 0`) — a genuine empty read, not an unreadable surface. No comment required action:
@@ -299,7 +299,8 @@ rather than semantic; and it did not check this PR's CI status.
 | 9 What have we learned | done | Below |
 
 **Re-verified against the working tree, not recalled:** the tree is clean, the diff is 99 files all
-under `doc/plans/truthful-signals/` (24,114 insertions, no deletions), and no `*.py` appears in it. A cloud run neither performs nor
+under `doc/plans/truthful-signals/`, all additions (the insertion count is deliberately not stated: it
+moves with every commit, including the one carrying this sentence), and no `*.py` appears in it. A cloud run neither performs nor
 owes a `/sync-plugin-cache`; none is recorded.
 
 ## What have we learned (Step 9)
