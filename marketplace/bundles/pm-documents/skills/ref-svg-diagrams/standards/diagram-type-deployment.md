@@ -75,7 +75,7 @@ cluster ─▶ namespace ─▶ pod ─▶ container        (orchestrated form)
 | Rule | Value |
 |------|-------|
 | Maximum nesting depth | **4 boxes**, counting the outermost enclosure as depth 1. |
-| Inset — child box edge to parent box inner edge | **At least 16 px** on every side, at every level. A floor, not an exact value: label bands and content stacking routinely push the top and bottom clearances well above it. |
+| Inset — child box edge to parent box inner edge | **At least 16 px** on every side, at every level — a floor, not a target. A larger clearance is not a defect. |
 | Label band — reserved strip at the top of every enclosure | **28 px** for a label-only enclosure, **44 px** when the enclosure carries an `encl-sub` sub-label. No child box may start above `parent_top +` the effective band. |
 | Minimum legible inner box | **120 × 48 px**. |
 

@@ -7,7 +7,7 @@ mode: knowledge
 
 # SVG Diagrams Skill
 
-Reference standards for authoring SVG technical diagrams with a uniform plan-marshall visual language. The Standards table below names every diagram type this skill covers. Covers the visual style, how SVGs adapt to GitHub's light / dark themes when embedded in `.adoc` and `.md` pages, and how to embed them with the correct AsciiDoc macro.
+Reference standards for authoring SVG technical diagrams with a uniform plan-marshall visual language. Covers the visual style, how SVGs adapt to GitHub's light / dark themes when embedded in `.adoc` and `.md` pages, and how to embed them with the correct AsciiDoc macro. The Standards table below names every diagram type this skill covers.
 
 ## Enforcement
 
@@ -35,7 +35,7 @@ Load this skill when:
 
 - Adding a new architectural / data-flow / dispatch diagram to `doc/`.
 - Touching an existing diagram under `doc/resources/diagrams/`.
-- Authoring a diagram of any type the Standards table names — sequence, state, block, graph, flow, stack or deployment — following that type's standard.
+- Authoring a diagram of any type the Standards table names, following that type's standard.
 
 Do not load this skill for:
 
@@ -56,7 +56,7 @@ Do not load this skill for:
 | [`standards/diagram-type-stack.md`](standards/diagram-type-stack.md) | Stack diagram type — layered slabs with optional convergence on a consumer. The audit-trail-layers diagram is the reference implementation. |
 | [`standards/diagram-type-sequence.md`](standards/diagram-type-sequence.md) | Sequence diagram type — time-ordered exchanges between actors, with lifelines, request/return arrows, and activation bars. The build-dispatch-sequence diagram is the reference implementation. |
 | [`standards/diagram-type-state.md`](standards/diagram-type-state.md) | State diagram type — discrete states of one entity over time, with named transition conditions and loop-backs. The phase-lifecycle diagram is the reference implementation. |
-| [`standards/diagram-type-deployment.md`](standards/diagram-type-deployment.md) | Deployment / topology diagram type — nested enclosures (host / network / container), trust boundaries, protocol-and-port edge labels, and mounted material. No reference implementation in this repository. |
+| [`standards/diagram-type-deployment.md`](standards/diagram-type-deployment.md) | Deployment / topology diagram type — what runs where and what can reach it: nested enclosures (host / network / container), trust boundaries, protocol-and-port edge labels, and mounted material. Containment is what separates it from the graph type. No reference implementation in this repository. |
 
 ## Templates
 
@@ -67,7 +67,7 @@ Do not load this skill for:
 | [`templates/flow-diagram-skeleton.svg`](templates/flow-diagram-skeleton.svg) | `diagram-type-flow.md` | Multi-track flow scaffold — two horizontal tracks with a Y-junction, a Bézier loop, and stage waypoints. |
 | [`templates/stack-diagram-skeleton.svg`](templates/stack-diagram-skeleton.svg) | `diagram-type-stack.md` | Three-slab stack scaffold with dashed inter-slab dividers, left-region label gutter, right-region content, and a consumer node on the right with convergent connectors. |
 | [`templates/sequence-diagram-skeleton.svg`](templates/sequence-diagram-skeleton.svg) | `diagram-type-sequence.md` | Three-actor sequence scaffold — header boxes, dashed lifelines, solid request / dashed return arrows, activation bars, and a caller-suspended note. |
-| [`templates/deployment-diagram-skeleton.svg`](templates/deployment-diagram-skeleton.svg) | `diagram-type-deployment.md` | Nested-enclosure deployment scaffold — a host containing a network containing first-party and external components, a trust boundary with crossing glyphs, protocol-and-port edge labels, mounted-material pills, and a collapsed group. |
+| [`templates/deployment-diagram-skeleton.svg`](templates/deployment-diagram-skeleton.svg) | `diagram-type-deployment.md` | Nested-enclosure deployment scaffold — a host containing a network containing first-party and external components, with a trust boundary and its crossing glyphs, mounted-material pills, and a collapsed group. |
 
 Each starter carries the canonical `<style>` block, arrow marker, theme-neutral palette, and placeholder content shaped to the diagram type's geometry. Copy the matching template, rename, fill in.
 
