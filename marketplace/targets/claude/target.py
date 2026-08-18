@@ -5,12 +5,12 @@ The Claude target operates in two modes selected by whether the caller
 provides ``--output``:
 
 * **Emit mode (`--output` provided)** — walk every bundle under
-  ``marketplace/bundles/`` and copy its content byte-for-byte into
-  ``{output}/{bundle}/`` with two exceptions: ``.claude-plugin/plugin.json``,
-  which is regenerated deterministically from the bundle's source
-  frontmatter, and any component whose ``targets:`` frontmatter scope omits
-  this target, which is not mirrored at all (a skill's declaration takes its
-  whole directory with it — see ``component_targets.py``). Immediately after
+  ``marketplace/bundles/`` and copy its content into ``{output}/{bundle}/``.
+  Most files are copied byte-for-byte; ``emitter.py``'s module docstring is
+  the authoritative list of what is not (the regenerated
+  ``.claude-plugin/plugin.json``, the role-eligible agents routed through
+  variant emission, the excluded cache directories, and any component whose
+  ``targets:`` frontmatter scope omits this target). Immediately after
   emit, the regenerated content is
   diffed against the just-written ``{output}/{bundle}/.claude-plugin/plugin.json``
   so callers see drift as part of the same TOON return. Equality

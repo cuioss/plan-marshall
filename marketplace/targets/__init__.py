@@ -13,6 +13,10 @@ Adding a new target:
        `register_target('{name}', YourTarget)`.
     4. Import the new sub-package below so the registration side-effect
        fires when callers `import marketplace.targets`.
+    5. If the target emits a component tree, honour each component's
+       `targets:` frontmatter scope from the emit path — see
+       `TargetBase.generate` and `marketplace/targets/README.md`
+       § "Adding a New Target", which carries the full checklist.
 """
 
 from __future__ import annotations

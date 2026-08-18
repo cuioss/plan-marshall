@@ -18,6 +18,8 @@ Test layers:
 
 from pathlib import Path
 
+import pytest
+
 from conftest import load_script_module
 
 
@@ -112,6 +114,44 @@ def test_a_byte_order_mark_does_not_hide_the_declaration():
 
     assert declaration is not None
     assert declaration[0] == ['cluade']
+
+
+@pytest.mark.parametrize(
+    ('value', 'expected'),
+    [
+        pytest.param('["#claude"]', ['#claude'], id='quoted-leading-hash'),
+        pytest.param('[cla#ude]', ['cla#ude'], id='hash-inside-a-name'),
+        pytest.param('[claude]#note', ['[claude]#note'], id='hash-with-no-preceding-space'),
+    ],
+)
+def test_a_hash_that_opens_no_token_is_not_a_comment(value, expected):
+    """The comment stripper must not eat a ``#`` that is part of a value.
+
+    The analyzer's `_strip_comment` docstring claims it mirrors the
+    generator's parser; this is what holds the two to the same answer.
+    """
+    declaration = declared_targets(f'---\nname: a\ntargets: {value}\n---\n')
+
+    assert declaration is not None
+    assert declaration[0] == expected
+
+
+@pytest.mark.parametrize(
+    ('block', 'expected'),
+    [
+        pytest.param('targets: [claude,\n  opencode]', ['claude', 'opencode'], id='across-lines'),
+        pytest.param(
+            'targets: [claude,  # and\n  opencode]', ['claude', 'opencode'], id='with-comment'
+        ),
+        pytest.param('targets: [\n  claude\n  ]', ['claude'], id='opened-on-its-own-line'),
+    ],
+)
+def test_a_flow_sequence_spanning_lines_is_read_whole(block, expected):
+    """Reading only the first physical line would report a target nobody wrote."""
+    declaration = declared_targets(f'---\nname: a\n{block}\n---\n')
+
+    assert declaration is not None
+    assert declaration[0] == expected
 
 
 # ---------------------------------------------------------------------------

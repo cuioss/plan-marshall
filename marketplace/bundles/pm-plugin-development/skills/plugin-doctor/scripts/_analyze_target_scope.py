@@ -126,6 +126,26 @@ def _strip_comment(value: str) -> str:
     return head.rstrip()
 
 
+def _join_flow_sequence(value: str, rest: list[str]) -> str:
+    """Return ``value``, extended across the lines a flow sequence spans.
+
+    Mirrors ``component_targets._join_flow_sequence``: a ``targets: [claude,``
+    continued on the next line is one value, and reading only the first
+    physical line would report ``[claude`` as an unknown target.
+    """
+    head = _strip_comment(value)
+    if not head.startswith('[') or ']' in head:
+        return head
+    parts = [head]
+    for line in rest:
+        segment = _strip_comment(line.strip())
+        if segment:
+            parts.append(segment)
+        if ']' in segment:
+            break
+    return ' '.join(parts)
+
+
 def _split_inline(value: str) -> list[str]:
     """Split an inline scalar or flow-sequence value into tokens."""
     inner = _strip_comment(value)
@@ -175,9 +195,10 @@ def declared_targets(text: str) -> tuple[list[str], int] | None:
         # +2: the opening fence occupies line 1, so block line 0 is file line 2.
         line_number = index + 2
         value = value.strip()
+        rest = lines[index + 1:]
         if value:
-            return _split_inline(value), line_number
-        return _collect_block_items(lines[index + 1:]), line_number
+            return _split_inline(_join_flow_sequence(value, rest)), line_number
+        return _collect_block_items(rest), line_number
     return None
 
 

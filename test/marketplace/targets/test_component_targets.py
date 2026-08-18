@@ -11,6 +11,7 @@ from marketplace.targets import TARGET_REGISTRY
 from marketplace.targets.base import TargetBase
 from marketplace.targets.component_targets import (
     TargetScopeError,
+    _declared_tokens,
     component_tree_target_names,
     emits_to,
     excluded_emission_roots,
@@ -34,6 +35,24 @@ _ACCEPTED_FORMS = {
     'block-with-comment-line': ('targets:\n  # why\n  - claude', {'claude'}),
     'block-item-trailing-comment': ('targets:\n  - claude  # why', {'claude'}),
     'block-with-blank-line': ('targets:\n\n  - claude', {'claude'}),
+    'flow-across-lines': ('targets: [claude,\n  opencode]', {'claude', 'opencode'}),
+    'flow-across-lines-with-comment': (
+        'targets: [claude,  # and\n  opencode]',
+        {'claude', 'opencode'},
+    ),
+    'flow-opened-on-its-own-line': ('targets: [\n  claude\n  ]', {'claude'}),
+}
+
+# Values whose ``#`` does NOT open a token, so it is part of the name rather
+# than a comment. Each is paired with the tokens the parser must preserve.
+# Without these the comment-stripping guard could be deleted with the suite
+# still green — which is how a documented behaviour regresses unnoticed.
+_HASH_IS_NOT_A_COMMENT = {
+    'quoted-leading-hash': ('targets: ["#claude"]', ['#claude']),
+    'hash-inside-a-name': ('targets: [cla#ude]', ['cla#ude']),
+    # No space before the ``#``, so it opens no comment and the whole run is
+    # one (malformed, and therefore rejected) token — never a silent ``claude``.
+    'hash-with-no-preceding-space': ('targets: [claude]#note', ['[claude]#note']),
 }
 
 
@@ -118,6 +137,23 @@ def test_registered_names_cover_every_component_tree_name():
 def test_declaration_forms_parse_to_the_same_scope(tmp_path, frontmatter, expected):
     """Inline-flow, bare-scalar, and block spellings all yield the same scope."""
     assert read_target_scope(_component(tmp_path, frontmatter)) == expected
+
+
+@pytest.mark.parametrize(
+    ('frontmatter', 'expected'),
+    [
+        pytest.param(form, expected, id=key)
+        for key, (form, expected) in _HASH_IS_NOT_A_COMMENT.items()
+    ],
+)
+def test_a_hash_that_opens_no_token_is_not_a_comment(frontmatter, expected):
+    """The comment stripper must not eat a ``#`` that is part of a value.
+
+    Every case here names an unregistered target, so the build rejects it
+    either way — what the assertion pins is WHICH token the diagnostic names,
+    which is the whole reason the guard distinguishes a comment from a value.
+    """
+    assert _declared_tokens(f'---\nname: demo\n{frontmatter}\n---\n\n# Body\n') == expected
 
 
 def test_absent_field_means_every_target(tmp_path):

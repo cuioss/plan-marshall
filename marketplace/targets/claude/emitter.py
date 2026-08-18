@@ -16,9 +16,11 @@ byte-for-byte: the canonical no-suffix file is emitted with
 ``variant_emitter.py`` for the variant-emission contract.
 
 A component declaring a ``targets:`` frontmatter scope that omits this
-target is not mirrored at all — see ``component_targets.py``. Its
-manifest entry is dropped in lock-step by ``plugin_json_gen``, so the
-equality check sees a deliberately-absent component rather than drift.
+target is not mirrored at all — see ``component_targets.py``. Where the
+component has a manifest entry (an agent or a command), ``plugin_json_gen``
+drops it in lock-step; a skill has none to drop, because the emitted
+``skills`` array is always empty. Either way the equality check sees a
+deliberately-absent component rather than drift.
 """
 
 from __future__ import annotations

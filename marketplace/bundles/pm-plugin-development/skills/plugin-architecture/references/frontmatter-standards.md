@@ -197,7 +197,7 @@ user-invocable: true
 
 ### Optional Fields
 
-Skills do not use `model`, `color`, or `tools`/`allowed-tools` fields. The plugin schema for skills supports only: `name`, `description`, `user-invocable`, `mode`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`, `profiles`, `priming_preamble`, `composes`, `targets`.
+Skills do not use `model`, `color`, or `tools`/`allowed-tools` fields. The plugin schema for skills supports only: `name`, `description`, `user-invocable`, `mode`, `implements`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`, `profiles`, `priming_preamble`, `composes`, `targets`.
 
 That list is the closed set of supported top-level skill fields, and it is this marketplace's own — `profiles`, `priming_preamble`, and `composes` are plan-marshall fields the host platform never reads, added to the list when the tooling that consumes them was built. `targets` (see [Target Scoping](#target-scoping)) is the newest such addition. `metadata:` remains the escape hatch for keys the list above does **not** name.
 
@@ -527,7 +527,7 @@ Agents must not declare `Task` — the host platform restricts Task from sub-age
 
 ### Issue 4: Unsupported Fields in Skills
 
-Skills must not declare `allowed-tools` or `tools`. The skill schema only supports: `name`, `description`, `user-invocable`, `mode`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`, `profiles`, `priming_preamble`, `composes`, `targets`. Any other field is silently ignored — carry it under `metadata:` if it needs to be recognized, or remove it.
+Skills must not declare `allowed-tools` or `tools`. The skill schema only supports: `name`, `description`, `user-invocable`, `mode`, `implements`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`, `profiles`, `priming_preamble`, `composes`, `targets`. Any other field is silently ignored — carry it under `metadata:` if it needs to be recognized, or remove it.
 
 ### Issue 5: Invalid Tool Names
 

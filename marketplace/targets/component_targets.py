@@ -185,6 +185,29 @@ def _strip_comment(value: str) -> str:
     return head.rstrip()
 
 
+def _join_flow_sequence(value: str, rest: list[str]) -> str:
+    """Return ``value``, extended across the lines a flow sequence spans.
+
+    ``targets: [claude,`` continued on the next line is one value, not a
+    truncated one. Reading only the first physical line yields the token
+    ``[claude`` and a diagnostic naming a target nobody wrote, so the
+    continuation lines are folded in until the closing bracket. A sequence
+    that never closes is malformed YAML; it is left as-is, which the
+    validator then rejects rather than guessing at.
+    """
+    head = _strip_comment(value)
+    if not head.startswith('[') or ']' in head:
+        return head
+    parts = [head]
+    for line in rest:
+        segment = _strip_comment(line.strip())
+        if segment:
+            parts.append(segment)
+        if ']' in segment:
+            break
+    return ' '.join(parts)
+
+
 def _split_inline(value: str) -> list[str]:
     """Split an inline scalar or flow-sequence value into tokens.
 
@@ -238,9 +261,10 @@ def _declared_tokens(text: str) -> list[str] | None:
         if not separator or key.strip() != TARGET_SCOPE_FIELD:
             continue
         value = value.strip()
+        rest = lines[index + 1:]
         if value:
-            return _split_inline(value)
-        return _collect_block_items(lines[index + 1:])
+            return _split_inline(_join_flow_sequence(value, rest))
+        return _collect_block_items(rest)
     return None
 
 
@@ -313,14 +337,13 @@ def emits_to(path: Path, target_name: str) -> bool:
     Raises:
         TargetScopeError: The component's declaration is invalid. Validation
             runs on every read, so an invalid declaration aborts any run that
-            reads that component. What that covers is exactly the runs that
-            READ components: every component-tree target's emit, and the
-            Claude target's validate-only mode (which re-walks each bundle's
-            components for this check alone). A ``pr-agent``-only run reads
-            no component at all — it derives a reviewer configuration from
-            skill rule text — so it neither can nor does validate a
-            declaration; the plugin-doctor ``targets-scope-invalid`` rule is
-            the authoring-time net for that case.
+            calls this predicate. What that covers is every component-tree
+            target's emit, plus the Claude target's validate-only mode (which
+            re-walks each bundle's components for this check alone). A
+            ``pr-agent``-only run does NOT validate: it opens skill manifests
+            to harvest rule text, but it never asks whether a component is
+            in scope, because it emits no component. The plugin-doctor
+            ``targets-scope-invalid`` rule is the authoring-time net there.
     """
     scope = read_target_scope(path)
     return scope is None or target_name in scope

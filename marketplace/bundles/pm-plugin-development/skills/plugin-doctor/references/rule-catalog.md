@@ -1242,7 +1242,15 @@ Five rules that catch gaps between what the marketplace *declares* and what is *
 
 ---
 
-### targets-scope-invalid
+## Rule: targets-scope-invalid
+
+Kept out of the reference-resolution pack above deliberately: every member of that pack catches a
+gap that resolves to a **dead reference at runtime**, and every member is analyze-only. An invalid
+`targets:` declaration is neither — it is a build-time authoring error, and this rule is
+build-failing under `quality-gate`.
+
+**Activation**: build-failing under `quality-gate` (via `RuleRunner.run_quality_gate`, routed
+through the `scoped(...)` wrapper) and also active in `doctor-marketplace.py analyze`.
 
 **Rule ID**: `targets-scope-invalid`
 
@@ -1254,7 +1262,7 @@ Five rules that catch gaps between what the marketplace *declares* and what is *
 
 **Detection**: Pure static analysis — the leading `---`-fenced frontmatter is parsed line-by-line for a TOP-LEVEL `targets:` key in either the inline-flow (`[a, b]`) or block (`- a`) form. Valid names are derived from the targets' own `register_target('{name}', …)` registrations under `marketplace/targets/*/__init__.py`, never transcribed into the analyzer. `details.reason` distinguishes `targets_unknown` (with `details.unknown_targets` and `details.registered_targets`) from `targets_empty`.
 
-**Coverage boundary**: The generator additionally rejects a declaration naming ONLY targets that emit no component tree. That check reads each target's `emits_bundle_tree` capability — a runtime property of a target class, not something a static scan can settle — so it stays in the build. And `marketplace/targets/` is a meta-project tree absent from a consumer install: when it cannot be located the unknown-name check is skipped (nothing to check names against) while the empty-declaration check, which needs no registry, still runs.
+**Coverage boundary**: The generator additionally rejects a declaration naming ONLY targets that emit no component tree. That check asks each target class for its `emits_bundle_tree` capability; this analyzer does not import the target classes, and pattern-matching the method body to guess the answer would restate a contract the build can ask for directly, so that rejection stays in the build. And `marketplace/targets/` is a meta-project tree absent from a consumer install: when it cannot be located the unknown-name check is skipped (nothing to check names against) while the empty-declaration check, which needs no registry, still runs.
 
 **Recommended fix**: Correct the target name to a registered one, or delete the `targets:` field entirely to ship the component to every target.
 
