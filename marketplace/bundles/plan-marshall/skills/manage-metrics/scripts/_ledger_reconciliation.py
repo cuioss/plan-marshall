@@ -107,6 +107,28 @@ def _parse_iso(value: object) -> datetime | None:
         return None
 
 
+def _row_sort_key(row: dict[str, Any]) -> tuple[bool, datetime, str, str, int]:
+    """A TOTAL ordering over rows, derived entirely from the row's own values.
+
+    Sorting on the timestamp alone is not total: Python's sort is stable, so two
+    rows sharing a timestamp keep the order they arrived in — which is the
+    manifest's row order, not a property of the data. Downstream that order
+    decides which of the tied rows ends up unpaired, so the same corpus written
+    in a different order would name a different dispatch in the emitted finding.
+
+    The tie-breakers are the remaining recorded fields, in a fixed order, so two
+    rows can share a key only if they are indistinguishable on every value this
+    module reads — in which case which one is reported is genuinely immaterial.
+    """
+    return (
+        row['parsed_timestamp'] is None,
+        row['parsed_timestamp'] or _EPOCH,
+        str(row.get('step_id') or ''),
+        str(row.get('termination_cause') or ''),
+        int(row.get('total_tokens') or 0),
+    )
+
+
 def _as_int(value: object) -> int:
     """Coerce a TOON scalar to int, defaulting to 0. Booleans are not counts."""
     if isinstance(value, bool):
@@ -173,10 +195,7 @@ def execution_rows_for_phase(rows: list[dict[str, Any]], phase: str) -> list[dic
         }
         for row in selected
     ]
-    return sorted(
-        normalised,
-        key=lambda row: (row['parsed_timestamp'] is None, row['parsed_timestamp'] or _EPOCH),
-    )
+    return sorted(normalised, key=_row_sort_key)
 
 
 def load_boundary_rows(path: Path) -> list[dict[str, Any]]:
@@ -211,10 +230,7 @@ def load_boundary_rows(path: Path) -> list[dict[str, Any]]:
                 'total_tokens': _as_int(columns[2].strip()),
             }
         )
-    return sorted(
-        rows,
-        key=lambda row: (row['parsed_timestamp'] is None, row['parsed_timestamp'] or _EPOCH),
-    )
+    return sorted(rows, key=_row_sort_key)
 
 
 def pair_rows(
@@ -239,10 +255,22 @@ def pair_rows(
     false signal about the ledgers — precisely the class this verb exists to
     surface, manufactured by the verb itself.
 
-    Determinism does not depend on input order: both row lists arrive sorted, and
-    augmenting paths are explored in index order, so one input yields one result.
-    Among maximum matchings the specific pairing chosen is unspecified — only the
-    SIZE is guaranteed, and only the unpaired sets are reported.
+    The reported sets do not depend on input order: this function sorts both row
+    lists by a TOTAL key derived from the rows' own values (see
+    :func:`_row_sort_key`), so a corpus written in any order produces the same
+    result — and the guarantee holds for any caller, not only for the two readers
+    that happen to sort already.
+
+    ⚠ **What is guaranteed is the SIZE of the matching, not which rows fill it.**
+    A corpus routinely admits several maximum matchings whose unpaired sets
+    differ — measured at roughly a quarter of small random corpora — and the
+    unpaired rows are what become findings, carrying a ``step_id`` and a token
+    figure. So a finding identifies *a* row that could not be paired, never *the*
+    divergent dispatch: where several rows were equally pairable, which one is
+    named is settled by the traversal, not by the ledgers. Read the per-phase
+    counts, which are exact, in preference to any single row's identity. This is
+    inherent to reporting unpaired rows under a maximum matching and is a stated
+    limit of this verb rather than a defect in it.
 
     Args:
         execution_rows: This phase's normalised execution-log rows.
@@ -252,6 +280,14 @@ def pair_rows(
     Returns:
         ``(pairs, unpaired_execution, unpaired_boundary)``.
     """
+    # Sort here rather than trusting the caller. Both production readers already
+    # return sorted rows, so this is a no-op on the real path — but the stability
+    # guarantee below is a property of the RESULT, and leaving it to the callers
+    # would mean a future one passing rows in manifest order silently restores
+    # the order-dependence this sort exists to remove.
+    execution_rows = sorted(execution_rows, key=_row_sort_key)
+    boundary_rows = sorted(boundary_rows, key=_row_sort_key)
+
     # Eligibility: a row with no parsable timestamp can never pair, and is left
     # for the caller to report — the honest outcome for a row whose position
     # nothing can establish.

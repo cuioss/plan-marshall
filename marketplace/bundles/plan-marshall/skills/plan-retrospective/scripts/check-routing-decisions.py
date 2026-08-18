@@ -472,13 +472,26 @@ COMPARISON_COMPUTED = 'computed'
 
 
 def sum_execution_log_tokens(manifest: dict[str, Any]) -> int:
-    """Sum the ``total_tokens`` attribution across every ``execution_log`` row."""
+    """Sum ``total_tokens`` across the ``execution_log`` rows this sum CLAIMS to cover.
+
+    Filtered to :data:`EXECUTION_LOG_PHASES`, which is the population
+    :data:`EXECUTION_LOG_POPULATION` publishes beside the figure. Summing every
+    row regardless of phase and then labelling the result with a phase list makes
+    the label a promise about the writer rather than a property of the sum — and
+    a manifest carrying an out-of-population row (hand-edited, or archived from
+    before the writer's phase gate existed) would then be summed under a label
+    naming phases it did not measure. That is this plan's own keeper rule applied
+    to its own deliverable: the figure carries its population, or it is not named
+    for one.
+    """
     rows = manifest.get('execution_log')
     if not isinstance(rows, list):
         return 0
     total = 0
     for row in rows:
         if isinstance(row, dict):
+            if str(row.get('phase')) not in EXECUTION_LOG_PHASES:
+                continue
             value = row.get('total_tokens')
             if isinstance(value, int):
                 total += value
@@ -642,10 +655,23 @@ def evaluate_cost_preview(manifest: dict[str, Any], metadata: dict[str, Any]) ->
     execution_log_tokens = sum_execution_log_tokens(manifest)
     raw_predicted = metadata.get('execution_profile_cost_preview')
     predicted: int | None = None
-    if isinstance(raw_predicted, int):
+    # `.strip()` before the digit test so a padded value is read rather than
+    # silently discarded — the population field beside it is already stripped,
+    # and one function reading two fields by two rules is how the third state
+    # below goes unnoticed.
+    if isinstance(raw_predicted, bool):
+        predicted = None
+    elif isinstance(raw_predicted, int):
         predicted = raw_predicted
-    elif isinstance(raw_predicted, str) and raw_predicted.isdigit():
-        predicted = int(raw_predicted)
+    elif isinstance(raw_predicted, str) and raw_predicted.strip().isdigit():
+        predicted = int(raw_predicted.strip())
+    # RECORDED BUT UNPARSEABLE is a third state, and it is not absence. A value
+    # that is present and cannot be read (`'12.5'`, `'abc'`, `'-100'`) previously
+    # collapsed into `not_attempted` under the reason "no cost preview recorded",
+    # which states an absence the record contradicts — the silent choice this
+    # deliverable exists to replace with a legible one, committed by the code
+    # that replaces it.
+    recorded_unparseable = predicted is None and raw_predicted is not None
 
     raw_population = metadata.get(PREDICTED_POPULATION_KEY)
     predicted_population = (
@@ -664,7 +690,12 @@ def evaluate_cost_preview(manifest: dict[str, Any], metadata: dict[str, Any]) ->
     if predicted is None:
         preview['comparison'] = COMPARISON_NOT_ATTEMPTED
         preview['comparison_reason'] = (
-            'no cost preview recorded in status.metadata.execution_profile_cost_preview'
+            'status.metadata.execution_profile_cost_preview holds '
+            f'{raw_predicted!r}, which is not a token count — the comparison is '
+            'not attempted, and this is a recorded value that could not be read '
+            'rather than an absent one'
+            if recorded_unparseable
+            else 'no cost preview recorded in status.metadata.execution_profile_cost_preview'
         )
         return preview
 

@@ -671,7 +671,12 @@ class TestOverCoveringBoundaryIsNotCalledAFloor:
 
         report = _report(plan_context, plan_id)
         assert 'Marked `(boundary sum, over-covering)`' in report
-        assert 'may double-count and is **not** a floor' in report
+        assert 'not** labelled a floor' in report
+        # The key states the figure is bounded in NEITHER direction. Asserted
+        # because an earlier wording claimed an upper bound, which the declared
+        # exclusions below the table deny — the file omits every dispatch class
+        # that registers no boundary.
+        assert 'bounded in neither direction' in report
 
     def test_the_provenance_is_persisted_distinctly(self, plan_context):
         """The store separates the two cases, not only the rendered text."""

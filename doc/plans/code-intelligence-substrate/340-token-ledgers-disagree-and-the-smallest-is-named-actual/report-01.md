@@ -122,10 +122,10 @@ D3+D5+D6 persistence) was evaluated and rejected on three grounds recorded here:
 | # | What was done | Commit | Verification state |
 |---|---|---|---|
 | **D1** | Hard gate. Re-derived the three ledgers' populations from their **writers** (the artifacts are git-ignored and absent from this clone, which is the plan's stated fallback). Mutates nothing. Findings above. | `c39363a`, `0485ef3` | Every code citation re-checked against `origin/main` by the round-1 verifier; all land on the symbol claimed |
-| **D2** | `actual_tokens` → `execution_log_tokens`, published beside `execution_log_population`. The comparison is gated on population equality: `delta_tokens` / `delta_pct` only when `comparison: computed`; a mismatch (including an `unstated` prediction population) is `refused` with a reason. | `7b303a0` | 5 behavioural tests + 2 contract-drift tests; refusal gate and mirrored phase set both mutation-tested |
+| **D2** | `actual_tokens` → `execution_log_tokens`, published beside `execution_log_population`. The comparison is gated on population equality: `delta_tokens` / `delta_pct` only when `comparison: computed`; a mismatch (including an `unstated` prediction population) is `refused` with a reason. | `7b303a0` | 11 behavioural tests + 2 contract-drift tests + 2 population-filter tests; refusal gate and mirrored phase set both mutation-tested |
 | **D3** | Each Total column persists a triple (value, `_population_count`, shared denominator), plus `totals_tokens_spans_populations`, `totals_sampled_at` and `dispatch_boundary_excluded_classes`. The render reads the store back rather than holding a second copy. `inline_main_context_tokens` is completed on every row — a measured `0` where `enrich` stamped it, `unmeasured` where it never visited. The aggregate is invalidated by any non-`generate` write. | `d52dea8`, round-1 fixes | Round-trip test over every column; population-count guard mutation-tested against the pre-fix state; invalidation guard mutation-tested |
-| **D4** | Read-only `reconcile-ledgers` verb + `_ledger_reconciliation.py`. Joins `execution_log[]` against each phase's boundary file on phase + timestamp window, one finding per unpaired row in each direction. `boundary_never_closed` and `phase_re_entered` are separate shapes from `row_absent_from_*`. Structural exclusions declared, unreadable manifest → `not_evaluated`. Publishes `union_rows`. | `f97455d` | 15 tests, each shape with a negative control; three guards mutation-tested |
-| **D5** | An unclosed phase's boundary sum is folded into its Tokens cell and marked `(boundary floor)`, with `tokens_cell_source: unclosed_boundary_floor` persisted. Fires both where the sum was refused as partial/over and where it silently won the maximum unlabelled. Duration partiality untouched. | `d52dea8`, round-1 fixes | 7 tests; the `end_time` guard and the cell marker both mutation-tested |
+| **D4** | Read-only `reconcile-ledgers` verb + `_ledger_reconciliation.py`. Joins `execution_log[]` against each phase's boundary file on phase + timestamp window, one finding per unpaired row in each direction. `boundary_never_closed` and `phase_re_entered` are separate shapes from `row_absent_from_*`. Structural exclusions declared, unreadable manifest → `not_evaluated`. Publishes `union_rows`. | `f97455d` | 19 tests, each shape with a negative control; three guards mutation-tested, and the matching brute-forced against exhaustive enumeration over 3 000 random corpora (0 non-maximal, 0 order-dependent reports) |
+| **D5** | An unclosed phase's boundary sum is folded into its Tokens cell under a marker naming how far it can be trusted — `(boundary floor)` where coverage is partial or undecidable, `(boundary sum, over-covering)` where the file holds more rows than sampled dispatches — with the matching `tokens_cell_source` persisted. Fires both where the sum was refused by the eligibility rules and where it silently won the maximum unlabelled. Duration partiality untouched. | `d52dea8`, round-1 fixes | 12 tests (7 fold + 5 over-covering, the latter with a `partial`-coverage negative control); the `end_time` guard and the cell marker both mutation-tested |
 | **D6** | Arm 1: `seconds_per_task` → `worked_seconds_per_task`, reading the recorded worked figure rather than wall clock; no clamping, no gap heuristics. Arm 2: the `enrich` persistence loop derives its field list from `_FOUR_FIELD_USAGE_LABELS`. | `d52dea8`, round-1 fixes | Arm 1: 3 tests over a real 8-hour idle gap, including a positive control that drives a worked-exceeds-wall row through `end-phase` and observes it clamped — so the untouched value on the idle-gap row is a property of that row, not of a clamp that never runs. Arm 2: source-level guard that the retired literal loop has not returned |
 | **D7** | (a) divergent rows → per-row findings; (b) population-mismatched comparison refused; (c) a Total rendered without a persisted population marker fails. | across the above | (a) and (b) fail against their named defect; (c) fails against a faithful pre-fix mutant (render the qualifier, persist nothing) |
 
@@ -133,7 +133,7 @@ D3+D5+D6 persistence) was evaluated and rejected on three grounds recorded here:
 
 `git diff --name-only origin/main...HEAD -- '*.py'` names **9 Python files**, so the gate applies.
 
-`./pw verify` → **`=== verify: SUCCESS ===`**, `20831 passed, 14 skipped` (403 s). Per-commit `./pw quality-gate` before every commit touching `*.py`: `ruff … All checks passed!`, `mypy … Success: no issues found`, `SPDX-header check passed`, plugin-doctor `issues[0]`. No `uv.lock` churn at any commit (`git status` checked before each).
+`./pw verify` at the final commit → **`=== verify: SUCCESS ===`**, `20852 passed, 14 skipped` (375.9 s). Re-run after every round; the figure above is the last one, not an earlier round's. Per-commit `./pw quality-gate` before every commit touching `*.py`: `ruff … All checks passed!`, `mypy … Success: no issues found`, `SPDX-header check passed`, plugin-doctor `issues[0]`. No `uv.lock` churn at any commit (`git status` checked before each).
 
 ⚠ **`test-compile` earned its place.** The first `./pw verify` failed with two `no-any-return` errors in the new metrics test module — a sub-step neither `quality-gate` nor `module-tests` performs, both of which were green on that same file. Fixed in `e978619`.
 
@@ -187,6 +187,80 @@ One row per instance. Round-1 findings come from the independent verification su
 | R3-F5 | round 3 | `plan-efficiency.md` was the one site of the freshness rule left unscoped ("every other writer drops it"), which `phase-boundary` contradicts at the verb level | **fixed** |
 | R3-F6 | round 3 | `pair_rows` was nearest-first greedy, so a row could take a partner another row needed — stranding both and emitting **two spurious findings** where a perfect pairing exists. A false signal about the ledgers, manufactured by the verb built to surface them | **fixed** — replaced with maximum bipartite matching (Kuhn's), so the unpaired sets are minimal by construction. Regression test uses the exact scenario, with a negative control proving genuine absences are still reported and an order-independence test. The row sort key also moved from the raw timestamp string to the parsed datetime |
 | R3-F7 | round 3 | An `over`-coverage boundary sum — which the module itself calls impossible for one population and potentially double-counted — was folded and labelled `(boundary floor)`, asserting a lower bound that classification denies. A false label on a **rendered cell** | **fixed** — `over` coverage now renders `(boundary sum, over-covering)` with `tokens_cell_source: unclosed_boundary_over_covering` and its own annotation. The fold is kept (rendering nothing for a phase that demonstrably spent something is worse); only the claim changes. 5 tests including a `partial`-coverage negative control |
+
+| R4-F1 | round 4 | `pair_rows`' docstring claimed order-independence; the sort was stable but not total, so two same-timestamp rows kept the manifest's order and the same data written differently named a different dispatch. Demonstrated end-to-end through `cmd_reconcile_ledgers` | **fixed** — `_row_sort_key` is now total over the row's own values, and `pair_rows` sorts internally rather than trusting callers (my first fix sorted only in the readers, and the new test caught that) |
+| R4-F2 | round 4 | "only the unpaired sets are reported" read as containment while naming the thing that varies: 23% of corpora admit maximum matchings with **different** unpaired sets, and those rows become findings carrying a `step_id` | **fixed** — the docstring now states the limit outright: a finding identifies *a* row that could not be paired, never *the* divergent dispatch, and the per-phase counts are the exact figures. Recorded as a residue below, not papered over |
+| R4-F3 | round 4 | The order-independence test used a corpus admitting a perfect matching, so `unpaired == []` under every ordering — vacuous with respect to its own name. A mutant reversing visit order left all tests green | **fixed** — rebuilt on a tied corpus where a row IS left over, with the precondition asserted; a sibling test pins the sort key directly |
+| R4-F6 | round 4 | The `end_time`-presence annotation and the over-covering annotation **co-render on every affected report** and contradicted each other: one said every recovered figure is a floor, the other that this one is not | **fixed** in the renderer and its `data-format.md` mirror |
+| R4-F7 | round 4 | The over-covering annotation asserted an "upper-bounded estimate", which the declared exclusions deny (6 of 9 dispatch classes register no boundary), and drew double-counting from a mechanism that does not entail it | **fixed** — the figure is now stated as bounded in **neither** direction, with both reasons named |
+| R4-F8 | round 4 | `_unclosed_boundary_floor.__doc__` still described the fold as producing a labelled floor, now false for the `over` half the same function feeds | **fixed**, along with a mis-attributed phrase in the neighbouring constant |
+| R4-F9 | round 4 | The report's D5 row described the behaviour R3-F7 removed — stating the pre-fix behaviour and its fix simultaneously | **fixed** |
+| R4-F10 | round 4 | D4's test count stale (15 → 19), despite R2-F9's remediation being "re-derive every count at the moment of the claim" | **fixed** — every count in this report re-derived by collection at the final commit |
+| R4-F11 | round 4 | The build-gate figure recorded a superseded tree (20 831), and nothing said the gate had been re-run after the last two commits | **fixed** — re-run at the final commit and re-stated |
+| R4-F12 | round 4 | `evaluate_cost_preview` reported `'no cost preview recorded'` for a value that **is** recorded but unparseable (`'12.5'`, `'abc'`, `'-100'`), and silently discarded a padded `'  42  '` while stripping the population field beside it | **fixed** — present-but-unreadable is now its own reason naming the value; the numeric read is stripped like its neighbour. 4 parametrised cases + a padded case + a negative control keeping absence and unreadability distinct |
+| R4-F13 | round 4 | `sum_execution_log_tokens` summed every row regardless of phase while publishing a two-phase population label — the label a promise about another process, not a property of the sum | **fixed** (survivor closed rather than carried) — the sum is filtered to `EXECUTION_LOG_PHASES`. This is the plan's own keeper rule applied to its own deliverable |
+| R4-F14 | round 4 | The R3-F6 row claimed a sort-key change with nothing pinning it; a mutation reverting it left the suite green | **fixed** — `test_the_sort_key_is_total_over_the_rows_own_values` pins it directly |
+| R4-F4 | round 4 | `_augment` recurses ~0.75·N per phase; `RecursionError` at N≈999 dense, exiting as a traceback rather than a TOON error | **survivor** — see the stop record |
+| R4-F5 | round 4 | A zone-naive timestamp would raise `TypeError` in the sort and in `pair_rows` rather than degrading to `not_evaluated` | **survivor** — see the stop record |
+
+## Stop record
+
+**Which exit ended the loop: the ROUND BUDGET, not a verifier's "nothing remains".**
+
+The budget was **4 rounds, declared before the first dispatch** — in the turn that launched round 1, not at the
+moment of wanting to stop. Round 4 exhausted it. Round 4's own answer to the stop question was **"yes, findings
+remain that A or B forbids leaving open"**, and it stated plainly that a fifth round would find more.
+
+Per the lane contract's budget-exit terms, **everything condition A forbids was fixed regardless of the budget**
+— all 10 A-violating round-4 findings, plus R4-F3 (which B's own carve-out denies a bound, since it changes a
+test's meaning) and R4-F13 (a survivor closed because its fix was three lines and is the plan's own thesis).
+Nothing false ships because the rounds ran out.
+
+**Evidence stronger than a read.** Round 4's verdict rests on exhaustive enumeration (4 000 corpora, every
+matching enumerated, maximality confirmed 4 000/4 000), a 6-mutant campaign in which **two mutants survived** —
+and those two survivors are exactly R4-F14 and R4-F3, neither reachable by reading — differential execution
+through the real verbs, tripwire instrumentation of the `_EPOCH` sentinel, and recursion-depth profiling with
+binary search for the fault threshold. After the fixes I re-ran the brute-force myself over 3 000 fresh corpora:
+**0 non-maximal, 0 order-dependent reports**.
+
+**Were the late rounds' findings narrower? Partly — and the split is the honest answer.** The *prose* findings
+did narrow to the run's own record: by round 4, the surviving instances of both corrected claim families were in
+the report rows that declare them fixed and in test docstrings, the production sites having been genuinely
+corrected. But round 3 was the first round to sweep the **code**, and rounds 3–4 found four shipped-behaviour
+defects there — a greedy pairing manufacturing spurious findings, a false `floor` label on a rendered cell, an
+emitted reason stating an absence the record contradicts, and a sum whose published population was an assertion
+rather than a filter. Those are not narrower; they are new territory that the prose-focused rounds never reached.
+The finding counts per round were **21, 13, 7, 14** — not a converging sequence.
+
+### Survivors — each characterised, and each re-put to the verifier in the stopping round
+
+| Survivor | Class | Bound |
+|---|---|---|
+| **F18** — `reconcile-ledgers` has no caller | B(a) | Re-checked in round 4: 26 references, all definition / registration / SKILL.md / tests / report; **zero workflow call sites**. It cannot change what any run does today, because no run invokes it. D4's stated "Done when" is met — the verb exists, is documented and is tested. Closing it means wiring a call site into a phase workflow, which is a scoping decision this plan did not make. |
+| **F19** — the D3/D5 guards' pre-fix failure is a module-level collection error | B(a) | The test module binds production constants at import, so a pre-fix revert cannot collect. Bound, and **strengthened** across rounds: rounds 2–4 individually mutation-tested those guards (each failed against the defect it names), which is stronger evidence than a collection error would have been. Closing it means restructuring the module to defer constant binding — no behavioural gain. |
+| **R2-F10** — a pushed commit message states 17 findings where it closes 18 | B(b) | Bound: pushed git history is immutable without a force-push, which the lane's durability discipline forbids for a cosmetic correction. Reach: one commit-message line. The correction is recorded in this table. |
+| **R4-F4** — `_augment` recursion cliff at N≈999 rows per phase | B(b) | Bound: needs ~1 000+ rows on **both** sides of a single phase; measured thresholds are N≈999 dense and N≈1 329 at 120 s spacing (a 44-hour phase). Contained by F18 — only a manual invocation reaches it at all. Promise: it stays outside any plan whose phase records under ~1 000 dispatches, which is every plan the corpus has produced. Closing it means an iterative rewrite of `_augment`. |
+| **R4-F5** — a zone-naive timestamp raises instead of degrading | B(a) | Bound verified by inspection of both writers: `now_utc_iso()` emits `…Z` and `datetime.now(UTC).isoformat()` emits `+00:00`, so every timestamp either ledger writes is aware. Unreachable from the current writers. Closing it means normalising in `_parse_iso`. |
+| **R4-F2 residue** — which unpaired row a finding names | B(b) | Not a defect to fix: inherent to reporting unpaired rows under any maximum matching. Bound: the per-phase **counts** are exact and order-independent (verified over 3 000 corpora); only a row's *identity* is settled by the traversal where several rows were equally pairable. Now stated in the docstring as a limit of the verb. |
+
+### What residue to assume remains
+
+⛔ **Do not read this as a converged loop.** The defect class never changed across four rounds: *a claim written
+beside the code it describes, true for the case in front of the author and false for the neighbouring case,
+corrected at n−1 of n sites.* Round 4 found six more instances, **two of them manufactured by round 3's own
+fixes**, and two more at sites round 3's sweep should have reached. Every fix writes new unreviewed prose, so
+the rate is self-sustaining rather than decaying.
+
+Concretely, a reader should assume:
+
+- **More instances of the same claim families exist**, most likely in this report's own dispositions — the
+  densest residue site across rounds 2, 3 and 4. Treat every "fixed at all N sites" row as a claim needing the
+  same verification as the code.
+- **At least one further test in the new modules probably asserts a property it cannot fail on.** That family
+  already has five instances (F3, R2-F11, R4-F3, and two caught during implementation), and only the rounds that
+  *executed* mutations found them — reading a test's name and believing it is exactly how they survive.
+- **Any figure not re-derived at the moment of writing is stale.** Two were, in a report that had already
+  adopted re-derivation as its rule.
 
 ## Reviewer participation
 

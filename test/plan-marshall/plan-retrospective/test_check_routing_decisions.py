@@ -676,3 +676,38 @@ class TestExecutionLogPopulation:
         canonical = set(constants.PHASES)
         assert ledger < canonical
         assert canonical - ledger
+
+
+class TestExecutionLogSumMatchesItsPublishedPopulation:
+    """The sum covers exactly the phases its label names."""
+
+    def test_a_row_outside_the_population_is_not_summed(self):
+        """An out-of-population row cannot inflate a figure labelled otherwise.
+
+        The writer refuses such rows today, so this is unreachable from it — but
+        an archived manifest predating that gate, or a hand-edited one, would
+        otherwise be summed under a label naming phases it did not measure. The
+        label is a property of the sum, not a promise about a writer in another
+        process.
+        """
+        manifest = {
+            'execution_log': [
+                {'step_id': 'a', 'phase': '1-init', 'total_tokens': 9_000_000},
+                {'step_id': 'b', 'phase': '3-outline', 'total_tokens': 1_000_000},
+                {'step_id': 'c', 'phase': '5-execute', 'total_tokens': 1_000},
+                {'step_id': 'd', 'phase': '6-finalize', 'total_tokens': 2_000},
+            ]
+        }
+
+        assert _crd.sum_execution_log_tokens(manifest) == 3_000
+
+    def test_every_in_population_row_is_still_summed(self):
+        """The negative control: the filter excludes, it does not under-count."""
+        manifest = {
+            'execution_log': [
+                {'step_id': 'a', 'phase': '5-execute', 'total_tokens': 40_000},
+                {'step_id': 'b', 'phase': '6-finalize', 'total_tokens': 60_000},
+            ]
+        }
+
+        assert _crd.sum_execution_log_tokens(manifest) == 100_000

@@ -681,7 +681,7 @@ The `## Phase Breakdown` Total uses the **canonical-six baseline** (`len(PHASE_N
 ```markdown
 ## Phase Breakdown
 
-> Phases missing an end_time boundary marker — 6-finalize. These rows were never closed by end-phase / phase-boundary, so no close recorded their totals and every column Total above is a floor. Such a row can still show figures recovered from sources that do not depend on the close — its accumulator, and its dispatch-boundary rows (marked `(boundary floor)`) — and those are floors too. This is an end_time-presence check only: a phase NOT listed here carries the marker, which says nothing about whether its recorded figures are complete or internally consistent.
+> Phases missing an end_time boundary marker — 6-finalize. These rows were never closed by end-phase / phase-boundary, so no close recorded their totals and every column Total above is a floor. Such a row can still show figures recovered from sources that do not depend on the close — its accumulator, and its dispatch-boundary rows — and each carries its own marker saying how far it can be trusted: `(boundary floor)` is a lower bound, `(boundary sum, over-covering)` explicitly is not. This is an end_time-presence check only: a phase NOT listed here carries the marker, which says nothing about whether its recorded figures are complete or internally consistent.
 ```
 
 ## Generated Report (metrics.md)

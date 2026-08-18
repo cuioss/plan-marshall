@@ -467,16 +467,41 @@ class TestPairingIsMaximal:
         assert [row['step_id'] for row in unpaired_execution] == ['e10000']
         assert unpaired_boundary == []
 
-    def test_the_pairing_does_not_depend_on_input_order(self):
-        """One corpus, one result — reversing either side changes no verdict."""
-        execution_rows = [self._row(240, 'e'), self._row(500, 'e')]
-        boundary_rows = [self._row(0, 'b'), self._row(250, 'b')]
+    def test_which_rows_are_reported_does_not_depend_on_input_order(self):
+        """The REPORTED set is stable under re-ordering — including under ties.
+
+        The corpus is chosen so a row is genuinely left over (a perfect matching
+        would make this vacuous: every ordering trivially reports nothing) and so
+        two execution rows share a timestamp. Ties are the case that matters:
+        Python's sort is stable, so before the sort key became total the
+        manifest's own row order decided which tied row went unpaired, and the
+        same data written in a different order named a different dispatch in the
+        emitted finding.
+        """
+        tied_a = self._row(100, 'a')
+        tied_b = self._row(100, 'b')
+        execution_rows = [tied_a, tied_b]
+        boundary_rows = [self._row(100, 'x')]
 
         forward = _ledger.pair_rows(execution_rows, boundary_rows, 300)
-        reversed_inputs = _ledger.pair_rows(
-            list(reversed(execution_rows)), list(reversed(boundary_rows)), 300
-        )
+        swapped = _ledger.pair_rows([tied_b, tied_a], boundary_rows, 300)
 
-        assert len(forward[0]) == len(reversed_inputs[0])
-        assert forward[1] == reversed_inputs[1] == []
-        assert forward[2] == reversed_inputs[2] == []
+        # Precondition: exactly one row IS left over, so there is something to
+        # disagree about.
+        assert len(forward[1]) == 1
+        assert [row['step_id'] for row in forward[1]] == [row['step_id'] for row in swapped[1]]
+        assert [row['step_id'] for row in forward[2]] == [row['step_id'] for row in swapped[2]]
+
+    def test_the_sort_key_is_total_over_the_rows_own_values(self):
+        """Two rows sharing a timestamp order by their remaining recorded fields.
+
+        Pinned directly, because the ordering is what makes the reported set a
+        property of the data rather than of the manifest's row order — and a
+        timestamp-only key looks correct while leaving that decided by input
+        order.
+        """
+        first = self._row(100, 'a')
+        second = self._row(100, 'b')
+
+        assert _ledger._row_sort_key(first) < _ledger._row_sort_key(second)
+        assert _ledger._row_sort_key(first)[:2] == _ledger._row_sort_key(second)[:2]

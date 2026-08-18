@@ -342,9 +342,9 @@ TOKENS_SOURCE_UNCLOSED_BOUNDARY = 'unclosed_boundary_floor'
 #: The same fold on a row whose boundary coverage is ``over`` — more recorded
 #: rows than sampled dispatches. The figure is still the best available account
 #: of what the phase spent, but it is NOT a floor: ``_boundary_coverage_state``
-#: classifies ``over`` as impossible for a single population and potentially
-#: double-counted across a resume, so a lower-bound label would assert exactly
-#: what that classification denies.
+#: classifies ``over`` as impossible for a single population, so the two counts
+#: are not commensurable and the figure is bounded in neither direction — a
+#: lower-bound label would assert exactly what that classification denies.
 TOKENS_SOURCE_UNCLOSED_BOUNDARY_OVER = 'unclosed_boundary_over_covering'
 
 #: Their cell suffixes. Deliberately NOT ``TOKEN_POPULATIONS`` members: the figure
@@ -627,7 +627,10 @@ def _unclosed_boundary_floor(phase_row: dict) -> int | None:
 
     So when the row carries no ``end_time`` but does carry a
     ``dispatch_boundary_total``, that sum is folded into the phase's Tokens cell
-    as a LABELLED floor. This is the same move ``enrich`` already makes when it
+    under a marker naming how far it can be trusted — ``(boundary floor)`` where
+    its coverage is partial or undecidable, and ``(boundary sum, over-covering)``
+    where the file holds more rows than the phase had sampled dispatches, which
+    is not a floor at all. This is the same move ``enrich`` already makes when it
     folds inline main-context spend into a zero-dispatch phase's total and labels
     the row's population — same reason (a real cost that would otherwise render
     as nothing), applied to the dispatched population instead of the inline one.
@@ -1643,8 +1646,10 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             'end-phase / phase-boundary, so no close recorded their totals and every '
             'column Total above is a floor. Such a row can still show figures recovered '
             'from sources that do not depend on the close — its accumulator, and its '
-            'dispatch-boundary rows (marked `(boundary floor)`) — and those are floors '
-            'too. This is an end_time-presence check only: a phase NOT listed here '
+            'dispatch-boundary rows — and each carries its own marker saying how far it '
+            'can be trusted: `(boundary floor)` is a lower bound, `(boundary sum, '
+            'over-covering)` explicitly is not. This is an end_time-presence check only: '
+            'a phase NOT listed here '
             'carries the marker, which says nothing about whether its recorded figures '
             'are complete or internally consistent.'
         )
@@ -2064,12 +2069,14 @@ def cmd_generate(args: argparse.Namespace) -> dict:
             '> Marked `(boundary sum, over-covering)` — the phase was never closed, and the '
             'sum of its dispatch-boundary rows is the largest measure available for it, but '
             'that file holds MORE rows than the phase had sampled dispatches: '
-            f'{over_folded}. The two counts are drawn from different populations (a resumed '
-            'or re-entered phase appends rows the single-window enrich walk never re-counts), '
-            'so the figure may double-count and is **not** a floor — it is shown because the '
-            'alternative is rendering nothing for a phase that demonstrably spent something. '
-            'Treat it as an upper-bounded estimate whose coverage is a known failure, and see '
-            'the per-phase Dispatch-boundary total bullet for both counts.'
+            f'{over_folded}. Numerator over denominator is impossible for one population, so '
+            'the two counts are not commensurable and this is not a coverage ratio at all — '
+            'which is why the figure is **not** labelled a floor. It is bounded in neither '
+            'direction: the row count exceeding the sample admits rows the sampled window '
+            'never saw, while the declared exclusions below mean the file still omits every '
+            'dispatch class that registers no boundary. It is shown because the alternative '
+            'is rendering nothing for a phase that demonstrably spent something. See the '
+            'per-phase Dispatch-boundary total bullet for both counts.'
         )
         lines.append('')
 
