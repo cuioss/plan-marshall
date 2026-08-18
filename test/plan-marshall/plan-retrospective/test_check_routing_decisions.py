@@ -636,3 +636,78 @@ class TestLoadDiffFiles:
         plan_dir = tmp_path / 'plan'
         plan_dir.mkdir()
         assert _crd.load_diff_files('cwd-diff.txt', plan_dir) == ['b.py']
+
+
+class TestExecutionLogPopulation:
+    """The mirrored ledger population is held to its writer, not to prose."""
+
+    def test_execution_log_population_matches_writer(self):
+        """``EXECUTION_LOG_PHASES`` mirrors the writer's own accepted-phase set.
+
+        ``check-routing-decisions`` runs in a different process from
+        ``manage-execution-manifest`` and cannot import its private module at
+        runtime, so the population it publishes is a hand-mirror. This test is
+        what keeps the mirror honest: it imports the writer's constant and fails
+        loudly when a phase is added or removed on either side. Without it, a
+        widened writer would leave the reader publishing a population label that
+        under-states what the ledger now holds — the exact mislabel the
+        population field exists to prevent.
+        """
+        core = load_script_module(
+            'plan-marshall', 'manage-execution-manifest', '_manifest_core.py', 'mc_population_drift'
+        )
+
+        assert tuple(_crd.EXECUTION_LOG_PHASES) == tuple(core.VALID_RECORD_PHASES)
+        assert _crd.EXECUTION_LOG_POPULATION == ','.join(core.VALID_RECORD_PHASES)
+
+    def test_execution_log_population_is_not_the_whole_plan(self):
+        """The published population is a PROPER subset of the canonical phases.
+
+        The defect this plan closes is a partial sum presented as an actual. If
+        the ledger ever did span every phase, the population label would be
+        redundant and the refusal gate dead code — so the asymmetry is pinned
+        rather than assumed.
+        """
+        constants = load_script_module(
+            'plan-marshall', 'tools-file-ops', 'constants.py', 'constants_population_drift'
+        )
+
+        ledger = set(_crd.EXECUTION_LOG_PHASES)
+        canonical = set(constants.PHASES)
+        assert ledger < canonical
+        assert canonical - ledger
+
+
+class TestExecutionLogSumMatchesItsPublishedPopulation:
+    """The sum covers exactly the phases its label names."""
+
+    def test_a_row_outside_the_population_is_not_summed(self):
+        """An out-of-population row cannot inflate a figure labelled otherwise.
+
+        The writer refuses such rows today, so this is unreachable from it — but
+        an archived manifest predating that gate, or a hand-edited one, would
+        otherwise be summed under a label naming phases it did not measure. The
+        label is a property of the sum, not a promise about a writer in another
+        process.
+        """
+        manifest = {
+            'execution_log': [
+                {'step_id': 'a', 'phase': '1-init', 'total_tokens': 9_000_000},
+                {'step_id': 'b', 'phase': '3-outline', 'total_tokens': 1_000_000},
+                {'step_id': 'c', 'phase': '5-execute', 'total_tokens': 1_000},
+                {'step_id': 'd', 'phase': '6-finalize', 'total_tokens': 2_000},
+            ]
+        }
+
+        assert _crd.sum_execution_log_tokens(manifest) == 3_000
+
+    def test_every_in_population_row_is_still_summed(self):
+        """The negative control: the filter excludes, it does not under-count."""
+        manifest = {
+            'execution_log': [
+                {'step_id': 'a', 'phase': '5-execute', 'total_tokens': 40_000},
+                {'step_id': 'b', 'phase': '6-finalize', 'total_tokens': 60_000},
+            ]
+        }
+
+        assert _crd.sum_execution_log_tokens(manifest) == 100_000

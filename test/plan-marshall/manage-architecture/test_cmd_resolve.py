@@ -50,18 +50,18 @@ The cases below cover the public surface:
   this guard with it instead of leaving it pinning a string nothing emits.
 
 A sixth case (``test_cmd_resolve_cache_tree_layout_emits_augmentation``)
-pins the cache-tree regression that PR #515 closed. ``cmd_resolve``'s
+pins the cache-tree layout contract. ``cmd_resolve``'s
 augmentation path resolves the build skill's ``_CONFIG`` via
 ``_MARKETPLACE_BUNDLES_DIR`` (an import-time ``resolve_bundles_root``
-result) plus ``resolve_bundle_path``. Pre-#515 ``_cmd_client`` anchored
-that lookup with ``parents[4]`` index arithmetic that silently produced
+result) plus ``resolve_bundle_path``. Anchoring
+that lookup with ``parents[4]`` index arithmetic instead silently produces
 the wrong directory under the versioned plugin-cache layout
 (``<base>/plan-marshall/<version>/skills/...``), so ``_load_build_config``
 returned ``None`` and the four augmentation fields were dropped. The case
 constructs exactly that versioned layout from the real build skill
 scripts, points ``_MARKETPLACE_BUNDLES_DIR`` at it, and asserts all four
-fields survive — failing on the pre-#515 arithmetic, passing on the
-post-#515 ``resolve_bundle_path`` rerouting.
+fields survive, which an index-arithmetic anchor cannot do and
+``resolve_bundle_path`` can.
 """
 
 import shutil
@@ -82,6 +82,27 @@ from _arch_fixtures import seed_project as _seed_project  # noqa: E402
 _architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
 _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')
 _maven_cmd_discover = load_script_module('plan-marshall', 'build-maven', '_maven_cmd_discover.py', '_maven_cmd_discover')
+
+
+def _registered_maven_cmd_discover():
+    """Return the ``_maven_cmd_discover`` module ``sys.modules`` currently holds.
+
+    ⛔ Patch THIS object, never the module-level ``_maven_cmd_discover`` binding
+    above. ``_cmd_client_query._enrich_maven_module_cached`` reaches the seam
+    with a DEFERRED ``from _maven_cmd_discover import enrich_maven_module``
+    inside the function body, so it resolves the name through ``sys.modules`` at
+    call time rather than through whatever object this module loaded at import
+    time.
+
+    Those are not always the same object. ``load_script_module`` registers under
+    the stem, and ``build-maven``'s own tests load the same script under the same
+    name — so whichever module pytest imports LAST during collection owns the
+    registration. Patching the import-time binding therefore works only when this
+    directory happens to be collected after ``build-maven/``, and silently
+    patches an unreachable copy when it is collected before.
+    """
+    return sys.modules['_maven_cmd_discover']
+
 
 cmd_resolve = _cmd_client.cmd_resolve
 resolve_command = _cmd_client.resolve_command
@@ -113,12 +134,13 @@ _PYPROJECT_VERIFY_EXECUTABLE = (
 )
 
 # Canonical Bucket B executable shape for a MAVEN command. Maven declares a
-# 300s outer floor (``MAVEN_OUTER_FLOOR_SECONDS``) against pyproject's 600s, so
-# ``max(learned, 300) + 30`` stays under the 600s ceiling for modest learned
-# values — this is the only engine family that still yields a ``per_task``
-# verdict, and therefore the only one that can keep the per_task hint template
-# under exact-match coverage. ``default_command_key_fn`` normalises the
-# ``--command-args`` value to the persisted key ``maven:test__pl_core``.
+# 300s outer floor (``MAVEN_OUTER_FLOOR_SECONDS``) against pyproject's 330, so
+# ``max(learned, 300) + 30`` stays under the 600s CEILING for modest learned
+# values and the verdict can be ``per_task``. Both engine families reach that
+# verdict — the pyproject floor case below asserts it too — so the per_task hint
+# template is under exact-match coverage from more than one direction.
+# ``default_command_key_fn`` normalises the ``--command-args`` value to the
+# persisted key ``maven:test__pl_core``.
 _MAVEN_TEST_EXECUTABLE = (
     'python3 .plan/execute-script.py plan-marshall:build-maven:maven '
     'run --command-args "test -pl core"'
@@ -183,7 +205,7 @@ def isolated_run_config(monkeypatch, tmp_path):
 
 
 # =============================================================================
-# Case (a): Bucket B notation, short duration -> floored to orchestrator tier
+# Case (a): Bucket B notation, learned value below the engine floor -> per_task
 # =============================================================================
 
 
@@ -422,7 +444,7 @@ def test_cmd_resolve_hint_pins_recognition_token(
 
 # =============================================================================
 # Case (f): Cache-tree layout — augmentation survives the versioned plugin-cache
-#           shape (PR #515 regression).
+#           shape.
 # =============================================================================
 
 
@@ -446,8 +468,8 @@ def _build_cache_tree(base: Path, version: str = '0.1-BETA') -> Path:
 
     Copies each skill's ``scripts/`` directory from the live marketplace
     source into ``<base>/plan-marshall/<version>/skills/<skill>/scripts`` —
-    the installed-plugin-cache shape whose depth differs from the
-    marketplace-source shape the pre-#515 ``parents[N]`` anchor assumed.
+    the installed-plugin-cache shape, whose depth differs from the
+    marketplace-source shape a ``parents[N]`` index anchor assumes.
 
     Returns the bundles-root anchor (``<base>``) suitable for assignment to
     ``_cmd_client._MARKETPLACE_BUNDLES_DIR``: ``resolve_bundle_path(base,
@@ -462,7 +484,7 @@ def _build_cache_tree(base: Path, version: str = '0.1-BETA') -> Path:
 
 
 def test_cmd_resolve_cache_tree_layout_emits_augmentation(isolated_run_config, monkeypatch):
-    """Augmentation fields survive the versioned plugin-cache layout (PR #515).
+    """Augmentation fields survive the versioned plugin-cache layout.
 
     Builds the versioned ``<base>/plan-marshall/<version>/skills/...`` cache
     tree, repoints ``_cmd_client._MARKETPLACE_BUNDLES_DIR`` at it, and runs
@@ -470,11 +492,12 @@ def test_cmd_resolve_cache_tree_layout_emits_augmentation(isolated_run_config, m
     timeout above the ceiling, all four augmentation fields MUST be present
     and carry the orchestrator-tier values.
 
-    Pre-#515 the ``parents[4]`` anchor resolved the build-config module path
-    to a non-existent directory under this layout, so ``_load_build_config``
-    returned ``None`` and the four fields were silently dropped — this case
-    failed. Post-#515 ``resolve_bundle_path`` reroutes through the versioned
-    subdir and the fields are emitted.
+    A ``parents[4]`` anchor resolves the build-config module path to a
+    non-existent directory under this layout, so ``_load_build_config`` returns
+    ``None`` and the four fields are dropped SILENTLY — no error, just a
+    legacy-shaped result, and precisely where the product is installed rather
+    than run from source. ``resolve_bundle_path`` reroutes through the
+    ``<version>`` subdir instead, which is what keeps the fields emitted.
     """
     _set_persisted_timeout(isolated_run_config, 'python:verify_plan_marshall', 800)
 
@@ -485,8 +508,8 @@ def test_cmd_resolve_cache_tree_layout_emits_augmentation(isolated_run_config, m
         with tempfile.TemporaryDirectory() as cache_dir:
             cache_base = _build_cache_tree(Path(cache_dir))
             # Repoint the bundles-root anchor at the versioned cache tree. This is
-            # the value pre-#515 arithmetic mis-resolved; resolve_bundle_path()
-            # must now find the build-config module under the <version> subdir.
+            # the value index arithmetic mis-resolves; resolve_bundle_path()
+            # must find the build-config module under the <version> subdir.
             monkeypatch.setattr(_cmd_client, '_MARKETPLACE_BUNDLES_DIR', cache_base)
 
             with tempfile.TemporaryDirectory() as project_dir:
@@ -585,7 +608,7 @@ def test_resolve_coverage_triggers_at_most_one_enrich(monkeypatch):
             'dependencies': [],
         }
 
-    monkeypatch.setattr(_maven_cmd_discover, 'enrich_maven_module', _spy_enrich)
+    monkeypatch.setattr(_registered_maven_cmd_discover(), 'enrich_maven_module', _spy_enrich)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_multi_module(tmpdir)
@@ -619,8 +642,8 @@ def test_resolve_plain_verbs_trigger_zero_enrich(monkeypatch, verb):
         enrich_calls.append((module_path, project_root))
         return None
 
-    monkeypatch.setattr(_maven_cmd_discover, '_get_maven_metadata', _spy_metadata)
-    monkeypatch.setattr(_maven_cmd_discover, 'enrich_maven_module', _spy_enrich)
+    monkeypatch.setattr(_registered_maven_cmd_discover(), '_get_maven_metadata', _spy_metadata)
+    monkeypatch.setattr(_registered_maven_cmd_discover(), 'enrich_maven_module', _spy_enrich)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_multi_module(tmpdir)

@@ -3,8 +3,8 @@
 """
 Abstract base class and shared TOON helpers for platform-runtime.
 
-Defines the Runtime ABC with all 24 platform operations. Concrete subclasses
-(ClaudeRuntime, OpenCodeRuntime) implement each operation for their target.
+Defines the Runtime ABC with all 24 platform operations. Each concrete subclass
+implements every operation for one target, or declines it via the no-op policy.
 
 TOON helpers delegate to the canonical toon_parser from ref-toon-format — no
 ad-hoc parsing or serialization in this module.
@@ -12,6 +12,7 @@ ad-hoc parsing or serialization in this module.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from typing import Any
 
 from toon_parser import serialize_toon
@@ -98,9 +99,21 @@ class Runtime(ABC):
     ``runtime.target`` in ``.plan/marshal.json`` and dispatches the requested
     operation.
 
-    All methods return a serialized TOON string ready for ``print()``.  Use
-    the ``toon_success``, ``toon_error``, and ``toon_noop`` helpers from this
-    module to build responses; never format TOON strings manually.
+    Methods return a serialized TOON string ready for ``print()``.  Use the
+    ``toon_success``, ``toon_error``, and ``toon_noop`` helpers from this module
+    to build responses; never format TOON strings manually. The one documented
+    exception is :meth:`session_render_title`: a target that renders the title
+    itself returns ``""`` on every path — written, nothing to write, or write
+    failed alike — so the caller appends nothing and cannot read the outcome off
+    the return value. A target that declines that operation returns an ordinary
+    no-op TOON like any other.
+
+    **The per-operation wire schemas live in ``standards/contract.md``.** This
+    module states each operation's INTENT and its decline conditions; that
+    document states the exact field set each status variant carries. An
+    implementer needs both — the intent here to decide what to build, the schema
+    there to agree on the wire with every other target. The declinable-primitive
+    rules those schemas assume are in ``standards/no-op-policy.md``.
     """
 
     # ------------------------------------------------------------------
@@ -117,7 +130,8 @@ class Runtime(ABC):
 
         Args:
             project_dir: Project root directory path.
-            target: Platform target identifier (``"claude"`` or ``"opencode"``).
+            target: Platform target identifier — the value seeded as
+                ``runtime.target``.
 
         Returns:
             Serialized TOON string (success or error).
@@ -127,57 +141,69 @@ class Runtime(ABC):
     def project_install_hook(
         self,
         target: str,
-        overwrite_statusline: bool = False,
-        overwrite_env_disable: bool = False,
+        overwrite: Sequence[str] = (),
         enforcement: bool = False,
     ) -> str:
-        """Install the full terminal-title hook wiring into a named settings file.
+        """Wire this target's session/display integration into its own configuration.
 
-        Reads (or creates) *target* and installs the SessionStart capture entry,
-        nine render entries across six render-trigger hook events
-        (SessionStart:matcher-less, SessionStart:clear, UserPromptSubmit,
-        Notification, Stop, PreToolUse:AskUserQuestion, PreToolUse:Bash,
-        PostToolUse:AskUserQuestion, PostToolUse:Bash), the ``statusLine``
-        command, and ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE = "1"``.
+        The operation carries INTENT only: make this target surface plan status
+        to the operator over whatever channel it has. WHERE that wiring lives and
+        WHAT it consists of are the implementation's to decide — INBOUND, the
+        caller names the target and nothing else, so no configuration location,
+        event name, or setting key is passed in.
 
-        Re-invocation CONVERGES an existing entry on the current shape rather
-        than making no change: an already-present entry whose hook ``timeout``
-        is stale is rewritten to the current value, and that outcome is reported
-        separately from a genuine no-op (``migrated_events`` on the
-        terminal-title path, ``capture_status`` for the SessionStart capture
-        entry, ``enforcement_status: migrated`` on the enforcement path).
-        Nothing is ever duplicated, and an entry that is already correct is left
-        untouched. ``already_present`` is False whenever ANY of those three
-        reported anything other than a no-op.
+        The RETURN is not symmetric, and deliberately so: a caller that asked for
+        a write has to be told what was written, so the success payload names the
+        elements the target actually manages and reports each one's disposition.
+        Those names are the target's own. A caller reads them to report or to
+        prompt; it must not hardcode them, and no other operation's contract
+        depends on them.
 
-        Unlike ``project_initial_setup``, this operation does not create
-        ``.plan/`` or seed ``marshal.json`` — it only mutates the named file.
+        Unlike :meth:`project_initial_setup`, this operation creates no plan state
+        and seeds no configuration file of plan-marshall's own; it only wires the
+        integration.
+
+        Re-invocation CONVERGES rather than merely detecting a duplicate: an
+        already-present element whose shape is stale is rewritten to the current
+        shape, and that outcome is reported distinguishably from a genuine no-op.
+        Nothing is ever duplicated, and an element that is already correct is left
+        untouched.
+
+        A target that has no such integration channel returns ``no-op`` with a
+        reason and an alternative rather than faking an install.
 
         Args:
-            target: Path to the settings file the hooks are installed into
-                (e.g. ``.claude/settings.local.json``).
-            overwrite_statusline: When True, overwrite an existing
-                ``statusLine`` whose command differs from the renderer; when
-                False, preserve the foreign value and surface
-                ``statusLine_status: already_present_other`` so the caller
-                can prompt.
-            overwrite_env_disable: Same semantics for
-                ``env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE``.
-            enforcement: When True, install ONLY the orthogonal PreToolUse
-                enforcement hook entry and skip the terminal-title bundle
-                entirely. The two install modes are independent: neither
-                disturbs the other's entries.
+            target: Platform target identifier — the value that appears as
+                ``runtime.target`` in ``marshal.json``.
+            overwrite: Conflict keys this call is authorised to overwrite. A
+                pre-existing configuration value that differs from the one the
+                integration wants is PRESERVED by default and reported as a
+                conflict, so the caller can prompt the operator; naming that
+                conflict's key here authorises overwriting it instead. The key
+                set is target-defined — each implementation documents its own —
+                and a target that defines one rejects an unrecognised key rather
+                than silently ignoring it, so a typo can never read as "do not
+                overwrite". A target that declines the operation outright defines
+                no keys and reaches no key check; its ``no-op`` answers every
+                argument, this one included.
+            enforcement: Wire the target's TOOL-INVOCATION GATE instead of its
+                session/display channel — the mechanism by which the target
+                consults plan-marshall before a tool call runs, so a call that
+                violates the active plan's discipline can be refused. A target
+                with no such interception point declines this mode exactly as it
+                would decline the operation. The two modes are independent:
+                neither disturbs the other's configuration.
 
         Returns:
-            Serialized TOON string (success, error, or no-op). The
-            terminal-title path carries ``target``, ``hook_installed``,
-            ``already_present``, ``installed_events``,
-            ``already_present_events``, ``migrated_events``, ``capture_status``
-            (``installed`` / ``migrated`` / ``already_present``),
-            ``statusLine_status``, and ``env_status``; the ``enforcement`` path
-            carries ``target``, ``enforcement_installed``,
-            ``enforcement_status`` (``installed`` / ``already_present`` /
-            ``migrated``), and ``already_present``.
+            Serialized TOON string (success, error, or no-op). A success payload
+            reports, per element the target manages, what became of it: installed,
+            converged onto the current shape, already correct, preserved because
+            an existing value conflicted and no ``overwrite`` key authorised
+            replacing it, or replaced because one did. Not every element admits
+            every disposition — the set each one reports is the target's to
+            define, and each target documents its own alongside the code that
+            assigns it. The payload also carries ``already_present`` — True only
+            when the call changed nothing at all.
         """
 
     # ------------------------------------------------------------------
@@ -188,19 +214,17 @@ class Runtime(ABC):
     def layout_skill_roots(self) -> str:
         """Resolve the project-local-skill discovery root(s) for this target.
 
-        Returns the ordered list of directory paths (relative to a project
-        root, or ``~``-anchored for user-global roots) where ``project:``
-        skills — finalize-steps, recipes, verify-steps, domain-attachable
-        skills — are discovered on this target. Callers resolve each returned
-        root against the relevant base directory and probe in list order
-        (first match wins).
+        Returns the ordered list of directory paths where ``project:`` skills —
+        finalize-steps, recipes, verify-steps, domain-attachable skills — are
+        discovered on this target. They are typically project-relative or
+        ``~``-anchored, but a target with a configuration-directory override
+        derives a root beneath it and returns that, so a caller must assume
+        neither form. Callers resolve each returned root against the relevant base
+        directory and probe in list order (first match wins).
 
-        On Claude: returns the single ``.claude/skills`` root.
-
-        On OpenCode: returns the multi-root list mirroring the executor's
-        discovery order (``$OPENCODE_CONFIG_DIR/skills``, ``.opencode/skills``,
-        ``.claude/skills``, ``.agents/skills`` and the ``~``-anchored
-        user-global variants).
+        A target with one such root returns a single-element list; a target that
+        discovers skills across several returns them all, in the order its own
+        discovery probes them.
 
         The result does not change for the lifetime of a process (the target
         is fixed by ``marshal.json``), so callers memoise it per process —
@@ -221,22 +245,21 @@ class Runtime(ABC):
         i.e. where ``extension.py`` / bundle scripts are found when running
         from an installed plugin rather than the marketplace repo.
 
-        On Claude: returns the single ``~/.claude/plugins/cache/plan-marshall``
-        cache root.
-
-        On OpenCode: OpenCode has no separate single plugin-cache; deployed
-        bundles live under the project-local-skill discovery roots themselves.
-        The op returns those root(s) so callers can probe them in priority
-        order (first match wins), mirroring ``layout_skill_roots``.
+        A target that keeps a dedicated cache directory returns it. A target
+        whose deployed bundles instead live among its project-local-skill roots
+        returns the ones that can actually hold them — deployed bundles are shared
+        across checkouts, so a root anchored inside a single project cannot — plus
+        any root derived from the target's own configuration-directory override. Either way
+        the caller probes the returned list in order, first match wins.
 
         The result does not change for the lifetime of a process (the target
         is fixed by ``marshal.json``), so callers memoise it per process.
 
         Returns:
             Serialized TOON string carrying ``roots[N]`` — the ordered list of
-            deployed-bundle cache roots for the active target (``~``-anchored
-            absolute paths). Claude returns a single-element list; OpenCode
-            returns its multi-root list.
+            deployed-bundle cache roots for the active target. The list may
+            carry one root or several; callers ``~``-expand each entry before
+            probing it.
         """
 
     # ------------------------------------------------------------------
@@ -247,14 +270,14 @@ class Runtime(ABC):
     def session_capture(self, plan_id: str) -> str:
         """Read and persist the current platform session identifier.
 
-        On Claude: reads ``$CLAUDE_CODE_SESSION_ID`` and APPENDS it to the
-        plan's ``status.metadata.session_ids`` list via ``manage-status``, so a
-        plan spanning several sessions keeps every identity rather than only the
-        newest.  Returns ``error`` with code ``hook_not_configured`` when the env
-        var is absent.
-
-        On OpenCode: returns ``no-op`` because the platform does not expose a
-        session id to the shell environment.
+        A target that exposes a session identifier resolves it however that
+        target makes it available and APPENDS it to the plan's
+        ``status.metadata.session_ids`` list via ``manage-status``, so a plan
+        spanning several sessions keeps every identity rather than only the
+        newest. When the identifier ought to be reachable but is not — the
+        target's wiring is incomplete — that is an ``error`` with code
+        ``hook_not_configured``, never a silent pass. A target that exposes no
+        session identifier at all returns ``no-op``.
 
         Args:
             plan_id: Plan identifier used by ``manage-status``.
@@ -272,14 +295,27 @@ class Runtime(ABC):
         emits the platform-appropriate sequence.
 
         Args:
-            statusline: When True, the success branch emits plain text
-                (``f"{icon} {body}"``) instead of the JSON envelope, matching
-                the ``statusLine`` hook contract. Noop branches still emit
-                nothing on stdout. Default ``False`` preserves the
-                hook-driven JSON-envelope contract.
+            statusline: Select the target's PERSISTENT STATUS-READOUT channel
+                over its event-driven one. When True, the success branch emits
+                the composed title as plain text (``f"{icon} {body}"``) rather
+                than the structured envelope the event channel expects. Noop
+                branches still emit nothing on stdout either way. Default
+                ``False`` selects the event-driven channel. A target with only
+                one channel implements both settings over it, or declines the
+                one it lacks.
 
         Returns:
-            Serialized TOON string (success or no-op).
+            The empty string from a target that renders the title itself — on
+            EVERY path. It has already written the title to stdout, or it had
+            nothing to write, or the write FAILED: all three return ``""``, so
+            the caller appends nothing and, critically, cannot tell the three
+            apart from the return value. A target that renders must therefore
+            name its outcome on a channel of its own (the reference
+            implementation writes it to stderr), because a failed paint is
+            otherwise indistinguishable from a successful one. A target that
+            declines the operation returns an ordinary no-op TOON instead. This
+            is the class docstring's one documented exception to the return-TOON
+            rule.
         """
 
     @abstractmethod
@@ -315,12 +351,17 @@ class Runtime(ABC):
         🔨). When omitted (``None``) the composer applies its default active
         icon — the shape every persisted-title-state change fires.
 
-        On Claude: best-effort — a no-op when the state is absent or unrenderable
-        (``reason: no_title_state``) or when the feature is configured off
-        (``reason: feature_inactive``). Never raises, and never changes the
+        Best-effort on every target. It never raises and never changes the
         caller's status or exit code.
 
-        On OpenCode: returns ``no-op`` (no plugin-driven terminal-title channel).
+        The two "nothing to settle" outcomes are ``success`` carrying a
+        ``reason``, NOT ``no-op``: state absent or unrenderable
+        (``reason: no_title_state``) and feature configured off
+        (``reason: feature_inactive``). A target that HAS a render channel did
+        its whole job in both cases — there was simply nothing to bind — so it
+        reports success and says why. ``no-op`` is reserved for a target with no
+        render channel to settle state for at all, which is the operation-level
+        decline the no-op policy governs.
 
         Args:
             plan_id: Plan identifier whose ``status.json`` supplies the title
@@ -353,16 +394,15 @@ class Runtime(ABC):
         and NO plan-dir-exists check — a session that switches to drive a
         different live plan rebinds cleanly instead of staying stuck.
 
-        On Claude: resolves ``session_id`` from the *session_id* argument or, when
-        absent, from ``$CLAUDE_CODE_SESSION_ID``, then delegates to the pure
-        ``session_binding`` policy. Best-effort — never raises.
-
-        On OpenCode: returns ``no-op`` (no platform-provided session id).
+        A target resolves ``session_id`` from the *session_id* argument first
+        and, when absent, from whatever session identifier it exposes.
+        Best-effort — never raises. A target that exposes none returns
+        ``no-op``.
 
         Args:
             plan_id: Plan identifier to bind to the session's slot.
-            session_id: Optional explicit session id; falls back to the platform
-                session-id environment variable when omitted.
+            session_id: Optional explicit session id; falls back to whatever
+                session identifier the target exposes when omitted.
 
         Returns:
             Serialized TOON string (success or no-op) noting whether the slot
@@ -377,15 +417,13 @@ class Runtime(ABC):
         counterpart of :meth:`session_bind`; ``session render-title`` resolves
         the session->plan binding through the same read path.
 
-        On Claude: resolves ``session_id`` from the *session_id* argument or, when
-        absent, from ``$CLAUDE_CODE_SESSION_ID``, then delegates to the pure
-        ``session_binding`` policy.
-
-        On OpenCode: returns ``no-op`` (no platform-provided session id).
+        A target resolves ``session_id`` exactly as :meth:`session_bind` does —
+        the argument first, then its own session identifier — and returns
+        ``no-op`` when it exposes none.
 
         Args:
-            session_id: Optional explicit session id; falls back to the platform
-                session-id environment variable when omitted.
+            session_id: Optional explicit session id; falls back to whatever
+                session identifier the target exposes when omitted.
 
         Returns:
             Serialized TOON string carrying the resolved ``plan_id`` (empty when
@@ -406,9 +444,8 @@ class Runtime(ABC):
         elapsed-time grace period. When *fix* is True, GCs each stale slot. Keeps
         NO shared mutable index — the scan-then-GC is per-file and idempotent.
 
-        On Claude: delegates to the pure ``session_binding`` policy.
-
-        On OpenCode: returns ``no-op`` (no platform-provided session id).
+        A target that maintains per-session binding slots reports over them. A
+        target with no session identifier keeps no slots and returns ``no-op``.
 
         Args:
             fix: When True, GC (remove) each stale slot whose plan is
@@ -441,10 +478,9 @@ class Runtime(ABC):
         A project that never opted into terminal titles is never touched by the
         teardown.
 
-        On Claude: when active, resolves the session id from
-        ``$CLAUDE_CODE_SESSION_ID`` and unbinds the session slot. Never raises.
-
-        On OpenCode: returns ``no-op`` (no terminal-title channel).
+        When active, a target resolves its own session identifier and unbinds
+        that session's slot. Never raises. A target with no render channel has no
+        binding to release and returns ``no-op``.
 
         Returns:
             Serialized TOON string (success or no-op) carrying ``active`` and
@@ -462,13 +498,10 @@ class Runtime(ABC):
         TEXT for the operator/orchestrator to act on. Zero-touch is impossible in
         any harness.
 
-        On Claude: returns ``success`` with the resolved directive
-        (``/reload-plugins``) plus the monitor caveat — only monitors require a
-        full session restart, and plan-marshall registers none, so
-        ``/reload-plugins`` picks up the regenerated executor / agent set live.
-
-        On OpenCode: returns ``no-op`` (no live plugin-reload command); the
-        alternative is a full session restart.
+        A target with a live reload command returns ``success`` carrying that
+        command's text, together with any caveat on how completely it reloads. A
+        target with no such command returns ``no-op`` naming the alternative —
+        typically a full session restart.
 
         Returns:
             Serialized TOON string (success or no-op) carrying the resolved
@@ -488,7 +521,10 @@ class Runtime(ABC):
             permissions: List of permission patterns to write.
 
         Returns:
-            Serialized TOON string (success or error).
+            Serialized TOON string (success, error, or no-op). A target whose
+            permission model this operation cannot be expressed against declines
+            here like any other operation, rather than reporting an outcome it
+            did not reach.
         """
 
     @abstractmethod
@@ -505,7 +541,10 @@ class Runtime(ABC):
                 ``"missing-steps"`` is in checks).
 
         Returns:
-            Serialized TOON string (success or error).
+            Serialized TOON string (success, error, or no-op). A target whose
+            permission model this operation cannot be expressed against declines
+            here like any other operation, rather than reporting an outcome it
+            did not reach.
         """
 
     @abstractmethod
@@ -527,7 +566,10 @@ class Runtime(ABC):
             dry_run: When ``True``, preview changes without applying.
 
         Returns:
-            Serialized TOON string (success or error).
+            Serialized TOON string (success, error, or no-op). A target whose
+            permission model this operation cannot be expressed against declines
+            here like any other operation, rather than reporting an outcome it
+            did not reach.
         """
 
     @abstractmethod
@@ -542,7 +584,10 @@ class Runtime(ABC):
             dry_run: When ``True``, preview changes without applying.
 
         Returns:
-            Serialized TOON string (success or error).
+            Serialized TOON string (success, error, or no-op). A target whose
+            permission model this operation cannot be expressed against declines
+            here like any other operation, rather than reporting an outcome it
+            did not reach.
         """
 
     @abstractmethod
@@ -557,7 +602,10 @@ class Runtime(ABC):
             dry_run: When ``True``, preview changes without applying.
 
         Returns:
-            Serialized TOON string (success or error).
+            Serialized TOON string (success, error, or no-op). A target whose
+            permission model this operation cannot be expressed against declines
+            here like any other operation, rather than reporting an outcome it
+            did not reach.
         """
 
     @abstractmethod
@@ -568,7 +616,10 @@ class Runtime(ABC):
             scope: ``"global"``, ``"project"``, or ``"both"``.
 
         Returns:
-            Serialized TOON string (success or error).
+            Serialized TOON string (success, error, or no-op). A target whose
+            permission model this operation cannot be expressed against declines
+            here like any other operation, rather than reporting an outcome it
+            did not reach.
         """
 
     @abstractmethod
@@ -588,7 +639,10 @@ class Runtime(ABC):
             dry_run: When ``True``, preview changes without applying.
 
         Returns:
-            Serialized TOON string (success or error).
+            Serialized TOON string (success, error, or no-op). A target whose
+            permission model this operation cannot be expressed against declines
+            here like any other operation, rather than reporting an outcome it
+            did not reach.
         """
 
     # ------------------------------------------------------------------
@@ -601,11 +655,24 @@ class Runtime(ABC):
     ) -> str:
         """Record token consumption for a planning phase.
 
-        On Claude: reads session transcript and sums tokens since the last
-        capture for this phase.
+        A target that exposes a session transcript sums the tokens recorded
+        since this phase's last capture. A target that does not returns
+        ``no-op`` — unless *total_tokens* is supplied.
 
-        On OpenCode: returns ``no-op`` unless ``total_tokens`` is provided, in
-        which case it stores the value directly.
+        **Requirement when *total_tokens* is supplied:** the count MUST be
+        persisted before ``success`` is returned. A target that cannot persist
+        it MUST return ``no-op`` rather than a success carrying the number,
+        because a success the caller cannot distinguish from a stored one turns
+        a declined measurement into a silently lost one.
+
+        **Known violation, documented rather than implied:** ``OpenCodeRuntime``
+        currently returns ``success`` for an explicit count while reaching no
+        persistence boundary. This is a recorded survivor, not the contract —
+        the requirement above is what an implementation must satisfy, and the
+        remedy is to relocate the (target-neutral) metrics boundary to a shared
+        home so both targets can reach it, or to decline with ``no-op``. Do not
+        read this note as permission; it exists so the contract does not assert
+        a behaviour a registered runtime does not have.
 
         Args:
             plan_id: Plan identifier.
@@ -686,7 +753,7 @@ class Runtime(ABC):
           test code.
         - ``exploration_doc_residency_bytes`` — the call targeted a workflow or
           standard document (skill and standard markdown bodies, ``doc/**``,
-          ``*.adoc``, ``CLAUDE.md``).
+          ``*.adoc``, and the target's own agent-instructions file).
         - ``exploration_unattributed_bytes`` — no target path is recoverable: the
           call carried no path input, or it is not path-addressed at all
           (``WebFetch`` / ``WebSearch``). This bucket FAILS OPEN exactly as
@@ -713,15 +780,15 @@ class Runtime(ABC):
         preserve that distinction rather than substituting zeros for a target
         that never measured.
 
-        On Claude: reads ``~/.claude/projects/.../{session_id}.jsonl`` and the
-        ``{session_id}/subagents/agent-*.jsonl`` transcripts, parses ``message.usage``
-        four-field records, ``<usage>`` return tags, and ``tool_use`` /
-        ``tool_result`` content items, and writes the per-phase JSON.
-        Returns ``no-op`` with code ``transcript_not_found`` when no transcript exists.
+        A target that exposes a session transcript walks it — the session's own
+        records and any subagent records it keeps — normalizes every usage and
+        tool-call record it recognises, and writes the per-phase JSON. When such a
+        target cannot locate a transcript for *session_id* it returns ``no-op``
+        carrying ``transcript_not_found`` as its ``reason``.
 
-        On OpenCode: returns ``no-op`` with code ``transcript_not_found`` — OpenCode
-        exposes no session transcript, so it writes no bucket and its counters are
-        absent rather than zero.
+        A target that exposes no transcript at all returns that same
+        ``transcript_not_found`` no-op: it writes no bucket, and its counters are
+        ABSENT rather than zero, per the rule above.
 
         Args:
             session_id: Platform session identifier whose transcript is walked.
@@ -736,7 +803,9 @@ class Runtime(ABC):
             ``four_field_phases_attributed``, ``unclassified_tool_calls`` — the
             run-level count of tool names outside the classifier's
             population-derived domain, non-zero when the classifier needs
-            extending); the no-op carries ``error: transcript_not_found``.
+            extending). The no-op carries ``transcript_not_found`` as its
+            ``reason`` — a no-op never carries an ``error`` field, and
+            ``toon_noop`` cannot emit one.
         """
 
     # ------------------------------------------------------------------
@@ -753,11 +822,18 @@ class Runtime(ABC):
         """Return platform-specific subagent invocation parameters.
 
         Does NOT spawn the subagent; returns a TOON payload with the exact
-        parameters the caller must pass to the platform's native tool (``Task:``
-        on Claude, ``task`` on OpenCode).
+        parameters the caller must pass to the target's own subagent-spawning
+        tool. The payload's ``invocation.tool`` names that tool, so the caller
+        need not know it in advance.
 
-        Returns ``no-op`` when the agent requires tools with no platform
-        equivalent.
+        Two ``invocation`` fields are fixed across targets rather than
+        target-defined, because the caller reads them: ``tool`` as above, and
+        ``subagent_type``, which echoes the requested *agent* back. No target
+        substitutes an agent of its own choosing, so a caller's selection always
+        reaches the invocation.
+
+        Returns ``no-op`` when the agent requires tools the target has no
+        equivalent for.
 
         Args:
             agent: Agent name without ``.md`` extension.

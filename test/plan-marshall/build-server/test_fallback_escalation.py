@@ -14,15 +14,10 @@ the state machine directly and the emission integration through
 
 from __future__ import annotations
 
-import sys
-
 import pytest
-from conftest import get_script_path
+from _build_extension_fixtures import build_scripts_dir
 
-_SHARED_SCRIPTS = get_script_path('plan-marshall', 'script-shared', 'marketplace_paths.py').parent
-_BUILD_DIR = _SHARED_SCRIPTS / 'build'
-if str(_BUILD_DIR) not in sys.path:
-    sys.path.insert(0, str(_BUILD_DIR))
+build_scripts_dir()
 
 import _build_execute_factory as factory  # noqa: E402
 

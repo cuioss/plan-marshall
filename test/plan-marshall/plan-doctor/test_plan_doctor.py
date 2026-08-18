@@ -3,8 +3,7 @@
 """Module tests for the ``plan-doctor`` skill.
 
 Covers the post-hoc plan-artifact diagnostics that scan ``TASK-*.json``
-files for unresolved lesson-ID references. The five contract cases
-required by TASK-006:
+files for unresolved lesson-ID references. The five contract cases:
 
     (a) Clean plan with no lesson-ID-shaped tokens → empty findings.
     (b) Plan with one phantom ID in a TASK description → 1 finding with
@@ -270,8 +269,8 @@ def test_scan_all_aggregates_findings_with_per_plan_attribution(plan_context):
     shutil.rmtree(plan_context.plan_dir_for(plan_context.plan_id), ignore_errors=True)
     # three plans in the same fixture directory:
     #   * ``mixed-clean`` (no findings)
-    #   * ``mixed-dirty-one`` (1 phantom in TASK-001)
-    #   * ``mixed-dirty-two`` (1 phantom in TASK-001 + 1 valid ID in TASK-002,
+    #   * ``mixed-dirty-one`` (1 phantom in ``TASK-001``)
+    #   * ``mixed-dirty-two`` (1 phantom in ``TASK-001`` + 1 valid ID in ``TASK-002``,
     #     so only 1 finding from this plan)
     # Total expected: 2 findings, attributed to the two dirty plans, with
     # the matching task files. We use ``plan_context`` for the LAST plan so

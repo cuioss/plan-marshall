@@ -22,28 +22,15 @@ marshal.json build.map and per-module ``derived.json`` files carrying
 ``paths.module`` + ``commands``.
 """
 
-import importlib.util
 import json
-import sys
 import tempfile
 from argparse import Namespace
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).parent.parent.parent.parent
-_SCRIPTS_DIR = _REPO_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-architecture' / 'scripts'
+from conftest import load_script_module
 
-
-def _load_module(name: str, filename: str):
-    spec = importlib.util.spec_from_file_location(name, _SCRIPTS_DIR / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_architecture_core = _load_module('_architecture_core', '_architecture_core.py')
-_cmd_client = _load_module('_cmd_client', '_cmd_client.py')
+_architecture_core = load_script_module('plan-marshall', 'manage-architecture', '_architecture_core.py', '_architecture_core')
+_cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')
 
 save_project_meta = _architecture_core.save_project_meta
 save_module_derived = _architecture_core.save_module_derived
@@ -168,10 +155,10 @@ def test_classify_changed_path_nested_pom_matches_bare_basename_route():
 
     The bare-basename regime of the shared matcher (``route_matches``) matches
     a route with no ``/`` against the path's basename anywhere in the tree —
-    the semantics the aggregator has always used. The pre-fix deriver matched
-    the full path with ``fnmatch.fnmatch``, so every nested descriptor on a
-    multi-module reactor went unclaimed (``classified_count: 0`` — lesson
-    2026-07-16-17-012, TokenSheriff).
+    the semantics the aggregator uses. Matching a bare route against the full
+    path with ``fnmatch.fnmatch`` instead leaves every nested descriptor on a
+    multi-module reactor unclaimed (``classified_count: 0``), so the deriver
+    sees nothing to verify.
     """
     merged = {
         'java': [
@@ -216,7 +203,7 @@ def test_resolve_module_for_path_newly_created_file_resolves():
 
 
 # =============================================================================
-# Virtual-sibling domain-affinity tie-break (lesson 2026-07-16-16-001 issue 2)
+# Virtual-sibling domain-affinity tie-break
 # =============================================================================
 
 # The npm build_map domain routes for the virtual-sibling fixture: a production
@@ -271,7 +258,16 @@ def _seed_virtual_siblings(project_dir: str) -> None:
 def test_resolve_module_for_path_prefers_domain_affine_sibling():
     """On a virtual-sibling specificity tie, the sibling whose technology serves
     the winning domain wins (npm → javascript), not the alphabetically-first
-    Maven wrapper (lesson 2026-07-16-16-001 issue 2).
+    Maven wrapper.
+
+    Domain affinity is the ONLY thing separating these two: both siblings claim
+    the same physical path, so the tie is genuine and the fallback is
+    alphabetical. ``test_resolve_module_for_path_alphabetical_fallback_without_affinity``
+    resolves this exact ``.js`` path to the MAVEN sibling when no discriminating
+    domain is supplied — ``maven`` sorts before ``npm``. Without affinity, then,
+    every JavaScript change under a shared physical path is attributed to the
+    sibling that sorts first rather than to the one whose technology claims the
+    file, and the deriver goes on to verify that module instead.
     """
     with tempfile.TemporaryDirectory() as tmp:
         project = Path(tmp) / 'project'
@@ -316,9 +312,17 @@ def test_resolve_module_for_path_java_affinity_selects_maven_sibling():
 
 
 def test_production_js_under_maven_wrapper_derives_npm_compile():
-    """End-to-end lesson 2026-07-16-16-001 issue 2: a production JS file under
-    an npm virtual module with a Maven-wrapper sibling at the same physical path
-    derives the npm module's compile — not the wrapper's Maven goal.
+    """End-to-end: a production JS file under an npm virtual module with a
+    Maven-wrapper sibling at the same physical path derives the npm module's
+    compile — not the wrapper's Maven goal.
+
+    The derived command is what a caller actually runs to verify the change, so
+    resolving the wrong sibling here does not merely mislabel it: the emitted
+    executable would be scoped to ``e-2-e-playwright-maven``, and the JavaScript
+    edit would be verified against the sibling module rather than the one whose
+    technology claims it. The assertions therefore pin BOTH halves — that the npm
+    module's ``compile`` is present and that no executable names the Maven
+    sibling — because a run that emitted both would still look green.
     """
     with tempfile.TemporaryDirectory() as tmp:
         project = Path(tmp) / 'project'
@@ -524,8 +528,17 @@ def test_deriver_is_deterministic():
 
 def test_it_route_stamped_verify_derives_failsafe_gate():
     """A seeded IT route stamped build_class=verify derives the module's verify
-    executable — not the Surefire test goal — for a changed *IT.java artifact
-    (lesson 2026-07-16-16-001 issue 1).
+    executable — not the Surefire test goal — for a changed *IT.java artifact.
+
+    Route precedence is the whole contract: the narrower IT route and the broad
+    ``*/src/test/*.java`` route both match, and the stamped ``verify`` class must
+    win. What makes that precedence load-bearing is asserted where the Maven
+    extension is tested — ``build-maven/test_maven_extension.py`` pins that an
+    IT-signature path resolves the Failsafe-bound class rather than the plain
+    test goal, because the plain goal does not run IT-named tests and so reports
+    success having executed none of them. Here the concern is only that the
+    deriver honours the stamp: this fixture seeds pyproject executables, so it
+    exercises route precedence and not the Maven behaviour that motivates it.
     """
     with tempfile.TemporaryDirectory() as tmp:
         project = Path(tmp) / 'project'
@@ -578,8 +591,16 @@ def test_plain_test_java_still_derives_module_tests_beside_it_route():
 
 def test_nested_pom_against_bare_route_derives_verify():
     """A nested pom.xml against a seeded bare ``pom.xml`` route classifies
-    non-zero and derives the module's ``verify`` executable (lesson
-    2026-07-16-17-012 end-to-end).
+    non-zero and derives the module's ``verify`` executable, end-to-end.
+
+    The end-to-end counterpart of
+    ``test_classify_changed_path_nested_pom_matches_bare_basename_route``, and it
+    matters for the same reason: a bare route matched against the full path
+    instead of the basename leaves every nested descriptor on a multi-module
+    reactor unclaimed, so ``classified_count`` is 0, no command is derived, and
+    the change is reported as needing no verification at all. Asserting the
+    non-zero count AND the resulting executable is what distinguishes "claimed
+    and derived" from "claimed but derived nothing".
     """
     with tempfile.TemporaryDirectory() as tmp:
         project = Path(tmp) / 'project'

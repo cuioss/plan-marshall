@@ -141,8 +141,8 @@ def test_project_initial_setup_invalid_dir_returns_error(
 
 
 def test_project_install_hook_is_noop(runtime: OpenCodeRuntime) -> None:
-    """project_install_hook returns no-op because OpenCode has no SessionStart hook."""
-    result = _parse(runtime.project_install_hook(".claude/settings.local.json"))
+    """project_install_hook returns no-op — OpenCode exposes no hook channel to wire."""
+    result = _parse(runtime.project_install_hook("opencode"))
     assert result["status"] == "no-op"
     assert result["operation"] == "project install-hook"
     assert "reason" in result
@@ -513,6 +513,25 @@ def test_subagent_dispatch_missing_prompt_file_returns_error(
     result = _parse(runtime.subagent_dispatch("execution-context-level-3", missing, None))
     assert result["status"] == "error"
     assert result["error"] == "prompt_not_found"
+
+
+@pytest.mark.parametrize(
+    "agent",
+    ["execution-context-level-2", "execution-context-level-5"],
+    ids=["level-2", "level-5"],
+)
+def test_subagent_dispatch_echoes_requested_agent(
+    runtime: OpenCodeRuntime, agent: str
+) -> None:
+    """subagent_dispatch returns the REQUESTED agent as subagent_type.
+
+    The caller's level selection reaches the payload rather than being
+    discarded in favour of a fixed level, mirroring the Claude passthrough.
+    """
+    result = _parse(runtime.subagent_dispatch(agent, None, None))
+
+    assert result["status"] == "success"
+    assert result["invocation"]["subagent_type"] == agent
 
 
 # =============================================================================

@@ -22,41 +22,16 @@ test at the bottom of this module pins that exclusion so the boundary stays
 honest rather than becoming a silent parity hole.
 
 Each ``extension.py`` shares the module basename ``extension``, so both classes
-are loaded via ``importlib.util.spec_from_file_location`` against explicit file
-paths to avoid the cross-skill module-name collision.
+are loaded through ``_build_extension_fixtures.load_build_extension`` under
+explicit distinct module names, which avoids the cross-skill collision without
+entering either module in ``sys.modules``.
 """
 
-import importlib.util
-
 import pytest
+from _build_extension_fixtures import load_build_extension
 
-# Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import MARKETPLACE_ROOT
-
-
-def _load_build_extension(skill_name: str, module_name: str):
-    """Load a build skill's BuildExtension class by explicit file path."""
-    extension_path = (
-        MARKETPLACE_ROOT
-        / 'plan-marshall'
-        / 'skills'
-        / skill_name
-        / 'scripts'
-        / 'extension.py'
-    )
-    if not extension_path.exists():
-        raise FileNotFoundError(f'Extension not found: {extension_path}')
-
-    spec = importlib.util.spec_from_file_location(module_name, extension_path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f'Could not load module from {extension_path}')
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.BuildExtension
-
-
-MavenBuildExtension = _load_build_extension('build-maven', 'maven_parity_extension')
-GradleBuildExtension = _load_build_extension('build-gradle', 'gradle_parity_extension')
+MavenBuildExtension = load_build_extension('build-maven', 'maven_parity_extension')
+GradleBuildExtension = load_build_extension('build-gradle', 'gradle_parity_extension')
 
 
 # The layout rows BOTH build systems claim. Descriptor rows (pom.xml vs

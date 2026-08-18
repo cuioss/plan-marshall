@@ -31,11 +31,9 @@ The summarize step uses a real subprocess (``run_script``) so the
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import shutil
 import sys
-import types
 from argparse import Namespace
 from pathlib import Path
 
@@ -43,6 +41,7 @@ import pytest
 from conftest import (
     MARKETPLACE_ROOT,
     get_script_path,
+    load_script_module,
     run_script,
 )
 
@@ -87,26 +86,11 @@ _NON_NULL_CORE_INVARIANTS = (
 # In-process manage-tasks dispatcher (mirrors test_invariants.py).
 # =============================================================================
 
-_MT_SCRIPTS_DIR = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'manage-tasks'
-    / 'scripts'
+# Loaded under a name used nowhere else in the tree, so the registration the
+# shared loader performs cannot displace another module's copy.
+_query = load_script_module(
+    'plan-marshall', 'manage-tasks', '_tasks_query.py', '_e2e_handshake_tasks_query'
 )
-
-
-def _load_mt_module(name: str, filename: str) -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location(name, _MT_SCRIPTS_DIR / filename)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_query = _load_mt_module('_e2e_handshake_tasks_query', '_tasks_query.py')
 
 cmd_list = _query.cmd_list
 cmd_read = _query.cmd_read

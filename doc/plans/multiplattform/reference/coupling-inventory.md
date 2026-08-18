@@ -13,14 +13,60 @@ a future plan — registered here precisely so a scoping exclusion is never a si
 Every `file:line`-level pointer here is a **lead**: locate the site by the named symbol, not a
 line. An entry that cannot be re-found by symbol is reported as such, never silently skipped.
 
+## Closing a row
+
+A row leaves this inventory when **the coupling it names is gone from the tree** — not when a plan
+claiming it merges. The two are different: a plan can land with a deliverable descoped, renegotiated,
+or partially met, and a row retired on the strength of a merge would then record work that was never
+done.
+
+So the closing test is a **re-derivation, never a plan status**. Re-run the detection the row's own
+`Coupling` column describes — the search, the symbol lookup, the zero-hit grep it was written
+from — and read the result:
+
+| Re-derivation | What happens to the row |
+|---|---|
+| Finds nothing | The coupling is gone. **Delete the row.** |
+| Still finds it | The row stays. Update `Drawn by` to the plan that will finish it, and narrow the `Coupling` text to what actually remains, so the next reader re-derives the residue rather than the original. |
+| Cannot be re-derived at all (the symbol is gone, the detection no longer applies) | Treat as **not closed**. Report it, and rewrite the row against the current tree before deciding — a detection that no longer parses is an unanswered question, not a clean result. |
+
+**A closed row is deleted, not archived.** This document records the couplings that are *open*; one
+that no longer exists is not a coupling, and a "formerly open" section would turn the work list into
+a changelog, which the repository's documentation standards forbid. The durable record of what was
+closed, how, and under whose verification is the closing plan's run report at
+`doc/plans/{epic}/{plan-name}/report-NN.md` — git holds that, so deleting the row loses nothing.
+
+**The one case where a row must not simply vanish:** when the plan closed it by *deciding* rather
+than by *removing*. A coupling deferred on purpose moves to
+[Deliberate non-migrations](#deliberate-non-migrations); one sanctioned as target-specific-by-design
+moves to [Confirmed clean](#confirmed-clean-no-action). Those two sections exist so intent is never
+mistaken for oversight, and a decision deleted as if it were a fix is exactly the silent loss the
+`Drawn by` column guards against.
+
+A section whose rows all close keeps its heading and records that it holds nothing open. The
+headings are a taxonomy of coupling kinds, not a list of outstanding items: deleting one would leave
+a reader unable to tell a category that was checked and found clear from a category nobody looked at.
+
 ## A. Runtime contract shape (`platform-runtime`)
 
-| Site | Coupling | Drawn by |
-|---|---|---|
-| `platform-runtime/scripts/runtime_base.py` — `project_install_hook` | Target-shaped contract: the ABC docstring names the Claude hook-event vocabulary (`SessionStart`, `UserPromptSubmit`, `Notification`, `Stop`, `PreToolUse:*`, `PostToolUse:*`), the `statusLine` command, and `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE`; `target` is typed as a settings-file path; `overwrite_statusline` / `overwrite_env_disable` are named for Claude mechanisms. The canonical invocation is already semantic — the residue is the contract text and the path-typed parameter | `010` |
-| `platform-runtime/scripts/runtime_base.py` — the layout, session, and metrics operation docstrings | Target enumeration: "On Claude: … On OpenCode: …" pairs instead of target-neutral intent + the no-op fallback (re-derive the full set by searching `On Claude`); `subagent_dispatch` names both targets inline | `010` |
-| `platform-runtime/scripts/platform_runtime.py` — `_REGISTRY`, `_TARGET_BOOTSTRAP_LIBS` | Registration is scattered: two separate per-target dicts, `default="claude"` argparse fallbacks and a bare `target = "claude"` fallback, no `_DEFAULT_TARGET` constant; `script-shared/scripts/marketplace_paths.py` repeats its own `'claude'` fallback returns | `010` |
-| `platform-runtime/scripts/opencode_runtime.py` — `subagent_dispatch` | Hardcodes `subagent_type: "execution-context-level-3"` while the Claude implementation parameterizes the agent name — both a bug and a target-shaped assumption | `010` |
+No open entries. Each row's own detection was re-derived clean: a case-sensitive search for
+`On Claude` / `On OpenCode` over `runtime_base.py` returns nothing, as does one for the Claude
+hook-event vocabulary, `statusLine`, `CLAUDE_CODE_*`, and every spelling of either target name;
+`project_install_hook` takes a target identifier with target-defined conflict keys rather than a
+settings-file path; the target→class registration is one adjacent block in `platform_runtime.py`
+behind a `_DEFAULT_TARGET` constant, held in lockstep with
+`marketplace_paths._DEFAULT_RUNTIME_TARGET` by test, and holding the subclass import too, so
+registering a target is one contiguous edit; and `opencode_runtime.subagent_dispatch` echoes the
+requested agent.
+
+**What these detections did NOT cover**, recorded so the clean result is not read wider than it is:
+they were searches for target ENUMERATION, so they say nothing about an operation whose docstring
+never enumerated one. Four `Runtime` operations still document no way to decline — `project_initial_setup`
+and `health_check` state `Returns: … (success or error)`, while `layout_skill_roots` and
+`layout_bundle_cache_root` state no status vocabulary at all — which leaves a target that cannot
+implement them nothing to point at when it says so. That is a contract-shape gap rather than a
+Claude coupling, so it belongs to no row here; plan `010`'s run report records it as residue for a
+later plan to scope.
 
 ## B. Claude literals and formats in general scripts
 
@@ -49,6 +95,8 @@ line. An entry that cannot be re-found by symbol is reported as such, never sile
 | Prose naming Claude as the assistant: `pm-requirements/README.md` ("provides Claude Code with expert knowledge…"), `pm-documents/…/content-review.md` ("Claude's role"), `pm-documents/skills/ref-svg-diagrams/SKILL.md` ("In Claude Code, use the Read tool…"), `pm-dev-frontend` README/css/javascript (the Anthropic-ships attribution), `phase-5-execute/standards/operations.md` (`mcp__sonarqube__*` tool name) | Target-neutral rewording, or route the named value through the appropriate abstraction (the sonar tool name through the CI abstraction) | — |
 | `tools-file-ops/scripts/constants.py` — `HARNESS_BASH_CEILING_SECONDS` | The 600-second Bash-tool ceiling is a per-target runtime fact stated as a single core constant; consumers derive `execution_tier` routing from it. Single-sourced, but the value itself belongs to the runtime | — |
 | `manage-files/scripts/manage-files.py` — `detect_ide`, `cmd_open_in_ide` | IDE launch inside core file CRUD. Keys on host editor signals (`TERM_PROGRAM`, `__CFBundleIdentifier`), not the assistant target — per-host rather than per-target, but the same relocation argument applies | — |
+| `opencode_runtime.py` — `metrics_capture` manual path vs `claude_runtime.py` — `_write_token_cursor` / `_manage_metrics_end_phase` | The metrics persistence boundary is **target-neutral** (it shells out to `plan-marshall:manage-metrics end-phase`) but lives in `claude_runtime`. The Claude implementation calls it and reports success; the OpenCode implementation reaches no boundary at all and reports the same success shape, so an explicit `--total-tokens` is acknowledged and then lost. A target reporting success for work it did not do is the exact failure the no-op policy exists to forbid. Remedy: relocate the boundary to a shared home and have both targets call it — or, if OpenCode genuinely cannot persist, decline with `no-op` | — |
+| `platform-runtime/SKILL.md` — the 24-operation table (9 rows) plus the `description:` frontmatter | Nine op rows end in "no-op on OpenCode" and two additionally parenthesise Claude-specific behaviour (`session push-title-token`, `session reload-directive`); the frontmatter names both targets. This is the same coupling plan 010/D2 removed from the ABC docstrings, one file over: per-target no-op status is restated in a shared skill body instead of being read from the target's own runtime, so a third target makes all nine rows silently incomplete rather than merely unstated. Remedy: the op table states intent only, and no-op status is surfaced from each runtime per `standards/no-op-policy.md` | — |
 
 ## D. Target-specific component candidates (the `targets:` filter's consumers)
 

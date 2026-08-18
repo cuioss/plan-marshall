@@ -10,27 +10,17 @@ fallback is never silent. A build takes exactly one limiter path.
 
 from __future__ import annotations
 
-import sys
-
 import pytest
-from conftest import get_script_path
+from _build_extension_fixtures import build_scripts_dir, execute_config
 
-_BUILD_DIR = get_script_path('plan-marshall', 'script-shared', 'marketplace_paths.py').parent / 'build'
-if str(_BUILD_DIR) not in sys.path:
-    sys.path.insert(0, str(_BUILD_DIR))
+build_scripts_dir()
 
 import _build_execute_factory as factory  # noqa: E402
 from _build_execute import CaptureStrategy  # noqa: E402
 
 
 def _config(**overrides):
-    base = {
-        'tool_name': 'maven', 'unix_wrapper': 'mvnw', 'windows_wrapper': 'mvnw.cmd', 'system_fallback': 'mvn',
-        'capture_strategy': CaptureStrategy.TOOL_LOG_FLAG, 'build_command_fn': factory.default_build_command_fn,
-        'scope_fn': lambda a: 'default', 'command_key_fn': factory.default_command_key_fn,
-    }
-    base.update(overrides)
-    return factory.ExecuteConfig(**base)
+    return execute_config(factory, CaptureStrategy.TOOL_LOG_FLAG, **overrides)
 
 
 class _FakeClient:

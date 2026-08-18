@@ -3,12 +3,13 @@ status: success
 plan_id: lesson-2026-04-18-13-001
 totals:
   duration_seconds: 2286
+  worked_seconds: 1500
   tokens: 403111
   files_modified: 3
   tasks_completed: 6
 ratios:
   tokens_per_file_modified: 134370
-  seconds_per_task: 381
+  worked_seconds_per_task: 250
 phase_breakdown[6]{phase,duration_seconds,tokens}:
   1-init,109,47592
   2-refine,307,0

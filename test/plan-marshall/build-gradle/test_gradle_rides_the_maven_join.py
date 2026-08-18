@@ -27,40 +27,17 @@ Only the console text itself is transcribed — from the format that parser's ow
 docstring documents.
 """
 
-import importlib.util
+from _build_extension_fixtures import load_build_extension
 
-from conftest import PROJECT_ROOT, load_script_module
+from conftest import load_script_module
 
 _gradle_cmd_discover = load_script_module(
     'plan-marshall', 'build-gradle', '_gradle_cmd_discover.py', '_gradle_cmd_discover'
 )
 
-_MAVEN_EXTENSION_FILE = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'build-maven'
-    / 'scripts'
-    / 'extension.py'
-)
-
-
-def _load_maven_build_extension():
-    """Load the build-maven BuildExtension by explicit file path.
-
-    Every build skill ships an ``extension.py`` sharing the module basename
-    ``extension``; loading via ``spec_from_file_location`` against the explicit
-    path avoids the cross-skill ``import extension`` collision.
-    """
-    spec = importlib.util.spec_from_file_location('maven_build_extension_for_gradle', _MAVEN_EXTENSION_FILE)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-MavenBuildExtension = _load_maven_build_extension().BuildExtension
+# Loaded under a name distinct from every other Maven-extension load site, so
+# this module's copy stays independent of theirs.
+MavenBuildExtension = load_build_extension('build-maven', 'maven_build_extension_for_gradle')
 
 
 #: A real ``gradle :app:dependencies --configuration compileClasspath`` rendering,

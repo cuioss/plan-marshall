@@ -9,8 +9,8 @@ Usage:
         <operation> [operation-specific args...]
 
 Operations:
-    project initial-setup   --project-dir <path>  --target claude|opencode
-    project install-hook    --target <settings-file-path>  [--enforcement]
+    project initial-setup   --project-dir <path>  --target <target-id>
+    project install-hook    --target <target-id>  [--overwrite <key>]  [--enforcement]
     layout skill-roots      (no arguments)
     layout bundle-cache-root (no arguments)
     session capture         --plan-id <id>
@@ -36,7 +36,7 @@ Operations:
 
 The router resolves ``PLAN_DIR_NAME`` (default ``.plan``) from the environment,
 reads ``marshal.json``, looks up ``runtime.target``, and dispatches to the
-appropriate ``Runtime`` subclass (``ClaudeRuntime`` or ``OpenCodeRuntime``).
+``Runtime`` subclass the registration block registers for that target.
 
 Exit codes:
     0 — TOON printed on stdout (success, error, or no-op)
@@ -72,19 +72,6 @@ _COMMON_BOOTSTRAP_LIBS: tuple[str, ...] = (
     "platform-runtime",
 )
 
-# Additional libraries required per target, discovered via glob within the
-# skills root.  Keys match the ``runtime.target`` values in marshal.json.
-_TARGET_BOOTSTRAP_LIBS: dict[str, tuple[str, ...]] = {
-    "claude": (
-        "tools-file-ops",
-        "tools-permission-doctor",
-        "tools-permission-fix",
-        "workflow-permission-web",
-        "script-shared",
-    ),
-    "opencode": (),
-}
-
 
 def _find_skills_root() -> Path | None:
     """Walk ancestors of this file to locate the marketplace ``skills/`` root.
@@ -116,9 +103,16 @@ def _bootstrap_glob_discover(target: str | None = None) -> Path | None:
     Each directory is appended only when it exists on disk and is not already
     present in ``sys.path``, so repeated calls are idempotent.
 
+    ``_TARGET_BOOTSTRAP_LIBS`` lives further down, in the registration block
+    that also declares ``_REGISTRY`` — that block cannot be hoisted above this
+    function because it names classes only importable once the common bootstrap
+    below has run. The ``target is None`` guard is what makes the ordering safe:
+    the pre-import call passes ``None`` and therefore never evaluates the name.
+
     Args:
-        target: Platform target string (e.g. ``"claude"`` or ``"opencode"``).
-                Pass ``None`` to add only the common libs.
+        target: Platform target identifier — a key of the registration block's
+                ``_TARGET_BOOTSTRAP_LIBS``. Pass ``None`` to add only the
+                common libs.
 
     Returns:
         The resolved ``skills/`` root ``Path`` when the root was found, or
@@ -129,8 +123,8 @@ def _bootstrap_glob_discover(target: str | None = None) -> Path | None:
         return None
 
     libs = list(_COMMON_BOOTSTRAP_LIBS)
-    if target in _TARGET_BOOTSTRAP_LIBS:
-        libs.extend(_TARGET_BOOTSTRAP_LIBS[target])
+    if target is not None:
+        libs.extend(_TARGET_BOOTSTRAP_LIBS.get(target, ()))
 
     for lib_name in libs:
         lib_dir = skills_root / lib_name / "scripts"
@@ -152,19 +146,57 @@ def _bootstrap_glob_discover(target: str | None = None) -> Path | None:
 _bootstrap_glob_discover()
 
 # ---------------------------------------------------------------------------
-# Imports — deferred until after sys.path bootstrap above.
+# Target registration block — the ONE place a runtime target is registered, and
+# the only part of this module a new target edits.
+#
+# Everything a target needs is here: its import, its ``Runtime`` subclass in
+# ``_REGISTRY``, and its extra bootstrap libraries in ``_TARGET_BOOTSTRAP_LIBS``.
+# The imports sit inside the block rather than with the module's other imports so
+# that a registration is one contiguous edit instead of one split across thirty
+# lines. Every import here is deferred until after ``_bootstrap_glob_discover()``
+# above has put the sibling script directories on ``sys.path`` — importing
+# ``runtime_base`` before it raises ``ModuleNotFoundError`` on ``toon_parser`` —
+# which is why they carry ``noqa: E402`` and cannot move to the top of the file.
+#
+# ``runtime_base`` is grouped with them for proximity, not necessity: it is the
+# shared base contract rather than a target, and a new target never touches that
+# line. Splitting it out needs a BLANK line to end the import group — a comment
+# alone does not, and ruff's own fix for the resulting I001 is to insert one.
+# It is kept here so the deferred imports read as a single block.
+#
+# The two dicts are declared adjacently so they cannot drift unnoticed, and a
+# lockstep test asserts their key sets stay equal.
+#
+# ``_DEFAULT_TARGET`` is the single fallback identifier: every argparse default
+# and every "no target resolved" fallback in this module reads it rather than
+# repeating a literal. The companion default in
+# ``script-shared/scripts/marketplace_paths.py`` is held equal to this one by
+# the same lockstep test.
 # ---------------------------------------------------------------------------
+
 from claude_runtime import ClaudeRuntime  # noqa: E402
 from opencode_runtime import OpenCodeRuntime  # noqa: E402
 from runtime_base import Runtime, toon_error  # noqa: E402
 
-# ---------------------------------------------------------------------------
-# Target registry
-# ---------------------------------------------------------------------------
+_DEFAULT_TARGET = "claude"
 
 _REGISTRY: dict[str, type[Runtime]] = {
     "claude": ClaudeRuntime,
     "opencode": OpenCodeRuntime,
+}
+
+# Additional libraries required per target, discovered via glob within the
+# skills root.  Keys match the ``runtime.target`` values in marshal.json, and
+# must cover exactly the ``_REGISTRY`` key set.
+_TARGET_BOOTSTRAP_LIBS: dict[str, tuple[str, ...]] = {
+    "claude": (
+        "tools-file-ops",
+        "tools-permission-doctor",
+        "tools-permission-fix",
+        "workflow-permission-web",
+        "script-shared",
+    ),
+    "opencode": (),
 }
 
 _PLAN_DIR_NAME = os.environ.get("PLAN_DIR_NAME", ".plan")
@@ -246,7 +278,7 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     if operation == "project initial-setup":
         p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime project initial-setup")
         p.add_argument("--project-dir", default=".")
-        p.add_argument("--target", default="claude", choices=list(_REGISTRY))
+        p.add_argument("--target", default=_DEFAULT_TARGET, choices=list(_REGISTRY))
         ns = p.parse_args(remaining)
         return runtime.project_initial_setup(ns.project_dir, ns.target)
 
@@ -255,19 +287,19 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     # ------------------------------------------------------------------
     if operation == "project install-hook":
         p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime project install-hook")
-        p.add_argument("--target", required=True)
-        p.add_argument("--overwrite-statusline", action="store_true",
-                       help="Overwrite an existing statusLine whose command differs from the renderer")
-        p.add_argument("--overwrite-env-disable", action="store_true",
-                       help="Overwrite an existing env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE that is not '1'")
+        p.add_argument("--target", required=True,
+                       help="Platform target identifier, as in marshal.json runtime.target")
+        p.add_argument("--overwrite", action="append", default=[], metavar="KEY",
+                       help="Conflict key this call may overwrite instead of preserving and "
+                            "reporting (repeatable; the key set is target-defined, and a "
+                            "target that defines one rejects a key outside it)")
         p.add_argument("--enforcement", action="store_true",
-                       help="Install ONLY the orthogonal PreToolUse enforcement hook entry "
-                            "(does not install the terminal-title bundle)")
+                       help="Wire the target's tool-invocation enforcement integration instead "
+                            "of its session/display one")
         ns = p.parse_args(remaining)
         return runtime.project_install_hook(
             ns.target,
-            overwrite_statusline=ns.overwrite_statusline,
-            overwrite_env_disable=ns.overwrite_env_disable,
+            overwrite=tuple(ns.overwrite),
             enforcement=ns.enforcement,
         )
 
@@ -304,7 +336,9 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     if operation == "session render-title":
         p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session render-title")
         p.add_argument("--statusline", action="store_true",
-                       help="Emit plain text (statusLine mode) instead of the JSON envelope")
+                       help="Emit the title as plain text on the target's persistent "
+                            "status-readout channel, instead of the structured envelope "
+                            "its event-driven channel expects")
         ns = p.parse_args(remaining)
         return runtime.session_render_title(statusline=ns.statusline)
 
@@ -348,7 +382,8 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
         p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session bind")
         p.add_argument("--plan-id", required=True)
         p.add_argument("--session-id", default=None,
-                       help="Optional explicit session id; defaults to $CLAUDE_CODE_SESSION_ID")
+                       help="Optional explicit session id; falls back to whatever "
+                            "session identifier the active target exposes")
         ns = p.parse_args(remaining)
         return runtime.session_bind(ns.plan_id, ns.session_id)
 
@@ -358,7 +393,8 @@ def _dispatch(runtime: Runtime, operation: str, remaining: list[str]) -> str:
     if operation == "session resolve-plan":
         p = argparse.ArgumentParser(allow_abbrev=False, prog="platform_runtime session resolve-plan")
         p.add_argument("--session-id", default=None,
-                       help="Optional explicit session id; defaults to $CLAUDE_CODE_SESSION_ID")
+                       help="Optional explicit session id; falls back to whatever "
+                            "session identifier the active target exposes")
         ns = p.parse_args(remaining)
         return runtime.session_resolve_plan(ns.session_id)
 
@@ -644,7 +680,7 @@ def main(argv: list[str] | None = None) -> int:
         # Peek at --project-dir without consuming remaining.
         peek = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
         peek.add_argument("--project-dir", default=None)
-        peek.add_argument("--target", default="claude")
+        peek.add_argument("--target", default=_DEFAULT_TARGET)
         ns_peek, _ = peek.parse_known_args(remaining)
         if ns_peek.project_dir:
             project_dir = ns_peek.project_dir
@@ -660,14 +696,15 @@ def main(argv: list[str] | None = None) -> int:
     if marshal is not None:
         target = _resolve_target(marshal)
         if not target:
-            # marshal.json found but runtime.target missing — default to claude.
-            target = "claude"
+            # marshal.json found but runtime.target missing — fall back to the
+            # registered default target.
+            target = _DEFAULT_TARGET
     else:
         # marshal.json absent — only valid for ``project initial-setup``.
         if operation == "project initial-setup":
             # Extract --target from remaining to bootstrap the correct runtime.
             peek2 = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
-            peek2.add_argument("--target", default="claude")
+            peek2.add_argument("--target", default=_DEFAULT_TARGET)
             ns_peek2, _ = peek2.parse_known_args(remaining)
             target = ns_peek2.target
         else:
@@ -700,15 +737,55 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     # ------------------------------------------------------------------
+    # ``project install-hook`` is the one operation that takes a target
+    # identifier as an ARGUMENT while the runtime serving it was selected
+    # independently from marshal.json. Two identifiers that can disagree is
+    # a silent-wrong-answer seam: a project whose marshal.json says
+    # ``opencode`` invoked with ``--target claude`` would reach
+    # ``OpenCodeRuntime``, which declines every invocation without reading
+    # the argument at all — so the caller asked for the Claude integration
+    # and was told OpenCode has no hook channel. The inverse mismatch
+    # reaches ClaudeRuntime and reports ``unknown_target``, which is an
+    # error about the wrong thing.
+    #
+    # Refuse the disagreement here, where both identifiers are in scope.
+    # The check fires ONLY when the requested target names a REGISTERED
+    # target: an absolute settings-file path is the documented test and
+    # recovery override, is not a registry key, and still reaches the
+    # implementation that defines it.
+    # ------------------------------------------------------------------
+    if operation == "project install-hook":
+        peek_target = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
+        peek_target.add_argument("--target", default=None)
+        ns_target, _ = peek_target.parse_known_args(remaining)
+        requested = ns_target.target
+        if requested in _REGISTRY and requested != target:
+            print(
+                toon_error(
+                    operation,
+                    "target_mismatch",
+                    f"--target {requested!r} names a different target than this "
+                    f"project's runtime.target {target!r}; the install would be "
+                    f"served by the {target!r} runtime and could not honour the "
+                    f"request. Run this from a {requested!r} project, or change "
+                    f"runtime.target in .plan/marshal.json.",
+                )
+            )
+            return 0
+
+    # ------------------------------------------------------------------
     # Dispatch to the runtime implementation.
     # ------------------------------------------------------------------
     result = _dispatch(runtime, operation, remaining)
-    # An empty-string return is the statusLine-mode sentinel: the runtime
-    # already wrote the verbatim statusLine content to stdout (or wrote
-    # nothing on the noop branches), and the caller MUST NOT append a
-    # trailing newline that would render as an empty row under the prompt.
-    # Every TOON return path produces a non-empty string, so the truthiness
-    # check is sufficient.
+    # An empty string is the stdout-is-final signal from ``session render-title``
+    # on a target that renders the title itself. It carries NO outcome: the render
+    # may have written its bytes, had nothing to write, or FAILED to write, and all
+    # three return "". So this branch means only "the runtime owns stdout here" —
+    # never "the title was emitted". A target that renders names its real outcome on
+    # a side channel (the Claude runtime writes an ``outcome:`` row to stderr).
+    # Whatever happened, the caller MUST NOT append a trailing newline that would
+    # render as an empty row under the prompt. Every TOON return path produces a
+    # non-empty string, so the truthiness check is sufficient.
     if result:
         print(result)
     return 0

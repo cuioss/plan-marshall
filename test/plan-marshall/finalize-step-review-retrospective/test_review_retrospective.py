@@ -29,7 +29,7 @@ Coverage:
 - ``unattributed`` bucket for records lacking ``author``;
 - ``unknown``-kind handling (raw_total only, never actionable);
 - empty-input;
-- the PR #726-shaped CodeRabbit case (5 inline + 1 status-summary review_body
+- the full CodeRabbit review shape (5 inline + 1 status-summary review_body
   + 1 walkthrough issue_comment => raw_total=7, actionable=5, meta=2).
 """
 
@@ -543,13 +543,13 @@ def test_resolution_quality_legend_matches_the_implemented_mapping():
 
 
 # ---------------------------------------------------------------------------
-# PR #726-shaped CodeRabbit case
+# Full CodeRabbit review shape
 # ---------------------------------------------------------------------------
 
 
-def test_pr_726_coderabbit_shape():
-    # CodeRabbit on PR #726: 5 inline actionable comments + 1 status-summary
-    # review_body (META) + 1 walkthrough issue_comment (META).
+def test_coderabbit_full_review_shape():
+    # A complete CodeRabbit review: 5 inline actionable comments + 1
+    # status-summary review_body (META) + 1 walkthrough issue_comment (META).
     # => raw_total=7, actionable=5, meta=2.
     records = [
         {'author': 'coderabbitai', 'kind': 'inline', 'resolution': 'fixed'},

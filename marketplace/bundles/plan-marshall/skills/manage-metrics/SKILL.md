@@ -120,14 +120,29 @@ phases_missing_end_time[1]:
 boundary_monotonicity[0]:
 re_entered_phases[1]:
   - 5-execute
+totals_population_denominator: 6
+totals_worked_ms: 572500
+totals_worked_ms_population_count: 6
+totals_wall_ms: 640000
+totals_wall_ms_population_count: 5
+totals_idle_ms: 91500
+totals_idle_ms_population_count: 5
+totals_tokens: 86754
+totals_tokens_population_count: 6
+totals_tool_uses: 214
+totals_tool_uses_population_count: 6
+totals_billing_weighted_total: 128900
+totals_billing_weighted_total_population_count: 6
+totals_tokens_spans_populations: true
+totals_sampled_at: 2026-03-27T10:25:00+00:00
 total_worked_seconds: 572.5
 total_wall_seconds: 640.0
-total_idle_seconds: 67.5
+total_idle_seconds: 91.5
 total_tokens: 86754
 total_billing_weighted: 128900
 total_worked_formatted: 9m32s
 total_wall_formatted: 10m40s
-total_idle_formatted: 1m7s
+total_idle_formatted: 1m31s
 total_tokens_formatted: 86.8K
 ```
 
@@ -552,7 +567,10 @@ the tool-call walk) — see [data-format.md](standards/data-format.md). `enrich`
 also stamps `total_tokens_population` on every row it touches, and writes
 `inline_main_context_tokens` on any row whose
 `input + output + cache_creation` sum is non-zero (`cache_read` is excluded, so
-a window carrying only `cache_read_input_tokens` receives no field).
+a window carrying only `cache_read_input_tokens` gets no figure from `enrich`).
+`generate` then completes that field on every phase row, so it is never absent:
+a row `enrich` stamped but left without a figure was measured at zero and reads
+`0`, while a row `enrich` never visited reads `unmeasured`.
 
 A dispatched `total_tokens` is left byte-identical (explicit-wins). The ONE case
 where `enrich` writes `total_tokens` is a phase that dispatched nothing: there it
@@ -563,6 +581,47 @@ dispatched measurement. See [data-format.md](standards/data-format.md) §
 the same agent dispatches the on-disk totals are independent of `enrich`'s
 per-phase subagent fields, so double-counting does not occur in the closed-phase
 row (`total_tokens`), which is filled from the accumulator at `end-phase` time.
+
+### reconcile-ledgers
+
+**Read-only.** Reconcile the plan's two ROW ledgers against each other and
+against the per-phase aggregate, emitting one finding per row present in one
+ledger and absent from the other. Pure arithmetic — it reserves no judgement for
+itself.
+
+A run writes three token ledgers, and no two cover the same population.
+`execution.toon`'s `execution_log[]` holds one row per `record-step` call and its
+writer accepts **only** `5-execute` and `6-finalize`. Each
+`work/metrics-dispatch-boundaries-{phase}.toon` holds one row per dispatch
+termination, for the dispatch classes that call `record-dispatch-boundary` — the
+rest are excluded by declaration. `work/metrics.toon` holds a per-phase
+**aggregate** across all six canonical phases, so it stores sums rather than rows
+and cannot say *which* dispatches it summed — only how many times the phase
+closed (`close_count`), which the reconciliation reads as the re-entry signal.
+
+The two row ledgers are written by independent call sites with no shared
+transaction and no shared key — a boundary row carries no `step_id` — so a
+dispatch can land in one and not the other **in both directions**. A step that
+ran four times can appear twice in one and three times in the other, and only
+their union shows all four. The result therefore publishes `union_rows` per phase
+and in total: that is the count a reader should take, and nothing else says so.
+
+The join is on phase plus a timestamp window (`--window-seconds`, default 300),
+because the missing `step_id` leaves no other key. Findings:
+
+| Finding | Meaning |
+|---------|---------|
+| `row_absent_from_boundary_ledger` | A `record-step` row with no dispatch-boundary partner in the window |
+| `row_absent_from_execution_log` | A dispatch that recorded its usage at termination but that no `record-step` row names — spend invisible to any `execution_log` sum |
+| `boundary_never_closed` | The phase recorded dispatch rows but its `metrics.toon` row carries no `end_time`. The rows are present; what no close recorded is the phase's own **summary** of them — deliberately a different finding from an absent row |
+| `phase_re_entered` | `close_count > 1`, so the aggregate is cumulative across closes while both row ledgers are append logs |
+
+Two states are reported rather than counted as divergence. A phase outside the
+execution log's accepted set is `structurally_excluded`: every boundary row there
+is absent from the log **by construction**, and reporting each one would bury the
+real findings. An unreadable `execution.toon` degrades the affected phases to
+`not_evaluated` with a reason — never to a clean verdict, which is what a missing
+manifest would otherwise produce by turning every boundary row into an orphan.
 
 ## Storage
 
@@ -643,14 +702,35 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics gene
   --plan-id PLAN_ID
 ```
 
-Returns the per-column totals — `total_worked_seconds`, `total_wall_seconds`,
-`total_idle_seconds`, `total_tokens` (dispatched work), and
-`total_billing_weighted` (derived cost, aggregated separately and never summed
-into `total_tokens`) — plus their formatted variants, the `end_time`-presence
-check (`any_phase_missing_end_time` / `phases_missing_end_time`), and each
-persisted denominator with its `_sampling_point` companion. A denominator that
-could not be counted is omitted from the return, exactly as it is from the
-record.
+Returns the **persisted aggregate** — one `totals_*` value per breakdown column,
+each with its `{field}_population_count` companion, plus the shared
+`totals_population_denominator`, `totals_tokens_spans_populations`, and
+`totals_sampled_at`. These are the same fields written to `work/metrics.toon`,
+echoed so a caller reading the return can state each total's coverage without a
+second read. The three duration totals are **milliseconds**; see
+[data-format.md](standards/data-format.md) § "The Persisted Aggregate" for why
+the store keeps that unit.
+
+⚠ In the store — not in this return — the row-derived aggregate is **present iff
+the most recent write computed it**: a later `start-phase`, `end-phase` or
+`enrich` drops the `totals_*` keys, because those writers move the phase rows the
+totals sum. A reader finding them absent re-runs `generate`.
+
+`phase-boundary` is the exception, and needs no action: it regenerates
+unconditionally as its own last step, so it leaves the aggregate present and
+fresh. `dispatch_boundary_excluded_classes` also survives every write — it is
+derived from a module constant rather than from the rows, so it cannot go stale
+against them.
+
+Alongside them it returns the human-facing summary — `total_worked_seconds`,
+`total_wall_seconds`, `total_idle_seconds` (each the corresponding
+`totals_*_ms` in seconds, **rounded to one decimal**), `total_tokens`
+(dispatched work), `total_billing_weighted` (derived cost, aggregated separately
+and never summed into `total_tokens`), and their formatted variants — plus the
+`end_time`-presence check (`any_phase_missing_end_time` /
+`phases_missing_end_time`) and each persisted denominator with its
+`_sampling_point` companion. A denominator that could not be counted is omitted
+from the return, exactly as it is from the record.
 
 ### print-phase-breakdown
 
@@ -697,6 +777,13 @@ python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics reco
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics enrich \
   --plan-id PLAN_ID --session-id SESSION_ID
+```
+
+### reconcile-ledgers
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-metrics:manage-metrics reconcile-ledgers \
+  --plan-id PLAN_ID [--window-seconds N]
 ```
 
 ## Expected Workflow

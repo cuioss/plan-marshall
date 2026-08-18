@@ -34,19 +34,10 @@ from assert_test_identifiers import (  # noqa: E402
     assert_identifiers_in_log,
 )
 
-from conftest import run_script  # noqa: E402
+from conftest import get_scripts_dir, run_script  # noqa: E402
 
 # Path to the script for CLI subprocess tests
-SCRIPT_PATH = (
-    Path(__file__).parent.parent.parent.parent
-    / 'marketplace'
-    / 'bundles'
-    / 'plan-marshall'
-    / 'skills'
-    / 'execute-task'
-    / 'scripts'
-    / 'assert_test_identifiers.py'
-)
+SCRIPT_PATH = get_scripts_dir('plan-marshall', 'execute-task') / 'assert_test_identifiers.py'
 
 
 # =============================================================================

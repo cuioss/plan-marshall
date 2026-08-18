@@ -15,18 +15,14 @@ unconditional stderr line — so a regression back to a logger-only emit fails.
 
 from __future__ import annotations
 
-import sys
 from argparse import Namespace
 from contextlib import contextmanager
 from typing import Any
 
 import pytest
-from conftest import get_script_path
+from _build_extension_fixtures import build_scripts_dir, execute_config
 
-_SHARED_SCRIPTS = get_script_path('plan-marshall', 'script-shared', 'marketplace_paths.py').parent
-_BUILD_DIR = _SHARED_SCRIPTS / 'build'
-if str(_BUILD_DIR) not in sys.path:
-    sys.path.insert(0, str(_BUILD_DIR))
+build_scripts_dir()
 
 import _build_execute_factory as factory  # noqa: E402
 from _build_execute import CaptureStrategy  # noqa: E402
@@ -34,20 +30,14 @@ from _build_execute import CaptureStrategy  # noqa: E402
 _MAVEN_NOTATION = 'plan-marshall:build-maven:maven'
 
 
-def _config(**overrides: Any) -> factory.ExecuteConfig:
-    """A minimal ExecuteConfig for driving cmd_run in these tests."""
-    base: dict[str, Any] = {
-        'tool_name': 'maven',
-        'unix_wrapper': 'mvnw',
-        'windows_wrapper': 'mvnw.cmd',
-        'system_fallback': 'mvn',
-        'capture_strategy': CaptureStrategy.TOOL_LOG_FLAG,
-        'build_command_fn': factory.default_build_command_fn,
-        'scope_fn': lambda a: 'default',
-        'command_key_fn': factory.default_command_key_fn,
-    }
-    base.update(overrides)
-    return factory.ExecuteConfig(**base)
+def _config(**overrides: Any):
+    """A minimal ExecuteConfig for driving cmd_run in these tests.
+
+    Unannotated return: ``factory`` is loaded at runtime, so
+    ``factory.ExecuteConfig`` is a value rather than a statically known type and
+    an annotation naming it checks nothing.
+    """
+    return execute_config(factory, CaptureStrategy.TOOL_LOG_FLAG, **overrides)
 
 
 def _run_args(**overrides: Any) -> Namespace:

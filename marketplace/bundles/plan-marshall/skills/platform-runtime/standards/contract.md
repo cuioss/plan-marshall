@@ -1,6 +1,6 @@
 # Platform Runtime TOON Contract
 
-Per-operation TOON schemas for all 24 `platform-runtime` operations. Every operation returns one of three status variants: `success`, `error`, or `no-op`. Parser: `from toon_parser import parse_toon, serialize_toon` from `plan-marshall:ref-toon-format`.
+Per-operation TOON schemas for all 24 `platform-runtime` operations. Almost every operation returns one of three status variants: `success`, `error`, or `no-op`. The single exception is `session render-title` on a target that renders the title itself — it owns stdout and returns the empty string, documented in its own section below. Parser: `from toon_parser import parse_toon, serialize_toon` from `plan-marshall:ref-toon-format`.
 
 **Invocation pattern**:
 ```bash
@@ -46,6 +46,7 @@ alternative: <what the caller can do instead>
 | `marshal_not_found` | `.plan/marshal.json` missing |
 | `prompt_not_found` | `subagent dispatch --prompt-file` path not found |
 | `unknown_target` | `runtime.target` value not in the target registry |
+| `unknown_overwrite_key` | `project install-hook --overwrite` names a conflict key the target does not define; rejected fail-closed before any write, so a typo never reads as "do not overwrite" |
 | `hook_not_configured` | SessionStart hook not installed; `$CLAUDE_CODE_SESSION_ID` unset |
 | `invalid_settings` | Settings file is malformed (JSON parse error); fail-closed before any write so a malformed file is never clobbered — returned by `permission configure`, `permission fix`, `permission ensure-wildcards`, `permission ensure-steps`, `permission web-apply` |
 | `invalid_marshal` | `.plan/marshal.json` is malformed (parse error); fail-closed instead of degrading to a zero-step audit — returned by `permission analyze`, `permission ensure-steps` |
@@ -91,29 +92,44 @@ hook_skip_reason: OpenCode does not support a SessionStart hook equivalent (issu
 status: error
 operation: project initial-setup
 error: unknown_target
-message: Target 'foobar' is not in the registry; valid targets are: claude, opencode
+message: "Target 'foobar' is not in the registry; valid targets are: claude, opencode"
 ```
 
 ---
 
 ### `project install-hook`
 
-Install hook wiring into a caller-specified settings file. Unlike `project initial-setup`, this does not create `.plan/` or seed `marshal.json` — it is the targeted hook-installation primitive. Convergent: re-invocation never duplicates an entry, and it brings an already-present entry onto the current shape rather than making no change — an entry carrying a stale hook `timeout` is rewritten and reported as migrated. An entry that is already correct is left untouched.
+Wire the target's session/display integration into its own configuration. Unlike `project initial-setup`, this does not create `.plan/` or seed `marshal.json` — it is the targeted integration-wiring primitive. Convergent: re-invocation never duplicates an element, and it brings an already-present element onto the current shape rather than making no change — an entry carrying a stale hook `timeout` is rewritten and reported as migrated. An element that is already correct is left untouched.
 
-Two independent install modes, neither of which disturbs the other's entries:
+**The operation is target-opaque on the way in.** The caller names the target and nothing else: no configuration location, event name, or setting key is passed. Where the wiring lands, and what it consists of, is the implementation's to decide.
 
-- **Default — the terminal-title bundle.** Installs the SessionStart capture entry, the nine render-trigger entries, the `statusLine` command, and `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE`.
-- **`--enforcement` — ONLY the PreToolUse enforcement entry.** Installs the single matcher-less enforcement entry and no render wiring, no `statusLine`, and no env entry.
+The response is not symmetric, because a caller that asked for a write has to be told what was written. The success payload names the elements the target manages and reports each one's disposition — on Claude that means `settings_path`, the three `*_events` lists, `capture_status`, `statusLine_status` and `env_status`, all of them Claude's own names. Read them to report or to prompt; never hardcode them, and read the file that was written from `settings_path` rather than assuming which one it was.
+
+Two independent install modes, neither of which disturbs the other's configuration:
+
+- **Default — the session/display integration.** On Claude: the SessionStart capture entry, the nine render-trigger entries, the `statusLine` command, and `env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE`.
+- **`--enforcement` — the tool-invocation enforcement integration only.** On Claude: the single matcher-less PreToolUse enforcement entry and no render wiring, no `statusLine`, and no env entry.
 
 **Arguments**:
 
-- `--target <value>` (required) — either the literal `claude` or an absolute path ending in `.json`. Any other value (a relative path, an unknown identifier) is rejected with `unknown_target` rather than silently creating a stray file. `claude` resolves through `_claude_project_settings_path()` for the terminal-title mode (`.claude/settings.json` when present, else `.claude/settings.local.json`) and pins `.claude/settings.local.json` for the `--enforcement` mode.
-- `--enforcement` (optional) — select the enforcement-only mode described above.
-- `--overwrite-statusline` / `--overwrite-env-disable` (optional) — overwrite a foreign `statusLine` command or env value instead of preserving it and reporting `already_present_other`.
-
-Callers read the resolved file from the response's `settings_path` rather than assuming which of the two settings files was written.
+- `--target <target-id>` (required) — the platform target identifier, as in `marshal.json`'s `runtime.target`.
+- `--enforcement` (optional) — select the enforcement mode described above.
+- `--overwrite <key>` (optional, repeatable) — authorise overwriting the named conflict. A pre-existing configuration value that differs from the one the integration wants is preserved by default and reported as `already_present_other`, so the caller can prompt; naming its key here overwrites it instead and reports `overwritten`. **The key set is target-defined** — the router does not validate it, and a target that defines a key set rejects a key outside it with `unknown_overwrite_key` rather than silently ignoring it, so a typo can never read as "do not overwrite". A target that declines the operation outright defines no keys and reaches no key check; its `no-op` answers every argument. Claude's keys are `statusline` and `env-disable`.
 
 `target` echoes the argument as passed; `settings_path` is the file the call actually resolved and wrote.
+
+**Claude's settings-file resolution** is internal to that implementation, not part of this contract: `claude` resolves through `_claude_project_settings_path()` for the default mode (`.claude/settings.json` when present, else `.claude/settings.local.json`) and pins `.claude/settings.local.json` for `--enforcement`. That implementation additionally honours an absolute path ending in `.json` as a test/recovery override; it is Claude-internal, no other target need offer it, and any other value (a relative path, an unknown identifier) is rejected with `unknown_target` rather than silently creating a stray file.
+
+The terminal-title path ALWAYS emits the first three rows below — the three event lists and the three `*_status` fields are never omitted, so a zero-length list is a measured "none of these", not an absent field. The `--enforcement` path emits its own row instead and none of theirs. Per-element disposition vocabularies differ:
+
+| Field | Values it can take | Assigned in |
+|---|---|---|
+| `capture_status` | `installed`, `migrated`, `already_present` | `claude_runtime._install_terminal_title_hooks` |
+| `statusLine_status`, `env_status` | `installed`, `already_present`, `already_present_other`, `overwritten` | `claude_runtime._install_terminal_title_hooks` |
+| `installed_events`, `already_present_events`, `migrated_events` | the render-event labels falling in each bucket | `claude_runtime._install_terminal_title_hooks` |
+| `enforcement_status` (`--enforcement` path only) | `installed`, `migrated`, `already_present` | `claude_runtime._install_enforcement_hook` |
+
+The four success blocks and the OpenCode no-op below were captured from real invocations rather than transcribed, with only the temporary directory rewritten to a readable repository path; the two `io_error` blocks are illustrative, and their `message` carries the absolute path the runtime resolves, never a relative one. A list renders as `key[N]:` followed by one indented `- item` per element, an empty list as a bare `key[0]:`, and a value containing `:` or `,` is quoted. `test_contract_doc_toon_is_canonical.py` holds every block in these standards to that shape, so an example the serializer could not emit fails the suite rather than misleading a reader.
 
 **Success (Claude — hook installed)**:
 ```toon
@@ -123,6 +139,21 @@ target: claude
 settings_path: /repo/.claude/settings.local.json
 hook_installed: true
 already_present: false
+installed_events[9]:
+  - "SessionStart:matcher-less"
+  - "SessionStart:clear"
+  - UserPromptSubmit
+  - Notification
+  - Stop
+  - "PreToolUse:AskUserQuestion"
+  - "PreToolUse:Bash"
+  - "PostToolUse:AskUserQuestion"
+  - "PostToolUse:Bash"
+already_present_events[0]:
+migrated_events[0]:
+capture_status: installed
+statusLine_status: installed
+env_status: installed
 ```
 
 **Success (Claude — hook already present and already correct)**:
@@ -133,6 +164,21 @@ target: claude
 settings_path: /repo/.claude/settings.local.json
 hook_installed: true
 already_present: true
+installed_events[0]:
+already_present_events[9]:
+  - "SessionStart:matcher-less"
+  - "SessionStart:clear"
+  - UserPromptSubmit
+  - Notification
+  - Stop
+  - "PreToolUse:AskUserQuestion"
+  - "PreToolUse:Bash"
+  - "PostToolUse:AskUserQuestion"
+  - "PostToolUse:Bash"
+migrated_events[0]:
+capture_status: already_present
+statusLine_status: already_present
+env_status: already_present
 ```
 
 **Success (Claude — hook already present, stale `timeout` converged)**:
@@ -143,7 +189,24 @@ target: claude
 settings_path: /repo/.claude/settings.local.json
 hook_installed: true
 already_present: false
+installed_events[0]:
+already_present_events[0]:
+migrated_events[9]:
+  - "SessionStart:matcher-less"
+  - "SessionStart:clear"
+  - UserPromptSubmit
+  - Notification
+  - Stop
+  - "PreToolUse:AskUserQuestion"
+  - "PreToolUse:Bash"
+  - "PostToolUse:AskUserQuestion"
+  - "PostToolUse:Bash"
+capture_status: migrated
+statusLine_status: already_present
+env_status: already_present
 ```
+
+Note the third capture: the nine render entries migrated and `capture_status` reports `migrated`, while `statusLine_status` and `env_status` stay `already_present` — those two elements carry no `timeout` to go stale. `already_present` is `false` because something changed, which is exactly what that flag is for.
 
 **Success (Claude — `--enforcement`, entry installed)**:
 ```toon
@@ -165,7 +228,7 @@ The capture entry needs its own field because it carries none of the nine render
 status: error
 operation: project install-hook
 error: io_error
-message: Failed to install terminal-title hooks into .claude/settings.local.json
+message: Failed to install terminal-title hooks into /repo/.claude/settings.local.json
 ```
 
 **Error (Claude — write failure, `--enforcement` path)**:
@@ -173,14 +236,14 @@ message: Failed to install terminal-title hooks into .claude/settings.local.json
 status: error
 operation: project install-hook
 error: io_error
-message: Failed to install enforcement hook into .claude/settings.local.json
+message: Failed to install enforcement hook into /repo/.claude/settings.local.json
 ```
 
 **No-op (OpenCode)**:
 ```toon
 status: no-op
 operation: project install-hook
-reason: OpenCode has no Claude-style SessionStart settings hook to install (issue anomalyco/opencode#8619)
+reason: OpenCode exposes no session/display hook channel to wire (issue anomalyco/opencode#8619)
 alternative: Use OpenCode's built-in session mechanism for plan visibility
 ```
 
@@ -198,7 +261,7 @@ status: success
 operation: layout skill-roots
 target: claude
 roots[1]:
-- .claude/skills
+  - .claude/skills
 ```
 
 ---
@@ -215,7 +278,7 @@ status: success
 operation: layout bundle-cache-root
 target: claude
 roots[1]:
-- /Users/me/.claude/plugins/cache/plan-marshall
+  - /Users/me/.claude/plugins/cache/plan-marshall
 ```
 
 ---
@@ -265,7 +328,7 @@ status: success
 operation: permission configure
 scope: project
 permissions_written: 3
-target_file: .claude/settings.local.json
+target_file: /repo/.claude/settings.local.json
 ```
 
 **Error**:
@@ -298,16 +361,14 @@ status: success
 operation: permission analyze
 scope: both
 checks_run[3]:
-- redundant
-- suspicious
-- missing-steps
+  - redundant
+  - suspicious
+  - missing-steps
 total_findings: 3
-
 findings[3]{check,severity,details}:
-redundant	info	Bash(git:*) present in both global and project settings
-suspicious	medium	Write(/tmp/**) is a broad write permission; consider scoping to a specific path
-missing-steps	high	project:finalize-step-plugin-doctor in phase-6-finalize has no matching skill permission
-
+  redundant,info,"Bash(git:*) present in both global and project settings"
+  suspicious,medium,Write(/tmp/**) is a broad write permission; consider scoping to a specific path
+  missing-steps,high,"project:finalize-step-plugin-doctor in phase-6-finalize has no matching skill permission"
 summary:
   high: 1
   medium: 1
@@ -320,17 +381,24 @@ status: success
 operation: permission analyze
 scope: project
 checks_run[2]:
-- redundant
-- suspicious
+  - redundant
+  - suspicious
 total_findings: 0
+findings[0]:
+summary:
+  high: 0
+  medium: 0
+  info: 0
 ```
+
+`findings[]` and `summary` are emitted whether or not anything was found — a zero here is a measured zero, not an absent field.
 
 **Error**:
 ```toon
 status: error
 operation: permission analyze
 error: invalid_check
-message: Unknown check 'typo'; valid checks are: redundant, suspicious, missing-steps, all
+message: "Unknown check 'typo'; valid checks are: redundant, suspicious, missing-steps, all"
 ```
 
 **Error (malformed marshal — fail-closed)**:
@@ -356,7 +424,7 @@ operation: permission fix
 scope: project
 fix_operation: normalize
 dry_run: false
-target_file: .claude/settings.local.json
+target_file: /repo/.claude/settings.local.json
 changes_applied: 4
 ```
 
@@ -367,11 +435,10 @@ operation: permission fix
 scope: project
 fix_operation: add
 dry_run: true
-target_file: .claude/settings.local.json
+target_file: /repo/.claude/settings.local.json
 changes_applied: 0
-
 proposed_additions[1]:
-- Bash(python3 scripts/*.py)
+  - Bash(python3 scripts/*.py)
 ```
 
 **Error**:
@@ -408,7 +475,7 @@ dry_run: false
 bundles_scanned: 10
 wildcards_added: 3
 wildcards_already_present: 7
-target_file: .claude/settings.local.json
+target_file: /repo/.claude/settings.local.json
 ```
 
 **Error**:
@@ -445,7 +512,7 @@ dry_run: false
 steps_scanned: 8
 permissions_added: 2
 permissions_already_present: 6
-target_file: .claude/settings.local.json
+target_file: /repo/.claude/settings.local.json
 ```
 
 **Success (dry-run)**:
@@ -457,10 +524,9 @@ scope: project
 dry_run: true
 steps_scanned: 8
 permissions_added: 0
-
 proposed_additions[2]:
-- Skill(finalize-step-plugin-doctor)
-- Skill(finalize-step-sync-plugin-cache)
+  - Skill(finalize-step-plugin-doctor)
+  - Skill(finalize-step-sync-plugin-cache)
 ```
 
 **Error**:
@@ -493,14 +559,13 @@ status: success
 operation: permission web-analyze
 scope: both
 total_domains: 6
-
 domains[6]{domain,category,scope,duplicate}:
-github.com	major	global	false
-api.github.com	major	global	false
-example.com	unknown	project	false
-github.com	major	project	true
-raw.githubusercontent.com	major	global	false
-suspicious-domain.xyz	suspicious	project	false
+  github.com,major,global,false
+  api.github.com,major,global,false
+  example.com,unknown,project,false
+  github.com,major,project,true
+  raw.githubusercontent.com,major,global,false
+  suspicious-domain.xyz,suspicious,project,false
 ```
 
 **Error**:
@@ -508,7 +573,7 @@ suspicious-domain.xyz	suspicious	project	false
 status: error
 operation: permission web-analyze
 error: invalid_scope
-message: --scope must be 'global', 'project', or 'both'; got 'all'
+message: "--scope must be 'global', 'project', or 'both'; got 'all'"
 ```
 
 ---
@@ -527,7 +592,7 @@ scope: project
 dry_run: false
 domains_added: 2
 domains_removed: 1
-target_file: .claude/settings.local.json
+target_file: /repo/.claude/settings.local.json
 ```
 
 **Error**:
@@ -552,45 +617,37 @@ message: settings file is malformed JSON; refusing to overwrite
 
 Resolve session → plan, read the title state from `status.json` (live first,
 archived fallback), compose via the pure `manage-terminal-title` composer, and
-emit the result. Hook mode emits a JSON envelope (`terminalSequence` for every
-event, plus a gated web/desktop `sessionTitle`); statusLine mode (`--statusline`)
-emits plain `{icon} {glyph} {body}` text. All session → plan resolution is
-internal; the only argument is the optional mode flag.
+emit the result. All session → plan resolution is internal; the only argument is
+the optional mode flag, which selects the target's persistent status-readout
+channel over its event-driven one.
 
-**Arguments**: `--statusline` _(optional — selects statusLine output mode instead of the hook JSON envelope)_
+**Arguments**: `--statusline` _(optional — selects the target's persistent status-readout channel; on Claude that is statusLine mode, plain `{icon} {glyph} {body}` text, instead of the hook JSON envelope)_
 
-**Success (Claude)**:
+**This operation is the one exception to the return-a-TOON rule**, and its stdout
+contract is why. A target that renders the title itself writes exactly the bytes
+its host parser consumes to stdout and **returns the empty string** — on every
+path, success and no-op alike — so the router appends nothing. There is therefore
+no success TOON and no no-op TOON on stdout for such a target, and a caller
+cannot read the outcome from the return value at all.
+
+Because `""` alone cannot distinguish *painted*, *nothing to paint*, and *the
+paint failed*, a rendering target names its outcome on a side channel. Claude
+writes one `outcome:` row to **stderr** per render, never to stdout:
+
 ```toon
 status: success
 operation: session render-title
+outcome: hook_envelope_written
 plan_id: my-plan
-title_body: pm:execute:implement-feature
-emitted: true
 ```
 
-**No-op (Claude — session not captured)**:
-```toon
-status: no-op
-operation: session render-title
-reason: $CLAUDE_CODE_SESSION_ID is unset; session capture has not run
-alternative: run marshall-steward to install the SessionStart hook, then re-enter the plan phase
-```
+`outcome` is drawn from a closed set — including `write_failed`, the case where
+the system believed it painted and did not, which is named rather than swallowed
+precisely because it is indistinguishable from success everywhere else. The full
+vocabulary lives with the implementation (`_claude_runtime_impl.session_render_title`).
 
-**No-op (Claude — no active plan)**:
-```toon
-status: no-op
-operation: session render-title
-reason: no active plan registered for this session
-alternative: start a plan phase so manage-status can register the session
-```
-
-**No-op (Claude — no title state)**:
-```toon
-status: no-op
-operation: session render-title
-reason: no plan-title to render; status.json has an empty or missing current_phase
-alternative: the title will resume on the next mutation that writes current_phase to status.json
-```
+A target that **declines** the operation is unaffected by any of this: it returns
+an ordinary no-op TOON on stdout like every other declined operation.
 
 **No-op (OpenCode)**:
 ```toon
@@ -614,9 +671,13 @@ The `--store orchestrator` branch additionally establishes the session→epic
 binding (best-effort), which is what lets the render channel resolve the epic and
 deliver its title on subsequent events — the load-bearing reason this seam
 exists. It also reports a configured-OFF terminal-title feature as
-`reason: feature_inactive`. Two no-op outcomes are distinguished on the return:
-`no_title_state` (nothing renderable to settle) and `feature_inactive` (no
-channel is wired up). The return carries **no `pushed` and no `delivery` field**:
+`reason: feature_inactive`. Two "nothing to settle" outcomes are distinguished on
+the return: `no_title_state` (nothing renderable to settle) and
+`feature_inactive` (no channel is wired up). Both are `status: success` carrying
+a `reason` — as the examples below show — **not** `status: no-op`: a target with a
+render channel did its whole job in each case. `no-op` on this operation means
+only that the target has no render channel at all. The return carries **no
+`pushed` and no `delivery` field**:
 both described a repaint this seam does not perform, and delivery is the next
 render event's outcome, not this seam's.
 
@@ -674,7 +735,7 @@ alternative: Use OpenCode's built-in TUI status surface for plan visibility
 
 Bind the running session to `--plan-id` (last-driven-wins) so `session render-title` and `session resolve-plan` resolve the session to that plan. The caller's own `active-plan` cache slot is written unconditionally — no protect-active, no stale-slot reclaim, no plan-dir-exists check — so a session that switches to drive a different live plan rebinds cleanly. No-op on OpenCode (no platform-provided session id).
 
-**Arguments**: `--plan-id <id>` (required), `--session-id <id>` (optional — falls back to `$CLAUDE_CODE_SESSION_ID`)
+**Arguments**: `--plan-id <id>` (required), `--session-id <id>` (optional — falls back to whatever session identifier the active target exposes; on Claude that is `$CLAUDE_CODE_SESSION_ID`, and a target that exposes none returns `no-op`)
 
 **Success (Claude — slot bound)**:
 ```toon
@@ -699,7 +760,7 @@ alternative: Use OpenCode's built-in TUI status surface for plan visibility
 
 Read the running session's bound plan id — the read side of `session bind`. `session render-title` resolves the session→plan binding through the same read path. No-op on OpenCode (no platform-provided session id).
 
-**Arguments**: `--session-id <id>` (optional — falls back to `$CLAUDE_CODE_SESSION_ID`)
+**Arguments**: `--session-id <id>` (optional — falls back to whatever session identifier the active target exposes; on Claude that is `$CLAUDE_CODE_SESSION_ID`, and a target that exposes none returns `no-op`)
 
 **Success (Claude — bound)**:
 ```toon
@@ -771,7 +832,7 @@ reason: feature_inactive
 ```toon
 status: no-op
 operation: session teardown
-reason: OpenCode does not expose a platform-provided session id to the shell, so there is no per-session binding to release (issue #9292)
+reason: "OpenCode does not expose a platform-provided session id to the shell, so there is no per-session binding to release (issue #9292)"
 alternative: Use OpenCode's built-in session mechanism for plan visibility
 ```
 
@@ -791,14 +852,14 @@ fix: false
 scanned: 12
 conflict_count: 1
 conflicts[1]:
-- my-plan=sid-a,sid-b
+  - "my-plan=sid-a,sid-b"
 stale_count: 1
 stale[1]:
-- sid-c=archived-plan
+  - sid-c=archived-plan
 gc_removed: 0
 orphan_count: 1
 orphans[1]:
-- sid-d
+  - sid-d
 orphans_removed: 0
 ```
 
@@ -823,7 +884,7 @@ Resolve and surface the harness-appropriate post-upgrade reload directive after 
 status: success
 operation: session reload-directive
 directive: /reload-plugins
-caveat: Only monitors require a full session restart; plan-marshall registers no monitors, so /reload-plugins picks up the regenerated executor / agent set live.
+caveat: "Only monitors require a full session restart; plan-marshall registers no monitors, so /reload-plugins picks up the regenerated executor / agent set live."
 ```
 
 **No-op (OpenCode — restart alternative)**:
@@ -871,11 +932,13 @@ tokens_captured: 8000
 source: manual
 ```
 
+**This success does NOT mean the count was stored.** Note the absent `cursor_updated` — the Claude success above carries it because that path writes the token cursor and calls `manage-metrics end-phase`; this one reaches no persistence boundary at all, so the number is reported back and then lost. That is a known contract violation (`Runtime.metrics_capture` requires an explicit count to be persisted before `success`, or declined with `no-op`), recorded as a survivor rather than fixed, because the metrics boundary is target-neutral in substance but currently lives in the Claude runtime. Do not rely on this call to record anything on OpenCode.
+
 **No-op (OpenCode — no manual tokens)**:
 ```toon
 status: no-op
 operation: metrics capture
-reason: automatic token capture requires a platform-provided session id, which OpenCode does not expose (issue #9292)
+reason: "automatic token capture requires a platform-provided session id, which OpenCode does not expose (issue #9292)"
 alternative: pass --total-tokens manually
 ```
 
@@ -949,7 +1012,7 @@ alternative: pass --total-tokens manually to metrics capture
 status: error
 operation: metrics normalized-tokens
 error: io_error
-message: Failed to write normalized-token result to <path>: <reason>
+message: "Failed to write normalized-token result to <path>: <reason>"
 ```
 
 ---
@@ -960,12 +1023,13 @@ Return the platform-specific invocation parameters for spawning a focused subage
 
 **Arguments**: `--agent <name>` (required), `--prompt-file <path>` (optional), `--context <json>` (optional)
 
+Every target echoes the requested `--agent` back as `invocation.subagent_type`; no target substitutes an agent of its own choosing, so a caller's selection always reaches the invocation.
+
 **Success (Claude)**:
 ```toon
 status: success
 operation: subagent dispatch
 platform: claude
-
 invocation:
   tool: Task
   description: Run phase-3-outline outline
@@ -978,19 +1042,20 @@ invocation:
 status: success
 operation: subagent dispatch
 platform: opencode
-
 invocation:
   tool: task
-  description: Run phase-3-outline outline
+  description: Run execution-context-level-3
   prompt: ...agent body with context merged...
   subagent_type: execution-context-level-3
 ```
+
+OpenCode composes its `description` as `Run {agent}`, so that field and `subagent_type` always name the same agent. Claude sources `description` from the agent's own frontmatter instead, which is why its example above shows a different string alongside the same `subagent_type`.
 
 **No-op (unmapped tools)**:
 ```toon
 status: no-op
 operation: subagent dispatch
-reason: Agent team-coordinator-agent requires unmapped tools: SendMessage
+reason: "Agent team-coordinator-agent requires unmapped tools: SendMessage"
 alternative: Remove unsupported tools from agent frontmatter or inline the agent logic
 ```
 
@@ -999,7 +1064,7 @@ alternative: Remove unsupported tools from agent frontmatter or inline the agent
 status: error
 operation: subagent dispatch
 error: prompt_not_found
-message: prompt file not found: prompts/my-prompt.md
+message: "prompt file not found: prompts/my-prompt.md"
 ```
 
 ---
@@ -1065,7 +1130,7 @@ bound_seconds: 600
 status: error
 operation: wait for
 error: unsupported_observable
-message: --observable 'ci-run' is not an inspectable observable kind; valid kinds: build-job
+message: "--observable 'ci-run' is not an inspectable observable kind; valid kinds: build-job"
 ```
 
 **Error (inspection channel unreachable)**:
@@ -1080,8 +1145,8 @@ message: the build-job inspection channel could not be reached (socket_absent); 
 ```toon
 status: no-op
 operation: wait for
-reason: OpenCode's runtime holds no wait channel — it has no platform-provided session id (issue #9292), no hook channel (issue anomalyco/opencode#8619), and no shared build layer to inspect an observable through, so a wait held here would be unobservable and could not be re-attached
-alternative: Invoke the observable's own bounded-wait verb synchronously in-turn (build-server-client wait, ci checks wait), or checkpoint and re-dispatch to re-establish the wait from persisted state
+reason: "OpenCode's runtime holds no wait channel — it has no platform-provided session id (issue #9292), no hook channel (issue anomalyco/opencode#8619), and no shared build layer to inspect an observable through, so a wait held here would be unobservable and could not be re-attached"
+alternative: "Invoke the observable's own bounded-wait verb synchronously in-turn (build-server-client wait, ci checks wait), or checkpoint and re-dispatch to re-establish the wait from persisted state"
 ```
 
 ---
@@ -1097,18 +1162,16 @@ Verify platform integration.
 status: success
 operation: health-check
 checks_run[4]:
-- permissions
-- display
-- mcp-diagnostics
-- hook
-
+  - permissions
+  - display
+  - mcp-diagnostics
+  - hook
 all_healthy: true
-
 results[4]{check,healthy,detail}:
-permissions	true	settings.local.json present; allow array has 12 entries
-display	true	render-title hook entry present in .claude/settings.local.json
-mcp-diagnostics	true	MCP server reachable at 127.0.0.1:64342
-hook	true	SessionStart hook entry present in .claude/settings.json
+  permissions,true,settings.local.json present; allow array has 12 entries
+  display,true,render-title hook entry present in .claude/settings.local.json
+  mcp-diagnostics,true,"MCP server reachable at 127.0.0.1:64342"
+  hook,true,SessionStart hook entry present in .claude/settings.json
 ```
 
 **Success (some checks failing)**:
@@ -1116,14 +1179,12 @@ hook	true	SessionStart hook entry present in .claude/settings.json
 status: success
 operation: health-check
 checks_run[2]:
-- permissions
-- hook
-
+  - permissions
+  - hook
 all_healthy: false
-
 results[2]{check,healthy,detail}:
-permissions	true	settings.local.json present; allow array has 12 entries
-hook	false	SessionStart hook entry missing from .claude/settings.json; run marshall-steward to install
+  permissions,true,settings.local.json present; allow array has 12 entries
+  hook,false,SessionStart hook entry missing from .claude/settings.json; run marshall-steward to install
 ```
 
 **Error**:

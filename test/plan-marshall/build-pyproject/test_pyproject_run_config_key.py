@@ -5,13 +5,13 @@
 The contract itself — TOON shape, ``--format json``, the canonical-args to
 ``key_suffix`` mapping, the ``compute_command_key`` round-trip drift guard, and
 the missing-``--command-args`` error path — lives in
-``build_test_helpers.assert_run_config_key_contract``. This module supplies only
+``_build_extension_fixtures.assert_run_config_key_contract``. This module supplies only
 what is genuinely pyproject-specific: the entry script, the ``build_tool`` name
 (``python``, not ``pyproject``), pyproject's own ``_CONFIG``, and the canonical
 args strings covering full scope, module scope, module-tests, and coverage.
 """
 
-from build_test_helpers import assert_run_config_key_contract
+from _build_extension_fixtures import assert_run_config_key_contract
 
 from conftest import get_script_path, load_script_module
 
