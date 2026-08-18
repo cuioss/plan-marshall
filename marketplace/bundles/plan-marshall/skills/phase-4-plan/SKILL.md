@@ -58,7 +58,7 @@ Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., 
 
 ## Dispatched workflows vs inline steps
 
-This phase dispatches under one role key: **`phase-4-plan`** (resolves through `phase-4-plan.default`). The bundled task-creation activity (Steps 5+6 — per-deliverable task creation, anchoring/breaking-refactor split, deriver-stamped verification) iterates *inside* one `phase-4-plan` envelope; the per-deliverable loop never spawns per-iteration subagents. Mechanical sub-procedures stay inline as scripts: Step 3 deliverable load, Step 4 dependency graph, Step 7 topological sort, Step 7b execution manifest composition, and Step 8 Q-Gate mechanical checks (via `manage-tasks:qgate-mechanical-checks` — coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Step 8b LLM Q-Gate activation is *signaled* by setting `qgate_validation_required: true` in the phase return TOON after every successful phase-4-plan invocation — both `module-mapping-validator` and `scope-criterion-validator` apply to every plan regardless of `plan_source` — EXCEPT when the operator's `plan.phase-4-plan.q_gate_validation` knob resolves to `off` (B1) or the surgical-scope bypass (B2) fires, either of which forces the flag to `false`; the orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads that flag and issues q-gate-validation as a sibling top-level `Task: plan-marshall:{target}` dispatch — the phase body cannot spawn it directly because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. The mechanical script's `ambiguous=true` signal is informational only (it means `solution_outline.md` was missing or unparseable, in which case the orchestrator-dispatched LLM run is the *only* authoritative pass). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2–4.
+This phase dispatches under one role key: **`phase-4-plan`** (resolves through `phase-4-plan.default`). The bundled task-creation activity (Steps 5+6 — per-deliverable task creation, anchoring/breaking-refactor split, deriver-stamped verification) iterates *inside* one `phase-4-plan` envelope; the per-deliverable loop never spawns per-iteration subagents. Mechanical sub-procedures stay inline as scripts: Step 3 deliverable load, Step 4 dependency graph, Step 7 topological sort, Step 7b execution manifest composition, and Step 8 Q-Gate mechanical checks (via `manage-tasks:qgate-mechanical-checks` — coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift, declared-set-closure, declared-scope-reconciliation). Step 8b LLM Q-Gate activation is *signaled* by setting `qgate_validation_required: true` in the phase return TOON after every successful phase-4-plan invocation — both `module-mapping-validator` and `scope-criterion-validator` apply to every plan regardless of `plan_source` — EXCEPT when the operator's `plan.phase-4-plan.q_gate_validation` knob resolves to `off` (B1) or the surgical-scope bypass (B2) fires, either of which forces the flag to `false`; the orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads that flag and issues q-gate-validation as a sibling top-level `Task: plan-marshall:{target}` dispatch — the phase body cannot spawn it directly because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. The mechanical script's `ambiguous=true` signal means the mechanical pass is not authoritative — `solution_outline.md` was missing or unparseable, or a closure check could not scan its full population — in which case the orchestrator-dispatched LLM run is the *only* authoritative pass. For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2–4.
 
 ### Loop-invariant inputs (cached at phase entry)
 
@@ -88,7 +88,7 @@ See [`extension-api/standards/dispatch-granularity.md`](../extension-api/standar
 | Task Contract | `plan-marshall:manage-tasks/standards/task-contract.md` | Required task structure and optimization workflow |
 
 **CRITICAL - Steps Field**:
-- The `steps` field MUST contain file paths from the deliverable's `Affected files` section
+- The `steps` field MUST contain file paths the parent deliverable declares — under `Affected files:`, or under the `Files expected to mutate:` / `Files to survey:` pair a survey-scope deliverable declares instead
 - Steps must NOT be descriptive text (e.g., "Update AuthController.java" is INVALID)
 - Validation rejects tasks with non-file-path steps
 - Exception: `verification` profile tasks use verification commands as steps (file-path validation is skipped)
@@ -538,7 +538,7 @@ Compose every task record for this phase invocation into one JSON array, then pe
 }
 ```
 
-Each step is a `{target, intent}` object — bare-string steps are rejected by `batch-add`. Source each step's `intent` from the parent deliverable's `affected_files[N].intent`, surfaced by `manage-solution-outline list-deliverables` (the deliverable's `Affected files` markers authored in phase-3-outline). The intent vocabulary is the closed enum `read` / `write-new` / `write-replace` / `delete`; it threads unchanged from the deliverable annotation into the task step so the `files_exist` Q-Gate applies the per-intent existence predicate.
+Each step is a `{target, intent}` object — bare-string steps are rejected by `batch-add`. Source each step's `intent` from the parent deliverable's declared entry for that path, surfaced by `manage-solution-outline list-deliverables` — `affected_files[N].intent` for the flat form, or the corresponding `mutation_scope` / `survey_scope` entry when the deliverable is survey-scope and declares no `Affected files:` list at all. The intent vocabulary is the closed enum `read` / `write-new` / `write-replace` / `delete`; it threads unchanged from the deliverable annotation into the task step so the `files_exist` Q-Gate applies the per-intent existence predicate.
 
 Sequential numbering is assigned in array order at call time. On any validation failure no `TASK-NNN.json` is written.
 
@@ -587,7 +587,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 - `domain`: Single domain from deliverable
 - `profile`: `implementation`, `module_testing`, or `verification` (determines workflow skill at execution)
 - `skills`: Domain skills only (system skills loaded by agent). Empty for `verification` profile.
-- `steps`: File paths from `Affected files` (NOT descriptive text). For `verification` profile: verification commands as steps instead of file paths.
+- `steps`: File paths the deliverable declares (`Affected files`, or the survey-scope pair) (NOT descriptive text). For `verification` profile: verification commands as steps instead of file paths.
 
 **Verification**: Stamp each task's `verification.commands` from the deterministic deriver at plan time. Call `architecture derive-verification` with the task's changed-artifact list (the `steps[].target` paths, comma-joined) and stamp the returned command set into `verification.commands` so the task is self-describing:
 
@@ -685,7 +685,7 @@ This step runs after Step 7 (execution order) and before Step 8 (Q-Gate). It MUS
 - `track` — read from `manage-references get --field track` (`simple` or `complex`).
 - `scope_estimate` — read from `manage-references get --field scope_estimate` (deliverables 2 / 3 wire this in earlier in the plan lifecycle).
 - `recipe_key` — OPTIONAL override only. The composer reads `status.json::metadata.plan_source` (falling back to `metadata.recipe_key`) on its own, so lesson- and recipe-derived plans select the `recipe` rule even when this flag is omitted. Pass `--recipe-key` only to force a recipe rule that status metadata does not already imply.
-- `affected_files_count` — `manage-references get --field affected_files`, count entries.
+- `affected_files_count` — `manage-references get --field affected_files`, count entries. ⚠ `references.affected_files` is written by `q-gate-validation.md` § Step 7 from verified deliverables and does **not** currently carry a survey-scope deliverable's `Files expected to mutate:` paths, so this figure can understate the declared surface. Step 8b § B2 defines the cardinality its predicate needs and says how to derive it; do not assume the two are the same number.
 - `phase-5-steps` CSV (`{p5_csv}`) — read via the bash call below, comma-join the returned `verification_steps` list (the phase-5 block stores its verification step list under `verification_steps`, not `steps`). **Validation/fallback-only on `compose`**: in any inited project the composer sources its candidate list authoritatively from `marshal.json` (`plan.phase-5-execute.verification_steps`) and ignores the CSV, so forwarding a CSV to `compose` cannot inject a plan-scoped candidate. The CSV's live consumer is `validate` (below), where it is `validate`'s own caller-supplied allow-list — a separate surface from compose's candidate source.
 - `phase-6-steps` CSV (`{p6_csv}`) — read via the bash call below, comma-join the returned `steps` list. Same contract as `{p5_csv}`: marshal-authoritative on `compose` (`plan.phase-6-finalize.steps`; CSV is fallback-only), allow-list input on `validate`.
 - `commit_and_push` — read via the bash call below, from the `commit_and_push` field; omit `--commit-and-push` on `compose` when the field is absent (defaults to `true`).
@@ -803,32 +803,44 @@ The composer's `decision.log` entry (one per applied rule) provides the audit tr
 
 ### Run Q-Gate Checks
 
-Invoke the deterministic mechanical-checks subcommand once. It runs the six
+Invoke the deterministic mechanical-checks subcommand once. It runs the
 mechanical verifications (coverage, skill-resolution, acyclic, files-exist,
-keyword-drift, structural-token-drift) and emits one Q-Gate finding per
-failure into the phase-4-plan store via the same `qgate add` API the inline
-prose used to call — pure regex + graph + filesystem, no LLM dispatch:
+keyword-drift, structural-token-drift) plus the two CLOSURE checks
+(declared-set-closure, declared-scope-reconciliation) and emits one Q-Gate
+finding per failure into the phase-4-plan store via the same `qgate add` API
+the inline prose used to call — pure regex + graph + filesystem, no LLM
+dispatch:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
   qgate-mechanical-checks --plan-id {plan_id}
 ```
 
-The six checks correspond to:
+The checks correspond to:
 
 1. **Deliverable Coverage**: Every deliverable has >= 1 task; no task references a deliverable that does not exist in `solution_outline.md`.
 2. **Skill Resolution Valid**: Every non-verification task has a non-empty `domain` and every `skills[]` entry matches the `bundle:skill` shape.
 3. **Dependency Graph Acyclic**: `depends_on` across all tasks forms a DAG (Kahn-style topological pass).
-4. **Steps Valid**: Every step target on non-verification tasks resolves on disk.
-5. **Keyword-drift**: Planning-domain keywords appearing in a `task.description` but absent from the parent deliverable's haystack (title + metadata + profiles + affected files + verification **+ the deliverable's own prose body**). The prose is part of the haystack because the check asks whether a task says something its deliverable does not, and a deliverable says things in prose — the intent gloss, the change-per-file narrative, the success criteria — not only in its structured fields; without it a task quoting its own deliverable was flagged for drift. This is the same body the structural-token-drift recipe in Step 9 reads, so the two checks agree on what "the deliverable" means. The keyword set itself is **not restated here**: it is the `_PLANNING_KEYWORDS` constant in [`manage-tasks/scripts/_cmd_qgate_mechanical.py`](../manage-tasks/scripts/_cmd_qgate_mechanical.py), which is what the check actually matches against. An inline copy would let the documented Q-Gate contract and the executed one drift apart the first time a keyword is added.
+4. **Steps Valid**: Every step target on non-verification tasks satisfies its declared `intent`'s existence predicate — `read` and `delete` require the path to exist, `write-new` requires it NOT to, and `write-replace` is not existence-checked at all.
+5. **Keyword-drift**: Planning-domain keywords appearing in a `task.description` but absent from the parent deliverable's haystack (title + metadata + profiles + affected files + verification **+ the deliverable's own prose body**). The prose is part of the haystack because the check asks whether a task says something its deliverable does not, and a deliverable says things in prose — the intent gloss, the change-per-file narrative, the success criteria — not only in its structured fields; without it a task quoting its own deliverable was flagged for drift. This is the same body the structural-token-drift recipe later in this step reads, so the two checks agree on what "the deliverable" means. The keyword set itself is **not restated here**: it is the `_PLANNING_KEYWORDS` constant in [`manage-tasks/scripts/_cmd_qgate_mechanical.py`](../manage-tasks/scripts/_cmd_qgate_mechanical.py), which is what the check actually matches against. An inline copy would let the documented Q-Gate contract and the executed one drift apart the first time a keyword is added.
 6. **Structural-token-drift**: `TASK-NNN` numbering monotonic, starting at `TASK-001`, no gaps.
+7. **Declared-set closure**: every declared write path is targeted by a step of a task belonging to that deliverable (projection), and every non-verification step target is declared by its parent deliverable (referrer).
+8. **Declared-scope reconciliation**: every declared glob is expanded against the tree and reconciled against the enumerated declaration (claim versus index).
+
+Checks 1–6 ask whether each declared thing is well-formed and RESOLVES; 7–8 ask whether the declared SET is COMPLETE. A plan can satisfy every one of the first six while omitting the one path that mattered — that omission is invisible to them by construction, because what is missing is exactly what never entered the declaration they read.
 
 Parse the return TOON: `total_failed` is the aggregate finding count for the
 inline checks (added to `qgate_pending_count` returned in Step 10), and
-`ambiguous` is `true` when `solution_outline.md` was missing or unparseable —
-in that case the orchestrator-dispatched q-gate-validation (signaled by
-Step 8b via `qgate_validation_required: true`) is the only authoritative pass
-and the orchestrator MUST still fire it.
+`ambiguous` is `true` on either of two conditions: `solution_outline.md` was
+missing or unparseable, OR a closure check's `population_complete` is `false`
+(an unexpandable declared glob, an expansion stopped at the match ceiling, or a
+task naming a deliverable the outline lacks). Both mean the same thing to the
+caller — the mechanical pass is not authoritative, because a zero it reports is
+a statement about what it managed to read rather than about the plan. In that
+case the orchestrator-dispatched q-gate-validation (signaled by Step 8b via
+`qgate_validation_required: true`) is the only authoritative pass and the
+orchestrator MUST still fire it. The companion `population` block reports what
+each closure check actually scanned.
 
 **Persist-rejection gate (mandatory).** The same return TOON carries
 `qgate_persist_failed` (bool) and `qgate_persist_failures` (a list of
@@ -916,11 +928,16 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   --message "[STATUS] (plan-marshall:phase-4-plan) qgate_validation_required=false — plan.phase-4-plan.q_gate_validation=off (operator opt-out)"
 ```
 
+> ⛔ **A closure claim is a HINT, never a LICENCE — B2 reaches the Step 8b dispatch and NOTHING else.**
+> Both `scope_estimate` and `affected_files_count` are *authored* values: the second is the cardinality of the deliverables' own declared file surface, so the bypass is driven by the very declaration whose completeness is in question. That makes it self-reinforcing in one direction — the more an outline **under**-enumerates, the more likely it satisfies the predicate and skips the validators it would have been checked by. What B2 suppresses is precisely the pair this call site activates (`planning-outline.md` → `validators: [module-mapping-validator, scope-criterion-validator]`): the two validators that reconcile LLM-authored task and deliverable shape against **live ground truth** rather than against the outline's own assertions. (`consumer_sweep_completeness` and the deletion-consumer sweep are **not** in the suppressed set — they activate at the phase-3-outline call site, under a different guard.)
+>
+> The bypass is therefore contained rather than removed: it may suppress the **dispatched LLM validators** and nothing more. Step 8's mechanical checks — including `declared_set_closure` and `declared_scope_reconciliation`, which compute whether the declared set is COMPLETE — run unconditionally on every phase-4-plan invocation, with no knob and no predicate. A declared set may hint that re-checking is cheap; it may never carry the authority to decide that re-checking is unnecessary. See [`manage-tasks/scripts/_qgate_closure.py`](../manage-tasks/scripts/_qgate_closure.py) for what those checks compute, and `test_qgate_closure.py::test_closure_check_runs_under_the_surgical_scope_bypass_shape` for the adversarial guard that asserts a plan shaped exactly like this predicate is still checked.
+
 **B2 — Surgical q-gate-validation bypass (deterministic)**: When `q_gate_validation != off`, before signalling `qgate_validation_required: true`, evaluate the surgical-scope predicate:
 
 > `scope_estimate == surgical AND affected_files_count <= 2`
 
-where `affected_files_count` is the cardinality of the deduplicated union of every deliverable's `Affected files:` list. When the predicate holds, override `qgate_validation_required` to `false` in the Step 10 return TOON instead of the unconditional `true` — the orchestrator's q-gate-validation dispatch site reads the flag and skips the validator envelope when it is `false`. When the predicate is false (non-surgical, or 3+ affected files), the unconditional `true` value documented above is preserved.
+where `affected_files_count` is the cardinality of the deduplicated union of every deliverable's **declared file surface** — `Affected files:`, plus the `Files to survey:` / `Files expected to mutate:` pair a survey-scope deliverable declares INSTEAD of it. ⚠ **Derive it here from `manage-solution-outline list-deliverables`** (whose records carry `affected_files`, `survey_scope` and `mutation_scope`), NOT from the Step 7b input `manage-references get --field affected_files` — that field does not carry the survey pair, and using it would silently restore the flat-field count this paragraph exists to widen. ⛔ **Reading `Affected files:` alone would make the bypass fire MORE readily on exactly the deliverables whose scope is least knowable**: a survey-scope deliverable contributes zero to a flat-field count, so a plan built entirely from them would satisfy `<= 2` no matter how wide its declared scope. That is the self-reinforcing direction named above, reached through the other declaration form. When the predicate holds, override `qgate_validation_required` to `false` in the Step 10 return TOON instead of the unconditional `true` — the orchestrator's q-gate-validation dispatch site reads the flag and skips the validator envelope when it is `false`. When the predicate is false (non-surgical, or 3+ affected files), the unconditional `true` value documented above is preserved.
 
 Log the bypass decision once at decision level:
 

@@ -44,7 +44,7 @@ A **sixth role group — `orchestrator`** — sits OUTSIDE `plan`: it is rooted 
 |-------|------------------|----------------|
 | `phase-2-refine` | `plan-marshall:phase-2-refine` | Single primary workflow (refine-analyze; confidence loop bundled). Dispatched on phase-2-refine entry. |
 | `phase-3-outline` | `plan-marshall:phase-3-outline` | Single primary workflow (outline; `track={simple|complex}` is a runtime input). Dispatched on phase-3-outline entry. |
-| `phase-4-plan` | `plan-marshall:phase-4-plan` | Single primary workflow (plan-all-tasks; Steps 5+6+7 bundled). Dispatched on phase-4-plan entry. |
+| `phase-4-plan` | `plan-marshall:phase-4-plan` | Single primary workflow (plan-all-tasks; Steps 5+6 bundled). Dispatched on phase-4-plan entry. |
 | `phase-5-execute` | `plan-marshall:phase-5-execute` | Per-task execute body, plus `verification-feedback` for build-runner / quality-gate triage. |
 | `phase-6-finalize` | `plan-marshall:phase-6-finalize` | Several workflows with distinct cost profiles — finalize body + verification-feedback (sonar / pr-comment / plugin-doctor / pr-state) + post-run-review (retrospective + lessons-capture). |
 

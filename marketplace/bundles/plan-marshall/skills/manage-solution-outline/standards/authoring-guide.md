@@ -71,7 +71,7 @@ Every solution outline MUST include a top-level `## Solution Metadata` block pla
 - scope_estimate: surgical
 ```
 
-**Choosing `scope_estimate`** — derive from the union of `affected_files` across all deliverables (see [solution-outline-standard.md](solution-outline-standard.md#scope_estimate) for the authoritative derivation table):
+**Choosing `scope_estimate`** — derive from the union of every deliverable's **declared file surface**: `affected_files`, plus the `Files to survey:` / `Files expected to mutate:` pair a survey-scope deliverable declares instead of a flat list (see [solution-outline-standard.md](solution-outline-standard.md#scope_estimate) for the authoritative derivation table). ⛔ Reading `affected_files` alone bands a survey-scope plan `none`, because its flat list is empty:
 
 1. Empty union (analysis-only) → `none`
 2. ≤3 files in one module, no public API surface → `surgical`

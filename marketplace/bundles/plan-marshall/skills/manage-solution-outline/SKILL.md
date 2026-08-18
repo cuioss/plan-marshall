@@ -409,7 +409,19 @@ deliverable:
     - testing
   affected_files:
     - src/test/java/de/cuioss/jwt/JwtValidationServiceTest.java
+  survey_scope: []
+  mutation_scope: []
 ```
+
+`survey_scope` and `mutation_scope` are present on EVERY record, empty for a
+deliverable using the flat `**Affected files:**` form. They carry the
+`**Files to survey:**` / `**Files expected to mutate:**` pair a survey-scope
+deliverable declares instead — see
+[`phase-3-outline/standards/outline-workflow-detail.md`](../phase-3-outline/standards/outline-workflow-detail.md#survey-scope-vs-mutation-scope-declaration).
+A survey-scope deliverable therefore shows an empty `affected_files` and a
+populated pair; its write-set is the union of `affected_files` writes and
+`mutation_scope`, so a consumer reading `affected_files` alone sees a
+deliverable that appears to touch nothing.
 
 If deliverable not found, returns error with available numbers:
 ```toon

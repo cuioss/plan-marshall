@@ -821,7 +821,25 @@ This is the canonical detail home for the **Survey-scope deliverable class** rec
 
 **Disjointness requirement**: each file appears under **exactly one** field. List a file under `**Files expected to mutate:**` when you expect to edit it; list it under `**Files to survey:**` only when you need to read/analyse it but do NOT expect to change it. The two lists are therefore disjoint by construction — `Files to survey:` is analysis-only, `Files expected to mutate:` is change-bearing. Conflating them into one `**Affected files:**` blob is the failure mode this convention prevents: a single merged list either over-claims (every surveyed file counted as "affected", which tanks the retrospective recall metric) or under-scopes (the analysis pool hidden, so reviewers cannot see what was examined).
 
-**`affected_files_recall` scope**: the downstream retrospective `affected_files_recall` check (run during plan retrospective) measures actually-mutated files against the declared mutation scope — it runs against the `**Files expected to mutate:**` subset, **NOT** the survey scope. A file surveyed-but-not-mutated never counts against recall; a file mutated-but-not-listed-under-`Files expected to mutate:` does. (This recall check is referenced here for completeness; it is owned by the retrospective workflow and is out of scope for the survey-scope authoring rule itself.)
+**`affected_files_recall` scope**: the downstream retrospective `affected_files_recall` check (run during plan retrospective) measures actually-mutated files against the declared mutation scope — it runs against the `**Files expected to mutate:**` subset, **NOT** the survey scope. A file surveyed-but-not-mutated never counts against recall; a file mutated-but-not-listed-under-`Files expected to mutate:` does. (This recall check is referenced here for completeness; it is owned by the retrospective workflow and is out of scope for the survey-scope authoring rule itself.) Both fields are read by `check-artifact-consistency.py`'s declaration parser alongside `**Affected files:**`, so this is behaviour rather than convention — see `test_recall_survey_scope.py`, which pins it.
+
+#### ⛔ The declared sweep is RUN before the write-set is frozen
+
+Declaring the two fields is a **presence** requirement, and presence is not the property that matters. The failure this closes is a deliverable whose `**Files to survey:**` names a scope — most sharply a *glob* — wider than the paths it then enumerates, where **nobody ran the declared sweep**. A real hit outside the enumerated set then appears in no write-set at all, and no downstream check can report it: recall measures the footprint against the declaration, so a path the declaration never named can never be reported as missing from it. The gap is precisely what never entered the write-set.
+
+So, before the deliverable is finalised:
+
+1. **Run the declared sweep.** Expand every pattern in `**Files to survey:**` against the tree and read off the full result. Do not sample, and do not reason from a representative subset.
+2. **Enumerate the result INCLUDING hits outside the request's constraints.** A hit the request did not anticipate is the finding, not noise to drop.
+3. **Resolve each out-of-constraint hit explicitly**, in one of exactly two ways:
+   - **widen** — add the path to `**Files to survey:**` or `**Files expected to mutate:**`, recording the authorisation for the wider scope; or
+   - **narrow** — tighten the declared pattern so it no longer claims the surface, and record the un-swept surface as a deliberate documented exclusion.
+
+   ⛔ Leaving the pair `{declared scope wide, write-set narrow}` unresolved is **not** a third option. That pair is the signature, and it is machine-comparable — a declared glob against an enumerated file list.
+
+**This is enforced mechanically, not only by this prose.** The `declared_scope_reconciliation` check in [`manage-tasks/scripts/_qgate_closure.py`](../../manage-tasks/scripts/_qgate_closure.py) expands every declared glob at phase-4-plan Step 8 and emits one finding per declared glob that matches files the deliverable does not also enumerate — the finding states the total number of such hits and names a bounded prefix of them, disclosing the remainder as `+N more` rather than eliding it silently. It publishes the population it examined — how many patterns were declared, expanded, and could NOT be expanded — because a glob that matches nothing looks identical to a glob that matches everything, and only the count separates them. An unexpandable pattern is reported as an **unmeasured** scope, never as an empty one.
+
+⚠ A prose warning is not a control. This rule is written here because the outline agent authors against it, but the check is what makes it hold.
 
 **Worked example** — a discovery-style deliverable with both fields populated:
 
@@ -835,7 +853,6 @@ This is the canonical detail home for the **Survey-scope deliverable class** rec
 - module: plan-marshall
 
 **Files to survey:**
-- `marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage_status.py`
 - `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/manage_tasks.py`
 - `marketplace/bundles/plan-marshall/skills/manage-config/scripts/manage_config.py`
 
@@ -843,7 +860,7 @@ This is the canonical detail home for the **Survey-scope deliverable class** rec
 - `marketplace/bundles/plan-marshall/skills/manage-status/scripts/manage_status.py`
 ```
 
-Here three scripts are surveyed for legacy logging calls, but the deliverable expects to mutate only the one that the survey confirms uses the legacy pattern. The other two are analysed and ruled out — they stay under `**Files to survey:**`. (When the survey confirms a file does need changing, the author moves it from `Files to survey:` to `Files expected to mutate:` before the outline is finalised, preserving disjointness.)
+Here three scripts are in play. The survey confirmed `manage_status.py` uses the legacy pattern, so it has been **moved** into `Files expected to mutate:` and no longer appears under `Files to survey:`; the other two are analysed and ruled out, and stay in the candidate pool. ⚠ **The two lists never share a path** — the fields are disjoint by construction, and this example shows the post-move state the outline is finalised in, not a snapshot mid-survey.
 
 #### `survey_vs_mutation_scope_declared` outline check (LLM-driven)
 
@@ -857,14 +874,13 @@ This is an LLM-driven outline check — prose the outline agent applies in-conte
 ### 2. Survey deprecated config keys and classify each for removal
 
 **Files to survey:**
-- `marketplace/bundles/plan-marshall/skills/manage-config/standards/config-schema.md`
 - `marketplace/bundles/plan-marshall/skills/marshall-steward/scripts/marshall_steward.py`
 
 **Files expected to mutate:**
 - `marketplace/bundles/plan-marshall/skills/manage-config/standards/config-schema.md`
 ```
 
-The title contains `Survey` and `classify`; both fields are present and disjoint → the check passes.
+The title contains `Survey` and `classify`, and both fields are present → the check passes. ⚠ The two lists also share no path, as the disjointness requirement demands, but **this check does not test that** — it asserts presence only. Disjointness is an authoring rule the example honours, not a criterion the check applies.
 
 **Negative example (flagged)** — survey-style deliverable with a single flat list:
 

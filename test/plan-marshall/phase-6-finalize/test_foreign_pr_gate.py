@@ -211,5 +211,65 @@ def test_foreign_paths_by_deliverable_selects_only_foreign_entries():
     assert extracted == [(2, ['/foreign/a.py'])]
 
 
+def test_foreign_paths_by_deliverable_reads_the_survey_scope_pair():
+    """A survey-scope deliverable's foreign paths reach the landing gate.
+
+    A discovery-style deliverable declares ``Files to survey:`` +
+    ``Files expected to mutate:`` INSTEAD of a flat ``Affected files:`` list, so
+    a gate reading only the flat field sees an EMPTY path list for a deliverable
+    that has a real foreign write-set — and clears a landing it should block.
+    The population this gate iterates must be the whole declared surface, not
+    the subset one field happens to carry.
+
+    The fixture gives the deliverable an empty ``affected_files``, so a
+    regression to the flat-field-only read reaches the opposite verdict (no
+    foreign paths at all) rather than a shorter list.
+    """
+    deliverables = [
+        {
+            'number': 1,
+            'foreign': True,
+            'affected_files': [],
+            'survey_scope': [{'path': '/foreign/surveyed.py', 'foreign': True}],
+            'mutation_scope': [
+                {'path': 'host.py', 'foreign': False},
+                {'path': '/foreign/mutated.py', 'foreign': True},
+            ],
+        },
+    ]
+
+    extracted = gate._foreign_paths_by_deliverable(deliverables)
+
+    assert extracted == [(1, ['/foreign/mutated.py', '/foreign/surveyed.py'])]
+
+
 def test_blocking_landing_state_constant_is_pushed_no_pr():
     assert gate.BLOCKING_LANDING_STATE == 'pushed_no_pr'
+
+
+def test_a_doubly_declared_foreign_path_is_named_once():
+    """A path declared under two headings appears once in the blocking message.
+
+    The survey-scope convention requires `Files to survey:` and `Files expected
+    to mutate:` to be disjoint, but that is an AUTHORING rule and no check
+    enforces it — `validate_deliverable_contract` does not compare the two
+    lists. So the gate must dedupe rather than assume: a path declared under
+    both would otherwise be named twice to the operator, in a message whose job
+    is to tell them exactly which foreign paths are unlanded.
+
+    The verdict is unaffected either way (`if paths:`), which is precisely why
+    this needs its own guard — no existing assertion could see the duplicate.
+    """
+    deliverables = [
+        {
+            'number': 1,
+            'foreign': True,
+            'affected_files': [],
+            'survey_scope': [{'path': '/foreign/both.py', 'foreign': True}],
+            'mutation_scope': [{'path': '/foreign/both.py', 'foreign': True}],
+        },
+    ]
+
+    extracted = gate._foreign_paths_by_deliverable(deliverables)
+
+    assert extracted == [(1, ['/foreign/both.py'])]
