@@ -54,8 +54,25 @@ intended.
 ⚠️ **The lesson is one the lane already states:** a negative was believed without a positive control.
 The same loop reported six branches and only the one whose answer mattered was re-checked.
 
-**`marketplace/bundles/**` exclusivity.** Not separately re-verified beyond the matrix and PR checks
-above; no in-flight test-quality work exists to contend for it.
+**`marketplace/bundles/**` exclusivity.** The plan makes this a gating HYPOTHESIS with a stated
+procedure — read the **Out of scope** section of each of `030`–`080` and confirm every one excludes
+`marketplace/bundles/**`. Run 01 did not perform it, and recorded instead that no in-flight
+test-quality work existed to contend for the surface. That was **wrong on its own terms**: the same
+section, four paragraphs above, records plan `070` as open PR #1290. Run 02 performed the check the
+plan asks for, and it is **CONFIRMED** — every one of the six excludes the surface:
+
+| Plan | `Out of scope` clause |
+|---|---|
+| `030` | "Any file under `marketplace/bundles/**`" |
+| `040` | "Any file under `marketplace/bundles/**`" |
+| `050` | "Any file under `marketplace/bundles/**`" — plus a special case extending the exclusion to `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py` |
+| `060` | "Any file under `marketplace/bundles/**`" |
+| `070` | "Any file under `marketplace/bundles/**`" |
+| `080` | "Any file under `marketplace/bundles/**` or `marketplace/targets/**`" |
+
+No sibling claims a file on this plan's production surface, so the plan's justification stands — now
+on the evidence it asked for rather than on an inference from PR state. (Plan `070` has since merged
+as #1290; the check above is read from each plan's own text, so it is unaffected either way.)
 
 ## Deliverables
 
@@ -417,6 +434,16 @@ before**, and one file newly ENTERS the measured population:
 `credentials.py` was reached by no `plan-marshall` test before; the new seam test imports it, so it
 joins the denominator at its own 52.6% and pulls the aggregate down.
 
+⛔ **The verdict, stated without softening it.** Condition 2 says *coverage does not decrease for the
+bundle paths the changed production modules sit under*. On the **aggregate** the condition names,
+`plan-marshall` decreased — 83.40% → 83.34% — so **condition 2 is NOT met as literally worded**, and
+this run does not claim it passed. What the per-file table above establishes is a different and
+narrower statement: **no file this change touches lost coverage**, and the aggregate moved because the
+measured population grew. Both are recorded, and which is which is not left to the reader: the
+explanation is offered as the cause of the decrease, never as a reason to score it as a pass. Raising
+`credentials.py` above 52.6% would satisfy the aggregate, and it is out of this plan's scope — the
+residue names it.
+
 ⚠️ **One line of the baseline does not reproduce, and the honest reading is measurement noise.** An
 independent re-measurement put the `plan-marshall` baseline at 83.41% rather than 83.40%, and found
 `script-shared/scripts/marketplace_paths.py` at 215/231 on **both** trees rather than 216 → 215 — with
@@ -626,4 +653,5 @@ Recorded in `report-02.md` § What have we learned, with the evidence the second
 | `identifier-validator-corpus`'s empty registry; the `broken-relative-link` fragment gap | Out of scope by the plan; already in the epic README's residue table |
 | **36 tests fail under a SERIAL reverse-directory-order run**, identically on `origin/main` — module-level caching in `platform-runtime`, `tools-integration-ci`, `workflow-integration-github` / `-gitlab`. Green under the parallel runner | `110`, which owns run-condition instruments; the owning slices for the modules themselves |
 | `plan-marshall`'s coverage aggregate is not reproducible to the last 0.01 pp, and `script-shared/scripts/marketplace_paths.py` reports 215/231 on **both** trees with the missing-LINE set differing between runs | Whoever next measures that bundle. Not a coverage move — the file is untouched — but run-to-run nondeterminism worth knowing about before reading a small aggregate delta as a regression |
+| **`credentials.py` sits at 52.6 % and is what makes verification condition 2's aggregate fall** (83.40 % → 83.34 %). The file entered the measured population here; covering it is not this plan's deliverable | `manage-providers`' owning slice, or a follow-up whose deliverable is that file's coverage |
 | `pm-dev-python:pytest-testing`'s `parse_ns` teaching does not mention the `register` escape. Not false — the escape is additive — but incomplete, and that file is plan `010`'s surface | `010`, or a follow-up |

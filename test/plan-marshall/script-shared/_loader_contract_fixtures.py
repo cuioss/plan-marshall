@@ -31,6 +31,55 @@ REGISTERING_HELPERS: dict[str, bool] = {
 }
 
 
+#: The single construction both loaders funnel through, and so the marker that
+#: identifies a registering helper without anyone listing one.
+REGISTRATION_PRIMITIVE = '_exec_module_from_path'
+
+
+def _module_level_call_names(tree: ast.Module) -> dict[str, set[str]]:
+    """Return each module-level function's name mapped to the names it calls."""
+    calls: dict[str, set[str]] = {}
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        called: set[str] = set()
+        for inner in ast.walk(node):
+            if isinstance(inner, ast.Call) and isinstance(inner.func, ast.Name):
+                called.add(inner.func.id)
+        calls[node.name] = called
+    return calls
+
+
+def registering_helpers_in_conftest(conftest_path: Path) -> set[str]:
+    """Return the PUBLIC ``conftest`` helpers that publish a module in ``sys.modules``.
+
+    Derived from the live source rather than copied from it, which is what keeps
+    :data:`REGISTERING_HELPERS` an assertion about ``conftest`` instead of a mirror
+    that can silently fall behind it. A helper registers when it calls
+    :data:`REGISTRATION_PRIMITIVE` -- the one construction both loaders funnel
+    through, by that function's own contract -- or when it delegates to a helper
+    that does. Both hops occur today: the two loaders take the first, ``parse_ns``
+    the second.
+
+    A fourth loader added later is therefore covered by the scan without anyone
+    remembering to list it, and one added by some route that bypasses the primitive
+    makes this derivation disagree with the declared mapping, which is a red build
+    rather than a silent gap.
+    """
+    tree = ast.parse(conftest_path.read_text(encoding='utf-8'), filename=str(conftest_path))
+    calls = _module_level_call_names(tree)
+
+    registering = {name for name, called in calls.items() if REGISTRATION_PRIMITIVE in called}
+    grew = True
+    while grew:
+        grew = False
+        for name, called in calls.items():
+            if name not in registering and called & registering:
+                registering.add(name)
+                grew = True
+    return {name for name in registering if not name.startswith('_')}
+
+
 def _module_level_string_constants(tree: ast.Module) -> dict[str, str]:
     """Return the module-level ``NAME = 'literal'`` bindings in ``tree``.
 

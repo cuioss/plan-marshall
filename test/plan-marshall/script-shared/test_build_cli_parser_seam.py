@@ -18,19 +18,22 @@ being written by hand. These pin:
 """
 
 import argparse
+import ast
 import sys
 from unittest import mock
 
 import pytest
 
-from conftest import load_script_module, parse_ns
+from conftest import MARKETPLACE_ROOT, load_script_module, parse_ns
 
 BUNDLE = 'plan-marshall'
 SKILL = 'script-shared'
 CLI_SCRIPT = 'build/_build_cli.py'
 FACTORY_SCRIPT = 'build/_build_execute_factory.py'
 
-#: Every build wrapper that routes its CLI through ``build_main``.
+#: Every build wrapper that routes its CLI through ``build_main``. Declared for
+#: readability and asserted against the tree below, so a fifth wrapper cannot bypass
+#: the shared-surface checks by being absent from this list.
 WRAPPER_SCRIPTS = [
     ('build-pyproject', 'pyproject_build.py'),
     ('build-maven', 'maven.py'),
@@ -55,6 +58,52 @@ RUN_DEFAULTS = {
     'project_dir': '.',
     'plan_id': None,
 }
+
+
+def _wrappers_calling_build_main() -> set[tuple[str, str]]:
+    """Return every marketplace script that dispatches its CLI through ``build_main``.
+
+    The whole marketplace is walked, not this bundle alone: a wrapper added under
+    another bundle is exactly the case a hand-kept list would miss, and it belongs in
+    the checks below no less than the four here today.
+    """
+    found: set[tuple[str, str]] = set()
+    for path in MARKETPLACE_ROOT.glob('*/skills/*/scripts/**/*.py'):
+        try:
+            tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
+        except SyntaxError:  # pragma: no cover - a marketplace script that parses is the norm
+            continue
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == 'build_main'
+            ):
+                found.add((path.parents[1].name, path.name))
+                break
+    return found
+
+
+def test_the_wrapper_population_is_derived_from_the_tree():
+    """Every script that calls ``build_main`` is one of the wrappers checked here.
+
+    ``WRAPPER_SCRIPTS`` is what the restriction checks below quantify over, so a
+    wrapper missing from it is a wrapper whose ``run`` surface is never compared
+    against the published seam — a green result over a population that silently
+    shrank. Deriving the set from the call sites makes the list an assertion about
+    the tree rather than a copy of it.
+    """
+    derived = _wrappers_calling_build_main()
+
+    assert derived, (
+        'no script in the marketplace calls build_main — the derivation has stopped '
+        'finding the wrappers, so the comparison below quantifies over nothing'
+    )
+    assert derived == set(WRAPPER_SCRIPTS), (
+        f'scripts routing through build_main: {sorted(derived)}; scripts checked here: '
+        f'{sorted(WRAPPER_SCRIPTS)}. A wrapper in the first set and not the second is '
+        'never compared against the published seam.'
+    )
 
 
 @pytest.fixture(scope='module')

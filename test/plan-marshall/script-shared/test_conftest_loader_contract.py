@@ -20,10 +20,15 @@ import sys
 from pathlib import Path
 
 import pytest
-from _loader_contract_fixtures import _scan_test_tree
+from _loader_contract_fixtures import (
+    REGISTERING_HELPERS,
+    _scan_test_tree,
+    registering_helpers_in_conftest,
+)
 
 from conftest import (
     MARKETPLACE_ROOT,
+    TEST_ROOT,
     get_scripts_dir,
     get_skill_dir,
     load_script_module,
@@ -155,35 +160,47 @@ PROBE_SCRIPT = 'credentials.py'
 PROBE_NAME = 'credentials'
 
 
-def test_registration_is_the_default(monkeypatch):
+@pytest.fixture(autouse=True)
+def _probe_registration_is_not_leaked():
+    """Keep the probe name out of ``sys.modules`` on both sides of every test here.
+
+    ⛔ ``monkeypatch.delitem(..., raising=False)`` does NOT do this. It undoes only
+    its own deletion, and the key is absent when it runs, so it records nothing to
+    restore — the registration the load then performs survives the test and the rest
+    of the session. A module whose whole subject is ``sys.modules`` displacement must
+    not itself displace a name, so the cleanup is a real teardown rather than a
+    deletion that happens to precede the load.
+    """
+    sys.modules.pop(PROBE_NAME, None)
+    yield
+    sys.modules.pop(PROBE_NAME, None)
+
+
+def test_registration_is_the_default():
     """A load with no ``register`` argument publishes the module under its stem.
 
     The control for the opt-out below: without it, an escape that suppressed nothing
     and an escape that worked would be indistinguishable.
     """
-    monkeypatch.delitem(sys.modules, PROBE_NAME, raising=False)
-
     module = load_script_module(PROBE_BUNDLE, PROBE_SKILL, PROBE_SCRIPT)
 
     assert sys.modules.get(PROBE_NAME) is module
 
 
-def test_register_false_publishes_nothing(monkeypatch):
+def test_register_false_publishes_nothing():
     """``register=False`` returns the module without touching ``sys.modules``.
 
     This is the escape a caller takes to avoid displacing a name another test module
     imports plainly, so it has to be the absence of a registration rather than a
     registration under a different name.
     """
-    monkeypatch.delitem(sys.modules, PROBE_NAME, raising=False)
-
     module = load_script_module(PROBE_BUNDLE, PROBE_SKILL, PROBE_SCRIPT, register=False)
 
     assert module is not None
     assert PROBE_NAME not in sys.modules
 
 
-def test_register_false_reaches_parse_ns(monkeypatch):
+def test_register_false_reaches_parse_ns():
     """``parse_ns`` forwards the opt-out to the load it performs.
 
     ``parse_ns`` loads the script to reach its parser, so it registers exactly as a
@@ -191,8 +208,6 @@ def test_register_false_reaches_parse_ns(monkeypatch):
     about a quarter of all loader call sites, so an opt-out that stopped at the
     loaders would leave a large minority of callers unable to reach it.
     """
-    monkeypatch.delitem(sys.modules, PROBE_NAME, raising=False)
-
     namespace = parse_ns(
         PROBE_BUNDLE, PROBE_SKILL, PROBE_SCRIPT, 'list-providers', register=False
     )
@@ -233,6 +248,33 @@ def test_the_scan_finds_the_loader_call_sites(tree_scan):
         f'registration names that are command-line tokens, not modules: {tokens}. '
         'The walker read an argument out of the wrong position — check the helper '
         'arity table and the positional-unpacking guard, not this assertion.'
+    )
+
+
+def test_the_scanned_helper_population_is_derived_from_conftest():
+    """The scan covers every helper ``conftest`` actually registers through.
+
+    ``REGISTERING_HELPERS`` names three helpers and the arity of each, and the arity
+    half genuinely has to be declared — it is a fact about a signature, not something
+    the tree states. The POPULATION half does not: a helper missing from it
+    contributes no call site, so the collision guard would go green while a whole
+    loader's worth of registrations escaped it. Deriving the population from
+    ``conftest`` and asserting the two agree turns that silent gap into a red build.
+
+    The derivation follows ``_exec_module_from_path``, the single construction both
+    loaders funnel through, and the delegation hop ``parse_ns`` takes to reach it.
+    """
+    derived = registering_helpers_in_conftest(TEST_ROOT / 'conftest.py')
+
+    assert derived, (
+        'the derivation found no registering helper at all — it has stopped tracking '
+        'conftest, and every assertion resting on it is vacuous'
+    )
+    assert derived == set(REGISTERING_HELPERS), (
+        f'conftest registers through {sorted(derived)}, but the scan covers '
+        f'{sorted(REGISTERING_HELPERS)}. A helper in the first set and not the second '
+        'publishes modules the collision guard cannot see: add it, with the arity its '
+        'signature has. One in the second and not the first no longer exists.'
     )
 
 
