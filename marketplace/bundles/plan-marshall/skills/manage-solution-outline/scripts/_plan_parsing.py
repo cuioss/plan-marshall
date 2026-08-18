@@ -266,6 +266,8 @@ def extract_deliverables(deliverables_section: str) -> list[dict[str, Any]]:
         metadata = _extract_metadata_block(content)
         profiles = _extract_profiles(content)
         affected_files = _extract_affected_files(content)
+        survey_scope = extract_survey_scope(content)
+        mutation_scope = extract_mutation_scope(content)
         verification = _extract_verification(content)
         has_success_criteria = bool(re.search(r'\*\*Success Criteria:\*\*', content, re.IGNORECASE))
 
@@ -277,6 +279,8 @@ def extract_deliverables(deliverables_section: str) -> list[dict[str, Any]]:
                 'metadata': metadata,
                 'profiles': profiles,
                 'affected_files': affected_files,
+                'survey_scope': survey_scope,
+                'mutation_scope': mutation_scope,
                 'declared_bucket': extract_declared_bucket(content),
                 'verification': verification,
                 'has_success_criteria': has_success_criteria,
@@ -335,6 +339,91 @@ def _extract_profiles(content: str) -> list[str]:
     return profiles
 
 
+#: The three declaration headings a deliverable may use to name its file
+#: surface, and the intent each implies when a bullet carries no ``(intent)``
+#: marker of its own.
+#:
+#: ``Affected files`` is the flat form. A **survey-scope deliverable** — one
+#: whose mutation set is not knowable at authoring time — declares the other
+#: two instead, per ``phase-3-outline/standards/outline-workflow-detail.md``
+#: § "Survey-scope vs mutation-scope declaration": ``Files to survey`` is the
+#: analysis-only candidate pool and ``Files expected to mutate`` is the
+#: change-bearing subset.
+#:
+#: The survey pair is parsed here because a declaration no parser reads is a
+#: declaration no downstream check can enforce. Before this, a deliverable
+#: authored exactly as that standard mandates parsed to an EMPTY file list:
+#: its expected-to-mutate paths belonged to no write-set, so every set-guarding
+#: check downstream — the recall check, the bucket adjudication, the
+#: verification-only guard — saw a deliverable that touched nothing.
+_SURVEY_SCOPE_HEADING = 'Files to survey'
+_MUTATION_SCOPE_HEADING = 'Files expected to mutate'
+
+
+def _extract_scope_field(
+    content: str, heading: str, default_intent: str | None = None
+) -> list[dict[str, Any]]:
+    """Extract one ``**{heading}:**`` bullet list as ``{'path', 'intent'}`` entries.
+
+    Shared by the three declaration headings. An entry's own parenthesized
+    ``(intent)`` marker always wins; ``default_intent`` supplies the intent only
+    when the bullet carries none, which is the documented form for the survey
+    pair (neither ``Files to survey`` nor ``Files expected to mutate`` bullets
+    carry markers in the standard's worked example).
+
+    Args:
+        content: The deliverable block body.
+        heading: The bold heading text, without the ``**`` fence or the colon.
+        default_intent: Intent applied to a marker-less bullet, or ``None`` to
+            leave it unset so the validator reports the missing marker itself.
+
+    Returns:
+        The declared entries in document order; empty when the heading is absent.
+    """
+    files: list[dict[str, Any]] = []
+
+    files_match = re.search(
+        rf'\*\*{re.escape(heading)}:\*\*\s*((?:- [^\n]+\n?)+)', content, re.IGNORECASE
+    )
+    if not files_match:
+        return files
+
+    files_text = files_match.group(1)
+    # Capture the backticked (or bare) path, then an optional trailing
+    # ``(intent)`` marker. The intent group is left unvalidated here — the
+    # validator enum-checks it against VALID_STEP_INTENTS.
+    file_pattern = re.compile(r'-\s*`?([^`\n(]+?)`?\s*(?:\(([a-z-]+)\))?\s*$', re.MULTILINE)
+    for match in file_pattern.finditer(files_text):
+        file_path = match.group(1).strip()
+        intent = match.group(2) or default_intent
+        if file_path:
+            files.append({'path': file_path, 'intent': intent})
+
+    return files
+
+
+def extract_survey_scope(content: str) -> list[dict[str, Any]]:
+    """Extract the ``**Files to survey:**`` candidate pool.
+
+    Analysis-only by definition, so a marker-less bullet is ``read``. These
+    paths are the deliverable's declared *examination* scope — the set a
+    declared sweep must actually cover — and are deliberately NOT part of the
+    write-set.
+    """
+    return _extract_scope_field(content, _SURVEY_SCOPE_HEADING, STEP_INTENT_READ)
+
+
+def extract_mutation_scope(content: str) -> list[dict[str, Any]]:
+    """Extract the ``**Files expected to mutate:**`` change-bearing subset.
+
+    A marker-less bullet is left unset rather than defaulted, matching
+    :func:`_extract_affected_files`: :func:`deliverable_write_set` counts an
+    unmarked entry as a write, so the path reaches the write-set either way and
+    a genuinely missing marker stays reportable rather than being papered over.
+    """
+    return _extract_scope_field(content, _MUTATION_SCOPE_HEADING)
+
+
 def _extract_affected_files(content: str) -> list[dict[str, Any]]:
     """Extract **Affected files:** list from deliverable content.
 
@@ -353,33 +442,33 @@ def _extract_affected_files(content: str) -> list[dict[str, Any]]:
     with no ``(intent)`` suffix yields ``intent=None`` so the validator — not
     this parser — produces the precise per-deliverable "missing marker" error.
     """
-    files: list[dict[str, Any]] = []
-
-    files_match = re.search(r'\*\*Affected files:\*\*\s*((?:- [^\n]+\n?)+)', content, re.IGNORECASE)
-    if not files_match:
-        return files
-
-    files_text = files_match.group(1)
-    # Capture the backticked (or bare) path, then an optional trailing
-    # ``(intent)`` marker. The intent group is left unvalidated here — the
-    # validator enum-checks it against VALID_STEP_INTENTS.
-    file_pattern = re.compile(r'-\s*`?([^`\n(]+?)`?\s*(?:\(([a-z-]+)\))?\s*$', re.MULTILINE)
-    for match in file_pattern.finditer(files_text):
-        file_path = match.group(1).strip()
-        intent = match.group(2)
-        if file_path:
-            files.append({'path': file_path, 'intent': intent})
-
-    return files
+    return _extract_scope_field(content, 'Affected files')
 
 
 def deliverable_write_set(deliverable: dict[str, Any]) -> list[str]:
     """Return the paths a deliverable declares it will MODIFY.
 
-    The authoritative write-set: every ``affected_files`` entry whose declared
-    intent is not :data:`constants.STEP_INTENT_READ`. A ``read`` entry names a
-    file the deliverable consults and leaves untouched, so it belongs to the
+    The authoritative write-set: every ``affected_files`` **or**
+    ``mutation_scope`` entry whose declared intent is not
+    :data:`constants.STEP_INTENT_READ`. A ``read`` entry names a file the
+    deliverable consults and leaves untouched, so it belongs to the
     deliverable's *reading* surface and to no part of its change footprint.
+
+    ``mutation_scope`` — the ``**Files expected to mutate:**`` field a
+    survey-scope deliverable declares INSTEAD of a flat ``Affected files``
+    list — is unioned in rather than treated as a separate surface. It is a
+    declaration of change intent by definition, and
+    ``phase-3-outline/standards/outline-workflow-detail.md`` already documents
+    it as "the list that downstream profile classification and the retrospective
+    recall check consume". Leaving it out made that documented contract false:
+    a correctly-authored survey-scope deliverable had an EMPTY write-set, so
+    its expected-to-mutate paths were invisible to every set-guarding check
+    downstream — the incomplete-derived-set failure in its purest form, since
+    the missing paths were the ones nobody could see were missing.
+
+    The two fields are disjoint by the standard's own disjointness requirement,
+    so the union is deduplicated defensively rather than assumed disjoint: a
+    path declared under both fields contributes one write-set member.
 
     Every classification derived from a deliverable's file list — its file-type
     bucket, whether it warrants a testing profile, what a build must cover —
@@ -402,14 +491,17 @@ def deliverable_write_set(deliverable: dict[str, Any]) -> list[str]:
         The declared write paths, in document order.
     """
     write_set: list[str] = []
-    for entry in deliverable.get('affected_files', []):
-        if not isinstance(entry, dict):
-            continue
-        if entry.get('intent') == STEP_INTENT_READ:
-            continue
-        path = entry.get('path')
-        if isinstance(path, str) and path:
-            write_set.append(path)
+    seen: set[str] = set()
+    for field in ('affected_files', 'mutation_scope'):
+        for entry in deliverable.get(field, []) or []:
+            if not isinstance(entry, dict):
+                continue
+            if entry.get('intent') == STEP_INTENT_READ:
+                continue
+            path = entry.get('path')
+            if isinstance(path, str) and path and path not in seen:
+                seen.add(path)
+                write_set.append(path)
     return write_set
 
 

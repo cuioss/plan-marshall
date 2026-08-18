@@ -339,9 +339,28 @@ def validate_deliverable_contract(deliverable: dict[str, Any]) -> tuple[list[str
     errors.extend(_check_declared_bucket(num, deliverable, write_set))
 
     # Check 3: Affected files section
+    #
+    # A SURVEY-SCOPE deliverable declares `**Files to survey:**` +
+    # `**Files expected to mutate:**` INSTEAD of a flat `**Affected files:**`
+    # list (see phase-3-outline/standards/outline-workflow-detail.md § "Survey-
+    # scope vs mutation-scope declaration"), so the section requirement is
+    # satisfied by either form. Without this, an outline authored exactly as
+    # that standard mandates failed validation with "Missing **Affected
+    # files:** section" — the validator and the authoring standard disagreed
+    # about what a declaration looks like.
+    #
+    # Only `affected_files` is walked by 3a/3b below, deliberately. The survey
+    # pair's documented form carries no `(intent)` markers, and its candidate
+    # pool MAY legitimately name a glob — both of which 3a/3b reject. The
+    # closure reconciliation that DOES read the survey pair (a declared glob
+    # against the enumerated file list) lives in the phase-4-plan mechanical
+    # Q-Gate, where it can compare the declaration against the tree.
     affected_files = deliverable.get('affected_files', [])
+    survey_scope = deliverable.get('survey_scope', []) or []
+    mutation_scope = deliverable.get('mutation_scope', []) or []
+    declares_survey_pair = bool(survey_scope) and bool(mutation_scope)
     is_verification_only = 'verification' in profiles
-    if not affected_files and not is_verification_only:
+    if not affected_files and not declares_survey_pair and not is_verification_only:
         errors.append(f'D{num}: Missing **Affected files:** section')
     else:
         # Check 3a: No wildcards or vague references; Check 3b: required intent marker.

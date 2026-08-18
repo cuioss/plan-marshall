@@ -496,6 +496,8 @@ class TestExtractDeliverables:
             'metadata',
             'profiles',
             'affected_files',
+            'survey_scope',
+            'mutation_scope',
             'declared_bucket',
             'verification',
             'has_success_criteria',

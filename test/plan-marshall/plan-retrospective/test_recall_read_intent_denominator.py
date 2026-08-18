@@ -290,7 +290,11 @@ class TestAllReadIntentIsSkippedNotFailed:
         )
 
         assert status == 'skip'
-        assert 'No deliverable declares an Affected files section' in message
+        assert 'No deliverable declares a file surface' in message
+        # The message names all three headings, so a reader can tell this skip
+        # from the every-declaration-is-read-intent one without knowing which
+        # declaration form the outline used.
+        assert 'Files expected to mutate' in message
 
 
 class TestReadIntentExcludedIsPublishedOnEveryBranch:

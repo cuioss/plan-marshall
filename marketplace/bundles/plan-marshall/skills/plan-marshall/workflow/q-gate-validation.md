@@ -387,6 +387,26 @@ python3 .plan/execute-script.py plan-marshall:manage-findings:manage-findings \
 
 **Cross-references**:
 - [`consumer-sweep.md`](../../phase-3-outline/standards/consumer-sweep.md) — outline-time procedure this check enforces
+- § 2.9a below — the mechanical closure checks, which run even when this dispatched validator is bypassed
+
+#### 2.9a Declared-Set Closure (mechanical, unsuppressible)
+
+Every check above asks whether each declared thing is **well-formed and resolves**. None asks whether the declared **set is complete**, and a plan can satisfy all of them while omitting the one path that mattered — the omission is invisible to them by construction, because what is missing is exactly what never entered the declaration they read.
+
+Two checks close that, and they do **not** live here. They run in phase-4-plan **Step 8**, as [`manage-tasks:qgate-mechanical-checks`](../../manage-tasks/SKILL.md#qgate-mechanical-checks) — a script invoked on every phase-4-plan invocation with no knob and no predicate:
+
+| Check | Closure computed |
+|---|---|
+| `declared_set_closure` | **Projection** — every declared write path is targeted by a step of a task belonging to that deliverable. **Referrer** — every non-verification step target is declared by its parent deliverable. |
+| `declared_scope_reconciliation` | **Claim versus index** — every declared glob is expanded against the tree and reconciled against the enumerated declaration, surfacing the `{declared scope wide, write-set narrow}` pair. |
+
+⛔ **Their placement is the point, not an implementation detail.** The Step 8b activation guard (`phase-4-plan/SKILL.md` § Step 8b) lets a **surgical-scope bypass** suppress *this document's* dispatched validators when the outline declares few enough affected files — a suppression driven by the very declaration whose completeness is in question, and therefore most likely to fire on exactly the outlines that under-enumerated. Putting the closure computation in the unconditional mechanical pass means **a closure claim cannot license skipping the check that would test it**. A declared set may hint that re-checking is cheap; it may never decide that re-checking is unnecessary.
+
+**Normative population assertion** — this is the line every set-guarding check here is held to, stated rather than left as an implicit consequence of whichever root a scan happened to start from:
+
+> **`detector_population ⊇ fix_set_population`.** The set a check scanned MUST contain every element the plan claims to cover. A check publishes the population it actually examined, and a zero finding count is a verdict about the plan ONLY when that population is complete. Otherwise the zero is a statement about what the check managed to read.
+
+The mechanical checks discharge it by publishing `population` alongside `checks` and flipping `ambiguous` when `population_complete` is false — an unexpandable glob, an expansion stopped at the match ceiling, or a task naming a deliverable the outline lacks. ⭐ **A glob that matches nothing looks identical to a glob that matches everything**, and the published count is the only thing that separates them. The same discipline is what the complete-coverage rule (§ 2.9's pass criteria, and [`client-api.md`](../../manage-architecture/standards/client-api.md) § `search`) demands of a content sweep; this states it as the general rule the Q-Gate checks are written against.
 
 #### 2.10 Argparse Validator
 

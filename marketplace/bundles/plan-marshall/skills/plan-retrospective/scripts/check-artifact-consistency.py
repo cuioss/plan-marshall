@@ -15,17 +15,19 @@ Checks performed:
   coverage. ``(read)``-intent declarations are excluded from the denominator:
   the footprint is a diff, so a file the plan only read can never appear in it,
   and counting one as an expected modification would cap achievable recall below
-  the threshold by construction. The declaration state is read **per
-  deliverable**: any deliverable whose own content carries the
-  ``Affected files:`` heading but from which no bullet could be parsed reports
-  ``fail``, naming that deliverable — even when sibling deliverables declared
-  files and the aggregate declared set is non-empty. That parse check reads the
-  UNFILTERED bullets, so a read-only deliverable is never mis-reported as a parse
-  failure. ``skip`` covers two distinct cases, each with its own reason: no
-  deliverable declares an ``Affected files`` section at all, or every declared
-  path carries read intent so no modification is expected. When the footprint
-  itself cannot be resolved the check reports ``inconclusive``: recall is
-  unmeasurable, never a confident 0%.
+  the threshold by construction. Three declaration headings are read, not one —
+  ``Affected files``, plus the ``Files expected to mutate`` / ``Files to survey``
+  pair a survey-scope deliverable declares instead (``Files to survey`` is
+  analysis-only, so its unannotated bullets carry read intent). The declaration
+  state is read **per deliverable**: any deliverable whose own content carries a
+  declaration heading but from which no bullet could be parsed reports ``fail``,
+  naming that deliverable — even when sibling deliverables declared files and the
+  aggregate declared set is non-empty. That parse check reads the UNFILTERED
+  bullets, so a read-only deliverable is never mis-reported as a parse failure.
+  ``skip`` covers two distinct cases, each with its own reason: no deliverable
+  declares a file surface at all, or every declared path carries read intent so
+  no modification is expected. When the footprint itself cannot be resolved the
+  check reports ``inconclusive``: recall is unmeasurable, never a confident 0%.
 - ``affected_files_exact_match`` — the declared modification-intent set and the
   resolved footprint agree exactly. It consumes the same intent-filtered
   declaration as the recall check, so a read-intent path is never reported as
@@ -87,7 +89,9 @@ _REQUIRED_SECTIONS = ('summary', 'overview', 'deliverables')
 # be present in references.json for the check to pass.
 _RECALL_THRESHOLD = 0.70
 
-# Regex for ``Affected files:`` bullet lists in deliverable sections.
+# Regex for declared-file bullet lists in deliverable sections. It matches a
+# BULLET, not a heading, so it serves all three declaration headings
+# (:data:`_DECLARATION_HEADINGS`) unchanged.
 #
 # Two tolerated bullet forms, in alternation order:
 #   1. Backtick-delimited, optionally annotated — ``- `path/to/file` (intent)``.
@@ -101,7 +105,7 @@ _RECALL_THRESHOLD = 0.70
 #
 # The MATCHING shape is deliberately unchanged from the pre-intent version: this
 # regex decides whether a bullet parses AT ALL, and a bullet that stops matching
-# is reported as "Affected files heading present but no bullet parsed" — a
+# is reported as "Declaration heading present but no bullet parsed" — a
 # ``fail`` at ``severity: error``. Narrowing the ``bare`` class (e.g. excluding
 # ``(`` so an annotation could not be swallowed) silently converted three
 # previously-parsing forms — ``- src/a.py (New file)``, ``- src/mod(1).py``, and
@@ -166,6 +170,25 @@ def _split_intent_suffix(quoted: str | None, qtail: str | None, bare: str | None
 _READ_INTENT = STEP_INTENT_READ
 
 
+#: The declaration headings a deliverable may use to name its file surface, and
+#: the intent each implies for a bullet carrying no ``(intent)`` annotation.
+#:
+#: ``Files to survey`` defaults to ``read`` because the standard defines it as
+#: analysis-only: an unannotated survey bullet is a file the deliverable reads
+#: and does not change, so counting it as an expected modification would cap
+#: achievable recall below the threshold by construction — the same failure
+#: :func:`extract_modification_intent_files` documents for read-intent entries.
+#: The other two default to ``None`` (unknown, and therefore counted as a
+#: modification), because an unannotated entry there states no intent and
+#: assuming read-only would shrink the denominator and manufacture a vacuously
+#: high recall.
+_DECLARATION_HEADINGS: tuple[tuple[str, str | None], ...] = (
+    ('Affected files', None),
+    ('Files expected to mutate', None),
+    ('Files to survey', _READ_INTENT),
+)
+
+
 def resolve_plan_dir(mode: str, plan_id: str | None, archived_plan_path: str | None) -> Path:
     if mode == 'live':
         if not plan_id:
@@ -224,18 +247,33 @@ def check_deliverable_count(content: str) -> tuple[str, str, list[dict[str, str]
 
 
 def _extract_bullet_entries(block_content: str) -> list[dict[str, str | None]]:
-    """Extract ``Affected files:`` bullets as ``{'path', 'intent'}`` entries.
+    """Extract declared-file bullets as ``{'path', 'intent'}`` entries.
 
-    Splits on each ``**Affected files:**`` heading occurrence and collects the
-    bullets beneath it, stopping at the next bold field heading (e.g. the next
+    Splits on each declaration heading occurrence and collects the bullets
+    beneath it, stopping at the next bold field heading (e.g. the next
     deliverable field or the next deliverable's own heading).
+
+    THREE headings are read, not one — see
+    :data:`_DECLARATION_HEADINGS`. ``Affected files`` is the flat form; a
+    survey-scope deliverable declares ``Files to survey`` (analysis-only) and
+    ``Files expected to mutate`` (change-bearing) instead, per
+    ``phase-3-outline/standards/outline-workflow-detail.md``. That standard
+    states the recall check "runs against the ``Files expected to mutate``
+    subset" — a claim that was FALSE while this parser split on
+    ``Affected files`` alone: a correctly-authored survey-scope deliverable's
+    expected-to-mutate paths reached no declared set, so recall could never
+    report one of them as missing. A path that appears in no declaration cannot
+    be missing from one, which is why an under-declared surface is invisible to
+    the very check that exists to measure declaration accuracy.
 
     Both tolerated bullet forms yield the bare path plus the declared intent:
     the canonical ``- `path` (intent)`` form contributes the backtick-delimited
     span and its annotation, and the bare ``- path (intent)`` form contributes
     the trimmed line body and its annotation. A bullet carrying no annotation
-    yields ``intent=None`` — an unannotated declaration is NOT known to be
-    read-only, so it is never treated as one.
+    yields the heading's default intent — ``read`` under ``Files to survey``
+    (analysis-only by definition) and ``None`` under the other two, where an
+    unannotated declaration is NOT known to be read-only and so is never
+    treated as one.
 
     This is the single bullet-matching site. :func:`_extract_bullets` projects
     it to paths for the declaration-parseability check, and
@@ -243,22 +281,23 @@ def _extract_bullet_entries(block_content: str) -> list[dict[str, str | None]]:
     modification-intent subset for the two footprint comparisons.
     """
     entries: list[dict[str, str | None]] = []
-    blocks = re.split(r'\*\*Affected files:\*\*', block_content)
-    # First block is before any header, skip.
-    for block in blocks[1:]:
-        # Stop at the next bold heading (next deliverable field).
-        chunk = re.split(r'\*\*[A-Z][^*]+:\*\*', block, maxsplit=1)[0]
-        for match in _AFFECTED_FILE_BULLET_RE.finditer(chunk):
-            path, intent = _split_intent_suffix(
-                match.group('quoted'), match.group('qtail'), match.group('bare')
-            )
-            if path:
-                entries.append({'path': path, 'intent': intent})
+    for heading, default_intent in _DECLARATION_HEADINGS:
+        blocks = re.split(rf'\*\*{re.escape(heading)}:\*\*', block_content)
+        # First block is before any header, skip.
+        for block in blocks[1:]:
+            # Stop at the next bold heading (next deliverable field).
+            chunk = re.split(r'\*\*[A-Z][^*]+:\*\*', block, maxsplit=1)[0]
+            for match in _AFFECTED_FILE_BULLET_RE.finditer(chunk):
+                path, intent = _split_intent_suffix(
+                    match.group('quoted'), match.group('qtail'), match.group('bare')
+                )
+                if path:
+                    entries.append({'path': path, 'intent': intent or default_intent})
     return entries
 
 
 def _extract_bullets(block_content: str) -> list[str]:
-    """Extract every ``Affected files:`` bullet path, regardless of intent.
+    """Extract every declared-file bullet path, regardless of intent or heading.
 
     The UNFILTERED projection of :func:`_extract_bullet_entries`. It answers
     "did this declaration parse at all?", which is an intent-independent
@@ -269,12 +308,12 @@ def _extract_bullets(block_content: str) -> list[str]:
 
 
 def extract_affected_files_per_deliverable(content: str) -> list[str]:
-    """Extract every ``Affected files:`` bullet item across all deliverables.
+    """Extract every declared-file bullet item across all deliverables.
 
-    Declared files are often listed as bullets beneath an ``**Affected files:**``
-    heading inside each deliverable section. We collect all such bullets into
-    a flat list, regardless of declared intent — the intent-filtered projection
-    the footprint comparisons consume is
+    Declared files are listed as bullets beneath one of the three declaration
+    headings (:data:`_DECLARATION_HEADINGS`) inside each deliverable section. We
+    collect all such bullets into a flat list, regardless of declared intent —
+    the intent-filtered projection the footprint comparisons consume is
     :func:`extract_modification_intent_files`.
     """
     return _extract_bullets(content)
@@ -283,7 +322,7 @@ def extract_affected_files_per_deliverable(content: str) -> list[str]:
 def extract_modification_intent_files(content: str) -> list[str]:
     """Extract the declared paths a deliverable intends to MODIFY.
 
-    Every ``Affected files:`` bullet except those explicitly annotated
+    Every declared-file bullet except those carrying
     ``(read)``. This — not the full declaration — is the correct population for
     any comparison against a realized footprint, because the footprint is a diff:
     a file the plan only ever read cannot appear in it.
@@ -306,12 +345,12 @@ def extract_modification_intent_files(content: str) -> list[str]:
 
 
 def _declaration_state_per_deliverable(solution_content: str) -> list[dict[str, Any]]:
-    """Return the per-deliverable ``Affected files:`` declaration state.
+    """Return the per-deliverable declared-file declaration state.
 
     For each ``### N. Title`` block of the outline's Deliverables section,
-    records whether that block's OWN content carries the ``**Affected files:**``
-    heading and, when it does, the bullets :func:`_extract_bullets` extracts
-    from it.
+    records whether that block's OWN content carries ANY of the three
+    declaration headings (:data:`_DECLARATION_HEADINGS`) and, when it does, the
+    bullets :func:`_extract_bullets` extracts from it.
 
     Attribution is per deliverable so a heading that parses to zero bullets is
     detectable even when sibling deliverables declared files, which the
@@ -330,7 +369,10 @@ def _declaration_state_per_deliverable(solution_content: str) -> list[dict[str, 
             {
                 'number': block['number'],
                 'title': block['title'],
-                'heading_present': '**Affected files:**' in block['content'],
+                'heading_present': any(
+                    f'**{heading}:**' in block['content']
+                    for heading, _default in _DECLARATION_HEADINGS
+                ),
                 'files': _extract_bullets(block['content']),
             }
         )
@@ -367,14 +409,14 @@ def check_affected_files_recall(
     :func:`_declaration_state_per_deliverable`) rather than off the flattened
     aggregate, in this order:
 
-    - any deliverable whose own content carries the ``Affected files:`` heading
+    - any deliverable whose own content carries a declaration heading
       yet yields no parsed bullet is a ``fail`` naming that deliverable — this
       fires even when sibling deliverables declared files and the aggregate
       declared set is non-empty, which the aggregate view cannot detect. The
       parse check reads the UNFILTERED bullets, so a deliverable declaring only
       read-intent files is never mis-reported as a parse failure;
     - otherwise, an empty aggregate declared set means no deliverable declares
-      an ``Affected files`` section at all, so ``skip`` is substantiated;
+      a file surface at all, so ``skip`` is substantiated;
     - otherwise, an aggregate that is non-empty while the modification-intent
       subset is empty means every declaration is read-intent — a distinct
       ``skip`` with its own reason, never a 0% recall;
@@ -401,7 +443,7 @@ def check_affected_files_recall(
         named = ', '.join(f'{state["number"]}. {state["title"]}' for state in unparseable)
         return (
             'fail',
-            f'Affected files heading present but no bullet parsed for deliverable(s): {named}',
+            f'Declaration heading present but no bullet parsed for deliverable(s): {named}',
             {
                 # ``declared`` means the SAME thing on every branch — the
                 # modification-intent count — so
@@ -425,7 +467,8 @@ def check_affected_files_recall(
     if not all_declared:
         return (
             'skip',
-            'No deliverable declares an Affected files section — nothing to compare',
+            'No deliverable declares a file surface (Affected files / Files expected '
+            'to mutate / Files to survey) — nothing to compare',
             {
                 'declared': 0,
                 'deliverables': len(deliverables),

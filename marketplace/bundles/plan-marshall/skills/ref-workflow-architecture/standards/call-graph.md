@@ -207,7 +207,8 @@ Each dispatched phase envelope (phases 2–6) runs the workflow doc inside the s
 │    /manage-execution-manifest compose/           (script — Step 8b)                │
 │    /manage-tasks qgate-mechanical-checks/        (script — Step 9)                 │
 │      coverage / skill-resolution / acyclic / files-exist /                         │
-│      keyword-drift / structural-token-drift                                        │
+│      keyword-drift / structural-token-drift /                                      │
+│      declared-set-closure / declared-scope-reconciliation                          │
 │                                                                                    │
 │    ══►  [q-gate-validation]   (Step 9b — unconditional;                            │
 │         module-mapping + scope-criterion validators against live ground truth)     │

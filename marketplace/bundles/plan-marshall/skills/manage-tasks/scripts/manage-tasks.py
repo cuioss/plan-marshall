@@ -371,9 +371,13 @@ def build_parser() -> argparse.ArgumentParser:
         'qgate-mechanical-checks',
         help='Run deterministic Q-Gate checks for phase-4-plan Step 9 (no LLM dispatch)',
         description=(
-            'Run the six deterministic Q-Gate checks over the just-written tasks '
+            'Run the deterministic Q-Gate checks over the just-written tasks '
             'and parent deliverables: coverage, skill-resolution, acyclic, '
-            'files-exist, keyword-drift, structural-token-drift. Each failure is '
+            'files-exist, keyword-drift, structural-token-drift, '
+            'declared-set-closure, declared-scope-reconciliation. The last two '
+            'ask whether the declared SET is COMPLETE, which the others cannot '
+            'see — they check that each declared thing is well-formed and '
+            'resolves. Each failure is '
             'emitted as a Q-Gate finding under --source qgate so phase-4-plan\'s '
             'existing aggregate loop consumes it without modification. Pure regex '
             '+ graph + filesystem; no LLM dispatch. Use --no-emit to inspect the '

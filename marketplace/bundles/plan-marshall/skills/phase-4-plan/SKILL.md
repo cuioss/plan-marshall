@@ -58,7 +58,7 @@ Step-level exceptions — calls whose non-zero exit is itself the signal (e.g., 
 
 ## Dispatched workflows vs inline steps
 
-This phase dispatches under one role key: **`phase-4-plan`** (resolves through `phase-4-plan.default`). The bundled task-creation activity (Steps 5+6 — per-deliverable task creation, anchoring/breaking-refactor split, deriver-stamped verification) iterates *inside* one `phase-4-plan` envelope; the per-deliverable loop never spawns per-iteration subagents. Mechanical sub-procedures stay inline as scripts: Step 3 deliverable load, Step 4 dependency graph, Step 7 topological sort, Step 7b execution manifest composition, and Step 8 Q-Gate mechanical checks (via `manage-tasks:qgate-mechanical-checks` — coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift). Step 8b LLM Q-Gate activation is *signaled* by setting `qgate_validation_required: true` in the phase return TOON after every successful phase-4-plan invocation — both `module-mapping-validator` and `scope-criterion-validator` apply to every plan regardless of `plan_source` — EXCEPT when the operator's `plan.phase-4-plan.q_gate_validation` knob resolves to `off` (B1) or the surgical-scope bypass (B2) fires, either of which forces the flag to `false`; the orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads that flag and issues q-gate-validation as a sibling top-level `Task: plan-marshall:{target}` dispatch — the phase body cannot spawn it directly because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. The mechanical script's `ambiguous=true` signal is informational only (it means `solution_outline.md` was missing or unparseable, in which case the orchestrator-dispatched LLM run is the *only* authoritative pass). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2–4.
+This phase dispatches under one role key: **`phase-4-plan`** (resolves through `phase-4-plan.default`). The bundled task-creation activity (Steps 5+6 — per-deliverable task creation, anchoring/breaking-refactor split, deriver-stamped verification) iterates *inside* one `phase-4-plan` envelope; the per-deliverable loop never spawns per-iteration subagents. Mechanical sub-procedures stay inline as scripts: Step 3 deliverable load, Step 4 dependency graph, Step 7 topological sort, Step 7b execution manifest composition, and Step 8 Q-Gate mechanical checks (via `manage-tasks:qgate-mechanical-checks` — coverage, skill-resolution, acyclic, files-exist, keyword-drift, structural-token-drift, declared-set-closure, declared-scope-reconciliation). Step 8b LLM Q-Gate activation is *signaled* by setting `qgate_validation_required: true` in the phase return TOON after every successful phase-4-plan invocation — both `module-mapping-validator` and `scope-criterion-validator` apply to every plan regardless of `plan_source` — EXCEPT when the operator's `plan.phase-4-plan.q_gate_validation` knob resolves to `off` (B1) or the surgical-scope bypass (B2) fires, either of which forces the flag to `false`; the orchestrator (`plan-marshall:plan-marshall/workflow/planning-outline.md`) reads that flag and issues q-gate-validation as a sibling top-level `Task: plan-marshall:{target}` dispatch — the phase body cannot spawn it directly because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. The mechanical script's `ambiguous=true` signal is informational only (it means `solution_outline.md` was missing or unparseable, in which case the orchestrator-dispatched LLM run is the *only* authoritative pass). For the rationale see [dispatch-granularity.md](../extension-api/standards/dispatch-granularity.md) § 2–4.
 
 ### Loop-invariant inputs (cached at phase entry)
 
@@ -803,11 +803,13 @@ The composer's `decision.log` entry (one per applied rule) provides the audit tr
 
 ### Run Q-Gate Checks
 
-Invoke the deterministic mechanical-checks subcommand once. It runs the six
+Invoke the deterministic mechanical-checks subcommand once. It runs the
 mechanical verifications (coverage, skill-resolution, acyclic, files-exist,
-keyword-drift, structural-token-drift) and emits one Q-Gate finding per
-failure into the phase-4-plan store via the same `qgate add` API the inline
-prose used to call — pure regex + graph + filesystem, no LLM dispatch:
+keyword-drift, structural-token-drift) plus the two CLOSURE checks
+(declared-set-closure, declared-scope-reconciliation) and emits one Q-Gate
+finding per failure into the phase-4-plan store via the same `qgate add` API
+the inline prose used to call — pure regex + graph + filesystem, no LLM
+dispatch:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-tasks:manage-tasks \
@@ -915,6 +917,11 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO \
   --message "[STATUS] (plan-marshall:phase-4-plan) qgate_validation_required=false — plan.phase-4-plan.q_gate_validation=off (operator opt-out)"
 ```
+
+> ⛔ **A closure claim is a HINT, never a LICENCE — B2 reaches the Step 8b dispatch and NOTHING else.**
+> Both `scope_estimate` and `affected_files_count` are *authored* values: the second is the cardinality of the deliverables' own declared `Affected files:` lists, so the bypass is driven by the very declaration whose completeness is in question. That makes it self-reinforcing in one direction — the more an outline **under**-enumerates, the more likely it satisfies the predicate and skips the validators that would have found the missing consumers. The `consumer_sweep_completeness` and deletion-consumer checks it suppresses are precisely the ones that materialize a consumer set the outline did not.
+>
+> The bypass is therefore contained rather than removed: it may suppress the **dispatched LLM validators** and nothing more. Step 8's mechanical checks — including `declared_set_closure` and `declared_scope_reconciliation`, which compute whether the declared set is COMPLETE — run unconditionally on every phase-4-plan invocation, with no knob and no predicate. A declared set may hint that re-checking is cheap; it may never carry the authority to decide that re-checking is unnecessary. See [`manage-tasks/scripts/_qgate_closure.py`](../manage-tasks/scripts/_qgate_closure.py) for what those checks compute, and `test_qgate_closure.py::test_closure_check_runs_under_the_surgical_scope_bypass_shape` for the adversarial guard that asserts a plan shaped exactly like this predicate is still checked.
 
 **B2 — Surgical q-gate-validation bypass (deterministic)**: When `q_gate_validation != off`, before signalling `qgate_validation_required: true`, evaluate the surgical-scope predicate:
 
