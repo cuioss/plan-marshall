@@ -88,16 +88,25 @@ that discloses it.
 test modules**, re-derived by running that exact command at the moment of this claim — so the full
 gate applies.
 
-**Per-commit gate.** `./pw quality-gate` ran before the one `*.py`-touching commit run 02 made
-(`f11e8b7`), read from the tools' own streamed output — the direct-`./pw` path emits no TOON log:
-`Success: no issues found in 414 source files` (mypy production), `All checks passed!` (ruff),
+**Per-commit gate.** `./pw quality-gate` ran before **each** of the two `*.py`-touching commits run 02
+made — `f11e8b7` (the round-4 fixes) and `8486214` (the reviewer-driven fix) — read from the tools' own
+streamed output, since the direct-`./pw` path emits no TOON log. Both runs reported
+`Success: no issues found in 414 source files` (mypy production), `All checks passed!` (ruff), and
 `>>> quality-gate: SPDX-header check passed`.
 
-**Branch gate — the final one, run undisturbed.** Run 01 declined to record its last `SUCCESS` as the
-gate because a verification sub-agent's mutation campaign was running on the same tree. Run 02's gate
-was taken with nothing else touching the tree: round 4 had reported and exited, its own mutation
-sweep had restored from snapshots and `git status --porcelain` was empty, and every fix was committed
-before the gate started.
+**Branch gate — run undisturbed.** Run 01 declined to record its last `SUCCESS` as the gate because a
+verification sub-agent's mutation campaign was running on the same tree. Run 02's gate was taken with
+nothing else touching the tree: round 4 had reported and exited, its own mutation sweep had restored
+from snapshots and `git status --porcelain` was empty, and every fix was committed before the gate
+started.
+
+⚠ **This gate measured `117d351`, not the final head.** The reviewer-driven fix `8486214` landed
+afterwards, so the local branch gate does **not** cover it. What covers it is (a) its own per-commit
+`./pw quality-gate`, (b) the targeted suite run (`test_qgate_closure.py`, 38 passed) plus the mutation
+check that the new guard goes red against the raw conversion, and (c) the **CI `verify` run on the
+final head**, which is a required context and is what merge-gate condition 1 is read from. Stated
+rather than left implicit: re-running the full local gate after every review fix is not what makes the
+merge safe here — the required CI context on the exact head SHA is.
 
 | Sub-step | Result, read from the streamed output |
 |---|---|
@@ -251,7 +260,25 @@ _Pending the PR._
 
 ## Cost
 
-_Recorded before the merge gate._
+Each figure carries its population, because a bare number that merely looks comparable is worse than
+none.
+
+- **Tokens:** **not available to the agent in this session.** Stated plainly rather than estimated —
+  this cloud session exposes no usage counter to the agent, and a guessed figure would be indistinguishable
+  from a measured one in this table.
+- **Wall-clock:** run 02's first commit is `d898934` at **11:03:13 UTC** and its last pre-merge commit
+  is recorded in this report's final commit; the span across the run's committed work is derived from
+  `git log --date=iso-strict` at the moment of this claim. That measures **committed work**, not
+  session time: it excludes the state-derivation and rebase that preceded the first commit, and it
+  includes long unattended waits on CI and on a reviewer's rate window.
+- **Population:** what these figures count is **one interactive Claude Code cloud session** running one
+  plan under the standalone lane, as the harness counts it.
+
+⛔ **This is NOT comparable to a plan-marshall `metrics.toon` total.** A `metrics.toon` total counts the
+orchestrator-plus-agent dispatch tree under plan-marshall's own per-task billing boundary. A single
+interactive cloud session does not share that boundary — this run's sub-agent dispatches (one
+verification round) and its own main-loop work fall under no such ledger. The two cannot be made
+comparable here, so no parity is implied.
 
 ## Contract check (Step 9)
 
