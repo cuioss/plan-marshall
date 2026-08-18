@@ -1,12 +1,14 @@
 # Gaps — 210-named-recovery-discards-operator-config
 
-**Source:** verification.md (same directory)   **Open items:** 4
+**Source:** verification.md (same directory)   **Open items:** 5
 
 ## G1 — Retire the destructive `git checkout -- .plan/marshal.json` recovery contract still pinned by the phase-2-refine test
 
 - **Kind:** incomplete-sweep
 - **Severity:** medium
-- **Where:** `test/plan-marshall/phase-2-refine/test_phase_2_refine_manage_config_readonly.py:11-13, 22-23, 215-275` — `test_marshal_json_restored_after_checkout`
+- **Where:** `test/plan-marshall/phase-2-refine/test_phase_2_refine_manage_config_readonly.py:12-13,
+  22-23, 215-275` (file is 275 lines) — `test_marshal_json_restored_after_checkout`, whose body quotes
+  the removed command at `:216`, `:219`, `:224`, `:259`
 - **What is wrong:** The plan removed the unconditional `git checkout -- .plan/marshal.json` recovery
   from all three workflow-doc sites, but this test file still states it as the live contract in four
   places: the module docstring (*"These tests pin both the mutation detection path and **the recovery
@@ -32,17 +34,24 @@
   `plan-marshall:plan-marshall/workflow/planning.md` § "Named recovery case — `.plan/marshal.json`" as
   the authority. If the checkout-restores-clean-state assertion is judged worth keeping at all, it must
   be re-titled and re-documented as a git-semantics fact, never as "the orchestrator recovery command".
-- **Done when:** `git grep -n "checkout -- .plan/marshal.json" -- test/` returns no line that presents
-  the command as the orchestrator's recovery path, and the phase-2-refine test module's docstring names
-  inspection-plus-disposition as the recovery contract.
+- **Done when:** the symbol `test_marshal_json_restored_after_checkout` no longer exists anywhere under
+  `test/plan-marshall/phase-2-refine/`; the strings `the recovery path` and
+  `post-refine orchestrator runs` no longer appear in
+  `test_phase_2_refine_manage_config_readonly.py` attached to a `git checkout --` instruction; the
+  module docstring's numbered test list names `git diff -- .plan/marshal.json` and cross-references
+  `plan-marshall:plan-marshall/workflow/planning.md` § "Named recovery case — `.plan/marshal.json`";
+  and
+  `uv run python -m pytest test/plan-marshall/phase-2-refine/test_phase_2_refine_manage_config_readonly.py -o addopts=""`
+  passes.
 - **Module/topic:** `plan-marshall` bundle — `phase-2-refine` tests / named-recovery contract
 
 ## G2 — Make the D2 single-authority guard detect a restatement, not just a duplicated literal
 
 - **Kind:** vacuous-test
 - **Severity:** high
-- **Where:** `test/plan-marshall/plan-marshall/test_named_recovery_marshal_config.py:113-116` —
-  `_references_authority`, consumed by `test_named_recovery_contract_is_a_single_authority:189-196`
+- **Where:** `test/plan-marshall/plan-marshall/test_named_recovery_marshal_config.py:118-120` —
+  `_references_authority` (`:112-115` is `_is_authority`, the other half of the guard), consumed at
+  `:196` inside `test_named_recovery_contract_is_a_single_authority` (`:180-200`)
 - **What is wrong:** `_references_authority(text)` returns
   `'planning.md' in low and 'named recovery' in low`. Every derived region begins with the heading
   `**Named recovery case — \`.plan/marshal.json\`**`, so the second clause is true by construction, and
@@ -73,10 +82,11 @@
 ## G3 — Assert that EVERY derived named-recovery region is inspection-first, not just the three known ones
 
 - **Kind:** missing-test
-- **Severity:** medium
-- **Where:** `test/plan-marshall/plan-marshall/test_named_recovery_marshal_config.py:64-66`
-  (`_UNCONDITIONAL_DISCARD`), `:123-142` (`test_named_recovery_never_instructs_unconditional_discard`),
-  `:145-179` (`test_named_recovery_inspection_first_population_nonempty_and_covers_known_members`)
+- **Severity:** high
+- **Where:** `test/plan-marshall/plan-marshall/test_named_recovery_marshal_config.py:66`
+  (`_UNCONDITIONAL_DISCARD`), `:99-109` (`_is_inspection_first`), `:123-141`
+  (`test_named_recovery_never_instructs_unconditional_discard`), `:144-177`
+  (`test_named_recovery_inspection_first_population_nonempty_and_covers_known_members`)
 - **What is wrong:** The offender predicate requires the literal prefix
   `Recovery:\s*git checkout -- \.plan/marshal\.json`, and the "always safe" predicate requires the
   literal `always safe` / `always a spurious`. D3(b) then asserts only that the *known* members
@@ -84,8 +94,17 @@
   *every* derived region is. Evaluating the three predicates against a synthetic fourth boundary that
   reads *"restore it from HEAD with `git checkout -- .plan/marshal.json`. `marshal.json` is never an
   execute-phase output artifact, so the dirty state is a spurious write with no phase work to lose."*
-  yields: offender = `False`, authority = `False`, references-authority = `True` — invisible to all
-  three tests. This contradicts the file's own docstring (*"so a new phase boundary that adds such a
+  yields offender = `False` and authority = `False`. Whether **all three** tests miss it turns on one
+  further detail, established live by writing the block into a fourth file inside the swept directory
+  and running the real test file (not by reading the predicates). A block carrying **no**
+  `planning.md` mention is *caught*: `_references_authority` returns `False` and
+  `test_named_recovery_contract_is_a_single_authority` fails by name
+  (`… restates the named-recovery contract instead of referencing the single authority`). A block
+  carrying the **standard cross-reference bullet that every real reference site already carries**
+  (`` - `plan-marshall:plan-marshall/workflow/planning.md` § "Named recovery case — `.plan/marshal.json`" ``)
+  returns `_references_authority == True`, and the injected destructive site then passes **3 of 3**.
+  That second variant is the realistic shape — it is what a maintainer copying an existing reference
+  block would produce — and it is invisible to all three tests. This contradicts the file's own docstring (*"so a new phase boundary that adds such a
   block is covered automatically"*) and report-01.md's *"a future fourth boundary is covered
   automatically"*.
 - **Why it matters:** D0's whole point is that the three sites were a sample. The regression guard
@@ -98,16 +117,25 @@
   `git checkout -- .plan/marshal.json` / `git restore … .plan/marshal.json` occurrence that is **not**
   inside a sentence warning against it (e.g. exclude a region only when the same region also satisfies
   `_is_inspection_first`), so the authority's own cautionary mention at `planning.md:392` still passes.
-- **Done when:** adding a reworded destructive named-recovery block (no `Recovery:` prefix, no
-  "always safe") at any workflow doc makes the test file fail, and the unmodified tree still passes.
+- **Done when:** adding, at any file under
+  `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/`, a named-recovery block that
+  (i) instructs `git checkout -- .plan/marshal.json` without the literal `Recovery:` prefix,
+  (ii) carries no `always safe` / `always a spurious` wording, **and** (iii) carries the standard
+  `` `plan-marshall:plan-marshall/workflow/planning.md` § "Named recovery case …" `` cross-reference
+  bullet — the variant that passes 3 of 3 today — makes
+  `test_named_recovery_never_instructs_unconditional_discard` fail and name that block in its
+  offender list, while the unmodified tree still passes 3 of 3. (The weaker form of this condition —
+  a block *without* the cross-reference bullet — is already met today, via
+  `test_named_recovery_contract_is_a_single_authority`, so it does not discriminate.)
 - **Module/topic:** `plan-marshall` bundle — named-recovery regression tests
 
 ## G4 — Tighten the authority's premise citation in planning.md
 
 - **Kind:** doc-drift
 - **Severity:** low
-- **Where:** `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/planning.md:390` and its
-  first cross-reference bullet
+- **Where:** `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/planning.md:390` (the
+  premise sentence) and its `**Cross-references**` block at `:408-412`, whose first two bullets cite
+  `phase-2-refine` § Allowed write paths and § Prohibited actions and nothing else
 - **What is wrong:** Two imprecisions in the sentence that carries the whole non-output premise.
   (a) It asserts *"no planning phase (2-refine, 3-outline, 4-plan) may mutate project configuration"*
   but cites only `plan-marshall:phase-2-refine` § Enforcement → Prohibited actions, whose
@@ -131,3 +159,84 @@
   states the prohibition for that phase, and the write-confinement clause matches
   `phase-2-refine/SKILL.md` § Allowed write paths.
 - **Module/topic:** `plan-marshall` bundle — `skills/plan-marshall/workflow/planning.md`
+
+## G5 — The layer-D recovery loop still routes a dirty tracked `.plan/marshal.json` to `git checkout --` as "the typical case"
+
+- **Kind:** incomplete-sweep
+- **Severity:** high
+- **Where:** `marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md:217-225`
+  — § "Recovery Loop" (the destructive instruction is at `:223`), plus the § "Granularity Trade-Off"
+  bullet at `:212` that states the same recovery, and § "Filter Rule" at `:229-231` which is what puts
+  `.plan/marshal.json` into the payload the loop acts on
+- **What is wrong:** D0 concluded *"No fourth site of this assertion shape exists in the documentation
+  or script surface"* (report-01.md § D0), and verification.md's D0 row repeated *"Independent shape
+  sweep over `marketplace/**`, `doc/**`, `*.py` found no fourth doc site"*. **A fourth site exists**, on
+  the declared `marketplace/bundles/**` surface. § "Recovery Loop" tells the reader, when
+  `phase_handshake verify --strict` fails with `error: main_checkout_dirtied_during_plan`:
+
+  > 2. **Decide per-path: revert or relocate.**
+  >    - *Revert* — when the change was unintended (typical case): `git -C {main_checkout} checkout -- {path}` to drop the dirty state.
+
+  and at `:212`, *"the operator must revert the leaked main-checkout changes (or move them into the
+  worktree branch)"*. The inspection step the loop does carry (`:221` — *"Inspect `newly_dirty[]`. The
+  payload lists the exact **paths**"*) surfaces a path list, never the diff, so nothing in the loop lets
+  the reader tell **who wrote the file** or whether the edit was intended — the exact inference gap this
+  plan exists to close. And the same document's § "Filter Rule: `.plan/` Paths Are Excluded Only When
+  Untracked" (`:231`) names `marshal.json` explicitly as one of the git-**tracked** `.plan/` files that
+  *"is a real leak into the main checkout and is retained"* — so `.plan/marshal.json` is precisely a
+  path that reaches `newly_dirty[]` and is then routed to `git checkout --` under the label
+  *"typical case"*.
+- **Why it matters:** The plan's Goal is *"the recovery path for a dirty `marshal.json` requires
+  inspection and an explicit disposition, not an unconditional discard."* For this path the Goal is not
+  met: the doc presumes unintendedness as the typical case, from a guard that establishes only that the
+  path became dirty between two boundaries. The document is agent-facing, not merely operator-facing —
+  `execute-task/SKILL.md:40` and `phase-5-execute/SKILL.md:55` both direct the reader to it. The site
+  fell between two sweeps: 210 swept only `skills/plan-marshall/workflow/*.md`, while sibling plan 140
+  (`fb41f014`) touched this same bundle (`workflow-integration-git/SKILL.md`, `git-workflow.py`) but not
+  `standards/worktree-handling.md`. It also undercuts report-01.md's basis for declaring the two
+  surfaces disjoint — they share a bundle, and this doc is the shared residue.
+- **Fix:** In `worktree-handling.md` § "Recovery Loop": (a) change step 1 so it surfaces content, not
+  only paths — add `git -C {main_checkout} diff -- {path}` for each path in `newly_dirty[]`; (b) delete
+  the parenthetical `(typical case)` from the *Revert* bullet at `:223` and replace it with the
+  disposition requirement — a revert happens only on an explicit operator decision for that one path;
+  (c) add the irrecoverability caveat in the wording the authority already uses at `planning.md:392`
+  (`git checkout --` destroys uncommitted, unstaged content with no undo — no reflog and no `git fsck`
+  recovers a worktree file); (d) add a cross-reference to
+  `plan-marshall:plan-marshall/workflow/planning.md` § "Named recovery case — `.plan/marshal.json`" as
+  the single authority, and name `.plan/marshal.json` as the highest-risk member of `newly_dirty[]`
+  given § "Filter Rule". Amend the § "Granularity Trade-Off" bullet at `:212` to match. Then extend the
+  regression surface: either widen `_derive_named_recovery_regions`
+  (`test/plan-marshall/plan-marshall/test_named_recovery_marshal_config.py:69-87`) to sweep
+  `workflow-integration-git/standards/*.md` as well, or add a sibling assertion over
+  `worktree-handling.md`.
+- **Done when:** `worktree-handling.md` contains no `(typical case)` qualifier on a `checkout --`
+  instruction; § "Recovery Loop" step 1 names a concrete `git diff` command; § "Recovery Loop" carries
+  the irrecoverability caveat and a cross-reference to `planning.md` § "Named recovery case —
+  `.plan/marshal.json`"; and a test asserts that no `git checkout --` / `git restore` instruction in
+  `marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/worktree-handling.md`
+  stands without an inspection-plus-operator-disposition qualifier in the same section — that test seen
+  red against today's text and green after.
+- **Module/topic:** `plan-marshall` bundle — `workflow-integration-git` / named-recovery contract
+
+## Refuted during adversarial review
+
+No gap was refuted in whole — G1, G2 and G4 were re-verified from the tree and stand as filed, and G3's
+substance stands. Three **sub-claims** were refuted and are recorded here rather than dropped, because
+the next reader needs to know they were tested and failed.
+
+- **G3's stated predicate evaluation — refuted.** G3 asserted that the synthetic fourth boundary it
+  quotes yields `references-authority = True` and is therefore *"invisible to all three tests"*. Running
+  the real test file against that block, written as a fourth `.md` file in the swept directory, gives
+  **1 failed, 2 passed**: `_references_authority` returns `False` (the quoted text contains no
+  `planning.md` mention) and `test_named_recovery_contract_is_a_single_authority` names the block. The
+  gap survives only in its cross-referencing variant, which was verified separately to pass 3 of 3;
+  G3's § "What is wrong" and § "Done when" were rewritten to say so, since the original Done-when was
+  already satisfied by the unmodified tree.
+- **verification.md § Method, "Synthetic fourth-site check … no test flags it" — refuted**, for the same
+  reason and by the same run. The bullet was corrected in place.
+- **verification.md § Deliverable table, D0 row, "Hit count re-derived: 51 matching lines in 34 files" —
+  not reproducible.** Re-running the union of the six pattern families report-01.md § D0 lists gives 68
+  lines in 45 files excluding `doc/plans/`, and 134 lines in 62 files including it. Neither is 51/34, so
+  the figure depends on an unstated pattern set and is a sample, not a derivation. The row now carries a
+  figure with its pattern stated. This does not disturb the report's *"several dozen"* characterisation,
+  which every one of these unions supports.
