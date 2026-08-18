@@ -21,7 +21,10 @@ plannable and validation-gated work, and the dependency/concurrency contract.
   against them.
 - [`reference/coupling-inventory.md`](reference/coupling-inventory.md) — the registry of open
   Claude couplings, by placement home. The plans' deliverables are drawn from it; it shrinks as
-  they land.
+  they land. **Every plan that removes a coupling retires its rows in that same plan**, by the
+  re-derivation test in the inventory's own
+  [§ Closing a row](reference/coupling-inventory.md#closing-a-row) — a row is retired because the
+  coupling is gone from the tree, never because a plan claiming it merged.
 - [`reference/opencode-validation-protocol.md`](reference/opencode-validation-protocol.md) — the
   live-runtime runbook (exact commands, expected observations, pass/fail criteria) for the first
   execution on a real OpenCode install, plus the post-validation work that becomes plannable once

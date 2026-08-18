@@ -26,6 +26,7 @@ All methods return a serialized TOON string via the helpers in runtime_base.
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from runtime_base import Runtime, toon_error, toon_noop, toon_success
@@ -99,14 +100,19 @@ class OpenCodeRuntime(Runtime):
     def project_install_hook(
         self,
         target: str,
-        overwrite_statusline: bool = False,
-        overwrite_env_disable: bool = False,
+        overwrite: Sequence[str] = (),
         enforcement: bool = False,
     ) -> str:
-        """No-op: OpenCode has no Claude-style SessionStart settings hook."""
+        """No-op: OpenCode exposes no session/display integration to wire.
+
+        The decline is honest rather than a stub: OpenCode offers no hook channel
+        at all (issue anomalyco/opencode#8619), so there is no configuration to
+        write and no conflict an ``overwrite`` key could resolve. Declining every
+        invocation — both install modes, any key set — is the whole behaviour.
+        """
         return toon_noop(
             "project install-hook",
-            "OpenCode has no Claude-style SessionStart settings hook to install"
+            "OpenCode exposes no session/display hook channel to wire"
             " (issue anomalyco/opencode#8619)",
             "Use OpenCode's built-in session mechanism for plan visibility",
         )
@@ -186,7 +192,13 @@ class OpenCodeRuntime(Runtime):
     # ------------------------------------------------------------------
 
     def session_capture(self, plan_id: str) -> str:
-        """No-op: OpenCode does not expose a platform session id."""
+        """No-op: OpenCode does not expose a platform session id.
+
+        This is the ABC's "exposes no session identifier at all" case, not its
+        "ought to be reachable but is not" case: there is no wiring that could
+        supply one (upstream issue #9292), so the decline is ``no-op`` rather
+        than ``hook_not_configured``.
+        """
         return toon_noop(
             "session capture",
             "OpenCode does not expose a platform-provided session id to the shell;"
@@ -437,8 +449,25 @@ class OpenCodeRuntime(Runtime):
     ) -> str:
         """Record token consumption for OpenCode.
 
-        When ``total_tokens`` is provided, stores it directly and succeeds.
-        Without it, returns ``no-op`` because OpenCode has no session transcript.
+        OpenCode exposes no session transcript, so there is nothing to sum.
+        Without ``total_tokens`` the op returns ``no-op``.
+
+        With ``total_tokens`` it returns ``success`` carrying the count — but it
+        **does NOT persist it**. This method reaches no metrics boundary: unlike
+        the Claude implementation, which writes the token cursor and calls
+        ``manage-metrics end-phase`` before reporting success, this one only
+        builds a payload. An operator who passes ``--total-tokens`` here is told
+        the capture succeeded and the number is not recorded anywhere.
+
+        That is a known defect, left as a characterised survivor rather than
+        fixed here: the persistence boundary is target-neutral (it shells out to
+        ``plan-marshall:manage-metrics``) but currently lives in
+        ``claude_runtime``, so wiring it up means relocating a helper across the
+        target boundary — the opposite of a docstring fix, and a change this
+        module should not make on its own. Bound: fires only when a caller passes
+        an explicit count on an OpenCode project, and OpenCode is not a tested
+        runtime. Do not "fix" this by deleting the paragraph; the sentence it
+        replaced claimed the value was stored, which was the actual defect.
         """
         if total_tokens is None:
             return toon_noop(
@@ -498,7 +527,9 @@ class OpenCodeRuntime(Runtime):
     ) -> str:
         """Return OpenCode subagent invocation parameters.
 
-        Uses ``task`` (lowercase) as the OpenCode native tool name.
+        Uses ``task`` (lowercase) as the OpenCode native tool name, and echoes
+        the REQUESTED *agent* back as ``subagent_type`` so the caller's
+        selection reaches the invocation instead of being discarded.
         """
         import pathlib
 
@@ -532,7 +563,7 @@ class OpenCodeRuntime(Runtime):
                     "tool": "task",
                     "description": f"Run {agent}",
                     "prompt": prompt_body,
-                    "subagent_type": "execution-context-level-3",
+                    "subagent_type": agent,
                 },
             },
         )

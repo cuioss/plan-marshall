@@ -109,6 +109,15 @@ CLAUDE_DIR = '.claude'
 # fallback root used when no runtime is resolvable.
 PLUGIN_CACHE_SUBPATH = 'plugins/cache/plan-marshall'
 
+# Fallback ``runtime.target`` identifier used when no target can be read from
+# ``marshal.json`` (file absent, unreadable, or carrying no ``runtime.target``).
+# Every fallback return in ``_read_runtime_target()`` reads THIS constant rather
+# than repeating the literal, so the module has one place to change. It is held
+# equal to ``platform_runtime._DEFAULT_TARGET`` by a lockstep test — the two
+# modules resolve the same default independently, and a silent divergence would
+# route this module's layout lookups at a different target than the router's.
+_DEFAULT_RUNTIME_TARGET = 'claude'
+
 # Fallback project-local-skill root used when the platform-runtime layout op
 # cannot be reached (no marshal.json, no marketplace tree, import failure).
 # This is the Claude default — every supported environment that lacks a
@@ -144,8 +153,9 @@ _BUNDLE_CACHE_ROOTS_CACHE: tuple[str, ...] | None = None
 def _read_runtime_target() -> str:
     """Read ``runtime.target`` from the nearest ``.plan/marshal.json``.
 
-    Walks up from the current working directory; returns ``"claude"`` when the
-    file is absent or malformed (every runtime-less environment is Claude).
+    Walks up from the current working directory; returns
+    ``_DEFAULT_RUNTIME_TARGET`` when the file is absent or malformed (every
+    runtime-less environment runs the default target).
     """
     cwd = Path.cwd().resolve()
     for parent in (cwd, *cwd.parents):
@@ -154,15 +164,15 @@ def _read_runtime_target() -> str:
             try:
                 data = json.loads(candidate.read_text(encoding='utf-8'))
             except (OSError, ValueError):
-                return 'claude'
+                return _DEFAULT_RUNTIME_TARGET
             if isinstance(data, dict):
                 runtime = data.get('runtime')
                 if isinstance(runtime, dict):
                     target = runtime.get('target')
                     if isinstance(target, str) and target:
                         return target
-            return 'claude'
-    return 'claude'
+            return _DEFAULT_RUNTIME_TARGET
+    return _DEFAULT_RUNTIME_TARGET
 
 
 def _find_skills_root() -> Path | None:
@@ -184,10 +194,12 @@ def _invoke_layout_op(target: str, method_name: str = 'layout_skill_roots') -> t
     """Call a platform-runtime layout op for ``target`` and parse its ``roots``.
 
     Imports the platform-runtime scripts in-process (no executor dependency),
-    instantiates the target's ``Runtime`` subclass, calls the op named by
-    ``method_name`` (``layout_skill_roots`` or ``layout_bundle_cache_root``),
-    and parses the ``roots`` list out of the op's TOON. Returns ``None`` on any
-    resolution failure so the caller can fall back to the Claude default.
+    instantiates the target's ``Runtime`` subclass **through the router's own
+    registration block** so this module never names a runtime class or
+    enumerates targets, calls the op named by ``method_name``
+    (``layout_skill_roots`` or ``layout_bundle_cache_root``), and parses the
+    ``roots`` list out of the op's TOON. Returns ``None`` on any resolution
+    failure so the caller can fall back to the module's default roots.
     """
     skills_root = _find_skills_root()
     if skills_root is None:
@@ -199,16 +211,20 @@ def _invoke_layout_op(target: str, method_name: str = 'layout_skill_roots') -> t
             sys.path.append(lib_dir)
 
     try:
+        from platform_runtime import _make_runtime
         from toon_parser import parse_toon
 
-        if target == 'opencode':
-            from opencode_runtime import OpenCodeRuntime
-
-            runtime: Any = OpenCodeRuntime()
-        else:
-            from claude_runtime import ClaudeRuntime
-
-            runtime = ClaudeRuntime()
+        # An unregistered target resolves to the default target's runtime. This
+        # is deliberately NOT what the router does — the router rejects an
+        # unregistered target with ``unknown_target`` and stops — because a
+        # layout lookup has no error channel: its callers get a root list or this
+        # module's own default, nothing else. Resolving the default runtime here
+        # yields the same roots that default carries (pinned by the lockstep
+        # test), so the two paths agree on the ANSWER while differing in how they
+        # reach it. The router reads ``_DEFAULT_TARGET`` in its OWN fallback
+        # situations — an omitted ``--target``, and a marshal.json that is absent
+        # or carries no ``runtime.target`` — none of which is this one.
+        runtime: Any = _make_runtime(target) or _make_runtime(_DEFAULT_RUNTIME_TARGET)
         parsed = parse_toon(getattr(runtime, method_name)())
     except Exception:
         return None
@@ -229,8 +245,10 @@ def get_project_skill_roots() -> tuple[str, ...]:
     marketplace tree, or an import failure) so build/test environments without a
     configured runtime keep working.
 
-    The returned roots are relative project-local paths (or ``~``-anchored
-    user-global paths on OpenCode); callers resolve each against the relevant
+    The returned roots are typically relative project-local paths (or
+    ``~``-anchored user-global paths on OpenCode), but a target with a
+    configuration-directory override derives a root beneath it and returns that,
+    so a caller must assume neither form. Callers resolve each against the relevant
     base directory and probe in list order (first match wins).
     """
     global _SKILL_ROOTS_CACHE
@@ -251,8 +269,10 @@ def get_bundle_cache_roots() -> tuple[str, ...]:
     ``~``-anchored user-global skill roots (OpenCode has no separate plugin
     cache). Falls back to the Claude default when no runtime is resolvable.
 
-    The returned roots are absolute (``~``-expanded) paths; callers probe in
-    list order (first existing match wins).
+    Callers probe the returned roots in list order (first existing match wins),
+    expanding ``~`` in each. They are normally absolute, but a target with a
+    configuration-directory override derives a root beneath it and returns that,
+    so a caller must not assume absoluteness.
     """
     global _BUNDLE_CACHE_ROOTS_CACHE
     if _BUNDLE_CACHE_ROOTS_CACHE is not None:

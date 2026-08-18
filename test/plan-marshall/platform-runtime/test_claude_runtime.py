@@ -486,8 +486,8 @@ class TestInstallTerminalTitleHooks:
     statusLine plus env entry; (b) re-running is idempotent; (c) existing
     statusLine with a different command yields already_present_other; (d)
     existing env.CLAUDE_CODE_DISABLE_TERMINAL_TITLE with a different value
-    yields already_present_other; (e) --overwrite-statusline /
-    --overwrite-env-disable flags overwrite; (f) existing claude_hook
+    yields already_present_other; (e) the 'statusline' / 'env-disable'
+    overwrite keys overwrite; (f) existing claude_hook
     SessionStart entry is preserved.
     """
 
@@ -966,33 +966,33 @@ class TestInstallTerminalTitleHooks:
         assert settings["env"]["CLAUDE_CODE_DISABLE_TERMINAL_TITLE"] == "0"
 
     # ------------------------------------------------------------------
-    # (e) --overwrite-statusline / --overwrite-env-disable replace foreign values.
+    # (e) The 'statusline' / 'env-disable' overwrite keys replace foreign values.
     # ------------------------------------------------------------------
 
-    def test_overwrite_statusline_flag_replaces_foreign_command(self, rt, tmp_path):
-        """overwrite_statusline=True replaces a foreign statusLine command with ours."""
+    def test_overwrite_statusline_key_replaces_foreign_command(self, rt, tmp_path):
+        """The 'statusline' overwrite key replaces a foreign statusLine command with ours."""
         target = tmp_path / ".claude" / "settings.local.json"
         target.parent.mkdir(parents=True)
         existing = {"statusLine": {"type": "command", "command": "echo hello-world"}}
         target.write_text(json.dumps(existing), encoding="utf-8")
 
         result = _parsed(
-            rt.project_install_hook(str(target), overwrite_statusline=True)
+            rt.project_install_hook(str(target), overwrite=("statusline",))
         )
         assert result["statusLine_status"] == "overwritten"
 
         settings = json.loads(target.read_text())
         assert settings["statusLine"]["command"] == _STATUSLINE_COMMAND
 
-    def test_overwrite_env_disable_flag_replaces_foreign_value(self, rt, tmp_path):
-        """overwrite_env_disable=True replaces a foreign env value with '1'."""
+    def test_overwrite_env_disable_key_replaces_foreign_value(self, rt, tmp_path):
+        """The 'env-disable' overwrite key replaces a foreign env value with '1'."""
         target = tmp_path / ".claude" / "settings.local.json"
         target.parent.mkdir(parents=True)
         existing = {"env": {"CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "0"}}
         target.write_text(json.dumps(existing), encoding="utf-8")
 
         result = _parsed(
-            rt.project_install_hook(str(target), overwrite_env_disable=True)
+            rt.project_install_hook(str(target), overwrite=("env-disable",))
         )
         assert result["env_status"] == "overwritten"
 
@@ -1142,6 +1142,44 @@ class TestInstallTerminalTitleHooks:
             assert result["error"] == "unknown_target", f"target={invalid!r}: {result}"
             # No stray file ever created.
             assert not (tmp_path / invalid).exists()
+
+    @pytest.mark.parametrize(
+        "keys",
+        [
+            ("bogus",),
+            ("overwrite-statusline",),
+            ("statusline", "bogus"),
+            ("statusLine",),
+        ],
+        ids=["unknown", "old-flag-spelling", "one-valid-one-not", "wrong-case"],
+    )
+    def test_unrecognised_overwrite_key_rejected_before_any_write(self, rt, tmp_path, keys):
+        """An overwrite key outside the target's key set is rejected, and nothing is written.
+
+        Silently ignoring a typo would read as "do not overwrite" — the caller
+        asked to overwrite and would be told the conflict was preserved, which is
+        the wrong answer rather than a missing one. The rejection precedes path
+        resolution, so no settings file is created or modified.
+        """
+        target = tmp_path / ".claude" / "settings.local.json"
+        target.parent.mkdir(parents=True)
+
+        result = _parsed(rt.project_install_hook(str(target), overwrite=keys))
+
+        assert result["status"] == "error"
+        assert result["error"] == "unknown_overwrite_key"
+        assert not target.exists()
+
+    def test_recognised_overwrite_keys_are_accepted(self, rt, tmp_path):
+        """Both of the target's documented overwrite keys pass validation together."""
+        target = tmp_path / ".claude" / "settings.local.json"
+        target.parent.mkdir(parents=True)
+
+        result = _parsed(
+            rt.project_install_hook(str(target), overwrite=("statusline", "env-disable"))
+        )
+
+        assert result["status"] == "success"
 
 
 # =============================================================================

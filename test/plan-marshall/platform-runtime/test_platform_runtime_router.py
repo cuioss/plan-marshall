@@ -505,31 +505,40 @@ class TestDispatch:
     # ---- project install-hook -------------------------------------------------
 
     def test_dispatch_project_install_hook(self, rt):
-        """project install-hook forwards --target and overwrite flags to runtime.project_install_hook."""
-        _dispatch(rt, "project install-hook", ["--target", ".claude/settings.local.json"])
+        """project install-hook forwards the target id, with no overwrite key authorised."""
+        _dispatch(rt, "project install-hook", ["--target", "claude"])
         rt.project_install_hook.assert_called_once_with(
-            ".claude/settings.local.json",
-            overwrite_statusline=False,
-            overwrite_env_disable=False,
+            "claude",
+            overwrite=(),
             enforcement=False,
         )
 
-    def test_dispatch_project_install_hook_with_overwrite_flags(self, rt):
-        """project install-hook forwards both overwrite flags when supplied."""
+    def test_dispatch_project_install_hook_with_overwrite_keys(self, rt):
+        """Repeated --overwrite accumulates into the overwrite key tuple, in order."""
         _dispatch(
             rt,
             "project install-hook",
             [
                 "--target",
-                ".claude/settings.local.json",
-                "--overwrite-statusline",
-                "--overwrite-env-disable",
+                "claude",
+                "--overwrite",
+                "statusline",
+                "--overwrite",
+                "env-disable",
             ],
         )
         rt.project_install_hook.assert_called_once_with(
-            ".claude/settings.local.json",
-            overwrite_statusline=True,
-            overwrite_env_disable=True,
+            "claude",
+            overwrite=("statusline", "env-disable"),
+            enforcement=False,
+        )
+
+    def test_dispatch_project_install_hook_forwards_unknown_overwrite_key(self, rt):
+        """The router does not validate overwrite keys — the target owns the key set."""
+        _dispatch(rt, "project install-hook", ["--target", "claude", "--overwrite", "bogus"])
+        rt.project_install_hook.assert_called_once_with(
+            "claude",
+            overwrite=("bogus",),
             enforcement=False,
         )
 
@@ -538,12 +547,11 @@ class TestDispatch:
         _dispatch(
             rt,
             "project install-hook",
-            ["--target", ".claude/settings.local.json", "--enforcement"],
+            ["--target", "claude", "--enforcement"],
         )
         rt.project_install_hook.assert_called_once_with(
-            ".claude/settings.local.json",
-            overwrite_statusline=False,
-            overwrite_env_disable=False,
+            "claude",
+            overwrite=(),
             enforcement=True,
         )
 
@@ -885,6 +893,75 @@ class TestMain:
         parsed = _parsed(captured.out)
         assert parsed["status"] == "success"
         rt.session_render_title.assert_called_once()
+
+    # ---- project install-hook: the two-target-identifier seam ----------------
+    #
+    # ``install-hook`` takes a target identifier as an argument while the runtime
+    # serving it is selected independently from marshal.json. When the two
+    # disagree the request cannot be honoured, and BOTH pre-guard outcomes were
+    # wrong answers rather than refusals: opencode-serving-claude declined without
+    # reading the argument ("OpenCode has no hook channel" — a true sentence about
+    # the wrong question), and claude-serving-opencode raised ``unknown_target``
+    # ("must be 'claude' or an absolute path" — an error about the wrong thing).
+
+    def test_install_hook_refuses_a_registered_target_other_than_the_projects(
+        self, tmp_path, capsys, in_tmp_cwd
+    ):
+        """An opencode project asked to install the claude hook is refused, not declined."""
+        _make_marshal_file(tmp_path, "opencode")
+        with patch("platform_runtime._make_runtime") as mock_make:
+            rt = _mock_runtime()
+            mock_make.return_value = rt
+            code = main(["project", "install-hook", "--target", "claude"])
+        assert code == 0
+        parsed = _parsed(capsys.readouterr().out)
+        assert parsed["status"] == "error"
+        assert parsed["error"] == "target_mismatch"
+        # The refusal must happen BEFORE dispatch: reaching the runtime at all is
+        # what produced the misleading no-op this guard exists to prevent.
+        rt.project_install_hook.assert_not_called()
+
+    def test_install_hook_refuses_the_inverse_mismatch_too(
+        self, tmp_path, capsys, in_tmp_cwd
+    ):
+        """The guard is symmetric — a claude project asked for opencode is refused."""
+        _make_marshal_file(tmp_path, "claude")
+        with patch("platform_runtime._make_runtime") as mock_make:
+            rt = _mock_runtime()
+            mock_make.return_value = rt
+            code = main(["project", "install-hook", "--target", "opencode"])
+        assert code == 0
+        parsed = _parsed(capsys.readouterr().out)
+        assert parsed["status"] == "error"
+        assert parsed["error"] == "target_mismatch"
+        rt.project_install_hook.assert_not_called()
+
+    def test_install_hook_allows_the_projects_own_target(
+        self, tmp_path, capsys, in_tmp_cwd
+    ):
+        """Agreement is the ordinary path and must still dispatch."""
+        _make_marshal_file(tmp_path, "claude")
+        with patch("platform_runtime._make_runtime") as mock_make:
+            rt = _mock_runtime()
+            mock_make.return_value = rt
+            code = main(["project", "install-hook", "--target", "claude"])
+        assert code == 0
+        rt.project_install_hook.assert_called_once()
+
+    def test_install_hook_still_passes_an_absolute_settings_path_through(
+        self, tmp_path, capsys, in_tmp_cwd
+    ):
+        """The absolute-path test/recovery override is NOT a registry key, so it is
+        not a mismatch and must still reach the implementation that defines it."""
+        _make_marshal_file(tmp_path, "claude")
+        override = str(tmp_path / "settings.local.json")
+        with patch("platform_runtime._make_runtime") as mock_make:
+            rt = _mock_runtime()
+            mock_make.return_value = rt
+            code = main(["project", "install-hook", "--target", override])
+        assert code == 0
+        rt.project_install_hook.assert_called_once()
+        assert rt.project_install_hook.call_args.args[0] == override
 
     def test_main_project_initial_setup_without_marshal_uses_target_arg(self, tmp_path, capsys, in_tmp_cwd):
         """project initial-setup can run before marshal.json exists; uses --target arg."""
