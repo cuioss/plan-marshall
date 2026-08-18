@@ -495,6 +495,62 @@ The plan's own note that "the mechanism above supersedes the need for it" is wha
 the defect was reproduced from the resolver's behaviour under a pinned directory, which needs no
 containment argument.
 
+### The stop record
+
+⛔ **The loop ended on exit (ii): the round budget was exhausted.** It did **not** end on a verifier
+answering that nothing remains. Round 4 answered the stop question **"yes — findings remain that
+condition A forbids leaving open"**, and judged that the recurring n−1-of-n pattern *"produced findings
+in this round and has not stopped."* That answer is recorded as given.
+
+- **Budget: 4 rounds, declared before the first dispatch.** The plan named none, so the run declared
+  it — up front, not at the moment of wanting to stop.
+- **The round that ended it: round 4**, by exhaustion.
+- **Everything condition A forbids was fixed regardless**, as the budget exit requires: all 9 of round
+  4's findings are fixed in commit `190910a`, including the two HIGH ones and F37, which had made D4 a
+  no-op for its own reader. Running out of rounds bounds how often the run *verifies*; it never bounds
+  what it *fixes*.
+
+**Findings per round: 12, 7, 9, 9 — 37 in total, every one fixed, none deferred.** The count did not
+fall. What changed is *what* the rounds found:
+
+| Round | Behavioural findings in shipped code | Condition-A false statements |
+|---|---|---|
+| 1 | 2 (a legitimate state refused; an unreachable handler) | 10 |
+| 2 | 0 | 7 |
+| 3 | 0 | 9 |
+| 4 | 1 (D4 unactionable by its reader) | 8 |
+
+**Are the late findings narrower? Partly — and the honest answer is not a clean yes.** Rounds 2 and 3
+found no behavioural defect in the shipped Python at all, and round 3's four campaigns (branch
+enumeration, a differential run against the merge base, a 4000-pair fuzz sweep, a targeted mutation)
+came back clean. But the D4 deliverable *is* prose, so "only prose findings" does not mean "only
+cosmetic findings": round 3's F20 inverted D4's verdict, and round 4's F37 showed D4 could not be
+applied at all. Those are deliverable-level, not narrow.
+
+**Condition-B survivors: one, and it is pre-existing.**
+
+| Survivor | Bound (b), and the promise it stays outside of |
+|---|---|
+| `TaskGraphInvalid` has no handler in `cmd_capture` **or** `cmd_verify`, so a broken task graph surfaces as `error: internal_error` rather than a structured `cycle` / `dangling` payload | **Reaches only** a plan whose task graph carries a cycle or a dangling `depends_on` at a phase boundary — the state the `task_graph_valid` invariant exists to block. **Fails closed at both verbs**: the raise precedes `_row_for_capture`/`upsert_row`, so no row is persisted, and `safe_main` exits 1. The promise it stays outside of is the plan's own goal — *"a self-contradictory record is refused at capture time rather than persisted"* — which it does not weaken: the record is still refused, and the boundary still blocks. The loss is confined to diagnostic shape. Confirmed absent at `origin/main`, so this run neither introduced nor widened it. Re-put to round 4, which ran the whole path and judged the bound "accurate and sufficient", recommending only that it be widened from `cmd_capture` to both verbs — done, in the code docstrings and here |
+
+**Residue a reader should assume remains.** The deliverables should be read as still carrying defects
+of the kind round 4 was finding, because the loop stopped on its budget rather than on exhaustion:
+
+- **Prose describing the deliverable, at sites the previous finding did not point at.** This is the
+  n−1-of-n pattern, and it produced findings in every round after the first — 2 of 7 in round 2, 5 of
+  9 in round 3, 3 of 9 in round 4. Round 4's instances were the report's own narrative of a rule it had
+  just fixed, a sibling docstring, and a *fourth* instance of a test premise two earlier rounds had
+  named. **Round 4's own fixes are unreviewed**, and are the most likely place for the next instance.
+- **Rule-versus-consumer mismatches that no round examined until late.** F31, F34 and F37 were all of
+  this kind — a documented rule whose stated inputs, available evidence, or reader did not match
+  reality. Three rounds passed over them.
+- **The code is the best-evidenced part of this change** and should not be read as carrying the same
+  residue: round 3's campaigns were clean, its commit is provably docstring-only by AST comparison,
+  round 4 re-derived D1's populations at HEAD, and `./pw verify` is green at every commit.
+
+One further independent pass is still owed and will happen outside this loop: the PR's automated
+reviewers see this diff (§ Reviewer participation).
+
 ## Reviewer participation
 
 _(Recorded after the PR is opened.)_

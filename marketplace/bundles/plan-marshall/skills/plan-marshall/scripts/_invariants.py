@@ -964,14 +964,15 @@ def _capture_task_graph_valid(plan_id: str, _metadata: dict[str, Any], _phase: s
     On failure raises :class:`TaskGraphInvalid`, which leaves no handshake row
     persisted and blocks the phase transition.
 
-    ⚠ **Unlike its four sibling capture-time exceptions, this one has no handler
-    in ``cmd_capture``**, so it is not converted into a structured
-    ``status: error`` payload with its ``cycle`` / ``dangling`` fields — it
-    propagates out of the verb and ``file_ops.safe_main`` renders it as
-    ``error: internal_error`` with exit 1. The boundary still fails closed (that
-    part of the outcome is unchanged), but the operator loses the structured
-    diagnosis. Pre-existing; noted here so the mechanism is not mistaken for the
-    handled path the siblings take.
+    ⚠ **Unlike its sibling capture-time exceptions, this one has no handler in
+    either ``cmd_capture`` or ``cmd_verify``**, so it is not converted into a
+    structured ``status: error`` payload with its ``cycle`` / ``dangling``
+    fields — it propagates out of whichever verb raised it and
+    ``file_ops.safe_main`` renders it as ``error: internal_error`` with exit 1.
+    The boundary still fails closed at both verbs (no row is persisted; the exit
+    is non-zero), so the only loss is the structured diagnosis. Pre-existing;
+    noted here so the mechanism is not mistaken for the handled path the
+    siblings take.
 
     Returns ``None`` if the tasks cannot be loaded (e.g. executor missing
     during a unit-test harness that doesn't provide the plan directory).
@@ -1876,8 +1877,8 @@ def capture_all(plan_id: str, metadata: dict[str, Any], phase: str) -> dict[str,
         BlockingFindingsPresent: when an actionable finding is pending at a
             boundary that blocks on findings.
         TaskGraphInvalid: when the task graph carries a cycle or a dangling
-            reference. Unhandled by ``cmd_capture`` — see
-            :func:`_capture_task_graph_valid`.
+            reference. Unhandled by ``cmd_capture`` and ``cmd_verify`` alike —
+            see :func:`_capture_task_graph_valid`.
         PrTitleMissing: when ``metadata.pr_title`` is absent from ``2-refine``
             onward.
         MainCaptureReadTheWorktree: when the ``main_*`` columns were read from
