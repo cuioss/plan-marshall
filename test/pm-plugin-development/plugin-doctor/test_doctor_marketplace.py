@@ -31,10 +31,9 @@ from pathlib import Path
 import pytest
 from toon_parser import parse_toon
 
-from conftest import get_script_path, get_scripts_dir, load_script_module, run_script
+from conftest import PROJECT_ROOT, get_script_path, get_scripts_dir, load_script_module, run_script
 
 # Script under test
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', 'doctor-marketplace.py')
 MARKETPLACE_ROOT = PROJECT_ROOT / 'marketplace' / 'bundles'
 

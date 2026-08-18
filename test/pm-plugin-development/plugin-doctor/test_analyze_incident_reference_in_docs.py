@@ -30,11 +30,10 @@ Test layers:
 
 from pathlib import Path
 
-from conftest import get_script_path, load_script_module
+from conftest import PROJECT_ROOT, get_script_path, load_script_module
 
 from _plugin_doctor_fixtures import assert_analyzer_findings
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 REAL_BUNDLES_ROOT = PROJECT_ROOT / 'marketplace' / 'bundles'
 
 

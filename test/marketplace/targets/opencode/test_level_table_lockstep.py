@@ -17,13 +17,13 @@ the OpenCode model resolution + effort passthrough.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
+from conftest import PROJECT_ROOT
 from marketplace.targets.claude import variant_emitter as claude_ve
 from marketplace.targets.opencode import variant_emitter as opencode_ve
 from marketplace.targets.opencode.frontmatter import OPENCODE_MODEL_PREFIX
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = PROJECT_ROOT
 MAPPING_JSON = REPO_ROOT / 'marketplace/targets/opencode/mapping.json'
 
 

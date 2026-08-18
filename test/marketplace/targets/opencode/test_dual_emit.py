@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from conftest import PROJECT_ROOT
 from marketplace.targets.body_transform_engine import build_user_invocable_lookup
 from marketplace.targets.opencode.emitter import emit_bundles
 from marketplace.targets.opencode.frontmatter import (
@@ -27,7 +28,7 @@ def _write(path: Path, content: str | bytes) -> None:
 @pytest.fixture()
 def opencode_config_dir() -> Path:
     """Canonical OpenCode mapping/rules config directory (real source files)."""
-    return Path(__file__).resolve().parents[3].parent / 'marketplace' / 'targets' / 'opencode'
+    return PROJECT_ROOT / 'marketplace' / 'targets' / 'opencode'
 
 
 def _make_bundle(
@@ -258,7 +259,7 @@ def test_real_marketplace_user_invocable_one_to_one_mapping(tmp_path: Path):
     test asserts the structural invariant rather than the literal count so it
     does not need to be edited every time a new user-invocable skill is added.
     """
-    project_root = Path(__file__).resolve().parents[3].parent
+    project_root = PROJECT_ROOT
     marketplace = project_root / 'marketplace' / 'bundles'
     config_dir = project_root / 'marketplace' / 'targets' / 'opencode'
     if not marketplace.is_dir():

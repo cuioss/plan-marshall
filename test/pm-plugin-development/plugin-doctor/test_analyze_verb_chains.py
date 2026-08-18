@@ -39,9 +39,7 @@ from pathlib import Path
 import pytest
 from _plugin_doctor_fixtures import assert_analyzer_findings
 
-from conftest import get_script_path, load_script_module
-
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+from conftest import PROJECT_ROOT, get_script_path, load_script_module
 
 
 def _load_module(name: str, filename: str):

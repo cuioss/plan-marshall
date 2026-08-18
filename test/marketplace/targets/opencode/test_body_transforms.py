@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from conftest import PROJECT_ROOT
 from marketplace.targets.body_transform_engine import (
     SKILL_DIRECTIVE_RE,
     TransformRules,
@@ -38,7 +39,7 @@ OPENCODE_SLASH_TEMPLATE = '/{name}'
 
 
 def _project_root() -> Path:
-    return Path(__file__).resolve().parents[3].parent
+    return PROJECT_ROOT
 
 
 def _opencode_mapping_path() -> Path:

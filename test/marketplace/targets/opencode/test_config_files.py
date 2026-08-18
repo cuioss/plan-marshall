@@ -8,12 +8,13 @@ from pathlib import Path
 
 import pytest
 
+from conftest import PROJECT_ROOT
 from marketplace.targets.opencode.frontmatter import load_mapping, load_rules
 
 
 @pytest.fixture()
 def opencode_config_dir() -> Path:
-    return Path(__file__).resolve().parents[3].parent / 'marketplace' / 'targets' / 'opencode'
+    return PROJECT_ROOT / 'marketplace' / 'targets' / 'opencode'
 
 
 # ---------------------------------------------------------------------------

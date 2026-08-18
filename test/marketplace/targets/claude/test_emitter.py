@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from conftest import PROJECT_ROOT
 from marketplace.targets.claude.emitter import (
     EXCLUDED_DIR_NAMES,
     emit_bundle_verbatim,
@@ -26,7 +27,7 @@ _EMPTY_INPUT_SHA1 = 'da39a3ee5e6b4b0d3255bfef95601890afd80709'
 # at this repo's actual ``marketplace/bundles/`` so the sentinel writer
 # exercises the real git work tree (uncommitted edits are part of the
 # fingerprint by design — see source_fingerprint.py).
-_REPO_ROOT = Path(__file__).resolve().parents[4]
+_REPO_ROOT = PROJECT_ROOT
 _REAL_MARKETPLACE_BUNDLES = _REPO_ROOT / 'marketplace' / 'bundles'
 
 

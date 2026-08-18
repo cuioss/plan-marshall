@@ -19,7 +19,7 @@ Covers the askuserquestion-in-dispatched-workflow analyzer:
 """
 from pathlib import Path
 
-from conftest import load_script_module
+from conftest import PROJECT_ROOT, load_script_module
 
 from _plugin_doctor_fixtures import assert_analyzer_findings
 
@@ -37,7 +37,6 @@ RULE_ID = _aar.RULE_ID
 RULE_NAME = _aar.RULE_NAME
 FINDING_TYPE = _aar.FINDING_TYPE
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 PROVENANCE_PATH = (
     PROJECT_ROOT
     / 'marketplace'

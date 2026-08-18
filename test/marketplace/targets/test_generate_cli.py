@@ -4,9 +4,9 @@
 import json
 import subprocess
 import sys
-from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+from conftest import PROJECT_ROOT
+
 GENERATE_SCRIPT = PROJECT_ROOT / 'marketplace' / 'targets' / 'generate.py'
 
 

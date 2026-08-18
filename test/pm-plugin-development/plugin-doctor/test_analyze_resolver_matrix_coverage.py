@@ -29,9 +29,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from conftest import load_script_module
+from conftest import PROJECT_ROOT, load_script_module
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 
 
 def _load_module(name: str, filename: str):

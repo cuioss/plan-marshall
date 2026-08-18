@@ -24,9 +24,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT, get_scripts_dir, load_script_module
+from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, get_scripts_dir, load_script_module
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'plugin-doctor')
 _FILE_OPS_DIR = (
     PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills'

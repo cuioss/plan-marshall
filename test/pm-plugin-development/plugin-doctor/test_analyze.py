@@ -15,10 +15,9 @@ from pathlib import Path
 # Import shared infrastructure
 from _plugin_doctor_dispatching_executor import write_dispatching_executor
 
-from conftest import create_temp_file, get_script_path, load_script_module, run_script
+from conftest import PROJECT_ROOT, create_temp_file, get_script_path, load_script_module, run_script
 
 # Script under test
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', '_analyze.py')
 SKILL_STRUCTURE_FIXTURES = Path(__file__).parent / 'fixtures' / 'skill-structure'
 CROSS_FILE_FIXTURES = Path(__file__).parent / 'fixtures' / 'cross-file-analysis'

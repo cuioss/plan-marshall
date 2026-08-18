@@ -31,7 +31,7 @@ from plugin_discover import (
     load_plugin_json,
 )
 
-from conftest import load_script_module
+from conftest import PROJECT_ROOT, load_script_module
 
 # =============================================================================
 # Cross-skill loader: import ``_architecture_core`` for layout fixtures.
@@ -162,7 +162,7 @@ def test_build_commands():
 
 def test_discover_bundles_in_project():
     """Test discovery finds bundles in real marketplace."""
-    project_root = Path(__file__).parent.parent.parent.parent
+    project_root = PROJECT_ROOT
 
     bundles = discover_bundles(str(project_root))
 
@@ -186,7 +186,7 @@ def test_discover_bundles_nonexistent():
 
 def test_load_valid_plugin_json():
     """Test loading a valid plugin.json file."""
-    project_root = Path(__file__).parent.parent.parent.parent
+    project_root = PROJECT_ROOT
     plugin_path = (
         project_root / 'marketplace' / 'bundles' / 'pm-plugin-development' / '.claude-plugin' / 'plugin.json'
     )
@@ -212,7 +212,7 @@ def test_load_nonexistent_file():
 
 def test_discover_skills_from_plugin_data():
     """Test skill discovery from plugin.json data."""
-    project_root = Path(__file__).parent.parent.parent.parent
+    project_root = PROJECT_ROOT
     bundle_dir = project_root / 'marketplace' / 'bundles' / 'pm-plugin-development'
     plugin_path = bundle_dir / '.claude-plugin' / 'plugin.json'
 
@@ -235,7 +235,7 @@ def test_discover_skills_from_plugin_data():
 
 def test_discover_agents_from_plugin_data():
     """Test agent discovery from plugin.json data."""
-    project_root = Path(__file__).parent.parent.parent.parent
+    project_root = PROJECT_ROOT
     bundle_dir = project_root / 'marketplace' / 'bundles' / 'pm-plugin-development'
     plugin_path = bundle_dir / '.claude-plugin' / 'plugin.json'
 
@@ -258,7 +258,7 @@ def test_discover_agents_from_plugin_data():
 
 def test_discover_commands_from_plugin_data():
     """Test command discovery from plugin.json data."""
-    project_root = Path(__file__).parent.parent.parent.parent
+    project_root = PROJECT_ROOT
     bundle_dir = project_root / 'marketplace' / 'bundles' / 'pm-plugin-development'
     plugin_path = bundle_dir / '.claude-plugin' / 'plugin.json'
 
@@ -377,7 +377,7 @@ def test_discover_preserves_a_leading_dot_directory_reference():
 
 def test_build_bundle_module_structure():
     """Test module structure from real bundle."""
-    project_root = Path(__file__).parent.parent.parent.parent
+    project_root = PROJECT_ROOT
     bundle_dir = project_root / 'marketplace' / 'bundles' / 'pm-plugin-development'
     plugin_path = bundle_dir / '.claude-plugin' / 'plugin.json'
 
@@ -413,7 +413,7 @@ def test_build_bundle_module_structure():
 
 def test_discover_plugin_modules_integration():
     """Integration test against real marketplace."""
-    project_root = Path(__file__).parent.parent.parent.parent
+    project_root = PROJECT_ROOT
 
     modules = discover_plugin_modules(str(project_root))
 
@@ -446,7 +446,7 @@ def test_discover_plugin_modules_nonexistent():
 
 def test_is_plan_marshall_marketplace_true():
     """Test detection of plan-marshall marketplace."""
-    project_root = Path(__file__).parent.parent.parent.parent
+    project_root = PROJECT_ROOT
 
     # Real project should be plan-marshall
     assert _is_plan_marshall_marketplace(str(project_root))

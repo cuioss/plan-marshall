@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from conftest import PROJECT_ROOT
 from marketplace.targets.opencode.frontmatter import (
     OPENCODE_MODEL_PREFIX,
     UnmappedFrontmatterError,
@@ -23,7 +24,7 @@ from marketplace.targets.opencode.frontmatter import (
 @pytest.fixture()
 def opencode_config_dir() -> Path:
     """Path to the canonical OpenCode mapping/rules config directory."""
-    return Path(__file__).resolve().parents[3].parent / 'marketplace' / 'targets' / 'opencode'
+    return PROJECT_ROOT / 'marketplace' / 'targets' / 'opencode'
 
 
 @pytest.fixture()

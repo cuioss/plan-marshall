@@ -17,7 +17,7 @@ Covers the WORKFLOW_DOC_TOON_ERROR_FIELD analyzer:
 """
 from pathlib import Path
 
-from conftest import load_script_module
+from conftest import PROJECT_ROOT, load_script_module
 
 from _plugin_doctor_fixtures import assert_analyzer_findings
 
@@ -35,7 +35,6 @@ RULE_ID = _awd.RULE_ID
 RULE_NAME = _awd.RULE_NAME
 FINDING_TYPE = _awd.FINDING_TYPE
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 PROVENANCE_PATH = (
     PROJECT_ROOT
     / 'marketplace'

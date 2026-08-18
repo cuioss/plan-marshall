@@ -40,14 +40,11 @@ the property holds for this project; the controlled one proves the mechanism
 itself, independent of whatever the tree happens to contain.
 """
 
-from pathlib import Path
 
 import plugin_discover
 from plugin_discover import _is_plan_marshall_marketplace, discover_plugin_modules
 
-from conftest import load_script_module
-
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+from conftest import PROJECT_ROOT, load_script_module
 
 _discovery = load_script_module(
     'plan-marshall', 'extension-api', 'extension_discovery.py', 'extension_discovery_graph_e2e'
