@@ -54,9 +54,8 @@ wrong type.
 | Wide strip | `0 0 1200 520` | A single network with many peer containers and shallow nesting. |
 | Dense stack | `0 0 1200 900` | One network carrying eight or more components at full nesting depth. The tallest shape; reach for a second diagram before reaching past it. |
 
-Positions and sizes snap to multiples of 8 wherever practical, per the shared grid rule. The label
-bands below (28 and 44) and the 12 px label inset are this type's standing exceptions: they are set
-by the label baselines in § Enclosure labels, not by the grid.
+Positions and sizes snap to multiples of 8 wherever practical, per the shared grid rule. Where a
+size below is given explicitly, that value governs.
 
 | Spacing | Value | Notes |
 |---------|-------|-------|
@@ -178,7 +177,7 @@ Mounted material is drawn as a **tag pill attached to the consuming box's bottom
 | Element | Class | Geometry |
 |---------|-------|----------|
 | Stem | `mount-stem` | 1.0 px, `stroke-dasharray: 2 2`, 12 px long, vertical, from the box's bottom edge |
-| Pill | `stroke` | height 18, `rx="4"`, width = label width + 16 |
+| Pill | `stroke` | height 18, `rx="4"`, width = label width + 16, rounded up to the 8-grid |
 | Label | `mount` | mono 10 px, upright, `x = pill_left + 8`, baseline `y = pill_top + 13` |
 
 The stem is deliberately heavier than the 0.6 px `3 3` divider dash. A 12 px run of 0.6 px dashes
@@ -207,7 +206,7 @@ full buries the affordances the diagram exists to show. Collapse them:
 <rect class="stroke" x="640" y="160" width="264" height="120" rx="4"/>
 <line class="own-bar" x1="640" y1="168" x2="640" y2="272"/>
 <text x="652" y="184" class="encl">variant instances (4)</text>
-<text x="652" y="202" class="encl-sub">same image, overlaid configuration</text>
+<text x="652" y="200" class="encl-sub">same image, overlaid configuration</text>
 ```
 
 - The count goes in the label, in parentheses. A collapsed group without a count is an omission.
@@ -252,8 +251,7 @@ at a glance from prose annotations, which stay sans-serif italic.
 **Crowded diagrams.** When two edge labels would come within 14 px of each other:
 
 1. Move the second label to the **opposite side** of its own edge — below a horizontal edge, left of
-   a vertical one. Never shrink the type; 11 px monospace is the floor at which the rasterised
-   result stays legible on both backgrounds.
+   a vertical one. Never shrink the type; 11 px is the floor for an edge label.
 2. If that is still not enough — three or more edges sharing one corridor — switch that corridor to
    the **numbered-leg convention**: replace each label with a leg number in a 9 px-radius open circle
    at the edge midpoint, monospace 10 px centered, and put the expansion in a legend block at the
@@ -292,8 +290,9 @@ carried by stroke pattern, stroke weight, and a crossing glyph.
 
 Rules:
 
-- The dash pattern `8 4` at 2.0 px is deliberately far from the `3 3` at 0.6 px used for dividers and
-  mount stems. The two must never be confusable at raster scale.
+- The dash pattern `8 4` at 2.0 px is deliberately far from the `3 3` at 0.6 px used for dividers
+  and the `2 2` at 1.0 px used for mount stems. No two of the three may be confusable at raster
+  scale.
 - The trust-boundary label sits **outside** the boundary, 8 px above its top-left corner, and is
   **upright** — every other 11 px annotation in the visual language is italic, so upright weight-600
   reads as a different class of statement.

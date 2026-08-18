@@ -77,9 +77,9 @@
   <rect class="stroke" x="64" y="324" width="96" height="18" rx="4"/>
   <text x="72" y="337" class="mount">certificates/</text>
 
-  <line class="mount-stem" x1="212" y1="312" x2="212" y2="324"/>
-  <rect class="stroke" x="176" y="324" width="72" height="18" rx="4"/>
-  <text x="184" y="337" class="mount">config/</text>
+  <line class="mount-stem" x1="200" y1="312" x2="200" y2="324"/>
+  <rect class="stroke" x="168" y="324" width="64" height="18" rx="4"/>
+  <text x="176" y="337" class="mount">config/</text>
 
   <!-- ============================================================
        depth 3 — collapsed group.  Count in the label; the members are

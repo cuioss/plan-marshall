@@ -55,7 +55,7 @@ Do not load this skill for:
 | [`standards/diagram-type-flow.md`](standards/diagram-type-flow.md) | Flow diagram type — single- or multi-track directional movement through stages, with junctions and loops. The post-execute-shipping-flow diagram is the reference implementation. |
 | [`standards/diagram-type-stack.md`](standards/diagram-type-stack.md) | Stack diagram type — layered slabs with optional convergence on a consumer. The audit-trail-layers diagram is the reference implementation. |
 | [`standards/diagram-type-sequence.md`](standards/diagram-type-sequence.md) | Sequence diagram type — time-ordered exchanges between actors, with lifelines, request/return arrows, and activation bars. The build-dispatch-sequence diagram is the reference implementation. |
-| [`standards/diagram-type-state.md`](standards/diagram-type-state.md) | State diagram type — discrete states of one entity over time, with named transition conditions and loop-backs. The phase-lifecycle diagram is the reference implementation. |
+| [`standards/diagram-type-state.md`](standards/diagram-type-state.md) | State diagram type — discrete states of one entity over time, with named transition conditions and loop-backs. The phase-lifecycle diagram is the reference implementation. This is the one type with no skeleton under `templates/`; its standard names that diagram as the starting point instead. |
 | [`standards/diagram-type-deployment.md`](standards/diagram-type-deployment.md) | Deployment / topology diagram type — what runs where and what can reach it: nested enclosures (host / network / container), trust boundaries, protocol-and-port edge labels, and mounted material. Containment is what separates it from the graph type. No reference implementation in this repository. |
 
 ## Templates
@@ -83,7 +83,7 @@ Read [`standards/theme-handling.md`](standards/theme-handling.md) and pick one o
 
 ### Step 3 — Author the SVG
 
-Copy the matching template from `templates/`. Fill in content, sticking to the palette and typography in [`standards/visual-language.md`](standards/visual-language.md). Save under `doc/resources/diagrams/{name}.svg`.
+Copy the matching template from `templates/`. The state type has no skeleton there — [`standards/diagram-type-state.md`](standards/diagram-type-state.md) names the diagram to start from instead, and its content must be replaced rather than left in place. Fill in content, sticking to the palette and typography in [`standards/visual-language.md`](standards/visual-language.md). Save under `doc/resources/diagrams/{name}.svg`.
 
 ### Step 4 — Verify the render (MANDATORY, BLOCKING)
 
