@@ -658,3 +658,81 @@ takes its docs-only path. *"The worst outcome any finding here produces is a rea
 minute."* Its two "would not let ship" items — § Residue's false population rows and § D2's line
 counts — are both fixed above, and condition A compelled them regardless.
 
+## Cost
+
+Every figure carries its population.
+
+- **Tokens:** **not available to the agent in this session.** The harness does not expose a running
+  total to the model, and this report does not estimate one. The four verification sub-agents each
+  reported their own usage on completion — 37k, 124k, 152k, 138k and 150k subagent tokens for the
+  cold read and rounds 1–4 — but those are the sub-agents' figures, not the run's, and the main
+  session's own consumption is unmeasured.
+- **Wall-clock:** roughly 2 hours 10 minutes, from the first command in the session to PR creation
+  (`10:0x`–`12:11` UTC, taken from the session's own command timestamps). Approximately half of that
+  is the four verification rounds, which ran 9–14 minutes each.
+- **Population:** one interactive Claude Code cloud session, as its own harness counts it.
+  ⛔ **This is NOT comparable to a plan-marshall `metrics.toon` total.** A `metrics.toon` figure counts
+  the orchestrator-plus-agent dispatch tree under plan-marshall's per-task billing boundary; this run
+  has no such boundary, no ledger, and no per-task accounting. The two numbers measure different
+  populations and must not be placed side by side. No attempt is made here to reconcile them.
+
+## Contract check (Step 9)
+
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | **Done** | Named in § Skills loaded, with the not-loaded set and reasons. All were obtainable by bundle path; the `plan-marshall` plugin was not relied on |
+| 2 Branch | **Done** | `claude/deployment-diagram-graduation-536j1k` — **harness-assigned, kept as-is** per the lane's resumability rule. Found absent from `origin` at session start and pushed as the run's first action, before any edit |
+| 3 Plan directory | **Done** | `doc/plans/truthful-signals/170-graduate-deployment-diagram-type-from-api-sheriff/plan.md`, moved with `git mv` so history follows; the `{NNN}-{slug}` prefix preserved. Its first-instruction block was checked at the move and re-checked here — **present, unmodified** |
+| 4 Implement | **Done** | Seven commits, each carrying the trailer, no "Generated with Claude Code" footer. Deliverable paths staged explicitly every time; `git add -A` never used, and `git status` checked for lockfile churn after each `./pw` run — none appeared |
+| 4 Per-commit gate | **N/A, and run anyway** | No commit touched a `*.py`, so the gate's trigger never fired. `./pw quality-gate` was run before three commits regardless, because D5 requires plugin-doctor independently; clean each time |
+| 4 Pushed | **Done** | Every commit pushed immediately. `git status -sb` reports no `ahead` |
+| 5 Build gate | **Done** | Git-derived verdict recorded in § Build gate: `-- '*.py'` empty, so the docs-only path. Confirmed from git, not assumed, as the plan required |
+| 6 Verification sub-agent | **Done** | Four rounds plus an isolated cold read. Budget declared up front; the loop ended on the **budget exit**, with everything condition A forbids fixed regardless. Full record in § How the verification loop stopped, including the per-round shipped-vs-report split, the residue estimate, and the three unused lenses |
+| 7 PR cycle | **See § Reviewer participation** | PR [#1296](https://github.com/cuioss/plan-marshall/pull/1296). No `skip-bot-review` label: the diff touches `marketplace/bundles/**`, and a skill is code |
+| 8 Merge gate | **See below** | Conditions 1–3 and the condition-4 disclosure are recorded in § Merge gate |
+| 8 Bridge | **Done** | Nothing was written under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan touched. The report carries the PR number and the per-deliverable outcome the orchestrator collects from |
+| 9 This check | **Done** | This table |
+| 9 What have we learned | **Done** | § What have we learned, below — a proposal presented to the operator, not self-approved |
+
+**GitHub access path:** the **GitHub MCP server** throughout. No `gh` CLI is present in this session,
+and Bash cannot reach `api.github.com`.
+
+**Plugin cache sync:** **not owed.** `/sync-plugin-cache` is a machine-local build step reading the
+git-ignored `target/` and writing `~/.claude/`, neither of which this session has or may touch. The
+merged bundle source is authoritative. Recorded explicitly so its absence is not read as an omission.
+
+**Working-tree claims re-verified at the moment of writing**, since the run's own build commands mutate
+the tree the report describes: `git status --porcelain` is empty, `git status -sb` reports no `ahead`,
+and the plan directory contains exactly `plan.md` and `report-01.md`.
+
+## Reviewer participation
+
+**Population derived from configuration, not transcribed.** The expected reviewers are the
+`author_login` of each registry doc under
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/`. Three carry one:
+`sourcery.md`, `coderabbit.md`, `pr-agent.md`. (`bot-participation-contract.md` declares none — it is
+the contract, not a registry entry.) **M = 3.**
+
+All three comment surfaces were read, as three separate MCP calls, none of which subsumes the others:
+`get_comments` (issue comments), `get_reviews` (review-summary bodies) and `get_review_comments`
+(inline threads). The inline surface returned a **clean empty set** — `totalCount: 0` with no error —
+so it is a genuine absence, not an unreadable surface.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence |
+|---|---|---|---|
+| `cuioss-review-bot` | **`reviewed`** | — | Published a "PR Reviewer Guide" over the diff as an issue comment: *"No relevant tests / No security concerns identified / No major issues detected."* An explicit nothing-to-report over the diff is a review artifact |
+| `coderabbitai` | **`rate-limited`** | **`yes`** — *"Next review available in: **12 minutes**"* | *"Review limit reached … you've reached your PR review limit, so we couldn't start this review… You've used all free OSS reviews for now."* Engaged; did not review this diff |
+| `sourcery-ai` | **`rate-limited`** | **`yes`**, but no time named — a **weekly** quota, so it resets on its own; the notice states no reset time | Review-summary body: *"you have reached your weekly rate limit of 500000 diff characters. Please try again later"* |
+
+**Coverage at first read: 1 of 3.** No verdict is `silent`, so the recovery check (§ Step 7) did not
+apply to any reviewer; no verdict is `unreadable`, so merge-gate condition 2 is established on read
+surfaces that all returned cleanly.
+
+⚠ **A coverage limit worth recording even for a reviewer that does report.** CodeRabbit's notice lists
+the files it would have processed and states that `templates/deployment-diagram-skeleton.svg` **is
+excluded by its `!**/*.svg` path filter**. The SVG — the artifact carrying four of this run's own
+condition-A defects, and the one no repository lint reads either — is outside that reviewer's scope by
+configuration, not by accident. Even with its window open, its green would say nothing about the
+skeleton. Together with the plugin-doctor analysis in § D5, **no automated reviewer or gate available
+to this PR reads the skeleton's geometry at all.**
+
