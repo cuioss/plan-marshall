@@ -1,0 +1,342 @@
+# Verification — 010-lsp-in-execute-lookup-and-write
+
+**Audited:** `plan.md`, `report-01.md` (the only two files in the plan directory)
+**Tree state:** `61a43e5` on `claude/code-intelligence-substrate-analysis-kah884`
+**Overall verdict:** CONFIRMED WITH GAPS
+
+All five deliverables landed as real, reachable code with real tests, and D0's premise was settled
+against a genuine language server that is still reachable from this clone. Two correctness holes were
+found by reading and then proved by execution: the read side's only cross-file lookup kind returns
+coordinates with **no file path**, and the write side's post-edit diagnostics re-run can return the
+**pre-edit** diagnostic set, so D2's "a worsened diagnostic set fails the step" guard fails open on a
+slow republish.
+
+## Deliverable verdicts
+
+| # | Deliverable (short) | Report claim | Ground truth | Verdict |
+|---|---|---|---|---|
+| D0 | GATE: warm server reachable from a leaf; hosting decision | CONFIRMED against live `pyright-langserver` 1.1.408; host in-envelope per-call | A live server is reachable and answers (36/36 tests pass here with pyright installed); hosting decision recorded and matches the shipped code. Re-measured latencies reproduce the *warm* figures but not the per-call cost basis the rationale uses | CONFIRMED (with a cost-basis caveat — G7) |
+| D1 | Read side + coverage contract | `lookup` verb returns coordinates; `state`+`provider_count` keep the three states separate | Coverage contract shipped and non-vacuous (mutation-proved). But `workspace-symbol` rows carry **no `path`**, and `document-symbol` omits nested symbols | PARTIAL |
+| D2 | Write side through the recorded footprint path | footprint from the edit → apply → re-diagnose → worsened fails and rolls back; adversarially verified | Mechanism shipped and the verdict guard is non-vacuous (mutation-proved, incl. the real-server adversarial test). But the re-diagnose can read a stale set (fail-open), resource-op parts of an edit are silently dropped, a mid-apply failure leaves the tree half-edited, and **no test exercises a multi-file rename through the verb** | PARTIAL |
+| D3 | Diagnostics as a pre-build signal, with the boundary | `diagnose` verb + boundary note in payload, SKILL and user page; cold read passed | Boundary prose present in all three places and in the module docstring; wording is unambiguous ("supplements … not replaces") | CONFIRMED |
+| D4 | Opt-in config, no-op degradation, docs | machine-local `language_servers` + 4 verbs; unconfigured is byte-identical; `not_configured` ≠ `unreachable` | All present and tested; the unconfigured path makes no server contact and no mutation | CONFIRMED |
+
+## Per-deliverable detail
+
+### D0 — GATE: is a warm server reachable from a dispatched leaf at all?
+
+- **Required (plan):** *"a recorded measurement from a live server exists, or the run reports the
+  premise refuted"*, plus the hosting decision (envelope / `marshalld` / sidecar) in the same breath.
+- **Claimed (report):** cold start 413.4 ms, `documentSymbol` 2.7 ms, `references` 11.9 ms,
+  `definition` 2.6 ms, `rename`→multi-file `WorkspaceEdit` 4.9 ms, first diagnostics 736.3 ms, against
+  `pyright-langserver` 1.1.408; hosting = in-envelope per-call subprocess; split = proceed unsplit.
+- **Found:** the measurement is recorded in `report-01.md:15-45`; the hosting decision is implemented
+  exactly as recorded — `lsp_client.py:310-315` (`_session` spawns the configured command per call),
+  `_lsp_jsonrpc.py:81-101` (`StdioTransport` = `subprocess.Popen` of the server), teardown at
+  `_lsp_jsonrpc.py:245-270`. No daemon, no socket: `grep -n "lsp" marketplace/bundles/plan-marshall/skills/manage-build-server/**` finds nothing, so `marshalld` was not widened.
+- **Checks run:** I re-derived the figures against a live server on this machine
+  (`/root/.local/bin/pyright-langserver`), workspace scoped to `manage-architecture` as the report was:
+
+  | Operation | Re-measured (quiet box) | Re-measured (loaded box) | Report |
+  |---|---|---|---|
+  | cold start (spawn + `initialize`) | 571.3 ms | 2140.1 ms | 413.4 ms |
+  | **first** `documentSymbol` after `didOpen` | **4873.3 ms** | **13384.0 ms** | 2.7 ms |
+  | `documentSymbol` repeated in same session | 4.2 ms | — | 2.7 ms |
+  | `definition` | 3.1 ms | 32.3 ms | 2.6 ms |
+  | `references` | 2.8 ms | 12.3 ms | 11.9 ms |
+  | first diagnostics | 2000.4 ms | 2001.1 ms | 736.3 ms |
+  | `rename` → `WorkspaceEdit` | 11.9 ms | 42.4 ms | 4.9 ms |
+
+- **Verdict:** CONFIRMED — the premise holds and a live server was genuinely driven. The caveat is the
+  *cost basis*: the report's per-call figures are **warm-path** figures (its sequence issued
+  `workspace/symbol` and diagnostics before `documentSymbol`, so the analysis wait had already been
+  paid). Under the shipped per-call hosting model, a one-shot lookup pays cold start **plus** the
+  first-query analysis — ~5.4 s here, not the ~0.42 s the "per-call boot is cheap" rationale uses. See
+  G7.
+
+### D1 — the read side
+
+- **Required (plan):** *"a leaf obtains a symbol's locations without reading the containing files, and
+  the three states above are separately representable in the returned payload"* — `definition` /
+  `references` / `documentSymbol` / `workspace/symbol`, carrying the substrate's coverage contract.
+- **Claimed (report):** `lookup` verb with all four kinds; `state` + `provider_count` keep
+  `not_configured` / `unreachable` / `ok`-found-nothing separate; verified by
+  `test_three_states_are_distinguishable` plus two real-server tests.
+- **Found:** `lsp_client.py:367-377` (`cmd_lookup`), `:170-204` (`_run_lookup`, all four kinds),
+  `:416-425` (the argparse `--kind` choices). Coverage contract: `:109-119` (`_degraded`,
+  `provider_count: 0`), `:196-204` (`state: ok`, `provider_count: 1`, `location_count`), documented at
+  `lsp-client/SKILL.md:49-69`.
+- **Checks run:**
+  - Mutation M2 — `lsp_client.py:358` changed so the unreachable path returns `STATE_NOT_CONFIGURED`.
+    `test_three_states_are_distinguishable` went red (`assert 2 == 3 … {('degraded','not_configured',0),('success','ok',1)}`). The negative control the plan demanded is real.
+  - Live probe of the payload shape against pyright over a two-file project
+    (`class Widget: def spin/def stop` in `alpha.py`, imported by `beta.py`):
+    - `workspace-symbol` for `Widget` → `locations: [{"name":"Widget","kind":5,"line":0,"character":6}]` — **no `path` key at all** (`path keys present: False`).
+    - `document-symbol` over `alpha.py` → `['Widget', 'top_level']`; `Widget.spin` and `Widget.stop`
+      are absent.
+- **Verdict:** PARTIAL. The coverage contract is fully delivered and non-vacuously tested. The literal
+  *Done when* ("obtains a symbol's **locations**") is not met for `workspace-symbol`: a name plus a
+  line number without a file is not a location, so the one lookup kind that spans files cannot locate
+  anything (`_symbol_rows`, `lsp_client.py:147-162`, emits only `name`/`kind`/`line`/`character`, while
+  the sibling `_location_rows` at `:122-144` does emit `path`). `document-symbol` is likewise
+  incomplete: `initialize` advertises `hierarchicalDocumentSymbolSupport: true`
+  (`_lsp_jsonrpc.py:290`) but `_symbol_rows` never recurses into `children`. See G1 and G5.
+
+### D2 — the write side, applied through the recorded path
+
+- **Required (plan):** *"a multi-file rename lands through the recorded footprint-capturing path, the
+  captured file list matches the edit, and a worsened diagnostic set fails the step"* — footprint
+  captured **from the edit itself**, never from a later diff; verified **after** application by
+  re-running diagnostics.
+- **Claimed (report):** `edit` verb: rename → `WorkspaceEdit` → `capture_footprint` → `apply_workspace_edit` → re-diagnose → `edit_verdict` + `restore_files`; adversarially verified by
+  `test_edit_worsened_fails_and_rolls_back` and `test_real_adversarial_defect_fails_and_rolls_back`.
+- **Found:** `lsp_client.py:207-275` (`_run_edit`), `_lsp_workspace_edit.py:90-98`
+  (`capture_footprint`, from `normalize_changes`, i.e. from the edit), `:141-158`
+  (`apply_workspace_edit` returning originals), `:161-164` (`restore_files`), `:167-179`
+  (`count_error_diagnostics` / `edit_verdict`). The failure payload carries
+  `reason: diagnostics_worsened`, `rolled_back: true`, `errors_before` / `errors_after`,
+  `new_diagnostics[]` (`lsp_client.py:249-263`).
+- **Checks run:**
+  - Mutation M1 — `edit_verdict` forced to always return `'success'`. Three tests went red, including
+    the real-server adversarial one: `test_edit_worsened_fails_and_rolls_back`,
+    `test_real_adversarial_defect_fails_and_rolls_back`, `test_edit_verdict_fails_on_worsened`
+    (`3 failed, 33 passed`). The adversarial control is genuine, not positive-only.
+  - Live repro of the post-edit read path (`StdioTransport` against a fake server that publishes a
+    clean set on `didOpen` and an Error diagnostic **4 s** after `didChange`):
+
+    ```
+    errors_before = 0
+    errors_after  = 0   (returned after 2.0s)
+    verdict       = success  <-- FAIL-OPEN (stale read)
+    truth (later) = 1 error(s) the server actually reported
+    ```
+
+  - Multi-file coverage: `test_real_clean_rename_edit` asserts `file_count == 1`
+    (`test_lsp_integration.py:102`); `test_edit_clean_applies_and_captures_footprint` uses a
+    single-file edit (`test_lsp_client.py:186-197`). The only two-file exercise
+    (`test_apply_and_restore_round_trip`, `test_lsp_workspace_edit.py:107-123`) bypasses `_run_edit`.
+  - Resource operations: `normalize_changes` builds `notes` for a dropped create/rename/delete
+    (`_lsp_workspace_edit.py:71-74`), but both callers discard them
+    (`:97` and `:149`, `changes, _notes = …`), and
+    `grep -n "notes" lsp_client.py SKILL.md doc/user/lsp-code-intelligence.adoc` returns **nothing**
+    (control: the same grep finds 8 hits in `_lsp_workspace_edit.py`).
+- **Verdict:** PARTIAL. The recorded design rule is genuinely shipped and its central guard is
+  non-vacuous. Against the literal *Done when* it falls short in three ways — the worsened-set guard
+  fails open on a slow republish (G2), the footprint is not honest for an edit carrying resource
+  operations (G3), and the *multi-file* half of the done-condition has no test (G6). A mid-apply
+  exception additionally leaves a half-applied edit with no rollback (G4).
+
+### D3 — diagnostics as a pre-build correctness signal
+
+- **Required (plan):** *"the capability is stated together with the boundary, and an independent cold
+  reader reports that it read the text as supplements the gate, not replaces it"*.
+- **Claimed (report):** `diagnose` verb + `DIAGNOSTICS_BOUNDARY_NOTE` in every payload, boundary prose
+  in `lsp-client/SKILL.md` and the user page; the Step-6 sub-agent's cold read returned
+  *"supplements the quality gate"*.
+- **Found:** `lsp_client.py:60-65` (the note constant), `:301` (carried in the `diagnose` payload),
+  `:24-27` (module docstring), `lsp-client/SKILL.md:88-96` ("It does **not** run the project's quality
+  gate, tests, linters, or coverage, and a clean `diagnose` is **not** a green build"),
+  `doc/user/lsp-code-intelligence.adoc:34-37` (same, as an AsciiDoc NOTE),
+  `execute-task/SKILL.md:244` ("supplements, never replaces").
+- **Checks run:** read all four surfaces. Every one states the boundary in the same sentence as the
+  capability; none phrases the signal as sufficient. I cannot re-run the *original* cold read (it was
+  a sub-agent judgement at the time), but the text as it stands admits only the "supplements" reading:
+  the negative is explicit, not implied.
+- **Verdict:** CONFIRMED. One precision defect, not a boundary defect: the "every payload" phrasing is
+  false for a `degraded` diagnose return, which carries no `boundary_note` (`lsp_client.py:389-392` →
+  `_with_session` → `_degraded`). See G8.
+
+### D4 — opt-in configuration, no-op degradation, documentation
+
+- **Required (plan):** *"a project with no configuration produces byte-identical behaviour to today,
+  and no server configured is distinguishable in the output from a server configured and
+  unreachable"*.
+- **Claimed (report):** machine-local `language_servers` section with new `language-server`
+  get/set/list/remove verbs; `lsp_client` degrades to `read_edit`; distinguishability asserted by
+  `test_preflight_not_configured` vs `test_preflight_unreachable`; docs at
+  `doc/user/lsp-code-intelligence.adoc`, `run-config-standard.md` § Language-Servers, execute-task
+  seams.
+- **Found:** `run_config.py:710-801` (the four verb handlers), `:1334-1358` (the `language-server`
+  subparser), `run-config-standard.md:208-248` (§ Language-Servers, schema + operations),
+  `doc/user/lsp-code-intelligence.adoc:13-16` (*"This is strictly opt-in, and an unconfigured project
+  loses nothing"*), `doc/user/README.adoc:22` (indexed), `execute-task/SKILL.md:242,244,286` (three
+  consumer seams, all gating on `preflight` → `state: ready` or on a `degraded` return).
+  Degradation: `lsp_client.py:350-358` returns `_degraded(...)` before any spawn when
+  `resolve_language_server` yields `None` — no subprocess, no mutation.
+- **Checks run:** the four config tests plus `test_preflight_not_configured` /
+  `test_preflight_unreachable` / `test_edit_degraded_when_not_configured` pass; the last asserts the
+  target file is byte-unchanged. `test_run_config_language_server.py` covers set/get/list/remove,
+  `enabled: false`, default `language_id`, and a non-JSON `--command`.
+- **Verdict:** CONFIRMED. `not_configured` and `unreachable` are separately representable and both are
+  asserted. Two low doc defects: the user page's state table (`:62-78`) omits `preflight`'s `ready`
+  (G10), and the re-diagnose scope is not stated (G9).
+
+## Correctness review
+
+Defects found by reading the shipped code, each proved by execution where the brief allows:
+
+1. **Stale post-edit diagnostics — D2's guard fails open.** `_lsp_jsonrpc.py:204-223`
+   (`wait_for_diagnostics`) breaks out of its wait as soon as the *inbound stream* has been quiet for
+   `settle` (2.0 s) **and** the URI has *any* entry — including the entry cached before the edit
+   (`:220`). It does not wait for a publish newer than the change, despite the module docstring
+   claiming exactly that (`:15-16`: *"`publishDiagnostics` tracked per URI so a post-edit re-diagnose
+   can wait for the **next** push"*). `_run_edit` (`lsp_client.py:239-247`) therefore compares
+   `errors_after` computed from pre-edit data, `edit_verdict` returns `'success'`, and a broken edit
+   lands with `status: success, applied: true`. Reproduced above against a real `StdioTransport`
+   whose server republished 4 s after `didChange`.
+2. **`workspace-symbol` results are unaddressable.** `lsp_client.py:147-162` (`_symbol_rows`) drops the
+   URI entirely, even though pyright returns `SymbolInformation` objects carrying `location.uri` — the
+   code reads `location` only to take its `range` (`:152-154`). Consequence: the payload names a
+   symbol and a line but not a file, so the leaf must fall back to `Grep`/`Read` to find it, which is
+   the cost D1 exists to remove.
+3. **Nested symbols are invisible to `document-symbol`.** `_symbol_rows` iterates the top level only;
+   pyright's hierarchical response nests methods under `children`. A leaf cannot locate
+   `ClassName.method` with this verb.
+4. **A `WorkspaceEdit` carrying resource operations is applied partially and reported as complete.**
+   `_lsp_workspace_edit.py:71-74` records the dropped create/rename/delete ops in `notes`, then both
+   `capture_footprint` (`:97`) and `apply_workspace_edit` (`:149`) throw the notes away, and no payload
+   field carries them. The file-honesty rule the plan required D2 to *ship* ("the captured file list
+   matches the edit") is violated exactly when it matters. `test_normalize_reports_resource_operation`
+   (`test_lsp_workspace_edit.py:64-68`) asserts the notes exist at the seam that discards them, so the
+   guard cannot fire in the shipped path.
+5. **A mid-apply failure leaves the tree half-edited.** `apply_workspace_edit`
+   (`_lsp_workspace_edit.py:141-158`) writes file-by-file with no `try`/`except`. An error on the
+   second of three files (permissions, a path the server named but that no longer exists, an encoding
+   error) propagates out of `_run_edit`; `_with_session` catches only spawn failures
+   (`lsp_client.py:356-358`), so `safe_main` turns it into a `status: error` TOON and exit 1 — with
+   file one modified, no rollback, and no footprint reported.
+6. **Bounded, in-spec limitations worth recording** (no gap raised for the mechanism, only for the
+   documentation): the re-diagnose covers only the footprint files, and only severity `Error`
+   (`_lsp_workspace_edit.py:167-169`); `diagnosticMode` is `openFilesOnly`
+   (`_lsp_jsonrpc.py:57-68`), so breakage outside the edited set is invisible. `wait_until_idle`
+   (`:225-243`) imposes a ≥1.5 s floor on every `workspace-symbol` call and `wait_for_diagnostics` a
+   ≥2 s floor on every `diagnose` (my re-measurement returned in exactly 2000.4 ms).
+
+What I read to conclude the rest is sound: all three shipped scripts end to end (`lsp_client.py` 457
+lines, `_lsp_jsonrpc.py` 379, `_lsp_workspace_edit.py` 180). The transport's reader-thread resilience
+(the reviewer's Finding 2) is correctly per-message: `_read_loop` (`_lsp_jsonrpc.py:115-153`) skips a
+length-0 or malformed frame and returns only on EOF or `OSError`. `apply_text_edits` (`:119-138`)
+applies highest-offset-first against offsets computed once, and the order-independence is asserted
+both ways (`test_apply_multiple_edits_bottom_up`). `select_language_server`
+(`lsp_client.py:73-96`) rejects a non-list, empty, or non-string command and honours
+`enabled: false`. Config resolution reads the shared machine-local store rather than a parallel one
+(`:99-101`).
+
+## Test adequacy
+
+Re-derived at audit time: `uv run python -m pytest test/plan-marshall/lsp-client/ -o addopts="" -q` →
+**36 passed in 23.27 s**, with `pyright-langserver` present at `/root/.local/bin/pyright-langserver`
+so the 5 real-server tests actually ran (they are `skipif`-guarded at
+`test_lsp_integration.py:43-44`).
+
+| Deliverable | Covering tests | Adequacy |
+|---|---|---|
+| D0 | `test_lsp_integration.py` (5 real-pyright tests) | Adequate as standing evidence that a live server is reachable and answers |
+| D1 coverage contract | `test_three_states_are_distinguishable` (`test_lsp_client.py:138-157`) | **Non-vacuous** — proved by mutation M2 |
+| D1 lookup kinds | `test_lookup_document_symbol_returns_coordinates`, `…_references_returns_locations`, `…_workspace_symbol`, `test_real_document_symbol_and_references`, `test_real_workspace_symbol_after_indexing` | **Weak on payload shape**: the workspace-symbol tests assert `name` and `location_count` only, so the missing `path` passes unnoticed; no test asserts a nested symbol is reachable |
+| D2 verdict + rollback | `test_edit_worsened_fails_and_rolls_back`, `test_real_adversarial_defect_fails_and_rolls_back`, `test_edit_verdict_fails_on_worsened` | **Non-vacuous** — proved by mutation M1 (all three go red) |
+| D2 footprint | `test_capture_footprint_from_edit`, `test_apply_and_restore_round_trip` | Adequate for the pure helpers; **no test drives a multi-file edit through `_run_edit`/`cmd_edit`**, which is the literal done-condition (G6) |
+| D2 resource ops | `test_normalize_reports_resource_operation` | **Vacuous with respect to the shipped path** — it asserts a value that no caller consumes (G3) |
+| D3 | `test_diagnose_carries_boundary_note` | Adequate for the success path; the degraded path's missing note is unasserted |
+| D4 | `test_preflight_not_configured`, `test_preflight_unreachable`, `test_real_preflight_ready`, `test_edit_degraded_when_not_configured`, `test_run_config_language_server.py` | Adequate — both directions asserted |
+| Transport | `test_reader_survives_length_zero_junk_frame` | Adequate and CI-portable (fake server subprocess, no pyright) |
+| `wait_for_diagnostics` freshness | *none* | **Missing** — the fake transport pops a queue (`test_lsp_client.py:45-46`), so the real settle/staleness logic is never exercised (G2) |
+
+**Mutation evidence.** Snapshots of both mutated files were taken to
+`$TMPDIR/…/verify-010-mutsweep/` before any edit and restored by byte copy afterwards; `md5sum`
+matches the pre-mutation digests (`_lsp_workspace_edit.py` `2b815b14…`, `lsp_client.py` `665eee6b…`)
+and `git status --porcelain marketplace/bundles/plan-marshall/skills/lsp-client/` is empty. No
+`git checkout` / `restore` / `stash` was used.
+
+## Report accuracy
+
+Most claims in `report-01.md` hold against the tree now. The exceptions:
+
+- **"`diagnose` verb + `DIAGNOSTICS_BOUNDARY_NOTE` in every payload"** (`report-01.md:58`) — false as
+  written, and repeated in shipped documentation at `lsp-client/SKILL.md:92` ("every payload carries
+  the boundary in `boundary_note`"). Only the *success* diagnose payload carries it
+  (`lsp_client.py:301`); a `degraded` return does not (`:109-119`). Correct statement: *every payload
+  a running server produced*.
+- **The D0 latency table** (`report-01.md:20-30`) is accurate as a set of measurements but is used
+  (`:33`, `:40`) as the cost basis for the hosting decision without disclosing that the per-call
+  figures are warm-path. Re-measured here, the first query in a fresh session costs 4873 ms
+  (13384 ms on a loaded box), not 2.7 ms; the honest per-call cost of a one-shot lookup is cold start
+  **plus** first analysis.
+- **"⚠ Sync owed"** (`report-01.md:61`, `:127`) — stale against the current lane contract. `CLAUDE.md`
+  § Standalone Plan Lane now states that a lane plan editing `marketplace/bundles/` *"neither performs
+  a sync nor records one as owed"*. Harmless, confined to the report.
+- **"`35 passed` in the lsp-client suite"** (`report-01.md:78`) and **"the 4 lsp-client real-pyright
+  integration tests"** (`:67`) — both were true of their moment; the current counts are **36** total
+  and **5** real-server tests (`test_real_preflight_ready` was the fix commit's addition, and a later
+  plan, `02ced6f`, refactored the argument construction). Not defects, recorded so a later reader does
+  not treat the older numbers as current.
+- **Unverifiable from this clone:** the whole-tree `./pw verify` figures (`18714 passed, 14 skipped`,
+  `mypy … 385 files`), the individual commit SHAs (`6a96ab0`, `f5ae40f`, `e4154aa`, `d46769e`,
+  `9dc172d`) and the wall-clock figure. The clone is shallow (`git rev-list --count HEAD` = 50, a
+  `.git/shallow` graft is present), so the plan's own commits are not present. The PR record is
+  consistent with them: PR #1140 reports 9 commits, 17 changed files, +2335/−3.
+
+Verified true: the shipped symbol and file names (`_run_lookup`, `_run_edit`, `capture_footprint`,
+`apply_workspace_edit`, `edit_verdict`, `restore_files`, `STATE_READY`, `DIAGNOSTICS_BOUNDARY_NOTE`,
+all named test functions), the Finding-1 fix (`cmd_preflight` emits `ready`, `lsp_client.py:341-347`;
+documented at `SKILL.md:66-69`; `test_real_preflight_ready`), the Finding-2 fix (per-message reader
+resilience plus `test_lsp_transport.py`), the reviewer table (Sourcery's stored review is verbatim the
+quoted weekly-rate-limit notice), the branch name (`claude/lsp-execute-lookup-write-43d0ar` is PR
+#1140's head ref), and the unsplit decision being recorded before implementation.
+
+## Declared residue — current status
+
+| Residue item (from report) | Still open? | Evidence |
+|---|---|---|
+| MERGED confirmation for PR #1140 | **Closed** | `pull_request_read get`: `"merged": true`, `"merged_at": "2026-08-10T18:06:34Z"`, `merged_by: cuioss-oliver`, base `main` |
+| Local plugin-cache sync owed for `marketplace/bundles/**` | **Moot** | `CLAUDE.md` § Standalone Plan Lane: a lane plan "neither performs a sync nor records one as owed"; the merged bundle source is authoritative and `target/` / `~/.claude/` are machine-local |
+| Reviewer coverage 1 of 3 (two bots rate-limited) | **Open but not actionable** | `get_reviews` on #1140 returns a single review — Sourcery's rate-limit notice. No re-review was performed; the PR merged without one, as the contract allows |
+| "What have we learned" GAP: the lane contract should sanction arm-and-hand-off | **Closed** | `.claude/skills/cloud-plan-lane/SKILL.md:55`: *"a run cannot reliably block-until-green and re-check inside the session — Step 8's arm-and-hand-off completion exists for exactly this"* |
+
+## Out-of-scope and collateral
+
+Every exclusion was respected.
+
+- **Default-on behaviour** — not built. Absent configuration resolves to `None`
+  (`lsp_client.py:81-91`) and every verb returns `degraded` before contacting anything.
+- **Batch harvesting of symbol references** — not in this plan's surface. The harvest that exists now
+  (`pm-plugin-development/skills/plan-marshall-plugin/scripts/lsp_harvest.py`) belongs to a later
+  plan and *reuses* this client (`:138-147`, `:272-277`: `client.StdioTransport`, `client.LspSession`),
+  which is what this plan's Notes asked for ("build the client so a second consumer can reuse it").
+- **Editor-facing corpus language server** — separate surface
+  (`pm-plugin-development/skills/tools-corpus-language-server/`), separate store, and
+  `doc/developer/corpus-language-server-protocol.adoc:71-78` records that it deliberately did *not*
+  extend the `language_servers` binding.
+- **Any claim of a token saving** — none found. The shipped docs claim a mechanism ("coordinates, not
+  file bodies"), never a measured share.
+- **Widening the build daemon silently** — not done; no LSP reference exists under
+  `manage-build-server`, and the hosting decision is recorded.
+
+No collateral change was found: the plan's PR touched 17 files and every surface I located
+(`lsp-client/`, its tests, `run_config.py` + its standard + tests, `execute-task/SKILL.md`,
+`doc/user/lsp-code-intelligence.adoc`, `doc/user/README.adoc`) is named in the plan's Expected surface
+or is the index entry for one that is.
+
+## Method and coverage
+
+- Read in full: `plan.md`, `report-01.md`, all three shipped scripts, all four test files,
+  `lsp-client/SKILL.md`, `doc/user/lsp-code-intelligence.adoc`, the `language_servers` half of
+  `run_config.py` and `run-config-standard.md`, and the three `execute-task/SKILL.md` seams.
+- Executed: the lsp-client suite three times (baseline 36 passed; under mutation M1 3 failed/33 passed;
+  after restore 36 passed), two mutations with byte-snapshot restore, a live-server payload-shape probe,
+  a live-server latency re-measurement (twice, under different machine load), and a fail-open repro
+  driving the real `StdioTransport` against a purpose-built slow fake server.
+- Queried GitHub read-only for PR #1140's merge state and reviews.
+- **Not checked, and why:** the whole-tree `./pw verify` numbers (out of scope per the brief — the run
+  is many minutes); the plan's individual commits and their per-commit gates (shallow clone, 50
+  commits, graft present); the *original* Step-6 cold reads (a past sub-agent judgement — I read the
+  current text instead and state what reading it admits); token/wall-clock cost figures (the report
+  itself declines to state tokens).
+- **False-negative discipline:** every "grep found nothing" result was paired with a control that finds
+  the same pattern where it is known to exist (e.g. `notes` → 0 hits in `lsp_client.py`/SKILL/user page,
+  8 hits in `_lsp_workspace_edit.py`).
+- **Tree left unchanged.** `git status --porcelain` for
+  `marketplace/bundles/plan-marshall/skills/lsp-client/` is empty and both mutated files match their
+  pre-mutation `md5sum`. Other modified paths in the working tree
+  (`manage-architecture`, `manage-findings`, `manage-metrics`, `manage-status`, `phase-6-finalize`,
+  and two `test_zz_*` files) predate this audit and belong to other agents; I did not touch them.
