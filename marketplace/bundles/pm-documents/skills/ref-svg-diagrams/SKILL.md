@@ -69,7 +69,7 @@ Do not load this skill for:
 | [`templates/sequence-diagram-skeleton.svg`](templates/sequence-diagram-skeleton.svg) | `diagram-type-sequence.md` | Three-actor sequence scaffold — header boxes, dashed lifelines, solid request / dashed return arrows, activation bars, and a caller-suspended note. |
 | [`templates/deployment-diagram-skeleton.svg`](templates/deployment-diagram-skeleton.svg) | `diagram-type-deployment.md` | Nested-enclosure deployment scaffold — a host containing a network containing first-party and external components, with a trust boundary and its crossing glyphs, mounted-material pills, and a collapsed group. |
 
-Each starter carries the canonical `<style>` block, arrow marker, theme-neutral palette, and placeholder content shaped to the diagram type's geometry. Copy the matching template, rename, fill in.
+Each starter carries the canonical `<style>` block, arrow marker, theme-neutral palette, and placeholder content shaped to the diagram type's geometry. Copy the matching template, rename, fill in. The state type has no starter here — its row in the Standards table names what to start from instead.
 
 ## Workflow
 
@@ -83,7 +83,7 @@ Read [`standards/theme-handling.md`](standards/theme-handling.md) and pick one o
 
 ### Step 3 — Author the SVG
 
-Copy the matching template from `templates/`. The state type has no skeleton there — [`standards/diagram-type-state.md`](standards/diagram-type-state.md) names the diagram to start from instead, and its content must be replaced rather than left in place. Fill in content, sticking to the palette and typography in [`standards/visual-language.md`](standards/visual-language.md). Save under `doc/resources/diagrams/{name}.svg`.
+Copy the matching template from `templates/`. The state type has no skeleton there — [`standards/diagram-type-state.md`](standards/diagram-type-state.md) names the diagram to start from instead. Fill in content, sticking to the palette and typography in [`standards/visual-language.md`](standards/visual-language.md). Save under `doc/resources/diagrams/{name}.svg`.
 
 ### Step 4 — Verify the render (MANDATORY, BLOCKING)
 

@@ -15,7 +15,7 @@
      role="img" aria-labelledby="title desc"
      font-family="ui-sans-serif, -apple-system, system-ui, 'Segoe UI', sans-serif">
   <title id="title">Deployment diagram skeleton, placeholder topology</title>
-  <desc id="desc">A placeholder deployment topology used as an authoring skeleton. A host contains one network. Left of a trust boundary sits a first-party component with mounted certificate and configuration material, and a collapsed group standing in for N identically-shaped instances. Right of the boundary sit a first-party service and an external component. Two edges cross the trust boundary and are marked with crossing glyphs. Replace every placeholder label, and enumerate the members of any collapsed group in this description.</desc>
+  <desc id="desc">A placeholder deployment topology used as an authoring skeleton. A host contains one network. Left of a trust boundary sits a first-party component with mounted certificate and configuration material, and a collapsed group standing in for N identically-shaped instances. Right of the boundary sit a first-party service and an external component. The boundary is labelled on both sides. Two edges cross it and are marked with crossing glyphs. Replace every placeholder label, and enumerate the members of any collapsed group in this description.</desc>
 
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
@@ -56,11 +56,13 @@
   <text x="52" y="140" class="encl">network</text>
 
   <!-- ============================================================
-       trust boundary — dashed 8 4 at 2.0px, label upright above the
-       top-left corner.  Runs in the gutter between the two regions.
+       trust boundary — dashed 8 4 at 2.0px, labels upright above the
+       line.  An open path cutting an enclosure labels BOTH sides: name
+       the state on each, not the mechanism that changes it.
        ============================================================ -->
   <line class="trust" x1="470" y1="152" x2="470" y2="496"/>
-  <text x="482" y="144" class="trust-lbl">trust boundary — name what changes, not the mechanism</text>
+  <text x="458" y="144" class="trust-lbl" text-anchor="end">unauthenticated</text>
+  <text x="482" y="144" class="trust-lbl">authenticated — name what changes, not the mechanism</text>
 
   <!-- ============================================================
        depth 3 — first-party component with mounted material

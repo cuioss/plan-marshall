@@ -308,7 +308,9 @@ before fixing it found the same falsehood at ten further sites in four sibling s
 two further ordinals (F11, F12). The run corrected all of them rather than the two the option named,
 on the lane's sweep-and-count rule, and disclosed the widening to the operator in its next reply
 rather than letting it pass silently. The operator has not been asked to ratify the widening; if it
-is unwanted, F3–F12 are a self-contained revert that leaves the graduation and the state fix intact.
+is unwanted, F3–F9, F11 and F12 are a self-contained revert that leaves the graduation and the state
+fix intact. F10 is **not** in that set: it is the forward-reference fix inside
+`standards/diagram-type-state.md` itself, one of the two surfaces the operator named.
 
 ### Independent verification sub-agent — round 1
 
@@ -367,29 +369,35 @@ the declaration had been made — corrected here, and recorded as R2-2 below.
 
 **On the plugin-doctor green — recorded because it bears on what D5 actually proves.** The verifier
 audited the analysers rather than trusting the summary. Round 2 re-derived the population and
-corrected it: there are **60** `_analyze_*.py` modules carrying **64** distinct rule identifiers, not
-"roughly fifty". Round 1's finding was that exactly one of them (`broken-relative-link`) could fire on
+corrected the module count to **60** `_analyze_*.py` modules, against round 1's "roughly fifty".
+The count of distinct *rule identifiers* is disputed and this report asserts none: round 2 said 64,
+round 3 counted 66 by a stated method (module-level `RULE_ID` constants plus inline `rule_id=`
+declarations), and round 2 stated no method. A figure two rounds could not agree on is reported as
+disputed rather than picked. Round 1's finding was that exactly one of them (`broken-relative-link`) could fire on
 a defect class this change can introduce, and that it passes; round 2 **did not reproduce that audit
 across all 64**, so the "exactly one" figure rests on round 1's reading alone. It did spot-check the
 two next-most-plausible rules (`skill-relative-temp-path-git-c`, `tmp-redirect-in-skills`) and found
 neither reachable here.
 `literal-count-drift` is hard-coded to the `extension-api` and `persona-security-expert` surfaces and
-cannot see a stale count in `ref-svg-diagrams`; `historical-prose-in-skills` matches seven narrow
-regexes and would not have matched *"The first per-diagram-type standard"* or *"## Upstream
+cannot see a stale count in `ref-svg-diagrams`; `no-historical-prose-in-skills` matches seven narrow
+detection regexes and would not have matched *"The first per-diagram-type standard"* or *"## Upstream
 graduation"*; nothing reads SVG geometry, so F32–F34 were structurally unreachable by the gate. **The
 gate's green says the links resolve and the frontmatter is well-formed. It says nothing about whether
 the graduated prose is true.** For this change the verification sub-agent, not the lint, is the only
 guard that covers the real defect classes — which is worth stating plainly in an epic about signals
 that look more informative than they are.
 
-**Render re-verification after the round-2 edits.** F32 and F35 changed the template. The direct
-evidence that neither could alter the raster is the diff: `git diff b06a62f..HEAD -- '*.svg'` shows
-exactly two changed regions, the XML comment block and the `<desc>` text, neither of which a
-rasteriser draws. Re-rendering on both backgrounds and finding both PNGs **byte-identical** to the
-round-1 renders is consistent with that, and is a check on it — it is not itself proof of which nodes
-moved, and an earlier draft of this report claimed it was. ⚠ Note also that identical rasters are the
-*weaker* signal here: the standard makes `<desc>` normative, so the F32 edit is a real semantic
-change that no PNG comparison could ever show.
+**Render ledger.** `SKILL.md` § Enforcement makes rasterise-and-read-back blocking for every
+**modified** SVG, so the gate is recorded per commit rather than once. An earlier draft pinned this
+paragraph to one diff range and to a byte-identical comparison; both went false the moment a later
+round edited the SVG again, which is why it is a ledger now.
+
+| Commit | What changed in the SVG | Render | Read back |
+|---|---|---|---|
+| `21267da` | The graduated skeleton, first landed | `#ffffff`, `#0d1117` at 1200 px | Both full PNGs, plus the 12 px footer caption re-rendered at 2.4× on both because the full render could not resolve it |
+| `e7d3f78` | XML comment block and `<desc>` only — **no drawn node** | Both re-rendered | Both came back byte-identical to the `21267da` renders. That is a *check* on the claim, not proof of it; the proof is the diff, which touches no drawn node. ⚠ And identical rasters are the weaker signal here — the standard makes `<desc>` normative, so this edit was a real semantic change no PNG could show |
+| `03b0b5e` | **Drawn geometry**: mount pill `x 176→168`, `width 72→64`, stem `x 212→200`, label `x 184→176` | Both re-rendered | Both full PNGs read back, plus the mount strip at 2.4× on both backgrounds to confirm `config/` sits inside its narrowed pill with padding on both sides |
+| this commit | **Drawn geometry**: a second `trust-lbl` added at `x=458`, `text-anchor="end"` | Both re-rendered | Both full PNGs read back; the new label clears the `first-party component` box (ends at 458, box ends at 344) and neither label collides with the other or with the `network` enclosure label |
 
 ### Independent verification sub-agent — round 2
 
@@ -439,4 +447,68 @@ of sweeping did not catch**, in the same family as F32 — which round 1 had alr
 instance D2's 'verify rather than assume' was aimed at"*. D2's sweep was still incomplete after the
 round that declared it complete. That is the strongest evidence this run produced for its own
 residue estimate below.
+
+### Independent verification sub-agent — round 3
+
+Round 3 was given a **deliberately different lens**: rounds 1 and 2 both worked outward from the
+diff, so round 3 was told to also read the standard *as an author would* and test its § Annotated
+template promise at face value. That change of lens is what produced its two most valuable findings.
+Twelve condition-A defects — six in the shipped skill, six in this report. All fixed.
+
+**In the shipped skill.**
+
+| # | Site | Finding | Disposition |
+|---|---|---|---|
+| R3-A1 | `standards/diagram-type-deployment.md` § Mounted material | The worked example draws the `certificates/` pill at `width="128"`; the rule three lines below gives 78.3 + 16 → **96**, which is what the skeleton ships for the identical string. ⭐ **R2-14's fix reached two of its three sites** — rule ✓, skeleton ✓, worked example ✗ | **Fixed** — 96 |
+| R3-A2 | `standards/diagram-type-deployment.md` § Annotated template | *"**Every affordance specified above** has a worked placeholder in the skeleton … an author does not need to read this document"* — wider than the eight-row table that follows, and false: the numbered-leg convention, its legend block, the closed-`rect` boundary form and nesting past depth 3 have no placeholder. ⭐ **F35's defect class at the site F35's fix did not reach** — F35 corrected the *template header's* identical over-claim and left the *standard's* | **Fixed** — the promise is narrowed to the table, and the four absent affordances are named as ones the author must read this document for |
+| R3-A3 | `templates/deployment-diagram-skeleton.svg` trust boundary | The boundary is an open `<line>` cutting the `network` enclosure, and § Trust boundaries requires such a boundary to **label both sides**. It carried one label — and the affordance table documented the single label as correct, so the standard certified its own violation. ⭐ **The first defect any round found by measuring the shipped artifact against a rule**, rather than by comparing two pieces of prose | **Fixed** — `unauthenticated` / `authenticated` labels on either side, the `<desc>` updated (it is normative), the affordance row corrected, and both renders read back |
+| R3-A8 | `SKILL.md` § Workflow Step 3 | Round 2's own fix added *"its content must be replaced rather than left in place"*, presented as disclosing an existing rule. Neither standard states it; the nearest text is scoped to the deployment skeleton's placeholders | **Fixed** — unsourced clause removed, factual disclosure kept |
+| R3-A9 | `standards/diagram-type-deployment.md` § Layout grid | Round 2 replaced round 1's bad enumeration with *"Where a size below is given explicitly, that value governs"* — **invented normative text**, not the restatement the report called it, and it dropped the one exception `visual-language.md` actually names (centred text / column midline), which this skeleton's centred caption and edge labels are | **Fixed** — the shared rule is now restated verbatim in substance, exception included, and nothing is invented. ⭐ Third consecutive round in which a fix to this one sentence was itself defective |
+| R3-A12 | `SKILL.md` under the Templates table | *"Copy the matching template, rename, fill in."* — the **third** unconditional site of the instruction round 2 called unfollowable for the state type, in the same file as the two it fixed | **Fixed** |
+
+**In the run report.**
+
+| # | Finding | Disposition |
+|---|---|---|
+| R3-A4 | ⛔ **R2-1's fix was never applied.** The report claimed *"§ Residue now exists"* — it did not. Three pointers dangled, including the file's own last line (*"its own residue estimate below"*, with nothing below it). **A claimed fix that was never made is a new failure mode for this run — weaker than a partial fix, and undetectable by any sweep that trusts the disposition column** | **Fixed** — § Residue exists below, and this row is the reason it is worth reading |
+| R3-A5 | The render paragraph asserted the SVG diff showed *"exactly two changed regions"*. True when written; falsified by the very commit that recorded R2-14, which moved drawn geometry | **Fixed** — replaced by a per-commit render ledger that cannot go stale the same way |
+| R3-A6 | Consequent: `03b0b5e` committed an SVG geometry change and the report recorded no render for it, so D5's checklist certified a version that no longer shipped. **The gate had in fact been run and read back — the defect was in the record, not the practice** | **Fixed** — the ledger records all four renders, and the two since |
+| R3-A7 | *"F3–F12 are a self-contained revert that leaves the state fix intact"* — F10 is inside `diagram-type-state.md`, one of the two surfaces the operator named | **Fixed** — F3–F9, F11, F12, with F10's exclusion explained |
+| R3-A10 | *"64 distinct rule identifiers"* did not reproduce; round 3 counted 66 by a stated method, and round 2 had stated none — which is exactly what R2-10 demanded of every re-derived count | **Fixed** — reported as disputed, with both figures and round 3's method, rather than picking one |
+| R3-A11 | The rule's `RULE_ID` is `no-historical-prose-in-skills`, not `historical-prose-in-skills` | **Fixed** |
+
+**The author's-eye lens — recorded because it is the finding about the deliverable, not about the run.**
+Round 3 traced what an author gets from the skeleton alone and reported that the § Annotated template
+promise **did not hold** in four places: R3-A3 (copying the skeleton reproduces a rule violation the
+affordance table certifies as correct), R3-A2 (the promise's own premise is false), and two condition-B
+items — the `<title>`/`<desc>` obligations that renaming does not satisfy, and the meta-caption that
+ships as content unless the author reads a rule elsewhere. Two of the four are fixed here; the other
+two are in § Residue with their bounds.
+
+Everything else round 3 measured in the skeleton passes: outer margin 24; host→network insets 16 on
+three sides with a 44 px band; every leaf ≥120×48; the radius ladder 8/6/4 keyed by role; edge labels
+centred on their longest segment at an 8 px offset; both crossing glyphs on the boundary; three
+`own-bar`s and one bare external box; and the depth-5 rationale's arithmetic.
+
+⭐ **Round 3's own answer on convergence, quoted because it is the honest one and the run should not
+paraphrase it into something softer:** *"the surface is not shrinking. It is rotating: each round
+exhausts the lens it used and the next round's lens finds a comparable number of defects in what the
+previous one could not see."* Round 2 found 16 (5 shipped / 11 report); round 3 found 12 (6 shipped /
+6 report). The shipped-skill share did **not** fall. This run's findings are **not narrower** than the
+previous round's, and this report does not claim they are.
+
+## Residue
+
+Anything left open, and where it should go next.
+
+| Item | Why it is open | Where it goes |
+|---|---|---|
+| **The downstream retirement (D4)** | A different repository, with its own PR flow, and no operator here to approve it. The plan forbids attempting it from this run | The proposal in § D4 above — two files to delete, four referrer files to repoint, upstream-first, and a whole-repository sweep still owed because the four are a best enumeration, not proof |
+| **No `state-diagram-skeleton.svg`** | Authoring one is a new diagram-type deliverable — a second unreviewed SVG in a PR whose reviewers are checking a graduation. The **disclosure** gap it caused is fixed at all three `SKILL.md` sites; only the artifact is missing | A follow-up plan. It is the only indexed type without a starter |
+| **The skeleton's `<title>` / `<desc>` do not satisfy their own rules** (round 3, condition B) | `<title>` names no environment and `<desc>` neither enumerates a collapsed-group membership nor names the boundary, though the standard makes both mandatory. **Bound:** the `<desc>` text instructs the author to do both, so the failure needs an author who renames and reads nothing. It changes no rule and misleads no one who follows the standard | A follow-up, together with the item below — both are "make the skeleton satisfy the standard it ships beside" |
+| **The skeleton's footer caption is an author instruction, not diagram content** (round 3, condition B) | It ships as content unless the author reads the deletion rule elsewhere in the standard; all five sibling skeletons use that slot for a type-descriptive caption. **Bound:** cosmetic and self-announcing — the caption literally reads "Skeleton only" | Same follow-up |
+| **No rule for the mount stem's horizontal position** (round 3, condition B) | The skeleton centres both stems on their pills; the standard's worked example does not, and neither states a rule. **Bound:** an author copying the skeleton inherits the centred convention and violates nothing, because no rule exists to violate. Writing one is new normative text this graduation is not entitled to add | A follow-up to the type standard |
+| **`.caption` is 12 px across all six templates** where `visual-language.md` says 11 px | Pre-existing across the whole template set, including the five this run did not touch. Fixing it here would be exactly the unrelated diagram churn the plan's out-of-scope forbids | A follow-up covering all six templates together |
+| **Ordinals in `diagram-type-block.md` and `diagram-type-sequence.md`** | Removed by this run under the operator's authorisation. Nothing open — recorded so a later reader knows they were deliberate, not missed | — |
+| **The plan's own premise that "five" diagram types exist** | Six existed on `main`. The plan is the input; correcting a landed plan is not this run's business | Noted for whoever authors the next plan in this epic |
 

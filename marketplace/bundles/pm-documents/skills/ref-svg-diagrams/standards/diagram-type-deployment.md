@@ -54,8 +54,8 @@ wrong type.
 | Wide strip | `0 0 1200 520` | A single network with many peer containers and shallow nesting. |
 | Dense stack | `0 0 1200 900` | One network carrying eight or more components at full nesting depth. The tallest shape; reach for a second diagram before reaching past it. |
 
-Positions and sizes snap to multiples of 8 wherever practical, per the shared grid rule. Where a
-size below is given explicitly, that value governs.
+Positions and sizes snap to multiples of 8 wherever practical, except for centred text where
+snapping to the column midline takes precedence — the shared grid rule, unchanged.
 
 | Spacing | Value | Notes |
 |---------|-------|-------|
@@ -170,7 +170,7 @@ Mounted material is drawn as a **tag pill attached to the consuming box's bottom
 
 ```svg
 <line class="mount-stem" x1="140" y1="280" x2="140" y2="292"/>
-<rect class="stroke" x="96" y="292" width="128" height="18" rx="4"/>
+<rect class="stroke" x="96" y="292" width="96" height="18" rx="4"/>
 <text x="104" y="305" class="mount">certificates/</text>
 ```
 
@@ -353,15 +353,16 @@ The skeleton template at [`../templates/deployment-diagram-skeleton.svg`](../tem
 canonical `<style>` block, the `arrow` marker, the theme-neutral token, and placeholder content laid
 out on this type's geometry. Copy it, rename it, and replace the placeholders.
 
-Every affordance specified above has a worked placeholder in the skeleton, so copy-rename-fill is the
-whole workflow — an author does not need to read this document to produce a structurally valid
-diagram:
+Every affordance in the table below has a worked placeholder in the skeleton, so copy-rename-fill
+carries a diagram that uses only those. The affordances specified above but **absent** from the
+skeleton — the numbered-leg convention and its legend block, the closed-`rect` boundary form, and
+nesting past depth 3 — are authored from this document:
 
 | Affordance | Placeholder in the skeleton |
 |------------|-----------------------------|
 | Containment nesting | `host` (depth 1, `rx="8"`, 44 px label band) containing `network` (depth 2, `rx="6"`, 28 px band) containing the components (depth 3, `rx="4"`), at or above the standard 16 px inset |
 | Enclosure labels | Top-left on every box, with one optional `encl-sub` line |
-| Trust boundary | Dashed `8 4` at 2.0 px running vertically through the network's content area, with its upright weight-600 label above the top of the line |
+| Trust boundary | Dashed `8 4` at 2.0 px running vertically through the network's content area, with upright weight-600 labels naming **both** sides above the top of the line, as an open path cutting an enclosure requires |
 | Trust crossings | Two `trust-cross` glyphs, one on each edge that crosses the boundary |
 | Protocol + port edge labels | `HTTPS :8443` and `gRPC :9000` on single-segment edges, `TCP :5432` on an orthogonal cross-container edge, labelled on its longest segment |
 | First-party vs external | Three boxes carry the `own-bar` left accent; the external component is the same box without it |
