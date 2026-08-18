@@ -1,6 +1,6 @@
 # Run report — 310-main-sha-records-the-pinned-cwd (run 01)
 
-**Date (UTC):** 2026-08-17    **Branch:** `claude/main-sha-pinned-cwd-0p9af9` (harness-assigned, kept as-is)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-17    **Branch:** `claude/main-sha-pinned-cwd-0p9af9` (harness-assigned, kept as-is)    **PR:** [#1286](https://github.com/cuioss/plan-marshall/pull/1286)    **Outcome:** completed
 
 ## Skills loaded
 
@@ -557,15 +557,79 @@ _(Recorded after the PR is opened.)_
 
 ## Cost
 
-_(Recorded at close.)_
+- **Tokens:** not available to the agent in this session. The harness exposes no token counter to the
+  run, and the four verification sub-agents report their own usage only to the dispatching harness,
+  not into this transcript. Stated plainly rather than estimated.
+- **Wall-clock:** the run spans 2026-08-17 to 2026-08-18 UTC (first commit `114e0a1` to the PR). The
+  dominant fixed costs are measurable and are: **six full `./pw verify` runs** at ~5m10s–5m45s each,
+  plus **four verification sub-agent dispatches** at roughly 26, 24, 17 and 14 minutes.
+- **Population:** one Claude Code cloud session — the orchestrator turn plus its four dispatched
+  verification sub-agents. ⛔ **Not comparable to a plan-marshall `metrics.toon` total**, which counts
+  an orchestrator-plus-agent dispatch tree under plan-marshall's own per-task billing boundary. This
+  lane has no such boundary and no ledger, so no figure here can be placed alongside one from that
+  substrate; presenting a number that implied parity would be worse than the omission.
 
 ## Contract check (Step 9)
 
-_(Recorded at close.)_
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | **Done** — five skills, all read via bundle path (the plugin route was not attempted). Named in § Skills loaded, with the reason `pm-documents:ref-asciidoc` was not among them |
+| 2 Branch | **Done** — `claude/main-sha-pinned-cwd-0p9af9`, **harness-assigned and kept as-is**. Pushed to `origin` as the run's first action, before any edit, and confirmed absent from the remote beforehand |
+| 3 Plan directory | **Done** — `doc/plans/code-intelligence-substrate/310-main-sha-records-the-pinned-cwd/plan.md` exists, moved with `git mv`, numeric prefix preserved. The first-instruction block was **present** and needed no repair |
+| 4 Implement | **Done** — every deliverable addressed; every commit carries the `Co-Authored-By` trailer and no "Generated with" footer |
+| 4 Per-commit gate | **Done** — every commit touching `*.py` was preceded by a clean gate, read from the streamed `./pw` output (`ruff … All checks passed!`, `mypy … Success`, `SPDX-header check passed`), never from the exit code |
+| 4 Pushed | **Done** — pushed after every commit; `git status -sb` reports no `ahead` |
+| 5 Build gate | **Done** — git-derived verdict: **11 Python files (6 production, 5 test)**, so the gate applies. `./pw verify` run **six times**, clean at every commit; final `20665 passed, 14 skipped` |
+| 6 Verification sub-agent | **Done** — four rounds against a budget declared up front. 37 findings, all fixed, none deferred. The stop record names exit (ii), round 4's own answer, the one condition-B survivor with its bound, and the residue |
+| 7 PR cycle | See § Reviewer participation |
+| 8 Merge gate | See § Reviewer participation |
+| 8 Bridge | **Done** — no status or bookkeeping write landed under `doc/plans/` outside this plan's own directory; no ledger, no other plan touched. This report carries the PR number and the per-deliverable outcome |
+| 9 This check | **Done** — this table |
+| 9 What have we learned | **Done** — below |
+
+**GitHub access path:** the **GitHub MCP server** (`create_pull_request`, `pull_request_read`). No `gh`
+CLI is present in this session.
+
+**Branch form:** harness-assigned `claude/*`, kept unchanged per the lane contract's resumability rule.
+
+**Plugin cache sync:** **not owed.** `/sync-plugin-cache` is a machine-local build step reading the
+git-ignored `target/` and writing `~/.claude/`; a cloud run neither performs nor records one.
+
+**Tree claims re-verified at close**, because the build gate mutates the very tree the report describes:
+`.plan/` now additionally carries `execute-script.py` and `temp/`, which it did not when the run began.
+The D4 verdict does not rest on that — it rests on **`.plan/local/` carrying no `plans/` directory**,
+re-checked at close and still true (it holds `logs/` and `marshall-state.toon`). The earlier
+"zero `handshakes.toon` in the tree" claim was withdrawn in round 2 for exactly this reason.
 
 ## What have we learned (Step 9)
 
-_(Recorded at close.)_
+**One contract change is proposed, and this run produced the evidence for it.**
+
+⛔ **The contract's mutation-testing guidance does not say how to restore the mutated file, and the
+obvious way silently destroys uncommitted work.** § Step 6 requires mutation-testing every new guard,
+and this run's first harness restored each file with `git checkout -- <path>` — which restores from the
+**index**, not from a snapshot. Round 1's fixes to `_invariants.py` were uncommitted at that moment, so
+the restore reverted the fixes along with the mutation. It was caught only because the next mutation's
+anchor failed to match; a harness whose anchors were more tolerant would have reported a clean matrix
+over silently reverted code.
+
+**Proposed edit** — in § Step 6, after the "⛔ **A guard is not a guard until it has been shown to
+FAIL**" paragraph, add:
+
+> ⛔ **Restore a mutated file from a snapshot the harness took itself — never with `git checkout`.**
+> `git checkout -- <path>` restores from the index, so it reverts every uncommitted change in that file,
+> not just the mutation. Commit your work before a mutation sweep, and have the harness hold the original
+> contents (in memory or a copy) and write them back in a `finally`.
+
+The evidence is one observed instance in this run, the failure is silent-by-default, and the remedy is
+two lines. It is **presented to the operator, not self-approved**, and — per § Step 9 — would ship as a
+separate `chore/` PR touching only the skill, never folded into this plan's diff.
+
+**No other contract change is proposed.** The lane's other machinery held up under an unusually long
+verification loop: the round-budget mechanism did what it exists to do (it terminated a loop that was
+still finding real defects at round 4, rather than pretending convergence), and conditions A and B drew
+a line this run used repeatedly — three findings that looked like acceptable survivors were fixed
+because A reaches false statements regardless of whether they execute.
 
 ## Residue
 
