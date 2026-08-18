@@ -374,13 +374,23 @@ def lane_resolution_view(decision_lines: list[str]) -> list[str]:
     return [line for line in decision_lines if _LANE_DECISION_RE.search(line)]
 
 
-def load_diff_files(diff_file: str | None, plan_dir: Path) -> list[str]:
-    """Return the realized footprint path list from a pre-saved diff file.
+def load_diff_files(diff_file: str | None, plan_dir: Path) -> list[str] | None:
+    """Return the realized footprint from a pre-saved diff file, or ``None`` if omitted.
 
-    ``--diff-file`` carries one path per line (the end-of-execute diff). ABSENT →
-    an empty list here, and the caller (``cmd_run``) then recovers the footprint
-    through the shared whole-chain resolver; only a still-unresolvable footprint
-    degrades the predicate re-evaluation to a skip (never a false positive).
+    ``--diff-file`` carries one path per line (the end-of-execute diff). OMITTED →
+    ``None``, the omitted-input sentinel; the caller (``cmd_run``) then recovers the
+    footprint through the shared whole-chain resolver, and only a still-unresolvable
+    footprint degrades the predicate re-evaluation to a skip (never a false positive).
+
+    ⛔ **Omission is tested as ``diff_file is None``, and the return distinguishes an
+    omitted argument from a supplied-and-empty one.** A truthiness test conflates
+    three states this function must keep apart: omitted, supplied-and-empty
+    (``--diff-file ""``), and supplied-naming-an-empty-file. The last is a RESOLVED,
+    genuinely-empty footprint — the run really did change nothing — and returning
+    ``[]`` for it lets the caller distinguish that from ``None``. Collapsing them
+    sends a supplied input down the omitted path, which is the same
+    could-not-look-versus-nothing-to-look-at conflation the raising behaviour below
+    exists to prevent, arriving by a different door.
 
     A SUPPLIED path is a different case and is treated as one. It is resolved
     plan-relative first and cwd-relative second (:func:`resolve_diff_file_path`),
@@ -392,8 +402,8 @@ def load_diff_files(diff_file: str | None, plan_dir: Path) -> list[str]:
     the documented invocation silently degraded to a skip while the identical file
     passed as an absolute path found a real violation.
     """
-    if not diff_file:
-        return []
+    if diff_file is None:
+        return None
     path = resolve_diff_file_path(diff_file, plan_dir)
     try:
         return [line.strip() for line in path.read_text(encoding='utf-8').splitlines() if line.strip()]
@@ -601,8 +611,12 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     # check (check-artifact-consistency) and this mis-prune check recover together off
     # the same resolution. An unresolvable footprint yields have_footprint=False → the
     # mis-prune checks SKIP (the negative control), never a fabricated fail.
-    footprint = load_diff_files(args.diff_file, plan_dir)
-    if footprint:
+    supplied_footprint = load_diff_files(args.diff_file, plan_dir)
+    if supplied_footprint is not None:
+        # Supplied — including a file that legitimately names nothing. That is a
+        # RESOLVED empty footprint, not an unresolvable one, so it must not fall
+        # through to the recovery chain and be re-reported as `unresolved`.
+        footprint = supplied_footprint
         footprint_source = 'diff_file'
         have_footprint = True
     else:

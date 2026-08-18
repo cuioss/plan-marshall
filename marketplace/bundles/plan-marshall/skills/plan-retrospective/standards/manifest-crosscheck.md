@@ -113,7 +113,11 @@ A `fail` is never downgraded, for a reason that differs by rule shape — the bl
 
 A `skip` is never downgraded either: the rule did not apply, which the filtering did not decide.
 
-The `diff` block publishes the evidence: `filtered_by_category` (one count per category, always present even at zero), `oracle_available` (whether the build map answered at all), and `majority_discarded`.
+There is a third obligation with the same purpose and a different cause. A rule that would emit a bare clean `pass` while **no diff observation reached it at all** — no `--diff-file` and no usable `--base-ref` diff — also takes `indeterminate`. The filtering logic cannot see this case: nothing was discarded, so the reduction is empty, yet the rule evaluated an empty footprint it never received.
+
+⛔ An ABSENT observation and a RESOLVED empty one are different states and must not be inferred from the same `len(files) == 0`. A supplied diff file that names nothing means the run really did change nothing — a rule may pass on it. The loader therefore reports evidence-availability directly rather than leaving it to be guessed downstream.
+
+The `diff` block publishes the evidence: `filtered_by_category` (one count per category, always present even at zero), `oracle_available` (whether the build map answered at all), `majority_discarded`, and `diff_available`.
 
 ## TOON Fragment Shape
 

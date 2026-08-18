@@ -86,6 +86,15 @@ def resolve_diff_file_path(diff_file: str, plan_dir: Path) -> Path:
     Raises:
         ValueError: When no candidate exists, naming every candidate tried.
     """
+    if not diff_file.strip():
+        # An empty or whitespace argument is SUPPLIED input that names nothing.
+        # Rejected explicitly, because `Path('')` is `.` and every relative
+        # candidate would then resolve to an existing DIRECTORY — failing later
+        # with a confusing "is a directory" read error instead of naming the
+        # actual defect, and only by luck rather than by rule.
+        raise ValueError(
+            f'Diff file does not exist: {diff_file!r} — the argument is empty and names no path'
+        )
     raw = Path(diff_file)
     if raw.is_absolute():
         if raw.exists():

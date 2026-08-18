@@ -728,10 +728,19 @@ class TestConsumerDispatchSetsAreKnownCategories:
         routing_mod = load_script_module(
             'plan-marshall', 'plan-retrospective', 'check-routing-decisions.py', 'crd_dispatch_mod'
         )
-        assert set(manifest_mod._DROPPED_CATEGORIES) <= set(CATEGORIES)
-        assert set(routing_mod._PRODUCTION_CATEGORIES) <= set(CATEGORIES)
+        dropped = set(manifest_mod._DROPPED_CATEGORIES)
+        production = set(routing_mod._PRODUCTION_CATEGORIES)
+        # Non-vacuity FIRST: a subset assertion over an empty set passes trivially,
+        # so an emptied dispatch policy would remove this test's coverage without
+        # failing it.
+        assert dropped, 'the manifest drop policy is empty — this guard would pass vacuously'
+        assert production, 'the routing production policy is empty — this guard would pass vacuously'
+        assert CATEGORIES, 'the category vocabulary is empty'
+
+        assert dropped <= set(CATEGORIES)
+        assert production <= set(CATEGORIES)
         # And the two dispatches must not both claim the same category.
-        assert not set(manifest_mod._DROPPED_CATEGORIES) & set(routing_mod._PRODUCTION_CATEGORIES)
+        assert not dropped & production
 
 
 # =============================================================================
@@ -793,3 +802,118 @@ class TestSummarizeChecksIsTotal:
         emitted.add(mod.STATUS_INDETERMINATE)
         assert emitted, 'no emitted statuses found — the extraction pattern went stale'
         assert emitted <= set(mod._STATUS_BUCKETS), emitted - set(mod._STATUS_BUCKETS)
+
+
+# =============================================================================
+# The reduction report's membership is derived, not mirrored
+# =============================================================================
+
+
+class TestDiffFedRuleRegistryIsTheSingleSource:
+    """A diff-fed rule cannot be evaluated while bypassing the reduction report.
+
+    `_DIFF_FED_CHECKS` used to be a hardcoded name set mirroring the dispatch
+    table. A new filtered evaluator added to one and not the other would silently
+    escape D2's guarantee and emit a bare clean pass over a majority-discarded
+    footprint — the exact failure the reduction report exists to prevent, reached
+    through the report's own membership test.
+    """
+
+    @staticmethod
+    def _mod():
+        from conftest import load_script_module
+
+        return load_script_module(
+            'plan-marshall', 'plan-retrospective', 'check-manifest-consistency.py', 'cmc_registry_mod'
+        )
+
+    def test_the_membership_set_is_derived_from_the_registry(self):
+        mod = self._mod()
+        assert mod._DIFF_FED_RULES, 'the rule registry is empty — every guard below would be vacuous'
+        assert mod._DIFF_FED_CHECKS == frozenset(mod._DIFF_FED_RULES)
+
+    def test_every_registered_evaluator_symbol_exists_and_is_callable(self):
+        mod = self._mod()
+        for name, symbol in mod._DIFF_FED_RULES.items():
+            evaluator = getattr(mod, symbol, None)
+            assert callable(evaluator), f'{name} names {symbol}, which is not callable'
+
+    def test_every_registered_rule_emits_a_check_of_that_name(self, tmp_path, monkeypatch):
+        """Quantified over the registry, so a rule added later is covered by construction."""
+        plan_id, _ = _setup(
+            tmp_path,
+            monkeypatch,
+            {
+                'manifest_version': 1,
+                'plan_id': 'oracle-plan',
+                'phase_5': {'early_terminate': False, 'verification_steps': []},
+                'phase_6': {'steps': ['push', 'branch-cleanup']},
+            },
+        )
+        diff = _write_diff(tmp_path, ['doc/a.adoc', 'src/b.py'])
+        result = run_script(
+            MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff)
+        )
+        assert result.success, result.stderr
+        emitted = {c['name'] for c in result.toon()['checks']}
+        mod = self._mod()
+        assert set(mod._DIFF_FED_RULES) <= emitted, set(mod._DIFF_FED_RULES) - emitted
+
+    def test_the_branch_cleanup_exclusion_names_a_registered_rule(self):
+        """The separately-dispatched rule must be IN the registry, not beside it."""
+        mod = self._mod()
+        assert mod._BRANCH_CLEANUP_CHECK in mod._DIFF_FED_RULES
+
+
+# =============================================================================
+# A verdict over no evidence is not a clean result
+# =============================================================================
+
+
+class TestVerdictWithheldWhenNoDiffEvidenceExists:
+    """An ABSENT diff observation and a RESOLVED empty one are different states.
+
+    The zero-evidence sibling of the majority-discarded case, and the filtering
+    logic cannot see it: nothing was discarded, so the reduction is empty, yet the
+    rule evaluated an empty footprint it never received and said "all 0 entries are
+    docs-shaped".
+    """
+
+    _MANIFEST = {
+        'manifest_version': 1,
+        'plan_id': 'oracle-plan',
+        'phase_5': {'early_terminate': False, 'verification_steps': []},
+        'phase_6': {'steps': ['push']},
+    }
+
+    def test_no_diff_file_and_no_base_ref_withholds_the_verdict(self, tmp_path, monkeypatch):
+        plan_id, _ = _setup(tmp_path, monkeypatch, self._MANIFEST)
+
+        result = run_script(MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live')
+        assert result.success, result.stderr
+        data = result.toon()
+
+        assert data['diff']['diff_available'] is False
+        docs_only = _check(data['checks'], 'docs_only_diff')
+        assert docs_only['status'] == 'indeterminate', docs_only
+        assert 'no diff evidence was available' in docs_only['message']
+
+    def test_a_supplied_empty_diff_file_is_evidence_and_still_passes(self, tmp_path, monkeypatch):
+        """The negative control, and the distinction that matters.
+
+        A supplied file naming nothing is a RESOLVED empty footprint — the run
+        really did change nothing — so a rule may pass on it. Inferring absence
+        from `len(files) == 0` would collapse this into the case above.
+        """
+        plan_id, _ = _setup(tmp_path, monkeypatch, self._MANIFEST)
+        diff = _write_diff(tmp_path, [])
+
+        result = run_script(
+            MANIFEST_SCRIPT, 'run', '--plan-id', plan_id, '--mode', 'live', '--diff-file', str(diff)
+        )
+        assert result.success, result.stderr
+        data = result.toon()
+
+        assert data['diff']['diff_available'] is True
+        assert data['diff']['files_total'] == 0
+        assert _check(data['checks'], 'docs_only_diff')['status'] == 'pass'

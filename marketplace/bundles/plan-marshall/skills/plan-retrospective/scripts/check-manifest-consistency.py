@@ -163,8 +163,20 @@ def load_decision_log_entries(plan_dir: Path) -> list[str]:
     return matches
 
 
-def load_diff_files(diff_file: str | None, base_ref: str | None, plan_dir: Path) -> tuple[list[str], str]:
-    """Return ``(file_paths, base_label)`` from either a pre-saved diff file or git.
+def load_diff_files(
+    diff_file: str | None, base_ref: str | None, plan_dir: Path
+) -> tuple[list[str], str, bool]:
+    """Return ``(file_paths, base_label, evidence_available)``.
+
+    ``evidence_available`` says whether the rules received a diff observation AT
+    ALL, and it is threaded out of here rather than inferred downstream from an
+    empty file list — because an empty list has two incompatible causes. A supplied
+    diff file naming nothing is a RESOLVED empty footprint (the run really did
+    change nothing, and a rule may pass on it); no diff input, or a git invocation
+    that failed, is an ABSENCE OF EVIDENCE (no rule may pass on it). Inferring from
+    `len(files) == 0` collapses the two, which is the same
+    could-not-look-versus-nothing-to-look-at conflation this script is being fixed
+    for.
 
     When ``--diff-file`` is provided, read it directly. A RELATIVE argument is
     resolved against the plan directory first and the cwd second
@@ -176,7 +188,9 @@ def load_diff_files(diff_file: str | None, base_ref: str | None, plan_dir: Path)
     any failure as "no diff available" rather than aborting — the manifest
     cross-check is a best-effort retrospective signal, not a build-blocking gate.
     """
-    if diff_file:
+    if diff_file is not None:
+        # `is not None`, never truthiness: `--diff-file ""` is SUPPLIED input and
+        # must take the supplied path (where it raises) rather than the git path.
         path = resolve_diff_file_path(diff_file, plan_dir)
         try:
             raw = path.read_text(encoding='utf-8')
@@ -188,10 +202,10 @@ def load_diff_files(diff_file: str | None, base_ref: str | None, plan_dir: Path)
             # supplied diff that cannot be read is a caller error, not a
             # silently-empty diff.
             raise ValueError(f'Diff file could not be read: {diff_file}: {e}') from e
-        return _split_diff_lines(raw), f'file:{path.name}'
+        return _split_diff_lines(raw), f'file:{path.name}', True
 
     if not base_ref:
-        return [], 'unknown'
+        return [], 'unknown', False
 
     try:
         result = subprocess.run(
@@ -202,10 +216,10 @@ def load_diff_files(diff_file: str | None, base_ref: str | None, plan_dir: Path)
             timeout=10,
         )
     except (OSError, subprocess.SubprocessError):
-        return [], base_ref
+        return [], base_ref, False
     if result.returncode != 0:
-        return [], base_ref
-    return _split_diff_lines(result.stdout), base_ref
+        return [], base_ref, False
+    return _split_diff_lines(result.stdout), base_ref, True
 
 
 def _split_diff_lines(raw: str) -> list[str]:
@@ -258,6 +272,8 @@ def filter_bookkeeping(files: list[str]) -> tuple[list[str], list[str], dict[str
         # an absent key for a measured zero.
         'by_category': {category: len(paths) for category, paths in buckets.items()},
         'majority_discarded': len(dropped) > len(kept),
+        # Filled in by the caller, which owns the base-label signal.
+        'diff_available': True,
     }
     return kept, dropped, reduction
 
@@ -493,12 +509,37 @@ def evaluate_branch_cleanup(
 #: input for its verdict to mean anything.
 STATUS_INDETERMINATE = 'indeterminate'
 
-#: The checks evaluated against the FILTERED footprint. Only these are subject to
-#: the reduction report — ``manifest_version_recognized`` reads the manifest body
-#: alone, so no amount of diff filtering affects its verdict.
-_DIFF_FED_CHECKS = frozenset(
-    {'docs_only_diff', 'early_terminate_diff', 'tests_only_diff', 'branch_cleanup_changes'}
-)
+#: The ONE dispatch registry for the diff-fed rules: check name → evaluator.
+#:
+#: ⛔ Both the evaluation loop and the reduction report read THIS map, so a rule
+#: added here is automatically evaluated AND automatically subject to the reduction
+#: report and the ``indeterminate`` downgrade. A hardcoded name set mirroring the
+#: dispatch table is the defect this whole change exists to remove — a private list
+#: restating a set defined authoritatively elsewhere — and an evaluator missing from
+#: that mirror would silently bypass D2's guarantee, emitting a bare clean pass over
+#: a majority-discarded footprint. That is precisely the failure the reduction
+#: report was written to prevent, so it must not be reachable through the report's
+#: own membership test.
+#:
+#: ``evaluate_branch_cleanup`` is dispatched separately (it needs the
+#: diff-availability signal the others do not take), which is why membership lives
+#: in this map rather than being inferred from the evaluation loop alone.
+#: ``manifest_version_recognized`` is deliberately absent: it reads the manifest
+#: body alone, so no amount of diff filtering affects its verdict.
+_DIFF_FED_RULES: dict[str, str] = {
+    'docs_only_diff': 'evaluate_docs_only',
+    'early_terminate_diff': 'evaluate_early_terminate',
+    'tests_only_diff': 'evaluate_tests_only',
+    'branch_cleanup_changes': 'evaluate_branch_cleanup',
+}
+
+#: Derived, never restated — see :data:`_DIFF_FED_RULES`.
+_DIFF_FED_CHECKS = frozenset(_DIFF_FED_RULES)
+
+#: The one diff-fed rule dispatched outside the shared loop, because it takes the
+#: diff-availability signal the others do not. Named once so both the loop's
+#: exclusion and any reader can refer to the same string.
+_BRANCH_CLEANUP_CHECK = 'branch_cleanup_changes'
 
 
 #: Emitted check status → its ``summary`` bucket name. EVERY status this script
@@ -537,10 +578,37 @@ def summarize_checks(checks: list[dict[str, str]]) -> dict[str, int]:
     return summary
 
 
+def _withhold_on_absent_evidence(checks: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Downgrade every diff-fed clean ``pass`` when no diff evidence existed at all.
+
+    ``base_label == 'unknown'`` (no ``--diff-file`` and no ``--base-ref``) or a git
+    diff that returned nothing means the rules ran against an empty footprint for
+    want of input rather than because the run changed nothing. A ``pass`` there
+    reads identically to a substantiated one downstream.
+
+    A ``fail`` is untouched — a rule that found a violation without diff evidence
+    found it in the manifest body. A ``skip`` is untouched for the usual reason.
+    """
+    out: list[dict[str, str]] = []
+    for check in checks:
+        if check['name'] not in _DIFF_FED_CHECKS or check['status'] != 'pass':
+            out.append(check)
+            continue
+        updated = dict(check)
+        updated['status'] = STATUS_INDETERMINATE
+        updated['message'] = (
+            f'{check["message"]} — VERDICT WITHHELD: no diff evidence was available '
+            '(no --diff-file supplied and no usable --base-ref diff), so the rule '
+            'evaluated an empty footprint rather than an empty change'
+        )
+        out.append(updated)
+    return out
+
+
 def apply_input_reduction(checks: list[dict[str, str]], reduction: dict[str, Any]) -> list[dict[str, str]]:
     """Annotate — and where required downgrade — every diff-fed check.
 
-    Two obligations, both discharged here so no rule evaluator can forget one:
+    Three obligations, all discharged here so no rule evaluator can forget one:
 
     - **Every** diff-fed check that ran against a reduced input set has the
       reduction appended to its message, so the count the rule actually saw is
@@ -552,6 +620,14 @@ def apply_input_reduction(checks: list[dict[str, str]], reduction: dict[str, Any
       downstream summary exactly like a substantiated one — so a run whose filter
       discarded all but one path could report every rule green while none of them
       had seen the change the plan was about.
+    - A check that would emit a bare clean ``pass`` while **no diff evidence
+      existed at all** takes :data:`STATUS_INDETERMINATE` too. This is the
+      zero-evidence sibling of the case above and the filtering logic cannot see
+      it: nothing was discarded, so the reduction is empty, yet the rule evaluated
+      an empty footprint and said ``all 0 entries are docs-shaped``. A verdict over
+      no evidence is not a clean result, and ``evaluate_branch_cleanup`` already
+      refuses it for its own rule (the ``base=unknown or empty diff`` skip); this
+      extends the same refusal to the rest.
 
     A ``fail`` is never downgraded, but the reason differs by rule shape and is
     worth stating precisely, because the obvious blanket rationale — "a reduced
@@ -581,8 +657,12 @@ def apply_input_reduction(checks: list[dict[str, str]], reduction: dict[str, Any
         The checks, with diff-fed entries annotated and possibly downgraded.
     """
     dropped = reduction['dropped']
-    if not dropped:
+    diff_available = reduction['diff_available']
+    if not dropped and diff_available:
         return checks
+
+    if not diff_available:
+        return _withhold_on_absent_evidence(checks)
 
     note = (
         f'{dropped} of {reduction["supplied"]} supplied paths were filtered as '
@@ -639,8 +719,13 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         }
 
     decision_entries = load_decision_log_entries(plan_dir)
-    raw_files, base_label = load_diff_files(args.diff_file, args.base_ref, plan_dir)
+    raw_files, base_label, evidence_available = load_diff_files(args.diff_file, args.base_ref, plan_dir)
     kept_files, dropped_files, reduction = filter_bookkeeping(raw_files)
+    # Whether a diff observation reached the rules at all. Taken from the loader,
+    # never inferred from an empty file list: a SUPPLIED file naming nothing is a
+    # resolved empty footprint a rule may pass on, while an absent or failed
+    # observation is not.
+    reduction['diff_available'] = evidence_available
 
     checks: list[dict[str, str]] = []
     findings: list[dict[str, Any]] = []
@@ -654,13 +739,15 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
     if version_finding is not None:
         findings.append(version_finding)
 
+    # Derived from the ONE registry rather than restated: every _DIFF_FED_RULES
+    # entry except the separately-dispatched branch-cleanup rule, in registry order.
     diff_evaluators: tuple[
         Callable[[dict[str, Any], list[str]], tuple[dict[str, str], dict[str, Any] | None]],
         ...,
-    ] = (
-        evaluate_docs_only,
-        evaluate_early_terminate,
-        evaluate_tests_only,
+    ] = tuple(
+        globals()[symbol]
+        for name, symbol in _DIFF_FED_RULES.items()
+        if name != _BRANCH_CLEANUP_CHECK
     )
     for evaluator in diff_evaluators:
         check, finding = evaluator(manifest, kept_files)
@@ -706,6 +793,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
             'filtered_by_category': reduction['by_category'],
             'oracle_available': reduction['oracle_available'],
             'majority_discarded': reduction['majority_discarded'],
+            'diff_available': reduction['diff_available'],
         },
         'checks': checks,
         'findings': findings,

@@ -476,7 +476,9 @@ python3 .plan/execute-script.py plan-marshall:plan-retrospective:check-manifest-
   [--diff-file DIFF_FILE] [--base-ref BASE_REF]
 ```
 
-`--base-ref` is required when `--diff-file` is absent. `--diff-file` resolves relative paths the same way `check-routing-decisions` does — plan directory first, cwd second — and errors rather than reporting an empty diff when neither exists.
+Supply `--base-ref` whenever `--diff-file` is absent — it is how the script obtains a diff at all. It is **not CLI-enforced**, and the behaviour when both are absent is defined rather than fatal: the script is a best-effort retrospective signal, not a build-blocking gate, so it records `base: unknown` and every diff-fed rule reports `indeterminate` instead of a clean pass. A verdict over no evidence is not a clean result, so none is emitted.
+
+`--diff-file` resolves relative paths the same way `check-routing-decisions` does — plan directory first, cwd second — and errors rather than reporting an empty diff when neither candidate exists. A supplied file that names nothing is a *resolved empty footprint*, not an absent one, and rules may pass on it.
 
 ### check-routing-decisions — run
 

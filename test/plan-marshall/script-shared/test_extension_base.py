@@ -1449,5 +1449,7 @@ class TestResolveRouteRole:
         """Quantified over the vocabulary, so a role added later cannot be missed."""
         from extension_base import BUILD_MAP_ROLES
 
+        # Non-vacuity first: iterating an empty vocabulary asserts nothing.
+        assert BUILD_MAP_ROLES, 'the build-map role vocabulary is empty — this guard would pass vacuously'
         for role in BUILD_MAP_ROLES:
             assert resolve_route_role('a.py', [('a.py', role)]) == role

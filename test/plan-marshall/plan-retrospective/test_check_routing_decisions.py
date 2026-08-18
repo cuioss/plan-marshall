@@ -585,8 +585,27 @@ class TestLoadDiffFiles:
     ``skip`` in every downstream summary.
     """
 
-    def test_absent_argument_yields_empty(self, tmp_path):
-        assert _crd.load_diff_files(None, tmp_path) == []
+    def test_absent_argument_yields_the_omitted_sentinel(self, tmp_path):
+        """OMITTED returns ``None``, distinct from a supplied-and-empty ``[]``."""
+        assert _crd.load_diff_files(None, tmp_path) is None
+
+    def test_empty_string_argument_is_supplied_input_not_omission(self, tmp_path):
+        """``--diff-file ""`` is supplied, so it takes the supplied path and raises.
+
+        A truthiness test would send it down the omitted path, which is the same
+        could-not-look-versus-nothing-to-look-at conflation the raise exists to
+        prevent, arriving by a different door.
+        """
+        with pytest.raises(ValueError, match='names no path'):
+            _crd.load_diff_files('', tmp_path)
+        with pytest.raises(ValueError, match='names no path'):
+            _crd.load_diff_files('   ', tmp_path)
+
+    def test_supplied_file_naming_nothing_is_a_resolved_empty_footprint(self, tmp_path):
+        """An existing but EMPTY diff file resolves to ``[]``, never to ``None``."""
+        path = tmp_path / 'empty.txt'
+        path.write_text('', encoding='utf-8')
+        assert _crd.load_diff_files(str(path), tmp_path) == []
 
     def test_missing_file_raises_rather_than_reporting_an_empty_diff(self, tmp_path):
         with pytest.raises(ValueError, match='Diff file does not exist'):
