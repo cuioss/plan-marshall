@@ -1,19 +1,24 @@
 # Verification — 080-exploration-split-measured-on-one-phase-and-it-is-the-worst-case
 
 **Audited:** `plan.md`, `report-01.md` (the only two files in the plan directory)
-**Tree state:** `61a43e5` on `claude/code-intelligence-substrate-analysis-kah884`
+**Tree state:** first pass at `61a43e5`; re-derived under adversarial review at `57c63a8`, both on
+`claude/code-intelligence-substrate-analysis-kah884`
 **Overall verdict:** CONFIRMED WITH GAPS
 
 The run halted at the plan's own D0 gate and reported the plan **blocked on corpus availability**. That
 determination is correct, and I re-derived it independently against the tree as it stands now. Every
-process claim in the report (PR number, files changed, review threads, comment bodies and ids, commit
-trailers, `.gitignore` line citation) is accurate to the byte. The gaps are in the report's *technical
-justification*: twice it states that the instrument D1 needs already exists in
-`.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py`. It does not — no shipped check reads
-the three exploration sub-source fields (`exploration_{index_answerable,doc_residency,unattributed}_bytes`)
-that define D1's split, and the closest check pools all phases into one per-plan figure, which D1
-explicitly forbids. The consequence lands on the handoff: the residue tells a resuming corpus-bearing
-session that "nothing needs building", which is false.
+process claim in the report (PR number, files changed, review threads, comment ids, CI conclusions, commit
+trailers, `.gitignore` line citation) is accurate. The gaps are in the report's *technical justification*:
+in three places it states that the instrument D1 needs already exists in
+`.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py`. It does not, in three separate
+respects — no shipped check reads the three exploration sub-source fields
+(`exploration_{index_answerable,doc_residency,unattributed}_bytes`) that define D1's split; the closest
+check pools all phases into one per-plan figure, which D1 explicitly forbids; and that same check applies
+neither of the two schema reads `plan.md:98-104` obliges nor the re-entry guard `plan.md:106-109`
+obliges, though sound implementations of all three exist elsewhere in the same file. The consequence
+lands on the handoff: the residue tells a resuming corpus-bearing session that "nothing needs building",
+which is false — and the work in question is git-derivable, so it did not need the absent corpus and
+could have been done in the cloud clone.
 
 ## Deliverable verdicts
 
@@ -47,13 +52,18 @@ session that "nothing needs building", which is false.
     (`git ls-files "*audit.py"` → 5 files), so the zero results are trustworthy negatives.
   - `git ls-files .plan/` → **13** paths: `.plan/marshal.json` plus twelve
     `.plan/project-architecture/**` files. No `.plan/local/`.
-  - `.gitignore` at the PR's base sha `3a5e2ca` (fetched via GitHub): `.plan/*` is on **line 46**, with
-    `!.plan/marshal.json` and `!.plan/project-architecture/` as the only exceptions — the report's citation
-    was exactly right at run time. (At `61a43e5` the same directive sits on line 45; `.gitignore` was
-    edited later, in #1250 and #1252.)
-  - On-disk state now: `ls .plan/` → `execute-script.py.probe.tmp  local  marshal.json  project-architecture  temp`;
-    `ls .plan/local` → `logs` only; `find . -name metrics.toon -not -path ./.git/*` → **nothing**. The corpus
-    is genuinely absent from this clone class, not merely from git.
+  - `.gitignore` at the PR's base sha `3a5e2ca` (read with `git cat-file -p 3a5e2ca:.gitignore`): line 44
+    `# Planning system`, 45 `# Runtime state`, **46 `.plan/*`**, 47 `!.plan/marshal.json`,
+    48 `!.plan/project-architecture/` — the report's citation was exactly right at run time. The same
+    directive now sits on line 45; the single intervening edit to `.gitignore` is `c0b4f3e` (2026-08-15,
+    **#1252**). *(An earlier draft of this document also credited #1250; `git log -- .gitignore` shows only
+    three commits ever touching the file — `c0b4f3e`, `47ace15`, `59b716d` — and #1250 is not among
+    them.)*
+  - On-disk state: `.plan/local/archived-plans/` does not exist, and
+    `find . -name metrics.toon -not -path ./.git/*` → **nothing**. The corpus is genuinely absent from
+    this clone class, not merely from git. (The rest of `.plan/local/` is volatile working state — it held
+    `logs` alone at the first pass and `logs` + `marshall-state.toon` at re-derivation — so only the two
+    durable facts above are quoted here.)
   - The two candidate substitutes the report named are as described:
     `test/plan-marshall/plan-retrospective/fixtures/archived-plan/` contains 17 files and **no**
     `metrics.toon` (only `fragment-*.toon`, logs, `status.json`, `references.json`); the replay fixtures are
@@ -88,9 +98,10 @@ session that "nothing needs building", which is false.
 - **Checks run:** greps above; read of `audit.py:6747-6910`, `audit.py:7176`, `audit.py:7229-7259`;
   read of `checks/exploration-share.md:1-40`; read of `manage-metrics.py:2320-2360` (the per-plan render
   site that *does* emit the sub-source bullets, per phase, for one plan at a time).
-- **Verdict:** CONFIRMED that D1 was not attempted and could not have been completed here (the records are
-  absent either way). REFUTED as to the report's justification: the instrument that would produce D1's
-  output does not exist. See Report accuracy and gaps G1/G2/G3.
+- **Verdict:** CONFIRMED that D1 was not attempted and could not have been *completed* here (the records
+  are absent either way). REFUTED as to the report's justification: the instrument that would produce
+  D1's output does not exist, and building it needs no corpus. See Report accuracy and gaps
+  G1/G2/G3/G4/G7.
 
 ### D2 — classify the unattributed remainder, byte half only
 
@@ -149,38 +160,67 @@ is the code the report *cites as already sufficient*, because the residue's corr
    sections" and returns a single `phases_measured` count; `_ExplorationShareRow` (`:6836-6859`) carries no
    per-phase structure. `plan.md:70` says ⛔ "Do not pool phases into one headline". Consequence: even for
    the coarse buckets, the existing check produces the shape D1 rules out.
-3. **The two schema obligations D1 inherits are, by contrast, genuinely already implemented** — the one
-   part of the report's "already exists" claim that holds. The three-state partiality read is
-   `audit.py:1043-1180`: `METRICS_SCHEMA_CURRENT` / `METRICS_SCHEMA_OLD` / `METRICS_SCHEMA_PRE_812`, with
+3. **The two schema readers D1 inherits exist and are sound — but D1's host consumes neither.**
+   The readers themselves are real. The three-state partiality read is `audit.py:1043-1180`:
+   `METRICS_SCHEMA_CURRENT` / `METRICS_SCHEMA_OLD` / `METRICS_SCHEMA_PRE_812`, with
    `_RETIRED_PARTIALITY_KEYS = ("partial", "unrecorded_phases")` recognised and refused rather than
    defaulted, `None` value fields on both degrades, and `forces_floor` returning `True` on any unreadable
-   state (`:1113-1115`). The three-way `unmeasured` cell read is `audit.py:7205-7224`
-   (`_BC_LEDGER_UNMEASURED_TOKEN`, `_BC_LEDGER_UNMEASURABLE_FIELDS`, the five-column legacy floor). Both
-   match `plan.md:98-104` as written. I found no defect in either.
+   state (`:1113-1115`). The three-way `unmeasured` cell read is defined at `audit.py:7205-7224`
+   (`_BC_LEDGER_UNMEASURED_TOKEN`, `_BC_LEDGER_UNMEASURABLE_FIELDS`, the five-column legacy floor
+   `_BC_LEDGER_MIN_COLUMNS`) and applied at `:7357-7394`, where a token cell dates the row without
+   measuring, an unparseable cell dates nothing, and a literal `0` is admitted only in a
+   fingerprint-dated row. Both readers match `plan.md:98-104` as written, and I mutation-tested both
+   (see Test adequacy) rather than only reading them.
 
-No other defect was found. What I read to conclude that: `audit.py:1040-1181`, `:6747-6910`, `:7176-7259`,
-`:7390-7460`; `checks/exploration-share.md:1-40`; `manage-metrics.py:2320-2360`, `:3400-3440`, `:3505-3545`;
-`manage-metrics/standards/data-format.md:162-184`.
+   **What does not hold is the inference the report draws from that.** `exploration-share` — the check
+   that would host D1 — calls neither reader: `parse_metrics_end_time_presence` is consumed at
+   `audit.py:1700`, `:4454` and `:7477` (the metrics, input-integrity and billing-composition checks) and
+   **nowhere** in the exploration-share region, and `_collect_exploration_share_rows` (`:6862-6888`)
+   applies only the absent-is-not-zero exclusion. Nor does it honour `plan.md:106-109`'s ⭐ obligation to
+   read the published value-scope fields: `close_count` / `value_scope` / `cumulative_fields` /
+   `last_close_fields` (`data-format.md:128-130`) are read by billing-composition (`audit.py:7515`
+   labels a `close_count > 1` row `unabsorbed_loop_back`) and by no part of exploration-share, so a
+   re-entered phase's counters are summed into a rate with no exclusion and no label. The correct
+   statement is therefore: the reusable readers exist and are sound, and wiring them into D1's host is
+   outstanding work — see gap G7.
+
+No other defect was found. Read across both passes: `audit.py:1040-1181`, `:6747-6910`, `:7128-7264`,
+`:7326-7396`, `:7390-7460`, `:7460-7530`; `checks/exploration-share.md:1-45`;
+`manage-metrics.py:2320-2363`, `:3400-3444`, `:3505-3545`;
+`manage-metrics/standards/data-format.md:128-130`, `:162-184`.
 
 ## Test adequacy
 
 **No test was warranted by this run** and none was added: the run shipped no executable surface (PR #1178
-changed exactly two Markdown files). There is therefore nothing here to prove vacuous, and I performed **no
-mutation sweep** — a mutation sweep needs shipped production code to mutate. I verified the absence of an
-executable footprint from the PR's own file list rather than assuming it (`get_files` on #1178: one
-`renamed`, one `added`, both under `doc/plans/`).
+changed exactly two Markdown files). There is therefore no shipped code path of this plan's to prove
+vacuous. I verified the absence of an executable footprint from the PR's own file list rather than
+assuming it (`get_files` on #1178: one `renamed`, one `added`, both under `doc/plans/`).
 
-For the record, the code the residue leans on *is* covered independently of this plan: the three-state
-reader has dedicated suites at
-`test/plan-marshall/audit-archived-plan-retrospectives/test_audit_check_metrics_end_time_markers.py` and
-`test_audit_check_metrics_core.py`, and the sub-source fields are exercised at
+**Two mutation sweeps were nonetheless run**, on the code the residue and Correctness-review item 3 lean
+on — because "the reader already exists and is sound" is a claim that has to be able to come back false.
+Both mutated `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py`, ran the owning test
+file, and restored the file from a byte snapshot (never `git checkout`), confirmed clean with
+`git status --porcelain` and an `md5sum` match against the pre-mutation snapshot.
+
+| Sweep | Mutation | Result |
+|---|---|---|
+| Three-state partiality read (`audit.py:1170-1175`) | old-schema branch returns `METRICS_SCHEMA_CURRENT` with `any_phase_missing_end_time=False` / `phases_missing_end_time=frozenset()` — i.e. defaults an old-schema record clean, the exact archetype `plan.md:98-101` names | **RED.** `test_audit_check_metrics_end_time_markers.py`: 12 passed → 3 failed, 9 passed (`test_metrics_old_schema_record_explains_nothing`, `test_parse_metrics_end_time_presence_reports_old_schema`, `test_input_integrity_old_schema_execute_stays_blind`). Restored → 12 passed. |
+| Three-way `unmeasured` cell read (`audit.py:7368-7372`) | the `unmeasured` token is admitted as a measured zero (`totals += 0; measured.add(...)`) — the absent-read-as-zero defect `plan.md:102-104` names | **RED.** `test_audit_check_billing_composition_ledger_provenance.py` + `..._under_counts.py`: 19 passed → 3 failed, 12 passed (`test_unmeasured_token_fingerprint_keeps_sibling_measured_zeros`, `test_a_fingerprinted_row_does_not_date_its_neighbour[undated-first]` and `[dated-first]`). Restored → 19 passed. |
+
+Both readers are therefore non-vacuously covered, which is what makes item 3's "sound" claim safe. Note
+that neither sweep says anything about `exploration-share`, which calls neither reader (item 3, gap G7).
+
+For the record, the sub-source fields are exercised at
 `test/plan-marshall/manage-metrics/test_manage_metrics.py:1773,1865-1866,2080-2081,2127-2128` and
-`test/plan-marshall/platform-runtime/test_metrics_tokens.py:758`. I did not audit those suites for vacuity
-— they belong to the plans that shipped them, not to this one.
+`test/plan-marshall/platform-runtime/test_metrics_tokens.py:758,802-876,937-938,1034-1035` (the first
+citation in each pair is prose using the hyphenated spelling `index-answerable`, not the field name — a
+grep for the underscore form alone will appear to miss them). I did not sweep those suites — they belong
+to the plans that shipped them, not to this one.
 
 ## Report accuracy
 
-Claims checked one by one against the tree, GitHub, and git. **Two are false**; the rest held.
+Claims checked one by one against the tree, GitHub, and git. **Three are false** — all three the same
+underlying error, stated in three places; the rest held.
 
 **False — 1.** `report-01.md:44-48`: the audit checks read counters "— **the exact per-phase exploration
 counters D1 collects**." They are not. D1 collects
@@ -193,9 +233,20 @@ counters D1 collects**." They are not. D1 collects
 (`exploration-share` + `billing-composition` checks in `audit.py`); **nothing needs building** — only the
 corpus needs to be present." Building is needed: no reporter emits the per-phase sub-source split, and the
 existing exploration reader pools phases (`audit.py:6789-6793`, `checks/exploration-share.md:16-18`)
-contrary to `plan.md:70`. The same claim is repeated inside the sub-agent finding table
+contrary to `plan.md:70`.
+
+**False — 3.** `report-01.md:70-73`: "Plan 080 has **no** git-derivable deliverable: its instrument
+(`exploration-share`/`billing-composition`) and the three-state schema reader … *already exist* in
+`audit.py`; 080 is purely 'run the existing instrument over records that are not in this clone.'" The
+second half is the same misidentification as False-1, and the first half does not follow from it: the
+per-phase sub-source reporter D1 needs is absent, is git-derivable, and could have been built in this
+clone (gaps G3/G4/G7). The claim is repeated a fourth time inside the sub-agent finding table
 (`report-01.md:97`: "The instrument and the three-state reader already exist in `audit.py`; 080 is
-measurement-only"), so the independent check corroborated the error rather than catching it.
+measurement-only"), so the run's independent check corroborated the error rather than catching it.
+
+⚠ **This does not weaken D0.** The plan mandates HALT on outcome (b) unconditionally
+(`plan.md:64-66`), so the halt is correct whether or not git-derivable preparatory work existed. What is
+wrong is only the report's *reason*, and the handoff it produced.
 
 **Held — everything else**, each verified rather than assumed:
 
@@ -203,19 +254,21 @@ measurement-only"), so the independent check corroborated the error rather than 
 |---|---|
 | PR #1178, outcome blocked, branch `claude/code-intelligence-substrate-fwoa6b` (l.3) | GitHub: PR 1178, `merged: true`, `merged_at 2026-08-12T09:24:46Z`, head ref matches. |
 | `.gitignore` line 46 ignores `.plan/*`, two exceptions (l.54-55) | True at base sha `3a5e2ca` — I counted the file fetched at that sha: `.plan/*` is line 46, `!.plan/marshal.json` 47, `!.plan/project-architecture/` 48. (Now line 45 at `61a43e5`; drift caused by later edits, not an error.) |
-| `git ls-files .plan/` → only `marshal.json` + `project-architecture/*` (l.56) | Re-run: 13 paths, exactly that set. |
+| `git ls-files .plan/` → only `marshal.json` + `project-architecture/*/enriched.json` (l.56) | Re-run: 13 paths — `marshal.json`, eleven `*/enriched.json`, **and** `project-architecture/_project.json`. The report's `*/enriched.json` spelling misses that twelfth path; the load-bearing half (no `.plan/local/`) is exact. |
 | No archived-plan metrics corpus anywhere in git (l.57-64) | Re-run: `"*metrics.toon"` → 0, `"*archived-plans*"` → 0, all 39 tracked `.toon` are templates or fixtures. |
 | The archived-plan fixture "carries *no* `metrics.toon` at all" (l.61-62) | `find` over that fixture: 17 files, none named `metrics.toon`. |
 | Replay fixtures `{legacy,plan,unmeasured}`, single-phase (l.62-63) | Correct at run time. A fourth (`undatable`) was added 2026-08-17 by #1278 (`d1c3153`), five days after this run — drift, not an error. |
 | `audit.py` walks `.plan/local/archived-plans/{plan_id}/` (l.47-48) | `audit.py:5` and `:9374-9375` (the `--plan-dir` default). |
 | SKILL.md quote "because it operates on `.plan/local/archived-plans/` — a directory that only exists in this meta-project" (l.48-50) | Verbatim at `SKILL.md:18-20`. |
 | Three-state reader `parse_metrics_end_time_presence` / `MetricsEndTimePresence` exists (l.71-73) | `audit.py:1052` and `:1139`. |
-| Siblings 030/060 shipped git-derivable deliverables, unlike 080 (l.65-71) | Both sibling reports state outcome **completed** (`030-…/report-01.md:3`, `060-…/report-01.md:3`), consistent with the contrast drawn. |
+| Siblings 030/060 shipped git-derivable deliverables (l.65-70) | Both sibling reports state outcome **completed** (`030-…/report-01.md:3`, `060-…/report-01.md:3`), consistent with the contrast drawn. **The sibling half only** — the "unlike 080 / 080 has no git-derivable deliverable" half of the same sentence (l.70-73) is False-3 above, not a held claim. |
 | Sub-agent process note: real sibling dir is `060-dispatch-boundary-ledger-is-not-a-commensurable-population` (l.99) | Directory listing confirms that exact name; no `060-billing-composition-…` exists. |
 | Build gate: no `*.py` footprint (l.79-84) | PR file list: two `doc/plans/**` Markdown paths only. |
 | 0 inline review threads (l.115-116) | `get_review_comments` on #1178 → `totalCount: 0`. |
-| Two conversation comments, ids `5264644499` (coderabbit skip) and `5264650522` (cuioss-review-bot clean guide), neither actionable (l.118-123) | Both fetched: bodies and ids match verbatim, authors `coderabbitai[bot]` and `cuioss-review-bot[bot]`. |
-| Coverage 1-of-3, two silent by design (l.133-144) | Consistent with the fetched comments; `sourcery-ai` posted nothing. |
+| Two conversation comments, ids `5264644499` (coderabbit skip) and `5264650522` (cuioss-review-bot clean guide), neither actionable (l.118-123) | Both fetched: ids, authors (`coderabbitai[bot]`, `cuioss-review-bot[bot]`) and substance match; `get_comments` on #1178 returns exactly these two. The cuioss-review-bot quote is verbatim; the coderabbit quote is **condensed** — the bot's body reads "Excluded labels (none allowed) (1) … skip-bot-review" across a collapsed `<details>`, which the report joins into one clause. Faithful, not verbatim. |
+| Coverage 1-of-3, two silent by design (l.133-144) | Consistent with the fetched comments; `sourcery-ai` posted no comment. |
+| `sourcery-ai`'s `Sourcery review` check concluded `skipped` (l.137) | `get_check_runs` on #1178: `Sourcery review`, status `completed`, conclusion **`skipped`**. True. *(Left unverified by the first pass.)* |
+| CI: the required `verify / conclusion` check went green without a heavy build (l.107-108) | `get_check_runs` on #1178: `verify / conclusion` → **`success`**, `verify / gate` → `success`, `verify / verify` → **`skipped`** — i.e. the docs-only skip fired and the required check still reported green, exactly as claimed. *(Left unverified by the first pass.)* |
 | Plan-directory move is a `git mv` carrying `Co-Authored-By: Claude` (l.166) | Commit `30e72b8`: "establish plan 080 directory… No content change", trailer present; PR file status is `renamed`. |
 | Report is the last pre-merge commit, pushed before arming auto-merge (l.168) | Three commits, last is `2f49698` (the reviewer-participation correction), i.e. the report was amended after the review bodies existed — consistent with l.133-135. |
 | Sub-agent cost ~96,454 tokens / 17 tool calls / 140,976 ms (l.150-151) | **UNVERIFIABLE** — session-internal telemetry, not reachable from the tree or GitHub. |
@@ -225,18 +278,18 @@ measurement-only"), so the independent check corroborated the error rather than 
 
 | Residue item (from report) | Still open? | Evidence |
 |---|---|---|
-| The measurement itself remains owed; a corpus-bearing session resumes 080 in place and writes `report-02.md` | **Open** | The plan directory contains only `plan.md` and `report-01.md` — no `report-02.md`. No other plan in the epic reports the split: `grep -rln "index-answerable"` over `doc/plans/` matches only `080-…/plan.md`, `010-lsp-in-execute-lookup-and-write/plan.md`, and `020-corpus-residency-admission-control/report-01.md` (which is itself a D0-blocked run, `020-…/report-01.md:3`). |
-| "nothing needs building — only the corpus needs to be present" | **Open and wrong as stated** | See Report accuracy #2 and gap G3: the per-phase population aggregator does not exist and must be built. |
-| Orchestrator routing: the plan must not be transitioned to `shipped`; re-route to a local session | **UNVERIFIABLE** | The orchestrator ledger lives under `.plan/`, which is git-ignored and absent here (`ls .plan/local` → `logs`). Nothing in the tree records the plan's status either way. |
+| The measurement itself remains owed; a corpus-bearing session resumes 080 in place and writes `report-02.md` | **Open** | No `report-02.md` exists in the plan directory. No other plan in the epic reports the split. Both spellings were searched, because they do not overlap: `grep -rln "index-answerable" doc/plans/` matches `080-…/plan.md`, `010-lsp-in-execute-lookup-and-write/plan.md` and this audit's own two files — **not** `020-…/report-01.md`, which carries only the underscore field name; `grep -rn "index_answerable\|doc_residency" doc/plans/` adds `020-corpus-residency-admission-control/{report-01.md,verification.md,gaps.md}`. 020 is itself a D0-blocked run (`020-…/report-01.md:3`), so it closes nothing. |
+| "nothing needs building — only the corpus needs to be present" | **Open and wrong as stated** | See Report accuracy False-2/False-3 and gaps G3/G4/G7: the per-phase sub-source aggregator does not exist, exploration-share pools phases, and it applies neither schema reader nor the re-entry guard. All three are git-derivable and none needs the corpus. |
+| Orchestrator routing: the plan must not be transitioned to `shipped`; re-route to a local session | **UNVERIFIABLE** | The orchestrator ledger lives under `.plan/`, which is git-ignored, so nothing git-reachable records the plan's status either way. |
 | Landing: auto-merge armed (SQUASH), merge queue lands it | **Closed** | PR #1178 `merged: true`, `merged_at 2026-08-12T09:24:46Z`, `merged_by cuioss-oliver`. |
-| Proposed (optional) `cloud-plan-lane` / `cloud-bridge.md` amendment: a run blocked on a missing environment prerequisite still lands its directory + report | **Open, by design** (operator decision, deliberately not shipped) | `.claude/skills/cloud-plan-lane/SKILL.md:1552-1554` says the report "must state the PR number and the outcome per deliverable — including a run that ended **blocked or partial**, and why", but neither that section nor `doc/plans/cloud-bridge.md` states that a run blocked on a missing *environment prerequisite* still establishes the directory and lands a report. `grep -rn "prerequisite\|corpus-bearing"` over both files → no such note. |
+| Proposed (optional) `cloud-plan-lane` / `cloud-bridge.md` amendment: a run blocked on a missing environment prerequisite still lands its directory + report | **Open, by design** (operator decision, deliberately not shipped) | `.claude/skills/cloud-plan-lane/SKILL.md:1551-1552` — inside **§ Step 8 — Merge gate** (1310-1558), *not* § Report, which begins at `:1638` — says the report "must state the PR number and the outcome per deliverable — including a run that ended **blocked or partial**, and why"; `cloud-bridge.md:132` (§ Path 2 — Sync) says the same. Neither states that a run blocked on a missing *environment prerequisite* still establishes the directory and lands a report. `grep -rn "prerequisite\|corpus-bearing"` over both files → 0 matches, and reading the surrounding `blocked` occurrences (`SKILL.md:133,209,1098`; `cloud-bridge.md:132`) finds the rule stated in no other words either. |
 
 ## Out-of-scope and collateral
 
 Nothing was built that the plan excluded, and nothing was changed outside the plan's own directory. Checked:
 PR #1178's complete file list is two paths, both under
 `doc/plans/code-intelligence-substrate/080-exploration-split-measured-on-one-phase-and-it-is-the-worst-case/`.
-Specifically, none of the four exclusions in `plan.md:115-121` was violated — no old plan was re-run or
+Specifically, none of the four exclusions in `plan.md:113-122` was violated — no old plan was re-run or
 re-instrumented, no cached-read population was measured or mentioned as a figure, the retired per-phase cost
 ranking is not revived anywhere in the report, and no re-scoping of the epic was acted on (the epic README
 is untouched by this plan). The run also did not substitute the two fixture corpora it identified, which is
@@ -251,7 +304,16 @@ a fetch of `.gitignore` at the PR's *base* sha to check the line citation agains
 saw. Read the cited instrument code (`audit.py` exploration-share and billing-composition regions, the
 three-state and three-way readers) and the field definitions it would need
 (`manage-metrics.py`, `data-format.md`, `platform-runtime/standards/contract.md`). Verified the whole PR
-cycle against GitHub: PR object, file list, commits, review threads, and both comment bodies.
+cycle against GitHub: PR object, file list, commits, review threads, both comment bodies, and the six
+check runs. Mutation-tested both schema readers (see Test adequacy).
+
+**Contract obligations checked and found not to bind.** `cloud-plan-lane` § Report now requires a
+`> **Verification loop exit:** …` line in every run report, which `report-01.md` does not carry. That is
+**not** a defect: the requirement landed in `7d61d67` (2026-08-18, #1297), six days after this run. The
+plan's own Verification section (`plan.md:148-158`) imposes four further obligations — D1's reader test,
+a record in every schema state, D3's cold read, and a full `./pw verify`. The first three are properties
+of D1/D3 output that does not exist, so they are vacuous here; the fourth was correctly discharged as
+"no buildable footprint" (verified: the PR's two files are both Markdown).
 
 **What I could not check, and why.**
 

@@ -1,16 +1,28 @@
 # Gaps — 080-exploration-split-measured-on-one-phase-and-it-is-the-worst-case
 
-The run itself did the right thing: it halted at its own D0 gate, and I re-derived that gate's answer
-independently (no `metrics.toon` tracked in git — `git ls-files "*metrics.toon"` → 0; no
-`.plan/local/archived-plans/` on disk — `ls .plan/local` → `logs` only; `.gitignore:46` at the run's base sha
+The run itself did the right thing: it halted at its own D0 gate, and that gate's answer was re-derived
+independently and again under adversarial review (no `metrics.toon` tracked in git —
+`git ls-files "*metrics.toon"` → 0; no `.plan/local/archived-plans/` on disk, and
+`find . -name metrics.toon -not -path ./.git/*` → nothing; `.gitignore:46` at the run's base sha
 `3a5e2ca` ignores `.plan/*`). Every process claim in `report-01.md` — PR #1178's two-file docs-only diff,
-zero inline review threads, both comment ids and bodies, the `Co-Authored-By` trailer, the sibling-060
-directory-name correction — is accurate. What remains is of two kinds. First, the report's technical
-justification for the halt is wrong in two places: it states that the instrument D1 needs already exists in
-`audit.py`, when in fact no shipped check reads the three exploration sub-source fields that *define* D1's
-split, and the closest check pools all phases into one per-plan figure that D1 explicitly forbids. Second,
-the consequent work — building that reporter, then running it over a real corpus — is entirely outstanding,
-and the reporter half of it does **not** need the corpus and could be built in a cloud clone today.
+zero inline review threads, both comment ids, the `verify / conclusion` and `Sourcery review` check
+conclusions, the `Co-Authored-By` trailer, the sibling-060 directory-name correction — is accurate.
+
+What remains is of two kinds. First, the report's technical justification for the halt is wrong in three
+places (`report-01.md:44-48`, `:70-73`, `:208-210`, echoed a fourth time at `:97`): it states that the
+instrument D1 needs already exists in `audit.py`. It does not, in three separate respects — no shipped
+check reads the three exploration sub-source fields that *define* D1's split (G3); the closest check
+pools all phases into one per-plan figure that D1 explicitly forbids (G4); and that same check applies
+neither of the two schema reads nor the re-entry guard the plan obliges D1 to inherit, though sound
+implementations of all three sit elsewhere in the same file (G7). Second, the consequent work — building
+that reporter, then running it over a real corpus — is entirely outstanding, and **the reporter half of
+it does not need the corpus and could be built in a cloud clone today** (G3/G4/G7). That last point is
+the one that changes what a resuming run should do, and it is the opposite of what the report's residue
+says.
+
+⚠ None of this weakens D0. The plan mandates HALT on outcome (b) unconditionally (`plan.md:64-66`), so
+the halt is correct regardless of what preparatory work was git-derivable. Only the report's stated
+*reason*, and the handoff it produced, are wrong.
 
 ## G1 — Correct report-01's claim that the audit checks read D1's counters
 

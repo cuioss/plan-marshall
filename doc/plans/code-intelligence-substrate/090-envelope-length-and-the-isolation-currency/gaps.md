@@ -2,14 +2,17 @@
 
 D2 shipped and holds: `doc/concepts/token-management.adoc` § 6 now argues in billing-weight /
 turns-resident currency, keeps its recommendation verbatim, and carries no surviving figure in prose or
-in `context-isolation.svg`. What remains falls in three groups. Inside the shipped text, two defects:
+in `context-isolation.svg`. What remains falls in four groups. Inside the shipped text, two defects:
 one sentence narrates the document's own previous wording (a "Current state only" violation), and the
-deleted figures were replaced by an unsourced comparative claim the run itself could not measure. On
-the shipped diagram, the `ref-svg-diagrams` mandatory rasterise-and-read-back gate was neither
-performed nor recorded, and the lane contract gives a lane run no pointer to that skill. And three of
-five deliverables (D1, D3, D4) are still blocked on a corpus no cloud run can reach, with nothing
-staged anywhere to pick them up — plus the section's duplicate `~10-15 K` figure the run itself
-deferred.
+deleted figures were replaced by an unsourced comparative claim the run itself could not measure. The
+correction also stopped short of the two surfaces a non-visual reader gets — the AsciiDoc image alt
+text and the SVG `<title>`, both still in orchestrator-context framing. On the shipped diagram, the
+`ref-svg-diagrams` mandatory rasterise-and-read-back gate was neither performed nor recorded, and the
+lane contract gives a lane run no pointer to that skill. And three of five deliverables (D1, D3, D4)
+are still blocked on a corpus no cloud run can reach, with nothing staged anywhere to pick them up —
+plus the two unsourced figures the run itself deferred in a later section. Two smaller entries round
+the list out: the run report does not say which plan-mandated checks it swept (G7), and the corrected
+§ 6 gives a reader no route from its cost model to the fields that measure it (G9).
 
 ## G1 — Delete the transitional parenthetical from § 6
 
@@ -89,7 +92,8 @@ deferred.
 - **Kind:** omission
 - **Severity:** medium
 - **Topic:** documentation-surface
-- **Where:** `doc/resources/diagrams/context-isolation.svg` (11 text nodes replaced by PR #1185);
+- **Where:** `doc/resources/diagrams/context-isolation.svg` (14 `<text>` nodes plus the `<desc>`
+  replaced by PR #1185 — counted from `git show 6f1cb7b -- doc/resources/diagrams/context-isolation.svg`);
   rule at `marketplace/bundles/pm-documents/skills/ref-svg-diagrams/SKILL.md:25`
 - **Evidence:** the skill's rule reads "Every new or modified SVG MUST be rasterised against both the
   GitHub light (`#ffffff`) and dark (`#0d1117`) backgrounds … and **the rendered PNG MUST be read back
@@ -98,8 +102,8 @@ deferred.
   (`cloud-plan-lane`, `ref-code-quality`, `ref-asciidoc`) and explicitly justifies omitting
   `plugin-script-architecture`; `ref-svg-diagrams` is neither loaded nor mentioned, and no rasterisation
   is recorded anywhere in the report. The edit replaced short monospace labels with much longer prose
-  inside fixed-width boxes — e.g. `~3 K` → "resident for the whole run" (25 chars) in a `width=160`
-  box, and three `~10–15 K` → "few resident turns" in `width=120` boxes.
+  inside fixed-width boxes — e.g. `~3 K` → "resident for the whole run" (26 chars) in the `width=160`
+  box at `:41`, and three `~10–15 K` → "few resident turns" in the `width=120` boxes at `:86`/`:94`/`:102`.
 - **Why it matters:** this is the defect class the rule exists for. An analytic width check (done during
   audit: the new strings are no longer than pre-existing neighbours in the same boxes, so overflow is
   unlikely) is not the check the standard asks for, and no one has looked at the rendered result in
@@ -108,7 +112,10 @@ deferred.
   `#0d1117` per the skill's Step 4 recipe, read both PNGs back, and fix any clipping, overlap or
   contrast regression found. Record the confirmation in the fixing run's report.
 - **Done when:** a run report states that both rasterisations were read back, names the two background
-  colours used, and either reports no defect or lists the corrections made.
+  colours used, and either reports no defect or lists the corrections made. **If no rasteriser is
+  reachable in the fixing run's runtime** (`rsvg-convert`, `inkscape`, `chromium` and the `cairosvg`
+  import were all absent during this audit), the report must say so explicitly and record the gate as
+  an open coverage gap — a silent skip does not satisfy this entry.
 - **Effort:** S
 - **Risk if fixed:** re-layout to cure a clip could shift neighbouring labels; keep the change inside the
   affected box and re-rasterise after.
@@ -118,8 +125,8 @@ deferred.
 - **Kind:** omission
 - **Severity:** medium
 - **Topic:** plan-lane-contract
-- **Where:** `.claude/skills/cloud-plan-lane/SKILL.md:106-116` (Step 1, "Conditionally, by what the plan
-  touches")
+- **Where:** `.claude/skills/cloud-plan-lane/SKILL.md:104-115` (Step 1, "Conditionally, by what the plan
+  touches" — heading at `:104`, table header at `:107`, the seven surface rows at `:109-115`)
 - **Evidence:** the table maps surfaces to skills — workflow docs, production code, Python code, Python
   tests, `SKILL.md`/bundle structure, `.adoc` documentation, security-relevant change — and has **no**
   row for an SVG diagram, even though `pm-documents:ref-svg-diagrams` exists and imposes a mandatory
@@ -143,13 +150,22 @@ deferred.
 - **Severity:** medium
 - **Topic:** measurement/metrics
 - **Where:** `doc/plans/code-intelligence-substrate/090-envelope-length-and-the-isolation-currency/plan.md:84-118`
-  (D1, D3, D4); `doc/plans/code-intelligence-substrate/README.md` (no per-plan status)
+  (D1, D3, D4); the fix lands as a new plan directory under `doc/plans/code-intelligence-substrate/`
 - **Evidence:** three of five deliverables are recorded blocked (`report-01.md:36-39`) on a corpus that
   lives under the git-ignored `.plan/` tree, which no cloud clone has (`.gitignore:45`;
-  `git ls-files .plan` → 13 tracked files, none of them a metrics record). Nothing anywhere picks the
-  residue up: `grep -rln "090-envelope\|envelope-length" doc/` returns only this plan's own two files,
-  and no sibling plan in `doc/plans/**` references its blocked deliverables. The blocker is structural,
-  not incidental — re-running this plan in the same lane produces the same three blocks.
+  `git ls-files .plan` → 13 tracked files — `marshal.json` plus twelve `project-architecture/**`
+  enrichments — none of them a metrics record). Nothing anywhere picks the residue up:
+  `grep -rln "090-envelope\|envelope-length" doc/` and
+  `grep -rln "turns_resident\|turns-resident\|envelope split" doc/plans/` both return only this plan's
+  own directory, and no sibling plan in `doc/plans/**` references its blocked deliverables. The blocker
+  is structural, not incidental — re-running this plan in the same lane produces the same three blocks.
+  **Partial prior art exists and shortens D3:** sibling plan 030 already landed a git-reachable,
+  mechanism-level account of the creation/read inversion at
+  `marketplace/bundles/plan-marshall/skills/manage-metrics/standards/data-format.md:246-248`
+  ("The cache-creation inversion — not established here": `cache_creation_input_tokens` bills the first
+  write at weight `1.25`, `cache_read_input_tokens` bills each re-read at weight `0.1`; the record
+  model is ruled out as a cause). What is still missing there is exactly what D3 asks for — the
+  *phase-specific* symbol and its addressability — which needs the corpus.
 - **Why it matters:** the epic's stated theme is the measurement substrate behind token reduction, and
   its only plan that owns the `turns_resident` factor has published nothing. The blocked work also gates
   a real lever (D4's envelope split) that no other plan targets, per `plan.md:177-180`.
@@ -157,10 +173,17 @@ deferred.
   executed on a machine holding the archived `.plan/` metrics rather than in a cloud clone, (b) carries
   D1/D3/D4 forward verbatim with their ⛔ guards, and (c) derives read-only from the emitter the sibling
   plan landed (`manage-metrics/scripts/manage-metrics.py:1539`,
-  `manage-metrics/standards/data-format.md:237-244`) instead of adding a second writer. Record in the
-  epic `README.md` that plan 090 shipped D2 only.
-- **Done when:** a successor plan file exists under `doc/plans/code-intelligence-substrate/` naming D1,
-  D3 and D4 and its corpus precondition, and it is referenced from the epic README.
+  `manage-metrics/standards/data-format.md:237-244`) instead of adding a second writer, and starts D3
+  from the mechanism 030 already recorded rather than re-deriving it. Do **not** add per-plan status to
+  the epic `README.md`: `doc/plans/README.md` § Layout makes the directory shape itself the status
+  signal (a bare `NNN-{name}.md` is authored-not-run, a `NNN-{name}/` directory means a run started),
+  and per-plan status in a README duplicates the run report. The successor's own Problem section
+  carries the pointer instead.
+- **Done when:** a successor plan file exists under `doc/plans/code-intelligence-substrate/` that (a)
+  names D1, D3 and D4, (b) states the corpus precondition in its own preamble, and (c) names
+  `090-envelope-length-and-the-isolation-currency` as the plan whose deliverables it carries forward —
+  so `grep -rl "090-envelope-length-and-the-isolation-currency" doc/plans/code-intelligence-substrate/`
+  returns a directory other than 090's own.
 - **Effort:** M
 - **Risk if fixed:** a locally-executed plan does not get the lane's PR/verification cycle in the same
   form; the successor must say which contract governs it.
@@ -182,13 +205,16 @@ deferred.
   "Where Plan Marshall deliberately spends more" (G2, G3).
 - **Why it matters:** a later run reading this report cannot tell which parts of the surface were swept,
   so it will re-do the sweep or, worse, assume it was done.
-- **Action:** append two lines to the report's D2 detail: that § 4 carries no numeric figure (so nothing
-  was owed there, and the figures the plan meant are those in "Where Plan Marshall deliberately spends
-  more", tracked as residue), and that the two-factor emission had already landed in `manage-metrics`
-  so no second writer was added.
-- **Done when:** `report-01.md` names § 4 and the emission-coordination check, each with its outcome.
+- **Action:** add a clearly-marked addendum block at the end of `report-01.md` (heading `## Addendum`,
+  not a rewrite of the run's narrative — the report is a dated record of one execution) stating two
+  outcomes: that § 4 ("Skill-driven guidance — no tool exploration") carries no numeric figure, so
+  nothing was owed there and the figures the plan's pointer actually reaches are those in "Where Plan
+  Marshall deliberately spends more" (tracked as G2/G3); and that the two-factor emission had already
+  landed in `manage-metrics` (PR #1154, `manage-metrics.py:1539`), so no second writer was added.
+- **Done when:** `report-01.md` names § 4 and the emission-coordination check, each with its outcome,
+  inside a block marked as an addendum rather than interleaved into the original narrative.
 - **Effort:** S
-- **Risk if fixed:** none — it is an append to a historical record; keep the existing text intact.
+- **Risk if fixed:** none — the existing text is kept intact and the addition is marked as later.
 
 ## G8 — Source or soften § 6's "bounded and small" cost comparison
 
@@ -202,6 +228,12 @@ deferred.
   deleted four figures on the ground that the population needed to re-derive them was unreachable
   (`report-01.md:56-59`). The plan itself labels the underlying arithmetic a LEAD requiring re-derivation
   at the moment of the claim (`plan.md:160`) and records D1 as blocked, so nothing measured backs it.
+  The repository's own published weights make the comparison non-obvious rather than self-evident:
+  `marketplace/bundles/plan-marshall/skills/manage-metrics/standards/data-format.md:48` defines
+  `billing_weighted_total = input + output + round(0.1 × cache_read) + round(1.25 × cache_creation)`,
+  so a **created** byte is billed **12.5×** a **read** byte. Re-creating an envelope's starting context
+  `n` extra times is "bounded and small" only where the residency it removes exceeds roughly `12.5 × n`
+  turns — a threshold the sentence asserts past without stating.
 - **Why it matters:** it is the load-bearing justification for the document's largest architectural
   claim. If envelope re-creation is *not* small against the read cost it removes — the exact failure mode
   the plan flags as real (`plan.md:158`: a split whose second half must re-read the first half's context
@@ -244,3 +276,39 @@ deferred.
 - **Effort:** S
 - **Risk if fixed:** couples a concept page to a field name that could be renamed; the cross-reference
   should point at the standards section, not restate the formula's field names in prose more than once.
+
+## G10 — Carry the currency correction into the image alt text and the SVG `<title>`
+
+- **Kind:** incomplete
+- **Severity:** low
+- **Topic:** documentation-surface
+- **Where:** `doc/concepts/token-management.adoc:61` (the `image::` macro's alt text) and
+  `doc/resources/diagrams/context-isolation.svg:7` (`<title>`)
+- **Evidence:** PR #1185 rewrote the SVG's `<desc>` (`:8`) and 14 `<text>` nodes into residency
+  framing, but left both surfaces a non-visual reader actually receives in the pre-correction currency.
+  The alt text still reads "… accumulates system prompt, tool outputs, raw build logs, and intermediate
+  reasoning into one growing context **heading toward the token-window limit**" — the commit touched
+  that line only to strip `(~200-500 tokens)`. The `<title>` still reads "Per-dispatch context
+  isolation — **single growing context vs orchestrator-plus-execution-context-variants**" and is not in
+  the commit's diff at all (`git show 6f1cb7b -- doc/resources/diagrams/context-isolation.svg` shows it
+  as a context line, never as `-`/`+`). The `<desc>` immediately below it now says the opposite thing
+  in the opposite currency: "every byte, once added, stays resident and is re-read on every later turn
+  … each byte's residency is bounded to its short-lived envelope".
+- **Why it matters:** neither string is false, and D2's literal *Done when* does not reach them — this
+  is completeness, not correctness. But a screen-reader user and an AsciiDoc-only reader get the alt
+  text and nothing else, so for them the section's diagram is still argued in orchestrator-context size,
+  which is exactly the mismatch D2 existed to remove. Inside one file the `<title>` and `<desc>` now
+  describe the same picture in two different currencies.
+- **Action:** rewrite the alt text's left-column clause in residency terms (e.g. "… into one growing
+  context in which every byte stays resident and is re-read on every later turn") and rewrite the SVG
+  `<title>` to match its own `<desc>` (e.g. "Per-dispatch context isolation — how long each byte stays
+  resident", which is already the diagram's rendered heading at `:30`). Keep both as *descriptions of
+  the picture*; do not turn either into the cost argument, which belongs in the prose.
+- **Done when:** `grep -n "heading toward the token-window limit" doc/concepts/token-management.adoc`
+  returns nothing, `grep -n "orchestrator-plus-execution-context-variants" doc/resources/diagrams/context-isolation.svg`
+  returns nothing, and the alt text and `<title>` each state the residency framing the SVG `<desc>`
+  already carries.
+- **Effort:** S
+- **Risk if fixed:** the alt text is the accessibility description; a rewrite that turns it into an
+  argument rather than a description degrades it. Fold this into G4's rasterise run so the diagram's
+  text surfaces are all confirmed in one pass.
