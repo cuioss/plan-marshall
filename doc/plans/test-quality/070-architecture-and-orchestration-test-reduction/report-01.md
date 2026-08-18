@@ -204,7 +204,7 @@ instruction, it is **reported rather than built**, and the run's budget went to 
 | Measure | Before | After |
 |---|---:|---:|
 | Deep `Path(__file__).parent` chains (3+) | 13 (after D1 removed 3) | **0** |
-| Modules containing `spec_from_file_location` | 22 | **8** |
+| Modules containing `spec_from_file_location` | 22 | **9** (10 sites — `test_pyproject_build.py` holds two) |
 | `test-module-preamble-boilerplate` doctor findings (slice) | 47 | **18** |
 
 The slice now carries **no** deep parent-chain arithmetic. Roots come from
@@ -218,8 +218,9 @@ semantics-identical — the registration-preservation hazard the plan names does
 run **added**:
 
 ⚠️ D3's done-when reads *"no `spec_from_file_location` … remains in the slice"*. Taken literally that is
-**not met** — nine sites across nine modules remain, and the table below is a reasoned exception list
-rather than the zero the sentence asks for. Recorded as a shortfall against the literal done-when, not
+**not met** — **10 sites across 9 modules** remain (`test_pyproject_build.py` accounts for two of them,
+one per row below), and the table below is a reasoned exception list rather than the zero the sentence
+asks for. Recorded as a shortfall against the literal done-when, not
 as satisfaction of it.
 
 | Site | Reason it stays | Owner |
@@ -605,7 +606,8 @@ ownership of it; `findings-test-corpus-review.md` and `report-authoring-01.md` a
 ## Build gate
 
 **Verdict: Python changed, so the build ran.** `git diff --name-only origin/main...HEAD -- '*.py'`
-returns **53** files of **55** changed (the other two are this plan's `plan.md` and `report-01.md`).
+returns **53** files of **56** changed. The other three are this plan's `plan.md`, its `report-01.md`,
+and `doc/developer/testing.adoc` — the beyond-diff sweep's one out-of-surface fix (§ Scope).
 
 `./pw verify` — all three sub-steps, not the narrower calls:
 
@@ -691,7 +693,7 @@ count in this run produced three different answers.
 | F19 | round 3 | Two modules cite `test/plan-marshall/conftest.py`, which does not exist | **fixed** (`5e6ae7e`) |
 | F20–F27 | round 3 | Eight report figure/pointer errors (dangling `§ Findings, F1`; 16 vs 15 modules; ExecuteConfig 4 vs 3; `execute_config` 4 vs 3 copies; prose baseline 43 vs 42; condition-4 column unqualified; unlisted `spec_from_file_location` site; `plan-orchestrator` credited with deferred imports it has none of) | **fixed** (`5e6ae7e`) |
 | F28 | round 3 | Registration-name counts irreproducible — three methods, three answers | **fixed** (`5e6ae7e`) — restated with its derivation and a warning to re-derive |
-| F29 | round 3 | D3's literal done-when ("no `spec_from_file_location` remains") not met — 9 sites remain | **corrected to partial** (`5e6ae7e`); the sites are listed with owners |
+| F29 | round 3 | D3's literal done-when ("no `spec_from_file_location` remains") not met — 10 sites across 9 modules remain | **corrected to partial** (`5e6ae7e`, count reconciled in `f1x`); the sites are listed with owners |
 | F30 | round 3 | D4/B3 reported complete; the done-when is met but ~20 citations survive in shapes the rule cannot match | **corrected to partial** (`5e6ae7e`); listed per file, **deferred** to a follow-up run |
 | F31 | round 3 | `rule-catalog.md` and `doctor-test-conventions.md` say the preamble rule has "One known-legitimate occurrence"; D1 created a second | **proposal** — `marketplace/bundles/**` is out of scope |
 | F32 | round 3 | Four conversions turned a non-registering load into a registering one; two were undisclosed | **survivor, characterised** — see below |
@@ -848,7 +850,7 @@ plan's diff, because the two have different review audiences.
 2. **D4's B5 half beyond the build family.** The architecture query filter cases and the inbox envelope
    shape cases, both named by D4, are untouched. The build-detection families the plan called "the
    single clearest parametrization target" were already converged before this run (§ D4).
-3. **8 modules still carrying `spec_from_file_location`**, each listed with its reason in § D3. Seven
+3. **10 `spec_from_file_location` sites across 9 modules**, each listed with its reason in § D3. Seven
    are plan `090` § D2's structurally-unfixable class; one is the `manage_lessons` registration
    collision, which needs `050`/`090` coordination because the other half lives in `manage-lessons/`.
 

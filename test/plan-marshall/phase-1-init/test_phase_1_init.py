@@ -147,6 +147,14 @@ class TestPhase1InitBaseBranchSeeding:
         # with --field base_branch carrying the precedence-resolved value.
         assert '--field base_branch' in text
 
+        # The placeholder itself, and the write that carries it. Asserting the
+        # write is what makes "the value is written via {resolved_base_branch}"
+        # a checked claim rather than a described one: a doc that resolved the
+        # placeholder but then wrote some other token would satisfy the
+        # source-presence checks below while breaking the contract.
+        assert '{resolved_base_branch}' in text
+        assert '--value {resolved_base_branch}' in text
+
         # the doc must document all three precedence sources so the
         # operator_param > project_default > git_fallback contract is fully
         # specified (all three literal strings appear in SKILL.md Step 6,
