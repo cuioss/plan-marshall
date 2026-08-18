@@ -140,3 +140,48 @@ def test_survey_only_paths_are_never_expected_modifications(tmp_path, monkeypatc
     details = data['details']['affected_files_recall']
     assert details['recall_pct'] == 100.0
     assert _check_by_name(data['checks'], 'affected_files_recall')['status'] == 'pass'
+
+
+def test_an_unparseable_survey_declaration_fails_loudly_not_silently(tmp_path, monkeypatch):
+    """A survey heading whose bullets do not parse is a ``fail``, never a ``skip``.
+
+    ``artifact-consistency.md`` states the obligation normatively: "a declaration
+    heading present in a deliverable's own content but yielding no parsed bullet
+    is treated as a parse failure". That exists because a borrowed parser's
+    silence is indistinguishable from a genuine absence — the check re-parses a
+    grammar it does not own, so an under-match reads as "the plan declared
+    nothing" rather than as "this reader could not read it".
+
+    The obligation was widened to all three headings while ``heading_present``
+    still looked for ``**Affected files:**`` alone. A survey-scope deliverable
+    with an unparseable list therefore took the SILENT branch: `skip`, "nothing
+    to compare", over a plan that had declared its whole mutation surface.
+
+    The two verdicts are asserted positively and are opposites, so a regression
+    reaches the wrong one rather than a differently-worded right one.
+    """
+    plan_id = 'retro-survey-unparseable'
+    base = tmp_path / 'base'
+    base.mkdir()
+    plan_dir = base / 'plans' / plan_id
+    build_happy_plan_dir(plan_dir)
+    # The heading is present; the entries below it are prose, not bullets, so
+    # nothing parses out of it.
+    (plan_dir / 'solution_outline.md').write_text(
+        '# Solution: Demo\nplan_id: demo\n\n## Summary\n\ns\n\n## Overview\n\no\n\n'
+        '## Deliverables\n\n### 1. Survey the loggers\n\n'
+        '**Files expected to mutate:**\n\nTBD — to be filled in during execution.\n',
+        encoding='utf-8',
+    )
+    (plan_dir / 'references.json').write_text(
+        json.dumps({'modified_files': ['src/foo.py'], 'domains': ['plan-marshall-plugin-dev']}),
+        encoding='utf-8',
+    )
+    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
+
+    result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+
+    assert result.success, result.stderr
+    check = _check_by_name(result.toon()['checks'], 'affected_files_recall')
+    assert check['status'] == 'fail'
+    assert 'no bullet parsed' in check['message']

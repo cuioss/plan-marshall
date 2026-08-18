@@ -333,9 +333,16 @@ def extract_modification_intent_files(content: str) -> list[str]:
     construction** — no execution of such a plan could pass, so the resulting
     ``fail`` grades the declaration style rather than the execution.
 
-    A bullet with NO annotation is included: an unannotated declaration states
-    no intent, and assuming read-only would silently shrink the denominator and
+    An unannotated bullet is included under ``Affected files:`` and
+    ``Files expected to mutate:``: an unannotated declaration there states no
+    intent, and assuming read-only would silently shrink the denominator and
     manufacture the opposite error (a vacuously high recall).
+
+    ``Files to survey:`` is the one exception, and it is not an assumption — the
+    field is DEFINED as the analysis-only candidate pool, so
+    :data:`_DECLARATION_HEADINGS` gives its unannotated bullets ``read`` intent
+    and this filter then excludes them. An explicitly marked non-read survey
+    bullet still counts: the heading supplies a default, never an override.
     """
     return [
         str(entry['path'])

@@ -588,7 +588,7 @@ lessons_recorded: {count}
 
 ## Steps Field Contract
 
-**CRITICAL**: The `steps` field MUST contain file paths from the deliverable's `Affected files` section. Exception: `verification` profile tasks use verification commands as steps instead of file paths (file-path validation is skipped).
+**CRITICAL**: The `steps` field MUST contain file paths the parent deliverable declares — under `Affected files:`, or under the `Files expected to mutate:` / `Files to survey:` pair a survey-scope deliverable declares instead. Exception: `verification` profile tasks use verification commands as steps instead of file paths (file-path validation is skipped).
 
 ### Input Format (API calls)
 
@@ -654,7 +654,7 @@ The script converts input to JSON array format in task files; each step carries 
 
 **Why valid:**
 - Each step is an explicit file path
-- Steps are derived from deliverable's `Affected files`
+- Steps are derived from the deliverable's declared file surface (`Affected files`, or the survey-scope pair)
 - Execution progress can be tracked per file
 
 ### Invalid Steps (Descriptive Text)

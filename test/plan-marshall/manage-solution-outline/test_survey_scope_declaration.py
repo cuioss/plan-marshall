@@ -129,7 +129,7 @@ def test_the_survey_pair_satisfies_the_affected_files_section_requirement():
     """
     errors, _warnings = validate_deliverable_contract(_only_deliverable())
 
-    assert not any('Missing **Affected files:** section' in e for e in errors), errors
+    assert not any('Missing declared file surface' in e for e in errors), errors
 
 
 def test_a_lone_survey_field_does_NOT_satisfy_the_section_requirement():
@@ -149,7 +149,13 @@ def test_a_lone_survey_field_does_NOT_satisfy_the_section_requirement():
 
     errors, _warnings = validate_deliverable_contract(lone)
 
-    assert any('Missing **Affected files:** section' in e for e in errors), errors
+    missing = [e for e in errors if 'Missing declared file surface' in e]
+    assert missing, errors
+    # The message names BOTH remedies, because it now fires for two causes: no
+    # declaration at all, and a survey pair with one field missing. Naming only
+    # `Affected files:` would send the author of a half-declared survey
+    # deliverable to the wrong fix.
+    assert 'Files expected to mutate' in missing[0]
 
 
 def test_survey_pair_bullets_are_exempt_from_the_intent_marker_requirement():

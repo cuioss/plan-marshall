@@ -203,8 +203,8 @@ Each dispatched phase envelope (phases 2–6) runs the workflow doc inside the s
 │    • Step 7: holistic verification tasks                                           │
 │                                                                                    │
 │  Orchestrator-side post:                                                           │
-│    /manage-tasks topological-sort/               (script — Step 8)                 │
-│    /manage-execution-manifest compose/           (script — Step 8b)                │
+│    /manage-tasks topological-sort/               (script — Step 7)                 │
+│    /manage-execution-manifest compose/           (script — Step 7b)                │
 │    /manage-tasks qgate-mechanical-checks/        (script — Step 8)                 │
 │      coverage / skill-resolution / acyclic / files-exist /                         │
 │      keyword-drift / structural-token-drift /                                      │
@@ -216,7 +216,7 @@ Each dispatched phase envelope (phases 2–6) runs the workflow doc inside the s
 └────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Execution-profile routing into the manifest.** The `manage-execution-manifest compose` step above is the single resolver for the execution-profile posture (`minimal` / `standard` / `full`). `phase-1-init`'s planning-lane router projects a recommended posture over its signals and the init posture dialogue persists the chosen value to `status.metadata.execution_profile`; `compose` then reads that posture and resolves each finalize element's `lane:` frontmatter block to produce the posture-pruned `phase_6.steps`. The profile is a distinct axis from the `planning_lane` (`light` / `deep`) depth decision — the two compose but do not coerce each other (`deep_lane: always` forces a deep planning lane without forcing a `full` profile). `compose` runs twice — provisional at init, idempotent re-compose with firm signals at Step 8b — so the posture-dialogue preview (`lanes preview`) and the executed finalize flow cannot diverge. See [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) § "Execution-profile lane resolution".
+**Execution-profile routing into the manifest.** The `manage-execution-manifest compose` step above is the single resolver for the execution-profile posture (`minimal` / `standard` / `full`). `phase-1-init`'s planning-lane router projects a recommended posture over its signals and the init posture dialogue persists the chosen value to `status.metadata.execution_profile`; `compose` then reads that posture and resolves each finalize element's `lane:` frontmatter block to produce the posture-pruned `phase_6.steps`. The profile is a distinct axis from the `planning_lane` (`light` / `deep`) depth decision — the two compose but do not coerce each other (`deep_lane: always` forces a deep planning lane without forcing a `full` profile). `compose` runs twice — provisional at init, idempotent re-compose with firm signals at Step 7b — so the posture-dialogue preview (`lanes preview`) and the executed finalize flow cannot diverge. See [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) § "Execution-profile lane resolution".
 
 ### 2.5 phase-5-execute
 

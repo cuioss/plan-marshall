@@ -41,6 +41,7 @@ compute_referrer_gaps = _closure.compute_referrer_gaps
 expand_declared_glob = _closure.expand_declared_glob
 declared_paths = _closure.declared_paths
 normalize_declared_path = _closure.normalize_declared_path
+is_glob = _closure.is_glob
 cmd_qgate_mechanical = _qgate.cmd_qgate_mechanical
 
 _parsing = load_script_module(
@@ -68,10 +69,11 @@ _STANDARDS_GLOB = 'marketplace/bundles/plan-marshall/skills/manage-tasks/standar
 #: never written as a literal.
 _MULTI_HIT_GLOB = 'marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/*.py'
 
-#: Trees the independent oracle's walk skips — build output, caches and VCS
-#: internals, none of which any pattern under test targets. Pruning keeps the
-#: walk cheap; the exclusion is stated rather than silent because it bounds
-#: where the oracle is faithful.
+#: Trees the independent oracle's walk skips — VCS internals, the virtualenv,
+#: dependency and build output, caches, and the git-ignored plan state. None of
+#: them holds a file any pattern under test targets. Pruning keeps the walk
+#: cheap; the exclusion is stated rather than silent because it bounds where the
+#: oracle is faithful.
 _WALK_PRUNED_DIRS = frozenset({'.git', '.venv', 'node_modules', 'target', '__pycache__', '.plan'})
 
 
@@ -99,10 +101,18 @@ def _independent_expansion(pattern: str) -> list[str]:
     the tree and matches with :func:`fnmatch` instead, so the two computations
     are genuinely independent and CAN contradict each other.
 
-    ⚠ The walk prunes :data:`_WALK_PRUNED_DIRS`, so this is a faithful
-    independent oracle only for patterns rooted OUTSIDE those trees. Every
-    caller here targets ``marketplace/bundles/…``, which no pruned directory
-    contains.
+    ⚠ It is a faithful oracle under TWO stated bounds, both of which every
+    caller here satisfies:
+
+    1. The walk prunes :data:`_WALK_PRUNED_DIRS`, so a pattern rooted inside one
+       of those trees would see fewer files than ``Path.glob`` does. Every
+       caller targets ``marketplace/bundles/…``, which no pruned directory
+       contains.
+    2. ``fnmatch``'s ``*`` crosses ``/`` while ``Path.glob``'s does not, so the
+       two agree only while no SUBDIRECTORY under the pattern's parent holds a
+       match. Both patterns used here name a single directory of files
+       (``…/standards/*.md``, ``…/scripts/*.py``); a pattern over a nested tree
+       would need a different oracle.
     """
     return [rel for rel in _repo_file_index() if fnmatch(rel, pattern)]
 
@@ -517,16 +527,27 @@ def test_files_exist_zero_is_load_bearing_not_vacuous(plan_context):
 
 
 def test_a_declared_glob_escaping_the_repo_is_unmeasured_not_empty():
-    """``../../etc/*.conf`` names a real populated directory OUTSIDE the tree.
+    """An escaping pattern is rejected, and the escape target really exists.
+
+    The precondition is asserted rather than assumed: the pattern must resolve
+    to a directory that is BOTH outside the repository and populated, or the
+    test would pass for the uninteresting reason that there was nothing out
+    there to find either way. ``PROJECT_ROOT`` is three levels below ``/``, so
+    ``../../../etc`` is ``/etc``.
 
     Left unnormalised, ``Path.glob`` walks out of the repository and returns
     nothing, so a scope nothing examined reports a clean zero — the very defect
     this module reports on outlines, committed by the module itself.
     """
-    expansion = expand_declared_glob('../../etc/*.conf', PROJECT_ROOT)
+    escape = '../../../etc/*.conf'
+    outside = (PROJECT_ROOT / '../../../etc').resolve()
+    assert outside == Path('/etc'), 'precondition: the pattern must leave the repo'
+    assert list(outside.glob('*.conf')), 'precondition: the escape target must be populated'
+
+    expansion = expand_declared_glob(escape, PROJECT_ROOT)
     assert expansion.expandable is False
 
-    deliverable = _deliverable(1, survey=['../../etc/*.conf'])
+    deliverable = _deliverable(1, survey=[escape])
     gaps, population = check_declared_scope_reconciliation([deliverable], PROJECT_ROOT)
 
     assert [g['kind'] for g in gaps] == ['unexpandable_glob']
@@ -648,6 +669,81 @@ def test_population_publishes_member_identities_not_only_counts():
 
     assert population['scanned_paths'] == sorted([_REAL_A, _REAL_B])
     assert population['scanned_paths_truncated'] is False
+
+
+def test_scanned_paths_truncation_is_disclosed_not_silent(monkeypatch):
+    """The published-member cap says when it bit. (B1)
+
+    ``scanned_paths`` is D3's own discharge mechanism: it carries the member
+    identities a positive-population assertion needs. A cap applied silently
+    would present a PARTIAL population as a complete one — the plan's own defect
+    class, reached inside the field that exists to prevent it.
+
+    The cap is lowered rather than building a 200-path fixture; the property
+    under test is the disclosure, not the constant. The unlowered case is
+    asserted alongside it, so a mutant hard-coding either verdict is caught.
+    """
+    deliverable = _deliverable(1, affected=[_REAL_A, _REAL_B])
+    tasks = [_task(1, 1, [_REAL_A, _REAL_B])]
+
+    _gaps, full = check_declared_set_closure(tasks, [deliverable])
+    assert full['scanned_paths_truncated'] is False
+    assert len(full['scanned_paths']) == 2
+
+    monkeypatch.setattr(_closure, '_MAX_SCANNED_PATHS_PUBLISHED', 1)
+    _gaps, capped = check_declared_set_closure(tasks, [deliverable])
+
+    assert capped['scanned_paths_truncated'] is True
+    assert len(capped['scanned_paths']) == 1
+    # The COUNT is unaffected by the publication cap — a reader can still tell
+    # how large the population was, which is what makes the cap a disclosure
+    # rather than a shrunken population.
+    assert capped['declared_paths_scanned'] == 2
+
+
+def test_a_bracket_pattern_is_not_treated_as_a_declared_glob():
+    """``[`` is deliberately outside the metacharacter set. (B5)
+
+    A character class is legal glob syntax but vanishingly rare in a declared
+    scope and common in prose, so reading a prose bracket as a pattern would
+    manufacture findings. The decision is documented at
+    ``_GLOB_METACHARACTERS``; this pins it, so a future widening has to change a
+    test rather than only a comment.
+    """
+    assert is_glob('src/a[0-9].py') is False
+    assert is_glob('src/*.py') is True
+    assert is_glob('src/a?.py') is True
+
+    # A bracketed path is therefore a LITERAL declaration: it takes part in the
+    # projection closure (which skips patterns) rather than the reconciliation.
+    deliverable = _deliverable(1, mutate=['src/a[0-9].py'])
+    assert compute_projection_gaps(deliverable, [_task(1, 1, [])]) == ['src/a[0-9].py']
+
+
+def test_a_holistic_task_does_not_flip_the_population_incomplete(plan_context):
+    """``deliverable == 0`` is the holistic sentinel, carved out here too. (B4)
+
+    ``_check_coverage`` already whitelists it ("do not flag as orphan"). Without
+    the same carve-out the closure pass counted it as unmapped, set
+    ``population_complete: False`` and flipped ``ambiguous`` — triggering a whole
+    LLM re-dispatch because of a task that is correctly shaped. The fixture uses
+    a NON-verification holistic task deliberately: a verification-profile one is
+    skipped earlier and so cannot reach the sentinel branch at all.
+    """
+    plan_dir = plan_context.plan_dir_for('closure-holistic')
+    _write_outline(
+        plan_dir,
+        f'### 1. One deliverable\n\n**Affected files:**\n- `{_REAL_A}` (read)\n',
+    )
+    _write_task_file(plan_dir / 'tasks', _task(1, 1, [_REAL_A]))
+    _write_task_file(plan_dir / 'tasks', _task(2, 0, [_REAL_A], profile='implementation'))
+
+    result = cmd_qgate_mechanical(Namespace(plan_id='closure-holistic', no_emit=True))
+
+    population = result['population']['declared_set_closure']
+    assert population['unmapped_tasks'] == []
+    assert population['population_complete'] is True
+    assert result['ambiguous'] is False
 
 
 def test_ambiguous_flips_when_the_closure_population_is_incomplete(plan_context):

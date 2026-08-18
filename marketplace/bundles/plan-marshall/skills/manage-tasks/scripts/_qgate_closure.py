@@ -24,8 +24,8 @@ incomplete:
 ``referrer``
     Every non-verification task step target is declared by its parent
     deliverable. ``phase-4-plan/SKILL.md`` § Step 5 already states this as an
-    invariant ("Source each step's ``intent`` from the parent deliverable's
-    ``affected_files[N].intent``") and nothing checked it. A step target absent
+    invariant — a step's ``intent`` is sourced from the parent deliverable's own
+    declared entry for that path — and nothing checked it. A step target absent
     from every declared set is a path in no write-set — the exact shape the
     retrospective recall check is structurally unable to report, because a path
     that appears in no declaration cannot be missing from one.
@@ -239,7 +239,9 @@ def expand_declared_glob(pattern: str, repo_root: Path) -> GlobExpansion:
     # a measured-empty verdict over a scope nothing examined. An absolute
     # pattern is rejected here too, for an explicit statement of intent; that
     # one WOULD also be caught below, since ``Path.glob`` raises on it
-    # (``NotImplementedError`` on 3.12, ``ValueError`` from 3.13).
+    # (``NotImplementedError`` on both 3.12.3 and 3.13.12, executed; the
+    # handler catches the exception type rather than naming a version, so a
+    # future interpreter raising something else is covered without an edit).
     if pattern.startswith('~') or pattern.startswith('/'):
         return GlobExpansion([], False, False, 0)
     normalised = posixpath.normpath(pattern)
@@ -302,6 +304,16 @@ def check_declared_set_closure(
         tasks_scanned += 1
         step_targets_scanned += len(_step_targets(task))
         number = _as_int(task.get('deliverable'))
+        # ``deliverable == 0`` is the holistic-task sentinel, carved out by
+        # ``_check_coverage`` in the same script ("do not flag as orphan"). The
+        # closure pass MUST agree with it: counting the sentinel as unmapped
+        # would set ``population_complete: False`` and flip ``ambiguous``, which
+        # the caller reads as "the mechanical pass is not authoritative" — a
+        # whole re-dispatch triggered by a task that is correctly shaped. Two
+        # checks in one script disagreeing about the same sentinel is the drift
+        # this carve-out closes.
+        if number == 0:
+            continue
         if number is None or number not in by_number:
             unmapped_tasks.append(_as_int(task.get('number')) or 0)
             continue

@@ -30,7 +30,7 @@ whatever had already shipped. **D0 mutated nothing.**
 
 | Arm | What fails | Failure signature | Disposition |
 |---|---|---|---|
-| **A** — the derived SET is incomplete | coverage of a derived set | silent omission | Handed over as [`350-outline-derived-set-closure-integrity.md`](../350-outline-derived-set-closure-integrity.md) |
+| **A** — the derived SET is incomplete | coverage of a derived set | silent omission | Handed over as [`350-outline-derived-set-closure-integrity`](../350-outline-derived-set-closure-integrity/plan.md) |
 | **B** — the derived BUCKET or classification is wrong | classification of an already-derived set | wrong routing | **Shipped in this run** |
 
 ⚠ **The request-classification material went to arm B**, explicitly, and the successor spec records
@@ -486,7 +486,7 @@ whether this plan lands.
 ## Residue
 
 1. **Arm A of the split** — handed over as
-   [`350-outline-derived-set-closure-integrity.md`](../350-outline-derived-set-closure-integrity.md).
+   [`350-outline-derived-set-closure-integrity`](../350-outline-derived-set-closure-integrity/plan.md).
 2. **A `disabled` plan's footprint is derivable but reported unresolvable** — analysed and
    deliberately not fixed here (D4, F13). Carried into the successor spec with the evidence, because
    it is cross-cutting: `manage-references`, the composer, and `extension_base` share the policy and
