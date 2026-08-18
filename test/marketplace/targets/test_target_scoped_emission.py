@@ -25,6 +25,9 @@ from marketplace.targets.component_targets import (
 from marketplace.targets.opencode.target import OpenCodeTarget
 
 _SCOPED = '---\nname: {name}\ndescription: scoped to claude only\ntargets: [claude]\n---\n\n# Body\n'
+# The mirror image. Without it the Claude pipeline's exclusion path is never
+# taken — a fixture scoped TO claude exercises only the other target's skip.
+_OTHER = '---\nname: {name}\ndescription: scoped away from claude\ntargets: [opencode]\n---\n\n# Body\n'
 _PLAIN = '---\nname: {name}\ndescription: ships everywhere\n---\n\n# Body\n'
 
 
@@ -74,6 +77,10 @@ def marketplace(tmp_path: Path) -> Path:
     _write(bundle / 'skills' / 'scoped-skill' / 'SKILL.md', _SCOPED.format(name='scoped-skill'))
     _write(bundle / 'skills' / 'scoped-skill' / 'standards' / 'x.md', '# standard\n')
     _write(bundle / 'skills' / 'plain-skill' / 'SKILL.md', _PLAIN.format(name='plain-skill'))
+    _write(bundle / 'agents' / 'other-agent.md', _OTHER.format(name='other-agent'))
+    _write(bundle / 'commands' / 'other-cmd.md', _OTHER.format(name='other-cmd'))
+    _write(bundle / 'skills' / 'other-skill' / 'SKILL.md', _OTHER.format(name='other-skill'))
+    _write(bundle / 'skills' / 'other-skill' / 'standards' / 'y.md', '# standard\n')
     return bundles
 
 
@@ -118,6 +125,30 @@ def test_scoped_components_are_absent_from_every_other_target(opencode_tree: Pat
 def test_a_scoped_skill_takes_its_whole_subtree_with_it(opencode_tree: Path):
     """A skill's declaration governs its verbatim sub-directories too."""
     assert not (opencode_tree / 'skill' / 'demo-scoped-skill' / 'standards').exists()
+
+
+def test_the_claude_pipeline_also_excludes_what_scopes_it_out(claude_tree: Path):
+    """The filter is symmetric — the Claude target skips what names only another.
+
+    Every other case in this module scopes a component TO claude, which
+    exercises the OpenCode skip alone; this one is what makes the Claude
+    emitter's own exclusion path observable.
+    """
+    bundle = claude_tree / 'demo'
+
+    assert not (bundle / 'agents' / 'other-agent.md').exists()
+    assert not (bundle / 'commands' / 'other-cmd.md').exists()
+    assert not (bundle / 'skills' / 'other-skill').exists()
+
+
+def test_components_scoped_away_from_claude_still_reach_the_target_they_name(
+    opencode_tree: Path,
+):
+    """The exclusion above is a scope decision, not a component that got lost."""
+    assert (opencode_tree / 'agent' / 'other-agent.md').is_file()
+    assert (opencode_tree / 'command' / 'other-cmd.md').is_file()
+    assert (opencode_tree / 'skill' / 'demo-other-skill' / 'SKILL.md').is_file()
+    assert (opencode_tree / 'skill' / 'demo-other-skill' / 'standards' / 'y.md').is_file()
 
 
 def test_unscoped_components_reach_every_target(claude_tree: Path, opencode_tree: Path):
@@ -175,6 +206,9 @@ def test_emitted_manifest_matches_the_emitted_tree(claude_tree: Path):
 
     assert sorted(manifest['commands']) == ['./commands/plain-cmd.md', './commands/scoped-cmd.md']
     assert sorted(manifest['agents']) == ['./agents/plain-agent.md', './agents/scoped-agent.md']
+    # The scoped-away pair is absent from BOTH halves of the lock-step: the
+    # manifest does not declare it and the tree does not carry it.
+    assert not (claude_tree / 'demo' / 'commands' / 'other-cmd.md').exists()
 
 
 def test_equality_gate_passes_over_a_tree_holding_a_scoped_component(
