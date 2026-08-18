@@ -1376,10 +1376,33 @@ arming auto-merge — it is not a gate on the merge. Merge only when conditions 
 
    A non-zero count means the base has moved and this condition applies. **Re-run § Step 5's gate on
    the merged tree** — the full one, by the same `*.py` predicate Step 5 uses, so a docs-only advance
-   costs nothing. Where the merged tree is green, whether you also **push** the merge is a judgement:
-   pushing it makes the PR's own CI verify what actually lands, at the cost of another CI cycle and a
-   base that may move again before it finishes. Either way the condition is met by having **run** the
-   gate on the merged tree, and the report records the result and which choice was made.
+   costs nothing.
+
+   **Where the merge is performed decides what the report must say, so choose before you merge —
+   the two shapes are not interchangeable:**
+
+   - **On the branch (the default).** `git merge origin/main`, gate, push. The Step 9 report commit
+     (condition 4) then lands *on top of* the merge, so pushing the report pushes the merge with it —
+     there is no third option where the branch carries the report but not the merge. The PR's own CI
+     therefore verifies what actually lands, at the cost of one more CI cycle and a base that may move
+     again before it finishes.
+   - **On a throwaway branch, leaving the PR head untouched.** Cut one from the PR head, merge
+     `origin/main` there, gate there, then return to the PR head and delete it. Use this when the
+     merge must stay out of the PR's history. The tested tree is then **not** the PR head, and the
+     report says so, naming the merge commit that was tested — otherwise the record claims a
+     verification of a tree the PR does not contain.
+
+   The condition is met by having **run** the gate on a merged tree either way. The report records
+   which shape was used, the tested merge commit, and the gate's result (§ Report → Build gate).
+
+   ⛔ **Fail closed.** Every command this condition runs is load-bearing, and a failure of any of them
+   leaves the check unperformed rather than passed: a failed `git fetch` leaves `origin/main` stale
+   and the count meaningless; a conflicting merge leaves no merged tree to gate; a red gate on the
+   merged tree is the defect this condition exists to surface. In each case **condition 2 is NOT
+   established, auto-merge is NOT armed**, and the report records the command that failed and why. A
+   conflicted merge is resolved (or the merge aborted and the conflict reported as a blocker) before
+   the condition can be met — never left half-applied in the working tree, which would make every
+   later check read against a tree that is neither the PR head nor the merged one.
 
    ⛔ **Re-running the gate is not optional when the count is non-zero, and "the queue re-verifies" is
    not a substitute.** It does — on `merge_group`, after arming — and by then the branch is locked and
@@ -1539,7 +1562,7 @@ that its artifact exists on disk:
 | 5 Build gate | Report states the git-derived Python-change verdict and the build outcome |
 | 6 Verification sub-agent | Findings and dispositions in the report; **which of the two exits ended the loop** — named with the same `verifier-clear` / `budget-exhausted` token the report header carries, plus the `non-converging` qualifier where it applies (§ Report) — the **budget that applied** (five, or the plan's) with **every extension and who granted it**, and the round that stopped it. Where the budget ran out with an operator reachable, that the boundary question was **put to them** and what they answered; where it ran out headless, that fact and the fallback taken. On the verifier exit: **the verifier's own last answer** — never the author's verdict — and the **evidence stronger than a read** it rests on, named. On the budget exit: that fact, with everything A forbids **fixed** regardless and what closing each remaining B survivor would take. Either way: each survivor — and each behavioural finding left `deferred` — listed individually with its (a) proof or (b) bound and confirmation it was **re-put to the verifier** in the stopping round; whether the late rounds' findings were **narrower and not merely fewer**; the **residue to assume remains**; and `Outcome` still reporting the deliverables, not the loop (§ Step 6, "When the loop stops") |
 | 7 PR cycle | PR exists; every comment dispositioned in the report; the participation table carries a verdict **and** a `Reopens?` value per reviewer, and every `silent` verdict records what its recovery check found. An `unreadable` verdict means condition 3 is NOT established — the row is reported as **not done**, whatever the merge outcome |
-| 8 Merge gate | Conditions 1–4 met and auto-merge armed; where the base had advanced, the report names the gate's result on the merged tree and whether the merge was pushed (condition 2). Either `state: MERGED` was confirmed after arming, **or** the session could not self-wake to watch the queue (§ Cloud session affordances) and delegated the landing to the orchestrator's collect — both are completed, neither is partial (§ Step 8). The merge commit is recorded to the operator, not in the pre-merge report |
+| 8 Merge gate | Conditions 1–4 met and auto-merge armed; where the base had advanced, the report names the shape used, the merge commit tested, and the gate's result on it (condition 2) — and a condition 2 that failed closed is reported as **not established**, with nothing armed. Either `state: MERGED` was confirmed after arming, **or** the session could not self-wake to watch the queue (§ Cloud session affordances) and delegated the landing to the orchestrator's collect — both are completed, neither is partial (§ Step 8). The merge commit is recorded to the operator, not in the pre-merge report |
 | 8 Bridge | No **status or bookkeeping** write landed under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan's directory was touched; a **declared-deliverable** edit to a shared lane doc (e.g. `cloud-bridge.md`, `README.md`, the plan template) is permitted — and the report carries the PR number and per-deliverable outcome the orchestrator will collect from |
 | 9 This check | Its result appended to the report |
 | 9 What have we learned | A contract-change proposal presented to the operator, or a recorded "none, because …" |
@@ -1647,9 +1670,12 @@ The `git diff --name-only origin/main...HEAD -- '*.py'` verdict, and the build r
 "no Python changes, build skipped".
 
 Then the stale-base re-verification (§ Step 8 condition 2): the `git rev-list --count HEAD..origin/main`
-figure at the gate, and — when it was non-zero — the gate's result on the **merged** tree and whether
-the merge was pushed. A zero count is recorded as the measurement it is ("base current at the gate"),
-not left unstated: an absent line is indistinguishable from a check that was never run.
+figure at the gate, and — when it was non-zero — which shape was used (merged on the branch and pushed,
+or gated on a throwaway branch with the PR head left untouched), **the merge commit that was tested**,
+and the gate's result on that merged tree. A zero count is recorded as the measurement it is ("base
+current at the gate"), not left unstated: an absent line is indistinguishable from a check that was
+never run. Where the condition failed closed — a failed fetch, a conflicting merge, a red merged-tree
+gate — the report names the command that failed and states that condition 2 was **not established**.
 
 ## Findings
 Every finding from the verification sub-agent, from CI, and from PR review — each with source,
