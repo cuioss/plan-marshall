@@ -33,14 +33,19 @@ a content comparison that walked zero files and `fail` on two samples that demon
 
 The mechanisms are distinct and each is readable at a named symbol:
 
-- **The anti-vacuity guard is dropped by the scoped run.** Two rules emit an `empty_population`
+- **The anti-vacuity guard is dropped by the scoped run.** Three rules emit an empty-population
   finding anchored at the *marketplace root* — `EMPTY_POPULATION_TYPE` in
   `_analyze_thinking_directive_in_workflow_docs.py::analyze_thinking_directive_in_workflow_docs` and
-  in `_analyze_shim_marker.py::analyze_shim_marker`. Both are routed through the `_scoped` closure in
-  `doctor-marketplace.py::cmd_quality_gate`, and `_finding_in_scope` keeps a finding only when its
-  `file` resolves *to or under* a `--paths` scope dir. The marketplace root is a **parent** of every
-  possible scope dir, so under `--paths` the guard's finding is unconditionally dropped and the rule
-  reports zero findings over an empty population.
+  in `_analyze_shim_marker.py::analyze_shim_marker`, and a third in
+  `_analyze_incident_reference_in_docs.py::analyze_incident_reference_in_docs`, which anchors the
+  same way but carries **no** `EMPTY_POPULATION_TYPE` constant (it emits the rule's ordinary
+  `FINDING_TYPE` with `extra.pattern_family='empty_population'`), so a search for the constant name
+  finds only the first two. All three reach the `_scoped` closure in
+  `doctor-marketplace.py::cmd_quality_gate` — the first two directly, the third through the
+  `_suppressed` closure, which calls `_scoped` before the suppression filter — and `_finding_in_scope`
+  keeps a finding only when its `file` resolves *to or under* a `--paths` scope dir. The marketplace
+  root is a **parent** of every possible scope dir, so under `--paths` the guard's finding is
+  unconditionally dropped and the rule reports zero findings over an empty population.
 - **The examined population is invisible on a clean run.** `_runner.py`'s `emit()` closure records
   `{'rule': label, 'findings': len(findings)}` and nothing else. `details.population_size` rides on
   findings only, so on a clean tree — the only state a passing gate is ever in — the size the rule
@@ -87,15 +92,23 @@ halts and reports, and D2–D8 are not attempted.**
    **Derive the population first.** Enumerate, by reading
    `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_runner.py`
    (`RuleRunner.run_quality_gate`), every rule whose findings are routed through the `scoped(...)`
-   wrapper. For each, open its analyzer module and determine whether it can emit a finding whose
+   wrapper **or** through the `suppressed(...)` wrapper — the latter is `_suppressed` in
+   `doctor-marketplace.py`, which calls `_scoped` before filtering, so a rule routed that way is
+   scope-filtered exactly as a `scoped(...)` rule is. Enumerating `scoped(...)` alone under-derives
+   the set. For each, open its analyzer module and determine whether it can emit a finding whose
    `file` is the marketplace root — or any path that is a *parent* of a plausible `--paths` scope dir
-   — rather than a file inside the tree. Two members are known at authoring time
-   (`_analyze_thinking_directive_in_workflow_docs.py` and `_analyze_shim_marker.py`, both via a
-   constant named `EMPTY_POPULATION_TYPE`); **re-derive the set, do not trust that pair as
-   complete** — a third such rule may have landed since.
+   — rather than a file inside the tree. Three members are known at authoring time:
+   `_analyze_thinking_directive_in_workflow_docs.py` and `_analyze_shim_marker.py` (both via a
+   constant named `EMPTY_POPULATION_TYPE`, both routed through `scoped(...)`), and
+   `_analyze_incident_reference_in_docs.py` (routed through `suppressed(...)`, and carrying **no**
+   such constant — it emits the rule's ordinary `FINDING_TYPE` with
+   `extra.pattern_family='empty_population'`). **Derive by finding anchor, not by constant name, and
+   re-derive the set rather than trusting that trio as complete** — a fourth such rule may have
+   landed since.
 
-   ⛔ **STOP CONDITION.** If the `scoped(...)` call sites cannot be enumerated from `_runner.py`, or
-   if a routed rule's finding anchor cannot be determined by reading its analyzer, **halt the plan**,
+   ⛔ **STOP CONDITION.** If the `scoped(...)` / `suppressed(...)` call sites cannot be enumerated
+   from `_runner.py`, or if a routed rule's finding anchor cannot be determined by reading its
+   analyzer, **halt the plan**,
    record what was derivable and what was not, and ship nothing from D2–D8. Do **not** fall back to a
    hand-maintained list of exempt finding types: a hand-maintained enumeration of a machine-derivable
    set is the defect class this epic exists to remove, and writing one here would reproduce it inside
@@ -181,10 +194,13 @@ halts and reports, and D2–D8 are not attempted.**
    its ground truth through `.plan/execute-script.py`, and returns `[]` — a silent no-op — when that
    file is absent. **`.plan/` is git-ignored and does not exist in this clone. Do not go looking for
    it, and do not read an empty result from the real tree as evidence of anything.** The supported
-   path is the cluster's own fixture helpers in
-   `test/pm-plugin-development/plugin-doctor/test_analyze.py` (`_build_fixture_root`,
-   `_write_fake_script`, `_write_skill_md`, `write_dispatching_executor`), which build a synthetic
-   executor; re-derive their names from that file rather than trusting this list. If a whole-tree
+   path is the cluster's own fixture helpers reachable from
+   `test/pm-plugin-development/plugin-doctor/test_analyze.py` — `_build_fixture_root`,
+   `_write_fake_script` and `_write_skill_md` are defined in that file, and
+   `write_dispatching_executor` is imported into it from the sibling module
+   `test/pm-plugin-development/plugin-doctor/_plugin_doctor_dispatching_executor.py` — which build a
+   synthetic executor; re-derive their names and their defining modules from that file's imports
+   rather than trusting this list. If a whole-tree
    confirmation of 060/G7's live incidence is attempted and cannot be produced for this reason,
    **record the coverage gap in the run report** rather than reporting the tree clean.
 
@@ -256,9 +272,14 @@ halts and reports, and D2–D8 are not attempted.**
 
    - **060/G5** — `_augment_misplaced_router_flag` in
      `marketplace/bundles/plan-marshall/skills/tools-input-validation/scripts/input_validation.py`
-     builds its worked example as `{prog} {flag} VALUE <subcommand> ...`. No marketplace script sets
-     `prog=`, so `parser.prog` is the bare script filename — an invocation form the repository's
-     script-execution convention forbids — and `<subcommand>` is a placeholder where the caller's own
+     builds its worked example as `{prog} {flag} VALUE <subcommand> ...`, where `prog` is the root
+     parser's `parser.prog`. Most marketplace scripts leave `prog=` unset, so that value is the bare
+     script filename; the scripts that do set it (`orchestrator.py`, `marshalld.py`, the
+     `marshall-steward` scripts, `platform_runtime.py`, `_ci_barrier.py`) set it to a bare program
+     name. **Re-derive which spelling the CI surface's own root parser yields** — either way the
+     rendered example is an invocation form the repository's script-execution convention forbids,
+     because none of these spellings is the `python3 .plan/execute-script.py {bundle}:{skill}:{script}`
+     notation a caller may run — and `<subcommand>` is a placeholder where the caller's own
      verb was available in the failing argv. Build the example from the caller's actual argv instead:
      render the verb tokens that preceded the misplaced flag, and prefer an explicitly supplied
      notation over `parser.prog`, falling back to `prog` only when none is supplied.
@@ -274,14 +295,18 @@ halts and reports, and D2–D8 are not attempted.**
      a router-scoped flag placed *after* the verb on the CI surface, whose worked example moves the
      flag ahead of the verb. State explicitly that this is the **mirror** of the existing
      verb-scoped-flag signature, whose worked example prescribes the opposite move, so a reader cannot
-     collapse the two into one. Fix 060/G5 before or with this, or the guidance points at a note that
-     names an uninvocable path.
+     collapse the two into one. The section's lead-in sentence states a literal signature count
+     ("these four canonical argparse-rejection signatures"); re-derive it from the numbered list at
+     the moment of the change and correct it in the same edit — an enumeration lead-in left standing
+     above a list of a different length is the same defect class this epic exists to remove. Fix
+     060/G5 before or with this, or the guidance points at a note that names an uninvocable path.
 
    *Done when:* running the CI parser with a subcommand followed by `--plan-id X` produces stderr
    naming the flag and stating that it belongs before the subcommand, pinned by a test against the
    real CI parser; the emitted example names the caller's real verb rather than a placeholder and
    names no bare `*.py` filename, pinned by a test; and the standards document contains a signature
-   whose worked example moves a router flag from after the verb to before it.
+   whose worked example moves a router flag from after the verb to before it, with the section's
+   stated signature count equal to the number of numbered entries the section lists.
 
 7. **D7 — The pin-trap detector's loader model, shape table, remedy and sampling API say what they do**
    (closes 320/G6, 360/G3, 320/G5, 320/G4, 320/G9, 320/G10)
@@ -354,11 +379,16 @@ halts and reports, and D2–D8 are not attempted.**
      reference (the reverse of the shipped term-of-art form), and a dated / version-pinned narration
      family. Add one positive test per new form and one negative keeping a legitimate version
      constraint unflagged, and extend the rule catalogue and provenance entries. **The real-tree
-     zero-findings test will go red on one live site** — a dated snapshot heading a section of
+     zero-findings test will go red on at least one live site** — the dated lead-in line
+     `As of 2025-10-27:` opening the universal-access bullets in
      `marketplace/bundles/plan-marshall/skills/tools-permission-doctor/standards/permission-architecture.md`.
      Remove that date, letting the bullets below it stand as the present-tense statement they already
      are; this is the minimum edit required to keep the rule's real-tree anchor green, and it is
-     independently required by the repository's documentation standards.
+     independently required by the repository's documentation standards. **Re-run the anchor after
+     the matcher lands and re-derive the full live-site set from the pattern actually written** — a
+     family widened beyond the gap's proposed regex surfaces further sites (see the Claim labels row
+     for 130/G3), and each one must be disposed of or the widening narrowed before the anchor is
+     green.
    - **130/G2** — a back-ticked incident reference is exempt from every narration family whatever the
      surrounding prose, so a removed reference can be reinstated by adding two backticks and the gate
      stays green. **Do not narrow the exemption in this run.** It is a deliberate, documented,
@@ -438,7 +468,8 @@ Under `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/`:
   new placement rule (D3).
 - `scripts/_analyze_canonical_enum_drift.py` — `_enum_sites_in_skill` (D3), the enum-token pattern
   and the authority resolver (D8).
-- `scripts/_analyze_incident_reference_in_docs.py` — the narration pattern set (D8).
+- `scripts/_analyze_incident_reference_in_docs.py` — the root-anchored empty-population finding
+  (D1) and the narration pattern set (D8).
 - `scripts/_plugin_pin_trap.py` — the content comparison, the volatile signature, the executor
   adapter, the loader model, the shape table, the remedy text and the paired observer (D2, D7).
 - `references/rule-catalog.md`, `references/rule-provenance.md`, `SKILL.md` — the anti-vacuity claim
@@ -477,6 +508,7 @@ Under `doc/plans/truthful-signals/`:
 |---|---|---|
 | 040/G6 reproduces: the empty-population finding is anchored at the marketplace root and `_finding_in_scope` keeps a finding only when its path is the scope dir or under it, so a parent path can never match | OBSERVED | `_analyze_thinking_directive_in_workflow_docs.py` (`EMPTY_POPULATION_TYPE`, `file=str(marketplace_root)`) and `doctor-marketplace.py::_finding_in_scope`; the rule is routed through `scoped(...)` in `_runner.py::run_quality_gate` |
 | The same defect exists in `analyze_shim_marker` — its empty-population finding is also root-anchored and also routed through `scoped(...)` | OBSERVED | `_analyze_shim_marker.py` (`EMPTY_POPULATION_TYPE`) and the `emit('analyze_shim_marker', scoped(...))` call in `_runner.py::run_quality_gate` |
+| A third member exists — `analyze_incident_reference_in_docs` anchors its empty-population finding at the marketplace root too, reaches `_scoped` through `suppressed(...)`, and carries no `EMPTY_POPULATION_TYPE` constant, so a constant-name search misses it | OBSERVED | `_analyze_incident_reference_in_docs.py` (the `if not targets:` branch returning a `Finding` with `file=str(marketplace_root)` and `extra.pattern_family='empty_population'`), the `emit('analyze_incident_reference_in_docs', suppressed(...))` call in `_runner.py::run_quality_gate`, and `_suppressed` in `doctor-marketplace.py::cmd_quality_gate`, which calls `_scoped` before filtering |
 | 050/G1 reproduces: the real-tree shim test's docstring claims a regression on either side turns it red and that every shim carries a marker | OBSERVED | `test/pm-plugin-development/plugin-doctor/test_analyze_shim_marker.py::test_real_marketplace_tree_produces_zero_findings` docstring |
 | The measured per-site recall figure quoted in 050/G1 | HYPOTHESIS | The recall harness D4 adds — re-derive by mutation over the real population; do not carry the recorded figure forward |
 | 060/G6 reproduces: `_entry_from_surface` unions root flags into every subcommand's accept set, so a root-declared flag can never be reported as misplaced, and its docstring justifies the union with a false claim about argparse | OBSERVED | `_analyze_argument_naming.py::_entry_from_surface` (docstring and the `root_flags \| child_flags` assignment) |
@@ -493,14 +525,14 @@ Under `doc/plans/truthful-signals/`:
 | 050/G2 reproduces: `analyze_shim_marker` is emitted from the quality-gate pass only, while the catalogue claims both passes | OBSERVED (asserted absence, verified) | The only `analyze_shim_marker` call site in `_runner.py` is inside `run_quality_gate`; `references/rule-catalog.md` § Discovery approach for that rule claims `cmd_quality_gate` **and** `cmd_analyze` |
 | 100/G6 reproduces: neither new rule id appears in the catalogue or the plugin-doctor SKILL.md | OBSERVED (asserted absence, verified) | Both rule ids occur zero times in `references/rule-catalog.md` and `SKILL.md`; the mirror-drift section states a literal count of four |
 | 100/G7's site and notation counts | HYPOTHESIS | `derive_population` over the real tree — re-derive at the moment of the change; the recorded figures describe an earlier tree |
-| 130/G3's live dated-narration site still exists | OBSERVED | `marketplace/bundles/plan-marshall/skills/tools-permission-doctor/standards/permission-architecture.md` — the dated heading above the universal-access bullets; it is the only such match under `marketplace/bundles` outside Javadoc/JSDoc examples |
+| 130/G3's live dated-narration site still exists | OBSERVED | `marketplace/bundles/plan-marshall/skills/tools-permission-doctor/standards/permission-architecture.md` — the dated lead-in line `As of 2025-10-27:` standing directly above the universal-access bullets, under the `## Universal Access Pattern` heading (it is a prose line, not a markdown heading); it is the only match for the gap's `(?:as of\|since\|before\|after)\s+(?:20\d{2}(?:-\d{2})?\|\d+\.\d+\.\d+)` family under `marketplace/bundles` outside Javadoc/JSDoc examples — a family widened beyond that pattern (e.g. to a spelled-out month) also matches `pm-dev-frontend-cui/skills/cui-javascript-project/standards/project-structure.md`'s "current active LTS as of October 2025", so re-derive the live-site set against the pattern actually written |
 | 130/G3's real-tree anchor goes red unless that site is edited | HYPOTHESIS | The new dated-narration pattern run against the real tree once D8's matcher lands |
 | 460/G5 reproduces: two retrospective test docstrings describe a three-way, per-column read | OBSERVED | `test/plan-marshall/plan-retrospective/test_analyze_logs.py` and `test_analyze_logs_behavior.py` — the two docstrings; a third match in `test_chat_provenance.py` is about chat provenance and is out of family |
 | The expected surface above is the set of files this plan touches | HYPOTHESIS | The run's own diff, checked against the section at verification time; a file touched and not listed is collateral change to be justified in the report |
 | Every gap named in the Deliverables reproduces at HEAD — none was already closed | OBSERVED | Each gap's own `Where` clause was opened at the named file and symbol while this plan was authored; the source documents are git-tracked at `doc/plans/truthful-signals/{040,050,060,100,130,320,360,460}-*/gaps.md` |
 
 An asserted **absence** is verified exactly as an asserted presence, and is the higher-risk half.
-The four absences above are each marked as verified.
+The three absences above are each marked as verified.
 
 ## Verification
 
@@ -582,11 +614,13 @@ the call, because this run has no operator to approve one. Shipping either decis
 approving an amendment to a contract it is governed by.
 
 **One collateral edit is required, not optional.** D8's dated-narration family will redden the
-incident-reference rule's real-tree anchor unless the single live dated site in the permission
-architecture standard is corrected in the same commit. That site is separately the subject of a gap
-assigned elsewhere in this epic; the edit made here is the one-line date removal that keeps the
-anchor green and is independently required by the repository's documentation standards. Nothing else
-in that file changes.
+incident-reference rule's real-tree anchor unless the live dated site in the permission architecture
+standard is corrected in the same commit. That site is separately the subject of a gap assigned
+elsewhere in this epic; the edit made here is the one-line date removal that keeps the anchor green
+and is independently required by the repository's documentation standards. Nothing else in that file
+changes. It is the only site the gap's proposed regex matches — but the live-site set is a function
+of the pattern the run actually writes, so re-derive it after the matcher lands rather than assuming
+this one edit suffices.
 
 **Sequencing.** D1 gates everything: if the root-anchored population cannot be derived, the run halts
 and D2–D8 are not attempted. Within D3 and D6 the two items on `_analyze_argument_naming.py` and the

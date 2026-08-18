@@ -26,31 +26,33 @@ governs only a branch this run cuts itself — see the contract § Step 2.)
 
 ## Problem
 
-Twenty-four defects, filed across ten already-landed plans in this epic, resolve into two mechanisms
+Twenty-four defects, filed across twelve already-landed plans in this epic, resolve into two mechanisms
 in one place.
 
 **The first is in the contract itself.** `.claude/skills/cloud-plan-lane/SKILL.md` ships rules whose
 inputs it declares unobtainable, facts it never probed stated as flat fact, and obligations with no
 artifact that proves they were met. § Step 8 condition 1 instructs the run to derive which context
-blocks from `(required contexts ∩ non-green contexts)` (`SKILL.md:1245-1252`) while the same
+blocks from `(required contexts ∩ non-green contexts)` (`SKILL.md:1342-1349`) while the same
 condition, forty lines above, states that the ruleset-config API is unreachable on the cloud MCP path
-(`:1206-1208`) — so the left operand cannot be enumerated and the paragraph has no terminus a cloud
+(`:1303-1305`) — so the left operand cannot be enumerated and the paragraph has no terminus a cloud
 run can reach. § Cloud session affordances states three facts as confirmed (`:54` no `gh`; `:56`
 ruleset API not reachable; `:57` arming queues at once) that the run which wrote them recorded as
 *reported-only, not probed*, and its `:56` row still says to read required-ness from
-`mergeStateStatus` while `:1218-1224` establishes the MCP payload has no such key and the field is
-`mergeable_state`. And condition 1's non-required-context **disclosure** obligation (`:1241-1243`)
-has no report artifact anywhere: the Step-9 contract-check row `| 8 Merge gate |` (`:1407`) demands
-none, and the § Report template (`:1456-1560`) has no merge-gate section — while the sibling
-disclosure it was modelled on, condition 4's review-coverage shortfall, *does* carry one at `:1530`.
+`mergeStateStatus` while `:1315-1321` establishes the MCP payload has no such key and the field is
+`mergeable_state`. And condition 1's non-required-context **disclosure** obligation (`:1338-1340`)
+has no report artifact anywhere: the Step-9 contract-check row `| 8 Merge gate |` (`:1504`) demands
+none, and the § Report template (`:1563-1693`) has no merge-gate section — while the sibling
+disclosure it was modelled on, condition 4's review-coverage shortfall, *does* carry one at `:1663`.
+(Every `SKILL.md` line number in this plan is HEAD-anchored at authoring time and is a **lead**: that
+file moves, so locate by the quoted text, never by the number.)
 
 **The second is in the run reports the contract produces**, and it is the same mechanism one layer
 out. Fifteen of the twenty-four defects are false statements standing in landed `report-01.md` files:
 counts that do not re-derive, unresolved template placeholders read as "the run recorded nothing",
 sections written early and never reconciled with what the run later did, and absence claims the same
-file contradicts. The contract already carries the rule that would have caught most of them — "**A
+file contradicts. The contract already carries the rule that would have caught five of them — "**A
 count derived by looking is a sample.** State how it was derived, and re-derive it at the moment of
-the claim" (`SKILL.md:1568-1569`) — and it was violated in five separate plans. The rule is not the
+the claim" (`SKILL.md:1701-1702`) — and it was violated in four separate plans. The rule is not the
 missing part. The **receipt** is: Step 9's self-check has a row for every step's artifact and none for
 whether the report's own claims survive a re-read, so a run finishes its contract check green with a
 report that contradicts itself. That is exactly the shape of the merge-gate defect above, which is
@@ -76,7 +78,7 @@ evidence corpus later plans in this epic mine, say what their runs actually did.
 ## ⛔ Declared Bridge excursion — read before Step 4
 
 This plan's D1, D5 and D6 **edit run reports inside ten other plans' directories** under
-`doc/plans/truthful-signals/`. The contract's Step-9 row `| 8 Bridge |` (`SKILL.md:1408`) states
+`doc/plans/truthful-signals/`. The contract's Step-9 row `| 8 Bridge |` (`SKILL.md:1505`) states
 flatly that "no other plan's directory was touched", while permitting "a **declared-deliverable**
 edit to a shared lane doc". This plan and the contract therefore disagree, and the first-instruction
 block requires the run to **report the disagreement** rather than resolve it silently. The resolution
@@ -98,15 +100,17 @@ is decided here, in advance, so the run needs no mid-run decision:
 
 **On the contract edits themselves (D2, D3, D4, D7).** These are *declared deliverables of a plan the
 operator handed over*, not a run deciding from its own experience that the contract should change.
-The prohibition at `SKILL.md:1437` ("Never self-approve a change to the contract that governs you")
-governs the second case and does not bar the first — plans 030, 220 and 450 all landed deliverables
-in this same file. Any **further** contract gap this run notices, beyond the deliverables below, is
-recorded as a proposal in § What have we learned and is **not** shipped in this PR.
+The prohibition at `SKILL.md:1544` ("Never self-approve a change to the contract that governs you")
+governs the second case and does not bar the first — plans 030 (PR #1137) and 450 (PR #1147) both
+landed deliverables in this same file. Any **further** contract gap this run notices, beyond the
+deliverables below, is recorded as a proposal in § What have we learned and is **not** shipped in
+this PR.
 
 ## Deliverables
 
 D0 gates every other deliverable. D1 carries the plan's only `high` gap and lands first after the
-gate. D2–D4 are the contract half, D5–D7 the record half.
+gate. D2–D4 and D7 are the contract half — prose in a governing skill; D1, D5 and D6 are the record
+half — corrections inside landed run reports.
 
 Where a gap's *Fix* offered the run a choice between two remedies, **this plan has already chosen**;
 the choice is stated in the deliverable. The run makes no such decision.
@@ -298,8 +302,9 @@ the choice is stated in the deliverable. The run makes no such decision.
    and did not disclose it, or committed a report containing an unresolved placeholder, is reported as
    **not done** at Step 9 rather than done. Verified by cold read (§ Verification).
 
-5. **D5 — Seven landed reports reconciled with what their runs did** *(closes 220/G4, 110/G4, 110/G5,
-   060/G4, 160/G7, 370/G4, 260/G4 — classes C1 and C2)*
+5. **D5 — Seven corrections across six landed reports, reconciled with what their runs did**
+   *(closes 220/G4, 110/G4, 110/G5, 060/G4, 160/G7, 370/G4, 260/G4 — classes C1 and C2; 110 takes two
+   of the seven, which is why the file count is one lower than the correction count)*
 
    One edit per instance, in the file each gap names. Findings are recorded per instance, not bundled.
 
@@ -320,8 +325,8 @@ the choice is stated in the deliverable. The run makes no such decision.
       table is a *conformance* record, so a stale row there reads as a compliance fact that is false.
    d. **060** header line — `**PR:** _pending_` → the PR number, re-derived at the moment of the edit
       from the plan directory's git history (`git log --oneline -- {plandir}`).
-   e. **160** — delete the second, `_pending_` `## Cost` heading and its body; the filled one three
-      lines above stands.
+   e. **160** — delete the second, `_pending_` `## Cost` heading and its body; the filled `## Cost`
+      section earlier in the same file stands.
    f. **370** — delete the four trailing `(Recorded at close.)` placeholder sections (`## Cost`,
       `## Contract check (Step 9)`, `## What have we learned (Step 9)`, `## Residue`); filled versions
       of all four already appear earlier in the file.
@@ -330,7 +335,8 @@ the choice is stated in the deliverable. The run makes no such decision.
       dispatcher's runtime-input class (`iteration`, `producer`, whitelisted `session_id`) as the
       direction-2 population it did not cover.
 
-   *Done when:* each of the seven files satisfies its gap's own *Done when*; and, checked per file, no
+   *Done when:* each of the seven corrections satisfies its gap's own *Done when*; and, checked once
+   per touched file across the six, no
    `_pending_` or `(Recorded at close.)` placeholder remains, no template heading occurs twice, and no
    § Build gate or § Contract check statement is contradicted by another section of the same file.
 
@@ -373,9 +379,10 @@ the choice is stated in the deliverable. The run makes no such decision.
    is a Markdown-section parser for finalize step rosters and **not** a population source. Cite the
    reference implementation named in the gap, after confirming the symbol still exists at HEAD.
 
-   The cost of not having this is measured: two plans in this epic named `_dispatch_roster.py` as the
-   pattern, and a third rediscovered the same mis-pointer from scratch — the mis-pointer still stands
-   at `doc/plans/truthful-signals/050-migration-shims-have-no-expiry/plan.md`. Correcting that plan's
+   The cost of not having this is measured: two plans in this epic (040 and 050) named
+   `_dispatch_roster.py` as the pattern, and 050's own run then rediscovered the mis-pointer from
+   scratch — the cost was paid twice, and the mis-pointer still stands at
+   `doc/plans/truthful-signals/050-migration-shims-have-no-expiry/plan.md`. Correcting that plan's
    text is **not** in scope (see § Out of scope).
 
    ⛔ Respect the skill's own § Boundary: it carries only judgement with no home elsewhere and points
@@ -445,7 +452,7 @@ the choice is stated in the deliverable. The run makes no such decision.
 **Read-only** (the evidence base, never edited by this plan): the twelve
 `doc/plans/truthful-signals/{source-plan}/gaps.md` and `verification.md` files. Re-derive that set
 from the ids in § Deliverables — it is wider than the ten reports § Expected surface lists as edited,
-because several source plans contribute a gap without owning a report this plan corrects.
+because two source plans (030 and 230) contribute a gap without owning a report this plan corrects.
 
 **No `*.py` file is expected in the diff.** If one appears, that is scope drift and is reported as
 such (§ Verification).
@@ -461,7 +468,7 @@ such (§ Verification).
 | The authoring skill names no population-derivation mechanism (040/G5) — an asserted **absence** | OBSERVED | A content search of `.claude/skills/author-cloud-plan/SKILL.md` for `population-derived\|_dispatch_roster\|implements:` returns nothing. Re-derive before writing D7 |
 | Three affordance rows state as fact what the writing run marked reported-only (450/G3) | OBSERVED | `SKILL.md` § Cloud session affordances rows "GitHub access", "Ruleset-config API", "Auto-merge arming", against the D0 table in `450-…/report-01.md:33-36` |
 | The "Ruleset-config API" row names a merge-state field its own § Step 8 note says does not exist (450/G4) | OBSERVED | That row's "Read required-ness from `mergeStateStatus`", against § Step 8 condition 1's MCP field note (`mergeable_state`, lowercase, no `mergeStateStatus` key) |
-| The remaining 15 report-accuracy defects reproduce at HEAD | OBSERVED | Located by content search in each named `report-01.md`: `_pending_` in 060; two `## Cost` headings in 160; four `(Recorded at close.)` sections in 370; "no local build was run" vs the § Run continuation build in 110; the superseded branch/PR in 110's contract-check rows 2 and 7; "quantified" in 220's D1 bullet; "Direction 2 … none" and the test count in 260; the two case counts in 430; "three EARLIEST" in 440 (**two** sites); the boundary-harness figure in 040 |
+| The twelve report-accuracy defects assigned to D5 and D6 reproduce at HEAD | OBSERVED | Located by content search in each named `report-01.md`: `_pending_` in 060; two `## Cost` headings in 160; four `(Recorded at close.)` sections in 370; "no local build was run" vs the § Run continuation build in 110; the superseded branch/PR in 110's contract-check rows 2 and 7; "quantified" in 220's D1 bullet; "Direction 2 … none" and the test count in 260; the two case counts in 430; "three EARLIEST" in 440 (**two** sites); the boundary-harness figure in 040 |
 | The corrected **value** of each count in D6 | HYPOTHESIS | Each is re-derived at the moment of the edit by the derivation D6 names (test collection at the documented commit; step frontmatter for the order set). The figures in the gap documents are leads and are **not** to be transcribed |
 | The `sourcery-ai` review body and the full commit set of plan 450's PR (D1(d), D1(e)) | HYPOTHESIS | The live PR surfaces (`get_reviews`, the commit list). Both are quoted in the git-tracked `450-…/gaps.md` § G2 / § G5; per D0(d), if the live read is unavailable the correction cites the gap document as its substrate and says so |
 | Plan 060's PR number (D5(d)) | OBSERVED | `git log --oneline -- doc/plans/truthful-signals/060-…/` names the landing commit and its PR number; re-derive at the moment of the edit |
@@ -541,7 +548,7 @@ four reasons, and readers should be able to check the argument rather than take 
 
 **And the durable half is what makes the sweep worth doing.** A sweep with no recurrence control is a
 sweep you do again: the contract *already* carries the rule that would have caught five of these
-("a count derived by looking is a sample… re-derive it at the moment of the claim"), and five separate
+("a count derived by looking is a sample… re-derive it at the moment of the claim"), and four separate
 plans violated it anyway. The missing part is not another rule but a **receipt** — which is the same
 diagnosis 030/G4 makes about the merge-gate disclosure ("condition 1's disclosure got the rule and not
 the receipt"), one layer out. D4 is that receipt, and it is the deliverable this plan would keep if it
@@ -572,7 +579,8 @@ closed only when **both** land, which is why it is named in both deliverables. T
 cannot run concurrently with any other plan editing that file. It has no dependency on the twelve source
 plans, all of which have landed.
 
-**Prior art.** Plans 030, 220 and 450 in this epic landed deliverables in the same contract file; plan
+**Prior art.** Plans 030 (PR #1137) and 450 (PR #1147) in this epic landed deliverables in the same
+contract file; plan
 450's run made the same sibling-report excursion this plan declares in advance, and recorded it as an
 operator-directed exception. The gap documents this plan works from are git-tracked at
 `doc/plans/truthful-signals/{source-plan}/gaps.md`, each with a `verification.md` beside it whose

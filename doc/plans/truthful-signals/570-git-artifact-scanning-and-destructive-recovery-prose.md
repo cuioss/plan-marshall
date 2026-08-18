@@ -46,8 +46,11 @@ single inspection-first authority at
 guard at `test/plan-marshall/plan-marshall/test_named_recovery_marshal_config.py`. The guard does not
 hold: `_references_authority` returns true for any region that mentions `planning.md` and "named
 recovery" — both true by construction of the region heading — so a full restatement of the contract
-passes, and `test_named_recovery_never_instructs_unconditional_discard` checks only the three
-already-fixed regions rather than every derived one. And a **fourth** destructive site was missed
+passes, and `test_named_recovery_never_instructs_unconditional_discard` sweeps every derived region
+but only for two literal signatures (a `Recovery:`-prefixed `git checkout --` line and an "always
+safe" phrase), never asserting that every derived region is `_is_inspection_first` — the sibling
+`test_named_recovery_inspection_first_population_nonempty_and_covers_known_members` asserts that only
+of the three already-known members. And a **fourth** destructive site was missed
 entirely: `workflow-integration-git/standards/worktree-handling.md` § "Recovery Loop" routes a dirty
 path to `git -C {main_checkout} checkout -- {path}` labelled "(typical case)", while its own § "Filter
 Rule" names `.plan/marshal.json` as exactly the kind of tracked file that reaches that loop.
@@ -93,7 +96,19 @@ D3 or D6 on a hand-written list.**
      `marketplace/bundles/plan-marshall/skills/workflow-integration-git/standards/*.md`, which D3
      brings into scope.
    - **P2 — dispatch sites.** Sweep `marketplace/bundles/**` for every `effort resolve-target`
-     invocation and partition it into those that pass `--workflow` and those that do not.
+     occurrence, then keep only the **dispatch sites**: an occurrence that instructs an agent to
+     resolve a target and then use the resolved `{target}` in a `Task:` dispatch — whether the `Task:`
+     block sits in the same document or in the caller the document hands the target to. Discard every
+     occurrence that merely *describes* the verb: its own reference documentation
+     (`manage-config/SKILL.md`, `manage-config/standards/data-model.md`,
+     `plan-marshall/standards/effort-*.md`, `extension-api/standards/*.md` prose about the resolver,
+     `ref-workflow-architecture/**`, `plan-retrospective/**`, the `plugin-doctor` rule text) and the
+     resolver's own source (`manage-config/scripts/_cmd_effort.py`) — which documents a resolve without
+     `--workflow` as a legitimate **pure query that emits nothing**, so a sweep that demands
+     `--workflow` everywhere would be wrong, not thorough. Partition the kept set into those that pass
+     `--workflow` and those that do not; record both halves and the discard rule applied. **Floor:** the
+     six sites 280/G3 names (listed under D6(b)) must all land in the kept set. If the discard rule
+     drops any of them, the rule is too narrow — widen it and re-derive before proceeding.
    *Done when:* the run report carries both populations with the command that produced each, and each
    is non-empty. **If either sweep returns an empty set, or `_derive_named_recovery_regions` cannot be
    executed, the run HALTS**: it records the failed derivation, ships nothing that depends on it, and
@@ -149,7 +164,8 @@ D3 or D6 on a hand-written list.**
      `.plan/marshal.json`, not only the single literal `git diff -- .plan/marshal.json`.
    - **(c)** In `test_named_recovery_never_instructs_unconditional_discard`, add a **universal**
      assertion: every region in the derived population must satisfy `_is_inspection_first`, with
-     offenders listed by `path.name:lineno`. Keep the known-member check as an additional floor.
+     offenders listed by `path.name:lineno`. Keep the test's existing two literal-signature checks
+     (the `Recovery:`-prefixed discard and the "always safe" phrase) as an additional floor.
      Broaden `_UNCONDITIONAL_DISCARD` to match any `git checkout -- .plan/marshal.json` /
      `git restore … .plan/marshal.json` occurrence, and exclude a region from the offender list only
      when that same region satisfies `_is_inspection_first` — so the authority's own cautionary
@@ -255,9 +271,12 @@ D3 or D6 on a hand-written list.**
      that matter here — it enumerates ignored files individually but collapses a nested repository to a
      single trailing-slash directory entry — and keep the existing not-a-repo/git-unavailable clause,
      updated to the new return contract.
-   - **(c)** Extend both `--no-gitignore` descriptions — the argparse `help=` in `git-workflow.py` and
-     the parameter line in `workflow-integration-git/SKILL.md` — to state that the nested git
-     repository/worktree skip is unconditional and unaffected by the flag.
+   - **(c)** Extend both `--no-gitignore` descriptions — in `git-workflow.py` the `'help'` value of the
+     `--no-gitignore` entry in the declarative `detect-artifacts` command spec (the file registers
+     arguments as spec dicts; it contains no `add_argument` call and no `help=` keyword, so locate it by
+     the `'flags': ['--no-gitignore']` entry), and the parameter line in
+     `workflow-integration-git/SKILL.md` — to state that the nested git repository/worktree skip is
+     unconditional and unaffected by the flag.
    *Done when:* a test in `test_git_workflow.py` monkeypatches the `git ls-files --ignored` call to
    raise, invokes `cmd_detect_artifacts` with default flags against a repo containing one gitignored
    artifact, and asserts the result carries an error status and no `safe` entry for that artifact —
@@ -273,12 +292,18 @@ D3 or D6 on a hand-written list.**
      `marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_handshake_store.py`, have
      `_capture_main_dirty_files`'s sibling capture return the exempted set, and register it in the
      invariant tuple list in `_invariants.py` alongside `('main_dirty_files', _always,
-     _capture_main_dirty_files)`. Register it as **informational and non-blocking** — do **not** add it
-     to `summarize-invariants._CORE_INVARIANTS`, or every historical row without the column becomes an
-     `error` finding. Document the new column in
+     _capture_main_dirty_files)`. Register it as **informational and non-blocking**, which takes two
+     explicit acts, because both defaults run the other way: add
+     `'main_dirty_exempted': 'informational_only'` to `INVARIANT_BLOCKING_SCOPE` in `_invariants.py`
+     (`is_invariant_blocking_at_phase` documents that an **unmapped** invariant fail-safes to
+     `blocking_at_every_boundary`, so omitting the entry makes the column block every boundary on a set
+     that legitimately changes at every boundary); and do **not** add it to
+     `summarize-invariants._CORE_INVARIANTS`, or every historical row without the column becomes a
+     severity-`error` `missing invariant` finding. Document the new column in
      `marketplace/bundles/plan-marshall/skills/plan-marshall/references/phase-handshake.md`: both the
-     invariant table row next to `main_dirty_files` **and** the TOON field-order header a few dozen
-     lines above it, which enumerates every column and would otherwise disagree with the store.
+     invariant table row next to `main_dirty_files` **and** the `handshakes[N]{…}` TOON field-order
+     header above that table, which enumerates every column and would otherwise disagree with the
+     store.
    - **(b)** For each member of D0's P2 that lacks `--workflow`, add
      `--workflow {the workflow doc the subagent loads} --plan-id {plan_id} --caller
      plan-marshall:{calling-skill}` to the `effort resolve-target` call, following
@@ -298,10 +323,14 @@ D3 or D6 on a hand-written list.**
      `execution-context-{level}` — confirm against
      `plan-marshall/standards/effort-roles.md` and `manage-config/standards/data-model.md` before
      rewording.
-   *Done when:* a phase-boundary capture over a tree with a dirty untracked `.plan/` write records that
-   path in `main_dirty_exempted`, `phase-handshake.md` describes the column in both the table and the
-   TOON header, and the existing handshake tests pass; and a **re-derived** P2 sweep finds no
-   `effort resolve-target` invocation in `marketplace/bundles/**` that omits `--workflow`.
+   *Done when:* a new test under `test/plan-marshall/plan-marshall/` — sited in whichever existing
+   handshake/invariants module already exercises the main-checkout captures, derived from the test tree,
+   not guessed — drives the new capture against a tree carrying a dirty **untracked** `.plan/` path and
+   asserts that path appears in the returned exempted set and **not** in `main_dirty_files`, and that
+   test passes; `phase-handshake.md` describes the column in both the invariant table and the TOON
+   header; the existing handshake and `summarize-invariants` suites pass unchanged; and a **re-derived**
+   P2 finds no member of its dispatch-site set that omits `--workflow` (occurrences discarded by P2's
+   non-dispatch rule are out of scope and stay as they are).
 
 8. **D7 — Correct the stale row, the dead marker, and the run report**
    *(closes 310/G1 `medium`, 050/G7 `low`, 310/G6 `low`)*
@@ -321,9 +350,14 @@ D3 or D6 on a hand-written list.**
      above it that already records the retirement in full. Record which of the two the run found.
    - **(c)** `doc/plans/truthful-signals/310-baseline-reconcile-anchors-on-a-stale-phase-1-sha-and-one-verdict-auto-merges/report-01.md`
      — complete the two unfilled header placeholders (`**PR:** _pending_`, `**Outcome:** _in progress_`)
-     with PR #1206 and the merge commit the report's own § Contract check already names; correct the
+     with the PR number and the merge commit. The report's § Contract check names the PR (row "7 PR
+     cycle" — a lead, re-read it) but names **no** merge commit — it was committed with the merge
+     still pending, and the
+     only SHA it carries is the branch head. Derive the merge commit from this clone's history
+     (`git log --oneline --grep="(#{pr})"` for that PR number), never from the report. Correct the
      § Build gate count word, which says "three `.py` files" and then enumerates four (re-derive the
-     count from `git show --name-only` on that merge commit rather than trusting either figure); and
+     count from `git show --name-only` on the derived merge commit rather than trusting either
+     figure); and
      **do not strike** the § Findings clause claiming "no stale … 'init-time SHA anchor' prose
      survives" — a run report records what the run claimed. Append a one-line correction after it
      naming the surviving site(s) and pointing at that plan's own `gaps.md` G1/G2.
@@ -337,7 +371,8 @@ D3 or D6 on a hand-written list.**
 
 Every exclusion carries its reason, because there is no operator watching for drift mid-run.
 
-- **Every other gap in the six source plan directories** — `140/…` is fully assigned here, but
+- **Every other gap in the seven source plan directories** — `140/…` is fully assigned here (all five
+  of its gaps), but
   `050` G1–G6, `210` G1, `280` G1/G2/G4+, `290` G4/G5, `310` G2/G3/G4/G5/G7/G8, and `330`
   G1/G2/G4/G5 are **not** in this plan's assignment. A finding is recorded per instance and each of
   those is assigned to another plan; editing the same file for an unassigned gap risks a merge
@@ -397,7 +432,7 @@ not trust any cited in this plan or in the gap documents.
 | `worktree-handling.md` § "Recovery Loop" routes a dirty path to `git checkout --` labelled "(typical case)", and its § "Filter Rule" names `marshal.json` as a retained tracked `.plan/` file (210/G5) | OBSERVED | `workflow-integration-git/standards/worktree-handling.md` — § "Recovery Loop" step 2 and § "Filter Rule" |
 | `_capture_config_hash`'s docstring still carries the refuted "does not accept / exited non-zero / never fired at all" clause, echoed as "exit 2 -> silent `None`" in the test comment (290/G1) | OBSERVED | `_invariants.py` — `_capture_config_hash` docstring; `test_invariants_behavior.py` — the `_capture_config_hash` section comment |
 | The executor strips `--audit-plan-id` before the target parser runs, which is why the refuted clause is wrong | OBSERVED | `marketplace/bundles/plan-marshall/skills/tools-script-executor/templates/execute-script.py.template` — `extract_audit_plan_id` and the `--audit-plan-id … (stripped before passing to script)` help line (git-tracked; the generated `.plan/execute-script.py` is not in the clone) |
-| No test exercises the `isinstance(config, dict)` guard in `_capture_config_hash` (asserted **absence**, 290/G2) | OBSERVED | `test_invariants_behavior.py` — the only `non_dict` symbol is `test_hash_dict_handles_non_dict_payload`, which tests `_hash_dict`; the three capture tests cover absent / unparseable / plan-section |
+| No test exercises the `isinstance(config, dict)` guard in `_capture_config_hash` (asserted **absence**, 290/G2) | OBSERVED | `test_invariants_behavior.py` — the only `non_dict` symbol is `test_hash_dict_handles_non_dict_payload`, which tests `_hash_dict`; no `_capture_config_hash` test writes a non-dict `marshal.json` — they cover absent / unparseable / plan-section / phase-stability / genuine-change. **Counts here are leads — re-derive the test set from the file** |
 | `_filter_main_dirty_paths` discards the exempted half, and no exempted-population column exists in `HANDSHAKE_FIELDS`/`HANDSHAKE_LIST_FIELDS` (asserted **absence**, 330/G3) | OBSERVED | `_invariants.py` — `_filter_main_dirty_paths` (`retained, _exempted = …; return retained`); `_handshake_store.py` — the field list and `HANDSHAKE_LIST_FIELDS`, which holds `main_dirty_files` alone |
 | Five of the six dispatch-site files contain zero `[DISPATCH]` occurrences, and the two in `planning.md` belong to other sites (280/G3) | OBSERVED | `grep -c DISPATCH` over the six files; `grep -n resolve-target` over the same set. **A count — re-derive both at the moment of the change, via D0's P2** |
 | `SKILL.md`'s `baseline-reconcile` row still names the captured `worktree_sha` and is the only such hit under `marketplace/` (310/G1) | OBSERVED | `grep -rn "captured .worktree_sha" marketplace/` — one hit, the `baseline-reconcile` row |
