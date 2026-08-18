@@ -1,8 +1,8 @@
 # Gaps — 170-graduate-deployment-diagram-type-from-api-sheriff
 
-**Source:** verification.md (same directory)   **Open items:** 4
+**Source:** verification.md (same directory)   **Open items:** 5
 
-All four are small. The graduation itself landed: the standard, the skeleton and both index rows
+All five are small. The graduation itself landed: the standard, the skeleton and both index rows
 exist, comply with their own contract, render legibly on both GitHub backgrounds, and pass
 `./pw quality-gate` (`total_issues: 0`, re-run at HEAD). Nothing below blocks or misleads about
 what runs where; each is a false or incomplete statement inside documentation whose subject is
@@ -87,7 +87,7 @@ truthful statements.
 
 - **Kind:** stale-statement
 - **Severity:** low
-- **Where:** `doc/plans/truthful-signals/170-graduate-deployment-diagram-type-from-api-sheriff/report-01.md` — § Residue, the row *"No rule for the mount stem's horizontal position"*
+- **Where:** `doc/plans/truthful-signals/170-graduate-deployment-diagram-type-from-api-sheriff/report-01.md:569` — § Residue, the row *"No rule for the mount stem's horizontal position"*
 - **What is wrong:** The row reads *"The skeleton centres both stems on their pills; **the
   standard's worked example does not**, and neither states a rule."* At HEAD the worked example does
   centre: `diagram-type-deployment.md:173` puts the stem at `x=144` and `:174` puts the pill at
@@ -105,3 +105,56 @@ truthful statements.
 - **Done when:** The row's factual clause matches `diagram-type-deployment.md:173–174` at HEAD, and
   the follow-up it points to is described as writing down an already-consistent convention.
 - **Module/topic:** `doc/plans/truthful-signals/` run reports — cloud-plan-lane report hygiene
+
+## G5 — Correct the footer-caption residue row's false absolute about `block-diagram-skeleton.svg`
+
+- **Kind:** stale-statement (false absolute, asserted as verified)
+- **Severity:** low
+- **Where:** `doc/plans/truthful-signals/170-graduate-deployment-diagram-type-from-api-sheriff/report-01.md:568` — § Residue, the row *"The skeleton's footer caption is an author instruction, not diagram content"*; the same absolute is restated at `report-01.md:632` (finding R4-A8)
+- **What is wrong:** The row reads *"four of the five sibling skeletons use that slot for a
+  type-descriptive caption, and `block-diagram-skeleton.svg` **has no footer-caption element at
+  all**"*. `block-diagram-skeleton.svg` carries three of them —
+  `<text class="col-sub">optional footer caption</text>` at `:49`, `:64` and `:78`, one per column
+  box. What is true is narrower: block has no `.caption` **class** and no diagram-level footer slot,
+  putting its footer captions inside the column boxes at 11 px via `.col-sub`. R4-A8 at `:632`
+  introduced this absolute while correcting the row's population, and recorded it as *"verified by
+  element count"* — an element count that, run today, returns three.
+- **Why it matters:** This is the same defect as G4, at a second site in the same section of the same
+  file, and it is the more serious of the two because the false clause is presented as the *product*
+  of a derivation. It is also load-bearing for G3: block's `.col-sub` at 11 px is the evidence that
+  the shared 11 px caption rule is satisfiable in a skeleton, and a reader who believes block has no
+  footer caption at all loses that evidence. A finding is recorded per instance, so this is filed
+  separately from G4 rather than folded into it.
+- **Fix:** Edit `report-01.md:568` to say that `block-diagram-skeleton.svg` defines no `.caption`
+  class and no diagram-level footer slot, and instead carries three per-column
+  `<text class="col-sub">optional footer caption</text>` elements at 11 px. Edit the R4-A8 row at
+  `:632` to match, and drop or qualify its *"verified by element count"* claim, which is what made
+  the false absolute look checked.
+- **Done when:** Neither `report-01.md:568` nor `:632` asserts that `block-diagram-skeleton.svg` has
+  no footer-caption element, and `grep -c 'optional footer caption'
+  marketplace/bundles/pm-documents/skills/ref-svg-diagrams/templates/block-diagram-skeleton.svg`
+  → `3` no longer contradicts either row.
+- **Module/topic:** `doc/plans/truthful-signals/` run reports — cloud-plan-lane report hygiene
+
+## Refuted during adversarial review
+
+**None.** An independent agent that did not write this document re-verified all four original gaps
+at HEAD and upheld every one, at its original severity. This section is empty as a *result*, not as
+an omission — what was checked to reach it is recorded in `verification.md` § Adversarial review, and
+in summary: every cited line was opened and every quotation compared verbatim; G2's six further
+absent affordances were each confirmed absent from the skeleton individually rather than taken from
+the report; G3's rationale was confirmed at its source (`visual-language.md:43` fixes 11 px, the
+deployment standard fixes no caption size, and its preamble at `:10–13` delegates typography), and
+the `.caption` populations were re-derived across all six templates; G4's arithmetic was recomputed
+from `diagram-type-deployment.md:173–174`. Two candidate refutations were tested and failed: G1 is
+not rescued by reading `gRPC`/`mTLS` as vendor casing the rule tacitly permits — the rule says
+"upper case" without qualification — and G2 is not rescued by treating its three named absences as a
+different *kind* of item from the six omitted, since all nine are alike "specified in the document,
+not present in the skeleton".
+
+Two candidate *additions* were also tested and deliberately not filed. The skeleton's external
+component sitting on the authenticated side of the trust boundary (carried as § Residue) is a
+legitimate topology — an external datastore reached over an authenticated leg — and the `<desc>`
+describes it accurately, so it is not a defect. And no sibling standard routing a reader to the
+deployment type, though real, is the plan's own declared out-of-scope boundary (*"Modifying any
+other diagram type"*) rather than a gap in what was delivered.
