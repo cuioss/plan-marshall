@@ -12,7 +12,7 @@ discovery function directly for detailed coverage.
 
 import json
 
-from discovery_test_helpers import (
+from _discovery_fixtures import (
     assert_command_uses_executor,
     assert_module_commands,
     assert_module_paths,

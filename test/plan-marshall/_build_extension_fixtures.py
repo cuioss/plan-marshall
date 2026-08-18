@@ -1,18 +1,148 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared test helpers for build-* skill tests.
+"""The one build-extension fixture surface, shared by all six ``build-*`` directories.
 
-Provides reusable test functions for coverage reports, execute configs,
-run subcommands, and the ``run-config-key`` contract that are duplicated across
-Maven, Gradle, npm, and Python.
+Stages the extension contract every build backend implements — coverage
+reports, ``ExecuteConfig`` construction, the ``run`` subcommand, the
+``run-config-key`` contract, and the ``BuildExtension`` (Axis-B) file-to-build
+map — so the six directories assert one contract through one surface instead of
+staging it six times.
+
+Underscore-prefixed so pytest does not collect it and the ``plugin-doctor``
+``unique-fixture-basenames`` rule (which enumerates only ``_``-prefixed helper
+modules) can see it.
 
 Usage:
-    from build_test_helpers import assert_coverage_missing_file, assert_coverage_high, ...
+    from _build_extension_fixtures import assert_coverage_high, execute_config, ...
+
+⛔ LOADING THE FACTORY HERE RE-REGISTERS IT IN ``sys.modules``.
+:func:`assert_run_config_key_contract` resolves ``compute_command_key`` through
+``conftest.load_script_module``, and that helper REGISTERS the module it builds
+under its own stem — unlike a bare ``spec_from_file_location``. The registration
+REPLACES whatever ``sys.modules['_build_execute_factory']`` previously held, so a
+test module that already did ``import _build_execute_factory as factory`` at its
+own import time keeps a copy that is no longer reachable from ``sys.modules`` at
+all; it survives only as a reference in that module's globals.
+
+``test/conftest.py``'s ``_neutralize_daemon_routing`` fixture depends on exactly
+this fact. ``cmd_run`` is a CLOSURE, so it resolves the ``_route_to_daemon`` seam
+from ``cmd_run.__globals__`` — the globals of whichever factory copy produced it,
+not from whatever ``sys.modules`` currently maps the name to. That is why the
+fixture patches closure ``__globals__`` DICTS rather than a module object:
+patching the module object would be silently partial, and load-order dependent,
+which makes getting it wrong a flaky green rather than a clean red.
+
+Two consequences bind anything added to this module:
+
+* Do NOT hoist the factory load to module scope. Loading it here at import time
+  would register a copy at a DIFFERENT moment than the lazy call below, adding a
+  second live copy to a hazard that already has two.
+* :func:`build_scripts_dir` deliberately only puts the build scripts directory on
+  ``sys.path``; it does NOT import the factory. Each consumer keeps its own
+  module-level ``import _build_execute_factory as factory`` so its binding timing
+  is unchanged by sharing this bootstrap.
 """
+
+import importlib.util
+import sys
 
 from toon_parser import parse_toon
 
-from conftest import load_script_module, run_script
+from conftest import get_script_path, load_script_module, run_script
+
+# =============================================================================
+# Extension-contract staging — the surface all six build-* directories share
+# =============================================================================
+
+
+def build_scripts_dir():
+    """Put ``script-shared/scripts/build`` on ``sys.path`` and return it.
+
+    The build backends' shared modules (``_build_execute_factory``,
+    ``_build_execute``, ``_build_server_protocol``) live outside every
+    ``scripts/`` directory pytest already resolves, so a consumer must add that
+    directory before importing them.
+
+    Idempotent: the insert is skipped when the directory is already on the path.
+
+    This function does NOT import the factory, and must not start doing so — see
+    the ``sys.modules`` re-registration hazard in this module's docstring. The
+    caller keeps its own module-level ``import _build_execute_factory as
+    factory`` so that binding happens at the caller's import time, exactly as it
+    did before this bootstrap was shared.
+
+    Returns:
+        The build scripts directory, so a caller can derive sibling paths.
+    """
+    build_dir = get_script_path('plan-marshall', 'script-shared', 'marketplace_paths.py').parent / 'build'
+    if str(build_dir) not in sys.path:
+        sys.path.insert(0, str(build_dir))
+    return build_dir
+
+
+def execute_config(factory, capture_strategy, **overrides):
+    """Build the minimal ``ExecuteConfig`` that drives ``cmd_run`` in a test.
+
+    The eight-field Maven-shaped baseline every routing and execution test
+    starts from, with keyword overrides for the fields a given test varies.
+
+    Args:
+        factory: The consumer's own ``_build_execute_factory`` module object.
+            Passed in rather than imported here so this module never binds a
+            factory copy of its own (see the re-registration hazard above), and
+            so the config is built from the SAME copy whose seams the caller
+            patches.
+        capture_strategy: The ``CaptureStrategy`` member for the backend.
+        **overrides: Fields to replace in the baseline.
+
+    Returns:
+        A ``factory.ExecuteConfig`` instance.
+    """
+    base = {
+        'tool_name': 'maven',
+        'unix_wrapper': 'mvnw',
+        'windows_wrapper': 'mvnw.cmd',
+        'system_fallback': 'mvn',
+        'capture_strategy': capture_strategy,
+        'build_command_fn': factory.default_build_command_fn,
+        'scope_fn': lambda a: 'default',
+        'command_key_fn': factory.default_command_key_fn,
+    }
+    base.update(overrides)
+    return factory.ExecuteConfig(**base)
+
+
+def load_build_extension(skill, module_name):
+    """Load a build skill's ``BuildExtension`` class WITHOUT registering it.
+
+    Every build skill ships an ``extension.py`` sharing the module basename
+    ``extension``, so each load is given an explicit distinct module name to
+    avoid the cross-skill ``import extension`` collision.
+
+    Uses ``spec_from_file_location``, which — unlike ``load_script_module`` —
+    does NOT enter the module in ``sys.modules``. That is the point: two backends
+    loaded here stay two distinct objects with independent module-level state,
+    and neither displaces a registration another module already holds. A consumer
+    that genuinely wants the registered form calls ``load_script_module``
+    directly with its own distinct ``module_name``.
+
+    Args:
+        skill: The build skill's name, e.g. ``'build-maven'``.
+        module_name: The distinct name to load under. Required, not derived, so
+            two call sites loading the same skill cannot silently collapse onto
+            one name.
+
+    Returns:
+        The skill's ``BuildExtension`` class.
+    """
+    extension_path = get_script_path('plan-marshall', skill, 'extension.py')
+    spec = importlib.util.spec_from_file_location(module_name, extension_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f'Could not load module from {extension_path}')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.BuildExtension
+
 
 # =============================================================================
 # Coverage Report Test Helpers
