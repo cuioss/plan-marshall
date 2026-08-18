@@ -21,8 +21,9 @@ from conftest import TEST_ROOT
 #: ⛔ ``parse_ns`` does NOT. Its signature is ``(bundle, skill, script, *argv)``, so
 #: its fourth positional is the first ARGV TOKEN, not a module name — reading it as
 #: one attributes the call to a subcommand string (``'run'``, ``'read'``, ``'list'``)
-#: and loses the registration entirely. It is by far the most common of the three
-#: call shapes, so getting this wrong makes the guard inert on its main input.
+#: and loses the registration entirely. It is the second most common of the three
+#: shapes and about a quarter of all loader call sites, so getting it wrong hid a
+#: whole class of registration without emptying the guard.
 REGISTERING_HELPERS: dict[str, bool] = {
     'load_script_module': True,
     'load_skill_module': True,
@@ -69,6 +70,35 @@ def _opts_out_of_registration(call: ast.Call) -> bool:
     return False
 
 
+#: Positional indices in every helper here: ``(bundle, skill, script[, module_name])``.
+SCRIPT_ARG_INDEX = 2
+MODULE_NAME_ARG_INDEX = 3
+
+
+def _positionals_are_indexable(call: ast.Call) -> bool:
+    """Return whether the call's positionals can be read by index.
+
+    ⚠️ This and the ``.py`` suffix check in :func:`_registered_name` are REDUNDANT
+    with each other on the current tree: removing either alone changes no result,
+    because the other still rejects the two sites where unpacking shifts the index.
+    Only removing both reintroduces the defect. They are kept as a pair because they
+    fail differently — this one refuses to guess, the suffix check refuses to
+    believe — and the mutation record says so rather than claiming each is
+    independently load-bearing.
+
+    A ``*args`` unpacking BEFORE the script position makes every later index
+    meaningless — ``parse_ns(*_SCRIPT, '--plan-id', p)`` has no script at index 2.
+    Reading one anyway yields a confident wrong answer (the flag token) rather than
+    a visible gap, which is the same failure as mistaking ``parse_ns``'s fourth
+    positional for a module name. A star AFTER the script is the ordinary
+    ``*argv`` spelling and disturbs nothing.
+    """
+    for index, argument in enumerate(call.args):
+        if isinstance(argument, ast.Starred):
+            return index > SCRIPT_ARG_INDEX
+    return True
+
+
 def _registered_name(
     call: ast.Call, constants: dict[str, str], takes_module_name: bool
 ) -> str | None:
@@ -83,14 +113,26 @@ def _registered_name(
     """
     if _opts_out_of_registration(call):
         return None
+    indexable = _positionals_are_indexable(call)
     if takes_module_name:
-        keywords = {kw.arg: kw.value for kw in call.keywords}
-        explicit = keywords.get('module_name') or (call.args[3] if len(call.args) > 3 else None)
-        if explicit is not None:
-            return _string_value(explicit, constants)
-    if len(call.args) > 2:
-        script = _string_value(call.args[2], constants)
-        return Path(script).stem if script else None
+        # The KEYWORD spelling is immune to unpacking, so it is read first and
+        # without the indexability guard: ``load_script_module(*_PAIR, 'x.py',
+        # module_name='y')`` names its registration unambiguously however the
+        # earlier arguments arrived.
+        for keyword in call.keywords:
+            if keyword.arg == 'module_name':
+                return _string_value(keyword.value, constants)
+        if indexable and len(call.args) > MODULE_NAME_ARG_INDEX:
+            return _string_value(call.args[MODULE_NAME_ARG_INDEX], constants)
+    if indexable and len(call.args) > SCRIPT_ARG_INDEX:
+        script = _string_value(call.args[SCRIPT_ARG_INDEX], constants)
+        # A script argument ends in ``.py``. Requiring that is what makes reading
+        # the WRONG position fail visibly instead of confidently: a subcommand
+        # (``'run'``) or a flag (``'--plan-id'``) reached by a mis-counted index
+        # lands here, and returning None puts it in the disclosed unresolved tally
+        # rather than inventing a registration that does not exist.
+        if script and script.endswith('.py'):
+            return Path(script).stem
     return None
 
 

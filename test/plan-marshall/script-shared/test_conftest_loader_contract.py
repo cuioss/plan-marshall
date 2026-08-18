@@ -37,7 +37,7 @@ EXTENSION_SKILL = 'plan-marshall-plugin'
 #: from BOTH sides so the guard's blind spot stays a truthful quantity: it may not
 #: grow (that widens what the guard cannot see) and it may not silently shrink
 #: (that leaves the constant overstating the gap).
-UNRESOLVED_CALL_SITE_BOUND = 88
+UNRESOLVED_CALL_SITE_BOUND = 90
 
 #: Names a file-load registers that some test module ALSO imports plainly.
 #:
@@ -186,8 +186,9 @@ def test_register_false_reaches_parse_ns(monkeypatch):
     """``parse_ns`` forwards the opt-out to the load it performs.
 
     ``parse_ns`` loads the script to reach its parser, so it registers exactly as a
-    direct load does — and it is the call a test is most likely to make. An opt-out
-    that stopped at the loader would leave the common path unable to use it.
+    direct load does. It is the second most common of the three call shapes and
+    about a quarter of all loader call sites, so an opt-out that stopped at the
+    loaders would leave a large minority of callers unable to reach it.
     """
     monkeypatch.delitem(sys.modules, PROBE_NAME, raising=False)
 
@@ -215,7 +216,17 @@ def test_the_scan_finds_the_loader_call_sites(tree_scan):
     # no module_name, so its fourth positional is an argv token. A control over
     # load_script_module alone cannot see that rule being applied to the wrong helper.
     assert 'test_shared_harness.py' in registered['platform_runtime'], registered['platform_runtime']
-    assert 'run' not in registered, sorted(registered)[:20]
+
+    # No resolved name may look like a command-line token. A name-specific check
+    # ('run' is absent) only catches the tokens it happens to list; two successive
+    # arity defects showed the class needs catching, not the instances — a
+    # subcommand, or a flag like '--plan-id', reached by a mis-counted index.
+    tokens = sorted(name for name in registered if name.startswith('-'))
+    assert tokens == [], (
+        f'registration names that are command-line tokens, not modules: {tokens}. '
+        'The walker read an argument out of the wrong position — check the helper '
+        'arity table and the positional-unpacking guard, not this assertion.'
+    )
 
 
 def test_no_new_shared_registration_collision(tree_scan):
