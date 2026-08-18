@@ -519,15 +519,18 @@ Each exclusion carries its reason, because with no operator watching, this writt
 only thing holding the line against a tempting adjacent change.
 
 - **Every other gap in the ten source `gaps.md` files.** Those documents carry gaps this plan does not
-  name — among them 100/G3, G5, G6, G7, G8, G9, G10; 110/G1, G4, G5; 130/G2, G3, G5; 190/G4, G5, G6,
-  G7; 200/G1–G7; 280/G1–G4, G6; 390/G1, G2, G4; 430/G1–G5, G7. They are assigned to other plans in
+  name — 100/G3, G5, G6, G7, G8, G9, G10; 110/G1, G4, G5; 130/G2, G3, G5; 190/G4, G5, G6,
+  G7; 200/G1–G7; 280/G1–G4, G6, G7; 390/G1, G2, G4, G5; 430/G1–G5, G7, G8, G9 (re-derive this list
+  from the ten `gaps.md` files rather than trusting it). They are assigned to other plans in
   this epic and several touch the same files this plan does. Fixing one here produces a conflicting
   diff against a concurrent run and, worse, closes it in a report that the plan actually assigned to
   it will not see. **Read a source `gaps.md` only for the entries this plan names.**
-- **The `.caption` 12 px divergence in the other five diagram templates.** D6(c) fixes only the
-  deployment skeleton, which is the instance this gap set owns. The others are templates no plan in
-  this set touched, each needs its own render-and-read-back verification, and changing them here is
-  exactly the unrelated diagram churn plan 170's own out-of-scope forbade.
+- **The `.caption` 12 px divergence in the other diagram templates.** Five of the six skeletons under
+  `ref-svg-diagrams/templates/` define `.caption` at 12 px — re-derive that population rather than
+  trusting this count. D6(c) fixes only the deployment skeleton, which is the instance this gap set
+  owns. The rest are templates no plan in this set touched, each needs its own render-and-read-back
+  verification, and changing them here is exactly the unrelated diagram churn plan 170's own
+  out-of-scope forbade.
 - **Writing a rule for the mount stem's horizontal position.** D8(c) corrects a false *justification*
   in a residue row; the residue stays open. Writing the rule is new normative text in a diagram-type
   standard, which is a different kind of change from the corrections this plan makes, and it belongs
