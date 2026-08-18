@@ -29,6 +29,7 @@ from _loader_contract_fixtures import (
 from conftest import (
     MARKETPLACE_ROOT,
     TEST_ROOT,
+    _exec_module_from_path,
     get_scripts_dir,
     get_skill_dir,
     load_script_module,
@@ -214,6 +215,25 @@ def test_register_false_reaches_parse_ns():
 
     assert namespace.command == 'list-providers'
     assert PROBE_NAME not in sys.modules
+
+
+def test_a_failed_execution_leaves_no_registration(tmp_path):
+    """A module whose body raises is not left published under its name.
+
+    The registration deliberately precedes execution, because a body that resolves
+    its own name through ``sys.modules`` needs the entry to exist already. Without a
+    cleanup that ordering publishes a HALF-INITIALISED module when the body raises,
+    and a later plain ``import`` of the name then succeeds and hands back the broken
+    object — a failure arbitrarily far from its cause, and the same
+    order-dependent shape the collision guard above exists to prevent.
+    """
+    broken = tmp_path / 'broken_probe_module.py'
+    broken.write_text("raise RuntimeError('module body failed')\n", encoding='utf-8')
+
+    with pytest.raises(RuntimeError, match='module body failed'):
+        _exec_module_from_path(broken, None, True)
+
+    assert 'broken_probe_module' not in sys.modules
 
 
 def test_the_scan_finds_the_loader_call_sites(tree_scan):

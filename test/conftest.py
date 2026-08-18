@@ -540,9 +540,20 @@ def _exec_module_from_path(path: Path, module_name: str | None, register: bool):
     Registration is by the resolved name and REPLACES any existing entry — see
     :func:`load_script_module` for what that costs a caller holding an earlier copy.
 
+    ⛔ The registration happens BEFORE execution, because a module body that
+    resolves its own name through ``sys.modules`` needs the entry to be there
+    already. That ordering means a body which raises would leave a
+    half-initialised module published under its name, and a later plain
+    ``import`` of that name would succeed and hand back the broken object —
+    failing far from its cause. The entry is therefore removed on failure,
+    which is the standard importlib pattern, so an execution error leaves
+    ``sys.modules`` exactly as it found it.
+
     Raises:
         FileNotFoundError: when ``path`` is not a file.
-        ImportError: when the module spec cannot be created or executed.
+        ImportError: when the module spec cannot be created.
+        Exception: whatever the module body raises — ``exec_module`` propagates
+            the body's own exception type rather than wrapping it.
     """
     import importlib.util
 
@@ -556,7 +567,12 @@ def _exec_module_from_path(path: Path, module_name: str | None, register: bool):
     module = importlib.util.module_from_spec(spec)
     if register:
         sys.modules[name] = module
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        if register:
+            sys.modules.pop(name, None)
+        raise
     return module
 
 

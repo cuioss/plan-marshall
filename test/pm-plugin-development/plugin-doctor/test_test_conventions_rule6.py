@@ -337,6 +337,30 @@ def test_bare_record_number_is_flagged(tmp_path):
     assert findings[0]['details']['matched'] == '#551'
 
 
+def test_spelled_out_pull_request_reference_is_flagged(tmp_path):
+    """The ``pull request #NNN`` spelling is flagged like the ``PR #NNN`` one.
+
+    The prefixed alternative accepts both words, and only one of them had a case.
+    An untested alternative is one nobody notices losing: this spelling carries no
+    digit bound, so a regression narrowing it would be invisible to the bare-form
+    cases above, which do.
+    """
+    _write(
+        tmp_path,
+        'test_spelled_out.py',
+        '''
+        def test_x():
+            """Keeps the ordering pull request #849 established."""
+            assert True
+        ''',
+    )
+
+    findings = analyze_test_docstring_prose(tmp_path)
+
+    assert [f['details']['kind'] for f in findings] == ['pr_reference']
+    assert findings[0]['details']['matched'] == 'pull request #849'
+
+
 def test_single_digit_bare_number_is_not_flagged(tmp_path):
     """A one-digit bare number is intra-document enumeration, not a record id."""
     _write(

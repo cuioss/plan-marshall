@@ -22,9 +22,9 @@ in silence.
 
 ## Deliverables
 
-Run 01 delivered D1–D7. This run's own work is the findings R1–R6 recorded in § Findings; the ones
-described here are those that changed a file — R1, R3 and R4 under `test/`, and R2 in the plan's
-gating record. R5 and R6 are report corrections and are dispositioned in the table there.
+Run 01 delivered D1–D7. This run's own work is the findings recorded in § Findings; the ones
+described here are those that changed a file — R1, R3, R4, R7 and R8 under `test/`, and R2 in the
+plan's gating record. R5 and R6 are report corrections and are dispositioned in the table there.
 
 ### R1 — the D3 guard's positive control was pinned to a filename another slice owns
 
@@ -104,7 +104,8 @@ rather than on the PR head alone, because the defect R1 fixes is invisible to a 
 | Run | Result |
 |---|---|
 | after R1 | 21010 passed, 14 skipped |
-| after R2–R4 (shipped) | **21012 passed, 14 skipped** in 459.66 s |
+| after R2–R4 | 21012 passed, 14 skipped in 459.66 s |
+| after R7–R8 (shipped) | **21014 passed, 14 skipped** in 450.62 s |
 
 Both with `ruff` "All checks passed!", `mypy` "Success: no issues found in 414 source files"
 (production) and 776 (test-compile), "SPDX-header check passed", and plugin-doctor clean. `uv run
@@ -122,13 +123,21 @@ Per instance.
 | R3 | PR review (`coderabbitai`) | `REGISTERING_HELPERS` and `WRAPPER_SCRIPTS` are hand-kept mirrors; a helper or wrapper added later escapes the checks that quantify over them | **Fixed** — both populations derived from their live sources, asserted for equality and non-vacuity, both mutation-proven |
 | R4 | PR review (`coderabbitai`) | `monkeypatch.delitem(..., raising=False)` restores nothing when the key is absent, so the probe leaks `credentials` into `sys.modules` for the session | **Fixed** — autouse teardown; proven by running the registering test alone in-process (CLEAN with the teardown, LEAKED without) |
 | R5 | PR review (`coderabbitai`) | The report classifies verification condition 2 as satisfied while recording `plan-marshall` coverage falling 83.40 % → 83.34 % | **Fixed** — the report now states condition 2 as NOT met as literally worded, keeps the per-file result as the narrower claim it supports, and names the residue |
+| R7 | PR review (`coderabbitai`, **review-summary body**) | `_exec_module_from_path` registers the module before executing it, so a body that raises leaves a half-initialised module published under its name — a later plain `import` then succeeds and returns the broken object. Its docstring also promised `ImportError` for an execution failure, which `exec_module` does not raise | **Fixed** — the entry is popped on failure (the standard importlib pattern), the `Raises:` clause corrected to say the body's own exception type propagates, and a guard added that reds when the cleanup is removed |
+| R8 | PR review (`coderabbitai`, **review-summary body**) | `_PR_REFERENCE_RE` accepts `pull request #NNN` and no test covers that alternative; only `PR #NNN` and the bare form had cases | **Fixed** — a regression case for the spelled-out form. It carries no digit bound, so a regression narrowing it would be invisible to the bare-form cases, which do |
 | R6 | Run 01's record | Three report sections were left as `_Filled in …_` placeholders; a landed report carrying them is an incomplete record | **Fixed** — run 01's placeholders cross-reference this report, which carries the three sections |
 
-⚠️ **Two of run 01's own defects were caught by an external reviewer, not by its four-round loop** —
-R3 and R4 are both in code that loop wrote, reviewed, and mutation-tested. R4 in particular is a
-`sys.modules` leak inside the module whose subject is `sys.modules` leaks. That is the concrete form
-of what `report-01.md` calls its residue, and it is evidence for the lane's own rule that a stopped
-loop is not defect-free code.
+⚠️ **Four of run 01's own defects were caught by an external reviewer, not by its four-round loop** —
+R3, R4, R7 and R8 are all in code that loop wrote, reviewed, and mutation-tested. R4 and R7 are both
+`sys.modules` defects inside the change whose subject is `sys.modules` defects. That is the concrete
+form of what `report-01.md` calls its residue, and it is evidence for the lane's own rule that a
+stopped loop is not defect-free code.
+
+⚠️ **R7 and R8 arrived on the review-SUMMARY surface, not as inline threads**, filed as "nitpicks"
+inside the same review that opened the four threads. A run that read `get_review_comments` and
+treated the resolved threads as the whole review would have shipped both — including R7, a real
+`sys.modules` defect. That is exactly the three-surface rule this contract states, and here it paid
+for itself on the surface easiest to skip.
 
 ### Stop record
 
