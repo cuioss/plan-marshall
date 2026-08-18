@@ -20,6 +20,8 @@ Each fixture here is built so a regression reaches the OPPOSITE verdict, not
 merely a different count.
 """
 
+from typing import Any
+
 from conftest import load_script_module
 
 _parsing = load_script_module(
@@ -65,10 +67,11 @@ _SURVEY_DELIVERABLE = """### 1. Survey the legacy loggers and classify each
 """
 
 
-def _only_deliverable() -> dict:
+def _only_deliverable() -> dict[str, Any]:
     deliverables = extract_deliverables(_SURVEY_DELIVERABLE)
     assert len(deliverables) == 1, 'precondition: the fixture declares one deliverable'
-    return deliverables[0]
+    record: dict[str, Any] = deliverables[0]
+    return record
 
 
 def test_survey_scope_bullets_are_parsed_as_read_intent():
