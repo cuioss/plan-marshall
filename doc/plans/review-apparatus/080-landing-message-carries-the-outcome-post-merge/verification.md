@@ -1,0 +1,308 @@
+# Verification — 080-landing-message-carries-the-outcome-post-merge
+
+**Landed as:** PR #1196, squash commit `6b923309` (refutation)
+**Verdict:** verified-with-gaps
+
+The refutation's **trigger** is sound and independently re-derived: the landing emission genuinely moved
+post-merge before the run, so the plan's foundational OBSERVED claim was false at the HEAD the run read.
+The refutation's **closure decision** is not sound in full: three of the six deliverables were declared
+moot on arguments that do not survive inspection, and one defect the plan named — a `kind: landing`
+message emitted, and phrased as a landing, for a plan that did **not** merge — is live in the current
+tree.
+
+## Method
+
+1. Read `plan.md` and `report-01.md` in full; extracted every deliverable, *Done when* clause,
+   ⛔/⭐/⚠ obligation, out-of-scope item, claim-label row and Verification demand.
+2. Read the landed diff (`git show --stat 6b923309`) — two files, both under `doc/plans/**`, 120 added
+   lines, no source change.
+3. Re-derived the refutation from the tree at **both** `6b923309` (the HEAD the run read) and the current
+   branch HEAD `61a43e53`. Every report citation was opened at `6b923309` and its quoted text compared
+   character-for-character.
+4. Traced the emission chain end to end: step `order:` frontmatter → the sort choke-point
+   (`_sort_steps_by_frontmatter_order`) → the finalize dispatch loop's per-step outcome handling →
+   `branch-cleanup`'s six terminal branches → the landing producer → the inbox write boundary.
+5. Read the implementing Python (`pr_intent_section.py`, `_orchestrator_inbox.py`,
+   `_manifest_validation.py`) for fail-open branches, non-idempotence and unreachable predicates.
+6. Enumerated the finalize-step population by `order:` frontmatter across
+   `phase-6-finalize/{workflow,standards}/*.md` **and** `.claude/skills/*/SKILL.md`, to check D0's
+   published population independently.
+7. Read PR #1196's issue comments and reviews through the GitHub API to check the report's reviewer
+   table.
+8. Searched `test/` for tests pinning the single-landing, halted-finalize and SHA-bearing claims.
+
+Searches whose *absence* results are relied on below are named at each finding.
+
+## Refutation audit
+
+### The refutation's argument, restated
+
+1. The plan's foundational OBSERVED claim is *"`lessons-capture` precedes `branch-cleanup`"*. At HEAD
+   `lessons-capture` is `order: 991` and `branch-cleanup` is `order: 70`; higher order runs later, so the
+   emission is already post-merge.
+2. The plan's own verify-first gate says a moved emission REFUTES the plan and it must be closed.
+3. Every other enumerated defect is already resolved: the batch self-description is gone; the singular
+   landing is a documented invariant; `review-retrospective.md` is HEAD-stamped and derived from the
+   append-only `pr-comment` store; `create-pr` keeps Non-goals and truncates visibly.
+4. D2's missing outcome fields are not a live defect because (a) the root cause is cured by the ordering
+   and (b) the plan's own out-of-scope forbade the enrichment.
+5. The never-merges case is already correct because a finalize that halts pre-merge never reaches
+   `order: 991`, so it emits no landing rather than a false one.
+
+### Independent re-derivation from the tree
+
+**Point 1 — CONFIRMED, and stronger than the report states.** At `6b923309`,
+`phase-6-finalize/workflow/lessons-capture.md` frontmatter carries `order: 991` and
+`phase-6-finalize/standards/branch-cleanup.md` carries `order: 70`. Ascending order *is* runtime order:
+`manage-execution-manifest/scripts/_manifest_validation.py:384-417` sorts steps ascending
+(`sortable.sort(key=lambda pair: pair[0])`), and `phase-6-finalize/SKILL.md:216` defines the band —
+*"**POST-RUN REVIEW (post-merge, `order > 70`)** — every step declaring `post_run_review: true` runs after
+the merge gate"*. `lessons-capture` declares `post_run_review: true`.
+
+**Point 2 — CONFIRMED, with the movement itself located.** The plan's gate is conditioned on *"if a
+landing **has since moved** the emission"*. It did: `git log -p` on `lessons-capture.md` shows exactly one
+change to the field, `-order: 60` / `+order: 991`, in commit `e1ae3814`, *"fix(phase-6-finalize): reorder
+post-run-review steps after the merge gate (#1080)"*. So the plan's claim was true when authored and was
+inverted by intervening work — the gate's literal trigger, not merely a mis-stated premise. (The report
+attributes the move to sibling plans 040/050 and cites `source-edit-pushability.md` from #1175; the actual
+reorder is #1080, a different change. See § Report-claim audit.)
+
+**Point 3 — CONFIRMED in three parts of four.**
+
+- *Batch self-description gone.* `grep -n -i "batch\|two lesson"` over `lessons-capture.md` at
+  `6b923309` returns no match (exit 1). CONFIRMED.
+- *Singular-landing invariant documented.* `lessons-capture.md:82` at `6b923309` reads verbatim
+  *"Exactly **one `kind: landing` message per orchestrated finalize run**, emitted unconditionally"*;
+  `plan-orchestrator/standards/inbox-envelope.md:92` carries the matching payload-contract row;
+  `finalize-step-preference-emitter.md:219-221` reads *"This branch emits NO `kind: landing` message."*
+  All three quotes are exact. But see § Correctness review — the invariant is **per finalize run**, and
+  the defect the plan reported was **three landings for one plan**.
+- *`review-retrospective.md`.* `head_dependent: true` at `SKILL.md:16`; `--head-at-completion {sha}` on
+  the completion record, the zero-findings skip-clean record and both non-fatal error paths;
+  `unmeasurable` / `indeterminate` grading present. All CONFIRMED. But the stamp lands on the
+  **step record**, not on the **artifact** — see § Correctness review.
+- *`create-pr`.* `create-pr.md:148-149` at `6b923309` is *"3. **Explicit non-goals** — what this change
+  deliberately does NOT do…"*; `create-pr.md:180-182` is the `truncated: true` branch, *"cut at a word
+  boundary, with the truncation marker rendered INSIDE the budget so the loss is visible"*. The script
+  `phase-6-finalize/scripts/pr_intent_section.py:159-187` implements exactly that and provably cannot
+  overrun the budget. CONFIRMED.
+
+**Point 4 — REFUTED. The out-of-scope clause says the opposite of what the report reads into it.** The
+plan's text is:
+
+> ⇒ **D2 must not add any field that reads as authoritative**, and the enriched message should carry its
+> claims **labelled as the plan's own report**.
+
+That contemplates an enriched message and constrains its *labelling*; it does not forbid the enrichment.
+The report renders it as *"The plan's own OUT-OF-SCOPE **forbade the enrichment** that would matter
+here"* — an inversion. The project itself settled the question one day later: PR #1215 added
+`phase-6-finalize/standards/emit-landing.md` and
+`plan-orchestrator/standards/landing-payload-spec.md`, a machine-readable landing carrying `pr`,
+`merge_state`, `deliverables_total/done`, `total_tokens` and per-step outcomes, with
+`emit-landing.md:158` stating *"the STEP's own recorded claim, never a corroboration"* — precisely the
+labelled-as-own-report shape the plan asked for. D2 was a live, actionable deliverable, not a
+constraint-barred one.
+
+**Point 5 — REFUTED. This is the load-bearing error.** The premise *"a finalize that halts pre-merge never
+reaches order 991"* assumes a non-merging `branch-cleanup` stops the pipeline. It does not.
+`branch-cleanup.md` § "Mark Step Complete" has **six** terminal branches and **every one records
+`--outcome done`** (lines 1720, 1751, 1760, 1769, 1782, 1796 at HEAD; the same six at `6b923309`).
+Three of them are non-merging:
+
+- **Branch C — declined by user** — *"Nothing was rebased, merged, or cleaned up"*, `work_performed=false`.
+- **Branch D — no PR found** — *"exits before the rebase and before any merge"*, `work_performed=false`.
+- **Branch F — enqueued, merge not yet landed** — *"the queue merge never landed… It records **no
+  `merge_mechanism`**, because no merge landed"*, and yet `--outcome done`.
+
+`branch-cleanup` is an **inline** step (`standards/dispatch-inline-split.md:45`), so the post-dispatch
+completion guard that halts on a missing record (`SKILL.md:1136`) does not apply to it, and the dispatch
+loop's documented behaviour on a non-`done` step is *"continue to the next step"* (`SKILL.md:1057`,
+`SKILL.md:592`). Nothing in `SKILL.md` halts the FOR loop on a `done` outcome either. The loop therefore
+proceeds into the post-run band and reaches the landing producer, which emits **unconditionally**
+(`emit-landing.md:47-49`: *"the emission is unconditional when the step runs"*; at `6b923309`,
+`lessons-capture.md:238`: *"always ≥ 1 — the `kind: landing` message is unconditional"*).
+
+### Does the refutation hold?
+
+**Its trigger holds.** The gate fired for the right reason and the report was the correct deliverable for
+that trigger.
+
+**Its closure does not hold in full.** The plan's ⛔ observation 1 — *"the message ASSERTS a landing in its
+prose while the PR is open… The fix must change the message's **claim**"* — survives. In the current tree
+the only worked example of the landing body is
+`emit-landing.md:175`:
+
+> 1. **An optional one-line narrative headline** under a `## What landed` heading — e.g.
+>    `{plan_id} shipped as {pr} ({merge_state}).`
+
+A `## What landed` heading and the verb *shipped*, with the contradicting fact parenthesised beside them —
+which is exactly the shape the plan called out as insufficient. Reached on a Branch C / D / F run, it is a
+landing-asserting message for a plan that did not land.
+
+## Deliverables
+
+| # | *Done when* (plan) | Report claim | Ground truth in the tree | Verdict |
+|---|---|---|---|---|
+| D0 | "the population is derived and published, or the stop condition fires and the split is proposed" | Population = exactly the three named floor members; zero additional; stop condition does not fire | Independently re-derived over `phase-6-finalize/{workflow,standards}/*.md` + `.claude/skills/*/SKILL.md` by `order:` frontmatter. No fourth PR/review/merge-state artifact found that is not regenerated. `project:finalize-step-era-stamp-fill` (order 21) writes a PR number into tracked source but declares `head_dependent: true`, so it re-arms on loop-back and is correctly excluded. Population = 3 stands. The report's published table omits five project-local steps it says its method enumerated (it is labelled "relevant subset"). | **Satisfied** (derivation correct; publication partial) |
+| D1 | "the choice is made with both failure modes stated, and the never-merges case has a **defined message**" | "Already post-merge… **Never-merges is already correct:** a finalize that halts pre-merge never reaches order 991, so it emits **no** landing" | Emission site: correct. Never-merges: **false**. `branch-cleanup` Branches C/D/F record `--outcome done` without merging, the loop continues, and the landing is emitted anyway. No message is defined anywhere for a plan that never merges: `grep -n -i "never merges\|halt\|blocked\|abandoned"` over `landing-payload-spec.md` returns nothing, and the orchestrator's terminal-row gap marker (`orchestrator.py:674-677`) fires only for `shipped`/`landed` rows. | **Not satisfied** |
+| D2 | "no landing message contains a 'What landed' assertion that can be true only if the merge happened, unless the merge happened" | Root cause cured by ordering; content mandate barred by out-of-scope | The out-of-scope reading is an inversion (see § Refutation audit point 4). The *Done when* clause itself is **unmet at HEAD**: `emit-landing.md:175` is a `## What landed` / *shipped* headline with no conditioning on `merge_state`, reachable on a non-merged run. The fact half was delivered by PR #1215 (`landing-payload-spec.md`), but without a commit SHA — `LANDING_REQUIRED_KEYS` (`_orchestrator_inbox.py:806-821`) is `schema, plan_id, pr, merge_state, deliverables_total, deliverables_done, total_tokens, steps`; `grep -n -i "sha"` over `emit-landing.md` and `landing-payload-spec.md` finds no commit-SHA field. | **Not satisfied** |
+| D3 | "one landing per landing, **proven by a test over the multi-emission shape**" | "Already the documented invariant" | The documented invariant is scoped *per orchestrated finalize run*; the reported defect was three landings for **one plan** across successive outcomes. `cmd_inbox_write` (`_orchestrator_inbox.py:890-980`) has no per-sender landing-uniqueness guard — a second `--kind landing` from the same `sender_id` allocates a new sequence and returns `status: success`. `cmd_inbox_supersede` exists (added by PR #1198) but is a manual verb; `grep -n "supersede"` over `emit-landing.md` finds no call. No test over the multi-emission shape exists (`grep -rln "emit_landing\|emit-landing" test/` → 5 files, none asserting single-landing-per-plan; `test_inbox_message_state.py` covers the supersede verb mechanics only). | **Not satisfied** |
+| D4 | "every D0 member either carries a HEAD stamp or regenerates, with the choice justified per member" | "Already done" for `review-retrospective.md` | The step record carries `--head-at-completion`. The **artifact** does not: the Step 4 composition instruction (`.claude/skills/finalize-step-review-retrospective/SKILL.md:388-425`) enumerates what the artifact must contain — metrics table, `## Review-versus-Gate Delta`, `## Qualitative Quality Assessment`, `## Comparative Verdict` — and never a HEAD stamp. `SKILL.md:94` nonetheless claims *"the stamp is what ties it to that tree for anyone reading the retrospective later"*. The staleness the plan observed is cured by ordering (order 990 is post-merge, after the last point HEAD can advance), so the class defect is gone; the literal *Done when* (the artifact carries the HEAD it describes) is not met. Note the current `## Review-versus-Gate Delta` section does carry "both tree SHAs", added after the refutation. | **Partially satisfied** |
+| D5 | four tests, each proven failing pre-fix | N/A — no implementation | No test exists for (a) a landing carrying the SHA, (b) the halted-finalize case, (c) the sibling-count assertion, or (d) a consumer detecting a stale artifact by HEAD. Searched `test/` for `emit-landing`, `emit_landing`, `landing`. | **Not satisfied** |
+
+## Report-claim audit
+
+| Report claim | Status |
+|---|---|
+| `lessons-capture` `order: 991`, `branch-cleanup` `order: 70` | **CONFIRMED** at `6b923309`, frontmatter read directly |
+| `SKILL.md:149` ordering authority; `SKILL.md:214-217` post-run band; `SKILL.md:219` ascending validator | **CONFIRMED** within ±1 line (band is 213-216; the ordering-authority paragraph is 218) |
+| `lessons-capture.md:82` "Exactly one `kind: landing` message per orchestrated finalize run, emitted unconditionally" | **CONFIRMED** verbatim |
+| `inbox-envelope.md:92` landing payload row | **CONFIRMED** verbatim |
+| `finalize-step-preference-emitter.md:219-221` emits no second landing | **CONFIRMED** verbatim |
+| Grep for `batch` / `same batch` / `two lesson` in `lessons-capture.md` → no matches | **CONFIRMED** (re-run, exit 1) |
+| `review-retrospective`: `head_dependent: true`, `--head-at-completion` on every terminal record, append-only `pr-comment` derivation, `unmeasurable`/`indeterminate` grading | **CONFIRMED**, with the artifact-vs-step-record distinction the report does not draw |
+| `create-pr.md:148-149` Non-goals first-class; `create-pr.md:180-182` visible word-boundary truncation inside budget | **CONFIRMED** verbatim, and confirmed in the implementing script |
+| Consumer check: `cleanup.md:111` never derives quiescence from a merge landing | **CONFIRMED** verbatim — line 111 is *"⛔ Quiescence is **never** derived from a timer, and **never** from a merge landing."* |
+| D0 population = 3, no additional member | **CONFIRMED** by independent enumeration |
+| Build gate: no Python changes, build skipped | **CONFIRMED** — the diff is two files under `doc/plans/**` |
+| Reviewer table (`cuioss-review-bot` clean, `coderabbitai` skipped on `skip-bot-review`, `sourcery-ai` rate-limited) | **CONFIRMED** against the live PR #1196 comment and review bodies — every quoted phrase matches |
+| "Never-merges is already correct… emits **no** landing rather than a false one" | **REFUTED** — see § Refutation audit point 5 |
+| "The plan's own OUT-OF-SCOPE forbade the enrichment that would matter here" | **REFUTED** — the clause constrains labelling, not existence |
+| "D3 — Already the documented invariant" | **MISLEADING** — the invariant is per-run; the observed defect was per-plan |
+| Git-provenance row substantiating "a landing has since moved the emission" with #1175 / #1165 / #1170 | **IMPRECISE** — those PRs are real and did the `review-retrospective` work, but the emission move is `e1ae3814` (#1080), which the report never names |
+| "An independent verification sub-agent… returned REFUTATION CONFIRMED on all six checks" | **UNVERIFIABLE** — no persisted sub-agent artifact exists in the repository; the claim rests on the report alone, and its Q1/Q2 conclusions are contradicted by the findings above |
+
+## Correctness review
+
+**C1 — A landing is emitted for a plan that did not merge (CONFIRMED).** Covered in § Refutation audit
+point 5. Three `branch-cleanup` branches record `--outcome done` while explicitly not merging; the
+dispatch loop continues; `emit-landing` (`order: 1000`) emits unconditionally. `emit-landing.md` contains
+no merge-state gate — `grep -n "supersede\|inbox write\|existing\|idempot\|second landing\|already"` over
+it returns only the write call itself and the error-handling row.
+
+**C2 — The landing's only worked headline asserts a landing unconditionally (CONFIRMED).**
+`emit-landing.md:175` pairs a `## What landed` heading with *shipped* and parenthesises `{merge_state}`.
+The plan's ⛔ says appending a correct field beside a false sentence leaves the false sentence there. The
+template is labelled *optional* and *e.g.*, which softens it to guidance rather than a mandate — but it is
+the only guidance the producer gives.
+
+**C3 — `merge_state` derivation is under-specified (PLAUSIBLE).** `emit-landing.md:158-161` says derive
+`pr` and `merge_state` *"from the `create-pr` and `branch-cleanup` step records… (their `facts` /
+`outcome` / `display_detail`); when no PR exists, both are `n/a`"*. The only stated rule is the no-PR case.
+Branch F records `outcome: done`, `work_performed=true` and **no** `merge_mechanism`; an agent reading
+`outcome: done` without the absence rule can render `merge_state=merged`. The discriminator exists in the
+facts (`merge_mechanism` present iff a merge landed, per `branch-cleanup.md:1702`) but is never named at
+the consuming site.
+
+**C4 — No landing-uniqueness guard at the write boundary (CONFIRMED).** `cmd_inbox_write`
+(`_orchestrator_inbox.py:890-980`) validates slug, sender id, sender type, kind, epic existence,
+deliverability-to-a-running-plan and payload non-emptiness. It never asks whether this sender already
+filed a `kind: landing`. `allocate_message_path` simply takes the next sequence. A second landing is
+therefore accepted silently and — the envelope being append-only — both survive to the drain, with no
+`superseded_by` link unless a caller invokes `inbox supersede` by hand.
+
+**C5 — `pr_intent_section.py` reports a reader failure as a substantive absence (CONFIRMED).**
+`_run_outline_read` degrades an `OSError`, a non-zero exit and an unparseable envelope all to `{}`
+(lines 115-123); `has_outline_intent` treats a non-`success` status as "no content" (line 135, `continue`)
+and returns `False` (line 139); `cmd_render` then emits `omitted: True` with
+`reason: 'no outline intent: solution_outline.md absent, or its summary and overview sections are both
+absent or empty'` (lines 197-211). That reason asserts a fact the script did not establish, and the PR
+body silently loses its whole Intent section — including Non-goals — with nothing in the rendered body
+indicating a section was ever intended. This is the same archetype the plan's D0 named for the PR body,
+on a path the report did not examine. No test covers it: `test_pr_intent_section.py` exercises the absent,
+empty, present, over-budget, unbreakable-token and missing-draft cases, but never a reader error.
+
+**C6 — The truncation marker does not name what was lost (CONFIRMED, minor).** The three composed Intent
+items are ordered problem → approach → non-goals, and truncation cuts from the end, so Non-goals is
+structurally the first casualty. The marker
+(`pr_intent_section.py:81-84`) reads *"Intent truncated — {shown} of {total} characters shown"* — it makes
+the loss visible but not identifiable, so a reviewer still cannot tell that the scope statement is what
+went missing. The plan's detectability argument is addressed at the "a human can see something was cut"
+level and not at the "the reviewer knows the Non-goals are absent" level.
+
+**C7 — `failed_outcome_strategy` is cited but defined nowhere (CONFIRMED, minor).**
+`phase-6-finalize/SKILL.md:533` reads *"the dispatcher honours `failed_outcome_strategy`"*. A repo-wide
+search (`grep -rn "failed_outcome_strategy"` over the whole tree excluding `.git`) returns that one line.
+The mechanism the sentence relies on to bound a failed step's blast radius does not exist, which is
+directly relevant to what happens after a non-merging `branch-cleanup`.
+
+**C8 — `default:emit-landing` is unclassified in the dispatched/inline roster (CONFIRMED, minor).**
+`standards/dispatch-inline-split.md` declares itself *"the single source of truth"* and carries a closure
+invariant — *"Every step in the authoritative registry carries **exactly one** classification… never both
+and never neither"* — pinned by `test/plan-marshall/phase-6-finalize/test_dispatch_roster_closure.py`.
+`grep -n "emit-landing"` over that document returns nothing, while `SKILL.md:178` registers the step and
+calls it inline, and `SKILL.md:772` and `SKILL.md:883` name it among the inline consumers. The guarding
+test reads `.plan/marshal.json`, which is git-ignored; the local snapshot predates the step, so the test
+passes without covering it (run locally: exit 0).
+
+## Completeness review
+
+By consumer kind, over the current tree:
+
+- **Prose (skill bodies).** The landing producer, the merge gate, and the orchestrator drain are mutually
+  consistent on the *happy* path. The non-merging path is unrepresented in all three.
+- **Docs (standards).** `landing-payload-spec.md` derives the report↔inbox delta and classifies it, but
+  its required-fact set omits the commit SHA the plan's D2 and D5(a) both name. `inbox-envelope.md`'s
+  landing row still describes a narrative payload while the spec mandates a fenced facts block — the two
+  now differ in strictness, though the spec declares itself the winner.
+- **Schema placeholders.** `LANDING_REQUIRED_KEYS` is the single source of truth for completeness and is
+  shared by producer, validator and drain. No SHA slot; no `merge_state` vocabulary is fixed anywhere, so
+  the value is free text.
+- **Worked examples.** The one landing-body example (`emit-landing.md:169-186`) shows only the merged
+  case. There is no worked example for a non-merged, deferred, or declined run.
+- **Test fixtures / stubs (`*.py`).** `test_landing_completeness.py` covers prose-vs-facts completeness,
+  fail-closed schema, and the shared-constant invariant. It does not cover merge-state truthfulness,
+  single-landing-per-plan, or the halted-finalize case.
+- **Prose-bearing string literals in production code.** `pr_intent_section.py:203-205` carries the
+  absence-asserting `reason` string discussed in C5; `_TRUNCATION_MARKER` carries the loss-quantifying
+  but section-blind marker of C6.
+
+## Out-of-scope compliance
+
+| Out-of-scope item | Status |
+|---|---|
+| Making the channel TRUSTED / adding fields that read as authoritative | **Complied with.** The run added no field at all. The later `emit-landing` work labels its claims as the step's own (`emit-landing.md:158`), which is what the clause asked for. The report's *reading* of the clause was wrong (§ Refutation audit point 4), but no breach occurred. |
+| Re-running review comparison on every loop-back by default | **Complied with.** No regeneration default was introduced. |
+| Making the `landing` payload shape contractual unless D2 forces it | **Complied with by this run** (nothing touched). Made contractual afterwards by PR #1215, which is the "unless D2 forces it" arm, exercised by a different plan. |
+| Disturbing `branch-cleanup`'s position in the step order | **Complied with.** `branch-cleanup` is `order: 70` at `6b923309` and at HEAD; unchanged by this run. |
+
+The diff itself is two files under `doc/plans/review-apparatus/080-…/` and touches no source, so no
+out-of-scope breach is structurally possible from this commit.
+
+## Residue status
+
+The report records one residue item:
+
+> **D2 content enrichment** (landing message carrying an explicit, non-authoritative outcome summary)…
+> The epic may open a fresh, correctly-scoped plan for it if still wanted.
+
+**Status: largely closed, by a different epic, one day later.** PR #1215 (plan 302, `truthful-signals`)
+added `standards/emit-landing.md` (`order: 1000`), `landing-payload-spec.md`, the `landing-facts` fenced
+block and `check_landing_completeness`. The landing now carries `pr`, `merge_state`, deliverable counts,
+token totals and the per-step outcome set, labelled as the plan's own claim.
+
+**Residual within the residue:** no commit SHA (D2 and D5(a) both require it); no cost-against-anchor
+comparison (only a raw `total_tokens`); no explicit "what was deliberately left unchanged" field; and the
+message's *claim* is still landing-shaped regardless of `merge_state`.
+
+The report's *"Nothing else open"* does not hold: the never-merges behaviour (D1), the per-plan
+single-landing guarantee (D3), and the four D5 tests were all closed as moot rather than recorded as
+residue.
+
+## Summary
+
+The verify-first gate fired for a real reason, and the run was right to report a refutation rather than
+re-implement a plan whose central premise had been inverted by PR #1080. The report is unusually accurate
+at the level of individual citations — every file:line quotation checked reproduces verbatim, and the
+reviewer-participation table matches the live PR exactly.
+
+Where it fails is in the step from *"the ordering defect is fixed"* to *"therefore nothing here is a live
+defect."* Three of its six moot-ness arguments do not survive: the never-merges case is not handled (three
+`branch-cleanup` branches record `done` without merging and the pipeline runs on to emit a landing
+anyway), the out-of-scope clause was read as forbidding the D2 enrichment the project implemented one day
+later, and the single-landing invariant it cites is scoped per finalize run while the defect reported was
+per plan. The plan's own ⛔ — *"the fix must change the message's **claim**, not only append an outcome"* —
+remains unimplemented: `emit-landing.md:175`'s worked headline is a `## What landed` / *shipped* sentence
+with the contradicting `merge_state` in parentheses beside it.
+
+Seven follow-up items are recorded in `gaps.md`, one blocker.
