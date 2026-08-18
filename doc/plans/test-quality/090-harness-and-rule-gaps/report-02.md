@@ -192,12 +192,14 @@ payload's own comment count agreed with what was read. Merge-gate condition 2 is
 **established**, not overridden: every comment on the PR was fixed, and each was replied to on its
 thread with what was changed and the evidence.
 
-⚠️ **What `coderabbitai` reviewed, precisely.** Its four findings are against head `224fea4`, and its
-verification of the fixes is thread-by-thread — three confirmed against the replies, and the guard
-population thread confirmed as "Addressed in commit `9369dfb`" after that commit landed. It did **not**
-perform a fresh full review of `9369dfb`: its commit status on that head reads "Review rate limited".
-So the final head carries a confirmed disposition per finding and no new full pass, and this record
-says which rather than letting `reviewed` imply the latter.
+⚠️ **What `coderabbitai` reviewed, precisely.** Its full pass is against head `224fea4` — the four
+inline findings and the two review-summary nitpicks alike — and its verification of the fixes is
+thread-by-thread: three confirmed against the replies, and the guard-population thread confirmed as
+"Addressed in commit `9369dfb`" after that commit landed. It has performed **no fresh full review of
+any later head**; its commit status on each of them reads "Review rate limited", and the fixes for the
+two summary nitpicks were answered in a PR comment rather than re-reviewed. So the final head carries
+a confirmed or answered disposition per finding and no new full pass, and this record says which
+rather than letting `reviewed` imply the latter.
 
 ⚠️ **`coderabbitai`'s review was obtained, not merely awaited.** Its first two attempts — the PR
 opening and this run's push — both returned rate-limit notices. The review exists because the window
