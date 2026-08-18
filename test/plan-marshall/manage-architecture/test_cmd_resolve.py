@@ -83,6 +83,27 @@ _architecture_core = load_script_module('plan-marshall', 'manage-architecture', 
 _cmd_client = load_script_module('plan-marshall', 'manage-architecture', '_cmd_client.py', '_cmd_client')
 _maven_cmd_discover = load_script_module('plan-marshall', 'build-maven', '_maven_cmd_discover.py', '_maven_cmd_discover')
 
+
+def _registered_maven_cmd_discover():
+    """Return the ``_maven_cmd_discover`` module ``sys.modules`` currently holds.
+
+    ⛔ Patch THIS object, never the module-level ``_maven_cmd_discover`` binding
+    above. ``_cmd_client_query._enrich_maven_module_cached`` reaches the seam
+    with a DEFERRED ``from _maven_cmd_discover import enrich_maven_module``
+    inside the function body, so it resolves the name through ``sys.modules`` at
+    call time rather than through whatever object this module loaded at import
+    time.
+
+    Those are not always the same object. ``load_script_module`` registers under
+    the stem, and ``build-maven``'s own tests load the same script under the same
+    name — so whichever module pytest imports LAST during collection owns the
+    registration. Patching the import-time binding therefore works only when this
+    directory happens to be collected after ``build-maven/``, and silently
+    patches an unreachable copy when it is collected before.
+    """
+    return sys.modules['_maven_cmd_discover']
+
+
 cmd_resolve = _cmd_client.cmd_resolve
 resolve_command = _cmd_client.resolve_command
 
@@ -585,7 +606,7 @@ def test_resolve_coverage_triggers_at_most_one_enrich(monkeypatch):
             'dependencies': [],
         }
 
-    monkeypatch.setattr(_maven_cmd_discover, 'enrich_maven_module', _spy_enrich)
+    monkeypatch.setattr(_registered_maven_cmd_discover(), 'enrich_maven_module', _spy_enrich)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_multi_module(tmpdir)
@@ -619,8 +640,8 @@ def test_resolve_plain_verbs_trigger_zero_enrich(monkeypatch, verb):
         enrich_calls.append((module_path, project_root))
         return None
 
-    monkeypatch.setattr(_maven_cmd_discover, '_get_maven_metadata', _spy_metadata)
-    monkeypatch.setattr(_maven_cmd_discover, 'enrich_maven_module', _spy_enrich)
+    monkeypatch.setattr(_registered_maven_cmd_discover(), '_get_maven_metadata', _spy_metadata)
+    monkeypatch.setattr(_registered_maven_cmd_discover(), 'enrich_maven_module', _spy_enrich)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_multi_module(tmpdir)
