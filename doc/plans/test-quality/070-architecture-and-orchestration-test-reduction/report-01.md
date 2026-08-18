@@ -803,8 +803,8 @@ Re-read against what actually happened, confirming both that the step ran and th
 | 4 Pushed | **done** — pushed after every commit; no unpushed commit remains |
 | 5 Build gate | **done** — git-derived verdict: 53 of 56 changed files are `*.py`, so the build ran. Full `./pw verify` green: 20,791 passed, 14 skipped. It **failed first** on `test-compile`, which is recorded rather than smoothed over |
 | 6 Verification sub-agent | **done** — three rounds, budget of 3 declared up front, **ended on the budget exit** with round 3's stop answer YES; everything condition A forbids fixed, condition B's item characterised. Findings and the stop record are in § Findings |
-| 7 PR cycle | **in progress** — PR [#1290](https://github.com/cuioss/plan-marshall/pull/1290); participation table below |
-| 8 Merge gate | pending |
+| 7 PR cycle | **done** — PR [#1290](https://github.com/cuioss/plan-marshall/pull/1290). All five review threads dispositioned (3 fixed, 2 rejected-with-reason, each reason posted on its thread). All three comment surfaces read; the participation table below carries a verdict **and** a `Reopens?` value per reviewer. No verdict is `unreadable`, so merge-gate condition 2 is **established**, not overridden |
+| 8 Merge gate | **done** — conditions 1–3 met on head `c3e6b0b`: `verify / conclusion` **success** with `mergeable_state: clean`; every comment handled; this report committed as the last pre-merge commit. The condition-4 coverage shortfall (2 of 3) was disclosed **before** arming. Auto-merge armed on the operator's explicit instruction. ⚠️ Three earlier `verify / conclusion` failures were each confirmed from the job log to be `cancelled` — runs superseded by this run's own per-commit pushes, not real failures |
 | 8 Bridge | **done** — no status or bookkeeping write landed under `doc/plans/` outside this plan's own directory; no ledger, no status file, no other plan's directory touched |
 | 9 This check | **done** — this table |
 | 9 What have we learned | below |
