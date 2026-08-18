@@ -41,10 +41,16 @@ _STANDARDS = (
 
 
 def _toon_blocks(doc: pathlib.Path) -> list[tuple[int, str]]:
-    """Return every fenced ``toon`` block in *doc* as ``(line_number, body)``.
+    """Return EVERY fenced ``toon`` block in *doc* as ``(line_number, body)``.
 
-    Blocks carrying an ``<angle-bracket>`` placeholder are skipped: they are
-    templates for a shape, not a payload any run produced.
+    Nothing is exempted. An earlier version skipped blocks containing
+    ``<angle-bracket>`` placeholders on the theory that a template is not a
+    payload, and that exemption immediately hid a real defect: an ``io_error``
+    example whose ``message`` was unquoted where the serializer quotes it. A
+    placeholder sits in a VALUE, and a value with a placeholder still renders
+    the way the serializer renders values — so a template can be canonical, and
+    every one in these standards is. An exemption that is not needed is only a
+    place for defects to hide.
     """
     blocks: list[tuple[int, str]] = []
     body: list[str] | None = None
@@ -53,9 +59,7 @@ def _toon_blocks(doc: pathlib.Path) -> list[tuple[int, str]]:
         if line.strip() == "```toon" and body is None:
             body, start = [], lineno
         elif line.strip() == "```" and body is not None:
-            text = "\n".join(body)
-            if not ("<" in text and ">" in text):
-                blocks.append((start, text))
+            blocks.append((start, "\n".join(body)))
             body = None
         elif body is not None:
             body.append(line)
@@ -75,7 +79,7 @@ def _cases() -> list[tuple[str, int, str]]:
 @pytest.mark.parametrize(
     ("doc_name", "lineno", "block"),
     _cases(),
-    ids=lambda v: f"L{v}" if isinstance(v, int) else (v if isinstance(v, str) and v.endswith(".md") else ""),
+    ids=[f"{doc}-L{line}" for doc, line, _ in _cases()],
 )
 def test_documented_toon_block_is_what_the_serializer_emits(
     doc_name: str, lineno: int, block: str

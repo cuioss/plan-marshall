@@ -999,7 +999,7 @@ alternative: pass --total-tokens manually to metrics capture
 status: error
 operation: metrics normalized-tokens
 error: io_error
-message: Failed to write normalized-token result to <path>: <reason>
+message: "Failed to write normalized-token result to <path>: <reason>"
 ```
 
 ---
