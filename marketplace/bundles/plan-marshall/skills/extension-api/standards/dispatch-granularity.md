@@ -67,7 +67,7 @@ If multiple steps run sequentially, read the same files, and have similar model 
 
 - `phase-2-refine`'s confidence loop (Steps 3b → 3c → 8 → 9 → 10 → 11 → 12 → back to 8) is *one* logical activity ("refine the request until confident"). Bundling all those steps into a single `phase-2-refine` dispatch pays one envelope, runs the loop inside the subagent's context, returns the final state.
 - `phase-3-outline` Complex Track Step 10 is one substantive activity (discovery → analysis → write solution). Steps 9c and 10b are tightly coupled to it. Bundle as one `phase-3-outline` Complex Track dispatch.
-- `phase-4-plan` Steps 5+6+7 form one logical task-creation activity over the deliverable set. Bundle into `phase-4-plan` (plan-all-tasks).
+- `phase-4-plan` Steps 5+6 form one logical task-creation activity over the deliverable set. Bundle into `phase-4-plan` (plan-all-tasks).
 
 The four pre-existing finalize dispatches (`create-pr`, `automated-review`, `sonar-roundtrip`, `lessons-capture`) are good examples of well-bundled scope: each carries multi-step work; `automated-review` itself iterates N comments inside one context rather than spawning per-comment subagents.
 
@@ -151,7 +151,7 @@ The wrong shape — per-iteration sequential dispatch into separate envelopes �
 - Per-phase / per-workflow "iterate-in-context" callouts (the load-bearing application of Heuristics 2 and 3):
   - [`phase-2-refine/SKILL.md`](../../phase-2-refine/SKILL.md) § Dispatched workflows vs inline steps — confidence loop runs inside one envelope.
   - [`phase-3-outline/SKILL.md`](../../phase-3-outline/SKILL.md) § Dispatched workflows vs inline steps — per-deliverable Complex Track loop runs inside one envelope.
-  - [`phase-4-plan/SKILL.md`](../../phase-4-plan/SKILL.md) § Dispatched workflows vs inline steps — Steps 5+6+7 task-creation loop runs inside one envelope.
+  - [`phase-4-plan/SKILL.md`](../../phase-4-plan/SKILL.md) § Dispatched workflows vs inline steps — Steps 5+6 task-creation loop runs inside one envelope.
   - [`phase-5-execute/SKILL.md`](../../phase-5-execute/SKILL.md) § Dispatched workflows vs inline steps — the budget-bounded task loop runs inside one envelope, loading `execute-task` in-context per task (neither per-task nor per-deliverable); the orchestrator drives one envelope per plan-time-packed `envelope_id` group, and the in-envelope driver yields (logging a `budget_yield` decision) when its group is exhausted — `triage_required` / `baseline_drift` are the other two yield triggers.
   - [`plan-retrospective/SKILL.md`](../../plan-retrospective/SKILL.md) § Dispatch shape — 8 aspects iterate inside one envelope.
   - [`workflow-pr-doctor/SKILL.md`](../../workflow-pr-doctor/SKILL.md) — thin redirect to `verification-feedback.md` (`producer=pr-state`); per-finding loop iterates inside one envelope. When iteration crosses the wrapper budget, overflow returns to the orchestrator (no in-envelope sub-dispatch — the envelope is a leaf; see verification-feedback.md § Overflow returns to the orchestrator).

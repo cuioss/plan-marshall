@@ -189,3 +189,50 @@ def test_a_glob_in_the_survey_pool_is_not_rejected_as_a_wildcard():
     errors, _warnings = validate_deliverable_contract(with_glob)
 
     assert not any('Wildcard in affected files' in e for e in errors), errors
+
+
+def test_a_path_declared_under_both_fields_yields_one_write_set_member():
+    """The union is DEDUPLICATED, not concatenated.
+
+    :func:`deliverable_write_set` documents this explicitly — "a path declared
+    under both fields contributes one write-set member" — because the two fields
+    are disjoint by the authoring standard's requirement and the union is
+    defended rather than assumed. Nothing pinned it: removing the dedupe left
+    every suite green, while the identical defensive dedupe in
+    ``foreign_pr_gate._foreign_paths_by_deliverable`` did carry its own guard.
+
+    Asserted as the exact list, not as a length or a membership test: a
+    concatenating regression yields ``['src/dup.py', 'src/dup.py']``, which a
+    ``in``-style assertion would still accept.
+    """
+    record: dict[str, Any] = {
+        'number': 1,
+        'title': 'Declares one path twice',
+        'affected_files': [{'path': 'src/dup.py', 'intent': 'write-replace'}],
+        'mutation_scope': [{'path': 'src/dup.py', 'intent': None}],
+    }
+
+    assert deliverable_write_set(record) == ['src/dup.py']
+
+
+def test_the_dedupe_preserves_document_order_across_the_two_fields():
+    """Deduplication keeps the FIRST occurrence, so order is `affected_files` then `mutation_scope`.
+
+    The docstring promises "in document order"; a dedupe implemented by set
+    membership alone would satisfy the cardinality assertion above while
+    scrambling the order this one pins.
+    """
+    record: dict[str, Any] = {
+        'number': 1,
+        'title': 'Overlapping declarations',
+        'affected_files': [
+            {'path': 'src/first.py', 'intent': 'write-replace'},
+            {'path': 'src/shared.py', 'intent': 'write-replace'},
+        ],
+        'mutation_scope': [
+            {'path': 'src/shared.py', 'intent': None},
+            {'path': 'src/last.py', 'intent': None},
+        ],
+    }
+
+    assert deliverable_write_set(record) == ['src/first.py', 'src/shared.py', 'src/last.py']

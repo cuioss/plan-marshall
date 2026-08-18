@@ -362,9 +362,11 @@ def check_declared_set_closure(
                         f'that deliverable names it as a target. The declared set is not '
                         f'projected onto the task set: either add a step that writes '
                         f'{path!r}, or remove the path from the declaration. A declared '
-                        f'path nobody will touch is a sweep declared and never run — the '
-                        f'file exists, so the files_exist check passes, and the omission '
-                        f'is invisible to every later gate.'
+                        f'path nobody will touch is a sweep declared and never run, and '
+                        f'the files_exist check cannot see it: that check iterates task '
+                        f'STEP TARGETS, and a declared path no task targets is not one, so '
+                        f'it is never examined and its existence on disk is never even '
+                        f'consulted. The omission is invisible to every later gate.'
                     ),
                     'file_path': path,
                 }
@@ -475,9 +477,9 @@ def check_declared_scope_reconciliation(
                         ),
                         'detail': (
                             f'Deliverable {number} declares the pattern {pattern!r}, which '
-                            f'yielded no measurable file set: it is absolute, it escapes the '
-                            f'repository root, the path matcher rejected it, or it matched '
-                            f'only directories '
+                            f'yielded no measurable file set: it is home-relative (starts '
+                            f'with "~"), it is absolute, it escapes the repository root, the '
+                            f'path matcher rejected it, or it matched only directories '
                             f'({expansion.directories_matched} directory match(es)). An '
                             f'unexpandable pattern is an UNMEASURED scope, not an empty one — '
                             f'it contributes zero hits exactly as a pattern matching nothing '

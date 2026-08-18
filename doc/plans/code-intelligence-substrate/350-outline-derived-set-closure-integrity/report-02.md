@@ -70,9 +70,17 @@ It is **a link repair, not a status or bookkeeping write.** Step 3 moved this pl
 `350-outline-derived-set-closure-integrity.md` to `350-outline-derived-set-closure-integrity/plan.md`,
 which broke the two links 280's report holds to its arm-A hand-over. Leaving them dangling would have
 left 280's report making a false cross-reference — a condition-**A** defect this run's own move
-caused. No ledger, no status file, and no other plan directory was touched. A sweep for the pre-move
-path (`grep -rn '350-outline-derived-set-closure-integrity\.md' --include=*.md .`) returns nothing
-outside `plan.md`'s own front matter, so the repair is complete rather than partial.
+caused. No ledger, no status file, and no other plan directory was touched.
+
+A sweep for the pre-move path — `grep -rn '350-outline-derived-set-closure-integrity\.md'
+--include=*.md .`, run at the moment of this claim — returns exactly **one** hit, and it is the
+sentence above this one: the pattern quoted in this report's own prose. No live cross-reference to
+the pre-move path survives anywhere in the tree, so the repair is complete rather than partial.
+⚠ An earlier version of this paragraph claimed the sweep "returns nothing outside `plan.md`'s own
+front matter". Both halves were false — the sweep does return a hit, and `plan.md` contains no
+occurrence of the string and has no front matter naming it. It was written from expectation rather
+than from the command's output, which is the defect this plan is about, committed in the report
+that discloses it.
 
 ## Build gate
 

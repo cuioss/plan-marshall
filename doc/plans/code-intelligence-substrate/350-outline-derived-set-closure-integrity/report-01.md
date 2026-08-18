@@ -102,8 +102,10 @@ verdict the fixture could have failed.
 **Done, and it required an enabling fix D0 uncovered.** `check_declared_scope_reconciliation`
 expands each declared glob (normalising it first, so a repo-escaping pattern is rejected as
 unmeasured rather than walking out of the tree), enumerates the result **including hits outside the
-declaration**, and emits one finding per declared glob — stating the total number of unenumerated
-hits, naming a bounded prefix of them, and disclosing the remainder as `+N more` — naming the
+declaration**, and emits one finding per declared glob **that matches files the deliverable does not also
+enumerate** — a fully enumerated glob emits none, which
+`test_declared_glob_fully_enumerated_is_closed` pins by asserting `gaps == []` — stating the total
+number of unenumerated hits, naming a bounded prefix of them, and disclosing the remainder as `+N more` — naming the
 resolution the author must pick
 — widen with a recorded authorisation, or narrow and record the un-swept surface as a documented
 exclusion. The `{declared scope wide, write-set narrow}` pair is therefore detected mechanically, by
@@ -179,11 +181,15 @@ of this row said the opposite of the test it describes.
 
 ### D5 — tests, each verified to fail pre-fix, plus the characterization-corpus rule
 
-**Done.** Re-derived with `grep -c '^def test_'` at the moment of this claim: **33** in
-`test_qgate_closure.py`, **8** in `test_survey_scope_declaration.py`, **4** in
-`test_recall_survey_scope.py`, plus one added to each of `test_foreign_deliverable_column.py` and
-`test_foreign_pr_gate.py` — **47** new test functions across five modules. (Stated as a count of
-test *functions*, not of collected cases; the two differ wherever a test is parametrized.)
+**Done.** Re-derived with `grep -c '^def test_'` at the moment of this claim, and against
+`origin/main` for the two pre-existing suites: **34** in `test_qgate_closure.py`, **8** in
+`test_survey_scope_declaration.py`, **4** in `test_recall_survey_scope.py`, **1** added to
+`test_foreign_deliverable_column.py` (11 → 12) and **2** to `test_foreign_pr_gate.py` (13 → 15)
+— **49** new test functions across five modules. (Stated as a count of test *functions*, not of
+collected cases; the two differ wherever a test is parametrized.) ⚠ Round 4 found the earlier
+version of this sentence carrying three false figures at once — 33, "one added to each", and a
+total of 47 — none of which held even at run 01's own head, and the first of which
+`actual-state.md` already contradicted.
 
 **Red-before-green was done by MUTATION, not by a stash.** A first attempt stashed the production
 changes and ran the new suite: it produced a *collection error* (the new module was absent), which
@@ -191,9 +197,15 @@ proves the module did not exist and proves nothing about whether any guard detec
 is a weak red signal, so it was discarded in favour of a mutation campaign — each mutant reverting
 one specific behaviour, each run against only the guard that names it.
 
-**27 mutants at the end of round 2, all detected**; round 3 then added its own independent campaign
-and the total moved again — the count is stated per round below rather than as one figure, because
-it moved three times and a single number went stale twice. Round 2's 27 cover: the survey/mutation headings going unparsed; the write-set excluding the mutation scope; the
+**Every round-2 mutant was detected** (27 at the close of that round); round 3 ran its own
+independent campaign and the total moved to **32**, all detected; round 4 ran **19**, of which 17
+were detected and **2 survived** — recorded as B1 and B2 in [`report-02.md`](report-02.md). The
+figure is stated per round because it moved every round, and a single number went stale twice.
+⚠ An earlier version of this paragraph promised a per-round count and then never stated round 3's,
+and introduced its list of round-2 mutants with a count the list does not match. The list below
+enumerates the BEHAVIOURS those mutants reverted, not the mutants themselves — one behaviour can
+have more than one revert point, so it is deliberately not presented as a count. The behaviours:
+the survey/mutation headings going unparsed; the write-set excluding the mutation scope; the
 closure checks not being wired in; a home-relative glob reported as measured-empty; a referrer
 closure accepting a target a declared glob would `fnmatch`; a projection closure reporting a declared
 glob as unprojected; `population_complete` asserted rather than measured; the retrospective parser
@@ -238,8 +250,10 @@ An under-enumerated corpus faithfully pins the defect as expected behaviour; thi
 The corpus was **aligned, not exempted**: `_EXISTING_FILE` is now both the declared path and the step
 target in every fixture that is not deliberately injecting a fault.
 
-**Stated exclusions** — every fixture that does NOT declare the path its task targets, with its
-reason:
+**Stated exclusions** — every fixture that deviates from the aligned shape, with its reason. The
+deviation is *not* uniformly "declares a path its task does not target": the second row declares
+exactly the path its task targets, and deviates because that path is deliberately **absent from
+disk**. The rows:
 
 | Fixture | Why it deviates | Disposition |
 |---|---|---|

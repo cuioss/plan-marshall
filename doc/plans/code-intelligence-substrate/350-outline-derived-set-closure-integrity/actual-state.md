@@ -153,10 +153,14 @@ sub-agents clobbered each other's mutation harness by choosing the same filename
 - **Per-commit gate:** `./pw quality-gate` before every `*.py`-touching commit, read from the tools'
   streamed output — `Success: no issues found in 414 source files`, `All checks passed!`,
   `SPDX-header check passed`.
-- **Branch gate:** `./pw verify` ran four times. ⚠ **The second run FAILED** —
+- **Branch gate:** `./pw verify`, run the number of times [`report-01.md`](report-01.md) § Build
+  gate tabulates — that table is the record, and this line no longer restates a total, because the
+  two documents previously disagreed ("three times" there, "four" here) and a past run's
+  invocation count is not re-derivable from the tree. ⚠ **One run FAILED** —
   `verify: test-compile failed`, a test-only type error invisible to `quality-gate` and to per-file
-  `pytest`, with the wrapper still exiting 0. Fixed in `4ec39fd`. The final run's result is recorded
-  in `report-01.md` § Build gate.
+  `pytest`, with the wrapper still exiting 0. Fixed in `4ec39fd`. Run 01 recorded **no** final gate
+  — its § Final gate says "pending a clean re-run" — so the final gate is the one run 02 ran, in
+  [`report-02.md`](report-02.md) § Build gate.
 
 ⛔ **Read the gate for what it is.** The build's own coverage line says it: SPDX cannot evaluate file
 content, plugin-doctor cannot evaluate whether a documented claim is true, `mypy(test)` cannot

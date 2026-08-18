@@ -448,7 +448,7 @@ The granularity heuristics live in `../../extension-api/standards/dispatch-granu
 | phase-3-outline Step 4 change-type | Script + LLM fallback | Keyword classifier resolves majority; ambiguous escalates. |
 | phase-3-outline Complex Track Steps 9c+10+10b | Bundle into `phase-3-outline` | Per-deliverable loop iterates in-context. |
 | phase-3-outline Step 11 Q-Gate (outline-time) | `--phase phase-3-outline` (q-gate-validation tracks phase default) | Bypassed when `scope_estimate=surgical` AND `change_type ∈ {bug_fix, tech_debt, verification}` AND `deliverable_count=1`. |
-| phase-4-plan Steps 5+6+7 task creation | Bundle into `phase-4-plan` | Per-deliverable loop iterates in-context. |
+| phase-4-plan Steps 5+6 task creation | Bundle into `phase-4-plan` | Per-deliverable loop iterates in-context. |
 | phase-4-plan Step 8 mechanical Q-Gate checks | Script | Pure regex + graph + filesystem. Unconditional — no knob, no predicate — which is what keeps the closure checks reachable when Step 8b is suppressed. |
 | phase-4-plan Step 8b LLM Q-Gate | `--phase phase-4-plan` (q-gate-validation tracks phase default) | After every successful phase-4-plan invocation EXCEPT when the `q_gate_validation` knob is `off` (B1) or the surgical-scope bypass (B2) fires (module-mapping + scope-criterion validators reconcile LLM-authored shape against live ground truth). |
 | phase-5-execute per-task execution | `phase-5-execute.default` per-task dispatch | One envelope per task. |

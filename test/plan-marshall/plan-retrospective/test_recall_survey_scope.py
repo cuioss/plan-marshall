@@ -60,6 +60,14 @@ Overview text goes here.
 """
 
 
+#: The same form, plus ONE survey bullet carrying an explicit non-read marker.
+#: The heading supplies ``read`` as a DEFAULT; an explicit annotation must win.
+_MARKED_SURVEY_OUTLINE = _SURVEY_OUTLINE.replace(
+    "- `src/surveyed_only.py`\n",
+    "- `src/surveyed_only.py`\n- `src/marked.py` (write-replace)\n",
+)
+
+
 def _check_by_name(checks: list, name: str) -> dict | None:
     for entry in checks:
         if entry.get('name') == name:
@@ -185,3 +193,47 @@ def test_an_unparseable_survey_declaration_fails_loudly_not_silently(tmp_path, m
     check = _check_by_name(result.toon()['checks'], 'affected_files_recall')
     assert check['status'] == 'fail'
     assert 'no bullet parsed' in check['message']
+
+
+def test_an_explicitly_marked_survey_bullet_reaches_the_recall_denominator(
+    tmp_path, monkeypatch
+):
+    """The heading supplies a DEFAULT intent; it never overrides a stated one.
+
+    ``references/artifact-consistency.md`` states this as the design ("the
+    heading supplies a default, never an override"), and nothing in this suite
+    exercised it: inverting the precedence in ``_extract_bullet_entries`` — so
+    the heading's ``read`` wins over an explicit marker — left the whole
+    ``plan-retrospective`` suite green.
+
+    Under that inversion an explicitly marked ``(write-replace)`` bullet under
+    ``Files to survey:`` is silently downgraded to ``read`` and drops out of the
+    denominator, which RAISES recall by shrinking what it is measured against —
+    the vacuously-high-recall error the default exists to avoid. The denominator
+    is therefore asserted as exactly 3, and the excluded pool as exactly 1: the
+    inversion reaches 2 and 2, the opposite verdict on both numbers.
+    """
+    plan_id = 'retro-survey-scope-marked'
+    base = tmp_path / 'base'
+    base.mkdir()
+    plan_dir = base / 'plans' / plan_id
+    build_happy_plan_dir(plan_dir)
+    (plan_dir / 'solution_outline.md').write_text(_MARKED_SURVEY_OUTLINE, encoding='utf-8')
+    (plan_dir / 'references.json').write_text(
+        json.dumps(
+            {
+                'modified_files': ['src/foo.py', 'src/bar.py', 'src/marked.py'],
+                'domains': ['plan-marshall-plugin-dev'],
+            }
+        ),
+        encoding='utf-8',
+    )
+    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
+
+    result = run_script(SCRIPT_PATH, 'run', '--plan-id', plan_id, '--mode', 'live')
+
+    assert result.success, result.stderr
+    details = result.toon()['details']['affected_files_recall']
+    assert details['declared'] == 3, 'the explicitly marked survey bullet is a declared mutation'
+    assert details['read_intent_excluded'] == 1, 'only the unmarked survey bullet defaults to read'
+    assert details['found'] == 3
