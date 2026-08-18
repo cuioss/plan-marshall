@@ -1,6 +1,6 @@
 # Run report — 220-build-ledger-is-the-build-time-oracle (run 01)
 
-**Date (UTC):** 2026-08-13    **Branch:** claude/build-time-oracle-ledger-hxatuk (harness-assigned, kept as-is)    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-13    **Branch:** claude/build-time-oracle-ledger-hxatuk (harness-assigned, kept as-is)    **PR:** [#1224](https://github.com/cuioss/plan-marshall/pull/1224)    **Outcome:** completed
 
 ## Skills loaded
 
