@@ -1,6 +1,6 @@
 # Run report — 320-manifest-cross-check-discards-production-tree (run 01)
 
-**Date (UTC):** 2026-08-17 – 2026-08-18    **Branch:** `claude/manifest-cross-check-production-edn4tw` (harness-assigned)    **PR:** TBD    **Outcome:** completed
+**Date (UTC):** 2026-08-17 – 2026-08-18    **Branch:** `claude/manifest-cross-check-production-edn4tw` (harness-assigned)    **PR:** [#1288](https://github.com/cuioss/plan-marshall/pull/1288)    **Outcome:** completed
 
 ## Skills loaded
 
@@ -360,10 +360,152 @@ loop's own exit is recorded here, separately, as the budget exit it was.
 
 ## Reviewer participation
 
+**Population derived from configuration, not transcribed.** Every
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc
+declaring an `author_login`: `coderabbit.md` → `coderabbitai`, `pr-agent.md` → `cuioss-review-bot`,
+`sourcery.md` → `sourcery-ai`. Cross-named by `.github/workflows/pr-agent.yml`. **M = 3.**
+
+All THREE comment surfaces were read — `get_comments` (issue comments), `get_reviews` (review-summary
+bodies) and `get_review_comments` (inline threads) — because none subsumes the others on the MCP
+path. Each verdict below comes from a stored body, never from a check-run state.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence |
+|---|---|---|---|
+| `cuioss-review-bot` | `reviewed` | — | Issue comment on head `8cd95a7`: "PR Reviewer Guide 🔍 — PR contains tests / No security concerns identified / **No major issues detected**". A review artifact against the diff carrying an explicit nothing-to-report. Its `review / review` check also concluded `success`, but that is not what the verdict rests on |
+| `coderabbitai` | `rate-limited` | **yes** | Issue comment: "Review limit reached … we couldn't start this review. **Next review available in: 28 minutes.** … You've used all 1 included review currently available under your plan." A countdown that clears on its own |
+| `sourcery-ai` | `rate-limited` | **no** | Review-summary body: "your pull request is larger than the review limit of **150000 diff characters**". A property of THIS diff, not of the clock — the same request never succeeds at this size, so waiting is futile. Its `Sourcery review` check concluded `skipped`, consistent with the body |
+
+**Coverage: 1 of 3.** No verdict is `silent`, so no recovery check was owed; no verdict is
+`unreadable`, so merge-gate condition 2 is **established on evidence** rather than overridden — all
+three surfaces returned successfully, and `comments: 1` on the PR payload served as a positive
+control that bodies existed before any of them was read.
+
+⭐ **The two shortfalls are different in kind and the table shows it.** Both are `rate-limited`, and
+a run that reported only the verdict would render them identically — but one clears in 28 minutes and
+the other never clears at this diff size. Only the first is worth re-requesting.
+
+**Actionable comments: none.** The one reviewer that reviewed reported no issues, and the inline
+review-thread surface is empty (`totalCount: 0`). There is nothing to fix or reply to; no comment was
+left unaddressed.
+
+**Re-request.** `coderabbitai`'s window reopens ~28 minutes after 2026-08-18T00:42:52Z. Its own
+notice names two ways to re-trigger — a `@coderabbitai review` comment, or a push. The report records
+below whether the re-request was made and what it produced.
+
+**§ Step 8 condition 4 disclosure fired**, before arming auto-merge, in these words: *"Review
+coverage: 1 of 3 — `cuioss-review-bot` reviewed with no issues; `coderabbitai` rate-limited, reopens
+~28 minutes after 00:42:52Z; `sourcery-ai` rate-limited on a 150,000-character diff-size ceiling,
+does not reopen."* A run that merges on 1-of-3 must say 1-of-3.
+
 ## Cost
+
+- **Tokens:** **not available to the agent in this session.** The harness does not expose a token
+  count to the running agent, and no figure is invented in its place.
+- **Wall-clock:** ~3h25m — first commit `dfa4c56` at 2026-08-17T21:18:20Z, last pre-merge commit at
+  2026-08-18T00:4x. Source: `git log --date=iso-strict`. This is elapsed time on the branch, which
+  includes four `./pw verify` runs (~8 minutes each) and four dispatched verification rounds.
+- **Population:** what these figures count is **this single Claude Code cloud session**, as the
+  session's own clock records it. ⛔ **Not comparable to a plan-marshall `metrics.toon` total.** That
+  counts the orchestrator-plus-agent dispatch tree under plan-marshall's own per-task billing
+  boundary, which a single interactive cloud session does not share — there is no dispatch tree here,
+  the verification sub-agents are Task-tool children rather than billed leaf dispatches, and no
+  ledger records them. The figures cannot be made comparable, so no comparison is offered.
 
 ## Contract check (Step 9)
 
+Re-read against what actually happened, confirming both that each step ran and that its artifact
+exists on disk.
+
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | **done** | Named in § Skills loaded. Loaded by bundle path — the `plan-marshall` plugin is not installed in this session, so `Skill:` notation was not used. No skill was unobtainable by both routes |
+| 2 Branch | **done** | `claude/manifest-cross-check-production-edn4tw` — **harness-assigned**, kept as-is per the contract. Published to `origin` before the first edit: `git ls-remote` was empty, so the branch was pushed as the run's first action |
+| 3 Plan directory | **done** | `doc/plans/code-intelligence-substrate/320-manifest-cross-check-discards-production-tree/plan.md` exists and opens with the first-instruction block (present on arrival — no repair needed). The `320-` priority prefix is preserved by the move |
+| 4 Implement | **done** | Six commits, each carrying the `Co-Authored-By: Claude` trailer and no "Generated with Claude Code" footer. All six deliverables addressed |
+| 4 Per-commit gate | **done** | Every commit touching `*.py` was preceded by a clean gate — the direct `./pw` path, so read from the streamed tool output: `ruff … All checks passed!`, `mypy … Success: no issues found in 413 source files`, `SPDX-header check passed`, `issues[0]` |
+| 4 Pushed | **done** | Pushed after every commit, not once at PR time. `git status -sb` reports no `ahead` at the final commit |
+| 5 Build gate | **done** | Git-derived verdict recorded (§ Build gate): `*.py` changed ⇒ full `./pw verify`; result `20687 passed, 14 skipped`, coverage COMPLETE over all six dimensions. Re-measured on the delivered tree after round 3's finding that an earlier figure described a superseded one |
+| 6 Verification sub-agent | **done** | Four rounds, budget declared before the first dispatch. Findings and dispositions per instance above; the stop record names the **budget exit**, the round that ended it, round 4's own last answer, the evidence it rested on (a 2,871-path differential), that rounds 2–3's findings were **not** narrower and round 4's were, the single survivor with its (b) bound, and the residue to assume remains |
+| 7 PR cycle | see § Reviewer participation | PR [#1288](https://github.com/cuioss/plan-marshall/pull/1288). No `skip-bot-review` label: the diff touches `*.py` **and** `marketplace/bundles/**`, and a skill is code |
+| 8 Merge gate | see below | |
+| 8 Bridge | **done** | No status or bookkeeping write landed under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan's directory touched. The report carries the PR number and a per-deliverable outcome for the orchestrator to collect |
+| 9 This check | **done** | This table |
+| 9 What have we learned | **done** | Below |
+
+**GitHub access path:** the **GitHub MCP server**. There is no `gh` CLI in this session; the `gh`
+spellings in the contract were mapped to `pull_request_read` (`get`, `get_comments`, `get_reviews`,
+`get_review_comments`, `get_check_runs`) and `create_pull_request`.
+
+**Branch form:** harness-assigned `claude/*`, kept. The closed prefix set governs branches a run
+creates; this run created none.
+
+**Plugin cache sync:** **not owed.** `/sync-plugin-cache` is a machine-local build step reading the
+git-ignored `target/` and writing `~/.claude/`; a cloud run neither performs nor records one, even
+though this diff edits `marketplace/bundles/`.
+
+**Tree claims re-verified.** Claims about the *filesystem* are not covered by the diff sweeps, and
+this run's own build gate mutates the tree it describes. Re-checked at the end: `git status
+--porcelain` clean apart from the staged report; no `uv.lock` churn in any commit (every commit
+staged named paths, never `git add -A`); `__pycache__` directories created by the test runs are
+git-ignored and reached no commit.
+
 ## What have we learned (Step 9)
 
+**One contract change is proposed, and it is presented to the operator rather than self-approved.**
+
+### The evidence this run produced
+
+The contract's § Step 6 tells a run to sweep by **consumer kind** and lists them: prose, docs, tests,
+`*.py` fixtures and stubs, prose-bearing string literals in production code. This run swept exactly
+that way and still leaked the same class four rounds running — but the leak was never a *kind* the
+list omits. It was always the same kind, at a site the sweep had not enumerated:
+
+| Round | The correction | Where it did not land |
+|---|---|---|
+| 2 | docs-provenance claim | a third site **in the same file**, 30 lines from the ⛔ that forbids it |
+| 3 | the F12 docs split, and M4's message | `standards/manifest-crosscheck.md` — the shipped doc for the same behaviour |
+| 4 | the mutation-campaign claim, and two renamed test names | the report's own **tables**, while its body was correct |
+
+The contract already names this ("Sweep-and-count: a claim is corrected at every site or it is not
+corrected") and even prescribes the remedy — *grep for the claim before fixing any instance of it*.
+What it does not say is **what the enumeration must cover**, and every miss above was an enumeration
+that stopped at the artifact kind the fix lived in: the code, not the doc that documents the code;
+the prose, not the table that tabulates the prose.
+
+### The proposed edit
+
+Add to § Step 6's sweep-and-count block, after "Grep for the claim before fixing any instance of it":
+
+> ⛔ **The enumeration crosses artifact kinds, and that is where it keeps stopping.** A claim
+> corrected in code is not corrected until the doc that documents that code says the same thing, and
+> a claim corrected in prose is not corrected until every table, index, or disposition row that
+> restates it does too. Three consecutive rounds of one observed run each caught a fix that had
+> landed in one kind and not the neighbouring one — code but not the shipped standards doc, prose but
+> not the table below it — while the run was diligently sweeping *within* each kind. So enumerate the
+> claim's sites **by artifact kind first** (code, its shipped doc, the tests, the report's prose, the
+> report's tables), then grep within each.
+
+### Ship it separately
+
+On approval this ships as its own `chore/` branch touching only `.claude/skills/cloud-plan-lane/SKILL.md`,
+**without** `skip-bot-review` — it changes a skill, and a skill is code that gets reviewed. It is
+deliberately kept out of this plan's PR: two changes with different review audiences in one diff
+means neither gets read properly, and it would couple a contract amendment to whether this plan lands.
+
+**Operator disposition:** *pending* — the run is autonomous, so this is recorded as proposed and
+unapproved. It has not been shipped.
+
 ## Residue
+
+**Nothing in this plan's scope is left unfinished.** All six deliverables are complete, verified per
+site where the plan required it, and covered by tests that were shown non-vacuous. What follows is
+residue in the strict sense: things a later reader should know, not work this run skipped.
+
+| Residue | Where it should go next |
+|---|---|
+| **The survivor.** `*Spec.java` recognised by the shared name pattern is an exonerating delta for the routing consumer, bounded and declared (§ When the loop stops). It cannot fire on this repository | Nowhere, unless a consumer project appears whose `build.map` is silent for a `*Spec.java` outside `test/` — then the bound is the thing to re-check |
+| **The record's own defect class.** Every round found a correction applied to a claim's body but not to every place it is restated. A reader should re-derive any *count*, *guard name*, or *"fixed at all N"* disposition in this report rather than trust it | The proposed contract change (§ What have we learned), if the operator accepts it |
+| **`_footprint_resolver.py`'s `.plan/` clause** was corrected here because the file is in this diff, not because the plan reached it. Sibling modules may carry the same blanket "`.plan/` is git-ignored" premise | A `chore/` sweep for that premise across the tree, if anyone wants it. Out of this plan's scope |
+| **The oracle itself is unconsolidated.** This plan is one *consumer* adopting `build.map`; the plan's Out-of-scope says so explicitly. `resolve_route_role` is a consumer-side lookup, not the consolidation | Whichever plan owns oracle consolidation |
+| **Two more private copies of the canonical-verify `verify:` prefix knowledge** exist (`manage-config/scripts/_cmd_quality_phases.py::_CANONICAL_VERIFY_PREFIXES`, `tools-marketplace-inventory/scripts/_dep_detection.py::CANONICAL_COMMAND_PREFIXES`), and D3 added a third normalizer locally rather than sharing one. This is the same source-of-truth-duplication archetype as the defect this plan fixed, but for *step ids* rather than *paths*, so it fell outside D0's stated scope (`"is this path implementation"`) | A follow-up plan, scoped to step-id classification. Named here so it is not rediscovered from scratch |
+| **`coderabbitai`'s review** had not been obtained when the report was finalized; its window reopens ~28 minutes after PR creation | Recorded above under § Reviewer participation. The merge is not gated on it (§ Step 8 condition 4 is a disclosure, not a gate) |
