@@ -1,0 +1,249 @@
+# Gaps — 050-post-run-band-contract-and-ordering-residue
+
+Plan 050 landed all five deliverables, and the parts that shipped as code (the derived edge gate, the
+five-tier footprint resolver, the `capture-footprint` side effect, the merge-commit fallback, the recall
+consumer) are correct, non-vacuously tested, and honestly documented. What remains falls into three
+clusters. **First**, the footprint the plan learned how to capture is still not reaching three of its
+consumers: the mis-prune aspect's documented invocation passes a `--diff-file` that no step in the
+repository produces (and which now hard-errors), the manifest cross-check was never migrated to the
+shared resolver at all, and the archived-plan auditor plus the lessons-housekeeping step still read the
+retired `references.modified_files` key. **Second**, two documentation claims the plan itself authored are
+false against the tree — one naming a consumer that does not consume, one resting on the retired key.
+**Third**, D3's entire shipped change is a prose workflow step that no test pins, and D1's "published
+cardinality" lives only as report prose that has already drifted (13/24 → 14/25). Nine gaps, one per
+instance.
+
+## G1 — Stop passing a phantom `--diff-file` to the routing-decisions aspect
+
+- **Kind:** bug
+- **Severity:** high
+- **Topic:** measurement/metrics
+- **Where:** `marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md:275` (aspect 13
+  invocation); raise site `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/_footprint_resolver.py:98-111`
+  (`resolve_diff_file_path`); consumer branch `…/scripts/check-routing-decisions.py:750-767`
+- **Evidence:** SKILL.md:275 reads
+  `run --plan-id {plan_id} --mode {live|archived} --diff-file work/footprint.txt > work/fragment-routing-decisions.toon`.
+  A full-repo search for `footprint.txt` (excluding `.git`, `__pycache__`, `doc/plans`) returns 14 hits,
+  every one inside `plan-retrospective`'s own docs, scripts and tests — **no step writes the file**.
+  `resolve_diff_file_path` raises `ValueError: Diff file does not exist: work/footprint.txt — a relative
+  --diff-file is resolved against the plan directory first and the cwd second; tried: …`, and `safe_main`
+  (`tools-file-ops/scripts/file_ops.py:1688-1698`) converts that into `status: error / internal_error`,
+  exit 1. The recovery branch at `check-routing-decisions.py:758` (`supplied_footprint is None`) is
+  therefore never taken. At plan 050's landing the same missing file returned `[]` and fell through to
+  the resolver; commit `eb0124c` (#1288) introduced the raise.
+- **Why it matters:** D4's stated outcome — *"one footprint resolution, two consumers … recover
+  together"* — does not happen. The mis-prune half errors out on every run that follows the documented
+  command, so the `realized_footprint` capture plan 050 built is consumed by exactly one consumer, and the
+  aspect that re-evaluates prune predicates produces an error fragment instead of a verdict.
+- **Action:** Drop `--diff-file work/footprint.txt` from the aspect-13 command at SKILL.md:275 (and the
+  matching prose at `:271` and `:495`) so the resolver recovery runs, **or** add a producer step that
+  writes `work/footprint.txt` from `manage-references compute-footprint` before the aspect runs. Prefer
+  the first: the shared resolver already answers the same question and the capture is the primary tier.
+- **Done when:** Running the documented aspect-13 command against a plan directory with no
+  `work/footprint.txt` returns `status: success` with `footprint_source` ∈ {`resolved`, `unresolved`}, and
+  an integration test asserts that (currently no test exercises the SKILL.md invocation form).
+- **Effort:** S
+- **Risk if fixed:** A live plan that genuinely relied on a saved end-of-execute diff would switch to the
+  live-worktree tier; both name the same set, so the risk is limited to plans whose worktree diff and saved
+  diff disagree.
+
+## G2 — Migrate `check-manifest-consistency` onto the shared footprint resolver
+
+- **Kind:** omission
+- **Severity:** medium
+- **Topic:** measurement/metrics
+- **Where:** `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/check-manifest-consistency.py:166-222`
+  (`load_diff_files`), invocation at `…/plan-retrospective/SKILL.md:262-263`
+- **Evidence:** `load_diff_files` re-derives `git diff {base_ref}...HEAD --name-only` in the process cwd
+  and never imports `resolve_footprint` (only `resolve_diff_file_path` is imported, at `:42`). The
+  documented aspect-12 command passes neither `--diff-file` nor `--base-ref`, so `base_ref` is falsy →
+  `return [], 'unknown', False` (`:207-208`) → `_withhold_on_absent_evidence` (`:581-605`) downgrades every
+  diff-fed check to `indeterminate`.
+- **Why it matters:** The manifest cross-check is the third consumer of the realized footprint and the one
+  the retrospective forwards `affected_files_exact_match` warnings to
+  (`check-artifact-consistency.py:857-877`). Post-merge it is permanently blind, so the aspect it defers to
+  cannot answer either. The capture plan 050 shipped would resolve it.
+- **Action:** Have `check-manifest-consistency.cmd_run` fall back to
+  `_footprint_resolver.resolve_footprint(plan_dir, live_plan_id)` when neither `--diff-file` nor
+  `--base-ref` yields a diff, setting `evidence_available=True` only on a resolved footprint and keeping
+  the `indeterminate` withholding for the still-unresolvable case.
+- **Done when:** With `references.realized_footprint` present and no `--diff-file`/`--base-ref`,
+  `check-manifest-consistency run` reports its diff-fed rules as `pass`/`fail` rather than
+  `indeterminate`, and a test pins the unresolvable case still yielding `indeterminate`.
+- **Effort:** M
+- **Risk if fixed:** Rules that have been silently `indeterminate` post-merge will start emitting real
+  verdicts, which may surface a backlog of manifest-drift findings on the next few runs.
+
+## G3 — Correct the false consumer claim in `manage-references/SKILL.md`
+
+- **Kind:** doc-defect
+- **Severity:** medium
+- **Topic:** bundle-docs
+- **Where:** `marketplace/bundles/plan-marshall/skills/manage-references/SKILL.md:424`
+- **Evidence:** The row reads
+  `| plan-retrospective, audit-archived-plan-retrospectives | (reads realized_footprint / merge_commit_sha via the shared footprint resolver) | Resolve the realized footprint for recall and mis-prune checks post-merge |`.
+  `git log -S` attributes the line to `0e7f644` (this plan). A grep over
+  `.claude/skills/audit-archived-plan-retrospectives/` finds zero occurrences of `realized_footprint`,
+  `merge_commit_sha`, `_footprint_resolver`, `check-artifact-consistency` or `check-routing-decisions`;
+  the skill reads `references.json::modified_files` instead (`scripts/audit.py:1265-1266`).
+- **Why it matters:** The consumer table is the surface a maintainer consults before changing a
+  `references.json` key. It currently asserts a coupling that does not exist, which both hides G4 and
+  invites someone to "safely" change the resolver believing the auditor tracks it.
+- **Action:** Remove `audit-archived-plan-retrospectives` from that row (leaving `plan-retrospective`), or
+  fix G4 first and then the row becomes true.
+- **Done when:** Every skill named in the `manage-references` consumer table can be shown to reference the
+  key or resolver the row claims, by grep.
+- **Effort:** S
+- **Risk if fixed:** None — documentation only.
+
+## G4 — Make the archived-plan auditor read the realized footprint, not the retired key
+
+- **Kind:** bug
+- **Severity:** medium
+- **Topic:** detectors/auditor
+- **Where:** `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py:1265-1266`
+  (`modified_files_count`), `:1327-1329` (`plan_ships`), `:1808-1809` (actual touched-file count);
+  documented in `checks/token-economics.md:116`, `checks/scope-estimate-accuracy.md:14-15`,
+  `checks/execution-context-manifest.md:59-60`, `checks/sequence-and-build-minimality.md:74`
+- **Evidence:** `inputs.modified_files_count = len(refs.get("modified_files") or [])` and
+  `return bool(plan_pr_number(inputs.plan_dir)) or inputs.modified_files_count > 0`.
+  `_footprint_resolver.py:156-162` declares `modified_files` a `SHIM(B)` and states *"the current writer no
+  longer emits the key"*; `_references_core.py:25-45` (`ReferencesData`) has no `modified_files` member,
+  and a grep for a writer across `marketplace/bundles/` finds none.
+- **Why it matters:** For every plan created after the ledger removal, `modified_files_count` is 0. That
+  drives the shipping partition (`plan_ships`), `tokens_per_file`, the `big_spend_tiny_footprint`
+  anti-pattern flag, the scope-estimate-accuracy comparison and the execution-context-manifest `modified`
+  column — i.e. the retrospective auditor grades recent plans against a footprint it never reads.
+- **Action:** Resolve the footprint through the same tier order the shared resolver uses —
+  `realized_footprint` → `merge_commit_sha` → `modified_files` — inside `audit.py`, and update the four
+  check documents to name the resolved source rather than the raw key.
+- **Done when:** An archived plan carrying only `references.realized_footprint` (no `modified_files`)
+  reports a non-zero `modified` count and is classified as shipping by `plan_ships`.
+- **Effort:** M
+- **Risk if fixed:** Plans currently excluded as non-shipping will re-enter the delivery-cost corpus,
+  shifting every cross-plan aggregate the auditor computes.
+
+## G5 — Make `finalize-step-lessons-housekeeping` read a footprint key that still exists
+
+- **Kind:** bug
+- **Severity:** medium
+- **Topic:** dispatch/finalize
+- **Where:** `.claude/skills/finalize-step-lessons-housekeeping/SKILL.md:88-90` (Step 1 read), `:55`
+  (classification input), `:318` (Error Handling fallback row)
+- **Evidence:** Step 1 runs
+  `manage-references get --plan-id {plan_id} --field modified_files`; `:55` says the Step 3
+  classification *"reasons about what the plan changed from `modified_files`"*; `:318` names
+  `request.md` + `modified_files` as the fallback when the quality-verification report is absent — which,
+  per the D2 contract, is the normal case at this step's settle-band order.
+- **Why it matters:** Both of this step's outcome inputs are now empty for a current plan: the
+  retrospective report is normally absent at order 4, and `modified_files` is no longer written. The step
+  classifies lessons against `request.md` alone. Plan 050's R3 rationale names exactly this consequence —
+  *"Every finalize step that scopes itself from the declared file set inherits that miss"* — but scoped its
+  fix to two retrospective consumers.
+- **Action:** Change Step 1 to read the realized footprint (`--field realized_footprint`, falling back to
+  `affected_files` pre-merge, since this step runs at order 4 before the capture exists), and update `:55`
+  and `:318` to name the key actually read. Note the capture happens at branch-cleanup (order 70), so a
+  same-run read must use the live worktree diff via `manage-references compute-footprint` rather than the
+  capture.
+- **Done when:** The step's Step 1 command names a key or verb that returns a non-empty value on a current
+  plan, and the Error Handling row at `:318` names that same source.
+- **Effort:** M
+- **Risk if fixed:** Lesson classification will see a real file set for the first time in a while, which
+  may change retain/remove decisions on the next few runs.
+
+## G6 — Correct the `modified_files` claim in the D2 contract document
+
+- **Kind:** doc-defect
+- **Severity:** low
+- **Topic:** bundle-docs
+- **Where:** `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/source-edit-pushability.md:76-84`
+  (specifically `:81`)
+- **Evidence:** *"its Step 1 read of the retrospective's `quality-verification-report.md` is **best-effort
+  and non-fatal** (the report is normally absent at its settle-band order, and it proceeds on `request.md`
+  + `modified_files` alone), so it does **not** itself require the post-merge classify half"*. The
+  `modified_files` key is no longer written (see G4/G5), so the fallback the argument rests on is empty.
+- **Why it matters:** This paragraph is the worked case that justifies D2's conclusion that no step needed
+  a physical split. If the fallback is in fact empty, the premise ("it proceeds fine without the
+  post-merge evidence") is weaker than stated, and a later reader deciding whether their own step needs the
+  split will be reasoning from a false example.
+- **Action:** Once G5 is fixed, update `:81` to name the key the step actually reads. Until then, at
+  minimum drop the `modified_files` half of the parenthetical so the document does not assert a live input
+  that is dead.
+- **Done when:** The paragraph names only inputs a grep can show the step still obtains.
+- **Effort:** S
+- **Risk if fixed:** None — documentation only.
+
+## G7 — Pin the retrospective's Step 2.5 reconcile so D3's fix cannot silently vanish
+
+- **Kind:** test-gap
+- **Severity:** medium
+- **Topic:** tests
+- **Where:** `marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md:129-163` (Step 2.5);
+  existing test `test/plan-marshall/manage-metrics/test_manage_metrics.py:1301`
+- **Evidence:** `git show 0e7f644 --stat` lists `test/plan-marshall/manage-metrics/test_manage_metrics.py`
+  but **not** `manage-metrics/scripts/manage-metrics.py`, and
+  `git show 0e7f644^:…/manage-metrics.py | grep -c _reconcile_accumulator_into_phase` → `2`: the fold
+  already existed. D3's entire shipped change is the SKILL.md prose step. `TestReconcileFloorKeepsPartiality`
+  exercises `cmd_generate` directly and never reads the SKILL document, so deleting Step 2.5 leaves the
+  whole suite green.
+- **Why it matters:** The defect D3 fixed (retrospective reads a zero for the largest finalize phase) is
+  invisible in tests and only observable on a real run — the exact condition that let it survive
+  unnoticed in the first place. An unpinned prose step in a 500-line SKILL.md is one refactor away from
+  being dropped.
+- **Action:** Add a document-contract test (in `test/plan-marshall/plan-retrospective/`) asserting that
+  `plan-retrospective/SKILL.md` contains a `manage-metrics … generate` invocation positioned before the
+  aspect that reads `metrics.md`, and that the surrounding prose still states the no-`end_time` /
+  live-modes-only conditions.
+- **Done when:** Removing the `manage-metrics generate` call from Step 2.5 turns a named test red.
+- **Effort:** S
+- **Risk if fixed:** A prose-shape test can become brittle if the SKILL is restructured; anchor it on the
+  command string and the aspect ordering rather than on headings.
+
+## G8 — Give D1's edge cardinality a self-refreshing publication surface
+
+- **Kind:** incomplete
+- **Severity:** low
+- **Topic:** measurement/metrics
+- **Where:** `test/plan-marshall/phase-6-finalize/test_finalize_edge_ordering.py:79-124`;
+  the only publication is prose in
+  `doc/plans/code-intelligence-substrate/050-post-run-band-contract-and-ordering-residue/report-01.md:30-40`
+- **Evidence:** The report publishes *"13 edges … 13 of 24 finalize steps (≈54%)"*. Re-deriving with the
+  module's own `derive_ordering_edges()` against the current tree gives **14 edges over 14 of 25 non-gate
+  steps (56%)**, because `emit-landing` (order 1000, `post_run_review: true`) was added afterwards
+  (`git show 0e7f644:…/standards/emit-landing.md` → not present in that commit). The test deliberately
+  asserts no literal, so nothing in the tree states the current figure.
+- **Why it matters:** D1's *Done when* requires the cardinality to be **published**. A number published
+  only as prose in a dated report drifts within weeks, and the plan's own Verification section warns that
+  *"a count presented without its coverage is the defect this plan exists to fix, reproduced."*
+- **Action:** Have the derivation emit its figures where a reader will meet them — e.g. a
+  `--report`-style entry point on the module, or a generated line in
+  `extension-api/standards/ext-point-finalize-step.md` refreshed by a test that fails when the document
+  and the derivation disagree.
+- **Done when:** A reader can obtain the current edge count and coverage percentage from the tree without
+  running a test file by hand, and adding a marker-carrying step updates that surface or fails a test.
+- **Effort:** S
+- **Risk if fixed:** A generated-doc check adds one more thing that must be regenerated when a finalize
+  step is added.
+
+## G9 — Resolve the footprint once per `check-artifact-consistency` run
+
+- **Kind:** incomplete
+- **Severity:** low
+- **Topic:** measurement/metrics
+- **Where:** `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/check-artifact-consistency.py:516`
+  (inside `check_affected_files_recall`) and `:852` (for `check_affected_files_exact_match`)
+- **Evidence:** Both call sites invoke `_resolve_footprint(plan_dir, plan_id)` independently; the comment
+  at `:840-844` asserts the two checks *"must agree on the source of truth"* but enforces that by
+  convention rather than by structure. On a live plan each call re-runs `compute_plan_branch_diff`, i.e.
+  two `git diff` subprocess invocations for one value.
+- **Why it matters:** No behavioural defect today — both calls take the same tiers — but the invariant the
+  comment states is unenforced, and a future tier with any nondeterminism (a live worktree mutating between
+  the two calls) would let the recall and exact-match checks grade against different footprints while
+  reporting as one measurement.
+- **Action:** Resolve once in `cmd_run` and pass the resolved value into `check_affected_files_recall`
+  alongside the existing arguments, as is already done for `check_affected_files_exact_match`.
+- **Done when:** `_resolve_footprint` is called exactly once per `cmd_run`, and a test asserts both checks
+  receive the same object.
+- **Effort:** S
+- **Risk if fixed:** `check_affected_files_recall`'s signature changes; its existing tests patch the
+  resolver and would need retargeting.
