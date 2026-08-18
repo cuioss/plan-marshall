@@ -88,9 +88,36 @@ that discloses it.
 test modules**, re-derived by running that exact command at the moment of this claim — so the full
 gate applies.
 
-_The final `./pw verify` result is recorded here once round 4's fixes are in and the tree is
-undisturbed; run 01 explicitly declined to record its last `SUCCESS` as the gate because a
-verification sub-agent's mutation campaign was running on the same tree at the time._
+**Per-commit gate.** `./pw quality-gate` ran before the one `*.py`-touching commit run 02 made
+(`f11e8b7`), read from the tools' own streamed output — the direct-`./pw` path emits no TOON log:
+`Success: no issues found in 414 source files` (mypy production), `All checks passed!` (ruff),
+`>>> quality-gate: SPDX-header check passed`.
+
+**Branch gate — the final one, run undisturbed.** Run 01 declined to record its last `SUCCESS` as the
+gate because a verification sub-agent's mutation campaign was running on the same tree. Run 02's gate
+was taken with nothing else touching the tree: round 4 had reported and exited, its own mutation
+sweep had restored from snapshots and `git status --porcelain` was empty, and every fix was committed
+before the gate started.
+
+| Sub-step | Result, read from the streamed output |
+|---|---|
+| **quality-gate** | `Success: no issues found in 414 source files`; `All checks passed!`; `>>> quality-gate: SPDX-header check passed` |
+| **test-compile** | `Success: no issues found in 770 source files` — the sub-step neither narrower call runs, and the one that failed on run 01 |
+| **module-tests** | `20843 passed, 14 skipped in 449.79s (0:07:29)` — `0 failed`, `0 errors` |
+| **overall** | `=== verify: SUCCESS ===` |
+
+Read from the output, not the exit code: on run 01 the wrapper exited 0 on a **failing** run, so
+`SUCCESS` versus `test-compile failed` is the only signal. `UV_HTTP_TIMEOUT=600` was set on every
+`./pw` call; the branch gate exceeds the foreground Bash timeout and was run in the background.
+
+`git status --porcelain` was empty after the gate — the session interpreter is 3.12.3, at or above
+the project floor, so this build produced **no `uv.lock` churn** to keep out of a commit.
+
+⛔ **Read the gate for what it is.** The build's own coverage line says SPDX cannot evaluate file
+content, plugin-doctor cannot evaluate whether a documented claim is true, `mypy(test)` cannot
+evaluate whether a well-typed test asserts anything, and `module-tests` is silent on every input no
+test supplies. Round 4 then found fourteen false statements against this green tree — including two
+in operator-facing strings that type-check, lint and pass every test while stating something false.
 
 ## Findings
 
