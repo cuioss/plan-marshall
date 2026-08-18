@@ -349,7 +349,8 @@ entirely, that is a finding: record it and say so, do not invent a substitute si
    `_mentions_help` matches, as re-derived from that function; the conditions section enumerates five
    statuses and states the `indeterminate`/`unknown` two-layer naming; and the foreground instruction
    names the `execution_tier` it applies to and cross-links `agents.md`, with no sentence in the
-   section forbidding the backgrounding `await-long-running.md` mandates.
+   section forbidding the backgrounding `agents.md` § "Leaf cannot reap a backgrounded build"
+   sanctions.
 
 6. **D6 — The deployment diagram standard and its skeleton**
    (closes 170/G1, 170/G2, 170/G3)
@@ -401,7 +402,11 @@ entirely, that is a finding: record it and say so, do not invent a substitute si
 
    - **(a) The `#1027` narration in three normative automatic-review documents** (130/G4). The
      sentence *"on #1027 PR-Agent posted its Guide — valid participation — while reporting 'no major
-     issues' on a diff in which CodeRabbit found two Major defects"* appears verbatim in
+     issues' on a diff in which CodeRabbit found two Major defects"* appears in three places. **The
+     wording is near-identical, not byte-identical** — one site reads "published … under its record"
+     where the others read "posted" — so **locate the three sites by the `#1027` reference, not by an
+     exact-string match**, and treat a failed exact match as an expected variance rather than an
+     absent site. The three are
      `marketplace/bundles/plan-marshall/skills/automatic-review/SKILL.md`,
      `marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md`,
      and the module docstring of
@@ -456,11 +461,13 @@ entirely, that is a finding: record it and say so, do not invent a substitute si
      `marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/dispatch-logging.md`
      § "Field semantics" gives the `role` row's Source as *"The `--role` argument the caller passed to
      `effort resolve-target`"*. The implemented seam falls back `--role` → `--phase` → the resolver
-     payload's `role` → the literal `default`, and both landed migrated callers rely on that fallback
-     by passing only `--phase`. A caller reading the table concludes `--role` is required and may add
-     a wrong one, changing the label the dispatch audit rosters on. Restate the Source cell as the
+     payload's `role` → the literal `default`, and landed migrated callers rely on that fallback by
+     passing only `--phase`. A caller reading the table concludes `--role` is required and may add a
+     wrong one, changing the label the dispatch audit rosters on. Restate the Source cell as the
      fallback chain. **Re-derive the chain from the implementing function before writing it** — the
-     `emission_role` composition in the effort command module — rather than copying this paragraph.
+     `emission_role` composition and the `role_display` fallback in
+     `marketplace/bundles/plan-marshall/skills/manage-config/scripts/_cmd_effort.py` (read-only; not
+     edited by this plan) — rather than copying this paragraph.
    - **(b) Codify the shell-interpolation rule where it can travel** (390/G3).
      `marketplace/bundles/plan-marshall/skills/persona-security-expert/standards/dependency-supply-chain.md`
      carries a CI/CD pipeline-hardening bullet list covering SHA-pinning, least privilege, OIDC,

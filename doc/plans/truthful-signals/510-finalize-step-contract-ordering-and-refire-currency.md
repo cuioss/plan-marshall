@@ -348,10 +348,13 @@ set of surviving violations, split into dispatch sites and doc-echoes.
    to add flags to one — that instruction is uncarryable here and was corrected in 280's own
    adversarial review.
 
-*Done when:* the population-(b) derivation, **re-run after the edits**, returns zero matches across
-`marketplace/` and `.claude/`; every `effort resolve-target` in the former dispatch-site files carries
-`--workflow`; and no sentence in `plan-marshall/workflow/planning.md` instructs a hand-written
-`[DISPATCH]` emission.
+*Done when:* the population-(b) derivation, **re-run after the edits** with its two D1 exclusions
+applied, returns zero matches across `marketplace/` and `.claude/` — the only surviving occurrences
+anywhere in those trees are the ones inside `ref-workflow-architecture/standards/dispatch-logging.md`,
+which quotes the shape in order to forbid it and is excluded by construction, so a sweep that counts
+them is reporting on the wrong population rather than on unfinished work; every `effort
+resolve-target` in the former dispatch-site files carries `--workflow`; and no sentence in
+`plan-marshall/workflow/planning.md` instructs a hand-written `[DISPATCH]` emission.
 
 ---
 
@@ -632,7 +635,7 @@ collateral and must be explained in the run report.
 - `.../phase-6-finalize/standards/emit-landing.md` — D7, D8
 - `.../phase-6-finalize/standards/finalize-step-print-phase-breakdown.md` — D7
 - `.../phase-6-finalize/standards/disposition-to-hint-routing.md` — D8
-- `.../phase-6-finalize/workflow/create-pr.md`, `.../pre-submission-self-review.md` — D3, D7
+- `.../phase-6-finalize/workflow/create-pr.md` — D7; `.../pre-submission-self-review.md` — D3, D5.1
 - `.../phase-6-finalize/workflow/lessons-capture.md`, `.../adr-propose.md` — D5.2
 - `.../phase-2-refine/standards/refine-workflow-detail.md` — D6
 - `.../phase-3-outline/standards/outline-workflow-detail.md` — D5.1
@@ -684,8 +687,10 @@ Beyond each deliverable's own *Done when*:
    row per mutation: the file mutated, the mutation, the test id that failed, the failure message,
    and the restore confirmation (`git diff --quiet` clean, bytes identical). **A guard whose red was
    not observed is reported as not done.** This is the one verification the plan cannot substitute
-   anything for: five of these six guards were each demonstrated green against their own defect
-   before this plan existed.
+   anything for: four of these six (230/G2, 310/G4, 440/G6, 440/G1) carry a recorded mutation in
+   their source `gaps.md` that left the suite green against their own defect before this plan
+   existed, and the remaining two (300/G1, 302/G8) are asserted-unpinned rather than demonstrated —
+   which makes observing their red the only evidence this plan will have.
 2. **Cold reads — four deliverables whose value is what a later reader DOES with the text.** Dispatch
    the pre-PR verification sub-agent (`cloud-plan-lane` § Step 6) with an *interpretation* brief, not
    a conformance brief: give the reader the changed text with no context from this plan, and have it

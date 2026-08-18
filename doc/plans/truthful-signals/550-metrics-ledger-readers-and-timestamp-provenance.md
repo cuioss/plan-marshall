@@ -431,7 +431,7 @@ the architecture inventory's crawl.
 
 | Claim | Label | Confirm/refute artifact |
 |---|---|---|
-| 150/G1 (`high`) reproduces: the D6(c) test asserts only the `Z` suffix, a literal inside the format string | OBSERVED | `test/plan-marshall/manage-run-config/test_display_time_render.py` → `test_stored_timestamp_is_utc_under_any_knob_value`; `.../tools-file-ops/scripts/file_ops.py` → `now_utc_iso` |
+| 150/G1 (`high`) reproduces: plan 150's own D5(c) storage-invariant test asserts only the `Z` suffix, a literal inside the format string | OBSERVED | `test/plan-marshall/manage-run-config/test_display_time_render.py` → `test_stored_timestamp_is_utc_under_any_knob_value`; `.../tools-file-ops/scripts/file_ops.py` → `now_utc_iso` |
 | 150/G5 (`high`) reproduces: the guard's `allowed` set is file-granular, and neither `_guard_granularity` nor `render_call_budget` exists in the classification artifact | OBSERVED | `test/plan-marshall/manage-run-config/test_display_timezone_guard.py` → `test_knob_symbols_never_reach_a_store_or_compare_site`; `.../timestamp_render_classification.json` (asserted absence, verified by searching the file for both key names) |
 | 220/G1 (`high`) reproduces: `build_share` is gated on `wall_clock_seconds > 0` alone | OBSERVED | `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py` → `_sequence_build_minimality_plan`, the `build_share` expression |
 | 220/G2 + 430/G8 reproduce and are the **same site**: `summarize_build_ledger` tallies `unknown` and omits it from its return dict | OBSERVED | `.../plan-retrospective/scripts/analyze-logs.py` → `summarize_build_ledger` |
@@ -539,10 +539,12 @@ paragraph has moved, adjust rather than duplicate it.
 
 **Sequencing against the epic.** No gap here is a defect in another plan's deliverables; all are
 residue, incomplete sweeps and stale statements left behind by landed work. Nothing in this plan
-depends on another `truthful-signals` plan landing first. Two files are shared with sibling fix-out
-plans in the same wave — `audit.py` and `data-format.md` — so if a merge conflict appears on either,
-rebase and re-read the conflicting paragraph rather than resolving it mechanically: both files carry
-lock-step obligations that a textual merge will not honour.
+depends on another `truthful-signals` plan landing first. One file is shared with a sibling fix-out
+plan in the same wave — `audit.py`, which plan 510 also edits — so if a merge conflict appears on it,
+rebase and re-read the conflicting paragraph rather than resolving it mechanically: it carries
+lock-step obligations a textual merge will not honour (the hand-copied `_BC_LEDGER_*` constants
+against `data-format.md`, and the `CHECK_ERA` table against its test mirror). Re-derive the shared
+set rather than trusting this sentence: the wave's plans are the other files in this directory.
 
 **A machine-local path that appears in this plan's text.** `.plan/temp/sequence_analysis.py` and
 `.plan/temp/build_minimality.py` are named in D3(c) **only as strings to delete from a comment**.
