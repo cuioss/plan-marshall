@@ -31,18 +31,28 @@ from `git ls-remote`:
 | `110` | none | none | clear |
 | `120` | none | none | clear |
 
-The repository had exactly **one** open PR at check time — #1289
-(`chore(cloud-plan-lane): forbid git checkout as the mutation-sweep restore`, head
-`claude/main-sha-pinned-cwd-0p9af9`), which names no test-quality plan. Six other remote branches
-were unmerged; none belongs to a named party. `claude/runtime-seam-neutrality-osuaxx` touches
-`script-shared/scripts/marketplace_paths.py` — the same *directory* D1 changes but not a file it
-touches, and it belongs to the `multiplattform` epic, which the matrix does not name. Recorded as an
-observation, not a collision.
+Re-taken immediately before the PR, because the first reading of this was **wrong** (below). Two PRs
+are open: **#1290** (`claude/architecture-orchestration-test-reduction-iuthfe`, plan `070`) and
+**#1291** (`claude/runtime-seam-neutrality-osuaxx`, the `multiplattform` epic). Neither is a party the
+matrix names against `090`, and neither shares a **single file** with this branch — `comm -12` over
+each branch's file list against this one is empty. #1289, the only PR open at the first check, has
+since merged.
 
-⚠️ **Sequencing observation.** `claude/architecture-orchestration-test-reduction-iuthfe` is already
-merged into `main`, so plan `070` has **landed** — this plan did not land before `070` started, as
-its § Notes intended. That is an ordering fact, not a collision (the matrix governs concurrent
-editing only), and it means `070`'s **B6** half did not have D1's seams available to it.
+⛔ **A gating check this run got wrong, and how.** The first pass reported
+`claude/architecture-orchestration-test-reduction-iuthfe` as already merged into `main` and concluded
+plan `070` had **landed**. It has not: it is **16 commits ahead** of `origin/main` and is open PR
+**#1290**. The check ran `git fetch origin <branch>` in a loop and tested `FETCH_HEAD` — a shared ref,
+so one iteration's fetch was read against another's expectation and an unmerged branch read as merged.
+Against the branch's own remote-tracking ref
+(`git merge-base --is-ancestor origin/<branch> origin/main`) the answer is unambiguous.
+
+The collision conclusion is unaffected: `070` is not a matrix party against `090`, and the file-overlap
+check is empty. But the claim derived from the error — that `070`'s **B6** half ran without D1's seams
+— is **withdrawn**. `070` is still open and can still consume them, which is what the plan's § Notes
+intended.
+
+⚠️ **The lesson is one the lane already states:** a negative was believed without a positive control.
+The same loop reported six branches and only the one whose answer mattered was re-checked.
 
 **`marketplace/bundles/**` exclusivity.** Not separately re-verified beyond the matrix and PR checks
 above; no in-flight test-quality work exists to contend for it.
@@ -149,8 +159,9 @@ same filename, so `load_skill_module`'s default `sys.modules` name is `extension
 a mechanical conversion would make the 20 displace each other — and the D3 guard could not see it,
 because nothing imports `extension` plainly. The analyzer's message, the standards doc's remediation
 and the loader's own docstring all say so now; they did not in the first round. They belong to the
-owning slices (`080` for the `pm-*` and `marketplace` directories, `060`'s slice for the `build-*`
-ones). This is the same division D1's Out-of-scope states: this plan opens the seam, the owning slice
+owning slices — `080` for the `pm-*` and `marketplace` directories, **`070`** for the `build-*` ones
+(`060`'s plan defers the build-system family to it explicitly), `060` for `extension-api/` and `050`
+for `plan-retrospective/`. This is the same division D1's Out-of-scope states: this plan opens the seam, the owning slice
 performs the conversion.
 
 ### D3 — Make a shared-registration collision impossible to introduce silently — **done** (`aeb8f7a`)
@@ -271,9 +282,18 @@ reported, and a new case pins the behaviour.
 | Stage | `test-docstring-historical-prose` |
 |---|---:|
 | pristine `origin/main` | 81 |
-| widened, unbounded | 308 |
+| widened, unbounded | 308 ⚠️ |
 | widened + bounded, first round | 282 |
 | **shipped (delimiter stripped, negative lookbehind)** | **286** |
+
+⚠️ **The `308` is not reproducible and should not be relied on.** It was measured against an
+intermediate matcher state that was never committed, so it cannot be recovered from git. An
+independent attempt to reconstruct it four ways — the round-1 analyzer and the shipped segmenter, each
+with and without the digit bound — returned 312, 312, 295 and 302 on both trees, and none is 308. The
+figures either side of it are exact and reproduce (81 on `origin/main`, 282 under the round-1 matcher,
+286 shipped), and so does the consequence drawn from it: the 26 findings the bounds removed re-derive
+exactly, split 10 one-digit and 16 hyphenated-compound. Only the intermediate row is unverifiable, and
+it is marked rather than quietly carried.
 
 **No true positive stopped being reported.** Every one of the 81 pristine findings is present in the
 final set — zero `file:line` pairs disappeared and no file's count decreased. (Measured against the
@@ -454,7 +474,7 @@ Every finding, per instance.
 | F5 | Own mutation sweep | `register=False` was **unpinned** — mutating `_exec_module_from_path` to ignore it left the whole suite green | **Fixed**: three guards added (default registers, `register=False` does not, `parse_ns` forwards it), each mutation-proven |
 | F6 | Own mutation sweep | The first probe module for those guards (`sensible_number`) is itself plainly imported, so the control created a real collision | **Fixed**: probe switched to `credentials.py`, which nothing plain-imports |
 | F7 | `./pw test-compile` | `keywords['register'].value` fails mypy; green under `quality-gate` and scoped pytest | **Fixed** by factoring `_opts_out_of_registration` |
-| F8 | Beyond-diff sweep (D4) | Four docs restated the matched spellings or the figure derived from them: `doctor-test-conventions.md` ×2, `rule-catalog.md` ×2 | **Fixed**; the `285 prose / 876 data` figure re-derived — to **286 / 955** after round 1 corrected the definition (V4) |
+| F8 | Beyond-diff sweep (D4) | Two documents restated the matched spellings or the figure derived from them, at four sites: `doctor-test-conventions.md` ×2, `rule-catalog.md` ×2 | **Fixed**; the `285 prose / 876 data` figure re-derived — to **286 / 955** after round 1 corrected the definition (V4) |
 | F9 | Beyond-diff sweep (D2) | Five sites restated the remedy the rule prescribes, two of them naming `load_script_module`'s `spec_from_file_location` call, which this change moved into `_exec_module_from_path` | **Fixed** in the analyzer message, its docstring, the standards doc, the rule catalog and the provenance table |
 | F10 | D5 measurement | The plan's premise that the sibling rule "still matches on shape alone" is partly wrong — markdown already carries the inline-code exemption | Recorded; D5's decision rests on the corrected picture |
 | F11 | Sequencing | The first pass read plan `070`'s branch as merged and concluded it had landed. **Refuted**: it is 16 commits ahead of `origin/main` and is open PR #1290. The check tested the shared `FETCH_HEAD` inside a loop instead of the branch's own remote-tracking ref | **Corrected**, and the claim derived from it withdrawn: `070` is still open and can still consume D1's seams |
@@ -495,6 +515,25 @@ Round 2 returned eleven false statements, one behavioural finding and one missin
 | W12 | The coverage baseline does not fully reproduce — 83.41% vs 83.40%, and `marketplace_paths.py` 215/231 on *both* trees | **Fixed**: recorded as measurement nondeterminism (the missing-LINE sets differ while the count does not) rather than as an unexplained delta |
 | W13 | `test/README.md` is off the Expected surface and the departure was undisclosed | **Disclosed** |
 
+Round 3 returned six findings, **none of them about the shipped change** — every deliverable figure
+it re-derived reproduced exactly, and every guard survived mutation as documented:
+
+| # | Finding | Disposition |
+|---|---|---|
+| X1 | The gating section **still asserted `070` merged and landed**, while F11 and W1 recorded the refutation — the report stated a fact and its negation. W1 claimed "Fixed at both sites"; the prose site was never rewritten, because the edit script that would have done it aborted on a later anchor and discarded its earlier substitutions | **Fixed** |
+| X2 | The `build-*` directories were attributed to `060` at a **third** site. W10 claimed "Fixed at both sites"; there were three | **Fixed** |
+| X3 | The residue row still called the `marketplace_paths.py` delta "unexplained" after §Coverage and W12 had explained it as measurement nondeterminism | **Fixed** |
+| X4 | F8 said "**Four docs**" over two documents at four sites | **Fixed** |
+| X5 | The intermediate `308` reproduces under **none** of four reconstructions (312/312/295/302, both trees); the matcher state it was taken from was never committed | **Marked unverifiable** rather than carried. The figures either side of it, and the 26-finding consequence drawn from it, all reproduce exactly |
+| X6 | Commit `ac29583`'s message says the keyword-first path "keeps **14** correctly-resolved sites resolving"; the population is **12** — all in `manage-config/` | **Corrected here**, the only available remedy: a commit message is immutable. The message's "deliberately left unguarded" means *not subject to the indexability guard*, which is true; it is not a claim that the path is undetectable, and a mutation that makes the walker ignore `module_name=` does red the suite |
+
+⛔ **Three of round 3's six are corrections this report claimed to have already applied** — "Fixed at
+both sites" ×2 and "Fixed" ×1 — landed at n−1 of n sites. That is the same defect the report describes
+twice in its own prose, committed twice more while describing it. The mechanical cause is now known
+and worth stating: the edit scripts asserted every anchor and wrote the file only at the end, so a
+single stale anchor silently discarded the substitutions that had already matched. Later rounds
+applied and verified each edit separately.
+
 ⚠️ **Two of these — V1 and V3 — were defects in guards this run wrote to catch defects.** V1 left the
 registration guard inert on its most common input while reporting a clean baseline; V3 made the
 citation rule silently narrower than the round's own report claimed. Both are the vacuous-guard class,
@@ -502,10 +541,51 @@ found by an independent reader and not by the author.
 
 ### Stop record
 
-**Round budget: 4 verification rounds**, declared here before the first dispatch. The plan states no
-budget, so the run declares one.
+**Round budget: 4 verification rounds**, declared before the first dispatch. The plan states no
+budget, so the run declared one.
 
-_The exit, the verifier's last answer, and any survivors are recorded here after the loop._
+**The loop stopped at round 3, on the verifier's answer — not on the exhausted budget.** One round of
+the declared four was left unspent.
+
+⛔ **This is a decision the run took, not a state it reached.** The verifier's round-3 answer to the
+stop question was **"Yes — condition A, on six findings; condition B is satisfied."** All six were
+false-or-unverifiable statements in **this report**, and every one was fixed or marked before the PR.
+None was a finding about the deliverables. The run stopped after acting on them; it did not stop
+because a round came back empty, and no round ever did.
+
+**The evidence the stop rests on is stronger than another read**, which is what exit (i) requires:
+
+* a **differential** run of the whole `test-conventions` sweep against a pristine `origin/main`
+  worktree, compared as a finding **set** rather than a count — zero findings disappeared across all
+  seven rules, the only set change being one known-legitimate self-finding relocating with the code
+  that produced it;
+* a **byte-identical** recursive accept-set dump of all five D1 parsers on both trees, captured by
+  intercepting `main()`'s `parse_args` — the artifact that decides whether the refactor changed
+  production behaviour;
+* a **mutation campaign** over every guard this run added: 7/7 of the D4 cases red the right test, and
+  the arity guards red only when removed together, which is the disclosed claim and was verified
+  rather than accepted;
+* independent re-derivation of every deliverable figure — 20, 23, 90, 286, 955, 802, 597, 20855, the
+  D5 split 159 = 124+19+16+0, the loader frequencies 592/195/1 — all reproducing exactly.
+
+**Were the late rounds' findings narrower, or merely fewer?** **Narrower, decisively.** Round 1 found
+5 defects in the shipped change; round 2 found 1; round 3 found **0**. The counts barely moved
+(12 → 13 → 6) while the subject changed completely: by round 3 every finding was about the run's own
+record, and half of them were corrections the record *claimed to have already made*.
+
+**Survivors: one, characterised under B(a).** The two arity guards
+(`_positionals_are_indexable` and the `.py` suffix check) are **mutually redundant on this tree** —
+removing either alone changes no result. The proof that this cannot change what the deliverable does
+is the mutation matrix itself: with either guard present, both mis-indexed sites are rejected and the
+disclosed count stays 90. It is disclosed in the code and in § D3 rather than presented as two
+independently load-bearing checks. No behavioural finding is **deferred**.
+
+**Residue to assume remains.** The deliverables should be read as still carrying defects of the kind
+round 3 found — **statements in this report that a later reading would falsify**, particularly
+figures restated in more than one place. Three of round 3's six were exactly that, in text written to
+fix the previous round's version of the same defect. The shipped change is the better-verified half:
+three rounds of independent re-derivation moved no deliverable figure. The record is the weaker half,
+and it is where the next defect should be expected.
 
 ## Reviewer participation
 
@@ -542,5 +622,5 @@ _Filled in as the final pre-merge commit._
 | `test-docstring-historical-prose` at 286, `test-module-preamble-boilerplate` at 183, `test-module-line-budget` at 317 — none at zero, so no further flip is licensed | `100` for the line budget; the reduction slices for the other two |
 | `identifier-validator-corpus`'s empty registry; the `broken-relative-link` fragment gap | Out of scope by the plan; already in the epic README's residue table |
 | **36 tests fail under a SERIAL reverse-directory-order run**, identically on `origin/main` — module-level caching in `platform-runtime`, `tools-integration-ci`, `workflow-integration-github` / `-gitlab`. Green under the parallel runner | `110`, which owns run-condition instruments; the owning slices for the modules themselves |
-| `script-shared/scripts/marketplace_paths.py` covered 216/231 → 215/231, one line, unexplained and untouched by this change | Whoever next measures that bundle; recorded rather than explained away |
+| `plan-marshall`'s coverage aggregate is not reproducible to the last 0.01 pp, and `script-shared/scripts/marketplace_paths.py` reports 215/231 on **both** trees with the missing-LINE set differing between runs | Whoever next measures that bundle. Not a coverage move — the file is untouched — but run-to-run nondeterminism worth knowing about before reading a small aggregate delta as a regression |
 | `pm-dev-python:pytest-testing`'s `parse_ns` teaching does not mention the `register` escape. Not false — the escape is additive — but incomplete, and that file is plan `010`'s surface | `010`, or a follow-up |
