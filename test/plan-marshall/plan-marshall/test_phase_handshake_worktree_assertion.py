@@ -165,7 +165,7 @@ def test_assertion_fails_when_worktree_path_empty() -> None:
 
 @pytest.mark.parametrize('phase', ['1-init', '2-refine', '3-outline', '4-plan'])
 def test_assertion_passes_when_path_empty_at_planning_phase(phase: str) -> None:
-    """Regression (PR #580): empty path is the legitimate pre-materialization
+    """An empty path is the legitimate pre-materialization
     state for the on-main planning phases; the assertion must pass there so a
     worktree-routed plan can capture handshake invariants before phase-5."""
     assert cmds._resolve_worktree_assertion({'use_worktree': True}, phase) is None
@@ -285,10 +285,10 @@ def test_cmd_verify_refuses_on_filesystem_missing_worktree(
 def test_cmd_capture_succeeds_at_planning_phase_before_materialization(
     stubbed_invariants, stub_metadata, plan_context
 ) -> None:
-    """Regression (PR #580): a worktree-routed plan captures the 1-init handshake
+    """A worktree-routed plan captures the 1-init handshake
     while ``worktree_path`` is still empty (worktree materializes at phase-5).
 
-    Before the phase-gating fix ``cmd_capture`` refused here with
+    Without the phase gating ``cmd_capture`` refuses here with
     ``worktree_unresolved`` / ``worktree_path_missing``, blocking the planning
     drift gate for every worktree plan in phases 1-4.
     """
@@ -486,7 +486,6 @@ def test_cli_strict_exits_zero_when_worktree_resolves(
 # ``_invariants.py``. The check raises
 # ``MainCheckoutDirtiedDuringPlan`` and ``cmd_verify`` translates the
 # exception into the structured ``error: main_checkout_dirtied_during_plan``
-# payload. Origin: deliverable D2 of plan ``lesson-2026-05-08-08-001``.
 #
 # The five scenarios below exercise the contract end-to-end through
 # ``cmd_capture`` / ``cmd_verify``:

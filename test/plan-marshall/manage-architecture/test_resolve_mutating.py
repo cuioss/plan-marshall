@@ -2,8 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the authored ``mutating`` signal on ``resolve_command``.
 
-Pins deliverable 4 of the architecture-resolution plan (lesson
-2026-07-16-17-013 recommendation 3): a resolved canonical derived from an
+A resolved canonical derived from an
 operator-authored mutating profile carries ``mutating: true``; an unmarked
 canonical omits the field entirely (authored-true vs unknown stays
 distinguishable — no inferred ``mutating: false`` ever).
@@ -73,7 +72,7 @@ def _seed(project_dir: str, root_commands: dict, leaf_commands: dict | None = No
 
 
 def test_resolve_surfaces_mutating_true_on_authored_canonical(tmp_path):
-    """Lesson 2026-07-16-17-013 rec. 3: a mutating canonical resolves with mutating: true."""
+    """A mutating canonical resolves with ``mutating: true``."""
     _seed(str(tmp_path), {'quality-gate': _MUTATING_GATE, 'verify': _PLAIN_VERIFY})
 
     result = resolve_command('quality-gate', 'root-mod', str(tmp_path))

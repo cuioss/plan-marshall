@@ -188,7 +188,7 @@ def test_capture_phase_steps_manifest_absent_step_not_enforced(
     required-steps.md Activation note). With the manifest scheduling only
     step-a, a phase_entry where step-a is done captures cleanly even though
     step-b (required but unscheduled) is absent — guards against a manifest
-    pruning deadlocking the phase transition (PR #556)."""
+    pruning deadlocking the phase transition."""
     monkeypatch.setattr(inv, '_read_manifest_steps', lambda _pid, _phase: {'step-a'})
     metadata = {'phase_steps': {'5-execute': {'step-a': {'outcome': 'done', 'display_detail': None}}}}
     result = inv._capture_phase_steps_complete('pid', metadata, '5-execute')

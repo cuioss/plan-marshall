@@ -134,9 +134,8 @@ class TestPhase1InitBaseBranchSeeding:
         """SKILL.md MUST write the resolved value to references.base_branch and
         document the three-source precedence contract.
 
-        TASK-004's Step 6 rewrite replaced the retired single-source
-        {project_base_branch} placeholder with a unified {resolved_base_branch}
-        placeholder threaded through all three precedence branches
+        A unified {resolved_base_branch} placeholder is threaded through all
+        three precedence branches
         (operator_param > project_default > git_fallback). The value is written
         via {resolved_base_branch} regardless of which precedence branch supplied
         it, so the doc-contract coverage is the presence of every precedence

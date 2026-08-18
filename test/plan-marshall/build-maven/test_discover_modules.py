@@ -863,8 +863,8 @@ def test_build_commands_stamps_mutating_on_profile_canonical():
 
 
 def test_discover_quality_gate_carries_mutating_when_authored(monkeypatch):
-    """Lesson 2026-07-16-17-013 rec. 3: authored build.maven.profiles.mutating=pre-commit
-    yields a discovered quality-gate entry carrying mutating: true."""
+    """An authored ``build.maven.profiles.mutating`` yields a discovered
+    quality-gate entry carrying ``mutating: true``."""
     _patch_ext_defaults(monkeypatch, {EXT_KEY_PROFILES_MUTATING: 'pre-commit'})
     root = _make_module_tree({'.': _MUTATING_PROFILE_POM})
 

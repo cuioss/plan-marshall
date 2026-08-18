@@ -282,8 +282,8 @@ class TestGitignoreSetupEdgeCases:
 class TestGitignoreConsolidation:
     """Test consolidation of duplicate managed blocks into a single block.
 
-    Pre-PR#666 projects accumulated several ``# Planning system`` managed-block
-    headers (one per re-run). ``consolidate_managed_blocks`` merges every
+    A project can accumulate several ``# Planning system`` managed-block
+    headers, one per re-run. ``consolidate_managed_blocks`` merges every
     managed block into one, preserving the union of managed rules
     (de-duplicated, order-stable), and ``setup_gitignore`` runs the pass
     unconditionally on every invocation.

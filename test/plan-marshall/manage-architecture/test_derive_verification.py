@@ -156,9 +156,8 @@ def test_classify_changed_path_nested_pom_matches_bare_basename_route():
     The bare-basename regime of the shared matcher (``route_matches``) matches
     a route with no ``/`` against the path's basename anywhere in the tree —
     the semantics the aggregator has always used. The pre-fix deriver matched
-    the full path with ``fnmatch.fnmatch``, so every nested descriptor on a
-    multi-module reactor went unclaimed (``classified_count: 0`` — lesson
-    2026-07-16-17-012, TokenSheriff).
+    the full path with ``fnmatch.fnmatch``, which leaves every nested descriptor
+    on a multi-module reactor unclaimed (``classified_count: 0``).
     """
     merged = {
         'java': [
@@ -203,7 +202,7 @@ def test_resolve_module_for_path_newly_created_file_resolves():
 
 
 # =============================================================================
-# Virtual-sibling domain-affinity tie-break (lesson 2026-07-16-16-001 issue 2)
+# Virtual-sibling domain-affinity tie-break
 # =============================================================================
 
 # The npm build_map domain routes for the virtual-sibling fixture: a production
@@ -258,7 +257,7 @@ def _seed_virtual_siblings(project_dir: str) -> None:
 def test_resolve_module_for_path_prefers_domain_affine_sibling():
     """On a virtual-sibling specificity tie, the sibling whose technology serves
     the winning domain wins (npm → javascript), not the alphabetically-first
-    Maven wrapper (lesson 2026-07-16-16-001 issue 2).
+    Maven wrapper.
     """
     with tempfile.TemporaryDirectory() as tmp:
         project = Path(tmp) / 'project'
@@ -303,9 +302,9 @@ def test_resolve_module_for_path_java_affinity_selects_maven_sibling():
 
 
 def test_production_js_under_maven_wrapper_derives_npm_compile():
-    """End-to-end lesson 2026-07-16-16-001 issue 2: a production JS file under
-    an npm virtual module with a Maven-wrapper sibling at the same physical path
-    derives the npm module's compile — not the wrapper's Maven goal.
+    """End-to-end: a production JS file under an npm virtual module with a
+    Maven-wrapper sibling at the same physical path derives the npm module's
+    compile — not the wrapper's Maven goal.
     """
     with tempfile.TemporaryDirectory() as tmp:
         project = Path(tmp) / 'project'
@@ -511,8 +510,7 @@ def test_deriver_is_deterministic():
 
 def test_it_route_stamped_verify_derives_failsafe_gate():
     """A seeded IT route stamped build_class=verify derives the module's verify
-    executable — not the Surefire test goal — for a changed *IT.java artifact
-    (lesson 2026-07-16-16-001 issue 1).
+    executable — not the Surefire test goal — for a changed *IT.java artifact.
     """
     with tempfile.TemporaryDirectory() as tmp:
         project = Path(tmp) / 'project'
@@ -565,8 +563,7 @@ def test_plain_test_java_still_derives_module_tests_beside_it_route():
 
 def test_nested_pom_against_bare_route_derives_verify():
     """A nested pom.xml against a seeded bare ``pom.xml`` route classifies
-    non-zero and derives the module's ``verify`` executable (lesson
-    2026-07-16-17-012 end-to-end).
+    non-zero and derives the module's ``verify`` executable, end-to-end.
     """
     with tempfile.TemporaryDirectory() as tmp:
         project = Path(tmp) / 'project'

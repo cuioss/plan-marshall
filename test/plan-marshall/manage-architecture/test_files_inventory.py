@@ -10,7 +10,7 @@ post-processor (which mutates the ``modules`` dict in-place — every such test
 inspects the resulting ``files`` block on the module dict), plus the
 ``which-module`` / ``resolve_module_for_path`` containment fallback that
 resolves ``paths.tests`` paths and the project-local ``.claude/**`` tree to
-their owning module (closes lesson 2026-07-09-04-001).
+their owning module.
 """
 
 import os
@@ -623,7 +623,7 @@ def test_is_marketplace_bundle_module_rejects_non_bundle_path():
 # which-module / resolve_module_for_path containment fallback
 # =============================================================================
 #
-# Regression coverage for lesson 2026-07-09-04-001: a ``test/**`` path that is
+# A ``test/**`` path that is
 # not surfaced as an exact ``files``-inventory hit (the crawled ``test``
 # category elides to a sample) must still resolve to its owning module via the
 # ``paths.sources ∪ paths.tests`` containment fallback, and the meta-project's
@@ -694,7 +694,7 @@ def _seed_containment_project(tmpdir: str) -> None:
 def test_which_module_resolves_test_path_via_paths_tests():
     """A ``test/**`` path absent from every ``files`` inventory resolves to its
     owning module through the ``paths.tests`` containment fallback — not the
-    root ``default`` module and not ``None`` (closes lesson 2026-07-09-04-001).
+    root ``default`` module and not ``None``.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         _seed_containment_project(tmpdir)

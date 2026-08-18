@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Lock the resolve-command contract for execute-task profiles.
 
-Lesson 2026-05-03-21-003 (and three consolidated antecedents) documented that
-per-task verification was too lenient: the implementation profile resolved
+Per-task verification must not be lenient. When the implementation profile resolved
 ``compile`` (mypy on production sources only, no ruff) and the module_testing
 profile resolved ``module-tests`` (pytest only, no static analysis on tests).
 Static-analysis regressions accumulated silently across tasks and only
@@ -101,7 +100,7 @@ def test_constraints_block_requires_strict_gate(skill_text: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Regression tests for the verification profile workflow (lesson 2026-05-26-15-002)
+# Regression tests for the verification profile workflow
 #
 # The verification profile previously instructed the subagent to execute each
 # `step.target` directly with no worktree resolution and no --project-dir

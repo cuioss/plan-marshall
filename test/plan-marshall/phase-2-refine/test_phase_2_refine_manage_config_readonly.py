@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Regression tests pinning the read-only manage-config contract for phase-2-refine.
 
-These tests demonstrate the failure mode documented in lesson 2026-05-28-23-001:
+These tests demonstrate the failure mode the contract closes:
 a refine agent that invokes a mutating manage-config verb (e.g., ``plan
 phase-2-refine set --field simplicity --value lean``) writes to the tracked
 ``.plan/marshal.json``, making the working tree dirty and corrupting
@@ -155,7 +155,7 @@ def test_manage_config_set_dirties_marshal_json(tmp_path) -> None:
     This pins the mutation path: the refine agent has access to a mutating
     manage-config verb and accidentally invoking it produces a detectable
     git dirty state — exactly the post-refine orchestrator assertion that
-    caught the original regression (lesson 2026-05-28-23-001). Exercised
+    catches this class of regression. Exercised
     against a synthetic tmp_path repo so the real checkout is never touched.
 
     Arrange: synthetic repo with a committed, clean ``.plan/marshal.json``.

@@ -355,7 +355,7 @@ def test_classify_globs_uses_single_star_not_recursive():
         assert '**' not in pattern
 
 
-# --- Failsafe IT routing: lesson 2026-07-16-16-001 issue 1 -------------------
+# --- Failsafe IT routing -----------------------------------------------------
 #
 # Maven's generic */src/test/*.java route claims *IT.java / IT*.java /
 # *ITCase.java files under role test, whose base default maps to module-tests —

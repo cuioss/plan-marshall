@@ -3,10 +3,10 @@
 # ruff: noqa: I001, E402
 """Regression tests for ``discover --force`` project-identity stability.
 
-Lesson ``2026-06-29-23-002``: ``architecture discover --force`` run inside a
-worktree (e.g. the ``architecture-refresh`` finalize step) overwrote the
-project ``name`` with the worktree/plan-id basename and blanked the curated
-``description`` / ``description_reasoning``. ``api_discover`` now resolves the
+``architecture discover --force`` run inside a
+worktree (e.g. the ``architecture-refresh`` finalize step) must not overwrite the
+project ``name`` with the worktree/plan-id basename, nor blank the curated
+``description`` / ``description_reasoning``. ``api_discover`` resolves the
 project-identity fields from a stable anchor — the existing ``_project.json``
 when present, else the repository-root basename (never ``project_path.name``)
 — and preserves the description unless ``regenerate_description=True``.

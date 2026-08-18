@@ -3,7 +3,8 @@
 """Regression tests for dynamic MYPYPATH resolution in build.py.
 
 Guards against drift in collect_script_dirs() and removal of build.py's
-_compute_mypypath() helper. See lesson-2026-04-13-005-mypypath-dynamic.
+_compute_mypypath() helper. A MYPYPATH that stops covering a canonical
+scripts subdirectory makes mypy silently skip those sources.
 """
 
 import importlib.util

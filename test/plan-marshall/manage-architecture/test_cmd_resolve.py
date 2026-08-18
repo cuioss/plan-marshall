@@ -50,11 +50,11 @@ The cases below cover the public surface:
   this guard with it instead of leaving it pinning a string nothing emits.
 
 A sixth case (``test_cmd_resolve_cache_tree_layout_emits_augmentation``)
-pins the cache-tree regression that PR #515 closed. ``cmd_resolve``'s
+pins the cache-tree layout contract. ``cmd_resolve``'s
 augmentation path resolves the build skill's ``_CONFIG`` via
 ``_MARKETPLACE_BUNDLES_DIR`` (an import-time ``resolve_bundles_root``
-result) plus ``resolve_bundle_path``. Pre-#515 ``_cmd_client`` anchored
-that lookup with ``parents[4]`` index arithmetic that silently produced
+result) plus ``resolve_bundle_path``. Anchoring
+that lookup with ``parents[4]`` index arithmetic instead silently produces
 the wrong directory under the versioned plugin-cache layout
 (``<base>/plan-marshall/<version>/skills/...``), so ``_load_build_config``
 returned ``None`` and the four augmentation fields were dropped. The case
@@ -422,7 +422,7 @@ def test_cmd_resolve_hint_pins_recognition_token(
 
 # =============================================================================
 # Case (f): Cache-tree layout — augmentation survives the versioned plugin-cache
-#           shape (PR #515 regression).
+#           shape.
 # =============================================================================
 
 
@@ -462,7 +462,7 @@ def _build_cache_tree(base: Path, version: str = '0.1-BETA') -> Path:
 
 
 def test_cmd_resolve_cache_tree_layout_emits_augmentation(isolated_run_config, monkeypatch):
-    """Augmentation fields survive the versioned plugin-cache layout (PR #515).
+    """Augmentation fields survive the versioned plugin-cache layout.
 
     Builds the versioned ``<base>/plan-marshall/<version>/skills/...`` cache
     tree, repoints ``_cmd_client._MARKETPLACE_BUNDLES_DIR`` at it, and runs
