@@ -1,0 +1,159 @@
+# Gaps — 200-lsp-derivation-resolver
+
+The `lsp` resolver is registered, honest about its failure modes, and correctly refuses to guess an
+owner — all mutation-proven. What it does not do is produce edges: driven over this repository with a
+real enabled binding, the shipped engine harvests 1 920 file references and derives **zero** module
+edges, because the marketplace's cross-bundle imports are bare imports resolved by the generated
+executor's `sys.path`, which pyright at the workspace root cannot follow. Alongside that, D2's stated
+mechanism (the Axis-D path-attribution seam) was silently replaced by a bundle-local prefix table
+while three shipped documents still claim the seam is used, D3's fourth failure mode is actively
+misreported as a timeout, and two claims in the run report's findings table are not true of the tree.
+Eleven gaps follow.
+
+## G1 — Make the harvest resolve cross-bundle imports so the resolver derives non-zero edges
+
+- **Kind:** bug
+- **Severity:** high
+- **Topic:** lsp/resolvers
+- **Where:** `marketplace/bundles/pm-plugin-development/skills/plan-marshall-plugin/scripts/lsp_harvest.py:221-365` (`harvest_workspace`, server initialization); the resolver consuming it at `marketplace/bundles/pm-code-intelligence/skills/plan-marshall-plugin/extension.py:106`
+- **Evidence:** `build_lsp_component_refs` over the repository root with `binding={'command': ['pyright-langserver','--stdio']}` and the real discovered module set:
+  `elapsed=60.4s ran=True files=1387 refcount=1920` / `modules with lsp refs: 0` /
+  `unattributable-endpoint: 1372 suppressed` / `self-edge: 548 suppressed` / `unresolved-symbol: 5321 position(s)`.
+  Direct probe of the one cross-bundle import in `pm-dev-python/skills/plan-marshall-plugin/extension.py:19`:
+  `'from extension_base import DerivationResolverBase, ExtensionBase' @col 5 -> UNRESOLVED` (all three positions).
+- **Why it matters:** the plan's Goal is "the module graph carries edges derived from actual symbol references for at least one language", and D1's *Done when* is "its edges appear in the store". On the only project where the harvest is materialized, the edge set is empty and always will be: every reference pyright can resolve is intra-directory (hence a self-edge), and every cross-bundle reference is unresolvable. Enabling the binding today buys ≈ 60 s of crawl cost per run for nothing.
+- **Action:** give the server the module search path the executor synthesizes. Either pass `python.analysis.extraPaths` (the set of every bundle skill `scripts/` directory) through the `workspace/configuration` reply the harvest can supply, or generate a transient `pyrightconfig.json` for the harvest root, or narrow the harvest's workspace root to a per-bundle subtree with that bundle's own path set. Whichever is chosen, keep the drop-and-note rule intact.
+- **Done when:** a full-tree `build_lsp_component_refs` with an enabled binding returns at least one module in `refs` whose `target_bundle` differs from its own name, and a real-server test asserts a named cross-bundle edge (e.g. `pm-dev-python -> plan-marshall`) rather than a synthetic fixture edge.
+- **Effort:** M
+- **Risk if fixed:** a wider resolution surface means more resolved references, so `unattributable-endpoint` volume and harvest wall-clock both rise; the ≈ 60 s full-tree cost could grow. Wrongly-scoped `extraPaths` could resolve a name to the wrong bundle's copy of a same-named module and produce a confidently wrong edge — the exact outcome D2 exists to prevent, so pair this with a spot-check of the resulting edge set.
+
+## G2 — Report a JSON-RPC error reply as its own failure mode, not as a timeout
+
+- **Kind:** bug
+- **Severity:** high
+- **Topic:** lsp/resolvers
+- **Where:** `marketplace/bundles/pm-plugin-development/skills/plan-marshall-plugin/scripts/lsp_harvest.py:327-338` (the `except client.LspError` arm) and the constant at `:105`
+- **Evidence:** stub server replying to `initialize` with `{'code': -32603, 'message': 'workspace not supported by this server'}` produces
+  `ran=False reason="server-timeout: …python3 did not respond within 10s (initialize failed: {'code': -32603, 'message': 'workspace not supported by this server'})"` after 5.03 s — the server responded immediately.
+- **Why it matters:** D3 requires that "each failure mode produces a distinct stated reason". A server-side workspace rejection — D3's own fourth mode — is delivered under the third mode's reason string, telling the operator the binary is unresponsive when it explicitly refused. This is the "stated-but-wrong reason … worse than a silent one because it looks considered" class the run itself flagged twice (findings 3 and 15) and then shipped a third instance of.
+- **Action:** split the `LspError` arm. A JSON-RPC error response (the transport raises `LspError(f'{method} failed: …')` from `_lsp_jsonrpc.py:197`) is a server refusal, not a timeout; give it `REASON_WORKSPACE_UNSUPPORTED` when it arrives from `initialize`, or a new `server-rejected:` reason. Reserve `REASON_SERVER_TIMEOUT` for the wait-expiry path (`_lsp_jsonrpc.py:193`).
+- **Done when:** a negative control driving a stub server that answers `initialize` with a JSON-RPC error yields a reason distinct from all four existing ones, and `test_every_failure_mode_states_a_distinct_reason` requires five distinct reasons.
+- **Effort:** S
+- **Risk if fixed:** the two `LspError` shapes are distinguished only by message text unless the transport is taught to carry a discriminator; a text match is brittle. Prefer adding a typed field to `LspError` in `lsp-client` — but that is another bundle's surface, so coordinate rather than reach across.
+
+## G3 — Route the lift through the Axis-D path-attribution seam, or state plainly that it does not
+
+- **Kind:** incomplete
+- **Severity:** medium
+- **Topic:** lsp/resolvers
+- **Where:** `marketplace/bundles/pm-plugin-development/skills/plan-marshall-plugin/scripts/lsp_harvest.py:552` (`attribute = make_prefix_attributor(module_paths)`) and `:566-594`
+- **Evidence:** `lsp_harvest.py` imports nothing from `_path_attribution_merge`; `merge_path_claims` / `lookup_claim` appear nowhere in either bundle. The seam itself claims nothing under the marketplace: live `merge_path_claims(discover_path_attributors(), …)` returns only `{'prefix': '.claude', …}` and `{'prefix': '.plan', …}`, and `lookup_claim('marketplace/bundles/pm-dev-java/skills/x/scripts/y.py', claims)` → `None`.
+- **Why it matters:** D2 states "The lift goes through the path-attribution seam" and the plan's Notes make it a ⛔ hard gate — "without a trustworthy path-to-module answer the lift guesses". The lift uses a self-built longest-prefix table instead. That substitution is *necessary* (the seam would attribute nothing, so routing through it would guarantee zero edges) — which makes it a genuine finding about the seam's coverage, not a shortcut. It was neither disclosed in the run report nor recorded as residue.
+- **Action:** decide and record. Either have `pm-plugin-development` publish `(marketplace/bundles/{bundle}, {bundle})` claims through `claim_paths()` so the seam can answer and the lift can call `lookup_claim`, or keep `make_prefix_attributor` and state in the engine, the concepts page and the resolver standard that the lift uses a discovery-derived prefix table rather than the Axis-D seam, with the reason.
+- **Done when:** either `lsp_harvest.py` calls `lookup_claim` over merged Axis-D claims and the drop tests still pass, or all three sites named in G4/G5/G6 describe the mechanism actually used.
+- **Effort:** M
+- **Risk if fixed:** publishing marketplace-bundle prefixes as Axis-D claims changes what `which-module` and the change-footprint classifiers answer for every `marketplace/bundles/**` path — a much wider blast radius than this resolver. Verify against the `which-module` test suite before landing.
+
+## G4 — Correct the concepts page's claim that the lift uses the path-attribution seam
+
+- **Kind:** doc-defect
+- **Severity:** medium
+- **Topic:** documentation-surface
+- **Where:** `doc/concepts/code-intelligence.adoc:113`
+- **Evidence:** "The lift between them goes through the path-attribution seam, and its important behaviour is the case where it produces nothing".
+- **Why it matters:** this is the page D5 exists to make precise, and it names a mechanism the shipped code does not use. A reader auditing the substrate would look for Axis-D claims behind the `lsp` edges and find none.
+- **Action:** replace with the mechanism actually used (a longest-prefix table over the discovered module directories), or make the claim true via G3.
+- **Done when:** the sentence names the mechanism `lsp_harvest.py:552` actually invokes.
+- **Effort:** S
+- **Risk if fixed:** none.
+
+## G5 — Correct the resolver standard's claim that the lift uses the path-attribution seam
+
+- **Kind:** doc-defect
+- **Severity:** medium
+- **Topic:** bundle-docs
+- **Where:** `marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-derivation-resolver.md:231`
+- **Evidence:** "…lifts its file-granular references to module granularity through the path-attribution seam; an endpoint no module owns yields no edge and a note rather than a guessed module."
+- **Why it matters:** the extension-point standard is the contract document an implementor reads. Stating that a shipped implementor consumes Axis-D when it does not misleads the next resolver author into believing the seam covers marketplace paths.
+- **Action:** as G4 — describe the discovery-derived prefix table, or make the claim true via G3. The second half of the sentence (drop-and-note) is accurate and should stay.
+- **Done when:** the roster row describes the attribution mechanism the code uses.
+- **Effort:** S
+- **Risk if fixed:** none.
+
+## G6 — Correct the engine and resolver docstrings that name the path-attribution seam
+
+- **Kind:** doc-defect
+- **Severity:** medium
+- **Topic:** lsp/resolvers
+- **Where:** `marketplace/bundles/pm-plugin-development/skills/plan-marshall-plugin/scripts/lsp_harvest.py:420-422` and `marketplace/bundles/pm-code-intelligence/skills/plan-marshall-plugin/extension.py:115`
+- **Evidence:** `lsp_harvest.py` — "The lift goes through the path-attribution seam — the ``attribute`` callable is that seam's ``path -> owning module`` answer". `extension.py` — "its references were lifted to module granularity through the path-attribution seam".
+- **Why it matters:** the docstring asserts that the injected callable *is* the seam's answer; the only caller injects `make_prefix_attributor`. A maintainer reading either docstring would look for the wrong integration point.
+- **Action:** describe the callable as a path-to-module lookup the caller supplies, and name what `build_lsp_component_refs` actually supplies.
+- **Done when:** neither docstring claims Axis-D, or G3 makes both true.
+- **Effort:** S
+- **Risk if fixed:** none.
+
+## G7 — Add the missing `lsp` kind to `module-discovery.md`'s second `dep_type` enumeration
+
+- **Kind:** doc-defect
+- **Severity:** medium
+- **Topic:** bundle-docs
+- **Where:** `marketplace/bundles/plan-marshall/skills/extension-api/standards/module-discovery.md:348`
+- **Evidence:** "every element must carry all three of `target_bundle`, `dep_type` (one of `script` / `skill` / `import` / `path` / `implements`), and `resolved`" — five kinds. The same file's line 161 was corrected and does list `lsp`.
+- **Why it matters:** report finding 12 records this as **Fixed**; it is half-fixed. The remaining line is in the normative "must carry" clause, so an implementor following it would treat an `lsp` entry as contract-violating.
+- **Action:** add `lsp` to the parenthetical at `:348`, or replace the inline list with a cross-reference to `:161`.
+- **Done when:** `grep -n "script. / .skill. / .import. / .path. / .implements" module-discovery.md` returns no line lacking `lsp`.
+- **Effort:** S
+- **Risk if fixed:** none.
+
+## G8 — Pin the truncation/partiality note with a regression test
+
+- **Kind:** test-gap
+- **Severity:** medium
+- **Topic:** tests
+- **Where:** `marketplace/bundles/pm-plugin-development/skills/plan-marshall-plugin/scripts/lsp_harvest.py:293,313,349-353`; test file `test/pm-plugin-development/plan-marshall-plugin/test_lsp_harvest.py`
+- **Evidence:** `grep -rn "truncat\|harvest-budget\|out-of-workspace\|unresolved-symbol\|unreadable" test/` returns no hit in either plan test file. Report finding 24 records the inner-loop truncation flag as **Fixed**, and finding 24's whole point is that truncation inside the last file previously exited the loop normally and reported a partial harvest as complete.
+- **Why it matters:** the fix is exactly the kind that silently regresses — deleting `truncated = True` at `:313` restores the original defect and no test notices. A partial harvest reported as complete is a confident wrong answer at edge-set scale.
+- **Action:** add a test driving `harvest_workspace` with a `timeout_s` small enough to expire mid-file (a slow stub server plus a multi-import source file) and assert a note starting `harvest-budget:`; add a second asserting `out-of-workspace:` fires when a definition resolves outside the root.
+- **Done when:** deleting `truncated = True` at `:313` makes at least one test fail.
+- **Effort:** M
+- **Risk if fixed:** a timing-dependent test can flake; drive the deadline deterministically (monkeypatch `time.monotonic`) rather than by sleeping.
+
+## G9 — Add a negative control and roster entry for the `lsp` dep type in the sibling resolvers' tests
+
+- **Kind:** test-gap
+- **Severity:** low
+- **Topic:** tests
+- **Where:** `marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/scripts/_dep_detection.py:25-32` (`DependencyType`) and the sibling resolvers' "everything else is ignored" tests
+- **Evidence:** `DependencyType` still enumerates exactly five members (`SCRIPT_NOTATION`, `SKILL_REFERENCE`, `PYTHON_IMPORT`, `RELATIVE_PATH`, `IMPLEMENTS`); no `lsp`. The sibling resolvers derive their ignore-populations from that enum, so none of them is asserted to ignore an `lsp` reference.
+- **Why it matters:** this is the run's own declared residue and it is the "test fixture that still passes" shape — the behaviour is correct today but unasserted, so a future resolver that widened its kind set would silently claim `lsp` edges and forfeit provenance.
+- **Action:** either add an `lsp` member to `DependencyType` (it is a real `dep_type` in `component_refs`, so the enum is incomplete) or hard-code `'lsp'` into each sibling resolver's ignore-population test.
+- **Done when:** at least one test per sibling resolver asserts that a `dep_type: 'lsp'` reference yields no edge and no note from that resolver.
+- **Effort:** S
+- **Risk if fixed:** adding an enum member may widen the detection engine's own behaviour if any code iterates `DependencyType` to decide what to scan — check call sites before adding.
+
+## G10 — Refresh the tracked `.plan/project-architecture/` overlay for the new bundle
+
+- **Kind:** omission
+- **Severity:** medium
+- **Topic:** architecture-core
+- **Where:** `.plan/project-architecture/_project.json:2`; missing `.plan/project-architecture/pm-code-intelligence/enriched.json`
+- **Evidence:** `git ls-files --error-unmatch .plan/project-architecture/_project.json` → tracked. Its description still reads "It ships **ten** production bundles…". `ls .plan/project-architecture/` lists ten bundle directories plus `default`; every sibling bundle has an `enriched.json` and `pm-code-intelligence` has no directory at all.
+- **Why it matters:** this subtree is in git, so the staleness ships to every clone. A consumer reading `_project.json` is told the marketplace has ten bundles when it has eleven, and the eleventh has no curated overlay while all its siblings do. The run declared this as residue and deliberately left it, reasoning from the lane contract's "never touches `.plan/`" — a statement the run itself showed rests on the false premise that all of `.plan/` is git-ignored.
+- **Action:** regenerate the overlay on a machine that can run the crawl (or hand-add the `pm-code-intelligence/enriched.json` matching its siblings' shape) and correct the `_project.json` description. Separately, carve the tracked portion out of the lane contract's `.plan/` prohibition so the next run is not blocked by the same false premise.
+- **Done when:** `_project.json` names eleven bundles and `.plan/project-architecture/pm-code-intelligence/enriched.json` exists.
+- **Effort:** S
+- **Risk if fixed:** a full regeneration rewrites every module's overlay and could clobber hand-curated `enriched.json` content; prefer a targeted addition plus the one-line description fix.
+
+## G11 — Correct the "every bundle declares its domain identity" claim
+
+- **Kind:** doc-defect
+- **Severity:** low
+- **Topic:** documentation-surface
+- **Where:** `doc/concepts/extension-architecture.adoc:16`
+- **Evidence:** "The required hook is `get_skill_domains()` — every bundle declares its domain identity and organises its skills by profile". `pm-code-intelligence` returns `[]` (`extension.py:51-60`) and ships no skills organised by profile; `ext-point-domain-bundle.md:116-121` and `extension-contract.md:67` both correctly record it as the no-domain case.
+- **Why it matters:** the same file's line 14 was updated to "eleven production bundles" by this run, so the sentence now over-claims about a bundle the run itself added. Two adjacent standards already state the correct rule, so the concepts page is the outlier.
+- **Action:** qualify — e.g. "every bundle implements `get_skill_domains()`; a bundle contributing an edge set rather than skills returns none".
+- **Done when:** the sentence admits the no-domain case, matching `ext-point-domain-bundle.md:116-121`.
+- **Effort:** S
+- **Risk if fixed:** none.
