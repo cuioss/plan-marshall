@@ -1571,16 +1571,27 @@ A finding is recorded **per instance**, not bundled: three occurrences of one de
   prevent.
 - **A reachable operator may be asked; a headless run may not wait for one.** This lane is written for
   autonomous execution, but a run sometimes executes in an interactive main session with the operator
-  reachable. When that is so **and** a plan offers a re-scope, or names a STOP CONDITION with an
-  autonomous fallback, the run **MAY** escalate the decision via `AskUserQuestion`, recording both the
-  question and its answer in the report — a conversation event is not a committed artifact, so the report
-  is its only durable trace. A **headless** run, or a **dispatched leaf** that cannot reach the operator
-  at all, takes the plan's stated autonomous fallback. Escalation is a permitted option for the reachable case, **never** a requirement — so the
-  headless path always remains a complete, unblocked outcome.
+  reachable. When that is so, the run **MAY** escalate a decision via `AskUserQuestion`, recording both
+  the question and its answer in the report — a conversation event is not a committed artifact, so the
+  report is its only durable trace. Escalation is a permitted option in the reachable case, with the
+  **one exception** below. A **headless** run, or a **dispatched leaf** that cannot reach the operator
+  at all, never waits: it takes the plan's stated autonomous fallback where the plan states one, and
+  this skill's own stated fallback otherwise — so the headless path always remains a complete,
+  unblocked outcome.
 
-  **The verification loop's round budget is the one place this is an obligation rather than an option**
-  (§ Step 6, "When the loop stops"): a reachable operator IS asked when the budget runs out, because
-  the alternative is a run silently deciding for itself how much verification is enough. The headless
-  half is unchanged and non-negotiable — no operator to reach means the autonomous fallback, never a
-  wait.
+  **The exception: the verification loop's round budget, where the ask is an obligation rather than an
+  option** (§ Step 6, "When the loop stops"). A reachable operator IS asked when the budget runs out,
+  because the alternative is a run silently deciding for itself how much verification is enough. This
+  obligation does **not** depend on a plan offering a re-scope or naming a STOP CONDITION: the budget
+  defaults to five whether or not a plan sets one, so the default case has no plan-stated fallback to
+  key on. The headless half is unchanged and non-negotiable — no operator to reach means the fallback,
+  never a wait.
+
+  **Reachability is decided by whether `AskUserQuestion` can actually be issued and answered, not by
+  how the run was launched.** A run that cannot issue it is headless. A run that can issue it but is
+  unattended — nobody is watching the session — is reachable by the letter and useless by the fact, so
+  the obligation carries a bound: **ask, and if no answer has arrived by the time the run would
+  otherwise idle, take the fallback and record in the report both that the ask was issued and that it
+  went unanswered.** An ask that blocks forever is strictly worse than stopping with survivors
+  disclosed, which is the same reasoning the headless carve-out rests on.
 - **Never write outside the repository** — this lane has no business in `.plan/` or `~/.claude/`.
