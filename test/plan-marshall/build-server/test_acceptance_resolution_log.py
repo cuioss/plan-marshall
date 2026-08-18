@@ -30,8 +30,13 @@ from _build_execute import CaptureStrategy  # noqa: E402
 _MAVEN_NOTATION = 'plan-marshall:build-maven:maven'
 
 
-def _config(**overrides: Any) -> factory.ExecuteConfig:
-    """A minimal ExecuteConfig for driving cmd_run in these tests."""
+def _config(**overrides: Any):
+    """A minimal ExecuteConfig for driving cmd_run in these tests.
+
+    Unannotated return: ``factory`` is loaded at runtime, so
+    ``factory.ExecuteConfig`` is a value rather than a statically known type and
+    an annotation naming it checks nothing.
+    """
     return execute_config(factory, CaptureStrategy.TOOL_LOG_FLAG, **overrides)
 
 

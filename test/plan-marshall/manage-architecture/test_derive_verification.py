@@ -258,6 +258,15 @@ def test_resolve_module_for_path_prefers_domain_affine_sibling():
     """On a virtual-sibling specificity tie, the sibling whose technology serves
     the winning domain wins (npm → javascript), not the alphabetically-first
     Maven wrapper.
+
+    Domain affinity is the ONLY thing separating these two: both siblings claim
+    the same physical path, so the tie is genuine and the fallback is
+    alphabetical. ``test_resolve_module_for_path_alphabetical_fallback_without_affinity``
+    resolves this exact ``.js`` path to the MAVEN sibling when no discriminating
+    domain is supplied — ``maven`` sorts before ``npm``. So without affinity every
+    JavaScript change under a shared path is attributed to the Maven wrapper, and
+    the module the deriver then verifies is the one that cannot build the file
+    that changed.
     """
     with tempfile.TemporaryDirectory() as tmp:
         project = Path(tmp) / 'project'
@@ -305,6 +314,13 @@ def test_production_js_under_maven_wrapper_derives_npm_compile():
     """End-to-end: a production JS file under an npm virtual module with a
     Maven-wrapper sibling at the same physical path derives the npm module's
     compile — not the wrapper's Maven goal.
+
+    The derived command is what a caller actually runs to verify the change, so
+    resolving the wrong sibling here does not merely mislabel it: the executable
+    would name ``e-2-e-playwright-maven`` and run a Maven build against a
+    JavaScript edit. The assertions therefore pin BOTH halves — that the npm
+    module's ``compile`` is present and that no executable names the Maven
+    sibling — because a run that emitted both would still look green.
     """
     with tempfile.TemporaryDirectory() as tmp:
         project = Path(tmp) / 'project'
@@ -511,6 +527,12 @@ def test_deriver_is_deterministic():
 def test_it_route_stamped_verify_derives_failsafe_gate():
     """A seeded IT route stamped build_class=verify derives the module's verify
     executable — not the Surefire test goal — for a changed *IT.java artifact.
+
+    ``module-tests`` is the plain Surefire goal, and Surefire's default includes
+    EXCLUDE the IT naming patterns. A gate derived as ``module-tests`` for an
+    ``*IT.java`` change therefore executes zero of the tests that changed and
+    still reports success — a green build that verified nothing. The
+    Failsafe-bound ``verify`` class is what actually runs them.
     """
     with tempfile.TemporaryDirectory() as tmp:
         project = Path(tmp) / 'project'
@@ -564,6 +586,15 @@ def test_plain_test_java_still_derives_module_tests_beside_it_route():
 def test_nested_pom_against_bare_route_derives_verify():
     """A nested pom.xml against a seeded bare ``pom.xml`` route classifies
     non-zero and derives the module's ``verify`` executable, end-to-end.
+
+    The end-to-end counterpart of
+    ``test_classify_changed_path_nested_pom_matches_bare_basename_route``, and it
+    matters for the same reason: a bare route matched against the full path
+    instead of the basename leaves every nested descriptor on a multi-module
+    reactor unclaimed, so ``classified_count`` is 0, no command is derived, and
+    the change is reported as needing no verification at all. Asserting the
+    non-zero count AND the resulting executable is what distinguishes "claimed
+    and derived" from "claimed but derived nothing".
     """
     with tempfile.TemporaryDirectory() as tmp:
         project = Path(tmp) / 'project'

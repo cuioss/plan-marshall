@@ -127,8 +127,13 @@ def _make_live_plan(main_repo: Path, plan_id: str) -> None:
     (main_repo / '.plan' / 'local' / 'plans' / plan_id).mkdir(parents=True, exist_ok=True)
 
 
-def _config(**overrides: Any) -> factory.ExecuteConfig:
-    """A minimal ExecuteConfig for driving cmd_run in tests."""
+def _config(**overrides: Any):
+    """A minimal ExecuteConfig for driving cmd_run in tests.
+
+    Unannotated return: ``factory`` is loaded at runtime, so
+    ``factory.ExecuteConfig`` is a value rather than a statically known type and
+    an annotation naming it checks nothing.
+    """
     return execute_config(factory, CaptureStrategy.TOOL_LOG_FLAG, **overrides)
 
 

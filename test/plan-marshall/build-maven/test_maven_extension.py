@@ -360,9 +360,9 @@ def test_classify_globs_uses_single_star_not_recursive():
 # Maven's generic */src/test/*.java route claims *IT.java / IT*.java /
 # *ITCase.java files under role test, whose base default maps to module-tests —
 # the plain Surefire test goal. Surefire's default includes EXCLUDE the IT
-# naming patterns, so the derived gate executed zero of the changed tests and
-# reported success. IT-signature paths must route to the Failsafe-bound verify
-# build_class instead.
+# naming patterns, so a gate derived as module-tests executes zero of the
+# changed tests and still reports success. IT-signature paths must route to
+# the Failsafe-bound verify build_class instead.
 
 
 def test_it_suffix_java_under_src_test_resolves_verify_build_class():
