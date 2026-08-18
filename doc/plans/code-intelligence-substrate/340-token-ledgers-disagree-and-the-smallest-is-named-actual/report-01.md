@@ -1,7 +1,7 @@
 # Run report — 340-token-ledgers-disagree-and-the-smallest-is-named-actual (run 01)
 
 **Date (UTC):** 2026-08-18    **Branch:** `claude/token-ledgers-disagree-q3t771` (harness-assigned)
-**PR:** _pending_    **Outcome:** _in progress_
+**PR:** [#1293](https://github.com/cuioss/plan-marshall/pull/1293)    **Outcome:** completed
 
 ## Skills loaded
 
@@ -201,7 +201,7 @@ One row per instance. Round-1 findings come from the independent verification su
 | R4-F13 | round 4 | `sum_execution_log_tokens` summed every row regardless of phase while publishing a two-phase population label — the label a promise about another process, not a property of the sum | **fixed** (survivor closed rather than carried) — the sum is filtered to `EXECUTION_LOG_PHASES`. This is the plan's own keeper rule applied to its own deliverable |
 | R4-F14 | round 4 | The R3-F6 row claimed a sort-key change with nothing pinning it; a mutation reverting it left the suite green | **fixed** — `test_the_sort_key_is_total_over_the_rows_own_values` pins it directly |
 | R4-F4 | round 4 | `_augment` recurses ~0.75·N per phase; `RecursionError` at N≈999 dense, exiting as a traceback rather than a TOON error | **survivor** — see the stop record |
-| R4-F5 | round 4 | A zone-naive timestamp would raise `TypeError` in the sort and in `pair_rows` rather than degrading to `not_evaluated` | **survivor** — see the stop record |
+| R4-F5 | round 4, **re-found by `cuioss-review-bot` on the PR** | A zone-naive timestamp would raise `TypeError` in the sort and in `pair_rows` rather than degrading | **fixed** (survivor closed on the reviewer's finding) — `_parse_iso` now reads a bare stamp as UTC, which is what both writers emit explicitly. I had carried this with a bound ("unreachable from the current writers"); the reviewer's remedy is two lines and removes the survivor entirely, which is better than defending the bound. 3 tests, all mutation-verified against the reported `TypeError` |
 
 ## Stop record
 
@@ -240,7 +240,6 @@ The finding counts per round were **21, 13, 7, 14** — not a converging sequenc
 | **F19** — the D3/D5 guards' pre-fix failure is a module-level collection error | B(a) | The test module binds production constants at import, so a pre-fix revert cannot collect. Bound, and **strengthened** across rounds: rounds 2–4 individually mutation-tested those guards (each failed against the defect it names), which is stronger evidence than a collection error would have been. Closing it means restructuring the module to defer constant binding — no behavioural gain. |
 | **R2-F10** — a pushed commit message states 17 findings where it closes 18 | B(b) | Bound: pushed git history is immutable without a force-push, which the lane's durability discipline forbids for a cosmetic correction. Reach: one commit-message line. The correction is recorded in this table. |
 | **R4-F4** — `_augment` recursion cliff at N≈999 rows per phase | B(b) | Bound: needs ~1 000+ rows on **both** sides of a single phase; measured thresholds are N≈999 dense and N≈1 329 at 120 s spacing (a 44-hour phase). Contained by F18 — only a manual invocation reaches it at all. Promise: it stays outside any plan whose phase records under ~1 000 dispatches, which is every plan the corpus has produced. Closing it means an iterative rewrite of `_augment`. |
-| **R4-F5** — a zone-naive timestamp raises instead of degrading | B(a) | Bound verified by inspection of both writers: `now_utc_iso()` emits `…Z` and `datetime.now(UTC).isoformat()` emits `+00:00`, so every timestamp either ledger writes is aware. Unreachable from the current writers. Closing it means normalising in `_parse_iso`. |
 | **R4-F2 residue** — which unpaired row a finding names | B(b) | Not a defect to fix: inherent to reporting unpaired rows under any maximum matching. Bound: the per-phase **counts** are exact and order-independent (verified over 3 000 corpora); only a row's *identity* is settled by the traversal where several rows were equally pairable. Now stated in the docstring as a limit of the verb. |
 
 ### What residue to assume remains
@@ -268,16 +267,84 @@ _Pending._
 
 ## Cost
 
-_Pending._
+- **Tokens:** **not available to the agent in this session.** The harness exposes no usage counter to the
+  running agent, and no figure is invented here. The four verification sub-agents each reported their own
+  usage on return — 279 458 / 278 356 / 214 719 / 225 251 sub-agent tokens, **998 K in total across the
+  four** — which is the only measured token figure this run holds. It excludes the main session entirely.
+- **Wall-clock:** **3 h 19 min** — first commit `c39363a` at 07:38:45 UTC to final commit `394053d` at
+  10:57:53 UTC (source: `git log --date=iso`). Of that, **1 h 44 min** was the four verification agents'
+  own reported durations (1 142 s / 2 813 s / 852 s / 1 503 s), i.e. **a little over half the elapsed time
+  was spent verifying rather than building.**
+- **Population:** these figures count **one Claude Code cloud session's git-observable span, plus four
+  dispatched sub-agents' self-reported usage**. ⛔ **NOT comparable to a plan-marshall `metrics.toon`
+  total**, which counts the orchestrator-plus-agent dispatch tree under plan-marshall's own per-task billing
+  boundary — a boundary this session does not share and cannot reconstruct. The two cannot be reconciled,
+  and no attempt is made to present them as though they could be. That is this plan's own subject applied to
+  its own cost line.
 
 ## Contract check (Step 9)
 
-_Pending._
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | **done** | Named above; all obtained by bundle path (plugin absent in this session) |
+| 2 Branch | **done** | `claude/token-ledgers-disagree-q3t771` — **harness-assigned**, kept as-is per the cloud-session rule. Published to `origin` before the first edit; the plan's `Branch prefix: fix` is superseded by that rule and the divergence is recorded here |
+| 3 Plan directory | **done** | `doc/plans/code-intelligence-substrate/340-…/plan.md` exists via `git mv`; the first-instruction block was present and needed no repair |
+| 4 Implement | **done** | 11 commits, each carrying the `Co-Authored-By` trailer and no "Generated with" footer |
+| 4 Per-commit gate | **done** | Every commit touching `*.py` preceded by `./pw quality-gate` reporting `ruff … All checks passed!`, `mypy … Success: no issues found`, `SPDX-header check passed`, plugin-doctor `issues[0]` |
+| 4 Pushed | **done** | Pushed after every commit; no unpushed commit remains |
+| 5 Build gate | **done** | 9 `*.py` files in the diff → gate applies. `./pw verify` → `SUCCESS`, 20 852 passed, 14 skipped |
+| 6 Verification sub-agent | **done** | 4 rounds; findings and dispositions in the table above; stop record states the **budget exit**, the budget declared before round 1, and each survivor's bound |
+| 7 PR cycle | **done** | PR #1293; no `skip-bot-review` (the diff touches `*.py` and `marketplace/bundles/**`, and a skill is code). All three comment surfaces read |
+| 8 Merge gate | see Reviewer participation | Conditions 1–3 met before arming; condition 4 disclosed |
+| 8 Bridge | **done** | No status or bookkeeping write outside this plan's own directory; the report carries the PR number and per-deliverable outcome |
+| 9 This check | **done** | This table |
+| 9 What have we learned | **done** | Below |
+
+**GitHub access path:** the GitHub MCP server (no `gh` CLI in this session). **Branch form:** harness-assigned.
+**Plugin cache sync:** not owed — a machine-local build step a cloud run neither performs nor records.
+
+**Tree-claim re-check.** The claims in this report about the *filesystem* (as distinct from the diff) were
+re-read at the final commit: the `*.py` diff count is 9, the branch is on `origin`, and `git status` is clean.
 
 ## What have we learned (Step 9)
 
-_Pending._
+**One contract change is proposed, and it is evidence-backed by all four rounds of this run.**
+
+§ Step 6 tells a run to sweep for restatements of a changed claim, and § "Sweep-and-count" tells it to enumerate
+every site before fixing any instance. This run followed both and **still leaked the same two claim families in
+every single round** — rounds 2, 3 and 4 each found a fix that had landed at n−1 of n sites. The contract's own
+diagnosis is correct but its remedy is under-specified in one concrete way: **it never names the run's own
+report as a sweep target.** Every round found surviving instances there, including rows that declare a claim
+fixed while restating the refuted wording (R2-F8, R3-F1, R3-F3, R4-F9). The report is the one surface a
+re-dispatched verifier reads *last* and an author edits *most*.
+
+**Proposed edit** — to § "Sweep-and-count", after "A contract has surfaces, not a site":
+
+> - **The findings table is a surface of every claim it records.** A row saying "fixed at all N sites" restates
+>   the claim it fixed, so the row itself becomes an N+1th site. Grep the corrected wording across the report
+>   before marking a row fixed, and re-read the row against the artifact rather than against the memory of
+>   having fixed it.
+
+⚠ **Not self-approved, and not shipped in this PR.** Per § Step 9 this requires operator approval and, on
+approval, its own `chore/` branch touching only the skill — coupling a contract amendment to whether this plan
+lands would mean neither gets read properly. **No operator was reachable in this headless run**, so the proposal
+is recorded here for the orchestrator's collect step rather than acted on.
 
 ## Residue
 
-_Pending._
+- **The verification loop stopped on its budget, not on convergence.** See the stop record for what a reader
+  should assume still remains, per instance. The short form: more instances of the same claim families are
+  likely, most densely in this report; at least one new test probably asserts a property it cannot fail on; and
+  any figure not re-derived at the moment of writing is stale.
+- **`reconcile-ledgers` has no caller** (F18). The verb is complete, documented and tested, and D4's stated
+  "Done when" is met — but until a phase workflow invokes it, the plan's Goal ("a cross-ledger disagreement
+  produces a finding instead of a silent choice") is achieved *in principle* rather than on any run. Wiring a
+  call site is the natural next plan; it was not in this plan's scope.
+- **The `worked_seconds_per_task > 900` threshold is unanchored** for its new numerator. It was calibrated
+  against wall clock and is left at its measured value rather than moved by an invented factor; re-deriving it
+  needs a corpus of worked-time observations that does not yet exist.
+- **Which unpaired row a reconciliation finding names** is settled by the traversal, not by the ledgers, where
+  several rows were equally pairable (~23% of small corpora). The per-phase counts are exact; the row identity
+  is not. Stated in the verb's own docstring as a limit.
+- **One bounded code survivor**: the `_augment` recursion cliff at ~1 000 rows per phase, contained by F18.
+  (The zone-naive-timestamp survivor was closed on the PR reviewer's finding rather than carried.)

@@ -505,3 +505,57 @@ class TestPairingIsMaximal:
 
         assert _ledger._row_sort_key(first) < _ledger._row_sort_key(second)
         assert _ledger._row_sort_key(first)[:2] == _ledger._row_sort_key(second)[:2]
+
+
+class TestMixedTimezoneAwarenessDoesNotCrash:
+    """A stamp with no offset is read as UTC, not left naive to poison a compare.
+
+    Mixing naive and aware datetimes in one phase makes the sort and the pairing
+    subtraction raise `TypeError` — an uncaught crash, where this module's rule
+    is that unusable input degrades to a reported state. Both writers emit an
+    explicit UTC offset, so reading a bare stamp as UTC is the only reading
+    consistent with the corpus.
+    """
+
+    @staticmethod
+    def _row(stamp: str, label: str) -> dict:
+        return {
+            'step_id': label,
+            'timestamp': stamp,
+            'parsed_timestamp': _ledger._parse_iso(stamp),
+            'total_tokens': 0,
+            'outcome': 'executed',
+            'termination_cause': 'step_complete',
+        }
+
+    def test_a_zoneless_stamp_parses_aware(self):
+        parsed = _ledger._parse_iso('2026-01-01T10:00:00')
+
+        assert parsed is not None
+        assert parsed.tzinfo is not None
+        assert parsed == datetime(2026, 1, 1, 10, tzinfo=UTC)
+
+    def test_mixed_awareness_pairs_instead_of_raising(self):
+        """The reviewer-reported crash: naive on one side, aware on the other."""
+        execution_rows = [self._row('2026-01-01T10:00:00', 'e-naive')]
+        boundary_rows = [self._row('2026-01-01T10:00:10Z', 'b-aware')]
+
+        pairs, unpaired_execution, unpaired_boundary = _ledger.pair_rows(
+            execution_rows, boundary_rows, 300
+        )
+
+        assert len(pairs) == 1
+        assert unpaired_execution == []
+        assert unpaired_boundary == []
+
+    def test_mixed_awareness_sorts_instead_of_raising(self):
+        """The same crash on the sort path, which runs before any pairing."""
+        rows = [
+            self._row('2026-01-01T10:00:10Z', 'aware'),
+            self._row('2026-01-01T10:00:00', 'naive'),
+        ]
+
+        assert [row['step_id'] for row in sorted(rows, key=_ledger._row_sort_key)] == [
+            'naive',
+            'aware',
+        ]

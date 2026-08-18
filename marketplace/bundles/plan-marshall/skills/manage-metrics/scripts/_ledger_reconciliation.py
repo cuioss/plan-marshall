@@ -98,13 +98,26 @@ STATE_NOT_EVALUATED = 'not_evaluated'
 
 
 def _parse_iso(value: object) -> datetime | None:
-    """Parse an ISO-8601 timestamp, tolerating a ``Z`` suffix. ``None`` on failure."""
+    """Parse an ISO-8601 timestamp to an AWARE datetime, tolerating a ``Z`` suffix.
+
+    A stamp carrying no offset parses naive, and mixing naive and aware values in
+    one phase makes ``_row_sort_key``'s sort and ``pair_rows``' subtraction raise
+    ``TypeError`` — an uncaught crash, where this module's rule is that an input
+    it cannot use degrades to a reported state rather than taking the process
+    down. A naive stamp is therefore read as UTC, which is what both writers emit
+    explicitly (``now_utc_iso()`` appends ``Z``; the boundary writer appends
+    ``+00:00``) and so is the only reading consistent with the corpus.
+
+    Returns ``None`` on anything unparseable, which callers surface as an
+    unpairable row rather than dropping it.
+    """
     if not value:
         return None
     try:
-        return datetime.fromisoformat(str(value).strip().replace('Z', '+00:00'))
+        parsed = datetime.fromisoformat(str(value).strip().replace('Z', '+00:00'))
     except (ValueError, TypeError):
         return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
 def _row_sort_key(row: dict[str, Any]) -> tuple[bool, datetime, str, str, int]:
