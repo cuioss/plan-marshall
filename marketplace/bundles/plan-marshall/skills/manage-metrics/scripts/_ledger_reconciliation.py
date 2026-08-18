@@ -37,7 +37,7 @@ from the other, and labels the two partiality shapes distinctly —
 
 * ``boundary_never_closed`` — the phase recorded dispatches but its terminal
   close never fired, so its ``metrics.toon`` row carries no ``end_time``. Its
-  rows exist; the phase's aggregate is what is missing.
+  rows exist; what no close recorded is the phase's own summary of them.
 * ``row_absent_from_*`` — a specific row has no partner in the other ledger.
 
 Conflating those two would report a whole unclosed phase as a pile of orphan
@@ -346,8 +346,9 @@ def reconcile_phase(
                 'total_tokens': sum(row['total_tokens'] for row in boundary_rows),
                 'detail': (
                     f'{len(boundary_rows)} dispatch-boundary row(s) recorded but the phase '
-                    'row carries no end_time — the rows are present and the phase AGGREGATE '
-                    'is what is missing, which is not the same defect as an absent row'
+                    'row carries no end_time — the rows are present and no close recorded '
+                    "the phase's own summary of them, which is not the same defect as an "
+                    'absent row'
                 ),
             }
         )

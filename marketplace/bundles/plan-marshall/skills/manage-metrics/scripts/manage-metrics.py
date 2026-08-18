@@ -311,7 +311,7 @@ _TOTALS_DENOMINATOR_FIELD = 'totals_population_denominator'
 # of re-summing would quote it anyway.
 #
 # Freshness is therefore carried by PRESENCE, not by this stamp: ``write_metrics``
-# drops every aggregate key for any writer that did not just compute it. The stamp
+# drops the row-derived aggregate for any writer that did not just compute it. The stamp
 # records when the surviving aggregate was taken, mirroring the denominators'
 # ``denominators_sampled_at``; it is not what a reader tests.
 _TOTALS_SAMPLED_AT_FIELD = 'totals_sampled_at'
@@ -332,9 +332,11 @@ _TOKENS_CELL_SOURCE_FIELD = 'tokens_cell_source'
 #: The Tokens cell for a phase that was never closed, carrying its
 #: dispatch-boundary sum as a labelled FLOOR. A phase whose terminal close never
 #: fired is simultaneously the phase most likely to be missing the marker and the
-#: phase most likely to hold the largest figure — the boundary file is the only
-#: durable record of what it spent, and dropping it makes a multi-million-token
-#: phase render as ``-``.
+#: phase most likely to hold the largest figure. Its boundary file is one of two
+#: records that survive a missing close — the per-phase accumulator is the other,
+#: and ``_reconcile_accumulator_into_phase`` backfills ``total_tokens`` from it —
+#: so the fold takes the LARGER of the two rather than assuming either is the
+#: only evidence. Where neither is present the cell renders ``-``.
 TOKENS_SOURCE_UNCLOSED_BOUNDARY = 'unclosed_boundary_floor'
 
 #: Its cell suffix. Deliberately NOT a ``TOKEN_POPULATIONS`` member: the figure
@@ -902,7 +904,7 @@ def _coerce_numeric(value: object) -> int | float | str:
 
 
 def write_metrics(plan_id: str, data: dict, *, preserve_totals: bool = False) -> None:
-    """Write the store, INVALIDATING the persisted aggregate unless it was just computed.
+    """Write the store, INVALIDATING the row-derived aggregate unless it was just computed.
 
     Only ``cmd_generate`` computes the ``totals_*`` aggregate, while every other
     writer of this store — ``start-phase``, ``end-phase``, ``phase-boundary`` and
@@ -919,6 +921,11 @@ def write_metrics(plan_id: str, data: dict, *, preserve_totals: bool = False) ->
     write landing in the same second as the ``generate`` it invalidates would be
     undetectable by comparison. The same present-iff-derivable-now rule already
     governs ``cache_read_per_tool_use``.
+
+    ⚠ Scoped to the ROW-DERIVED keys — the ``totals_*`` family and its companions.
+    ``dispatch_boundary_excluded_classes`` also lives in the aggregate's field
+    table but is derived from a module constant rather than from the rows, so it
+    cannot go stale against them and is deliberately left in place.
 
     Args:
         plan_id: Plan identifier.
@@ -1601,8 +1608,9 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     # reach disk before rendering began. That is the intended shape — a store
     # holding derived keys but no aggregate would be exactly the half-written
     # record this deliverable exists to remove — and it is bounded: every read
-    # between here and the write goes through `_coerce_numeric` / `_numeric`,
-    # which return None rather than raising on any stored value.
+    # between here and the write goes through `_coerce_numeric` (which falls back
+    # to the original value) or `_numeric` (which returns None), neither of which
+    # raises on any stored value.
 
     # Build metrics.md content
     lines = []
@@ -1900,7 +1908,7 @@ def cmd_generate(args: argparse.Namespace) -> dict:
     data[_BOUNDARY_EXCLUDED_CLASSES_FIELD] = ','.join(DISPATCH_BOUNDARY_EXCLUDED_CLASSES)
     # Provenance for a reader: the moment this aggregate was computed. It is NOT
     # the freshness signal — that is presence, enforced by write_metrics, which
-    # drops every aggregate key for any writer that is not this one.
+    # drops the row-derived aggregate for any writer that is not this one.
     data[_TOTALS_SAMPLED_AT_FIELD] = now_utc_iso()
 
     # Denominators + their sampling point. Written last among the derived

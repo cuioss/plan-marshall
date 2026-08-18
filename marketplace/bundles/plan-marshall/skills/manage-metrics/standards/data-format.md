@@ -518,7 +518,9 @@ Each column persists a **triple**: the value, the count of phase rows that fed i
 | `dispatch_boundary_excluded_classes` | list (comma-joined) | Derived by `generate` from `DISPATCH_BOUNDARY_EXCLUDED_CLASSES` — the dispatch classes that register no boundary. These are the key to every boundary coverage shortfall the report shows; as prose alone, a script got the coverage numbers without the declaration that makes them interpretable |
 | `totals_sampled_at` | ISO 8601 timestamp | Written by `generate` — the moment the aggregate above was computed. Provenance for a reader; **not** the freshness signal, which is presence (below) |
 
-**The aggregate is present iff the most recent write computed it.** Only `generate` computes the totals, while every other writer of this store — `start-phase`, `end-phase`, `phase-boundary` and `enrich` — rewrites the phase rows underneath them — so `write_metrics` **drops every aggregate key** for those writers. A reader that finds the keys knows the rows have not moved since they were summed; a reader that finds them absent knows to re-run `generate`. There is nothing to compare and no stale value to mistake for a current one.
+**The row-derived aggregate is present iff the most recent write computed it.** Only `generate` computes the totals, while every other writer of this store — `start-phase`, `end-phase`, `phase-boundary` and `enrich` — rewrites the phase rows underneath them, so `write_metrics` **drops the `totals_*` family** for those writers. A reader that finds the keys knows the rows have not moved since they were summed; a reader that finds them absent knows to re-run `generate`. There is nothing to compare and no stale value to mistake for a current one.
+
+Two scoping facts ride with that rule. `phase-boundary` regenerates unconditionally as its own last step, so although its `write_metrics` call drops the aggregate, the verb as a whole leaves it present and fresh — the invalidation is a property of the *write*, and only `start-phase`, `end-phase` and `enrich` leave it visible to a reader. And `dispatch_boundary_excluded_classes`, though it sits in the table above, is **not** dropped: it is derived from a module constant rather than from the rows, so it cannot go stale against them.
 
 ⛔ Do **not** substitute a timestamp comparison for this. `updated` and `totals_sampled_at` are both second-granularity, so a write landing in the same second as the `generate` it invalidates is indistinguishable from a fresh one — presence is exact where the comparison is not. The rule is the same present-iff-derivable-from-this-run invariant `cache_read_per_tool_use` follows.
 
@@ -679,7 +681,7 @@ The `## Phase Breakdown` Total uses the **canonical-six baseline** (`len(PHASE_N
 ```markdown
 ## Phase Breakdown
 
-> Phases missing an end_time boundary marker — 6-finalize. These rows were never closed by end-phase / phase-boundary, so their totals are absent and every column Total above is a floor. This is an end_time-presence check only: a phase NOT listed here carries the marker, which says nothing about whether its recorded figures are complete or internally consistent.
+> Phases missing an end_time boundary marker — 6-finalize. These rows were never closed by end-phase / phase-boundary, so no close recorded their totals and every column Total above is a floor. Such a row can still show figures recovered from sources that do not depend on the close — its accumulator, and its dispatch-boundary rows (marked `(boundary floor)`) — and those are floors too. This is an end_time-presence check only: a phase NOT listed here carries the marker, which says nothing about whether its recorded figures are complete or internally consistent.
 ```
 
 ## Generated Report (metrics.md)

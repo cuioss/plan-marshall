@@ -356,12 +356,33 @@ class TestWorkedTimeExcludesTheIdleGap:
 
         store = _store(plan_context, plan_id)
         assert _phase_field(store, '5-execute', 'agent_duration_ms') == str(self._WORKED_MS)
-        # Positive control on the clamp: it exists and fires when worked EXCEEDS
-        # wall, so the no-op above is a property of this row, not a dead clamp.
-        assert manage_metrics._clamp_worked_to_wall({'duration_seconds': 1.0}, 5000) == 1000
+
+        # Positive control through the SAME code path, not a direct call to the
+        # clamp helper: a second plan closed with a worked value that EXCEEDS its
+        # wall span comes back clamped. That establishes the clamp is wired into
+        # `end-phase`, so the untouched value above is a property of the idle-gap
+        # row rather than of a clamp that never runs.
+        control = 'idle-gap-clamp-control'
+        cmd_start_phase(ns_start_phase(control, '5-execute'))
+        raw = manage_metrics.read_metrics_raw(control)
+        opened = datetime.now(UTC) - timedelta(seconds=1)
+        raw['phases']['5-execute']['start_time'] = opened.isoformat()
+        manage_metrics.write_metrics(control, raw)
+        cmd_end_phase(ns_end_phase(control, '5-execute', total_tokens=1, duration_ms=self._WALL_MS))
+
+        clamped = int(_phase_field(_store(plan_context, control), '5-execute', 'agent_duration_ms'))
+        assert clamped < self._WALL_MS
 
     def test_the_idle_residual_is_the_gap(self, plan_context):
-        """Idle is published as its own figure, not folded into either total."""
+        """Idle is published as its own figure, and it IS the operator's gap.
+
+        Asserted against the fixture's own constants, not against
+        `wall - worked` read back from the same store. That identity is how
+        `idle_duration_ms` is computed, so asserting it pins neither operand and
+        holds no matter what the operands become — an earlier version did exactly
+        that and stayed green under a mutant that made worked equal wall
+        (idle collapsed to 0, identity intact) while its sibling test failed.
+        """
         plan_id = 'idle-gap-residual'
         self._drive_phase_with_idle_gap(plan_id)
 
@@ -369,9 +390,11 @@ class TestWorkedTimeExcludesTheIdleGap:
 
         store = _store(plan_context, plan_id)
         idle_ms = int(_top_level_field(store, 'totals_idle_ms'))
-        worked_ms = int(_top_level_field(store, 'totals_worked_ms'))
-        wall_ms = int(_top_level_field(store, 'totals_wall_ms'))
-        assert idle_ms == wall_ms - worked_ms
+        expected_gap = self._WALL_MS - self._WORKED_MS
+        # Within a second of scheduling slack on the seeded wall span.
+        assert abs(idle_ms - expected_gap) <= 1000
+        # And it is a large positive residual, not an incidental near-zero.
+        assert idle_ms > self._WORKED_MS * 40
 
 
 class TestInlineCostFieldOnEveryRow:

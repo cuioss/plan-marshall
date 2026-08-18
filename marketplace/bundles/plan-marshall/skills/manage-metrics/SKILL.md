@@ -124,9 +124,9 @@ totals_population_denominator: 6
 totals_worked_ms: 572500
 totals_worked_ms_population_count: 6
 totals_wall_ms: 640000
-totals_wall_ms_population_count: 6
-totals_idle_ms: 67500
-totals_idle_ms_population_count: 6
+totals_wall_ms_population_count: 5
+totals_idle_ms: 91500
+totals_idle_ms_population_count: 5
 totals_tokens: 86754
 totals_tokens_population_count: 6
 totals_tool_uses: 214
@@ -137,12 +137,12 @@ totals_tokens_spans_populations: true
 totals_sampled_at: 2026-03-27T10:25:00+00:00
 total_worked_seconds: 572.5
 total_wall_seconds: 640.0
-total_idle_seconds: 67.5
+total_idle_seconds: 91.5
 total_tokens: 86754
 total_billing_weighted: 128900
 total_worked_formatted: 9m32s
 total_wall_formatted: 10m40s
-total_idle_formatted: 1m7s
+total_idle_formatted: 1m31s
 total_tokens_formatted: 86.8K
 ```
 
@@ -613,7 +613,7 @@ because the missing `step_id` leaves no other key. Findings:
 |---------|---------|
 | `row_absent_from_boundary_ledger` | A `record-step` row with no dispatch-boundary partner in the window |
 | `row_absent_from_execution_log` | A dispatch that recorded its usage at termination but that no `record-step` row names — spend invisible to any `execution_log` sum |
-| `boundary_never_closed` | The phase recorded dispatch rows but its `metrics.toon` row carries no `end_time`. The rows are present; the **aggregate** is what is missing — deliberately a different finding from an absent row |
+| `boundary_never_closed` | The phase recorded dispatch rows but its `metrics.toon` row carries no `end_time`. The rows are present; what no close recorded is the phase's own **summary** of them — deliberately a different finding from an absent row |
 | `phase_re_entered` | `close_count > 1`, so the aggregate is cumulative across closes while both row ledgers are append logs |
 
 Two states are reported rather than counted as divergence. A phase outside the
@@ -711,10 +711,16 @@ second read. The three duration totals are **milliseconds**; see
 [data-format.md](standards/data-format.md) § "The Persisted Aggregate" for why
 the store keeps that unit.
 
-⚠ In the store — not in this return — the aggregate is **present iff the most
-recent write computed it**: any later `start-phase` / `end-phase` /
-`phase-boundary` / `enrich` drops the keys, because those writers move the phase
-rows the totals sum. A reader finding them absent re-runs `generate`.
+⚠ In the store — not in this return — the row-derived aggregate is **present iff
+the most recent write computed it**: a later `start-phase`, `end-phase` or
+`enrich` drops the `totals_*` keys, because those writers move the phase rows the
+totals sum. A reader finding them absent re-runs `generate`.
+
+`phase-boundary` is the exception, and needs no action: it regenerates
+unconditionally as its own last step, so it leaves the aggregate present and
+fresh. `dispatch_boundary_excluded_classes` also survives every write — it is
+derived from a module constant rather than from the rows, so it cannot go stale
+against them.
 
 Alongside them it returns the human-facing summary — `total_worked_seconds`,
 `total_wall_seconds`, `total_idle_seconds` (each the corresponding
