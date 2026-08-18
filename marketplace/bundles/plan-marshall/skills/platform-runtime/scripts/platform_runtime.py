@@ -160,9 +160,9 @@ _bootstrap_glob_discover()
 #
 # ``runtime_base`` is grouped with them for proximity, not necessity: it is the
 # shared base contract rather than a target, and a new target never touches that
-# line. Splitting it out is possible (a comment line ends an isort group), and is
-# a fair change to make; it is kept here only so the deferred imports read as one
-# block.
+# line. Splitting it out needs a BLANK line to end the import group — a comment
+# alone does not, and ruff's own fix for the resulting I001 is to insert one.
+# It is kept here so the deferred imports read as a single block.
 #
 # The two dicts are declared adjacently so they cannot drift unnoticed, and a
 # lockstep test asserts their key sets stay equal.

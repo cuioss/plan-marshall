@@ -86,7 +86,7 @@ def test_default_bundle_cache_roots_match_what_the_default_target_resolves() -> 
 
 
 def test_every_registered_target_resolves_a_bundle_cache_root() -> None:
-    """Both layout ops resolve for every registered target, not just the default one.
+    """``layout_bundle_cache_root`` resolves for every registered target, not just the default.
 
     The sibling constant test covers only the default target, so this one
     quantifies over the live registry -- a later target is covered without anyone
@@ -102,10 +102,11 @@ def test_every_registered_target_resolves_a_bundle_cache_root() -> None:
 def test_layout_op_resolves_each_registered_target_distinctly() -> None:
     """Every registered target resolves through the router's registry to its own roots.
 
-    Every test in this file drives ``_invoke_layout_op`` unpatched -- elsewhere
-    in the suite it is patched out at every call site -- and this one quantifies
-    over the live ``_REGISTRY`` rather than a name list, so a target added later
-    is covered without anyone remembering. Asserting the roots are pairwise
+    Five of this file's tests drive ``_invoke_layout_op`` unpatched, this one
+    among them; most other suites patch it out, though two in
+    ``extension-api/test_extension_discovery.py`` also reach the real op. This
+    one quantifies over the live ``_REGISTRY`` rather than a name list, so a
+    target added later is covered without anyone remembering. Asserting the roots are pairwise
     DISTINCT is what makes it non-vacuous: a registry lookup that collapsed every
     target onto one runtime would still return roots, and only the distinctness
     catches it.

@@ -224,9 +224,9 @@ python3 .plan/execute-script.py plan-marshall:platform-runtime:platform_runtime 
 settings file and reports it back as `settings_path`.
 
 Report the result:
-- `status: success` with `already_present: false` → Hook installed successfully
-- `status: success` with `already_present: true` → Hook was already present
-- `status: error` → Report `message` and advise checking write permissions on the file the response names in `settings_path`
+- `status: success` with `already_present: false` → Something changed. Read `installed_events` / `migrated_events` / `capture_status` to say what: a fresh install, or an existing entry converged onto the current shape.
+- `status: success` with `already_present: true` → Nothing changed; the wiring was already correct
+- `status: error` → Report `message`, which names the file that could not be written, and advise checking its write permissions. An error payload carries only `status`, `operation`, `error` and `message` — there is no `settings_path` on it
 - `status: no-op` → Platform does not support this hook (e.g. OpenCode); report info and continue
 
 If the user chooses **Skip**: continue to Step 7.

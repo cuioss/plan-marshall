@@ -205,8 +205,9 @@ the per-event summary below; `migrated_events` names each render entry that was
 converged, and `capture_status` reports the SessionStart capture entry, which
 carries no render label. Read `already_present: true` for "nothing changed at all" rather than deriving
 it: it is strictly narrower than those two signals, also requiring
-`installed_events` empty and both `statusLine_status` and `env_status`
-already-present. A run that installed one missing render entry reports empty
+`installed_events` empty and both `statusLine_status` and `env_status` in
+{`already_present`, `already_present_other`} — a preserved foreign value still
+counts as "nothing changed", because nothing was written. A run that installed one missing render entry reports empty
 `migrated_events` and `capture_status: already_present` while `already_present`
 is `false`.
 

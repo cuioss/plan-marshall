@@ -129,7 +129,7 @@ The terminal-title path ALWAYS emits the first three rows below — the three ev
 | `installed_events`, `already_present_events`, `migrated_events` | the render-event labels falling in each bucket | `claude_runtime._install_terminal_title_hooks` |
 | `enforcement_status` (`--enforcement` path only) | `installed`, `migrated`, `already_present` | `claude_runtime._install_enforcement_hook` |
 
-Each block below was captured from a real invocation rather than transcribed, with only the temporary directory rewritten to a readable repository path. A list renders as `key[N]:` followed by one indented `- item` per element, an empty list as a bare `key[0]:`, and a value containing `:` or `,` is quoted. `test_contract_doc_toon_is_canonical.py` holds every block in these standards to that shape, so an example the serializer could not emit fails the suite rather than misleading a reader.
+The four success blocks and the OpenCode no-op below were captured from real invocations rather than transcribed, with only the temporary directory rewritten to a readable repository path; the two `io_error` blocks are illustrative, and their `message` carries the absolute path the runtime resolves, never a relative one. A list renders as `key[N]:` followed by one indented `- item` per element, an empty list as a bare `key[0]:`, and a value containing `:` or `,` is quoted. `test_contract_doc_toon_is_canonical.py` holds every block in these standards to that shape, so an example the serializer could not emit fails the suite rather than misleading a reader.
 
 **Success (Claude — hook installed)**:
 ```toon
@@ -228,7 +228,7 @@ The capture entry needs its own field because it carries none of the nine render
 status: error
 operation: project install-hook
 error: io_error
-message: Failed to install terminal-title hooks into .claude/settings.local.json
+message: Failed to install terminal-title hooks into /repo/.claude/settings.local.json
 ```
 
 **Error (Claude — write failure, `--enforcement` path)**:
@@ -236,7 +236,7 @@ message: Failed to install terminal-title hooks into .claude/settings.local.json
 status: error
 operation: project install-hook
 error: io_error
-message: Failed to install enforcement hook into .claude/settings.local.json
+message: Failed to install enforcement hook into /repo/.claude/settings.local.json
 ```
 
 **No-op (OpenCode)**:

@@ -270,8 +270,8 @@ def get_bundle_cache_roots() -> tuple[str, ...]:
     cache). Falls back to the Claude default when no runtime is resolvable.
 
     Callers probe the returned roots in list order (first existing match wins),
-    expanding ``~`` in each. They are normally absolute, but a target whose own
-    configuration override designates a root passes that root through as given,
+    expanding ``~`` in each. They are normally absolute, but a target with a
+    configuration-directory override derives a root beneath it and returns that,
     so a caller must not assume absoluteness.
     """
     global _BUNDLE_CACHE_ROOTS_CACHE

@@ -11,15 +11,25 @@ plugin-doctor and the whole test suite passed over it, because a false sentence
 in a document type-checks and lints exactly like a true one.
 
 A round-trip is what closes it. ``serialize_toon`` has one canonical rendering
-per value, so a block that survives ``serialize_toon(parse_toon(block))``
-unchanged is in the shape the runtime actually emits, and a block that does not
-is in a shape it cannot. The expectation is NOT computed from the document — it
-comes from the serializer the production code calls.
+per value, so a block that does NOT survive ``serialize_toon(parse_toon(block))``
+is in a shape the serializer could never emit. That direction is sound and is
+what this test enforces, and the expectation comes from the serializer the
+production code calls, never from the document.
 
-What this does and does not buy: it pins SHAPE, not content. A block claiming a
-field the operation never sets still round-trips, so this cannot replace reading
-the payload against its producer. It does make the whole class of
-transcription-invented syntax impossible to land.
+**The converse does not hold, and the limit is wider than "shape vs content".**
+A surviving block is the canonical rendering of SOME dict — not necessarily of
+the dict this operation emits. A mutation battery against real block shapes found
+it catches every indentation, separator, quoting, count-header, dropped-row,
+blank-line and duplicate-key defect, and misses at least three that are shape
+rather than content: keys in the wrong ORDER (the serializer emits
+dict-insertion order, so a reordered block is unemittable yet passes), a renamed
+uniform-array header field, and a type flip such as ``false`` to ``"false"``. It
+is blind to wrong field names and wrong values by design.
+
+So this cannot replace reading a payload against its producer — the install-hook
+captures in ``contract.md`` were verified by reproduction, and that is what a
+content claim costs. What it does buy is that the class of
+transcription-invented SYNTAX can no longer land.
 """
 
 import pathlib  # noqa: I001
