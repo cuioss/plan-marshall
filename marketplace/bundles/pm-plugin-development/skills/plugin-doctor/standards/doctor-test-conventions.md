@@ -195,7 +195,7 @@ Flag a docstring or comment under the test tree citing a lesson id, a PR referen
 **Detection**:
 
 1. Parse every `*.py` under `--test-root` with `ast.parse`.
-2. Collect the prose segments — module, class, and function **docstrings** (via `ast.get_docstring`), plus every `#` **comment** (via `tokenize`).
+2. Collect the prose segments — module, class, and function **docstrings** (via `ast.get_docstring`), plus every `#` **comment** (via `tokenize`). A comment's leading `#` is stripped: it is punctuation the tokenizer supplies rather than something the author wrote, and leaving it attached would make every comment appear to open with a `#`-prefixed token. A docstring is kept verbatim, so a citation at its very first character is still matchable.
 3. Match each segment against the citation patterns. The lesson-id and `plan-marshall#NNNN` matchers are **imported from** `_analyze_lesson_id_in_skill_prose` and `_analyze_incident_reference_in_docs` rather than restated — one textual shape, one matcher. Two shapes those analyzers do not carry are defined locally: PR references (`PR #NNN` / `pull request #NNN`, and a bare `#NN` carrying at least two digits), and plan/deliverable ids (`TASK-NNN`, `deliverable D<n>` and `deliverable <n>` alike, ``plan `slug` ``).
 4. Skip any match that sits inside an **inline literal** — a `` `…` `` / ` ``…`` ` code span, or a single- or double-quoted string — because prose in that position is naming a value, not citing a record.
 5. Emit at most one finding per segment; `details.kind` names which citation shape fired.
