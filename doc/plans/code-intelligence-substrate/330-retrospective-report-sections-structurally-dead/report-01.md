@@ -1,6 +1,6 @@
 # Run report — 330-retrospective-report-sections-structurally-dead (run 01)
 
-**Date (UTC):** 2026-08-17    **Branch:** `claude/code-intelligence-retrospective-s9weii`    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-17 – 2026-08-18    **Branch:** `claude/code-intelligence-retrospective-s9weii`    **PR:** _see below_    **Outcome:** completed
 
 ## Skills loaded
 
@@ -289,8 +289,14 @@ here is stale before it is read. `git rev-list --count origin/main..HEAD` is the
 
 - Per-commit `./pw quality-gate` before each `*.py`-touching commit: `ruff … All checks passed!`,
   `mypy … Success: no issues found in 412 source files`, `SPDX-header check passed`.
-- Full `./pw verify` over the branch diff, re-run after the round-1 fixes: **`=== verify: SUCCESS ===`**,
-  `20723 passed, 14 skipped` in 378 s — all three sub-steps (quality-gate, test-compile, module-tests).
+- Full `./pw verify` over the branch diff, **re-run after every round's fixes and last measured at
+  HEAD after round 4**: **`=== verify: SUCCESS ===`**, `20723 passed, 14 skipped` in 372 s — all
+  three sub-steps (quality-gate, test-compile, module-tests). The totals moved with the work:
+  20683 → 20704 → 20717 → 20723.
+  ⚠ An earlier version of this line kept the clause "re-run after the round-1 fixes" while the figure
+  beside it was updated every round — a round-3 measurement labelled as a round-1 one. That is the
+  same figure-and-its-tree-from-different-trees defect F23 corrected once already, recurring in the
+  provenance clause rather than in the number.
 - One gate rejection was fixed rather than worked around: plugin-doctor's
   `no-historical-prose-in-skills` fired on new wording in `phase-6-finalize/SKILL.md`; the sentence
   was reworded and the gate re-run clean.
@@ -390,7 +396,7 @@ Round 3 targeted round 2's fixes, and found the same shape a third time.
 | V2 | Verifier, rationale check (A) | `_fragment_renders_empty`'s docstring claimed its split was "the same falsy-versus-empty split `_fragment_has_payload` makes". Executed, they were **opposite on `False`** and disagreed on an all-empty-valued dict. | **Fixed by making it true** rather than by softening the sentence: a bare `False` is now empty, matching the identity skip. |
 | V3 | Verifier, sweep (A) | `_names_checked_set`'s comment said "only `counts` is published at the top of a fragment". `checks` and `expected_invariants` are top-level too — round 2 added them without reconciling the sentence. | **Fixed.** |
 | V4 | Verifier, inward sweep (B, bounded) | Two keys title-casing to the same heading produce a `written`/`omitted` overlap and mis-target the probe. | **Accepted as a survivor.** ⚠ **Bound:** unreachable today — `cmd_add` rejects unregistered keys and the only domain aspect (`wrapper-tangle`) collides with nothing. `origin/main` carries the same collision in a different shape, so the branch neither introduces nor widens it. |
-| V5 | Verifier, producer sweep (A) | `retro_sections`'s comment (mirrored in a test comment and a commit message) called its two new names "the ONLY two of eight" producers needing coverage. There is a **third** — `check-manifest-consistency` publishes `checks` on a plan that HAS an `execution.toon`. The denominator is wrong too: three of the eight never reach `written` on an ordinary plan. | **Fixed** in the comment and the test; the commit message is recorded here, being unfixable. |
+| V5 | Verifier, producer sweep (A) | `retro_sections`'s comment (mirrored in a test comment and a commit message) called its two new names "the ONLY two of eight" producers needing coverage. There is a **third** — `check-manifest-consistency` publishes `checks` on a plan that HAS an `execution.toon`. The denominator was wrong too — and its correction was ALSO wrong, caught in round 4 (W1): on a plan carrying an `execution.toon` exactly **one** of the eight is dropped; three is the manifest-less case. | **Fixed** in the comment and the test; the commit message is recorded here, being unfixable. |
 | V6 | Verifier, divergence-paragraph audit (A) | `report-structure.md` said **ANY** non-envelope field is seen as payload. An empty-valued one is not. | **Fixed.** |
 | V7 | Verifier, sweep (A) | ⭐ **The worst one: a shipped consumer-facing doc.** `plan-retrospective/SKILL.md` enumerated the attribution vocabulary as three fields when it has five — **in the same sentence instructing the reader not to restate it**. Made wrong by round 2's own change. | **Fixed** — it no longer enumerates the vocabulary at all, and says why. |
 | V8, V9, V10, V11 | Verifier, report + comment audit (A) | This report restated the vocabulary as three fields (V8) and presented an incomplete table as *the* vocabulary (V9); `retro_sections`'s depth paragraph covered three of five names (V10); and `test_a_scalar_fragment_is_content_not_emptiness` was mislabelled "new behaviour" when it passes on `origin/main` (V11) — the **third** instance of that mislabel class after F17 and F24. | **All fixed.** The vocabulary table now says explicitly that it is a reader's aid and not the source of truth. |
@@ -410,11 +416,77 @@ tested the wrong property again — the container rather than the content — an
 prose had gone stale in four places. **Four successive attempts at one invariant**, each sound where
 it landed and each narrower than the claim it was written to support.
 
-The late rounds' findings did **not** become merely fewer — they stayed substantive and kept landing
-on the shipped deliverable, not only on the report. That is the honest reading, and it is the reason
-this run does not claim convergence. **The deliverables should be read as still carrying defects of
-that kind**, most plausibly: another shape that reaches `written` without a usable body, and another
-restatement of the attribution vocabulary that the registry has outgrown.
+### Verification round 4 (independent sub-agent) — and the stop record
+
+**Round 4 found the shipped code CORRECT.** Attempt 4 was verified by a 34-input-class exhaustive
+differential against `origin/main`, against the real clean-run fragment of all eight in-tree
+deterministic producers, against a documented-shape fragment for each of the seven `(LLM on …)`
+rows, and against the repository's own committed fragment corpus. Every one of the fifteen verdict
+changes moves **written → omitted**, every one is a shape no in-tree producer emits, and the corpus
+run writes all ten real fragments with **zero content loss** — while `origin/main` rendered two of
+those sections as `_No data provided._` placeholders. For a dict,
+`_fragment_renders_empty(x) ≡ not _fragment_has_payload(x)` exactly, so **no newly-omitted section
+can be a drop by construction**: the partition is coherent rather than merely consistent-looking.
+
+Round 4's six findings were **all prose, and four of them in files that ship** — none in behaviour.
+
+| # | Finding | Disposition |
+|---|---|---|
+| W1 | `retro_sections` said three of the eight producers never reach `written` "on an ordinary plan". Measured: on a plan carrying an `execution.toon` exactly **one** does not. Three is the manifest-less case — which the same comment block had just called the legacy one. **This was a correction introduced in round 3 that was itself wrong.** | **Fixed** in source and in this report. The pushed commit message carrying it is unfixable (F28 class). |
+| W2 | `retro_sections` said `evaluated_population` is emitted "on every fact block" of `check-dispatch-audit`. `channel_completeness` publishes no population at all. | **Fixed.** |
+| W3 | A test's own description said "the first two attempts … guarded on `fragment is None`". The first added no guard — it changed only the `_executive-summary` branch. | **Fixed.** |
+| W4 | This report's build-gate line kept the clause "re-run after the round-1 fixes" while the figure beside it was updated every round — a round-3 measurement labelled as a round-1 one. **The F23 defect class recurring in the provenance clause instead of the number.** | **Fixed** — the line now names its tree and shows the whole progression. |
+| W5 | `report-structure.md`'s V6 correction was still over-broad: a `False` value is not payload either, being skipped by identity. | **Fixed.** |
+| W6 + ordinal | The comment above the branch round 3 changed still enumerated only the round-2 vocabulary; and `_fragment_renders_empty`'s docstring said "the third of three attempts" while this record counts four. | **Fixed** — the comment names the case the branch exists for, and the docstring states no count, because a count of attempts goes stale on the next one. |
+
+**A disclosure round 4 asked for, and it is a reversal of this run's own work.** Round 2 shipped
+`test_a_scalar_fragment_is_content_not_emptiness[false]`, asserting a bare `False` fragment **is**
+content. Round 3 replaced it with `test_a_bare_false_fragment_is_empty`, asserting the opposite. The
+behaviour change is disclosed under V2, but the fact that it reverses an assertion this run had
+itself shipped one round earlier was not. It is now.
+
+**A bound round 4 asked to be written down.** A fragment whose only content is a payload-less zero
+(`{'status': 'success', 'findings': []}` with no other key) is omitted rather than written, which
+relocates the *looked-versus-could-not-look* ambiguity from the section body to the section's
+absence. **Bound (B-(b)):** all eight deterministic producers and all seven documented LLM shapes
+carry `plan_id`, so this is reachable only by an LLM deviating from its documented fragment shape.
+
+### The stop record
+
+- **Which exit ended the loop: the BUDGET.** Four rounds were declared before the first dispatch, and
+  four ran. This is not the verifier's "nothing remains" — round 4 answered the stop question
+  **YES**, naming six Condition-A findings.
+- **Everything condition A forbids was fixed anyway.** The budget bounds how often the run
+  *verifies*, never whether it *fixes* what verification already found. All six are fixed above;
+  the two pushed commit messages carrying instances of them cannot be corrected without rewriting
+  history other commits build on, and are recorded here instead.
+- **The verifier's own last answer**, quoted rather than paraphrased: *"Condition B is satisfied.
+  F6, F15, S1 and V4 are all properly characterised survivors with bounds I re-derived by execution
+  and confirmed."* Its Condition-A list is the six above.
+- **Evidence stronger than another read**, named: a 34-input-class exhaustive differential across two
+  trees; execution of all eight producers' `cmd_run`; the repository's committed fragment corpus;
+  replay of every new test against the pre-round module; and two-directional mutation of every guard.
+- **Survivors, each re-put to the verifier in the stopping round and each re-derived by it:** F6
+  (behaviour byte-identical to `origin/main`; no deliverable authorises a drop-side change), F15
+  (`SECTION_SPEC` keys − table keys is exactly the two dead rows), S1 (the only workflow writer of
+  `session_ids` always passes `--append`), V4 (zero heading collisions among the 17 registerable
+  keys), and the payload-less-zero bound recorded just above.
+
+⭐ **Were the late rounds' findings narrower? In KIND, yes. In LOCATION, no — and an earlier version
+of this paragraph got it half wrong, so it is restated precisely.** Rounds 1–3 each found the shipped
+**behaviour** wrong: an instance not a class, the wrong predicate plus a fresh defect, the container
+not the content. Round 4 found the behaviour **right** — there is no fifth attempt to make. But
+round 4's findings were not confined to this run's own record: four of six landed in files that ship.
+**The pattern that survived all four rounds is not the predicate — it is the prose attached to it.**
+Every round corrected the previous round's neighbouring sentences and left new ones; W1 and W2 are
+this run's own prose about this run's own mechanism, and W1 is a round-3 *correction* that was itself
+wrong.
+
+**What residue to assume remains.** Not another behavioural gap in the invariant — that was searched
+for hardest and not found. Assume instead **another statement in this branch's prose that its own
+later change made false**, most likely a restatement of a set the registry has since outgrown, or a
+figure whose stated provenance no longer matches the tree it was measured on. Both classes recurred
+in every one of the four rounds, including the round that introduced the correction.
 
 ## Reviewer participation
 
