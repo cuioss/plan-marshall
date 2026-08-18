@@ -449,10 +449,25 @@ class OpenCodeRuntime(Runtime):
     ) -> str:
         """Record token consumption for OpenCode.
 
-        OpenCode exposes no session transcript, so there is nothing to sum. When
-        ``total_tokens`` is provided it is stored directly and the call succeeds
-        — the ABC's "an explicit count is always honoured" rule. Without it, the
-        op returns ``no-op``.
+        OpenCode exposes no session transcript, so there is nothing to sum.
+        Without ``total_tokens`` the op returns ``no-op``.
+
+        With ``total_tokens`` it returns ``success`` carrying the count — but it
+        **does NOT persist it**. This method reaches no metrics boundary: unlike
+        the Claude implementation, which writes the token cursor and calls
+        ``manage-metrics end-phase`` before reporting success, this one only
+        builds a payload. An operator who passes ``--total-tokens`` here is told
+        the capture succeeded and the number is not recorded anywhere.
+
+        That is a known defect, left as a characterised survivor rather than
+        fixed here: the persistence boundary is target-neutral (it shells out to
+        ``plan-marshall:manage-metrics``) but currently lives in
+        ``claude_runtime``, so wiring it up means relocating a helper across the
+        target boundary — the opposite of a docstring fix, and a change this
+        module should not make on its own. Bound: fires only when a caller passes
+        an explicit count on an OpenCode project, and OpenCode is not a tested
+        runtime. Do not "fix" this by deleting the paragraph; the sentence it
+        replaced claimed the value was stored, which was the actual defect.
         """
         if total_tokens is None:
             return toon_noop(

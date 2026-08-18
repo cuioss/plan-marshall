@@ -683,10 +683,12 @@ class ClaudeRuntime(Runtime):
         shape the ``manage-status`` phase-write drive seam fires on every
         persisted title-state change.
 
-        Best-effort: a no-op when the state is absent / unrenderable
-        (``reason: no_title_state``) or when the feature is configured off
-        (``reason: feature_inactive``). Never raises, and never changes the
-        caller's status or exit code.
+        Best-effort. Never raises, and never changes the caller's status or exit
+        code. Both "nothing to settle" outcomes return ``status: success`` with a
+        ``reason`` — state absent / unrenderable (``reason: no_title_state``) and
+        feature configured off (``reason: feature_inactive``). Claude HAS a render
+        channel, so it never declines this operation; it did its whole job in both
+        cases and reports which one applied.
 
         Returns a success TOON carrying the store entry fields, plus ``reason``
         when the seam had nothing to settle. It carries no ``pushed`` and no

@@ -351,11 +351,17 @@ class Runtime(ABC):
         🔨). When omitted (``None``) the composer applies its default active
         icon — the shape every persisted-title-state change fires.
 
-        Best-effort on every target: a no-op when the state is absent or
-        unrenderable (``reason: no_title_state``) and when the feature is
-        configured off (``reason: feature_inactive``). It never raises and never
-        changes the caller's status or exit code. A target with no render channel
-        to settle state for returns ``no-op``.
+        Best-effort on every target. It never raises and never changes the
+        caller's status or exit code.
+
+        The two "nothing to settle" outcomes are ``success`` carrying a
+        ``reason``, NOT ``no-op``: state absent or unrenderable
+        (``reason: no_title_state``) and feature configured off
+        (``reason: feature_inactive``). A target that HAS a render channel did
+        its whole job in both cases — there was simply nothing to bind — so it
+        reports success and says why. ``no-op`` is reserved for a target with no
+        render channel to settle state for at all, which is the operation-level
+        decline the no-op policy governs.
 
         Args:
             plan_id: Plan identifier whose ``status.json`` supplies the title

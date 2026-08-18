@@ -737,6 +737,43 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     # ------------------------------------------------------------------
+    # ``project install-hook`` is the one operation that takes a target
+    # identifier as an ARGUMENT while the runtime serving it was selected
+    # independently from marshal.json. Two identifiers that can disagree is
+    # a silent-wrong-answer seam: a project whose marshal.json says
+    # ``opencode`` invoked with ``--target claude`` would reach
+    # ``OpenCodeRuntime``, which declines every invocation without reading
+    # the argument at all — so the caller asked for the Claude integration
+    # and was told OpenCode has no hook channel. The inverse mismatch
+    # reaches ClaudeRuntime and reports ``unknown_target``, which is an
+    # error about the wrong thing.
+    #
+    # Refuse the disagreement here, where both identifiers are in scope.
+    # The check fires ONLY when the requested target names a REGISTERED
+    # target: an absolute settings-file path is the documented test and
+    # recovery override, is not a registry key, and still reaches the
+    # implementation that defines it.
+    # ------------------------------------------------------------------
+    if operation == "project install-hook":
+        peek_target = argparse.ArgumentParser(allow_abbrev=False, add_help=False)
+        peek_target.add_argument("--target", default=None)
+        ns_target, _ = peek_target.parse_known_args(remaining)
+        requested = ns_target.target
+        if requested in _REGISTRY and requested != target:
+            print(
+                toon_error(
+                    operation,
+                    "target_mismatch",
+                    f"--target {requested!r} names a different target than this "
+                    f"project's runtime.target {target!r}; the install would be "
+                    f"served by the {target!r} runtime and could not honour the "
+                    f"request. Run this from a {requested!r} project, or change "
+                    f"runtime.target in .plan/marshal.json.",
+                )
+            )
+            return 0
+
+    # ------------------------------------------------------------------
     # Dispatch to the runtime implementation.
     # ------------------------------------------------------------------
     result = _dispatch(runtime, operation, remaining)

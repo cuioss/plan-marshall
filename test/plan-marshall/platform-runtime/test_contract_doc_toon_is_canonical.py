@@ -73,6 +73,13 @@ def _toon_blocks(doc: pathlib.Path) -> list[tuple[int, str]]:
             body = None
         elif body is not None:
             body.append(line)
+    if body is not None:
+        raise AssertionError(
+            f"{doc}: ```toon fence opened at line {start} is never closed. "
+            "The scan would silently DROP this block, and the parametrized test "
+            "would still pass on every other block — so a malformed documented "
+            "payload would read as verified. Close the fence."
+        )
     return blocks
 
 

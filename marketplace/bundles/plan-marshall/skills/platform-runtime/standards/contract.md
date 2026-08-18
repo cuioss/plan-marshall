@@ -671,9 +671,13 @@ The `--store orchestrator` branch additionally establishes the session→epic
 binding (best-effort), which is what lets the render channel resolve the epic and
 deliver its title on subsequent events — the load-bearing reason this seam
 exists. It also reports a configured-OFF terminal-title feature as
-`reason: feature_inactive`. Two no-op outcomes are distinguished on the return:
-`no_title_state` (nothing renderable to settle) and `feature_inactive` (no
-channel is wired up). The return carries **no `pushed` and no `delivery` field**:
+`reason: feature_inactive`. Two "nothing to settle" outcomes are distinguished on
+the return: `no_title_state` (nothing renderable to settle) and
+`feature_inactive` (no channel is wired up). Both are `status: success` carrying
+a `reason` — as the examples below show — **not** `status: no-op`: a target with a
+render channel did its whole job in each case. `no-op` on this operation means
+only that the target has no render channel at all. The return carries **no
+`pushed` and no `delivery` field**:
 both described a repaint this seam does not perform, and delivery is the next
 render event's outcome, not this seam's.
 

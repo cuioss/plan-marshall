@@ -156,15 +156,39 @@ before the verification rounds added a test file.
   mypy clean over 411 production and 763 test files, plugin-doctor `total_issues: 0`. The draft's
   20565 was measured before the verification rounds added tests and is superseded, not corrected —
   it was true when written.
+- Post-merge gate: `origin/main` moved to `b199d94` while the PR was open, making it un-mergeable.
+  The base branch was merged in (`ccf1ff0`) and `./pw verify` re-run over the result:
+  **`=== verify: SUCCESS ===`, 20 892 passed, 14 skipped**, mypy clean over 413 production and 770
+  test files. The rise over 20 655 is `origin/main`'s own new tests, not this branch's. Superseding
+  again by the same rule: each figure was true of the tree it measured.
+  - The merge's two conflicts were both docstring-only, both in `session_capture`. `origin/main` had
+    documented that the session id is APPENDED to `status.metadata.session_ids` rather than replacing
+    a scalar — a target-general fact, so it folded into D2's target-opaque phrasing rather than
+    displacing it. D2's invariant was re-checked after resolution and still holds: zero occurrences
+    of `claude`/`opencode` in `runtime_base.py`, and zero `On Claude:`/`On OpenCode:` pairs anywhere
+    under `platform-runtime/scripts/`.
 - `UV_HTTP_TIMEOUT=600` was set on every `./pw` call. No `uv.lock` churn appeared at any point;
   deliverable paths were staged explicitly, never `git add -A`.
 
 ## Findings
 
-Nine verification rounds ran. Every round found defects in the previous round's fixes. Findings are
-recorded per instance below, grouped by round, with disposition.
+**Eight verification dispatches ran, labelled 1–9 with no round 5.** An earlier draft of this section
+said "nine rounds"; that was the highest label, not a count, and the table below has always had eight
+rows. Round 4's findings were reported under the label "round 5" and every later label inherited the
+off-by-one, which the row label recorded but the surrounding prose never reconciled.
 
-| Round | Findings | Disposition |
+The report **cannot** rule out that a ninth dispatch ran and went unrecorded — nothing in git
+distinguishes "eight dispatches mislabelled" from "nine dispatches, one row missing", and the run's
+own commit messages disagree (`0af667e` calls itself "a third verification round"; `dca6e6f` calls
+itself "a fifth" while auditing "round 4's own corrections"). Eight is what the evidence supports and
+is what is claimed here. A tenth dispatch ran after this section was first written and is recorded
+below.
+
+Every round **after the first** found defects in the previous round's fixes; round 1 was a cold read
+of the ABC with no previous round to audit. Findings are recorded per instance below, grouped by
+round label, with disposition.
+
+| Round label | Findings | Disposition |
 |---|---|---|
 | 1 (cold read of the ABC, no concrete runtime in context) | 8 | all fixed — `0a9796b` |
 | 2 (full verification) | 5 A-class + 1 B survivor + 4 residuals | 5 fixed, survivor closed with 4 tests — `51fffd7`; 1 further site — `5dbab2f` |
@@ -174,17 +198,34 @@ recorded per instance below, grouped by round, with disposition.
 | 7 | 10 A-class | all fixed — `c6f3a3a`, `eb6bd3f` |
 | 8 | 13 A-class | all fixed — `5e2e6ac`, `5888f22` |
 | 9 (harm-focused) | 3 with consequence, none blocking | F1 fixed; F2/F3 recorded as residue |
+| 10 (run-report accuracy + the unreviewed skill branch) | 12 against this report, 8 against the skill branch | 11 report findings fixed; G1/G2 fixed; G3–G5 characterised in the skill PR |
 
 **Defects this run introduced and then had to fix — recorded because they are the run's own error
-rate, not the plan's.** Four invented rationales in four consecutive rounds: a claim that the runtime
-imports "cannot move into this block" (disproved by executing the relocation); a claim that
-`marketplace_paths`' fallback "matches the router's" (the router errors instead); a claim that the
-two registration dicts had "drifted before" (no such commit exists); a claim that "a comment line
-ends an isort group" (ruff's own fix inserts a blank line). Two invented counts: "three edits"
-corrected to "four dispositions", itself corrected — there are five, and the fix was to stop counting
-and name them. One invented wire format: the `project install-hook` TOON examples were written by
-hand and documented an inline list syntax the serializer has never produced, plus a render-event
-label that does not exist.
+rate, not the plan's.**
+
+*Four invented rationales.* An earlier draft called these "four in four consecutive rounds", which
+made the error rate read as a bounded burst. Traced to their introducing commits, they are not
+consecutive and one was not a round's at all — they span the whole run, starting with the original
+deliverable:
+
+| Invented rationale | Introduced by | Found by |
+|---|---|---|
+| the runtime imports "cannot move into this block" (disproved by executing the relocation) | `51fffd7` — round 2's fix | round 3 |
+| `marketplace_paths`' fallback "matches the router's" (the router errors with `unknown_target` instead) | `29c58d6` — **the D3 deliverable, not a round** | round 2 |
+| the two registration dicts had "drifted before" (no such commit exists) | `ddf9d23` — round 6's fix | round 7 |
+| "a comment line ends an isort group" (ruff raises `I001` and fixes it by inserting a **blank** line) | `c6f3a3a` — round 7's fix | round 8 |
+
+*One invented count, not two.* An earlier draft claimed *"three edits" corrected to "four
+dispositions", itself corrected* — a correction chain that never happened. The two are unrelated
+claims in different files. "Three edits" was the registration comment's cost-of-adding-a-target and
+was **true when written**; `ddf9d23` retired it by moving the imports into the block. The invented
+count is `project_install_hook`'s Returns clause, which went three → four → five before the fix was
+to stop counting and name the dispositions instead (`installed`, `already_present`, `migrated`,
+`already_present_other`, `overwritten`).
+
+*One invented wire format.* The `project install-hook` TOON examples were written by hand and
+documented an inline list syntax the serializer has never produced, plus a render-event label that
+does not exist.
 
 **The most consequential single finding was in the original change.** `menu-healthcheck.md` told an
 operator that on `status: error` the response "names in `settings_path`" the file whose permissions
@@ -197,31 +238,57 @@ the registration block on the grounds that a comment ends an isort group — rej
 (ruff raises `I001` and fixes it by inserting a blank line), and the comment now records the real
 constraint. Round 8's B2 (removing the placeholder exemption introduces forward-compat fragility for
 a future template) was accepted as real but judged the lesser cost: the exemption was one commit old
-and had already hidden a defect.
+and had already hidden a defect. **Attribution correction:** an earlier draft credited that second
+finding to round 8 while also listing `5e2e6ac` among round 8's fixes — but `5e2e6ac` *is* the
+exemption removal, and a round cannot both produce a commit and raise a finding against it. The
+finding came from the self-audit inside `5e2e6ac` itself, whose message examines the preceding commit
+`c6f3a3a`. Round 8's dispatch is not its source.
 
 ### The stop record
 
-- **Which exit ended the loop, and when.** The original budget was **6 rounds, declared before the
-  first dispatch** (the plan named none, so the run did). It was **exhausted at round 6** — the
-  budget exit, not the verifier exit. Everything condition A forbids was fixed regardless, because A
-  is not subject to the budget. The operator then granted **five further rounds**; rounds 7–9 ran and
-  the operator's grant is not exhausted. **The loop is being stopped by judgment, not by exhaustion**
-  — see the residue note below.
+- **Which exit ended the loop, and when.** The skill names two exits: (i) the verifier answers that
+  nothing remains, and (ii) the declared budget is spent. **The loop ended on exit (i), at the round
+  labelled 9**, whose verdict is quoted below. The operator's grant of five further rounds was **not**
+  spent — two remained — so exit (ii) was never reached at the end.
+
+  An earlier draft said the loop stopped "by judgment, not by exhaustion". Judgment is not one of the
+  two exits, and naming it instead of an exit left the required answer unstated while the contract
+  check marked the row done. The accurate statement is exit (i), with grant unspent.
+
+  On the budget's own history: the original budget was **6 rounds, declared before the first dispatch**
+  (the plan named none, so the run did). An earlier draft said it was "exhausted at round 6" — that
+  does not follow from the table, because the row labelled 6 was the **fifth** dispatch under the
+  off-by-one recorded above, so only five of the six were spent when the operator was asked. The ask
+  at that boundary was therefore early rather than at exhaustion. Everything condition A forbids was
+  fixed regardless, because A is not subject to the budget.
+
+  Two further dispatches ran after this record was first written: the round labelled 10, whose
+  findings are folded in above and which is the source of every correction in this bullet, and the
+  external review on PR #1291.
 - **The verifier's own last answer** (round 9, quoted, not paraphrased): *"No. Nothing false remains
   that a reader or operator would act on."* and *"Ship it. Open the PR now. … Nothing must be fixed
   first."*
 - **Evidence stronger than a read.** Round 9 did not re-read: it executed every documented command
   against three throwaway projects (`claude`, `opencode`, an unregistered target) and compared
-  outputs. Three of the five `project install-hook` captures reproduce **byte-for-byte**. The
+  outputs. Three of the five `project install-hook` captures reproduce **exactly once the settings
+  path is normalised** — an earlier draft said "byte-for-byte", which cannot be literally true and
+  overstated the stop record's strongest evidence claim: `contract.md` states that the documented
+  captures had the temporary directory rewritten to a readable repository path, so a fresh invocation
+  against a throwaway project necessarily emits a different `settings_path` and only the OpenCode
+  decline could match unnormalised. Every other field matched without normalisation. The
   `unknown_overwrite_key` rejection, the `overwritten` dispositions, the empty-stdout/stderr-outcome
   split of `session render-title`, and the OpenCode decline were all reproduced live. Separately, the
   22-block automated TOON normalisation was proved meaning-preserving by re-parsing all 81 blocks
   before and after: exactly three semantic differences, all of them the deliberate `target:`
   correction.
 - **Were the late rounds' findings narrower?** **No — and this is the honest answer, not the
-  convenient one.** Rounds 5→8 went 7 → 8 → 10 → 13 A-class findings. Round 7 judged them *wider*
-  than earlier rounds', and round 8 agreed. Only round 9, under a deliberately narrowed
-  harm-focused charter, returned a short list.
+  convenient one.** The A-class counts **rose**: 7 → 8 → 10 → 13, across the rounds labelled
+  **3, 6, 7 and 8**. An earlier draft attributed that sequence to "rounds 5→8", which the table above
+  does not support — the round labelled 5 recorded six findings, and 7 is the count for round 3. The
+  sequence and the conclusion are unchanged; only the row labels were wrong. Round 7 judged its
+  findings *wider* than earlier rounds', and round 8 agreed. Only round 9, under a deliberately
+  narrowed harm-focused charter, returned a short list — and narrowing the charter is how that short
+  list was obtained, which is a fact about the question asked, not evidence that little remained.
 - **What residue to assume remains.** Assume the documentation-truth sweep is **incomplete, not
   exhausted**. Of round 8's thirteen findings, six were introduced by round 7's own fixes or were
   n−1-of-n misses within them — the loop was generating roughly as many defects as it removed. A
@@ -242,6 +309,8 @@ and had already hidden a defect.
 | S1 | `marketplace_paths._invoke_layout_op`'s `except Exception` swallows every failure with no diagnostic; four of five failure exits are uncovered | **(b)** Every reachable failure degrades to `_DEFAULT_SKILL_ROOTS` / `_DEFAULT_BUNDLE_CACHE_ROOTS`, which the lockstep tests pin equal to what the default target's op actually returns — so on Claude the fallback *is* the correct answer. On OpenCode it would silently narrow skill discovery to `.claude/skills`; OpenCode is not a tested runtime. Pre-existing; this branch did not widen it | Yes — round 9: "Not reachable as user harm" |
 | S2 | `test_layout_op_resolves_each_registered_target_distinctly` asserts pairwise-distinct roots; a third target legitimately sharing a root list turns it red with no defect | **(b)** Cannot fire with two registered targets, both verified distinct. Fires visibly at target-add time, never silently. Named in the test's own docstring with the remedy | Yes — round 9: "maintenance friction… no user harm" |
 | S3 | In a container with no `HOME` and no passwd entry, `claude_runtime.py`'s module-level `Path.home()` makes the whole lockstep file error at collection, so its `pytest.skip` guard never runs | **(b)** Pre-existing (`86d5298`), outside this plan's surface, and **not newly reachable**: `_invoke_layout_op` now imports `claude_runtime` on the OpenCode path too, but OpenCode's own `layout_skill_roots` calls `Path.home()` anyway, so the outcome is identical before and after. Documented in the guard's docstring | Yes — round 9: "No regression" |
+| S4 | `OpenCodeRuntime.metrics_capture` reports `status: success` for an explicit `--total-tokens` while persisting nothing. The Claude implementation writes the token cursor and calls `manage-metrics end-phase` before succeeding; the OpenCode one reaches no boundary at all, so the count is acknowledged and lost | **(b)** Pre-existing; this branch rewrote the docstring that asserted the false behaviour and has now corrected it to state what the code does. Fires only when a caller passes an explicit count on an OpenCode project, and OpenCode is not a tested runtime. **Not fixed here** because the persistence boundary is target-neutral in substance but lives in `claude_runtime`, so wiring it up means relocating a helper across the target boundary — a plan, and one that would otherwise add exactly the coupling this epic removes. Inventory row added | Raised by CodeRabbit on PR #1291, confirmed by reading both implementations |
+| S5 | `platform-runtime/SKILL.md` restates per-target no-op status in a shared skill body — nine of 24 op rows end in "no-op on OpenCode" | **(b)** D2's declared surface was `runtime_base.py`, so no claim in this report is falsified by it. A third target makes those nine rows silently incomplete rather than merely unstated, which is a documentation defect at target-add time, not a runtime one. Inventory row added | Derived while resolving the `origin/main` merge, which edited one of the nine rows |
 
 ### Residue for a later plan (not this plan's surface)
 
@@ -257,10 +326,19 @@ and had already hidden a defect.
   `health_check` state "(success or error)"; both `layout_*` ops state no status vocabulary. A target
   that cannot implement them has nothing to point at. Contract-shape gap, not a Claude coupling;
   recorded in the inventory's §A as explicitly outside what its detections covered.
-- **19 TOON-fenced blocks outside `platform-runtime/standards/` do not round-trip** — mostly
-  `marshall-steward` tab-tables mislabelled as `toon`, plus two genuine payloads in
-  `error-handling.md`. The new doc-pin's guarantee stops at the platform-runtime standards.
-- **`_claude_runtime_impl.py:50` hardcodes `"valid targets are: claude, opencode"`** inside the
+- **348 TOON-fenced blocks outside `platform-runtime/standards/` do not round-trip**, across roughly
+  130 files. The new doc-pin's guarantee stops at the platform-runtime standards. Worst offenders:
+  `manage-architecture/standards/client-api.md` (16), `manage-api.md` (15), `manage-status/SKILL.md`
+  (14), `tools-integration-ci/standards/api-contract.md` (13).
+
+  An earlier draft put this at **19** and described it as "mostly `marshall-steward` tab-tables
+  mislabelled as `toon`, plus two genuine payloads in `error-handling.md`". That is the
+  `marshall-steward` subtotal, not the tree-wide figure — the sweep had been run over one bundle and
+  its result written up as though it were the whole. The qualifier is true of the 19 and false of the
+  348, and a later plan sized off the old number would have scoped this at about 5% of its real
+  extent. Re-derived with the doc-pin's own oracle over every tracked `.md`/`.adoc` outside
+  `platform-runtime/standards/`.
+- **`_claude_runtime_impl.py:51` hardcodes `"valid targets are: claude, opencode"`** inside the
   Claude runtime while the router derives the same message from `_REGISTRY`. A target enumeration in
   a concrete runtime — small, but exactly this epic's subject.
 - **`platform-runtime/SKILL.md` carries D2's coupling one file over.** Nine of the op table's 24 rows
@@ -270,6 +348,30 @@ and had already hidden a defect.
   target-coupled version of the same 24 operations. Derived while resolving the `origin/main` merge,
   which edited one of those nine rows. Added to the inventory's §C rather than fixed here: fixing it
   is a nine-row rewrite plus a no-op-surfacing decision, which is a plan, not a merge resolution.
+- **Two structural refactors CodeRabbit raised on PR #1291, both real, both larger than a review fix.**
+  (1) *One target-registration source of truth.* `_REGISTRY`, `_TARGET_BOOTSTRAP_LIBS`,
+  `_DEFAULT_TARGET` and `_DEFAULT_RUNTIME_TARGET` remain four independent definitions; D3 made them
+  adjacent and added lockstep tests, which **detect** drift after the fact but do not **prevent** an
+  incomplete registration. The stronger shape is one record per target that owns its class and
+  bootstrap libs, with every view derived from the record set. D3's declared goal was "a registration
+  is one contiguous edit", which is met; "a registration is structurally impossible to do partially"
+  is the next step and is not claimed here.
+  (2) *A content-level pin for the terminal-title inventory.* `_DISPLAY_RENDER_ENTRIES` is
+  authoritative but its labels are restated in `_claude_runtime_impl` and in four `contract.md`
+  blocks. The new doc-pin checks TOON **shape**, so a wrong label or status value passes it — a limit
+  its own docstring already states. Generating those blocks from the runtime, or diffing them against
+  it, would close the gap the pin deliberately leaves open.
+- **`health_check`'s documented examples do not match its serialized output** — the `display` detail
+  is built by `_diagnose_display_entries` and never reads "render-title hook entry present", and the
+  `hook` check probes both `.claude/settings.json` and `.claude/settings.local.json` rather than the
+  one file the examples show. Same family as the first residue item above, and the same fix closes
+  both: derive the documented health-check examples from a captured run.
+- **The plan's Goal is wider than D2's completion criteria.** `plan.md` says a third target can
+  implement or decline *every* `Runtime` operation from `runtime_base.py`; D2's criteria only check
+  that target-enumerating text is gone. `project_initial_setup`, `health_check`, `layout_skill_roots`
+  and `layout_bundle_cache_root` still document no way to decline (the third residue item above), so
+  the Goal as written is not fully met by the criteria as written. Recorded rather than resolved: the
+  honest reading is that D2 delivered its criteria and the Goal overreached them.
 
 ## Reviewer participation
 
@@ -316,8 +418,8 @@ and `contract.md` (165/110, the deliverable itself). Dropping neither is possibl
 | 4 Pushed | **done** — no unpushed commit remains |
 | 5 Build gate | **done** — 11 `*.py` files changed; `./pw verify` green at finalisation |
 | 6 Verification sub-agent | **done** — nine rounds, stop record above |
-| 7 PR cycle | **pending at write time** — the PR is opened immediately after this commit, which is why the report cannot carry its number (Step 8 condition 3 requires the report to land *in* the PR) |
-| 8 Merge gate | **pending** — conditions 1–3 evaluated after the PR opens |
+| 7 PR cycle | **done** — PR [#1291](https://github.com/cuioss/plan-marshall/pull/1291). The row first read "pending at write time", on the reasoning that the report cannot carry a number that does not exist yet; that is true of the first commit and stops being true once the PR is open, so the row is updated in place rather than left as a snapshot. Review cycle recorded under Reviewer participation: CodeRabbit reviewed on the second push after a rate-limit window, `sourcery-ai` declined on diff size, `cuioss-review-bot` never ran |
+| 8 Merge gate | **pending** — conditions 1–3 evaluated after CI settles on the review-fix commit |
 | 8 Bridge | **done** — no status or bookkeeping write landed under `doc/plans/` outside this plan's directory. The `coupling-inventory.md` and epic `README.md` edits are operator-directed deliverables, recorded above as outside the plan's Expected surface |
 | 9 This check | **done** — this table |
 | 9 What have we learned | **done** — below |
@@ -347,11 +449,18 @@ that author the number.
 found, whether findings are narrowing or merely fewer, and every open survivor). A granted extension
 is another five on the same terms. The headless carve-out is preserved and its rationale made
 explicit, so a later editor does not simplify it away: an unconditional ask strands every unattended
-run at round five, which is worse than stopping with survivors disclosed. Six sites restating the
-budget rule moved together.
+run at round five, which is worse than stopping with survivors disclosed. **Seven** sites restating the
+budget rule moved together (an earlier draft said six; the seventh is the escalation rule in the
+closing discipline list).
 
-*Validated by this run:* the operator extension at round 6 → 7 is exactly the checkpoint the change
-describes, and it worked — it surfaced the decision at the moment it was load-bearing.
+*NOT validated by this run.* An earlier draft claimed the operator extension at the round 6 → 7
+boundary "is exactly the checkpoint the change describes, and it worked". It is not, and the
+distinction is the whole point of the change. The change describes **the run asking** — surfacing
+rounds spent, what the last round found, and every open survivor, via `AskUserQuestion`, at the
+boundary. What actually happened is that **the operator volunteered** further rounds without being
+asked. The run never issued the ask, so the mechanism the change introduces was never exercised; what
+the run demonstrates is the *absence* the change is meant to fix, not the change working. Calling
+that validation would have been the report certifying a mechanism on evidence that does not touch it.
 
 **A second lesson this run paid for, not yet proposed as a contract change.** The skill's
 verification loop has no mechanism requiring a documentation claim to be *pinned to its producer*.
@@ -364,7 +473,7 @@ this run's evidence, so it is recorded rather than proposed.
 
 ## Residue
 
-Listed in the Findings section above under "Residue for a later plan", plus the three characterised
-survivors S1–S3. The highest-value item is the `health_check` `permissions` detail naming
+Listed in the Findings section above under "Residue for a later plan", plus the five characterised
+survivors S1–S5. The highest-value item is the `health_check` `permissions` detail naming
 `settings.local.json` when the check resolved `settings.json` — the one residue where an operator
 acting on the output touches the wrong file.
