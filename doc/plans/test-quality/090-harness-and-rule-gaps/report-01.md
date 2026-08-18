@@ -589,7 +589,9 @@ and it is where the next defect should be expected.
 
 ## Reviewer participation
 
-_Filled in after the PR's reviewers report._
+The PR's reviewers reported after this run's session ended. The participation table, its
+N-of-M coverage and the § Step 8 shortfall disclosure are recorded by the run that worked the review
+cycle and the merge gate — `report-02.md` § Reviewer participation.
 
 ## Cost
 
@@ -604,11 +606,12 @@ _Filled in after the PR's reviewers report._
 
 ## Contract check (Step 9)
 
-_Filled in as the final pre-merge commit._
+This run stopped before the merge gate, so its final pre-merge commit was never made. The Step 9
+contract check covering both runs is in `report-02.md` § Contract check.
 
 ## What have we learned (Step 9)
 
-_Filled in as the final pre-merge commit._
+Recorded in `report-02.md` § What have we learned, with the evidence the second run produced.
 
 ## Residue
 

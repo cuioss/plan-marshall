@@ -17,6 +17,7 @@ Two contracts of ``test/conftest.py``'s loader pair:
 """
 
 import sys
+from pathlib import Path
 
 import pytest
 from _loader_contract_fixtures import _scan_test_tree
@@ -208,8 +209,14 @@ def test_the_scan_finds_the_loader_call_sites(tree_scan):
     """
     registered, plain, _ = tree_scan
 
+    # The site is identified by ROLE, not by filename. The shared fixture helper
+    # performing this load belongs to another slice, and pinning its name made this
+    # control fail on a rename while the walker itself was answering correctly — the
+    # control has to survive its subject being renamed or it measures the wrong thing.
+    # A shared fixture helper is a non-test module; pytest collects only ``test_*``.
     loaders = registered['_build_execute_factory']
-    assert any(site.endswith('build_test_helpers.py') for site in loaders), loaders
+    helper_sites = sorted(site for site in loaders if not Path(site).name.startswith('test_'))
+    assert helper_sites, loaders
     assert 'conftest.py' in plain['_build_execute_factory']
 
     # A parse_ns site too, because it resolves by a different rule: parse_ns takes
