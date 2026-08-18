@@ -172,6 +172,72 @@ def test_an_unclosed_flow_sequence_does_not_swallow_the_following_fields(
     assert _declared_tokens(f'---\nname: demo\n{frontmatter}\n---\n\n# Body\n') == expected
 
 
+# The fold boundary is a HEURISTIC for "a new key starts here", and
+# :func:`_join_flow_sequence` documents exactly where it is wrong: a
+# digit-initial or quoted key is missed and folded in, and a bare URL at
+# column 0 is treated as a key and ends the fold early. Both clauses were
+# unguarded — each could be falsified in code with the suite fully green —
+# so each is pinned here, together with the SAFETY property that makes them
+# tolerable: every such misread is rejected, never mis-accepted.
+_DOCUMENTED_MISREADS = {
+    'digit-initial-key-is-folded-in': (
+        'targets: [claude,\n2fa: no',
+        ['[claude', '2fa: no'],
+    ),
+    'quoted-key-is-folded-in': (
+        'targets: [claude,\n"q": v',
+        ['[claude', 'q": v'],
+    ),
+    'bare-url-at-column-zero-ends-the-fold': (
+        'targets: [claude,\nhttps://example.com',
+        ['[claude'],
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    ('frontmatter', 'expected'),
+    [pytest.param(f, e, id=k) for k, (f, e) in _DOCUMENTED_MISREADS.items()],
+)
+def test_the_fold_boundary_misreads_exactly_where_it_is_documented_to(frontmatter, expected):
+    """Pin the two misreads :func:`_join_flow_sequence` names, so neither can drift."""
+    assert _declared_tokens(f'---\nname: demo\n{frontmatter}\n---\n\n# Body\n') == expected
+
+
+@pytest.mark.parametrize(
+    'frontmatter',
+    [pytest.param(f, id=k) for k, (f, _e) in _DOCUMENTED_MISREADS.items()],
+)
+def test_every_documented_misread_is_rejected_never_mis_accepted(tmp_path, frontmatter):
+    """The safety property the fold's whole design rests on.
+
+    A misread may widen or truncate the text that gets REJECTED; it must never
+    produce a scope the author did not write. This is the clause a reviewer
+    would have to take on trust otherwise — the docstring asserts it, and
+    nothing else in the suite would notice if it stopped holding.
+    """
+    with pytest.raises(TargetScopeError):
+        read_target_scope(_component(tmp_path, frontmatter))
+
+
+@pytest.mark.parametrize(
+    'frontmatter',
+    [
+        pytest.param('"targets": [claude]', id='double-quoted-key'),
+        pytest.param("'targets': [claude]", id='single-quoted-key'),
+    ],
+)
+def test_a_quoted_key_is_still_a_declaration(tmp_path, frontmatter):
+    """``"targets":`` is the same key as ``targets:`` to any YAML reader.
+
+    Missing it failed OPEN: the declaration went unseen and the component
+    shipped to every target with nothing reported. Five verification rounds
+    did not catch it, which is why the quoted spellings are pinned rather
+    than assumed unreachable.
+    """
+    assert read_target_scope(_component(tmp_path, frontmatter)) == {'claude'}
+
+
 def test_a_flow_continuation_may_quote_a_colon():
     """A quoted value containing a colon is ordinary YAML and must fold in.
 

@@ -69,7 +69,7 @@ rather than reported here:
 - quality-gate: `ruff … All checks passed!`, `mypy … Success: no issues found in 415 source files`,
   `SPDX-header check passed`, plugin-doctor `total_issues: 0`
 - test-compile: mypy over 775 test files, clean
-- module-tests: **21042 passed, 14 skipped** — 0 failed, 0 errors
+- module-tests: **21055 passed, 14 skipped** — 0 failed, 0 errors
 
 No lockfile churn: `git status --porcelain` was empty after the build, and every commit staged
 deliverable paths explicitly — by name, or with `git add -A --` bounded by an explicit pathspec, which
@@ -77,8 +77,13 @@ sweeps nothing outside the named paths. No commit staged the whole worktree.
 
 ## Findings
 
-Source key: **V1**–**V5** = pre-PR verification sub-agent, rounds 1 to 5. **S** = self-found
-(mutation sweep or my own re-read). One row per instance.
+Source key: **V1**–**V6** = pre-PR verification sub-agent, rounds 1 to 6. **S** = self-found
+(mutation sweep or my own re-read).
+
+One row per finding, and a row states its own instance count where it covers more than one site (`F14–F17`
+is four; a row saying "both copies" or "both suites" is two). Round totals below count ROWS, so they
+understate instances — round 5's 19 rows are 18 condition-A instances plus survivors; round 6's 11 rows
+are 13 instances.
 
 ### Round 1
 
@@ -108,7 +113,7 @@ Source key: **V1**–**V5** = pre-PR verification sub-agent, rounds 1 to 5. **S*
 | R2-04 | V2 | "the gate saw the whole branch" was false of HEAD: the recorded `./pw verify` predated the round-1 fix commit. | **Fixed** — the claim now names the commit its figures come from, and `./pw verify` was re-run after the round-2 commit. |
 | R2-05 | V2 | Round 1 corrected "one exception" to "two"; still short — variant emission and the excluded cache directories are also exceptions, and `claude/emitter.py`'s docstring already listed them, so the two disagreed. | **Fixed** — the list defers to the emitter rather than restating it. |
 | R2-06 | V2 | The new sentence "That list is the **closed** set of supported top-level skill fields" made a pre-existing omission load-bearing: `implements` is a supported skill field, documented fifteen lines below the list it is missing from. | **Fixed** — `implements` added to both copies of the list. |
-| R2-07 | V2 | A flow sequence spanning lines (`targets: [claude,` continued next line) was truncated to its first physical line, yielding the token `[claude`. Same class as B1; the round-1 fix reached block sequences and inline comments but not flow sequences. | **Fixed** — both parsers fold continuation lines in; pinned by three tests per suite. |
+| R2-07 | V2 | A flow sequence spanning lines (`targets: [claude,` continued next line) was truncated to its first physical line, yielding the token `[claude`. Same class as B1; the round-1 fix reached block sequences and inline comments but not flow sequences. | **Fixed** — both parsers fold continuation lines in; pinned by three tests per suite at the time (five per suite at HEAD, after rounds 3–5 each added a fold fixture). |
 | R2-08 | V2 | `component_targets._strip_comment`'s comment-vs-value guard had NO test — deleting it left the suite green, so the documented behaviour could regress silently. | **Fixed** — three parametrised cases; deleting the guard now reddens three tests. |
 | R2-09 | V2 | Same guard, same gap, in the doctor's copy — whose docstring claims it "mirrors the generator's parser so the two agree", with nothing pinning the agreement. | **Fixed** — same three cases in the doctor suite. |
 | R2-10 | V2 | M2's falsity survived verbatim in `rule-catalog.md` § Coverage boundary. | **Fixed** |
@@ -191,7 +196,7 @@ What was done instead, and what it establishes:
 | Evidence | Scope | Result |
 |---|---|---|
 | Mutation sweep, 18 mutations across both parsers, both emitters, the manifest generator and the doctor rule | Every guard the plan's D1/D2 introduced | **18/18 reddened**, no survivors, tree byte-restored and re-checked clean |
-| Mutation sweep, 4 further mutations after round 2 (`_strip_comment` guard and the flow join, each parser separately) | The round-2 additions | **4/4 reddened**, 3 tests each |
+| Mutation sweep, 4 further mutations after round 2 (`_strip_comment` guard and the flow join, each parser separately) | The round-2 additions | **4/4 reddened**. Re-derived at HEAD by round 6: the `_strip_comment` pair reddens 3 tests per suite, the flow-join pair 5, because rounds 3–5 each added a fold fixture |
 | Round 4's mutation of `_TOP_LEVEL_KEY_RE` → `False` | The round-3 boundary | Reddens in both suites |
 | Round 5's mutation of `_DESCRIPTION_UNKNOWN` | The doctor's operator-facing text | Reddens |
 | **Replay against the pre-fix parser** (round 5's method, repeated here for the corrected fixture) | The two shapes R4-4 restored | Both **red before, green after** — a true red-first demonstration, obtained after the fact |
@@ -199,6 +204,41 @@ What was done instead, and what it establishes:
 A mutation that reddens a test proves the same property red-first proves — that the test discriminates
 the defect — and it proves it for guards whose defect no longer exists to be reintroduced. It does not
 substitute for the plan's literal instruction, which is why the shortfall is stated first.
+
+### Round 6
+
+Rounds 6–10 were granted by the operator after the default budget was spent (§ Budget escalation).
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| R6-01 | V6 | Round 5's own fix introduced a new falsity: "**This list** is: `name`, `description`, …" has no antecedent (the only preceding list is the *prohibited* fields, so the first reading is backwards) and, taken against its heading, asserts that `name`/`description`/`user-invocable`/`mode` are OPTIONAL — refuted twice in the same file. Fifth consecutive round in which prose written to close a finding was itself false. | **Fixed** — the sentence now names what it covers ("the required ones above and the optional ones below"). |
+| R6-02 | V6 | The F8 survivor bound claimed the 4761-case differential "proves the family is the **only** one producing accept/reject divergence" — refuted by B3, two rows below in the same table, and by the quoted-key defect below. | **Fixed** — the bound now states what the differentials actually establish: that the *fold* introduces no divergence in the bracketed form. |
+| R6-03a | V6 | **Behavioural, fail-OPEN, undisclosed.** A quoted top-level key — `"targets": [claude]` — was not recognised as a declaration, so the component shipped to **every** target with nothing reported. Valid YAML; PyYAML reads it as a real `targets` key. Five rounds missed it. | **Fixed, not merely disclosed** — the key is unquoted before comparison, and both quoted spellings are pinned. |
+| R6-03b | V6 | The same miss in the doctor's mirror, so the authoring-time net missed it too. | **Fixed** |
+| R6-04a | V6 | Round 5's answer to "the docstring is false" was a longer, more precise docstring with **no test behind any of it**. Proven by mutation: widening the boundary regex to match digit-initial keys, and adding `(?!//)` so a bare URL no longer ends the fold, each falsify a documented clause in code and leave the suite at **41 passed, 0 failed**. | **Fixed** — both misreads and the safety property (every misread is rejected) are now pinned. |
+| R6-04b | V6 | Same, in the doctor suite (27 passed, 0 failed under both mutations). | **Fixed** |
+| R6-05 | V6 | The Red-first table said the flow-join mutation reddens "3 tests each"; it reddens 5 per suite at HEAD, because rounds 3–5 each added a fold fixture. | **Fixed** — re-derived, and the figure now says which pair reddens which count. |
+| R6-06 | V6 | The same stale count at the R2-07 disposition. | **Fixed** |
+| R6-07 | V6 | The fold docstring's "no accept/reject divergence from PyYAML **anywhere in this bracketed form**" is unbounded as written, and a duplicate top-level key is a well-formed, entirely bracketed counter-example. | **Fixed** — scoped to divergence *arising from this fold*, with the duplicate-key exception named. |
+| R6-08 | V6 | The Findings lead-in states "One row per instance"; the round-5 table breaks it three times, so the round totals count rows rather than instances. | **Fixed** — the convention now matches what the tables do, and says so. |
+| R6-09 | V6 | F8's bound leans on "the standards section documents inline and block form only" (true) while `_split_inline`'s docstring and the `inline-bare` fixtures advertise the bare spelling the bound relies on nobody using. | **Fixed** — the bound names the tension rather than resting on the narrower reading. |
+| R6-10 | V6 | The doctor's cross-reference imported a guarantee its own module does not carry: "why **every** misread is rejected" is true of the build, but the analyzer returns `[]` with no `marketplace/targets/` tree, so a misread is silently ignored there. | **Fixed** |
+| R6-11 | V6 | The Residue's "(156 skills)" measures on-disk `SKILL.md` files while the sentence it corrects says *registered* — a `plugin.json` count. | **Fixed** — the row states the drift without substituting a figure from a different population. |
+
+**Round 6's evidence, and why it is the strongest on this branch.** It did not merely re-read: it built
+its own corpora and one of its results proves a GAP rather than confirming a claim.
+
+- **Two mutations that positively demonstrate missing coverage** — each falsifies a documented clause
+  in code while both suites stay fully green. No amount of reading establishes an absence of coverage;
+  this does. It is what produced R6-04.
+- **Directed falsification of the safety claim**: 20,580 bracketed shapes constructed specifically to
+  smuggle a valid scope through a misread → **0 accepts**. The claim survived an attack built to break
+  it.
+- **Two independent PyYAML differentials** (6,768 and 16,806 well-formed shapes) → 0 accept/reject and
+  0 scope divergence in the bracketed form, and a **24,046-shape parser-vs-parser differential** → 0
+  disagreements, generalising round 5's 4761/0 at five times the corpus.
+- **A family-level oracle comparison across 21 declaration families** — which is what surfaced R6-02
+  and the R6-03 fail-open, both invisible to any amount of reading.
 
 ### Cold read (the plan's § Verification requirement)
 
@@ -278,7 +318,7 @@ still rests on reading — which is precisely where round 5 found most of what i
 
 | Survivor | Kind | (a) proof / (b) bound |
 |---|---|---|
-| **F8** — plain-scalar `targets: claude` continued on an indented line is read as its first line only, accepting a scope PyYAML would reject | Behavioural, fail-**open** | **(b)** Reach: one component, scoped to a set YAML never declared. It cannot reach a component with no `targets:` field, and the 4761-case differential proves the family is the *only* one producing accept/reject divergence — the bracketed form has none. No component in the tree uses the plain-scalar multi-line form; the standards section documents inline and block form only. |
+| **F8** — plain-scalar `targets: claude` continued on an indented line is read as its first line only, accepting a scope PyYAML would reject | Behavioural, fail-**open** | **(b)** Reach: one component, scoped to a set YAML never declared. It cannot reach a component with no `targets:` field. It is **not** the only family diverging from PyYAML — B3 below is another, and a quoted top-level key was a third until round 6 fixed it; what the differentials establish is narrower, that the *fold* introduces no divergence in the bracketed form. No component in the tree uses the plain-scalar multi-line form. The standards section documents inline and block form only — but note `_split_inline`'s docstring and the `inline-bare` test fixtures do advertise the single-line bare spelling, so an author could reach the multi-line form by extending a spelling the code invites. |
 | **F9** — `targets:` plus an indented scalar reports "declares an empty list" | Diagnostic text | **(a)** The build outcome is unchanged (rejection); only the message misnames the defect. It cannot change what the deliverable does. |
 | **B3** — a duplicate top-level `targets:` resolves to the first declaration, silently | Behavioural | **(b)** Verified again at HEAD: cannot narrow below the first declaration and cannot widen past "every target"; the result is then fully validated. |
 | **B5** — OpenCode's `_prune_stale_outputs` runs only on a full regeneration, so a `--bundles` subset emit can leave a scoped-out component behind | Behavioural, pre-existing | **(b)** Bounded to scoped emits. The normal build and both drift checks run full regenerations; the constraint is documented at the function with its reason. Unchanged by this plan — reachable through a new cause, not newly created. |
@@ -319,7 +359,7 @@ Four dispositions above defer here; this is that record.
 | The `#optional-fields-2` anchor ordinal in `frontmatter-standards.md` is unguarded — `broken-relative-link` explicitly skips pure-anchor links, so inserting an earlier `### Optional Fields` heading would silently retarget it (round 4, R4-8) | Correct today (headings at 80/149/198). Guarding it means widening a plugin-doctor rule's scope, which is outside this plan | A plugin-doctor rule-scope change |
 | The `rule-provenance.md` § "Target-scope rule" lead-in is unguarded prose — the provenance test checks only that a *row* exists (round 4, R4-10) | Same class as the anchor: the guard would be a new doctor capability, not a fix to this change | With R4-8 |
 | `rule-provenance.md` line 247's "**Five rules** … NOT in `quality-gate`" stands over an 8-row table whose last three rows are `cmd_quality_gate` (round 5) | **Pre-existing and not branch-introduced** — round 5 confirmed the section is byte-identical to `origin/main` after this plan's row was moved out of it | A provenance-table audit |
-| `CLAUDE.md`'s "157 registered components (153 skills…)" has drifted (156 skills) | Pre-existing, already tracked as deferred in another plan's report | Already owned elsewhere |
+| `CLAUDE.md`'s "157 registered components (153 skills…)" has drifted | Pre-existing, already tracked as deferred in another plan's report. The drift is real; this report deliberately states no replacement figure, because `CLAUDE.md` says *registered* — a `plugin.json` count — and the obvious substitute (156 on-disk `SKILL.md` files) measures a different population | Already owned elsewhere |
 
 **Behavioural survivors** — see § Findings → "Stop record" for each one's bound.
 

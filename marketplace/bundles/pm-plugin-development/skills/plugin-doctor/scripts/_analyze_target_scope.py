@@ -151,7 +151,10 @@ def _join_flow_sequence(value: str, rest: list[str]) -> str:
     so an unclosed sequence cannot absorb the fields that follow it. That
     pattern approximates "a new key starts here" and is wrong in both
     directions — see ``component_targets._join_flow_sequence`` for what it
-    misses and why every misread is rejected rather than mis-accepted.
+    misses. There, every misread is REJECTED by the build. Here the outcome
+    is weaker by design: with no ``marketplace/targets/`` tree to check names
+    against, this analyzer reports nothing at all (see the module docstring),
+    so a misread is silently ignored rather than surfaced.
     """
     head = _strip_comment(value)
     if not head.startswith('[') or ']' in head:
@@ -212,7 +215,10 @@ def declared_targets(text: str) -> tuple[list[str], int] | None:
         if line[:1].isspace():
             continue
         key, separator, value = line.partition(':')
-        if not separator or key.strip() != TARGET_SCOPE_FIELD:
+        # Unquote the key before comparing: ``"targets": [claude]`` is the same
+        # declaration as ``targets: [claude]`` to any YAML reader, and missing
+        # it fails OPEN — the component would silently ship everywhere.
+        if not separator or key.strip().strip('"').strip("'") != TARGET_SCOPE_FIELD:
             continue
         # +2: the opening fence occupies line 1, so block line 0 is file line 2.
         line_number = index + 2

@@ -226,9 +226,13 @@ def _join_flow_sequence(value: str, rest: list[str]) -> str:
     holding a token no registered name matches — an absorbed ``2fa: no``, or
     a truncated ``[claude`` — so :func:`_validate` rejects it and the build
     stops. A misread can widen or truncate the text that gets REJECTED; it
-    cannot produce a scope the author did not write. A differential sweep
-    over several thousand frontmatter shapes found no accept/reject
-    divergence from PyYAML anywhere in this bracketed form.
+    cannot produce a scope the author did not write. Directed differential
+    sweeps totalling tens of thousands of bracketed shapes found no
+    accept/reject divergence from PyYAML *arising from this fold*, and no
+    input that smuggled a valid scope through a misread. That says nothing
+    about divergences from other causes — a duplicate top-level key resolves
+    to the first declaration here and to the last in YAML, and both spellings
+    may be bracketed.
     """
     head = _strip_comment(value)
     if not head.startswith('[') or ']' in head:
@@ -295,7 +299,10 @@ def _declared_tokens(text: str) -> list[str] | None:
         if line[:1].isspace():
             continue
         key, separator, value = line.partition(':')
-        if not separator or key.strip() != TARGET_SCOPE_FIELD:
+        # Unquote the key before comparing: ``"targets": [claude]`` is the same
+        # declaration as ``targets: [claude]`` to any YAML reader, and missing
+        # it fails OPEN — the component would silently ship everywhere.
+        if not separator or key.strip().strip('"').strip("'") != TARGET_SCOPE_FIELD:
             continue
         value = value.strip()
         rest = lines[index + 1:]

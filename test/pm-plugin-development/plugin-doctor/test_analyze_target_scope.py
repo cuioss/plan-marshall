@@ -173,6 +173,45 @@ def test_a_flow_sequence_spanning_lines_is_read_whole(block, expected):
     assert declaration[0] == expected
 
 
+@pytest.mark.parametrize(
+    'value',
+    [pytest.param('"targets"', id='double-quoted'), pytest.param("'targets'", id='single-quoted')],
+)
+def test_a_quoted_key_is_still_a_declaration(value):
+    """``"targets":`` is the same key as ``targets:`` to any YAML reader.
+
+    Missing it failed OPEN in the generator — the component shipped
+    everywhere — and silently here, so the authoring-time net missed it too.
+    """
+    declaration = declared_targets(f'---\nname: a\n{value}: [cluade]\n---\n')
+
+    assert declaration is not None
+    assert declaration[0] == ['cluade']
+
+
+@pytest.mark.parametrize(
+    ('block', 'expected'),
+    [
+        pytest.param('targets: [claude,\n2fa: no', ['[claude', '2fa: no'], id='digit-initial-key'),
+        pytest.param('targets: [claude,\n"q": v', ['[claude', 'q": v'], id='quoted-key'),
+        pytest.param(
+            'targets: [claude,\nhttps://example.com', ['[claude'], id='bare-url-at-column-zero'
+        ),
+    ],
+)
+def test_the_fold_boundary_misreads_exactly_where_it_is_documented_to(block, expected):
+    """Pin the two misreads the fold's docstring names, so neither can drift.
+
+    Both were unguarded: each could be falsified in code with this suite
+    fully green. Every one of these inputs is rejected downstream, which is
+    the property that makes the heuristic tolerable.
+    """
+    declaration = declared_targets(f'---\nname: a\n{block}\n---\n')
+
+    assert declaration is not None
+    assert declaration[0] == expected
+
+
 # ---------------------------------------------------------------------------
 # The derived registry
 # ---------------------------------------------------------------------------
