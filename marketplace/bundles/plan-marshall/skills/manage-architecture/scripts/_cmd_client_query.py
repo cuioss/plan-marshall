@@ -21,6 +21,7 @@ from _architecture_core import (
     GENERATION_FIELD,
     DataNotFoundError,
     ModuleNotFoundInProjectError,
+    crawl_all_modules,
     current_worktree_sha,
     derive_freshness,
     get_root_module,
@@ -30,6 +31,7 @@ from _architecture_core import (
     load_project_meta,
     merge_module_data,
 )
+from _cmd_client_build import build_notation_for_executable
 
 
 def _load_module_or_raise(module_name: str, project_dir: str) -> dict[str, Any]:
@@ -630,9 +632,50 @@ _PROFILE_CANONICALS: frozenset[str] = frozenset(
 
 
 def _command_executable(commands: dict[str, Any], command_name: str) -> str:
-    """Return the executable string for ``command_name`` in a command map."""
+    """Return the executable string for ``command_name`` in a command map.
+
+    Trusts the entry to be a ``str`` or a mapping and **raises** on anything
+    else — ``.get`` on a list or a number is an ``AttributeError``. ⛔ Nothing
+    validates that shape: the crawl's disk fallback (``_read_disk_derived``)
+    reads each ``derived.json`` verbatim with no per-entry check, so a malformed
+    persisted command map reaches here intact. That is deliberate on the RESOLVE
+    path, where a caller has asked for one specific command and an empty string
+    would be a silently useless answer — the exception surfaces as a resolve
+    error instead of an executable nobody can run.
+
+    ⚠ It is the wrong contract for a SWEEP, which visits every entry of every
+    module and must not lose the whole project's answer to one bad row; that
+    caller wants :func:`_defensive_command_executable`.
+
+    """
     cmd_data = commands[command_name]
     return cmd_data if isinstance(cmd_data, str) else cmd_data.get('executable', '')
+
+
+def _defensive_command_executable(entry: Any) -> str:
+    """Return ``entry``'s executable string, or ``''`` for any other shape.
+
+    The total counterpart to :func:`_command_executable`, for a caller that
+    sweeps every module's whole command map rather than resolving one validated
+    command. The distinction is not stylistic: ``_command_executable`` calls
+    ``.get`` on anything that is not a ``str``, so a single entry that is a list,
+    a number, or ``None`` raises ``AttributeError`` out of the enclosing sweep and
+    takes every OTHER module's notations down with it. A sweep whose caller treats
+    an exception as "the architecture could not be resolved" would then report
+    that for the whole project on the strength of one malformed entry.
+
+    Args:
+        entry: One value from a module's ``commands`` map, of unverified shape.
+
+    Returns:
+        The executable string, or ``''`` when ``entry`` carries none.
+    """
+    if isinstance(entry, str):
+        return entry
+    if isinstance(entry, dict):
+        executable = entry.get('executable', '')
+        return executable if isinstance(executable, str) else ''
+    return ''
 
 
 def _resolved_command_dict(
@@ -733,6 +776,58 @@ def resolve_command(command_name: str, module_name: str | None = None, project_d
             return _resolved_command_dict(root_commands, command_name, root_module_name, 'root')
 
     raise ValueError(f'Command not found: {command_name}')
+
+
+def resolve_project_build_notations(project_dir: str = '.') -> frozenset[str]:
+    """Return every build notation this project's architecture resolves to.
+
+    The set-valued form of :func:`resolve_command`: instead of resolving ONE
+    canonical command to its executable, it walks every module's whole command
+    map and keeps the executor notation each build executable dispatches. The
+    result answers "which build systems does this project actually build with,
+    according to the architecture" — the question a consumer needs when it holds
+    a build notation from some other source and must decide whether that
+    notation could have come from THIS project.
+
+    Deliberately **project-wide, not plan-scoped**. A narrower per-plan set
+    would refuse legitimate evidence: an orchestrator-tier build runs at the
+    root module with no plan at all, and a polyglot project legitimately builds
+    several modules with different tools. The set is the union over every module
+    the crawl reports, so every notation the project can legitimately dispatch
+    is in it. What it excludes is a notation no module resolves to — which is
+    exactly the unrelated-evidence case.
+
+    **Cost.** This runs the same live crawl ``architecture resolve`` runs
+    (memoized per process, but the first call pays for it, and for Maven that
+    means a per-module ``help:all-profiles dependency:tree``). Call it once per
+    process and reuse the result; do not call it per candidate.
+
+    Args:
+        project_dir: Project root to crawl. Defaults to the current directory.
+
+    Returns:
+        The frozenset of resolved build notations. **Empty means the question
+        could not be answered** — an un-crawled project, a project with no
+        modules, or modules whose commands resolve to no build executable — and
+        is NOT evidence that the project builds with nothing. A caller that
+        treats the empty set as a refutation converts "I do not know" into "I
+        know it is wrong"; branch on emptiness explicitly.
+    """
+    notations: set[str] = set()
+    for module_data in crawl_all_modules(project_dir).values():
+        if not isinstance(module_data, dict):
+            continue
+        commands = module_data.get('commands', {})
+        if not isinstance(commands, dict):
+            continue
+        for entry in commands.values():
+            executable = _defensive_command_executable(entry)
+            if not executable:
+                continue
+            notation = build_notation_for_executable(executable)
+            if notation is not None:
+                notations.add(notation)
+    return frozenset(notations)
 
 
 # =============================================================================

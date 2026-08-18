@@ -355,3 +355,17 @@ proposed there.
   companion, so folding it in would have been unrequested scope.
 * **The remaining sections** (Cost, Contract check, What have we learned) are written at the merge
   gate, as the last pre-merge commit — a queued branch can no longer be pushed to.
+
+## Disposition update (2026-08-17) — appended by the epic re-scoping run
+
+Appended after this run closed, by the run that read every landed report in this epic and re-scoped
+the remaining plans. It records **what happened next** to items this report left open; it does not
+revise anything above.
+
+| Item from this report | Disposition |
+|---|---|
+| § Findings #2 / § Residue — `plugin-script-architecture/standards/testing-standards.md` prescribes `test_helpers.py`, the shape D5's guard now fails the build on | **Closed**, by PR #1249 (`chore(plugin-script-architecture): prescribe _{domain}_fixtures.py for helper modules`). This report's own correction was right that no plan in the epic owned the file — the fix landed as a separate change rather than inside a plan |
+| § Findings #15 / § Residue — `load_script_module` resolves only `{bundle}/skills/{skill}/scripts/{file}`, so a skill-root `extension.py` is unreachable | **Owner assigned: plan `090` § D2.** Plan `060`'s third run met the same gap from the other side and found two `test-module-preamble-boilerplate` findings that the remedy the rule's own message names cannot address. `090` takes either widening the loader or exempting the shape, and must state which and why the other was rejected |
+| § Findings #6 — `parse_ns` re-executes the script module on every call | **Now a stated hazard in every consuming plan.** Plans `070` and `080` carry it explicitly in their D3, because the two slices hold roughly 502 and 222 hand-built namespaces between them and per-assertion calls at that scale are the epic's clearest opportunity to slow the suite down. Plan `110` adds the wall-clock condition that would catch it |
+| § Residue — `create_nested_marshal_json` remains a third marshal builder by behaviour | **Still open and still unowned.** Recorded here so the omission stays visible; no plan claims it |
+| The refuted parser-seam hypothesis — 69 of 96 parser-constructing files publish no builder, so interception is the primary seam | **Consumed as this report directed.** It is why plan `090` § D1 exists: the modules that expose *neither* seam are the ones a conversion cannot reach at all, and `090` publishes a builder for each rather than leaving the call sites unconvertible |

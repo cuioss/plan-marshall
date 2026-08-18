@@ -607,7 +607,7 @@ def test_help_probe_leaves_the_freshness_gate_unable_to_report_fresh(tmp_path, m
 
     _dispatch(tmp_path, notation, [subcommand, '--help'], ledger_root=ledger_root)
 
-    verdict = _freshness_verdict(monkeypatch, 'discriminator-regression-plan')
+    verdict = _freshness_verdict(monkeypatch, 'discriminator-regression-plan', notation)
 
     assert verdict['status'] != 'fresh', (
         f'the freshness gate reported {verdict["status"]!r} on the strength of a '
@@ -620,19 +620,40 @@ def test_help_probe_leaves_the_freshness_gate_unable_to_report_fresh(tmp_path, m
 # =============================================================================
 
 
-def _freshness_verdict(monkeypatch, plan_id: str) -> dict:
+def _freshness_verdict(monkeypatch, plan_id: str, notation: str) -> dict:
     """Run the real ``pre-commit-verify-freshness`` handler against the isolated ledger.
 
-    ``_build_necessity_verdict`` is pinned to ``build`` on purpose: the
-    build-necessity short-circuit is a separate concern that would return
-    ``fresh`` without ever reaching the ledger scan, and the ledger scan is
-    exactly what this regression is about.
+    Two of the gate's inputs are pinned, both because they are separate concerns
+    that would decide the verdict before the property under test could:
+
+    * ``_build_necessity_verdict`` is pinned to ``build`` — the build-necessity
+      short-circuit would return ``fresh`` without ever reaching the ledger scan,
+      and the ledger scan is exactly what this module's regressions are about.
+    * ``resolve_expected_notations`` is pinned to ``{notation}`` — the dispatched
+      notation is derived from the live build-wrapper roster in sorted order, so
+      it is whichever build system sorts first, NOT one this repository builds
+      with. Against the real resolver the gate would refuse those rows as
+      unrelated evidence and every verdict here would be decided by the notation
+      cross-check rather than by the stamp discriminator this module pins. The
+      cross-check's own behaviour — including that refusal — is covered by
+      ``test/plan-marshall/manage-tasks/test_freshness_notation_crosscheck.py``.
+
+    Pinning the notation to exactly the dispatched one keeps the real
+    corroborate/refute comparison executing; it only removes the repository's
+    own architecture from the answer.
     """
     import _cmd_pre_commit_verify_freshness as gate
+    import _freshness_crosscheck as crosscheck
 
     monkeypatch.setattr(gate, '_build_necessity_verdict', lambda _plan_id: {'decision': 'build'})
+    monkeypatch.setattr(
+        crosscheck,
+        'resolve_expected_notations',
+        lambda _project_dir: (frozenset({notation}), None),
+    )
     args = types.SimpleNamespace(plan_id=plan_id)
-    return gate.cmd_pre_commit_verify_freshness(args)
+    verdict: dict = gate.cmd_pre_commit_verify_freshness(args)
+    return verdict
 
 
 def test_freshness_gate_cannot_report_fresh_after_a_query_dispatch(tmp_path, monkeypatch, in_project_root):
@@ -653,7 +674,7 @@ def test_freshness_gate_cannot_report_fresh_after_a_query_dispatch(tmp_path, mon
 
     _dispatch(tmp_path, notation, [subcommand], ledger_root=ledger_root)
 
-    verdict = _freshness_verdict(monkeypatch, 'discriminator-regression-plan')
+    verdict = _freshness_verdict(monkeypatch, 'discriminator-regression-plan', notation)
 
     assert verdict['status'] != 'fresh', (
         f'the freshness gate reported {verdict["status"]!r} on the strength of a '
@@ -680,7 +701,7 @@ def test_freshness_gate_reports_fresh_after_a_build_executing_dispatch(tmp_path,
 
     _dispatch(tmp_path, notation, [subcommand], ledger_root=ledger_root)
 
-    verdict = _freshness_verdict(monkeypatch, 'discriminator-regression-plan')
+    verdict = _freshness_verdict(monkeypatch, 'discriminator-regression-plan', notation)
 
     assert verdict['status'] == 'fresh', (
         f'the freshness gate reported {verdict["status"]!r} after a real build-executing '
@@ -829,7 +850,7 @@ def test_freshness_gate_is_not_fresh_after_an_unknown_stamped_dispatch(tmp_path,
         'Without it the verdict below would be withheld for the wrong reason.'
     )
 
-    verdict = _freshness_verdict(monkeypatch, 'discriminator-regression-plan')
+    verdict = _freshness_verdict(monkeypatch, 'discriminator-regression-plan', notation)
 
     assert verdict['status'] != 'fresh', (
         f'the freshness gate reported {verdict["status"]!r} on the strength of an '

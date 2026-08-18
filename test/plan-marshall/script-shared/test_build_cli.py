@@ -66,6 +66,7 @@ from _resolve_project_dir_fixtures import (
     assert_sentinel_is_not_a_routing_source,
     patch_main_checkout_root,
     patch_query_worktree_path,
+    worktree_query_result,
 )
 
 
@@ -247,13 +248,24 @@ def test_resolve_default_sentinel_distinguishes_explicit_from_missing():
     assert resolved == '/tmp/main-checkout-stub'
 
 
-def test_resolve_plan_id_with_use_worktree_true_but_empty_worktree_path_raises():
-    """``use_worktree=true`` + empty path is a corrupt-state error."""
-    from resolve_project_dir import WorktreeResolutionError, resolve_project_dir
+def test_resolve_plan_id_with_unmaterialized_worktree_returns_the_checkout_root():
+    """A worktree opted into but not yet created routes to the main checkout.
 
-    with patch_query_worktree_path(use_worktree=True, worktree_path=''):
-        with pytest.raises(WorktreeResolutionError):
-            resolve_project_dir(CANONICAL_PLAN_ID, '.', default='.')
+    The producer publishes this as ``worktree_state: pending`` under ``status:
+    success``, and instructs callers to fall back to the checkout. Every build
+    script routed by ``--plan-id`` reads it during phases 1-4, before
+    phase-5-execute creates the worktree, so treating it as a corrupt-state
+    error made the ordinary case an error for all of them.
+    """
+    from resolve_project_dir import resolve_project_dir
+
+    with (
+        patch_query_worktree_path(use_worktree=True, worktree_path=''),
+        patch_main_checkout_root('/tmp/main-checkout-stub'),
+    ):
+        resolved = resolve_project_dir(CANONICAL_PLAN_ID, '.', default='.')
+
+    assert resolved == '/tmp/main-checkout-stub'
 
 
 def _register_noop_run(subparsers):
@@ -317,7 +329,7 @@ def test_build_main_resolves_plan_id_to_worktree_before_handler(monkeypatch):
     import file_ops as _resolver_core
 
     monkeypatch.setattr(
-        _resolver_core, '_query_worktree_path', lambda _pid: (True, CANONICAL_WORKTREE)
+        _resolver_core, '_query_worktree_path', lambda _pid: worktree_query_result(True, CANONICAL_WORKTREE)
     )
 
     captured: list[str] = []

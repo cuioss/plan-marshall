@@ -97,7 +97,7 @@ _NOT_NECESSARY_VERDICT = {
 # reports no evidence either way rather than a positive "nothing to build".
 _UNKNOWN_VERDICT = {
     'decision': 'unknown',
-    'reason': 'plan footprint unresolvable — worktree not yet materialised',
+    'reason': 'plan footprint unresolvable — no materialized worktree carries evidence of what this plan changed',
 }
 
 _WORKTREE_SHA = 'f' * 64
@@ -139,12 +139,22 @@ def _stub_authority(monkeypatch, verdict: dict, calls: list) -> None:
 
 
 def _forbid_builds(monkeypatch, invoked: list) -> None:
-    """Fail loudly if anything on the gate's path shells out to a build.
+    """Fail loudly if anything shells out on the SHORT-CIRCUIT freshness path.
 
     The deadlock's resolution must come from ASKING the authority, never from
     running a build to manufacture the missing ledger entry. Trapping
     ``subprocess.run`` / ``Popen`` turns "no build was invoked" into an asserted
     property rather than an assumption.
+
+    ⛔ Scoped to the ``not_necessary`` short-circuit, which is the only path the
+    cases here take. It is NOT a claim that the gate is subprocess-free in
+    general: past the short-circuit, a ledger row that satisfies the primary
+    predicate is cross-checked against the architecture, and that resolution runs
+    the live module crawl — which does shell out (``git``, and a build tool's own
+    discovery verbs on a Maven/Gradle/npm project). Those are discovery commands,
+    not a build, so the "never run a build to satisfy the gate" rule still holds;
+    the blanket "no subprocess" property does not, and asserting it on the
+    candidate path would fail for the right reason.
     """
     import subprocess
 

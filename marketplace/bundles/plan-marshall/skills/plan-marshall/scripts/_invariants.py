@@ -27,7 +27,11 @@ from _git_helpers import git_dirty_count, git_dirty_files, git_head
 from _plan_state_exemption import partition_plan_state_exemption
 from constants import QGATE_PHASES
 from file_ops import get_base_dir, get_marshal_path
-from marketplace_paths import find_marketplace_path
+from marketplace_paths import (
+    base_dir_override_active,
+    find_marketplace_path,
+    main_checkout_root,
+)
 from toon_parser import parse_toon
 
 
@@ -207,6 +211,66 @@ class MainCheckoutDirtiedDuringPlan(Exception):
         )
 
 
+class MainCaptureReadTheWorktree(Exception):
+    """Raised by :func:`capture_all` when the ``main_*`` columns were read from
+    the plan's own worktree instead of from main.
+
+    ``main_sha`` equals ``worktree_sha`` **and** the two columns resolved to the
+    same directory, so one tree is being reported under two names. That is a
+    capture bug, not a valid row, so ``cmd_capture`` surfaces a structured error
+    and refuses to persist.
+
+    ⚠ **The evidence is the resolved PATHS, not the row.** The comparison reads
+    :func:`_main_repo_root` (a live git probe) and ``metadata.worktree_path``;
+    neither is a stored column. So this refusal is available at capture time and
+    NOT to a later reader of the persisted row, for whom an equal pair is merely
+    ambiguous — see ``plan-marshall:plan-retrospective`` →
+    ``references/invariant-check-summary.md`` for what such a reader can do
+    instead.
+
+    ⚠ **The refused ``main_sha`` is not necessarily a commit that never reached
+    main.** Under a base-dir override the resolver follows the working
+    directory, so a plan whose feature branch carries no commit can trip this
+    refusal on a value that IS main's HEAD. The defect being refused is the
+    mis-resolution, not the commit.
+
+    ⛔ **Equal commits alone are NOT the trigger** — the same-tree resolution is.
+    Two DISTINCT trees can legitimately hold one commit: a worktree-backed plan
+    whose feature branch carries no commit of its own yet still has its HEAD on
+    the commit it branched from. That state is produced by the shipped phase-5
+    flow (``phase-5-execute`` Step 2.5 materializes the worktree unconditionally,
+    before the ``early_terminate`` short-circuit, so an analysis-only plan never
+    commits on its branch), and refusing it would hard-block a legitimate
+    boundary with no override escape. It is therefore permitted, and the row it
+    writes is a correct one — ``main_sha`` genuinely is main's HEAD.
+
+    A plan with no persisted ``metadata.worktree_path`` captures no
+    ``worktree_sha`` at all (see :func:`_worktree_in_use`, which keys on that
+    path and does NOT read ``use_worktree``), so there is nothing to compare and
+    this refusal cannot fire.
+    """
+
+    def __init__(
+        self,
+        phase: str,
+        sha: str,
+        *,
+        main_root: Path,
+        worktree_path: Path,
+    ) -> None:
+        self.phase = phase
+        self.sha = sha
+        self.main_root = str(main_root)
+        self.worktree_path = str(worktree_path)
+        super().__init__(
+            f'phase {phase}: the main-scoped capture read the plan worktree — '
+            f'main_sha == worktree_sha ({sha}) and both resolved to '
+            f'{main_root}. A column named for main must be read from main; '
+            f'repair the main-anchored resolution (_main_repo_root) before '
+            f're-entering the phase.'
+        )
+
+
 class TaskGraphInvalid(Exception):
     """Raised by the ``task_graph_valid`` invariant capture when the plan's
     task dependency graph has a cycle or a dangling reference (a
@@ -214,9 +278,14 @@ class TaskGraphInvalid(Exception):
 
     Shaped like :class:`PhaseStepsIncomplete`: the constructor formats a
     descriptive message and keeps the structured fields (``cycle``,
-    ``dangling``) as attributes so callers can surface a structured error
+    ``dangling``) as attributes so a caller can surface a structured error
     payload and refuse to persist the handshake row — thereby blocking the
     phase transition on a broken task graph.
+
+    ⚠ **No caller currently does.** ``cmd_capture`` handles its four sibling
+    capture-time exceptions and not this one, so the attributes are carried but
+    never rendered; see :func:`_capture_task_graph_valid` for what reaches the
+    operator instead.
     """
 
     def __init__(
@@ -264,13 +333,22 @@ CaptureFn = Callable[[str, dict[str, Any], str], Any]
 # --- helpers --------------------------------------------------------------
 
 
-def _repo_root() -> Path:
-    """Main git checkout root inferred from the plan-marshall base directory.
+def _current_repo_root() -> Path:
+    """The CURRENT checkout root, resolved by the uniform cwd rule (ADR-002).
 
-    ``get_base_dir()`` resolves to ``<root>/.plan/local`` in production, so the
-    parent chain `.plan/local → .plan → root` identifies the main checkout.
-    In tests, ``PLAN_BASE_DIR`` may point somewhere else; in that case we fall
-    back to the current working directory.
+    ``get_base_dir()`` resolves to ``<root>/.plan/local``, so the parent chain
+    ``.plan/local → .plan → root`` identifies the checkout the working directory
+    is standing in. In tests, ``PLAN_BASE_DIR`` may point somewhere else; in
+    that case we fall back to the current working directory.
+
+    This follows the pinned worktree at phase-5+ **by design** — that is what
+    every cwd-relative consumer wants (the worktree-resident executor and the
+    plan state moved in at phase-5 start; see ``file_ops.get_executor_path``).
+
+    ⛔ It is therefore the WRONG resolver for a ``main_``-named capture: under a
+    pinned worktree it returns the worktree, so a main-scoped column would
+    silently record a feature-branch commit. Those captures use
+    :func:`_main_repo_root` instead.
     """
     try:
         base = get_base_dir()
@@ -279,6 +357,61 @@ def _repo_root() -> Path:
     if base.name == 'local' and base.parent.name == '.plan':
         return base.parent.parent
     return Path.cwd()
+
+
+def _main_repo_root() -> Path | None:
+    """The MAIN checkout root — the tree the ``main_*`` columns claim to describe.
+
+    Distinct from :func:`_current_repo_root`, which follows the pinned worktree
+    at phase-5+. The property this resolver adds is **worktree-invariance**: it
+    names the same main checkout from any tree in the repository, a linked
+    worktree included. It is NOT cwd-independent in general — see the precision
+    note below — and the defect it exists to close is precisely the worktree
+    case.
+
+    Precedence, in the shape ``marketplace_paths.resolve_main_anchored_path``
+    (the single sanctioned main-anchored exception, ADR-002) uses — override
+    first, then git:
+
+    1. **Base-dir override** (``PLAN_BASE_DIR`` / ``set_base_dir()``) — delegate
+       to :func:`_current_repo_root`. An override-based fixture has exactly one
+       checkout, so main and current coincide there.
+    2. **Production** — ``git rev-parse --git-common-dir`` points at main's
+       ``.git`` even when invoked from a linked worktree; its parent is the main
+       checkout root.
+
+    ⚠ **Precision, because the strong claim is easy to over-state.** Neither
+    branch is cwd-*independent*:
+
+    - The override branch inherits ``_current_repo_root``'s own fallback. For
+      the canonical override shape ``<root>/.plan/local`` it returns ``<root>``
+      regardless of cwd; for a **flat** override (a bare directory, which is
+      what the test sandbox installs) no checkout is named at all and the result
+      is ``Path.cwd()``. That is harmless where it occurs — one checkout — but it
+      is not cwd-independence, and this resolver does not claim it.
+    - The git branch runs ``git rev-parse`` in the process cwd, so it resolves
+      whichever *repository* the process is in. Within one repository it is
+      invariant across main and every linked worktree, which is the property the
+      ``main_*`` columns need.
+
+    Returns:
+        The main checkout root, or ``None`` when it cannot be resolved (not a
+        git repository, or git is unavailable).
+
+    ⛔ The ``None`` return is deliberate and MUST NOT be softened into a cwd
+    fallback. An unresolvable main checkout is *unknown*, and a main-scoped
+    column whose value is unknown is left EMPTY (the registry's documented
+    "not applicable" contract) rather than filled with the tree the process
+    happens to occupy. This applies to the git branch, where the defect lives;
+    the override branch is a caller's explicit declaration of where state
+    lives and is honoured as such.
+    """
+    if base_dir_override_active():
+        return _current_repo_root()
+    try:
+        return main_checkout_root()
+    except RuntimeError:
+        return None
 
 
 # Phases at and after which the worktree is materialized on disk (phase-5
@@ -333,7 +466,7 @@ def _always(_plan_id: str, _metadata: dict[str, Any]) -> bool:
 
 def _run_script(args: list[str]) -> str | None:
     """Invoke ``execute-script.py`` with ``args`` and return stdout on success."""
-    repo = _repo_root()
+    repo = _current_repo_root()
     executor = repo / '.plan' / 'execute-script.py'
     if not executor.exists():
         return None
@@ -449,11 +582,34 @@ def _read_manifest_steps(plan_id: str, phase: str) -> set[str] | None:
 
 
 def _capture_main_sha(_plan_id: str, _metadata: dict[str, Any], _phase: str) -> Any:
-    return git_head(_repo_root())
+    """HEAD SHA of the MAIN checkout, read worktree-invariantly.
+
+    Read via :func:`_main_repo_root` — never the cwd-relative resolver, which
+    under a pinned worktree would record the feature-branch commit in a column
+    named for main. Returns ``None`` (column left empty) when the main checkout
+    cannot be resolved, matching the registry's "not applicable" contract.
+
+    ⚠ **Worktree-invariant, not cwd-independent** — see :func:`_main_repo_root`
+    for which branch has which property. The value is stable across main and
+    every linked worktree of one repository, which is what this column needs;
+    it is not stable across repositories or under a flat base-dir override.
+    """
+    root = _main_repo_root()
+    if root is None:
+        return None
+    return git_head(root)
 
 
 def _capture_main_dirty(_plan_id: str, _metadata: dict[str, Any], _phase: str) -> Any:
-    return git_dirty_count(_repo_root())
+    """Porcelain dirty-path count of the MAIN checkout, read worktree-invariantly.
+
+    Same resolution contract — and the same worktree-invariant-not-cwd-independent
+    caveat — as :func:`_capture_main_sha`.
+    """
+    root = _main_repo_root()
+    if root is None:
+        return None
+    return git_dirty_count(root)
 
 
 def _filter_main_dirty_paths(paths: list[str], tree: str | Path) -> list[str]:
@@ -493,9 +649,10 @@ def _capture_main_dirty_files(_plan_id: str, _metadata: dict[str, Any], _phase: 
     is comparison-based and needs the persisted baseline row, which the
     capture-time signature does not expose).
 
-    Returns ``None`` when the dirty-file probe fails (not a git repository
-    or git invocation error) so the calling capture's "not applicable"
-    contract leaves the column empty in stored rows. Otherwise returns the
+    Returns ``None`` when the MAIN checkout cannot be resolved
+    (:func:`_main_repo_root`) or when the dirty-file probe against it fails
+    (not a git repository or git invocation error), so the calling capture's
+    "not applicable" contract leaves the column empty in stored rows. Otherwise returns the
     sorted, exemption-filtered list — the ``.plan/`` exemption drops only
     UNTRACKED plan state and retains a dirtied *tracked* ``.plan/`` file
     (``marshal.json``, a descriptor) as a real leak (see
@@ -513,7 +670,9 @@ def _capture_main_dirty_files(_plan_id: str, _metadata: dict[str, Any], _phase: 
     ``workflow-integration-git/standards/worktree-handling.md`` § layer D
     for the operator-facing recovery loop.
     """
-    repo = _repo_root()
+    repo = _main_repo_root()
+    if repo is None:
+        return None
     raw = git_dirty_files(repo)
     if raw is None:
         return None
@@ -802,8 +961,18 @@ def _capture_task_graph_valid(plan_id: str, _metadata: dict[str, Any], _phase: s
     matching the pattern used by the other hash invariants. An empty task
     list yields the zero-edge hash (stable, non-raising).
 
-    On failure raises :class:`TaskGraphInvalid` so ``cmd_capture`` refuses
-    to persist the handshake row and blocks the phase transition.
+    On failure raises :class:`TaskGraphInvalid`, which leaves no handshake row
+    persisted and blocks the phase transition.
+
+    ⚠ **Unlike its sibling capture-time exceptions, this one has no handler in
+    either ``cmd_capture`` or ``cmd_verify``**, so it is not converted into a
+    structured ``status: error`` payload with its ``cycle`` / ``dangling``
+    fields — it propagates out of whichever verb raised it and
+    ``file_ops.safe_main`` renders it as ``error: internal_error`` with exit 1.
+    The boundary still fails closed at both verbs (no row is persisted; the exit
+    is non-zero), so the only loss is the structured diagnosis. Pre-existing;
+    noted here so the mechanism is not mistaken for the handled path the
+    siblings take.
 
     Returns ``None`` if the tasks cannot be loaded (e.g. executor missing
     during a unit-test harness that doesn't provide the plan directory).
@@ -1641,11 +1810,80 @@ def is_invariant_blocking_at_phase(invariant_name: str, phase: str) -> bool:
     return True
 
 
+def _assert_main_capture_read_main(
+    captured: dict[str, Any],
+    metadata: dict[str, Any],
+    phase: str,
+) -> None:
+    """Refuse a row whose ``main_*`` columns were read from the worktree.
+
+    Reached only when BOTH ``main_sha`` and ``worktree_sha`` were captured —
+    which is exactly "a ``worktree_path`` is persisted", since ``worktree_sha``
+    is gated on :func:`_worktree_in_use`. A plan with no persisted path captures
+    no ``worktree_sha`` and is never examined here.
+
+    Equal commits are the *symptom*; the refusal condition is the *cause* —
+    both columns resolving to the same directory. Two distinct trees holding one
+    commit is a legitimate state (a feature branch with no commit of its own)
+    and is permitted; see :class:`MainCaptureReadTheWorktree`.
+
+    Both early returns below the equality check are unreachable by
+    construction — an unresolvable main checkout captures no ``main_sha``, and
+    an empty ``worktree_path`` captures no ``worktree_sha``, so either would
+    have short-circuited on the first guard. They are kept as defence rather
+    than as a fail-open branch.
+
+    ``worktree_path`` is resolved against the process cwd, exactly as
+    ``_capture_worktree_sha``'s own git probe is, so the two agree. A relative
+    path could therefore make the comparison miss a same-tree read (a false
+    negative — the safe direction); in production the path is absolute,
+    persisted from ``git worktree add``.
+
+    Raises:
+        MainCaptureReadTheWorktree: when the two commits are equal AND the two
+            columns resolved to the same directory.
+    """
+    main_sha = captured.get('main_sha')
+    worktree_sha = captured.get('worktree_sha')
+    if not main_sha or not worktree_sha or main_sha != worktree_sha:
+        return
+    main_root = _main_repo_root()
+    raw_worktree = metadata.get('worktree_path')
+    if main_root is None or not raw_worktree:
+        return
+    worktree_path = Path(str(raw_worktree))
+    try:
+        if main_root.resolve() != worktree_path.resolve():
+            return
+    except OSError:
+        return
+    raise MainCaptureReadTheWorktree(
+        phase,
+        str(main_sha),
+        main_root=main_root,
+        worktree_path=worktree_path,
+    )
+
+
 def capture_all(plan_id: str, metadata: dict[str, Any], phase: str) -> dict[str, Any]:
     """Run every applicable invariant and return name -> captured value.
 
     Non-applicable invariants are omitted from the return dict so callers can
     store empty strings or skip comparison during verify.
+
+    Raises:
+        PhaseStepsIncomplete: when the phase declares ``required-steps.md`` and
+            ``status.metadata.phase_steps[phase]`` is incomplete.
+        BlockingFindingsPresent: when an actionable finding is pending at a
+            boundary that blocks on findings.
+        TaskGraphInvalid: when the task graph carries a cycle or a dangling
+            reference. Unhandled by ``cmd_capture`` and ``cmd_verify`` alike —
+            see :func:`_capture_task_graph_valid`.
+        PrTitleMissing: when ``metadata.pr_title`` is absent from ``2-refine``
+            onward.
+        MainCaptureReadTheWorktree: when the ``main_*`` columns were read from
+            the plan's own worktree (cross-field check, run after the registry
+            loop rather than by a single invariant).
     """
     captured: dict[str, Any] = {}
     for name, applies_fn, capture_fn in INVARIANTS:
@@ -1655,4 +1893,5 @@ def capture_all(plan_id: str, metadata: dict[str, Any], phase: str) -> dict[str,
         if value is None:
             continue
         captured[name] = value
+    _assert_main_capture_read_main(captured, metadata, phase)
     return captured

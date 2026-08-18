@@ -271,11 +271,13 @@ class Runtime(ABC):
         """Read and persist the current platform session identifier.
 
         A target that exposes a session identifier resolves it however that
-        target makes it available and stores it via ``manage-status``. When the
-        identifier ought to be reachable but is not — the target's wiring is
-        incomplete — that is an ``error`` with code ``hook_not_configured``,
-        never a silent pass. A target that exposes no session identifier at all
-        returns ``no-op``.
+        target makes it available and APPENDS it to the plan's
+        ``status.metadata.session_ids`` list via ``manage-status``, so a plan
+        spanning several sessions keeps every identity rather than only the
+        newest. When the identifier ought to be reachable but is not — the
+        target's wiring is incomplete — that is an ``error`` with code
+        ``hook_not_configured``, never a silent pass. A target that exposes no
+        session identifier at all returns ``no-op``.
 
         Args:
             plan_id: Plan identifier used by ``manage-status``.

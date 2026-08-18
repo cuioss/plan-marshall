@@ -13,6 +13,7 @@ from conftest import load_script_module
 
 _lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_status_cmd_lifecycle')
 _query = load_script_module('plan-marshall', 'manage-status', '_status_query.py', '_status_cmd_query')
+_core = load_script_module('plan-marshall', 'manage-status', '_status_core.py', '_status_cmd_core')
 
 cmd_create = _lifecycle.cmd_create
 cmd_get_context = _query.cmd_get_context
@@ -192,3 +193,165 @@ def test_get_context_not_found(plan_context):
     """Test get-context returns None for missing plan (TOON error already output)."""
     result = cmd_get_context(Namespace(plan_id='nonexistent'))
     assert result is None
+
+
+# =============================================================================
+# Test: Metadata Append (list-valued fields)
+# =============================================================================
+
+
+def _append(plan_id, field, value):
+    return cmd_metadata(
+        Namespace(plan_id=plan_id, set=True, get=False, append=True, field=field, value=value)
+    )
+
+
+def _get(plan_id, field):
+    return cmd_metadata(
+        Namespace(plan_id=plan_id, set=False, get=True, append=False, field=field, value=None)
+    )
+
+
+def _new_plan(plan_id):
+    cmd_create(Namespace(plan_id=plan_id, title='Append Test', phases='1-init,2-refine', force=False))
+
+
+def test_metadata_append_creates_the_list_when_the_field_is_absent(plan_context):
+    _new_plan('append-absent')
+    result = _append('append-absent', 'session_ids', 'sess-1')
+    assert result['status'] == 'success'
+    assert result['value'] == ['sess-1']
+    assert result['appended'] is True
+
+
+def test_metadata_append_preserves_the_earlier_value(plan_context):
+    """REGRESSION (D4): the multi-session case the scalar field destroyed.
+
+    A plan legitimately spans several sessions. Held as a scalar the field had
+    ONE slot, so a second writer — a resume, or an observing process capturing
+    against the plan it is measuring — overwrote the first identity outright,
+    and the surviving value was well-formed so nothing downstream rejected it.
+    """
+    _new_plan('append-multi')
+    _append('append-multi', 'session_ids', 'sess-measured')
+    result = _append('append-multi', 'session_ids', 'sess-observer')
+
+    assert result['value'] == ['sess-measured', 'sess-observer']
+    # The measured plan's own identity SURVIVES the observer's write.
+    assert 'sess-measured' in _get('append-multi', 'session_ids')['value']
+
+
+def test_metadata_append_is_idempotent(plan_context):
+    _new_plan('append-idem')
+    _append('append-idem', 'session_ids', 'sess-1')
+    result = _append('append-idem', 'session_ids', 'sess-1')
+    assert result['value'] == ['sess-1']
+    assert result['appended'] is False
+
+
+def test_metadata_append_order_is_capture_order(plan_context):
+    _new_plan('append-order')
+    for sid in ('a', 'b', 'c'):
+        _append('append-order', 'session_ids', sid)
+    assert _get('append-order', 'session_ids')['value'] == ['a', 'b', 'c']
+
+
+def test_metadata_append_refuses_a_non_list_field_and_leaves_the_document_identical(plan_context):
+    """A scalar is never silently coerced into a container.
+
+    Asserts BYTE-identity rather than just the field's value: ``rmw_json``
+    commits unconditionally, so "the error path changed nothing" is a claim about
+    the whole document — including the ``updated`` stamp — not only the field the
+    caller named.
+    """
+    _new_plan('append-scalar')
+    cmd_metadata(
+        Namespace(plan_id='append-scalar', set=True, get=False, append=False,
+                  field='change_type', value='feature')
+    )
+    status_path = _core.get_status_path('append-scalar')
+    before = status_path.read_bytes()
+
+    result = _append('append-scalar', 'change_type', 'bug_fix')
+
+    assert result['status'] == 'error'
+    assert result['error'] == 'metadata_field_not_a_list'
+    assert status_path.read_bytes() == before
+    assert _get('append-scalar', 'change_type')['value'] == 'feature'
+
+
+def test_metadata_append_without_set_is_an_error(plan_context):
+    _new_plan('append-no-set')
+    result = cmd_metadata(
+        Namespace(plan_id='append-no-set', set=False, get=False, append=True,
+                  field='session_ids', value='sess-1')
+    )
+    assert result['status'] == 'error'
+    assert result['error'] == 'append_without_set'
+
+
+def test_metadata_append_without_value_is_an_error(plan_context):
+    _new_plan('append-no-value')
+    result = cmd_metadata(
+        Namespace(plan_id='append-no-value', set=True, get=False, append=True,
+                  field='session_ids', value=None)
+    )
+    assert result['status'] == 'error'
+    assert result['error'] == 'missing_value'
+
+
+def test_metadata_set_without_append_still_replaces(plan_context):
+    """The default --set path is unchanged: last write wins, no list."""
+    _new_plan('append-default')
+    cmd_metadata(
+        Namespace(plan_id='append-default', set=True, get=False, append=False,
+                  field='change_type', value='feature')
+    )
+    cmd_metadata(
+        Namespace(plan_id='append-default', set=True, get=False, append=False,
+                  field='change_type', value='bug_fix')
+    )
+    assert _get('append-default', 'change_type')['value'] == 'bug_fix'
+
+
+def test_metadata_append_leaves_sibling_metadata_untouched(plan_context):
+    _new_plan('append-siblings')
+    cmd_metadata(
+        Namespace(plan_id='append-siblings', set=True, get=False, append=False,
+                  field='change_type', value='feature')
+    )
+    _append('append-siblings', 'session_ids', 'sess-1')
+    assert _get('append-siblings', 'change_type')['value'] == 'feature'
+    assert _get('append-siblings', 'session_ids')['value'] == ['sess-1']
+
+
+def test_a_resume_on_a_pre_list_plan_does_not_fail(plan_context):
+    """The plan's D4 verification case, end to end.
+
+    A plan created before the identity became a list carries the retired scalar
+    `session_id` and no `session_ids`. A resume then captures against it. The
+    append must SUCCEED (a naive guard asserting the stored identity never
+    changes would fail exactly here, which is why no such guard was shipped),
+    the new identity must be recorded, and the legacy value must survive
+    untouched for the read-side fallback to find.
+    """
+    _new_plan('resume-legacy')
+    # A pre-list plan: the scalar field, no list field.
+    cmd_metadata(
+        Namespace(plan_id='resume-legacy', set=True, get=False, append=False,
+                  field='session_id', value='sess-original')
+    )
+
+    # The resuming session captures.
+    first = _append('resume-legacy', 'session_ids', 'sess-resumed')
+    assert first['status'] == 'success'
+    assert first['value'] == ['sess-resumed']
+
+    # A third session captures too — still no failure, still additive.
+    second = _append('resume-legacy', 'session_ids', 'sess-third')
+    assert second['status'] == 'success'
+    assert second['value'] == ['sess-resumed', 'sess-third']
+
+    # The legacy scalar is untouched, so the read-side fallback still resolves
+    # for any consumer reading a plan that never gained a list.
+    assert _get('resume-legacy', 'session_id')['value'] == 'sess-original'

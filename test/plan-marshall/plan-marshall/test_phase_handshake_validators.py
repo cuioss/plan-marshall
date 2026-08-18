@@ -132,18 +132,25 @@ def test_canonical_inputs_dont_trigger_invalid_field(subcommand, tmp_path):
 
     Isolation note: ``capture`` fans out to ~10 invariant-capture
     subprocesses (``_invariants.capture_all`` → ``manage-*`` via the
-    executor, plus ``git`` on the main checkout). ``_repo_root()`` and
-    ``git_main_checkout_root()`` both fall back to the *process cwd* when
-    ``PLAN_BASE_DIR`` does not resolve to the canonical ``.../​.plan/local``
-    shape — which is exactly the case here (the env points at ``tmp_path``).
-    Without pinning cwd, those subprocesses run ``git status --porcelain``
-    and resolve ``<repo>/.plan/execute-script.py`` against the REAL repo
-    working tree, so under ``-n auto`` they observe transient state mutated
-    by concurrent workers (a known recurring real-tree-leak signature) and
-    the aggregate capture becomes non-deterministic. Running with
-    ``cwd=tmp_path`` (a non-git, isolated dir) makes ``git_main_checkout_root``
-    return ``None`` so the executor/git fan-out short-circuits cleanly to
-    "not applicable" — the identifier validators still run at PARSE time
+    executor, plus ``git`` on the main checkout). ``_current_repo_root()``
+    falls back to the *process cwd* when ``PLAN_BASE_DIR`` does not resolve to
+    the canonical ``.../​.plan/local`` shape — which is exactly the case here
+    (the env points at ``tmp_path``) — and ``_main_repo_root()`` delegates to it
+    because a set ``PLAN_BASE_DIR`` is an active base-dir override.
+    Without pinning cwd, those subprocesses resolve
+    ``<repo>/.plan/execute-script.py`` against the REAL repo working tree, so
+    under ``-n auto`` they observe transient state mutated by concurrent workers
+    (a known recurring real-tree-leak signature) and the aggregate capture
+    becomes non-deterministic. Running with ``cwd=tmp_path`` moves the executor
+    lookup off that path, so the fan-out short-circuits to "not applicable".
+
+    ⚠ ``tmp_path`` is NOT outside the repository: ``build.py`` pins pytest's
+    ``--basetemp`` under the repo's own ``.plan/temp/``, so the git probes still
+    resolve this worktree and ``main_sha`` still captures the real HEAD. Only the
+    executor fan-out is isolated here, not the git reads — which is sufficient
+    for this test, whose assertions concern PARSE-time validation only. A test
+    that genuinely needs a repo-less cwd uses the ``outside_repo_dir`` fixture
+    instead. The identifier validators still run at PARSE time
     (the only behaviour this test asserts), so coverage is unchanged while
     the contention source is removed.
     """
@@ -167,8 +174,14 @@ def test_list_subcommand_canonical_plan_id(tmp_path):
     Pins ``cwd=tmp_path`` for the same isolation reason documented on
     ``test_canonical_inputs_dont_trigger_invalid_field``: although ``list``
     itself does not fan out to invariant captures, running every canonical
-    happy-path invocation against an isolated, non-git cwd keeps the parse-
-    time validator assertion free of any dependency on the real repo tree.
+    happy-path invocation from ``tmp_path`` keeps the parse-time validator
+    assertion free of any dependency on the real repo tree *for the executor
+    lookup*.
+
+    ⚠ ``tmp_path`` is NOT a non-git cwd — see that sibling's isolation note:
+    ``build.py`` pins pytest's ``--basetemp`` inside this repository, so git
+    probes still resolve this worktree. Sufficient here, because these
+    assertions concern PARSE-time validation only.
     """
     result = run_script(
         SCRIPT_PATH,

@@ -26,6 +26,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from _resolve_project_dir_fixtures import worktree_query_result
 
 from conftest import get_script_path, run_script
 
@@ -1672,7 +1673,7 @@ class TestPRTwoStateRoutingContract:
                 patch.object(
                     _resolver_core,
                     '_query_worktree_path',
-                    return_value=(True, '/tmp/wt-pr-resolved'),
+                    return_value=worktree_query_result(True, '/tmp/wt-pr-resolved'),
                 ),
                 patch('github_pr._github.fetch_pr_comments_data') as mock_fetch,
             ):

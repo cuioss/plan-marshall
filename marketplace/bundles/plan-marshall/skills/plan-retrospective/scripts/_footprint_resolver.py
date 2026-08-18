@@ -57,6 +57,60 @@ from _references_core import (
 FOOTPRINT_UNRESOLVED = None
 
 
+def resolve_diff_file_path(diff_file: str, plan_dir: Path) -> Path:
+    """Resolve an explicit ``--diff-file`` argument to an existing file, or raise.
+
+    An absolute path is used verbatim. A RELATIVE path is resolved against the
+    plan directory first and the process cwd second, and the first candidate that
+    exists wins. Plan-relative comes first because that is the form the capture
+    pattern documents (``--diff-file work/footprint.txt``, where ``work/`` is a
+    plan-directory subdirectory) and the form the sibling ``collect-fragments add
+    --fragment-file`` flag has always accepted in the same workflow.
+
+    **A supplied-but-unresolvable path raises.** It is never reported as an absent
+    one. The two were previously indistinguishable: an unresolvable ``--diff-file``
+    returned the same empty list as no ``--diff-file`` at all, so the documented
+    plan-relative invocation degraded to a ``skip`` reading *"no realized
+    footprint"* while the identical file passed as an absolute path found a real
+    violation. A could-not-look must not carry the same token as a
+    nothing-to-look-at, least of all when that token reads benign in every
+    downstream summary.
+
+    Args:
+        diff_file: The ``--diff-file`` argument as supplied.
+        plan_dir: The resolved plan directory a relative argument is resolved against.
+
+    Returns:
+        The existing file the argument names.
+
+    Raises:
+        ValueError: When no candidate exists, naming every candidate tried.
+    """
+    if not diff_file.strip():
+        # An empty or whitespace argument is SUPPLIED input that names nothing.
+        # Rejected explicitly, because `Path('')` is `.` and every relative
+        # candidate would then resolve to an existing DIRECTORY — failing later
+        # with a confusing "is a directory" read error instead of naming the
+        # actual defect, and only by luck rather than by rule.
+        raise ValueError(
+            f'Diff file does not exist: {diff_file!r} — the argument is empty and names no path'
+        )
+    raw = Path(diff_file)
+    if raw.is_absolute():
+        if raw.exists():
+            return raw
+        raise ValueError(f'Diff file does not exist: {diff_file}')
+    candidates = [plan_dir / raw, Path.cwd() / raw]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    tried = ', '.join(str(c) for c in candidates)
+    raise ValueError(
+        f'Diff file does not exist: {diff_file} — a relative --diff-file is resolved '
+        f'against the plan directory first and the cwd second; tried: {tried}'
+    )
+
+
 def footprint_resolved(footprint: set[str] | None) -> TypeGuard[set[str]]:
     """The ONE named predicate callers use to read a footprint's resolution state.
 
@@ -113,8 +167,15 @@ def resolve_merge_commit_footprint(plan_dir: Path, refs: dict[str, Any]) -> set[
 
     Uses ``git -C {plan_dir} diff --name-only {sha}^1 {sha}``. ``plan_dir`` is inside
     the repository (``.plan/archived-plans/…`` sits under the repo root even though
-    ``.plan/`` is git-ignored), so ``git -C`` resolves the enclosing repo and the
-    landed commit in its history.
+    it is git-ignored), so ``git -C`` resolves the enclosing repo and the landed
+    commit in its history.
+
+    ⚠ The ignored thing is that sub-path, not ``.plan/`` as a whole: a number of
+    files under ``.plan/`` ARE tracked (``marshal.json``, every
+    ``project-architecture/**/enriched.json``), which is why ``script-shared``'s
+    ``_plan_state_exemption`` exists. The conclusion here is unaffected — an
+    ignored path still resolves its enclosing repo — but the blanket form of the
+    claim is false and must not be restated.
 
     Any git failure — the SHA is absent (a shallow clone that never fetched it),
     ``plan_dir`` is not inside a repository, or a non-zero exit — returns ``None`` so

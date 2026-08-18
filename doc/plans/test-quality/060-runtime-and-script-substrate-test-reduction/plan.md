@@ -141,7 +141,7 @@ Work the slice **largest module first**.
    a starting point, **not** the list. Derive the list; do not copy it.
    **Two sibling plans derive halves of the same list; coordinate rather than duplicate.** Plan `010`
    § D6 derives the whole-tree candidate list and lands **before** this plan — read its report and
-   refine that list rather than starting from zero. Plan `080` § D5 derives the generator slice's
+   refine that list rather than starting from zero. Plan `080` § D4 derives the generator slice's
    candidates and may run concurrently with this one. Use the column set plan `010` fixed, and state
    in the report which rows are refinements of `010`'s and which are new, so the operator receives one
    list refined twice rather than three unrelated tables.
@@ -198,18 +198,34 @@ rename, because plan `070` owns both of its importers (see the note under D3).
 | `test/plan-marshall/script-shared/` carries matched positive/negative control pairs whose arms are evidence only in contrast | OBSERVED | the module docstrings of the daemon-routing and root-fs neutralization control modules under that directory |
 | This slice contains units whose contract is universal in the **B8** sense | HYPOTHESIS — **D5 exists to settle it** | Derive from the slice itself. If the derivation finds few or none, that is the finding — report it, and say so plainly rather than padding the table. |
 | No property-based test already exists anywhere in the tree | HYPOTHESIS — **asserted absence** | `grep -rn 'hypothesis\|@given\|strategies' test --include=*.py`. If one exists, D5's table starts from it rather than from zero. |
-| The partition holds — every directory under `test/plan-marshall/*/`, every file at the root of `test/plan-marshall/`, and every top-level `test/` entry other than `plan-marshall/` itself (which the first two clauses already decompose) appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time" states the procedure and the three deliberate exclusions. An entry in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
+| The partition holds — every directory under `test/plan-marshall/*/`, every file at the root of `test/plan-marshall/`, and every top-level `test/` entry other than `plan-marshall/` itself (which the first two clauses already decompose) appears in exactly one of `030`–`080`'s Expected surface | HYPOTHESIS — **gating and halting; run it before D1** | List the directories and check each against the six plans' Expected-surface lists; `doc/plans/test-quality/README.md` § "The partition, and how a run re-derives it" states the procedure and the deliberate exclusions its table names (**read the table; do not assume a count** — it has grown since these plans landed). An entry in two lists, or in **none**, is a partition defect: **halt and report it**, do not claim or skip it unilaterally |
 | Plans `010` and `020` have landed and their surfaces are present in this clone | HYPOTHESIS — **gating; this plan cannot start without it** | `grep -n 'def parse_ns' test/conftest.py`; the module-budget section of `persona-module-tester/standards/testing-methodology.md`. Absent → stop and report blocked. |
 
 ## Verification
 
-**The three-part done-when. All three must hold; the third alone is not success.**
+> ⛔ **SUPERSEDED IN PART — read this before the three conditions below.** This plan landed carrying a
+> three-part done-when whose third part is a **25% line floor**. That floor is **retired**, and so is
+> every other per-slice floor in this epic: four executed plans returned between 0.52% and 2.56%
+> against floors of 20–30%, and three of the six floors turned out to exceed their slice's entire
+> comment-and-docstring volume. A run re-entering this plan holds the **five conditions** in
+> `doc/plans/test-quality/README.md` § "What a reduction run must hold" — collected count, coverage,
+> skipped count, wall-clock, and a line delta that is **measured and reported, never targeted**.
+> Where that section and the text below disagree, **that section governs and the run reports the
+> disagreement**. Everything else below — the per-deliverable checks, the cold read, the executable
+> gate — stands unchanged.
+
+
+**The three-part done-when as this plan landed. ⛔ Its third condition is RETIRED — read it as a
+historical record, not as a gate.** Conditions 1 and 2 stand and are subsumed by the five in
+`README.md` § "What a reduction run must hold", which also add the skipped count and the
+wall-clock. **Condition 3 below is superseded**: the line delta is measured and reported, never
+targeted, and no run is held to the 25% figure it names.
 
 1. **Collected test count does not decrease.** Capture pytest's collected-item count for the slice
    before the first commit and again before the PR. Record both.
 2. **Coverage does not decrease** for the bundle paths this slice exercises. Record before/after and
    the command.
-3. **Line count drops by at least 25%** of the slice's starting total. If it cannot be reached without
+3. ⛔ **RETIRED — recorded, not required.** **Line count drops by at least 25%** of the slice's starting total. If it cannot be reached without
    violating (1) or (2), **report the shortfall and stop**.
 
 **A fourth check specific to this slice: the suite must stay hermetic.** This slice's tests are the
@@ -244,7 +260,7 @@ any you leave in place and why.
 ## Notes
 
 * **Concurrency.** Plans `030` through `080` are mutually parallel by construction, each owning a
-  disjoint slice. `doc/plans/test-quality/README.md` § "The plans, and what may run at the same time"
+  disjoint slice. `doc/plans/test-quality/README.md` § "The partition, and how a run re-derives it"
   carries the full partition.
 * **Order within the plan matters.** D1 before D2: hoisting fixtures shrinks modules and changes which
   ones are over budget, and a split done first strands fixtures away from the classes that need them.

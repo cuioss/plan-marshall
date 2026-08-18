@@ -34,7 +34,11 @@ from input_validation import (
     add_session_id_arg,
     parse_args_with_toon_errors,
 )
-from retro_sections import SECTION_SPEC
+from retro_sections import (
+    SECTION_SPEC,
+    ZERO_ATTRIBUTION_FIELDS,
+    ZERO_DECLARED_UNMEASURED_STATUSES,
+)
 from toon_parser import parse_toon
 
 # The canonical section→fragment-key registry lives in ``retro_sections`` so the
@@ -192,6 +196,143 @@ def _fragment_has_payload(fragment: Any) -> bool:
     return False
 
 
+def _reports_zero(fragment: Any) -> bool:
+    """Return True when a fragment makes an explicit *zero findings* claim.
+
+    The claim is a ``findings`` key holding a PRESENT-BUT-EMPTY list. A fragment
+    carrying no ``findings`` key at all makes no such claim (it reports some
+    other shape entirely), and one carrying a non-empty list reports findings —
+    neither is a zero.
+    """
+    if not isinstance(fragment, dict):
+        return False
+    findings = fragment.get('findings')
+    return isinstance(findings, list) and not findings
+
+
+def _names_checked_set(fragment: Any) -> bool:
+    """Return True when a zero-reporting fragment says what it checked.
+
+    Two ways to be unambiguous, and a fragment needs only one:
+
+    1. It DECLARES that it could not look — a status in
+       :data:`retro_sections.ZERO_DECLARED_UNMEASURED_STATUSES`. Such a fragment
+       is not claiming an evaluated-clean result at all.
+    2. It publishes the population it examined, under one of
+       :data:`retro_sections.ZERO_ATTRIBUTION_FIELDS`.
+
+    The empty-sentinel tuple below deliberately EXCLUDES ``False``, which is
+    filtered by a separate identity check — the same split ``_fragment_has_payload``
+    makes, for the same reason. ``False == 0`` in Python, so folding ``False`` into
+    the sentinel tuple (the natural way to spell "falsy means empty") would make
+    ``0 in sentinels`` true and swallow a published population of ``0`` — discarding
+    precisely the honest "I looked at nothing, and here is that number" case.
+    """
+    if not isinstance(fragment, dict):
+        return False
+    if str(fragment.get('status')) in ZERO_DECLARED_UNMEASURED_STATUSES:
+        return True
+    # Top level, then ONE level of nesting. The nesting pass is not
+    # defensiveness — it is where the real producers put these fields: only
+    # ``counts`` is published at the top of a fragment, while
+    # ``evaluated_population`` appears inside ``shape_violation`` /
+    # ``dispatch_coverage`` (``check-dispatch-audit``) and ``population`` inside
+    # ``script_cost_rollup`` (``analyze-logs``). A top-level-only probe would
+    # therefore flag a fragment that DOES name the population it examined,
+    # simply because it named it one level down — a false positive against
+    # exactly the producers this vocabulary was derived from.
+    #
+    # One level, not arbitrary depth: the population belongs to a named fact
+    # block, and an unbounded walk would let any incidental key deep in a
+    # payload clear the flag.
+    if _has_attribution_field(fragment):
+        return True
+    return any(_has_attribution_field(value) for value in fragment.values())
+
+
+def _has_attribution_field(candidate: Any) -> bool:
+    """Return True when ``candidate`` is a dict publishing a non-empty population.
+
+    ``False`` is matched by identity for the reason spelled out in
+    :func:`_names_checked_set` — a published population of ``0`` must survive.
+    """
+    if not isinstance(candidate, dict):
+        return False
+    for field in ZERO_ATTRIBUTION_FIELDS:
+        value = candidate.get(field)
+        if value is False:
+            continue
+        if value not in (None, '', [], {}):
+            return True
+    return False
+
+
+def _heading_to_fragment_key(fragments: dict[str, Any]) -> dict[str, str]:
+    """Return the heading→fragment-key map ``build_document`` renders under.
+
+    Covers BOTH render paths, because ``build_document`` writes sections through
+    both: the static ``SECTION_SPEC`` rows, and the generic fallback that emits a
+    registered-but-unlisted aspect (a domain-contributed key such as
+    ``wrapper-tangle``) under a heading synthesized from its key. A map built
+    from ``SECTION_SPEC`` alone would silently exclude every fallback-rendered
+    aspect from any probe over the written set — and those are the newest and
+    least conventional producers, so excluding them omits exactly the population
+    most likely to be non-conforming.
+
+    A ``SECTION_SPEC`` heading wins over a fallback key that synthesizes the same
+    heading, mirroring ``build_document``, whose fallback loop skips every key
+    already carrying a static row.
+    """
+    mapping = {heading: fragment_key for heading, fragment_key, _trigger in SECTION_SPEC}
+    spec_keys = set(mapping.values())
+    for aspect_key in sorted(fragments):
+        if aspect_key.startswith('_') or aspect_key in spec_keys:
+            continue
+        mapping.setdefault(_heading_from_aspect_key(aspect_key), aspect_key)
+    return mapping
+
+
+def unattributed_zero_sections(written: list[str], fragments: dict[str, Any]) -> list[str]:
+    """Return the written sections whose zero cannot be told from *could not look*.
+
+    A section that reports ``findings: []`` is making one of two very different
+    statements — *I checked, and the signals held* or *I could not check* — and a
+    reader cannot tell which without the checked set. This probe names the
+    sections that leave that ambiguity standing.
+
+    It is a REPORTED signal, not a gate: unlike ``sections_dropped`` (content the
+    report lost) an unattributed zero loses nothing, so it does not raise the
+    run's status. Conflating the two would blur a content-loss signal with an
+    ambiguity signal, which is the class of defect this partition exists to
+    surface.
+
+    The population is every WRITTEN section — both render paths (see
+    :func:`_heading_to_fragment_key`) — walked in document order, deduplicated.
+    A section the document does not carry reported nothing, so it cannot leave a
+    zero ambiguous.
+
+    Args:
+        written: Headings the document actually carries, in document order.
+        fragments: The fragment bundle the document was built from.
+
+    Returns:
+        The subset of ``written`` whose fragment reports zero without naming
+        what it checked.
+    """
+    mapping = _heading_to_fragment_key(fragments)
+    result: list[str] = []
+    for heading in written:
+        if heading in result:
+            continue
+        fragment_key = mapping.get(heading)
+        if fragment_key is None:
+            continue
+        fragment = fragments.get(fragment_key)
+        if _reports_zero(fragment) and not _names_checked_set(fragment):
+            result.append(heading)
+    return result
+
+
 def render_dispatch_boundaries_body(fragment: Any) -> str:
     """Render the Phase Dispatch Boundaries section body.
 
@@ -283,6 +424,54 @@ def render_section_body(fragment: Any) -> str:
     return summary_text + findings_block + data_block
 
 
+def _fragment_renders_empty(fragment: Any) -> bool:
+    """Return True when ``fragment`` cannot produce a body with content in it.
+
+    This is the predicate the *written implies non-empty* invariant turns on, and
+    it asks about EMPTINESS rather than absence. Asking ``fragment is None``
+    instead — the obvious spelling — closes only the absent-key case and leaves
+    the invariant false on the path the real pipeline takes:
+    ``toon_parser.parse_toon`` returns ``''`` for a valueless key, never ``None``
+    (only the literal token ``null`` yields ``None``), and
+    ``collect-fragments._read_fragment`` accepts any file that is not
+    whitespace-only. A producer that writes prose instead of a fragment therefore
+    registers successfully, reaches this renderer as ``''``, and — under an
+    ``is None`` guard — is emitted as a heading over an empty fenced block and
+    counted as written.
+
+    ⛔ **A non-empty CONTAINER is not the same as a usable BODY**, and testing the
+    container was one of several attempts that each closed a narrower case than
+    the invariant needs — no count is given here, because a count of attempts
+    goes stale on the next one. A dict such as
+    ``{'summary': ''}`` or ``{'findings': []}`` — the literal shape an LLM aspect
+    with nothing to report writes — is a non-empty dict that renders a JSON block
+    stating nothing. So for a dict the question is delegated to
+    :func:`_fragment_has_payload`, the discriminator this module ALREADY uses for
+    the drop-versus-omit split: a fragment it says carries nothing beyond its
+    envelope cannot simultaneously be a written section with a body. One
+    discriminator, one answer, both halves of the partition.
+
+    For a non-dict the payload discriminator does not apply (it reports ``False``
+    for every non-dict, which would swallow a bare scalar's content), so
+    emptiness is judged directly: a blank string or an empty container is empty;
+    ``0`` and ``0.0`` are content, because they render a value a reader can act
+    on. ``False`` is empty, matching the identity skip ``_fragment_has_payload``
+    applies to a ``False`` *value* — the two are kept genuinely consistent rather
+    than merely described as such.
+    """
+    if fragment is None:
+        return True
+    if isinstance(fragment, dict):
+        return not _fragment_has_payload(fragment)
+    if fragment is False:
+        return True
+    if isinstance(fragment, str):
+        return not fragment.strip()
+    if isinstance(fragment, (list, tuple, set, frozenset, bytes, bytearray)):
+        return not fragment
+    return False
+
+
 def _heading_from_aspect_key(aspect_key: str) -> str:
     """Derive a human-readable section heading from an aspect key.
 
@@ -327,18 +516,34 @@ def build_document(
     parts: list[str] = [build_header(plan_id, mode, plan_dir, session_id)]
 
     # Executive summary is synthesized from fragment data — if the caller
-    # provided one under ``_executive-summary``, use it verbatim; otherwise
-    # emit a placeholder.
+    # provided one under ``_executive-summary``, use it verbatim. When it did
+    # not, there is NO body to render, and the section takes the same non-emit
+    # partition every other section takes (see below). It is never emitted as a
+    # placeholder heading: ``references/report-structure.md`` § "Conditional
+    # Rule" forbids an empty heading, and counting one as written would break
+    # the partition invariant *written implies non-empty* — the loud half of
+    # this partition exists to make content loss visible, so the headline
+    # section must not ride the clean half on an empty body.
     exec_fragment = fragments.get('_executive-summary')
     if isinstance(exec_fragment, dict) and exec_fragment.get('summary'):
         exec_text = str(exec_fragment['summary']).strip()
     elif isinstance(exec_fragment, str) and exec_fragment.strip():
         exec_text = exec_fragment.strip()
     else:
-        exec_text = '_No executive summary provided._'
+        exec_text = ''
 
     for heading, fragment_key, trigger in SECTION_SPEC:
         if fragment_key == '_executive-summary':
+            if not exec_text:
+                # Same discriminator the conditional sections use: a fragment
+                # that carried payload the renderer nonetheless could not turn
+                # into a body is a DROP; an absent or empty one is a benign
+                # omission.
+                if _fragment_has_payload(exec_fragment):
+                    dropped.append(heading)
+                else:
+                    omitted.append(heading)
+                continue
             parts.append(f'## {heading}\n\n{exec_text}\n')
             written.append(heading)
             continue
@@ -354,6 +559,23 @@ def build_document(
                 omitted.append(heading)
             continue
         fragment = fragments.get(fragment_key)
+        if _fragment_renders_empty(fragment):
+            # Nothing usable to render, in any of three ways: an ABSENT fragment
+            # gets the literal ``_No data provided._`` placeholder; an EMPTY
+            # container (``''`` from a valueless TOON key, ``{}``, ``[]``) gets a
+            # heading over an empty fenced block; and a NON-EMPTY dict carrying
+            # no payload beyond its envelope (``{'findings': []}`` — the shape an
+            # LLM aspect with nothing to report writes) gets a heading over a
+            # JSON block that states nothing. Counting any of them as written is
+            # the invariant breach the Executive Summary branch above closes, and
+            # it was never confined to one row: every
+            # ``conditional_trigger = None`` row reaches here whenever its
+            # producer wrote nothing usable.
+            #
+            # Nothing was lost (there was no content to lose), so this is the
+            # benign half of the partition.
+            omitted.append(heading)
+            continue
         # Dispatch_boundaries uses a dedicated per-phase table renderer; every
         # other fragment falls back to the generic JSON+findings renderer.
         if fragment_key == 'dispatch_boundaries':
@@ -374,6 +596,17 @@ def build_document(
         if aspect_key.startswith('_'):
             continue
         if aspect_key in spec_keys:
+            continue
+        # Same invariant as the static loop above, because the invariant is a
+        # property of the PARTITION rather than of one render path.
+        #
+        # This check sits AFTER the ``spec_keys`` skip, and the order is
+        # load-bearing: above it, a registry key whose value is empty was
+        # recorded twice — once by the static loop under its real heading, and
+        # again here under a heading SYNTHESIZED from the key, naming a section
+        # that exists in no registry row.
+        if _fragment_renders_empty(fragments.get(aspect_key)):
+            omitted.append(_heading_from_aspect_key(aspect_key))
             continue
         heading = _heading_from_aspect_key(aspect_key)
         body = render_section_body(fragments.get(aspect_key))
@@ -425,6 +658,9 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         'sections_written': written,
         'sections_omitted': omitted,
         'sections_dropped': dropped,
+        # Reported, never gating: a written section whose "zero findings" cannot
+        # be told apart from "could not look". See ``unattributed_zero_sections``.
+        'sections_unattributed_zero': unattributed_zero_sections(written, fragments),
     }
     if dropped:
         result['message'] = (

@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta
 
 import ci_base
 import pytest
+from _resolve_project_dir_fixtures import worktree_query_result
 from ci_base import (
     BODY_KIND_ISSUE_COMMENT,
     BODY_KIND_ISSUE_CREATE,
@@ -1516,7 +1517,7 @@ def test_extract_routing_args_plan_id_only_resolves_via_manage_status(monkeypatc
     # The manage-status shell-out seam lives in file_ops; resolve_project_dir
     # delegates the worktree face to file_ops.resolve_plan_context.
     monkeypatch.setattr(
-        _resolver_core, '_query_worktree_path', lambda _pid: (True, '/tmp/worktree-resolved')
+        _resolver_core, '_query_worktree_path', lambda _pid: worktree_query_result(True, '/tmp/worktree-resolved')
     )
     resolved, remaining = extract_routing_args(['--plan-id', 'task-routing-canonical', 'pr', 'view'])
     assert resolved is not None
@@ -1529,7 +1530,7 @@ def test_extract_routing_args_plan_id_use_worktree_false_falls_back(monkeypatch)
     import file_ops as _resolver_core
     from ci_base import extract_routing_args
 
-    monkeypatch.setattr(_resolver_core, '_query_worktree_path', lambda _pid: (False, ''))
+    monkeypatch.setattr(_resolver_core, '_query_worktree_path', lambda _pid: worktree_query_result(False))
     monkeypatch.setattr(_resolver_core, 'cwd_checkout_root', lambda: '/tmp/main-checkout')
     resolved, remaining = extract_routing_args(['--plan-id', 'task-routing-canonical', 'pr', 'view'])
     assert resolved == '/tmp/main-checkout'
@@ -1575,7 +1576,7 @@ def test_extract_routing_args_router_level_plan_id_before_prepare_body_accepted(
     from ci_base import extract_routing_args
 
     monkeypatch.setattr(
-        _resolver_core, '_query_worktree_path', lambda _pid: (True, '/tmp/worktree-resolved')
+        _resolver_core, '_query_worktree_path', lambda _pid: worktree_query_result(True, '/tmp/worktree-resolved')
     )
     resolved, remaining = extract_routing_args(['--plan-id', 'my-plan', 'pr', 'prepare-body'])
     assert resolved is not None

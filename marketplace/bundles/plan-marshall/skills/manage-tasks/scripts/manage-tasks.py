@@ -27,7 +27,9 @@ Subcommands:
                      dispatch loop MUST continue while pending tasks remain
   pre-commit-verify-freshness
                    - Script-level enforcement that the worktree state has
-                     been observed by a fresh ``verify`` run before the
+                     been observed by a successful build -- ANY build-executing
+                     dispatch, not specifically ``verify`` -- whose notation the
+                     project's architecture resolves, before the
                      orchestrator may transition out of phase-5-execute or
                      dispatch ``push`` in phase-6-finalize. Returns
                      ``fresh``, ``stale``, or ``undecidable``; non-``fresh``
@@ -414,20 +416,34 @@ def build_parser() -> argparse.ArgumentParser:
         help='Script-level enforcement: worktree state must be observed by a fresh build run',
         description=(
             'Query the unified change-ledger for a ``kind=build`` entry whose '
-            '``exit_code == 0`` and whose ``worktree_sha`` equals the CURRENT '
-            'working-tree currency hash. The query is build-tool-agnostic and '
-            'tier-agnostic: it filters on ``kind``, ``exit_code`` and '
-            '``worktree_sha`` only — never ``notation`` or ``plan_id`` — so a '
-            'Maven/Gradle/npm build, or an orchestrator-driven global-tier build '
-            'with ``plan_id: null``, satisfies the gate exactly as a plan-scoped '
-            'build does. The primitive is the *working-tree* currency '
+            '``status == success`` and whose ``worktree_sha`` equals the CURRENT '
+            'working-tree currency hash — ``status``, not ``exit_code``, because '
+            'the build wrapper exits 0 on timeout. This primary predicate is '
+            'tier-agnostic: it filters on ``kind``, ``status`` and '
+            '``worktree_sha`` only, never ``plan_id``, so an orchestrator-driven '
+            'global-tier build recorded under the ``NO_PLAN`` sentinel satisfies '
+            'the gate exactly as a plan-scoped build does. Each matching row is '
+            'then CROSS-CHECKED: its ``notation`` is compared against the build '
+            'notations this project\'s architecture resolves, so a row naming a '
+            'build this project never runs cannot prove freshness. The '
+            'cross-check stays build-tool-agnostic — a Maven/Gradle/npm build '
+            'passes whenever the architecture resolves that notation here — and '
+            'its verdict is three-valued: ``corroborated`` passes, ``refuted`` '
+            'fails closed, and an architecture that cannot be resolved at all '
+            'passes with ``notation_cross_check: unverified`` stated in the '
+            'record rather than folded into a corroboration. The primitive is '
+            'the *working-tree* currency '
             '(uncommitted staged+unstaged+untracked state), NOT the committed '
             '``HEAD``: this is a pre-commit gate, so a HEAD-sha primitive would '
             'match trivially regardless of uncommitted edits and produce a '
             'false-positive ``fresh``. Returns ``status: fresh`` when a matching '
-            'successful build entry exists, ``status: stale`` when the ledger has '
-            'entries but none matches the current working-tree sha (the worktree '
-            'has been mutated since the last observed build), and '
+            'successful build entry exists and was not refuted (the record names '
+            'the matched row), ``status: stale`` when no successful build matches '
+            'the current working-tree sha or every one that does names a build '
+            'this project never runs (``reason`` names which route: '
+            '``worktree_mutated``, ``build_error``, ``build_timeout``, '
+            '``build_killed``, ``build_indeterminate``, ``notation_unrelated``, '
+            '``notation_absent``), and '
             '``status: undecidable`` when no positive proof can be established '
             '(``reason: no_registry`` — ledger absent/empty; '
             '``reason: head_unresolvable`` — working-tree sha undefined). The '

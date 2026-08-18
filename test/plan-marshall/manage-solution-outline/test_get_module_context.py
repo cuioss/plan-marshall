@@ -461,13 +461,21 @@ def _stub_get_worktree_path(monkeypatch, *, use_worktree: bool, worktree_path: s
 
     Stubbing at the subprocess boundary keeps the real resolution logic in
     play: ``_parse_get_worktree_path_output`` and ``PlanContext`` both execute
-    for real, so the ``use_worktree=true`` + empty-path state raises the
-    genuine ``WorktreeResolutionError`` rather than a hand-made stand-in.
+    for real against the payload the producer would actually emit.
+
+    The ``worktree_state`` line is derived by ``file_ops.derive_worktree_state``
+    — the same function the producer publishes its own state from — so this stub
+    cannot emit a payload shape production never emits, and a change to the state
+    machine reaches the stub without an edit here.
     """
+    state, published_path = file_ops.derive_worktree_state(
+        {'use_worktree': use_worktree, 'worktree_path': worktree_path}
+    )
     payload = (
         'status: success\n'
         f'use_worktree: {"true" if use_worktree else "false"}\n'
-        f'worktree_path: "{worktree_path}"\n'
+        f'worktree_state: {state}\n'
+        f'worktree_path: "{published_path}"\n'
     )
     monkeypatch.setattr(file_ops, '_run_get_worktree_path', lambda plan_id: payload)
 
@@ -475,12 +483,18 @@ def _stub_get_worktree_path(monkeypatch, *, use_worktree: bool, worktree_path: s
 def test_get_module_context_falls_back_to_checkout_when_worktree_unmaterialized(
     plan_context, monkeypatch, capsys, tmp_path
 ):
-    """Positive arm: an unmaterialized worktree degrades to the checkout root.
+    """Positive arm: an unmaterialized worktree resolves to the checkout root.
 
     This is the phase-3-outline state — ``use_worktree`` is true but the
-    worktree does not exist yet. The command must succeed, return the REAL
-    seeded context (an empty payload would make the fallback pass vacuously),
-    and name the checkout it read from.
+    worktree does not exist yet, which the producer publishes as
+    ``worktree_state: pending``. The command must succeed and return the REAL
+    seeded context (an empty payload would make the arm pass vacuously).
+
+    No fallback is reported, and that is the assertion that matters: ``pending``
+    is a state the shared resolver handles, not a failure this verb has to
+    survive. The reader used to reach the checkout root only by catching the
+    resolver's exception and stamping ``worktree_fallback: true`` — a normal
+    phase-3 window described to every caller as a degradation.
     """
     checkout = tmp_path / 'checkout'
     checkout.mkdir()
@@ -488,9 +502,11 @@ def test_get_module_context_falls_back_to_checkout_when_worktree_unmaterialized(
     _stub_get_worktree_path(monkeypatch, use_worktree=True, worktree_path='')
     # pytest's basetemp lives INSIDE this repository, so the real
     # cwd-relative resolver would walk up past the fixture and land on the
-    # repository root. Pin the checkout root the reader degrades to, so the
-    # arm asserts the degradation target rather than the harness layout.
+    # repository root. Both seams are pinned: the shared resolver reaches
+    # ``file_ops.cwd_checkout_root`` for the pending state, and this verb's own
+    # degrade path reaches its module-level import of the same helper.
     monkeypatch.setattr(_mod, 'cwd_checkout_root', lambda: str(checkout))
+    monkeypatch.setattr(file_ops, 'cwd_checkout_root', lambda: str(checkout))
     monkeypatch.chdir(checkout)
 
     code, out = _run_main(monkeypatch, capsys, ['get-module-context', '--plan-id', 'so-wt-absent'])
@@ -498,8 +514,8 @@ def test_get_module_context_falls_back_to_checkout_when_worktree_unmaterialized(
     assert code == 0
     data = parse_toon(out)
     assert data['status'] == 'success'
-    assert data['worktree_fallback'] is True
-    assert 'worktree_path is empty' in data['worktree_fallback_reason']
+    assert data['worktree_fallback'] is False
+    assert 'worktree_fallback_reason' not in data
     assert Path(data['project_dir']).resolve() == checkout.resolve()
     # Count-bearing assertions publish their population: a zero module_count
     # against an empty seed would otherwise read as a pass.

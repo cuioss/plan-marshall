@@ -409,20 +409,28 @@ def validate_tree_completeness(project_root: str, extensions: list) -> list[str]
     return sorted(uncovered)
 
 
-def _read_build_map_globs(project_root: str | None = None) -> list[str]:
-    """Collect every non-empty ``glob`` from ``build.map`` in marshal.json.
+def read_build_map_routes(project_root: str | None = None) -> list[tuple[str, str | None]]:
+    """Collect every ``(glob, role)`` route declared in ``build.map`` in marshal.json.
 
-    The build_map at the top-level ``build.map`` is the single source of truth
-    for the file-to-build contract — every ``{glob, role, build_class}`` entry
-    across all domains names a file type the project knows how to build. This is
-    the build-decision activation gate: a build is necessary only when the live
-    footprint touches one of these globs.
+    The build_map at the top-level ``build.map`` is the single source of truth for
+    the file-to-build contract — every ``{glob, role, build_class}`` entry across
+    all domains names a file type the project knows how to build, and the ``role``
+    says WHICH kind of file it is (:data:`ROLE_PRODUCTION` / :data:`ROLE_TEST` /
+    :data:`ROLE_CONFIG`).
 
-    Returns the deduplicated list of non-empty glob strings collected from every
-    build_map entry, in first-seen order. Returns an empty list when marshal.json
-    is missing, the ``build.map`` block is absent, or no entry
-    carries a glob — :func:`should_execute_build` treats an empty list as "no
-    build registered" and returns ``not_necessary``.
+    This is the declared oracle's read side, and it is the reader every
+    role-consulting site shares. A consumer that needs the role of one path pairs
+    it with :func:`resolve_route_role`; a consumer that needs only the activation
+    globs uses :func:`_read_build_map_globs`, which is derived from this reader so
+    both see one parse of one file.
+
+    Returns the deduplicated ``(glob, role)`` pairs in first-seen order. ``role``
+    is ``None`` for an entry whose role is absent or not a recognised
+    :data:`BUILD_MAP_ROLES` member — such an entry still names a buildable glob
+    (so the activation gate keeps it) while saying nothing about the file's kind
+    (so :func:`resolve_route_role` ignores it). Returns an empty list when
+    marshal.json is missing, the ``build.map`` block is absent, or no entry
+    carries a glob.
 
     Args:
         project_root: Accepted for signature parity with
@@ -433,6 +441,9 @@ def _read_build_map_globs(project_root: str | None = None) -> list[str]:
             (in-function) so this foundational module carries no hard top-level
             dependency on another skill's scripts dir — build extensions import
             ``extension_base`` standalone.
+
+    Returns:
+        Deduplicated ``(glob, role_or_None)`` pairs in first-seen order.
     """
     del project_root  # resolved from execution context, not forwarded
     import json as _json
@@ -454,8 +465,8 @@ def _read_build_map_globs(project_root: str | None = None) -> list[str]:
     build_map = build.get('map')
     if not isinstance(build_map, dict):
         return []
-    globs: list[str] = []
-    seen: set[str] = set()
+    routes: list[tuple[str, str | None]] = []
+    seen: set[tuple[str, str | None]] = set()
     for entries in build_map.values():
         if not isinstance(entries, list):
             continue
@@ -463,28 +474,134 @@ def _read_build_map_globs(project_root: str | None = None) -> list[str]:
             if not isinstance(entry, dict):
                 continue
             glob = entry.get('glob')
-            if isinstance(glob, str) and glob and glob not in seen:
-                seen.add(glob)
-                globs.append(glob)
+            if not isinstance(glob, str) or not glob:
+                continue
+            raw_role = entry.get('role')
+            role = raw_role if isinstance(raw_role, str) and raw_role in BUILD_MAP_ROLES else None
+            pair = (glob, role)
+            if pair in seen:
+                continue
+            seen.add(pair)
+            routes.append(pair)
+    return routes
+
+
+def resolve_route_role(path: str, routes: list[tuple[str, str | None]]) -> str | None:
+    """Return the build_map role governing ``path``, or ``None`` when no route covers it.
+
+    The declared oracle's per-path lookup, paired with :func:`read_build_map_routes`
+    (read the routes once, classify many paths). Matching is delegated to
+    :func:`route_matches`, so a bare-basename route and a path-bearing route each
+    match under the regime their shape selects — the same regime the build-decision
+    activation gate and the seed-completeness validator use.
+
+    **Precedence is deliberately implementation-favouring, and it is
+    order-independent.** When several routes match one path, an implementation role
+    wins over :data:`ROLE_CONFIG`: :data:`ROLE_PRODUCTION` first, then
+    :data:`ROLE_TEST`, then :data:`ROLE_CONFIG`. A caller filtering a footprint on
+    this answer therefore keeps a contested path rather than discarding it, which
+    can only widen what a rule examines — never narrow it behind a silent
+    reclassification. Deciding by precedence rather than by first match also means
+    the answer does not depend on which domain the seed happened to write first.
+
+    ``None`` means **no declared route covers this path** — a could-not-classify,
+    not a classified-as-unimportant. A caller must not collapse the two: an
+    unrouted path is one the oracle has no opinion about, and treating that as a
+    negative verdict is how a private guess re-enters through the back door.
+
+    Args:
+        path: Repo-relative, forward-slashed candidate path.
+        routes: The ``(glob, role)`` pairs from :func:`read_build_map_routes`.
+
+    Returns:
+        ``ROLE_PRODUCTION`` / ``ROLE_TEST`` / ``ROLE_CONFIG``, or ``None`` when no
+        route with a recognised role matches ``path``.
+    """
+    matched: set[str] = set()
+    for glob, role in routes:
+        if role is None:
+            continue
+        if role in matched:
+            continue
+        if route_matches(path, glob):
+            matched.add(role)
+    for role in (ROLE_PRODUCTION, ROLE_TEST, ROLE_CONFIG):
+        if role in matched:
+            return role
+    return None
+
+
+def _read_build_map_globs(project_root: str | None = None) -> list[str]:
+    """Collect every non-empty ``glob`` from ``build.map`` in marshal.json.
+
+    The build-decision activation gate: a build is necessary only when the live
+    footprint touches one of these globs. Derived from
+    :func:`read_build_map_routes` (the single build_map reader) by projecting the
+    glob out of each route and de-duplicating, so the activation gate and the
+    role lookup can never read a different build_map.
+
+    Returns the deduplicated list of non-empty glob strings collected from every
+    build_map entry, in first-seen order — an entry whose role is missing or
+    unrecognised still contributes its glob, because it names a buildable file
+    type regardless of whether it says which kind. Returns an empty list when
+    marshal.json is missing, the ``build.map`` block is absent, or no entry
+    carries a glob — :func:`should_execute_build` treats an empty list as "no
+    build registered" and returns ``not_necessary``.
+
+    Args:
+        project_root: Forwarded to :func:`read_build_map_routes`, which resolves
+            the marshal path from the current execution context rather than from
+            this argument (signature parity with :func:`should_execute_build`).
+    """
+    globs: list[str] = []
+    seen: set[str] = set()
+    for glob, _role in read_build_map_routes(project_root):
+        if glob in seen:
+            continue
+        seen.add(glob)
+        globs.append(glob)
     return globs
 
 
 def _resolve_plan_footprint(plan_id: str) -> list[str] | None:
     """Derive the live plan footprint for ``plan_id`` on demand.
 
-    Reads ``status.metadata.worktree_path`` to locate the worktree, then derives
-    the footprint live via ``compute_plan_branch_diff`` (``{base}...HEAD`` ∪
-    porcelain).
+    Branches on the plan's worktree-state discriminator to locate the working
+    tree, then derives the footprint live via ``compute_plan_branch_diff``
+    (``{base}...HEAD`` ∪ porcelain).
+
+    The state is obtained from ``file_ops.derive_worktree_state`` — the same
+    function ``manage-status get-worktree-path`` publishes its
+    ``worktree_state`` from — rather than re-read out of the primitive
+    ``use_worktree`` / ``worktree_path`` fields here. Reading those primitives
+    directly made a ``disabled`` plan indistinguishable from a ``pending`` one,
+    so every non-worktree plan reported its footprint permanently unresolvable
+    and carried the reason "worktree not yet materialised" — a statement that is
+    not merely unhelpful for such a plan but false, since no worktree will ever
+    be materialised for it.
+
+    Only a MATERIALIZED worktree yields a footprint. The other two states are
+    distinct reasons for the same ``None``, and keeping them distinct is the
+    point: ``pending`` means the evidence does not exist YET, ``disabled`` means
+    a worktree will never carry it. Neither is "the metadata is broken", which is
+    what the old primitive read reported for both.
+
+    Deriving a ``disabled`` plan's footprint from the main checkout is
+    deliberately NOT done here. It is a cross-cutting policy question — every
+    footprint gate in the tree (``manage-references``, the composer's own
+    ``_resolve_footprint``) treats "no materialized worktree" as "no derivable
+    footprint", and a main checkout carries no marker distinguishing the plan's
+    changes from whatever else is uncommitted in it. Changing that belongs with
+    those consumers, not inside this one resolver.
 
     The return distinguishes two materially different states that a single
     empty list used to collapse:
 
     - ``None`` — the footprint is **unresolvable**: no ``status.json``, malformed
-      status, an absent/empty ``worktree_path``, a ``worktree_path`` that is not a
-      directory, or ``compute_plan_branch_diff`` raising. This is the normal
-      condition during early compose (phase-4-plan), *before* phase-5-execute
-      Step 2.5 materialises the worktree. There is no evidence either way about
-      what changed, so :func:`should_execute_build` reports ``unknown``.
+      status, a ``pending`` or ``disabled`` worktree state, a ``worktree_path``
+      that is not a directory, or ``compute_plan_branch_diff`` raising. There is
+      no evidence either way about what changed, so
+      :func:`should_execute_build` reports ``unknown``.
     - ``[]`` — the worktree **is** resolvable and its diff is genuinely empty.
       Nothing changed, so :func:`should_execute_build` reports ``not_necessary``.
 
@@ -497,7 +614,7 @@ def _resolve_plan_footprint(plan_id: str) -> list[str] | None:
         plan_id: Plan identifier whose footprint to resolve.
 
     Returns:
-        The sorted repo-relative footprint paths for a resolvable worktree
+        The sorted repo-relative footprint paths for a resolvable working tree
         (possibly empty), or ``None`` when the footprint is unresolvable.
     """
     import json as _json
@@ -509,7 +626,12 @@ def _resolve_plan_footprint(plan_id: str) -> list[str] | None:
         resolve_base_ref,
     )
     from constants import FILE_REFERENCES, FILE_STATUS
-    from file_ops import get_plan_dir, read_json
+    from file_ops import (
+        WORKTREE_STATE_MATERIALIZED,
+        derive_worktree_state,
+        get_plan_dir,
+        read_json,
+    )
 
     status_path = get_plan_dir(plan_id) / FILE_STATUS
     if not status_path.exists():
@@ -520,14 +642,11 @@ def _resolve_plan_footprint(plan_id: str) -> list[str] | None:
         return None
     if not isinstance(status, dict):
         return None
-    metadata = status.get('metadata', {})
-    if not isinstance(metadata, dict):
+    worktree_state, worktree_path = derive_worktree_state(status.get('metadata'))
+    if worktree_state != WORKTREE_STATE_MATERIALIZED:
         return None
-    worktree_path = metadata.get('worktree_path', '')
-    if not isinstance(worktree_path, str) or not worktree_path:
-        return None
-    worktree = _Path(worktree_path)
-    if not worktree.is_dir():
+    working_tree = _Path(worktree_path)
+    if not working_tree.is_dir():
         return None
 
     refs_path = get_plan_dir(plan_id) / FILE_REFERENCES
@@ -539,7 +658,7 @@ def _resolve_plan_footprint(plan_id: str) -> list[str] | None:
         refs = {}
     base_ref = resolve_base_ref(None, refs)
     try:
-        footprint = compute_plan_branch_diff(worktree, base_ref)
+        footprint = compute_plan_branch_diff(working_tree, base_ref)
     except _subprocess.CalledProcessError:
         return None
     return sorted(footprint)
@@ -624,7 +743,10 @@ def should_execute_build(
     if footprint is None:
         return {
             'decision': 'unknown',
-            'reason': 'plan footprint unresolvable — worktree not yet materialised',
+            'reason': (
+                'plan footprint unresolvable — no materialized worktree carries '
+                'evidence of what this plan changed'
+            ),
             **label,
         }
     if not footprint:

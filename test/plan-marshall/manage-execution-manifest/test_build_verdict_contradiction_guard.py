@@ -58,7 +58,7 @@ _BUILD = {'decision': 'build'}
 #: vacuously-positive ``not_necessary`` a single collapsed empty list produced.
 _UNKNOWN = {
     'decision': 'unknown',
-    'reason': 'plan footprint unresolvable — worktree not yet materialised',
+    'reason': 'plan footprint unresolvable — no materialized worktree carries evidence of what this plan changed',
 }
 
 

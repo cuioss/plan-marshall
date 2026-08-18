@@ -11,6 +11,7 @@ import argparse
 
 import gitlab_ops
 from _ci_wait_contract import _ok_auth
+from _resolve_project_dir_fixtures import worktree_query_result
 
 
 def _capture_run_glab(*, mr_list_iid: int = 7):
@@ -607,7 +608,7 @@ def test_gitlab_main_routes_plan_id_via_extract_routing_args(monkeypatch):
     from ci_base import get_default_cwd, set_default_cwd
 
     monkeypatch.setattr(
-        _resolver_core, '_query_worktree_path', lambda _pid: (True, '/tmp/wt-gitlab-resolved')
+        _resolver_core, '_query_worktree_path', lambda _pid: worktree_query_result(True, '/tmp/wt-gitlab-resolved')
     )
 
     monkeypatch.setattr('sys.argv', ['gitlab_ops.py', '--plan-id', 'task-routing-canonical', '--help'])

@@ -337,12 +337,13 @@ Forbidden forms (all trigger the sandbox):
 For host-platform runtime state (session id, conversation id, plan id from main
 context) the shell is **not** the source — the skill input contract plus the
 domain-specific resolver is. For `session_id` specifically, it is captured at
-plan-init time by the platform-runtime `SessionStart` hook and stored in
-`status.json`. Read it back via:
+plan-init time by the platform-runtime `SessionStart` hook and APPENDED to the
+`status.json` field `metadata.session_ids` — a list, since a plan legitimately
+spans several sessions. Read it back (and take the last entry) via:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
-  --plan-id {plan_id} --get --field session_id
+  --plan-id {plan_id} --get --field session_ids
 ```
 
 It never shells out, never reads env vars, and never prompts. See

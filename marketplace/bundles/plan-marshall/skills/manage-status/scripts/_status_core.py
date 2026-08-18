@@ -395,6 +395,27 @@ def cmd_orchestrator_metadata(args: argparse.Namespace) -> dict[str, Any] | None
             'error': 'wrong_parameters',
             'message': '--get and --set are mutually exclusive; supply exactly one',
         }
+    # ``--append`` is attached to the SHARED ``metadata`` subparser, so it is
+    # accepted here by the argparse surface and implemented only by the plans
+    # store. Refuse it explicitly rather than ignoring it: an ignored --append
+    # falls through to the --set branch below and OVERWRITES, reporting
+    # ``status: success`` while destroying the value the caller meant to extend
+    # — the precise defect the flag was added to eliminate, reproduced on the
+    # store that never implemented it. The orchestrator store's list fields are
+    # served by ``update-field`` (JSON-array ``--value``); see manage-status
+    # SKILL.md § Canonical invocations.
+    if getattr(args, 'append', False):
+        return {
+            'status': 'error',
+            'plan_id': args.plan_id,
+            'store': ORCHESTRATOR_STORE,
+            'error': 'append_unsupported_for_store',
+            'message': (
+                '--append is implemented for the plans store only. The orchestrator '
+                "store's list fields are set through `update-field` with a JSON-array "
+                '--value. Nothing was written.'
+            ),
+        }
     # The --get read-path resolves an archived epic transparently; the --set
     # write-path stays strict so an archived-only epic refuses with
     # file_not_found (no resurrection at the active path).

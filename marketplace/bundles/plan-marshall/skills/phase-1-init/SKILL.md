@@ -781,16 +781,16 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
 
 ### Step 8a: session_id Early-Warning Check
 
-Verify that `status.metadata.session_id` was captured when `status.json` was created (Step 3a). The platform-runtime `SessionStart` hook (`session capture`) normally writes this field at plan-init time, but if the hook never ran or stored nothing, the gap stays invisible until phase-6-finalize aborts with an opaque hard-block. This sub-step surfaces the gap early — it does NOT abort init.
+Verify that `status.metadata.session_ids` was captured when `status.json` was created (Step 3a). The platform-runtime `SessionStart` hook (`session capture`) normally APPENDS the session id to that list at plan-init time, but if the hook never ran or stored nothing, the gap stays invisible until phase-6-finalize aborts with an opaque hard-block. This sub-step surfaces the gap early — it does NOT abort init.
 
 Read the field back:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status metadata \
-  --plan-id {plan_id} --get --field session_id
+  --plan-id {plan_id} --get --field session_ids
 ```
 
-If `value` is empty OR the call returns `status: error`, emit a `[WARNING]` work-log entry noting the gap:
+If `value` is empty (an absent field, or an empty list) OR the call returns `status: error`, emit a `[WARNING]` work-log entry noting the gap:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \

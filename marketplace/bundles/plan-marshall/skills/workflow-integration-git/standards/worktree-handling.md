@@ -35,7 +35,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status get-wo
   --plan-id {plan_id}
 ```
 
-The script returns the absolute path when `metadata.use_worktree == true` and an empty string when the plan runs against the main checkout.
+The script publishes a `worktree_state` discriminator — `materialized` / `pending` / `disabled` — and returns the absolute path only for `materialized`, an empty string for the other two. Consumers branch on that field; see [Worktree-Resolution Contract](#worktree-resolution-contract) for which of the two empty-path states a caller must distinguish.
 
 ## Worktree Lifecycle
 
@@ -61,7 +61,16 @@ The consequence for concurrent sessions: a plan-discovery operation (`manage-sta
 
 ### Worktree-Resolution Contract
 
-Every script and skill that consumes `worktree_path` reads it as a boolean disk-presence signal — there is no empty-path sentinel state to carry. The applicability decision is governed by a single materialization predicate (`_worktree_materialized` in the handshake's `_invariants.py`): the worktree is in play when **either** `worktree_path` is present and non-empty **or** the active phase is a materialization phase (`5-execute`, `6-finalize`). The phase term is what lets the predicate treat the transient phase-5 window — after phase entry but before Step 2.5 backfills the path — as materialized even while `worktree_path` is still empty. The three disk-presence observations below are the path-binding consequence of that predicate:
+Every script and skill that consumes `worktree_path` reads it as a boolean disk-presence signal — there is no empty-path sentinel state to carry. The applicability decision is governed by a single materialization predicate (`_worktree_materialized` in the handshake's `_invariants.py`): the worktree is in play when **either** `worktree_path` is present and non-empty **or** the active phase is a materialization phase (`5-execute`, `6-finalize`). The phase term is what lets the predicate treat the transient phase-5 window — after phase entry but before Step 2.5 backfills the path — as materialized even while `worktree_path` is still empty. The three disk-presence observations below are the path-binding consequence of that predicate.
+
+⚠ **These are PRODUCER-side facts, and a consumer does not read them directly.** `manage-status
+get-worktree-path` derives exactly this table into a published `worktree_state`
+(`disabled` / `pending` / `materialized`, in row order below), and every consumer branches on that
+field rather than on the raw pair — re-deriving the state from the primitives cannot distinguish the
+second row from the first, and they route differently. The rows remain here because the handshake's
+`_worktree_materialized` predicate is producer-side and additionally carries a phase axis this table
+describes; a consumer wanting the same question without the phase term calls
+`file_ops.derive_worktree_state`.
 
 | Observation | Meaning | Required behaviour |
 |-------------|---------|--------------------|
@@ -253,14 +262,19 @@ The contract has four states — the enumerated rows below are the complete set:
 
 | Invocation | Resolution | Effective working tree |
 |------------|-----------|------------------------|
-| `--plan-id X` (preferred) | Script resolves through `file_ops.resolve_plan_context`, the single plan-context resolver that owns the one `manage-status get-worktree-path` invocation in the codebase, and binds subprocesses to the resolved `worktree_path`. | The worktree at `<project_root>/.plan/local/worktrees/X/`. |
+| `--plan-id X` (preferred) | Script resolves through `file_ops.resolve_plan_context`, the single plan-context resolver that owns the one `manage-status get-worktree-path` invocation in the codebase, and binds subprocesses to the resolved `worktree_path`. The resolved path is selected by the producer's published `worktree_state` discriminator, never re-derived from the primitive metadata fields. | The worktree at `<project_root>/.plan/local/worktrees/X/` when `worktree_state` is `materialized`; the cwd-resolved checkout root when it is `pending` (opted in, phase-5-execute has not created it yet) or `disabled`. |
 | `--plan-id NO_PLAN` (plan-less sentinel) | The same resolver, taking its sentinel branch. The sentinel has no worktree face at all: `has_worktree` is `False` and `worktree_path` is the checkout root. | The **main checkout**, always — the sentinel never binds to a worktree. |
 | `--project-dir <abs>` (override) | Script binds subprocesses verbatim to `<abs>`. Used when a caller already holds an absolute path — e.g., post-worktree-removal cleanup, fixture-driven test invocations. | The supplied absolute path. |
 | Neither flag | Script binds subprocesses to the plan root resolved cwd-relatively (the nearest ancestor of cwd containing `.plan/local`; ADR-002). | The cwd-resolved tree — main in phases 1-4, the pinned worktree in phase-5+. |
 
 `--plan-id` and `--project-dir` are **mutually exclusive at every call site**; passing both is a hard error.
 
-When a script invoked with `--plan-id X` resolves an empty path (i.e., the plan exists but `metadata.use_worktree == false`), the script falls back to the cwd-relative plan root — the plan opted out of worktree mode at init time, and the caller's `--plan-id` becomes a no-op for path resolution.
+When a script invoked with `--plan-id X` resolves no worktree path, the script falls back to the cwd-relative plan root and the caller's `--plan-id` becomes a no-op for path resolution. **Two distinct states reach that fallback, and they are not interchangeable:**
+
+- `worktree_state: disabled` — the plan opted out of worktree mode at init time. No worktree will ever exist for it.
+- `worktree_state: pending` — the plan opted IN, but phase-5-execute Step 2.5 has not materialized the worktree yet. This is the ordinary reading for every worktree-bound plan during phases 1-4, and it is a `status: success` the producer instructs callers to fall back on — not an error.
+
+A consumer that only needs a usable working tree may ignore the difference. A consumer whose *answer* depends on it — a skip reason, an operator-facing message, a decision about whether evidence could exist — MUST branch on `worktree_state` rather than on `has_worktree`, which collapses both states to `False`.
 
 `NO_PLAN` is an accepted `--plan-id` value because `validate_plan_id` carves it out ahead of the kebab-case regex (see [`tools-input-validation/SKILL.md`](../../tools-input-validation/SKILL.md) § "The `NO_PLAN` sentinel (plan_id carve-out)"). It is correct only for a caller that genuinely has no plan; a `--plan-id` that failed to resolve must be corrected rather than replaced with the sentinel, which is why the `plan_not_found` envelope ships its sentinel `hint` together with a `hint_caveat`.
 

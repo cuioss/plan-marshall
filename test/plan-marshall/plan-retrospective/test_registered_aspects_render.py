@@ -64,6 +64,50 @@ _ASPECT_DOC_RE = re.compile(r'((?:references|standards)/[a-z0-9-]+\.md)')
 _ASPECT_DISPATCH_RE = re.compile(r'--aspect\s+([a-z][a-z0-9-]*)')
 
 
+# The aspect-table header, asserted verbatim before the Key column is read by
+# position. Reading a fixed cell index without anchoring the header is how a
+# column reorder silently starts scanning the wrong column and the guard keeps
+# passing against the wrong data.
+_ASPECT_TABLE_HEADER = '| Order | Aspect | Key | Script(s) | Reference |'
+
+# Zero-based index of the Key cell once a table row is split on ``|``.
+# ``_ASPECT_TABLE_ROW_RE`` already consumes the leading ``| N |``, so ``cells``
+# begins AFTER the Order column; re-wrapping it in ``|`` and splitting yields
+# ``['', Aspect, Key, Script(s), Reference, '']``. Verified by running the split
+# against the live table, not inferred from the row shape.
+_KEY_CELL_INDEX = 2
+
+
+def _scan_aspect_table_keys(skill_text: str | None = None) -> list[str]:
+    """Return the canonical key each Step-3 aspect-table row declares.
+
+    Read by COLUMN POSITION from the numbered rows, not by pattern-matching
+    backticked spans: the Script(s) and Reference cells are backticked too, so a
+    span-based scan would sweep script names and document paths into the key
+    population and the correspondence assertion would be checking the wrong set.
+
+    ``skill_text`` defaults to the live ``SKILL.md``. It is a parameter so the
+    bite test can run this exact parser over a DELIBERATELY corrupted table —
+    without it a "the guard bites" test can only do set arithmetic on a literal,
+    which exercises neither the parse nor the correspondence check.
+    """
+    if skill_text is None:
+        skill_text = _SKILL_MD_PATH.read_text(encoding='utf-8')
+    assert _ASPECT_TABLE_HEADER in skill_text, (
+        f'The Step-3 aspect table no longer carries the expected header '
+        f'{_ASPECT_TABLE_HEADER!r} — the Key column is read by position, so a '
+        f'reordered or renamed column must fail here rather than silently '
+        f'scanning a different cell'
+    )
+    keys: list[str] = []
+    for row in _ASPECT_TABLE_ROW_RE.finditer(skill_text):
+        cells = ('|' + row.group('cells') + '|').split('|')
+        if len(cells) <= _KEY_CELL_INDEX:
+            continue
+        keys.append(cells[_KEY_CELL_INDEX].strip().strip('`').strip())
+    return keys
+
+
 def _spec_fragment_keys() -> set[str]:
     """Return the set of every ``fragment_key`` declared in ``SECTION_SPEC``."""
     return {fragment_key for _heading, fragment_key, _trigger in _rs.SECTION_SPEC}
@@ -272,6 +316,92 @@ class TestDispatchedAspectsHaveStaticRow:
             'The completeness guard must flag routing-decisions as dispatched-but-unlisted '
             'when its SECTION_SPEC row is absent — proving the guard bites.'
         )
+
+
+class TestAspectTableKeysMatchTheRegistry:
+    """D3: the documentation that instructs a registration supplies the exact argument.
+
+    The Step-3 aspect table named its aspects in PROSE while
+    ``collect-fragments add`` validates ``--aspect`` against a closed registry,
+    and the canonical keys appeared nowhere in the document — so a registration
+    written from the table was rejected on first attempt. The table now carries a
+    Key column, and these assertions are what make that column *derived* rather
+    than *transcribed*: a key that drifts from ``SECTION_SPEC`` fails here.
+
+    ⚠ The correspondence is checked in ONE direction only — ``table → registry``.
+    A ``SECTION_SPEC`` row shipped with no table row is caught by nothing here,
+    and deliberately so: the reverse assertion would fail today on the two rows
+    that have no producer (``_executive-summary``, ``dispatch_boundaries``), and
+    encoding those exemptions in a test would pin the dead rows in place rather
+    than surface them. They are carried as residue in the plan's run report
+    instead. Re-open the reverse direction once neither dead row remains.
+    """
+
+    def test_scan_finds_a_key_for_every_numbered_row(self):
+        # Anchor: without it, a scanner returning [] would make every assertion
+        # below pass vacuously.
+        keys = _scan_aspect_table_keys()
+        assert len(keys) >= 15, f'aspect-table key scan returned {len(keys)} rows: {keys}'
+        assert all(keys), f'aspect-table row(s) with an empty Key cell: {keys}'
+        # Spot-anchor the one row whose key differs from BOTH its prose name and
+        # its reference-document basename (`invariant-summary`: prose slugs to
+        # `invariant-outcomes`, basename is `invariant-check-summary`) plus one
+        # that differs from its basename alone (`routing-decisions`, whose prose
+        # DOES slug to its key). Re-derived from the table, not recalled. If the
+        # scan were reading the wrong cell neither would be present.
+        assert 'invariant-summary' in keys
+        assert 'routing-decisions' in keys
+
+    def test_every_table_key_is_a_real_registry_key(self):
+        keys = _scan_aspect_table_keys()
+        spec_keys = _spec_fragment_keys()
+        unknown = sorted(set(keys) - spec_keys)
+        assert not unknown, (
+            f'The Step-3 aspect table declares key(s) {unknown} that are not in '
+            f'retro_sections.SECTION_SPEC. A registration copied from the table '
+            f'would be rejected by `collect-fragments add` — the exact defect the '
+            f'Key column exists to prevent.'
+        )
+
+    def test_every_table_key_is_registerable(self):
+        keys = _scan_aspect_table_keys()
+        registerable = _cf._registerable_aspect_keys()
+        unregisterable = sorted(set(keys) - registerable)
+        assert not unregisterable, (
+            f'The Step-3 aspect table declares key(s) {unregisterable} that '
+            f'`collect-fragments add` would reject as unregistered.'
+        )
+
+    def test_table_keys_are_unique(self):
+        keys = _scan_aspect_table_keys()
+        duplicates = sorted({k for k in keys if keys.count(k) > 1})
+        assert not duplicates, (
+            f'The Step-3 aspect table declares the same canonical key on more than '
+            f'one row: {duplicates} — two aspects registering one key means the '
+            f'second overwrites the first in the bundle.'
+        )
+
+    def test_guard_bites_on_a_key_that_is_not_in_the_registry(self):
+        # Runs the REAL parser over a deliberately corrupted copy of the live
+        # table, then applies the same correspondence check. Set arithmetic on a
+        # literal would prove nothing about either step.
+        corrupted = _SKILL_MD_PATH.read_text(encoding='utf-8').replace(
+            '| `invariant-summary` |', '| `invariant-check-summary` |', 1
+        )
+        assert corrupted != _SKILL_MD_PATH.read_text(encoding='utf-8'), (
+            'the corruption did not apply — the row shape changed and this test '
+            'would pass vacuously against an unmodified table'
+        )
+
+        keys = _scan_aspect_table_keys(corrupted)
+        unknown = sorted(set(keys) - _spec_fragment_keys())
+
+        assert unknown == ['invariant-check-summary'], (
+            f'the correspondence check must flag the corrupted key; got {unknown}'
+        )
+        # And the uncorrupted table must be clean, so the assertion above is
+        # discriminating rather than always-true.
+        assert not sorted(set(_scan_aspect_table_keys()) - _spec_fragment_keys())
 
 
 class TestConditionalFragmentActuallyRenders:

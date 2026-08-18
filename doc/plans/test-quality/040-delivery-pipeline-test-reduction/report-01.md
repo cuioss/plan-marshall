@@ -564,3 +564,20 @@ All four **PASS**.
 > **(b)** Answerable, and the strongest of the four. … "it mutates whatever tree the caller happens to be standing in, and in an isolated worktree it targets a branch that is still checked out, so the delete fails and the merge is reported against a tree the caller never asked to touch."
 > **Section-header accuracy: ACCURATE.** … **Stated count vs. listed count: MATCHES.**
 > *Real defect found:* part (2) is stated broader than it is enforced — the trip-wire patches only `subprocess.run`, so `Popen` / `check_call` / `os.system` are unguarded. *(Disposition: the docstring claim was narrowed to the seam actually guarded; widening the trip-wire is left as a proposal, since it changes test behaviour.)*
+
+## Disposition update (2026-08-17) — appended by the epic re-scoping run
+
+Appended after this run closed, by the run that read every landed report in this epic and re-scoped
+the remaining plans. It records **what happened next** to items this report left open; it does not
+revise anything above.
+
+| Item from this report | Disposition |
+|---|---|
+| § "What the measurement says about the 25% floor" — the floor is unreachable from prose and should be re-set against code | **Acted on, epic-wide, and further than this report proposed.** Every percentage floor in the epic is retired rather than re-set: the epic README § "Why there is no line floor" carries the arithmetic for all six slices and finds three of the six floors exceed that slice's entire comment-and-docstring volume. A run now reports its line delta as an observation |
+| § "Merge decision" — the re-scope this run judged well-founded but could not write, because the lane forbids writing outside the plan's own directory | **Written.** This is the run that had the standing to do it. Plans `070` and `080` are re-scoped, the README's run conditions are rewritten, and three plans are added for the work no plan owned. That constraint was correctly observed here, and it is why the re-scope waited |
+| D4 — 55 modules over the 400-line budget, unstarted | **Owner assigned: plan `100`.** Re-derived for this slice today by attributing every `test-module-line-budget` finding to the plan whose Expected surface names it, root-level modules included: **55** |
+| § Residue — 92 prose citations remain in shapes the doctor rule does not match (`deliverable N`, bare `#NNNN`, `this plan`), with "widening the rule is the better fix" | **Owner assigned: plan `090` § D4**, which widens `_PLAN_DELIVERABLE_ID_RE` and `_PR_REFERENCE_RE` to those spellings — and, as this report implied and `050`'s second run then proved, does so only against a **measured** false-positive rate rather than on taste |
+| § Findings 1–2 / § Residue — the epic README's stale exclusion list | **Closed.** The list is now a five-row table with a reason per row, and `test/pm-code-intelligence/` is durably assigned to plan `080`'s slice rather than dispositioned per run — four consecutive runs, this one included, each halted on it and were told to proceed |
+| D2 fixture corpus, unstarted; **D3 not performed at all** with ~124 unpaired `run_script` sites; D5's `parse_ns` half unstarted against ~391 `Namespace(` sites | **Still open in this plan's slice, and indexed** in the epic README § "What the executed half left open", including this report's own correction that D3 was *not performed* rather than partial |
+| § Residue — `fixtures/ci-wait/README.md` carries a plan slug, a lesson id, `TASK-` ids and a dated `Authored` line | **Still open.** Indexed in the README as part of this slice's residue |
+| § Findings 12 — the `github_ops` ↔ `_github_pr` circular import, a production defect | **Recorded, and now routable:** the epic README § "Where a recorded finding goes" sends a `marketplace/bundles/**` production defect to plan `090`. This particular one is not in `090`'s deliverable set — it is neither a parser seam nor a rule gap — so it remains open and unowned, stated here rather than implied |
