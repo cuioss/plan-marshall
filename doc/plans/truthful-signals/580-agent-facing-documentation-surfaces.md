@@ -659,9 +659,10 @@ answer means the wording failed, however complete the change looks** — fix the
 
 ### Executed checks
 
-- **Every *Done when:* grep and sweep in D1–D8, run and its output recorded** — not asserted. Where a
-  sweep is expected to return survivors (D1(c), D7(c)), list each survivor and its reason; a bare
-  "clean" is not evidence.
+- **Every *Done when:* grep and sweep in D1–D8, run and its output recorded** — not asserted. D1(c)'s
+  class sweep is expected to return survivors and every one of them is listed with its disposition;
+  D7(c)'s dated-narration sweep may legitimately come back with none, in which case the report carries
+  the command and its empty output. Either way a bare "clean" is not evidence.
 - **The build gate.** D7(a) touches `review_completeness.py`, so the lane's Python-change gate fires
   and `./pw verify` runs — see `cloud-plan-lane` for the gate condition and how the run reports its
   result. The change is a docstring, so a failure is a signal about the tree, not about this diff:
