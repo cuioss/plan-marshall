@@ -442,7 +442,8 @@ Beyond each deliverable's *Done when*:
      required-key subset? The intended reading is **the required-key subset**.
   A wrong reading means the wording failed however complete the diff looks; fix the wording and read
   again.
-- **Coverage check by id.** The run report lists all 31 gap ids from the six source `gaps.md` files
+- **Coverage check by id.** The run report lists all 31 gap ids (30 closed by a deliverable, one excluded under
+  § Out of scope) from the seven source `gaps.md` files
   this plan draws on, each against the deliverable that closed it or the Out-of-scope entry that
   excluded it. Re-derive the id set from `doc/plans/truthful-signals/{090,120,180,250,280,300,302}-…/gaps.md`
   rather than trusting this plan's grouping — those files are git-tracked and readable in the clone.

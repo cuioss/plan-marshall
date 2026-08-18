@@ -401,7 +401,8 @@ the choice is stated in the deliverable. The run makes no such decision.
   under git-ignored `.plan/`, which is absent from a cloud clone by construction and, per the gap
   itself, absent from a normal developer checkout too. No committed artifact can be produced from this
   environment, so a deliverable here could only restate the blockage the gap already records.
-- **Every other gap in the ten source `gaps.md` files.** Only the 24 ids named above are assigned to
+- **Every other gap in the twelve source `gaps.md` files** (re-derive the directory set; it is not
+  the same set as the ten reports this plan edits)**.** Only the 24 ids named above are assigned to
   this plan; the rest belong to sibling plans in this epic. Editing one here would duplicate another
   plan's work and collide with it on the same files.
 - **The code and skill defects the source plans' other gaps name** — `_gate_coverage.py`, `audit.py`,
@@ -441,8 +442,10 @@ the choice is stated in the deliverable. The run makes no such decision.
 - `doc/plans/truthful-signals/590-cloud-plan-lane-contract-and-run-report-accuracy/` — this plan's own
   directory: `plan.md` and `report-NN.md`.
 
-**Read-only** (the evidence base, never edited by this plan): the ten
-`doc/plans/truthful-signals/{source-plan}/gaps.md` and `verification.md` files.
+**Read-only** (the evidence base, never edited by this plan): the twelve
+`doc/plans/truthful-signals/{source-plan}/gaps.md` and `verification.md` files. Re-derive that set
+from the ids in § Deliverables — it is wider than the ten reports § Expected surface lists as edited,
+because several source plans contribute a gap without owning a report this plan corrects.
 
 **No `*.py` file is expected in the diff.** If one appears, that is scope drift and is reported as
 such (§ Verification).
@@ -464,7 +467,7 @@ such (§ Verification).
 | Plan 060's PR number (D5(d)) | OBSERVED | `git log --oneline -- doc/plans/truthful-signals/060-…/` names the landing commit and its PR number; re-derive at the moment of the edit |
 | The D1 delta figure of plan 220 is not derivable in this environment (D5(a)) | OBSERVED | `.gitignore` excludes `.plan/*`, and `CLAUDE.md` § Standalone Plan Lane states a cloud clone carries none of it — so `.plan/work/change-ledger.jsonl` and `.plan/local/archived-plans/` cannot exist here. ⛔ Machine-local: **do not go looking for them** |
 | Expected surface: two skill files, ten sibling reports, this plan's directory, no `*.py` | HYPOTHESIS | The run's own `git diff --name-only origin/main...HEAD`, checked at Step 9 against the § Expected surface list |
-| No gap in this set is `vacuous-test` or `vacuous-guard` | OBSERVED | The **Kind** line of each of the 24 entries in the ten `gaps.md` files: every one is `stale-statement`, `doc-drift`, `omission` or `incomplete-sweep`. No deliverable here therefore carries a red-first obligation; if the gate at D0(a) finds otherwise for any id, that id's deliverable acquires one and the report says so |
+| No gap in this set is `vacuous-test` or `vacuous-guard` | OBSERVED | The **Kind** line of each of the 24 entries across the twelve source `gaps.md` files — re-derive both figures at the moment of the check: every one is `stale-statement`, `doc-drift`, `omission` or `incomplete-sweep`. No deliverable here therefore carries a red-first obligation; if the gate at D0(a) finds otherwise for any id, that id's deliverable acquires one and the report says so |
 
 ## Verification
 
@@ -566,7 +569,7 @@ that contradicts this, that deliverable acquires the red-first obligation and th
 **Sequencing and concurrency.** D2, D3 and D4 all edit `.claude/skills/cloud-plan-lane/SKILL.md`, and
 D2(d) and D3 touch adjacent text (the affordance row and the condition-1 pointer into it) — 030/G3 is
 closed only when **both** land, which is why it is named in both deliverables. This plan therefore
-cannot run concurrently with any other plan editing that file. It has no dependency on the ten source
+cannot run concurrently with any other plan editing that file. It has no dependency on the twelve source
 plans, all of which have landed.
 
 **Prior art.** Plans 030, 220 and 450 in this epic landed deliverables in the same contract file; plan

@@ -222,3 +222,102 @@ verifies docs-only changes before they land.
   pre-authorised the excursion in the plan text and recorded a wording proposal for the contract, but
   a run reading § Step 8 Bridge strictly could stall there. Worth resolving before that plan is
   handed over.
+
+## Pre-PR verification sub-agent (Step 6)
+
+One round ran, over the finished work. Its per-item verdicts: epic coverage PASS (44/44 directories,
+all four files each), adversarial-review presence PASS (all 44, smallest section 1,121 words, each
+naming file-path and line citations rather than asserting a clean result), gap→plan coverage PASS
+(283 ids extracted, 0 uncovered, no genuine double-ownership), plan conformance PASS (all ten
+byte-identical to the template's first-instruction block, all sections present, prefixes valid,
+deliverable count equal to *Done when:* count), `author-cloud-plan` seven-rule self-check PASS,
+documentation standards PASS, no collateral change PASS.
+
+It then spot-checked the three highest-severity gaps it could find by opening each at HEAD:
+`302/G1` (`'n/a'` is truthy, so a landing that transmitted nothing reads complete), `380/G1`
+(`total = passed + failed + skipped`, so a run where no test body executed clears a `test-failure`
+finding), and `320/G1` (an `OSError` comparison returns `scanned=0`, and `partial` is `0 < 0` —
+false, so a comparison that read nothing renders clean). **All three reproduce**; none is a false
+finding.
+
+**It returned BLOCKED on three numeric claims**, and condition **A** forbids leaving a false statement
+open. Each was re-derived independently before being acted on, which changed the disposition of two:
+
+| # | Finding | Disposition |
+|---|---|---|
+| F1 | Plan `510` claims 41 gaps while its `closes` annotations name 36 | **Refuted.** 36 closed + 5 named under Out of scope = 41, and the source set is twelve directories as stated. The verifier counted `closes` annotations without the Out-of-scope entries. No edit. |
+| F2 | Plan `520` claims "31 gap ids from the six source `gaps.md` files" | **Partly upheld, fixed.** 31 is correct (30 closed + 1 excluded); the source set is **seven** directories, not six. Corrected, and the 30/1 split made explicit. |
+| F3 | Plan `590` claims "24 ids" from "ten source `gaps.md`" | **Partly upheld, fixed.** 24 is correct (22 closed + 2 excluded); the source set is **twelve** directories. Its separate "ten reports edited" claim is correct and was left alone. |
+
+**F3's fix demonstrated the epic's own defect.** The first pass corrected three sites and left a
+fourth — "no dependency on the ten source plans" — standing 130 lines further down. It was caught only
+because the fix was followed by a re-sweep for the claim rather than for the sites the finding named.
+That is the n−1-of-n failure this epic exists to file, committed inside the audit of it, and it is
+recorded here rather than quietly repaired.
+
+**Stop record.** The loop ended on the **verifier exit**, at round 1 of a default budget of five; no
+extension was needed and no operator boundary question arose. The verifier's own last answer was that
+F1–F3 remained and condition A forbade leaving them; all three were adjudicated and the two genuine
+ones fixed, so nothing A governs is left open. Condition **B** is not engaged: this run changed no
+behaviour, so there is no behavioural finding to characterise, and there are **no survivors**.
+
+The evidence the stop rests on is stronger than a re-read — coverage re-derived mechanically from the
+files (283 ids matched into a 275/8/0/0 partition), the document population recounted from the
+filesystem, the build-gate predicate computed from `git diff`, and three gaps re-executed at their
+named symbols.
+
+**What the verifier did not check**, in its own words: no build run (documentation-only diff); it did
+not verify that all 283 gaps reproduce, only three plus incidental confirmations; it did not re-audit
+each `verification.md` against its source `plan.md`/`report-01.md`; its cold-read check was structural
+rather than semantic; and it did not check this PR's CI status.
+
+## Contract check (Step 9)
+
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | done | Named under § Skills loaded, with the deliberate omissions and their reason |
+| 2 Branch | done | `claude/truthful-signals-verification-051sba` — the **harness-assigned** form, kept as-is per § Step 2; pushed to `origin` before the first edit |
+| 3 Plan directory | **n/a** | No `plan.md` was handed to this run; the operator's brief is the plan. Recorded as a deviation at the top of this report rather than narrated as complete |
+| 4 Implement | done | 84 commits, each carrying the `Co-Authored-By` trailer, no "Generated with Claude Code" footer |
+| 4 Per-commit gate | **n/a** | No commit touched a `*.py`; the gate's trigger surface was never entered |
+| 4 Pushed | done | Every commit pushed on creation; `git status -sb` reports no `ahead` |
+| 5 Build gate | done | `git diff --name-only origin/main...HEAD -- '*.py'` → zero files; "no buildable footprint, build skipped" |
+| 6 Verification sub-agent | done | Recorded in full above: findings, dispositions, the exit taken, the budget, the verifier's own last answer, and the residue to assume remains |
+| 7 PR cycle | done | PR [#1298](https://github.com/cuioss/plan-marshall/pull/1298), `skip-bot-review` applied at creation. Participation table records the suppression as suppression, not as coverage |
+| 8 Merge gate | see below | Conditions 1–3 assessed at arming time; condition 4 disclosed under § Reviewer participation |
+| 8 Bridge | done | No status or bookkeeping write landed outside this run's own artifacts. The `verification.md` / `gaps.md` pairs are deliverables of the brief; no ledger, no status file, no other epic touched. **One deviation:** this report sits at the epic root, for the reason given at the top |
+| 9 This check | done | This table |
+| 9 What have we learned | done | Below |
+
+**Re-verified against the working tree, not recalled:** the tree is clean, the diff is 99 files all
+under `doc/plans/truthful-signals/`, and no `*.py` appears in it. A cloud run neither performs nor
+owes a `/sync-plugin-cache`; none is recorded.
+
+## What have we learned (Step 9)
+
+Two contract changes are proposed, both grounded in what this run actually hit. Neither is shipped
+here — the lane forbids self-approving a change to the contract that governs the run, so these are
+recorded for the operator and would ship as a separate `chore/` PR if accepted.
+
+**1. The report path assumes a run has a plan.** § Report fixes the report at
+`doc/plans/{epic}/{plan-name}/report-NN.md`. A run executing an operator brief across a whole epic —
+as this one did — has no `{plan-name}`, so the path does not resolve and the run must improvise.
+*Evidence:* this run wrote to the epic root and had to disclose the deviation. *Proposed edit:* add a
+sentence to § Report stating that a run with no authored plan writes `report-NN.md`, or a named
+equivalent, at the epic root, and reports the placement in its Contract check.
+
+**2. Nothing in the contract governs a run that dispatches many agents into one working tree.**
+§ Step 6 assumes a single verification sub-agent and tells it to restore mutations from a snapshot.
+With agents mutating concurrently, that rule is actively unsafe: an agent can snapshot a file another
+has already mutated and "restore" it to the corrupted state, and every red count measured afterwards
+is meaningless. *Evidence:* observed early in this run — an agent reported `# MUTATION` markers left
+by a sibling, and two agents wrote scratch probe files into the repository. *Proposed edit:* add to
+§ Step 6 that where more than one agent may touch the tree, an agent checks `git diff --quiet -- <path>`
+before mutating and skips a file that is already dirty, and that scratch belongs in `$TMPDIR`, never
+in the repository.
+
+A third candidate was considered and **rejected**: proposing that `skip-bot-review` be narrowed so
+plans under `doc/plans/` keep their review. The label's rule is deliberately mechanical, this diff
+genuinely matches it, and the argument for reviewing planning prose is an argument about *this* diff
+rather than evidence that the rule is wrong. Recording it as a rejected candidate rather than a
+proposal.
