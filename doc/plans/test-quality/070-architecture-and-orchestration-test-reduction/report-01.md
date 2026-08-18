@@ -295,6 +295,63 @@ filenames** the module under test scans. They are now inline literal spans.
 One test function was renamed — `test_pr_726_coderabbit_shape` → `test_coderabbit_full_review_shape` —
 because the citation was in its *name*. The collected count is unchanged (§ Verification).
 
+#### The cold read (D4's mandated "By reading" verification) — 4 of 10 were over-stripped
+
+The plan requires this and specifies its shape: dispatch a sub-agent with **five rewritten test
+modules and no other context** — not the plan, not the originals — and ask, for ten named tests,
+"What contract does this test pin, and why does it matter?" The sub-agent was constrained exactly so:
+five files, no plan, no report, no git history, no production source, no test runs.
+
+**Round 1 result — the sub-agent's own closing line, verbatim: "6 of 10 answer both questions."**
+
+| # | Test | Round 1 verdict |
+|---|---|---|
+| 1 | `test_classify_changed_path_nested_pom_matches_bare_basename_route` | ANSWERS BOTH |
+| 2 | `test_resolve_module_for_path_prefers_domain_affine_sibling` | **ANSWERS Q1 ONLY** |
+| 3 | `test_production_js_under_maven_wrapper_derives_npm_compile` | **ANSWERS Q1 ONLY** |
+| 4 | `test_it_route_stamped_verify_derives_failsafe_gate` | **ANSWERS Q1 ONLY** |
+| 5 | `test_nested_pom_against_bare_route_derives_verify` | **ANSWERS Q1 ONLY** |
+| 6 | `test_cmd_resolve_cache_tree_layout_emits_augmentation` | ANSWERS BOTH |
+| 7 | `test_cmd_which_module_root_exact_hit_degrades_to_containment_fallback` | ANSWERS BOTH |
+| 8 | `test_assertion_passes_when_path_empty_at_planning_phase` | ANSWERS BOTH |
+| 9 | `test_cmd_capture_succeeds_at_planning_phase_before_materialization` | ANSWERS BOTH |
+| 10 | `test_which_module_resolves_test_path_via_paths_tests` | ANSWERS BOTH |
+
+**The four failures, verbatim** (its Q2 answers):
+
+> **2.** "CANNOT ANSWER FROM THE PROSE. The docstring names only the losing alternative ("not the
+> alphabetically-first Maven wrapper"), which is the negation of the assertion, not a consequence."
+>
+> **3.** "CANNOT ANSWER FROM THE PROSE. Again only the counterfactual outcome is named ("not the
+> wrapper's Maven goal"). The prose never says what happens if the Maven goal is derived instead."
+>
+> **4.** "CANNOT ANSWER FROM THE PROSE. … The word "failsafe" appears only in the test's *name*; no
+> sentence explains what a Surefire-goal derivation would fail to run."
+>
+> **5.** "CANNOT ANSWER FROM THE PROSE. "classifies non-zero" is an assertion about the output field,
+> not a statement of consequence."
+
+**And its diagnosis, verbatim** — which named the defect more precisely than the plan's own warning:
+
+> "**The four Q1-only tests are all in `test_derive_verification.py`**, and all four share one prose
+> shape: `X derives Y — not Z`. Naming the losing alternative reads like a reason but is only the
+> assertion restated with its polarity flipped."
+
+⭐ **This is exactly the over-stripping the plan predicted** ("plan `040`'s cold read found four of ten
+rewritten docstrings from which a maintainer could not recover *why* the contract matters" — the same
+4-of-10 ratio, independently). All four were in **this run's own rewrites**, and the mechanism was the
+one **B3** warns about: the consequence went out with the citation.
+
+**Fixed, and each rationale grounded in something checkable rather than asserted** (commit `a55cbf0`):
+the domain-affinity case against the sibling test that resolves the same `.js` path to the Maven
+module absent a discriminating domain; the end-to-end JS case against its own two assertions; the IT
+route against Surefire's default IT excludes (the tree's own statement, in
+`build-maven/test_maven_extension.py`); the nested-pom case against its unit-level counterpart's
+`classified_count: 0`. No citation was reintroduced — the doctor rule still reports **0**.
+
+The same Surefire consequence in `build-maven/test_maven_extension.py` was itself narrated in the past
+tense as superseded behaviour; it is now present tense, which is what **B3** asks for.
+
 #### B5 — the plan's named target was already converged before this run
 
 D4 names "the build-system detection matrices (six implementations × the same contract questions — the
@@ -436,3 +493,90 @@ measure of what happened.
 * **9 of 9** plan-lifecycle directories: unchanged, because the convergence D2 proposed was already
   present in the three directories that stage a plan directory at all, and the other six stage none.
 
+
+## Build gate
+
+**Verdict: Python changed, so the build ran.** `git diff --name-only origin/main...HEAD -- '*.py'`
+returns **53** files of **55** changed (the other two are this plan's `plan.md` and `report-01.md`).
+
+`./pw verify` — all three sub-steps, not the narrower calls:
+
+| Sub-step | Result |
+|---|---|
+| `quality-gate` | `ruff … All checks passed!`, `mypy … Success: no issues found in 413 source files`, `SPDX-header check passed` |
+| `test-compile` | **FAILED on the first run**, then clean — `Success: no issues found in 768 source files` |
+| `module-tests` | whole-tree suite (see the final run below) |
+
+⭐ **`test-compile` failing first is the contract's own warning materialising, and it is worth
+recording as a finding rather than a hiccup.** `./pw quality-gate` passed on every one of this run's
+four commits, and the slice's own tests passed — yet `test-compile`, which neither `quality-gate` nor
+`module-tests` performs, reported:
+
+```text
+test/plan-marshall/build-server/test_build_execute_routing.py:132: error: Returning Any from function declared to return "ExecuteConfig"  [no-any-return]
+test/plan-marshall/build-server/test_acceptance_resolution_log.py:35: error: Returning Any from function declared to return "ExecuteConfig"  [no-any-return]
+```
+
+D1's shared `execute_config()` helper returns whatever the dynamically-loaded factory constructs — an
+`Any` — while two of its call sites declared `-> factory.ExecuteConfig`. That annotation never checked
+anything (`factory` is loaded at runtime, so `factory.ExecuteConfig` is a *value*, not a statically
+known type), and it is exactly the "a variable used as a type" shape the lane contract names. It is
+**test-only**, so it is invisible to `quality-gate`'s production-scoped mypy and to the test run
+itself; CI runs the full `verify` and would have caught it. The two annotations were dropped, matching
+`test_acceptance_fallback.py`'s already-unannotated `_config`, with a docstring line saying why.
+
+## Reviewer participation
+
+_Recorded after the PR is opened and the three comment surfaces are read._
+
+## Cost
+
+* **Tokens:** not available to the agent in this session — the harness does not expose a usage counter
+  to the running agent, so no figure is stated rather than an invented one.
+* **Wall-clock:** the run's own elapsed time is likewise not directly readable; what *is* measured, and
+  is the figure the plan asks for, is the suite wall-clock recorded in § D5 (181.20 s → 155.55 s).
+* **Population:** every test figure in this report counts **this slice only** — the 27 Expected-surface
+  directories plus the two named root modules — executed by one `uv run python -m pytest` invocation in
+  a single Claude Code cloud session. ⛔ These are **not** comparable to a plan-marshall `metrics.toon`
+  total, which counts an orchestrator-plus-agent dispatch tree under plan-marshall's own per-task
+  billing boundary. This run has no such boundary and no ledger, so no comparison is offered.
+
+## Residue
+
+**Deliverable work left open:**
+
+1. **D3's B6 half — 506 `Namespace(` sites, none converted.** The seam map is measured (§ D3) so the
+   next run does not pay for the probe again. Two blockers are named and owned: `effort_presets.py` and
+   `manage_terminal_title.py` raise `ParserSeamNotFound` → **plan `090` § D1**. `manage-lifecycle`,
+   `build-server` and `q-gate-validation-agent` publish no top-level CLI script at all, which is a
+   *different* shape from a missing seam and is worth telling `090` about. Whoever takes this must hoist
+   `parse_ns` into fixtures or module constants — it re-executes the script module per call.
+2. **D4's B5 half beyond the build family.** The architecture query filter cases and the inbox envelope
+   shape cases, both named by D4, are untouched. The build-detection families the plan called "the
+   single clearest parametrization target" were already converged before this run (§ D4).
+3. **8 modules still carrying `spec_from_file_location`**, each listed with its reason in § D3. Seven
+   are plan `090` § D2's structurally-unfixable class; one is the `manage_lessons` registration
+   collision, which needs `050`/`090` coordination because the other half lives in `manage-lessons/`.
+
+**Findings recorded for other plans:**
+
+| Finding | Owner |
+|---|---|
+| `test/conftest.py` line 1128 names `build_test_helpers.py` **by path**, and this run renamed that file. The reference is now stale. This run may not edit `conftest.py`; plan `090` § D6 already owns rewriting that docstring to identify the helper by role | `090` § D6 |
+| `effort_presets.py` and `manage_terminal_title.py` expose no parser seam (`ParserSeamNotFound`) | `090` § D1 |
+| `manage-lifecycle`, `build-server`, `q-gate-validation-agent` publish no top-level CLI script, so `parse_ns` has nothing to address | `090` § D1 |
+| Seven `spec_from_file_location` sites load a bundle skill's **root-level** `extension.py` or the repository-root `build.py`, neither reachable through `get_scripts_dir` | `090` § D2 |
+| `load_script_module` cannot host a load that needs `sys.modules` mocks installed **between** `module_from_spec` and `exec_module` (`build-pyproject/test_pyproject_build.py`) | `090` |
+| **25 module/name pairs patch an import-time binding of a doubly-registered module** — the candidate set for the order-dependency class this run fixed one instance of (§ "Condition 4"). Most are in sibling slices | recorded; the in-slice ones are this plan's on a follow-up run, the rest belong to their owning slices |
+| 62 modules over the 400-line budget in this slice | `100` |
+
+**The plan's own leads that measurement corrected**, recorded so the next author does not re-inherit them:
+
+* The slice is **65,163** lines / **171** `test_*.py` modules, not ~63,200 / ~168.
+* `plan-orchestrator` (~224 `Namespace(` sites), not `manage-architecture` (~84), is the slice's
+  heaviest hand-built-namespace directory.
+* The plan's § Problem says `build_test_helpers.py`'s "own module docstring records" the `sys.modules`
+  hazard. It did not — only `test/conftest.py`'s `_routing_namespaces` docstring did, which is what the
+  plan's own claim-label table cites. D1 therefore **added** that record rather than preserving it.
+* D2's justifying hypothesis and D4's "single clearest parametrization target" were both already
+  satisfied on `main` (§ D2, § D4).
