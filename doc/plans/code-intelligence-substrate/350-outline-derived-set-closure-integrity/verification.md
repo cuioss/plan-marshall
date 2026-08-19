@@ -128,10 +128,11 @@ treats the merged text of those files as the claim under test.
 - **Claimed (report):** stated in `q-gate-validation.md` § 2.9a; discharged by a published
   `population` block that flips `ambiguous`; `scanned_paths` publishes member identities.
 - **Found:**
-  - The normative blockquote at
-    `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/q-gate-validation.md:392` § 2.9a
-    ("Declared-Set Closure (mechanical, unsuppressible)") — the exact line
-    `detector_population ⊇ fix_set_population`.
+  - The normative blockquote in
+    `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/q-gate-validation.md` § 2.9a
+    ("Declared-Set Closure (mechanical, unsuppressible)", heading at `:392`) — the exact line
+    `detector_population ⊇ fix_set_population` is at **`:407`**, under the "Normative population
+    assertion" lead-in at `:405`.
   - Mechanism: `_qgate_closure.py:411-421` and `:541-549` return `population`;
     `_cmd_qgate_mechanical.py:721-728` publishes `population` / `population_complete` and computes
     `ambiguous = not parseable or not population_complete`.
@@ -237,15 +238,23 @@ Three real defects:
    (`manage-solution-outline.py:372-377`) — therefore produces:
 
    ```
-   closure gaps: []  | pop_complete: True  | declared_scanned: 1
+   closure gaps: []  | pop_complete: True  | declared_paths_scanned: 2
    recon  gaps: []  | globs_declared: 1, globs_expanded: 1, matches_enumerated: 0,
-                      population_complete: True
+                      directories_matched: 0, population_complete: True
    ```
 
-   (executed against the live tree). The declared write surface is unchecked and the verdict reads
-   clean — a measured-looking verdict over a scope the checks structurally cannot examine, which is
-   the module's own stated failure mode. Consequence: the one deliverable shape whose mutation set is
-   least knowable at authoring time is also the one the closure cannot constrain. → **G8**.
+   (executed against the live tree, with one task whose single step targets a path the deliverable
+   *does* declare, so the referrer closure has nothing to say). **Control, executed in the same
+   probe:** replace the pattern with the literal `src/newthing/thing.py` and the projection closure
+   fires — `declared_set_closure: deliverable 1 declares 'src/newthing/thing.py' as a write but no
+   task targets it`. The glob spelling is the sole cause.
+
+   ⚠ **Stated precisely, because the first version of this row overstated it:** the population is not
+   dishonest — `matches_enumerated: 0` is published, which is exactly the distinction
+   `q-gate-validation.md:407` says the published count carries. What is missing is the **projection
+   obligation**: nothing asserts on that zero, so a clean `total_failed` is returned over a declared
+   write scope no task was ever required to cover. Consequence: the one deliverable shape whose
+   mutation set is least knowable at authoring time is also the one no closure constrains. → **G8**.
 
 2. **`deliverable_write_set`'s dedupe is byte-exact, so its docstring claim is false for a spelling
    variant.** `_plan_parsing.py:510` compares raw strings while `_qgate_closure.normalize_declared_path`
@@ -313,8 +322,9 @@ M5 and M6 both reach the opposite verdict, not merely a shorter list.
 
 **One live-directory precondition remains**, as report-02 disclosed (B4):
 `test_qgate_closure.py:696` asserts `len(hits) <= _closure._MAX_HITS_NAMED` where `hits` is the live
-`manage-tasks/scripts/*.py` set. Re-derived: 14 scripts today against a cap of 20, so six additions to
-that directory turn an unrelated change into a hard failure. Still open — **G11**.
+`manage-tasks/scripts/*.py` set. Re-derived: 14 scripts today against a cap of 20, and the comparison
+is `<=`, so **seven** additions (14 → 21) turn an unrelated change into a hard failure — `report-02.md`
+had this figure right and an earlier version of this row said six. Still open — **G11**.
 
 ## Report accuracy
 
