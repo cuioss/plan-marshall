@@ -20,6 +20,15 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.x'
+      - name: Install the generator's declared dependencies
+        # The generator reads component frontmatter with `yaml.safe_load`, so it
+        # is no longer stdlib-only. `pyproject.toml` is the single source of
+        # truth for the constraint; deriving it here keeps CI from carrying a
+        # second copy that could drift from it.
+        run: |
+          python3 -c "import pathlib, tomllib; print('\n'.join(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['dependencies']))" > /tmp/generator-requirements.txt
+          python3 -m pip install -r /tmp/generator-requirements.txt
+
       - name: Generate OpenCode target
         run: |
           python3 marketplace/targets/generate.py \
