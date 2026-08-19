@@ -1,7 +1,9 @@
 # Verification — 030-attribution-populations-and-the-cost-decomposition
 
 **Audited:** `plan.md`, `report-01.md` (the plan directory holds no other file)
-**Tree state:** `61a43e5` on `claude/code-intelligence-substrate-analysis-kah884`
+**Tree state:** audited at `61a43e5`; adversarially re-verified at `a90adeb`, both on
+`claude/code-intelligence-substrate-analysis-kah884`. `git diff --stat 61a43e5..a90adeb -- . ':!doc/plans'`
+is empty, so every code and standards citation below was re-checked against an unchanged tree.
 **Landing commit:** `18ddd54` — `fix(manage-metrics): separate the two unattributed populations and publish the read-cost decomposition (#1154)`
 **Overall verdict:** CONFIRMED WITH GAPS
 
@@ -112,7 +114,14 @@ one-writer constraint.
   still assert the *un-subtracted* model: `platform-runtime/standards/contract.md:967` ("the phase's
   recorded `cache_read` is divided in proportion to those weights") and
   `platform-runtime/scripts/runtime_base.py:733` (same sentence). Only the parent-observed portion is
-  divided. Two documents describing one producer now disagree. See G1, G2.
+  divided. The producer carries **three** prose surfaces and exactly one is correct:
+  `_attribute_cache_read`'s own docstring (`claude_runtime.py:1902-1909`) already states the
+  subtraction in full, while the two contract surfaces do not — so the fix is a transcription, not a
+  re-derivation. That the two are not merely vague but wrong is mutation-proved: substituting the
+  documented divisor (`attributable = cache_read_total`) turns
+  `test_metrics_tokens.py -k attribute_cache_read` red (2 failed / 6 passed). See G1, G2 — both
+  raised to **high** on adversarial review, because a normative contract stating a derivation the
+  reference implementation's own test suite forbids is a documented contract that is unimplemented.
 
 ### D3 — Emit resident context and turns per phase, and settle the creation inversion
 
@@ -149,11 +158,29 @@ one-writer constraint.
   - Verified the "one writer" constraint against the tree **at landing**:
     `git show 18ddd54:…/plan-retrospective/scripts/analyze-logs.py | grep -c cache_read_per_tool_use`
     → **0**. The plan was the only writer when it landed.
-- **Verdict:** CONFIRMED for what this plan shipped. Two follow-on findings, neither this run's doing
-  but both live in the tree now: a **second** `cache_read_per_tool_use` was added afterwards by
-  `#1260` in `plan-retrospective/scripts/analyze-logs.py:662` over a different population (G3); and
-  the render bullet/lattice name the factor `resident_context_per_call`, which is not a field
-  anywhere (G4, G5).
+- **Verdict:** CONFIRMED against the literal *Done when* — both factors are persisted fields and the
+  inversion carries an explicit "not established" with the record model ruled out. Five findings sit
+  on top of it, none of which the *Done when* tests:
+  - A **second** `cache_read_per_tool_use` was added afterwards by `#1260` in
+    `plan-retrospective/scripts/analyze-logs.py:662` over a different population (G3). Verified
+    independently on adversarial review: `18ddd54` is an ancestor of the introducing commit `89edc99`
+    (2026-08-16 vs 2026-08-11), so the second emitter post-dates the landing and this run did not
+    breach its own ⛔ one-writer constraint.
+  - The render bullet and the lattice name the factor `resident_context_per_call`, which is not a
+    field anywhere (G4, G5).
+  - The bullet's value label asserts "resident context per tool-use" while the same bullet discloses
+    that the numerator and denominator are different populations — the run's own pre-PR sub-agent
+    raised this (report Findings #2) and accepted it as designed because D3 named the formula
+    literally. That acceptance is defensible for the *formula* and not for the *label*: the label is
+    the reading a consumer carries away (G6).
+  - **Found on adversarial review, not by the original audit:** the decomposition's *second* factor
+    is labelled `turns` while being `tool_uses`, the dispatched-subagent tool-use count. The same
+    document defines a turn at `data-format.md:192` as "one usage-bearing transcript entry — one
+    context read the phase was actually billed for", and no per-phase field carries that count. The
+    published identity is therefore arithmetic (`x ≈ round(x/n)·n` for any `n`), not the "two levers"
+    the section's rationale at `:234` claims (G10).
+  - The decomposition is structurally absent for inline-only phases, and § Read-Cost Decomposition
+    states the mechanical guard condition without its population consequence (G7).
 
 ### D4 — Every figure names its population, its phase, and its sampling point
 
@@ -247,7 +274,8 @@ is precisely the case it was written for. See G8.
 
 **One untested branch.** The absent-denominator display fallback (`manage-metrics.py:2358-2362`) has
 no test — grepping `"not recorded on this row"` across `test/` returns nothing. Unreachable from a
-runtime-produced row, but reachable from a hand-edited or truncated `metrics.toon`. See G7.
+runtime-produced row, but reachable from a hand-edited or truncated `metrics.toon`. See G9 (this
+originally read "See G7", which is the inline-phase gap — corrected on adversarial review).
 
 ## Report accuracy
 
@@ -259,9 +287,11 @@ copied:
   (`git show 18ddd54:…/claude_runtime.py | sed -n '1870,1884p'`). **Stale now**: 1927 / 1933 at
   `61a43e5`. Ordinary drift, recorded rather than charged.
 - Test citations `test/plan-marshall/audit-archived-plan-retrospectives/test_audit.py` and
-  `test_audit_checks.py` — both files existed at `18ddd54` (`git ls-tree 18ddd54`). **Stale now**:
-  that directory was later split into ~40 per-check files; the cited tests live in
-  `test_audit_check_metrics_end_time_markers.py` and `test_audit_check_metrics_core.py`.
+  `test_audit_checks.py` — both files existed at `18ddd54` (`git ls-tree 18ddd54`, which lists
+  exactly three test files in that directory). **Stale now**: that directory was later split into
+  **59** `test_audit_check_*.py` files (71 test files in total — re-counted, not estimated); the
+  cited tests live in `test_audit_check_metrics_end_time_markers.py` and
+  `test_audit_check_metrics_core.py`, both of which exist.
 - `test_unmeasured_fixture_reads_three_ways_in_the_audit_ledger_reader` — existed at `18ddd54`
   (`test_record_model_representability.py:848`). **Stale now**: renamed to
   `test_unmeasured_fixture_separates_measured_zeros_from_unmeasured_in_the_audit_ledger_reader`
@@ -289,7 +319,7 @@ downstream-refactor drift, not overstatement.
 
 | Residue item (from report) | Still open? | Evidence |
 |---|---|---|
-| D2's quantitative claim — whether the `cache_read` residual is large in specific phases — corpus-blocked | **Still open** | `.plan/` is git-ignored and absent from this clone; no archived-plan record population exists in the tree. Nothing in `data-format.md:209-213` has been upgraded from structural argument to measured magnitude, and no later commit touches that section (`git log -- …/data-format.md` shows the section unchanged since `18ddd54`) |
+| D2's quantitative claim — whether the `cache_read` residual is large in specific phases — corpus-blocked | **Still open** | `.plan/` is git-ignored and absent from this clone; no archived-plan record population exists in the tree. Nothing in `data-format.md:209-213` has been upgraded from structural argument to measured magnitude. Evidence corrected on adversarial review: `git log 18ddd54..HEAD -- …/data-format.md` shows **five** later commits touching the file (`85abeeb`, `d1c3153`, `d5b2c4e`, `1565a29`, `3f64b71`), so the file-level log proves nothing; diffing the section itself (`18ddd54:…:200-204` against `HEAD:…:209-213`) is what shows it byte-identical |
 | D3's creation-inversion magnitude (n=1) — corpus-blocked | **Still open** | `data-format.md:246-248` still reads "*mechanism-named, magnitude-not-established (corpus-blocked)*" verbatim |
 | The `cloud-plan-lane` proposal on superseded-run CI classification (recorded, not self-applied, pending operator approval) | **Closed by a later plan** | The lane skill has since been revised repeatedly (`2cbcb1f`, `7d61d67`, `18b1b5c`, `b199d94`, `61a43e5`). Not re-verified clause-by-clause here — outside this plan's surface |
 | The recorded one-command-per-Bash-call slip | **Moot** | A disclosed process slip with no artifact in the tree |

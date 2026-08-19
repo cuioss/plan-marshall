@@ -2,7 +2,9 @@
 
 **Audited:** `plan.md`, `report-01.md` (plus, for the retirement question,
 `../135-remove-lsp-query-facade/plan.md` and `../135-remove-lsp-query-facade/report-01.md`)
-**Tree state:** `61a43e5` on `claude/code-intelligence-substrate-analysis-kah884`
+**Tree state:** first pass at `61a43e5`; re-derived end-to-end by the adversarial pass at `a90adeb`,
+both on `claude/code-intelligence-substrate-analysis-kah884` (`61a43e5` is an ancestor of `a90adeb`;
+no shipped file this audit cites changed between them)
 **Overall verdict:** CONFIRMED WITH GAPS
 
 The plan shipped as PR [#1207](https://github.com/cuioss/plan-marshall/pull/1207), squash-merged as
@@ -17,10 +19,10 @@ withdrawn by decision". The other four deliverables survive and are audited agai
 | # | Deliverable (short) | Report claim | Ground truth | Verdict |
 |---|---|---|---|---|
 | D1 | LSP-shaped facade + per-verb mapping table | "DONE. New `lsp` subcommand group … mapping table in `client-api.md`" | Facade, its handlers, its test and its docs are **gone** — removed on purpose by plan 135. The four residue verbs (`path`, `impact`, `find`, `which-module`) are present and unchanged. | CONFIRMED-AT-MERGE, RETIRED BY 135 (not a gap) |
-| D2 | `capabilities` verb: cannot-derive vs derived-nothing, envelope-scoped, uncached | "DONE … each `not_derivable`/`derivable` (+`derived_count`) or `available`/`unavailable`; read from producers that actually ran, per-call (uncached), envelope-scoped" | Verb exists and is correct for `module_edges` / `path_attribution`. The `content_search` row does **not** distinguish the two empties, and the "nothing is memoised" property is false in-process. | PARTIAL |
+| D2 | `capabilities` verb: cannot-derive vs derived-nothing, envelope-scoped, uncached | "DONE … each `not_derivable`/`derivable` (+`derived_count`) or `available`/`unavailable`; read from producers that actually ran, per-call (uncached), envelope-scoped" | Verb exists and draws the cannot-derive / derived-nothing binary for `module_edges` / `path_attribution`. The `content_search` row does **not** distinguish the two empties; the "nothing is memoised" property is false in-process; and the documented three-state shape has no `derived_count` on the `path_attribution` row. | PARTIAL |
 | D3 | Vacuous-consumer guard on the refine feasibility check | "DONE … `resolver_count: 0` → `FEASIBILITY: UNDERIVABLE` … Negative-control test asserts the two empty graphs are classified oppositely" | Guard text shipped and correct in both directions. The "negative-control test" re-implements the guard locally; deleting the shipped guard wholesale leaves it green. | PARTIAL |
 | D4 | `search --content` measurement contract (`--ignore-case`, `file_count`) | "DONE … `--ignore-case` (composes with `--literal`) … `file_count` (distinct paths) added alongside `count` (rows); regex-mode `(?i)` documented" | Implemented exactly as specified; both properties covered by tests that go red under mutation. Two sibling counters in the same response (`files_scanned`, `unreadable[]`) remain row-populations documented as file-populations. | CONFIRMED (with residue) |
-| D5 | Documentation across concepts / developer / user / skill surfaces | "DONE. concepts, developer `lsp-query-facade.adoc` + README registration, user `code-search.adoc`, `SKILL.md` + `client-api.md`" | Surviving (non-facade) doc surface is present, cross-referenced and accurate, except the caching claim and the `files_scanned` wording. The facade half of D5 was removed by plan 135 with no dangling xref. | CONFIRMED for the surviving surface |
+| D5 | Documentation across concepts / developer / user / skill surfaces | "DONE. concepts, developer `lsp-query-facade.adoc` + README registration, user `code-search.adoc`, `SKILL.md` + `client-api.md`" | Surviving (non-facade) doc surface is present, cross-referenced and accurate except at four points — the caching claim, the `files_scanned` / `unreadable` wording, the three-state table's `derived_count`, and the verb-summary row's vocabulary for `content_search`. The facade half of D5 was removed by plan 135 with no dangling xref. | CONFIRMED for the surviving surface |
 
 ## Per-deliverable detail
 
@@ -39,8 +41,8 @@ withdrawn by decision". The other four deliverables survive and are audited agai
   - `test/plan-marshall/manage-architecture/` no longer contains `test_lsp_facade.py`.
   - `doc/developer/lsp-query-facade.adoc` is absent and no `xref:`/link to it survives (grep for
     `lsp-query-facade` outside `doc/plans/` returns nothing).
-  - The retirement is documented and landed: `135-remove-lsp-query-facade/plan.md:20-61` states the
-    goal ("The `lsp` command group, its test, and every piece of its documentation are gone"), and
+  - The retirement is documented and landed: `135-remove-lsp-query-facade/plan.md:54-61` is the Goal
+    section ("The `lsp` command group, its test, and every piece of its documentation are gone"), and
     `git branch --contains 064b387` lists `main`.
   - The residue verbs the deliverable required to stay reachable are all still registered:
     `architecture.py:119` (`path`), `:142` (`impact`), `:233` (`which-module`), `:241` (`find`).
@@ -49,15 +51,18 @@ withdrawn by decision". The other four deliverables survive and are audited agai
   squash commits.
 - **Verdict:** CONFIRMED-AT-MERGE, RETIRED BY 135. The deliverable was built as specified and was
   then removed by a later landed plan that explicitly names it as a shim with zero adoption
-  (`135-remove-lsp-query-facade/plan.md:52-56`: "The `lsp` command group, its test, and every piece
+  (`135-remove-lsp-query-facade/plan.md:56-61`: "The `lsp` command group, its test, and every piece
   of its documentation are gone … The three genuinely-new pieces plan 130 also shipped — the
   `capabilities` report, the refine `UNDERIVABLE` guard, and the `search --content` measurement
-  contract — are untouched"). **This is not a gap and must not be re-filed as one.** Note for the
-  record that the plan's claim-label obligation "walk **all** subcommands against the LSP method
-  list … derive the full residue" was never discharged — `report-01.md:48-56` enumerates six verbs
-  against the **26 top-level subcommands** the argparse surface registers (re-counted from the
-  `add_parser` calls in `architecture.py`, plus 10 `enrich` sub-subcommands) — but the obligation is
-  moot now that the facade is gone.
+  contract (`--ignore-case`, `file_count`) — are untouched"). **This is not a gap and must not be
+  re-filed as one.** Note for the record that the plan's claim-label obligation "walk **all**
+  subcommands against the LSP method list … derive the full residue" was never discharged —
+  `report-01.md:48-56` is a five-row table naming **eight distinct** existing verbs (`module`,
+  `impact`, `find`, `resolve` as facade targets; `path`, `impact`, `find`, `which-module`, `graph`,
+  `neighbors` on the residue row) against the **26 top-level subcommands** the argparse surface
+  registers (re-counted at `a90adeb` from the `subparsers.add_parser` calls in `architecture.py`;
+  a further 10 are `enrich` sub-subcommands) — but the obligation is moot now that the facade is
+  gone.
 
 ### D2 — a capability-report verb
 
@@ -84,8 +89,10 @@ withdrawn by decision". The other four deliverables survive and are audited agai
     "modules_inventoried": 0}`, comparison `True`. That is exactly the *cannot-derive vs
     derived-nothing* ambiguity the deliverable exists to close, unresolved in one of its three rows.
     The shipped tests encode the conflation rather than catching it:
-    `test_capabilities.py:121-135` and `:225-233` assert the same two fields for the two different
-    envelopes.
+    `test_capabilities.py:121-135` (a never-crawled tmpdir) asserts `content_search` is
+    `unavailable`, and `:225-233` (two crawled, file-less modules) asserts `unavailable` plus
+    `modules_inventoried == 0` — two structurally different envelopes, no assertion anywhere that
+    their entries differ.
   - **Defect 2 — "nothing is memoised across calls" is false in-process.**
     `resolve_path_attribution` (`_architecture_core.py:1125-1185`) serves from
     `_PATH_CLAIM_CACHE` (`:1122`), a process-lifetime memo keyed by the sorted module-name tuple
@@ -96,19 +103,36 @@ withdrawn by decision". The other four deliverables survive and are audited agai
     `doc/concepts/code-intelligence.adoc:259` ("memoised across none"). The weaker per-dispatch
     phrasing in `SKILL.md:544` and `doc/user/code-search.adoc:198` ("never cached across dispatches")
     remains true, because each CLI invocation is a fresh process.
+  - **Defect 3 — the documented three-state shape is unexpressible on the `path_attribution` row.**
+    `client-api.md:1383-1390` and `doc/concepts/code-intelligence.adoc:262` state the three states as
+    `not_derivable`/`producer_count: 0`, `derivable`/`derived_count: 0`, `derivable`/`derived_count:
+    N`. The `path_attribution` entry (`_cmd_client_handlers.py:236-242`) carries no `derived_count`
+    at all, so an attributor that ran and claimed nothing and one that claimed fifty both report
+    `derivable, producer_count: 1`. The data is already in hand — each attributor report carries
+    `claim_count` (`extension-api/scripts/_path_attribution_merge.py:342`). D2's literal *Done when*
+    (distinguish *cannot derive* from *derived nothing*) is still met on this row, because
+    `producer_count` draws that binary; what fails is the stronger three-state claim the shipped
+    documentation makes. Filed as G9.
   - **Constraint not discharged — verification inside a dispatched leaf.** The plan's Verification
-    section requires D2 be verified in a leaf, not in main context. `report-01.md:112-117, 200-203`
-    records this as unmet and substitutes a two-project-dir test. Still open.
+    section (`plan.md:155-157`) requires D2 be verified in a leaf, not in main context.
+    `report-01.md:112-117, 200-203` records this as unmet and substitutes a two-project-dir test.
+    Still open.
 - **Checks run:** read the handler and its call chain; ran `test_capabilities.py` (10 passed);
   mutated `'status': 'derivable' if resolver_count else 'not_derivable'` →
   `'status': 'derivable'` and re-ran the file — **2 failed, 8 passed**
   (`test_empty_envelope_reports_no_capabilities_not_false_ones`,
   `test_module_edges_not_derivable_when_no_resolver_ran`), so the `module_edges` guard is
   non-vacuous; restored from a byte snapshot and confirmed `git status --porcelain` clean for the
-  file. Two in-process probes (payload equality; memo staleness) as described above.
-- **Verdict:** PARTIAL — the verb exists, is envelope-scoped, and is correct for two of its three
-  capabilities; the third does not draw the distinction the deliverable is named for, and one of the
-  three binding properties is documented more strongly than the code delivers.
+  file. Two in-process probes (payload equality; memo staleness) as described above. Re-run
+  independently at `a90adeb`: baseline 10 passed, mutation **2 failed, 8 passed** with exactly those
+  two test names; the memo-staleness probe carries a positive control — clearing
+  `_PATH_CLAIM_CACHE` between call 2 and call 3 flips the row to
+  `derivable, producer_count 1, producers ['probe-attributor']`, which pins the memo (not attributor
+  discovery) as the cause of the stale answer.
+- **Verdict:** PARTIAL — the verb exists, is envelope-scoped, and draws the cannot-derive /
+  derived-nothing binary on two of its three rows; the `content_search` row does not draw it at all,
+  one of the three binding properties is documented more strongly than the code delivers, and the
+  documented three-state shape is unexpressible on the `path_attribution` row.
 
 ### D3 — the vacuous-consumer guard
 
@@ -126,9 +150,13 @@ withdrawn by decision". The other four deliverables survive and are audited agai
     `test_feasibility_underivable_guard.py:85-93` defines `_dependency_direction_derivable` locally
     and asserts it against `get_module_graph`'s `resolver_count`. It never reads
     `refine-workflow-detail.md`, so it cannot detect the guard's removal or corruption.
-  - Proven: deleting the entire `**Underivable guard …**` block (everything from
-    `refine-workflow-detail.md:493` up to `### Scope Size Estimation`) leaves the test file green —
-    `3 passed in 0.39s`. Restored from a byte snapshot; `git status --porcelain` clean for the file.
+  - Proven, and re-proven independently at `a90adeb`: deleting the entire `**Underivable guard …**`
+    block (`refine-workflow-detail.md:492-499`, everything between the Feasibility Check prose and
+    `### Scope Size Estimation`) leaves the test file green — `3 passed`, with
+    `grep -c "Underivable guard"` returning `0` at the moment of the run. Restored from a byte
+    snapshot; `git status --porcelain` clean for the file. A whole-tree sweep of `test/` for
+    `UNDERIVABLE` finds no other test that reads the guard either, so the shipped artifact is
+    unprotected by the suite as a whole, not merely by its own test file.
   - A doc-anchored guard test is both feasible and idiomatic **in this same skill**:
     `test/plan-marshall/phase-2-refine/test_phase_2_refine_scope_estimate.py:361-384` reads
     `refine-workflow-detail.md` and asserts its documented content.
@@ -160,7 +188,7 @@ withdrawn by decision". The other four deliverables survive and are audited agai
   - Regex-mode `(?i)` documented at `client-api.md:936-947`, `doc/user/code-search.adoc:79-87`.
   - Measured in this clone on a doubly-attributed file: `count 2 / file_count 1 / files_scanned 2`.
   - **Residue — sibling counters in the same response are still row-populations.**
-    `files_scanned` (`:1238`) and `unreadable[]` (`:1233,:1237`) increment per
+    `files_scanned` (`:1238`) and `unreadable[]` (`:1233` decode, `:1236` OS) increment per
     `(module, category, path)` pair, not per distinct file, while `client-api.md:988` says
     `files_scanned` "Counts the files actually OPENED AND SCANNED", `doc/user/code-search.adoc:148`
     says "How many files were actually opened and searched", and `client-api.md:989` says of
@@ -170,8 +198,12 @@ withdrawn by decision". The other four deliverables survive and are audited agai
     `{"path": "shared/ghost.py", "reason": "os_error"}` entries.
 - **Checks run:** mutation M1 — dropped `re.IGNORECASE` from the compile → `test_search_content.py`
   **2 failed, 18 passed**; mutation M2 — `file_count` degenerated to `len(results)` → **1 failed, 19
-  passed**. Both restored from byte snapshots, `git status --porcelain` clean. Two in-process probes
-  for the row-population measurements above.
+  passed**. Both restored, `git status --porcelain` clean for the file afterwards. Two in-process
+  probes for the row-population measurements above. All four readings re-taken independently at
+  `a90adeb` (baseline 20 passed; M1 → 2 failed / 18 passed, naming
+  `test_ignore_case_composes_with_literal_on_a_metacharacter_pattern` and
+  `test_ignore_case_flag_and_inline_marker_both_work_in_regex_mode`; M2 → 1 failed / 19 passed,
+  naming `test_count_is_rows_and_file_count_is_distinct_files`) and reproduce exactly.
 - **Verdict:** CONFIRMED against the literal *Done when*; the residue above is a fresh, smaller
   instance of the same row-versus-file recurrence rather than a failure of the clause.
 
@@ -188,7 +220,8 @@ withdrawn by decision". The other four deliverables survive and are audited agai
     `lsp-query-facade` and for `LSP` across `marketplace/bundles/plan-marshall/skills/manage-architecture/`,
     `doc/user/code-search.adoc` and `doc/concepts/code-intelligence.adoc` returns exactly one
     unrelated hit (`code-intelligence.adoc:97`, about the real `lsp-client` transport).
-  - The surviving half is present and consistent with the code: `client-api.md:571-572` (summary
+  - The surviving half is present and, with the exceptions named below, consistent with the code:
+    `client-api.md:571-572` (summary
     rows), `:923-947` (search synopsis + case-insensitivity), `:983-1006` (anti-vacuity + the
     complete-coverage conjunction), `:1356-1434` (`capabilities`, including the elision note the
     report says it added at `:1417-1423`); `SKILL.md:509-534` (search, including the paragraphs plan
@@ -200,10 +233,20 @@ withdrawn by decision". The other four deliverables survive and are audited agai
     the synopsis and `.../agent-behavior-rules.md:313` names `--ignore-case` in the content-lookup
     hint.
   - Help text vs behaviour: `architecture.py:276-284` help text and `client-api.md:936-947` describe
-    the composition the code implements. Two doc statements do **not** match behaviour — the
-    "nothing is memoised" claim (D2 Defect 2) and the `files_scanned` / `unreadable` file-population
-    wording (D4 residue).
-- **Verdict:** CONFIRMED for the surviving surface, with the two inaccuracies filed as gaps.
+    the composition the code implements. **Four** doc statements do **not** match behaviour:
+    1. the "nothing is memoised" claim (D2 Defect 2 → G2);
+    2. the `files_scanned` / `unreadable` file-population wording (D4 residue → G5, G6);
+    3. the three-state table's `derived_count` on the `path_attribution` row (D2 Defect 3 → G9);
+    4. **the verb-summary row itself** — `client-api.md:572` describes `capabilities` as reporting
+       "Per-capability `derivable`/`not_derivable` (module edges, path attribution, **content
+       search**)", but `content_search` reports `available`/`unavailable` and never
+       `derivable`/`not_derivable` (`_cmd_client_handlers.py:246`). The detailed section states the
+       split correctly (`client-api.md:1392-1393`), so this is the summary row contradicting the
+       body of its own document. Folded into G1, whose fix decides which of the two vocabularies
+       survives.
+- **Verdict:** CONFIRMED for the surviving surface as a whole — every surface the deliverable named
+  exists, is cross-referenced, and passes the "no verb reads as renamed" criterion — with the four
+  inaccuracies above filed as gaps.
 
 ## Correctness review
 
@@ -230,29 +273,50 @@ Defects found:
    complete-coverage conjunction (`client-api.md:992-1006`) over a tree with cross-module duplicate
    inventory over-counts both the scanned population and the unreadable population; the duplicate
    `unreadable` entries additionally make `len(unreadable)` wrong as a count of at-risk files.
+4. **The `path_attribution` row cannot express "ran and claimed nothing" quantitatively
+   (`_cmd_client_handlers.py:236-242`)** while `client-api.md:1383-1390` and
+   `code-intelligence.adoc:262` document a three-state shape keyed on `derived_count`. The binary the
+   *Done when* requires is drawn (`producer_count`); the documented third state is not reachable on
+   this row.
 
 No fail-open branch, unguarded `None`, off-by-one, or stale-surface read was found in the D2/D4
 code paths beyond the above. The error boundaries (`:182-222`, `:1205-1210`, `:1193-1203`) are
-fail-closed and return structured errors.
+fail-closed and return structured errors. Two specific fail-open shapes were looked for and are
+absent: `resolver_count` is `count_dispatched(resolver_reports)`
+(`_cmd_client_query.py:412`, `:942-957`), which excludes only `STATUS_NOT_DISPATCHED`, so
+`producer_count` and `len(producers)` can never disagree on the `module_edges` row — the invariant
+`test_capabilities.py:152-156` asserts; and `resolve_path_attribution`'s degraded `(None, [])` return
+on `ImportError` (`_architecture_core.py:1173-1174`) surfaces as `not_derivable`, which is the
+conservative direction (an absent seam is reported as an absent capability, never as a present one).
 
 ## Test adequacy
 
 | Deliverable | Tests | Adequacy |
 |---|---|---|
 | D1 | `test_lsp_facade.py` — deleted with the facade by plan 135 | N/A (retired) |
-| D2 | `test/plan-marshall/manage-architecture/test_capabilities.py` (10 tests); `test_derivation_resolver_configuration.py:249-283` (plan 220) | Non-vacuous on `module_edges`: mutating the status ternary to a constant `'derivable'` turns the file red (2 failed, 8 passed). **Uncovered:** the "uncached" property (no test calls twice with changed producers) and the `content_search` cannot-derive case (the two tests that touch it assert the same payload for structurally different envelopes). |
+| D2 | `test/plan-marshall/manage-architecture/test_capabilities.py` (10 tests); `test_derivation_resolver_configuration.py:249-283` (plan 220) | Non-vacuous on `module_edges`: mutating the status ternary to a constant `'derivable'` turns the file red (2 failed, 8 passed). **Uncovered:** the "uncached" property (no test calls twice with changed producers); the `content_search` cannot-derive case (the two tests that touch it assert non-contradictory facts about structurally different envelopes and never that the entries differ); and any claim-count assertion on `path_attribution`. |
 | D3 | `test_feasibility_underivable_guard.py` (3 tests) | **Vacuous with respect to the shipped artifact.** Deleting the whole guard block from `refine-workflow-detail.md` leaves it green (3 passed). It pins `get_module_graph`'s `resolver_count` — behaviour that predates this plan — plus a locally-defined predicate. |
-| D4 | `test_search_content.py:540-667` (5 D4 tests) | Non-vacuous: dropping `re.IGNORECASE` → 2 failed; degenerating `file_count` to the row count → 1 failed. **Uncovered:** `files_scanned` / `unreadable` populations under duplicate attribution (the duplicate-attribution fixture at `:201-217` asserts `count`/`file_count` only). |
+| D4 | `test_search_content.py:540-666` (5 D4 tests) | Non-vacuous: dropping `re.IGNORECASE` → 2 failed; degenerating `file_count` to the row count → 1 failed. **Uncovered:** `files_scanned` / `unreadable` populations under duplicate attribution (the duplicate-attribution fixture at `:201-217` asserts `count`/`file_count` only). |
 
 All mutations were applied from byte snapshots taken under
-`…/scratchpad/verify-130-mutsweep/` and written back from those snapshots; `git status --porcelain`
-shows neither `_cmd_client_handlers.py` nor `refine-workflow-detail.md` modified afterwards.
+`…/scratchpad/verify-130-mutsweep/` (first pass) and `…/scratchpad/adv-130-mutsweep/` (adversarial
+re-run) and written back; `git status --porcelain` shows neither `_cmd_client_handlers.py` nor
+`refine-workflow-detail.md` modified by this audit afterwards. `git checkout` / `restore` / `stash`
+were never used.
 
-Method note: in a first batched sweep the D2 mutation reported green; re-run in isolation with
+Method note 1: in a first batched sweep the D2 mutation reported green; re-run in isolation with
 `-p no:cacheprovider` it is red with the two failures quoted above, and the mutated source was
 printed from disk immediately before the run to prove it was in place. The isolated run is the
 authoritative result; the batched green was a stale-bytecode artifact of my harness, not a property
-of the test.
+of the test. The adversarial re-run, always with `-p no:cacheprovider`, reproduces the red.
+
+Method note 2: during the adversarial re-run a concurrent agent held its own mutation
+(`_collapse_claimed_duplicate_rows` → `pass`) in `_cmd_client_handlers.py` for part of the window.
+Every mutation of mine in that file was therefore applied and reverted as a *single-line targeted
+edit* rather than a whole-file restore, so no other agent's in-flight work was overwritten; a
+`git diff` of the file after each revert showed my line back to HEAD content. The foreign mutation
+does not disturb the readings reported here — it was verified not to change the D4 baseline
+(20 passed with it present) and it is orthogonal to the `re.IGNORECASE` and `file_count` mutants.
 
 ## Report accuracy
 

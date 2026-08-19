@@ -2,13 +2,15 @@
 
 The facade removal itself left nothing undone: every artefact the plan named is gone from the tree, the
 wrapped verbs are intact and green, the `SKILL.md` hazard was handled, and the run produced no
-collateral. What remains are fourteen items **around** the removal:
+collateral. What remains are fifteen items **around** the removal:
 
 - **nine pre-existing documentation defects** in the same query-surface files — G1, G3–G9, G11. Four
   of these were surfaced by the run's own cold-read sub-agent and deliberately deferred (the heading
   hierarchy → G3; the verb-set drift → G4/G5/G6; the `info` adjacency overstatement → G7; the
-  intra-doc duplication → G8/G9), and no later plan has closed any of them;
-- **one shipped-code follow-up the plan named for itself** — G2;
+  intra-doc duplication → G8/G9), and no later plan has closed any of them; G1 and G11 were found by
+  this audit, not by the run;
+- **two shipped-code follow-ups** — the vocabulary nit the plan named for itself (G2) and a stale
+  handler-inventory docstring in a file this plan edited (G15);
 - **one missing detector** that is why the G4–G6 drift survived both plan 130 and plan 135 — G14;
 - **one forward-dangling cross-reference** into this plan's own directory — G10;
 - **two false claims confined to `report-01.md`** — G12, G13.
@@ -20,23 +22,27 @@ None of them is a regression caused by the removal.
 - **Kind:** doc-defect
 - **Severity:** medium
 - **Topic:** documentation-surface
-- **Where:** `marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md:571`
-  (row `| capabilities | Envelope capability report | … |`); contradicted code at
+- **Where:** `marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md:572`
+  (row `| capabilities | Envelope capability report | … |` — the 15th of the table's 17 verb rows,
+  which run 558-574); contradicted code at
   `marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/_cmd_client_handlers.py:246`
 - **Evidence:** the row reads "Per-capability `derivable`/`not_derivable` (module edges, path
   attribution, content search)". The handler emits `'status': 'available' if modules_inventoried else
   'unavailable'` for the `content_search` entry, and only `module_edges` / `path_attribution` use
   `derivable`/`not_derivable` (lines 231, 239). The same document's own `§ capabilities` states the
-  split correctly at `client-api.md:1391-1392` ("The `content_search` entry uses `available` /
-  `unavailable`"), so the doc contradicts itself.
+  split correctly at `client-api.md:1392-1393` ("The `content_search` entry uses `available` /
+  `unavailable` … with a `modules_inventoried` count"), so the doc contradicts itself. Note the
+  `§ capabilities` entry-shape table immediately above it (1386-1390) also states only
+  `derivable` / `not_derivable`, and is rescued solely by the 1392-1393 sentence that follows.
 - **Why it matters:** a consumer reading the summary row writes `if status == 'not_derivable'` and gets
   a silent false negative on content search — the exact "capability present when it is absent"
   confusion the `capabilities` verb exists to close.
 - **Action:** rewrite the row's Output cell to name both vocabularies, e.g. "Per-capability status —
   `derivable`/`not_derivable` for module edges and path attribution, `available`/`unavailable` for
   content search". Do not change the handler here (that is G2).
-- **Done when:** `client-api.md:571` names `available`/`unavailable` for content search, and no
-  statement in `client-api.md` claims a single status vocabulary across all three entries.
+- **Done when:** the `capabilities` row of the Command Summary table names `available`/`unavailable`
+  for content search, and no statement in `client-api.md` claims a single status vocabulary across
+  all three entries.
 - **Effort:** S
 - **Risk if fixed:** none — a one-cell documentation edit; `literal-count-drift` and the other
   plugin-doctor rules do not key on this row.
@@ -54,13 +60,18 @@ None of them is a regression caused by the removal.
   Recorded as a follow-up in Notes" — and § Notes repeats it. Still unchanged at `61a43e5`.
 - **Why it matters:** a consumer branching on `status` must special-case one of three rows; every
   document describing the verb has to carry the exception (see G1, plus
-  `doc/user/code-search.adoc:199`), which is how G1's contradiction arose in the first place.
+  `doc/user/code-search.adoc:198`), which is how G1's contradiction arose in the first place. The
+  handler's own docstring (`_cmd_client_handlers.py:172-176`) already describes the three states as
+  `not_derivable` / `derivable` / `derivable` **for every entry**, so the code contradicts itself
+  too, not only the docs.
 - **Action:** decide one vocabulary for all three entries (`derivable`/`not_derivable` reads best,
-  since a crawl that produced an inventory *is* a producer that ran) and change the handler, then
-  update `client-api.md § capabilities` (1391-1392 and both worked TOON payloads at 1404 and 1416),
-  `doc/user/code-search.adoc:199`, and `test_capabilities.py`.
+  since a crawl that produced an inventory *is* a producer that ran) and change the handler at
+  `_cmd_client_handlers.py:246`, then update: the handler docstring (172-176), `client-api.md
+  § capabilities` (the 1392-1393 exception sentence and the `content_search` row of each worked TOON
+  payload — 1403 and 1414), the Command Summary row (572, which G1 also touches),
+  `doc/user/code-search.adoc:198`, and `test_capabilities.py`.
 - **Done when:** all three `capabilities` entries emit the same two status values, `test_capabilities.py`
-  asserts the unified vocabulary, and no document mentions a per-entry exception.
+  asserts the unified vocabulary, and no document or docstring mentions a per-entry exception.
 - **Effort:** S
 - **Risk if fixed:** any consumer already matching on the literal `available` — a tree-wide grep for
   `content_search` and `'available'` must run first; at `61a43e5` the only readers are the docs and
@@ -72,21 +83,32 @@ None of them is a regression caused by the removal.
 - **Severity:** medium
 - **Topic:** documentation-surface
 - **Where:** `marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md:580`
-  (`## Error Handling`), with the orphaned H3s at 606, 712, 817, 909, 1144, 1284, 1356
-- **Evidence:** the H2 census is `Script Pattern` (7), `Commands` (20), `Resolver provenance` (90),
-  `Command Summary` (554), `Error Handling` (580), `Consumer View` (1437), `Data Source` (1448).
-  Seven verb sections — `### files`, `### which-module`, `### find`, `### search`, `### diff-modules`,
-  `### descriptor-regression-check`, `### capabilities` — sit between 580 and 1437 and therefore render
-  as subsections of *Error Handling*. Verbs appended after `resolve` were never re-parented under
-  `## Commands`. Recorded as deferred finding 1 in `report-01.md`; unchanged.
-- **Why it matters:** any rendered or outline view of the contract files these seven verbs under
-  "Error Handling", so a reader scanning for the `search` contract does not find it where the document's
-  own structure says verbs live; agents summarising the doc inherit the mis-parenting.
-- **Action:** move the seven H3 sections back under `## Commands` (or open a new H2, e.g.
-  `## Inventory and search commands`, immediately before `### files` and leave `## Error Handling` where
-  it is, after them). Keep section bodies byte-identical; this is a heading/ordering change only.
-- **Done when:** every `### <verb>` section in `client-api.md` has an H2 ancestor that is a command
-  section, and `## Error Handling` contains only error-handling prose.
+  (`## Error Handling`), with the orphaned H3s at 606, 712, 817, 909, 1144, 1284, 1356; and
+  `client-api.md:90` (`## Resolver provenance (the graph family)`), with the mis-parented H3s at
+  309, 449, 488, 515
+- **Evidence:** the H2 census is `Script Pattern` (7), `Commands` (20), `Resolver provenance (the
+  graph family)` (90), `Command Summary` (554), `Error Handling` (580), `Consumer View` (1437),
+  `Data Source` (1448). Of the document's **17** verb sections, only **two** (`### info` 22,
+  `### modules` 55) sit under `## Commands`. The break is in two places, not one:
+  - Seven — `### files` (606), `### which-module` (712), `### find` (817), `### search` (909),
+    `### diff-modules` (1144), `### descriptor-regression-check` (1284), `### capabilities` (1356) —
+    sit between 580 and 1437 and render as subsections of **Error Handling**. This is the half
+    `report-01.md` recorded as deferred finding 1.
+  - Four more — `### module` (309), `### overview` (449), `### commands` (488), `### resolve` (515) —
+    render under **Resolver provenance (the graph family)**, an H2 whose prose scopes itself to
+    "the four graph-family verbs" (92). `commands` and `resolve` are not graph-family verbs at all.
+    This half is **not** in `report-01.md`; it was found by this audit.
+- **Why it matters:** any rendered or outline view of the contract files seven verbs under "Error
+  Handling" and four more under a graph-family discussion, so a reader scanning for the `search` or
+  `resolve` contract does not find it where the document's own structure says verbs live; agents
+  summarising the doc inherit the mis-parenting.
+- **Action:** re-parent all eleven mis-filed H3 sections. Either move them under `## Commands`, or
+  open command H2s that own them (e.g. `## Inventory and search commands` immediately before
+  `### files`) and leave `## Error Handling` after them. Keep section bodies byte-identical; this is
+  a heading/ordering change only.
+- **Done when:** every one of `client-api.md`'s 17 `### <verb>` sections has an H2 ancestor that is a
+  command section, `## Error Handling` contains only error-handling prose, and `## Resolver
+  provenance (the graph family)` contains only the four verbs its own opening sentence names.
 - **Effort:** M
 - **Risk if fixed:** intra-repo anchor links to these sections (`#search`, `#capabilities`, `#find`,
   `#which-module`) must survive — they are name-anchors on the H3s, so a pure re-parent preserves them;
@@ -146,7 +168,7 @@ None of them is a regression caused by the removal.
 - **Topic:** documentation-surface
 - **Where:** verb defined at
   `marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/architecture.py:317`, contracted
-  at `…/standards/client-api.md:1284` (`### descriptor-regression-check`) and row 577; absent from
+  at `…/standards/client-api.md:1284` (`### descriptor-regression-check`) and Command Summary row 574; absent from
   `…/manage-architecture/SKILL.md`
 - **Evidence:** `grep -c "descriptor-regression-check" SKILL.md` → **0**. The verb is missing from both
   `SKILL.md` surfaces: the Command Groups table (36-49) and the Canonical invocations list (342-630).
@@ -173,14 +195,18 @@ None of them is a regression caused by the removal.
   `impact` verbs traverse, plus the adjacency surfaces of `overview` and `module` / `info`." The
   `info` contract at `client-api.md:22-52` returns `project`, `technologies`, and
   `modules{name,path,purpose,description,freshness}` — no edge, dependency, or adjacency field.
-  `module` genuinely does carry `internal_dependencies`, so the claim is wrong for `info` only.
+  `module` genuinely does carry `internal_dependencies`, and `overview`'s contract
+  (`client-api.md:449-467`) genuinely lists an **Adjacency** section — "table of `Module | Internal
+  Dependencies`, followed by a one-line `_Edge provenance: …_` footer" — so the claim is wrong for
+  `info` and for `info` alone.
   Recorded as deferred finding 3 in `report-01.md` (which cites line 34; the sentence is now at 36).
 - **Why it matters:** the concepts page is the tier model's authority. Naming `info` as an edge surface
   tells a reader that a Tier 1 answer is available from a Tier 0-only verb, which is exactly the
   cannot-derive / derived-nothing confusion the rest of the page works to eliminate.
-- **Action:** change the clause to "plus the adjacency surface of `module`" (or, if `overview` is
-  verified to carry adjacency, "of `overview` and `module`"), dropping `info`. Verify `overview`'s
-  output against `client-api.md:449` before keeping it in the list.
+- **Action:** delete ` / \`info\`` from the clause, leaving "plus the adjacency surfaces of
+  `overview` and `module`". Both survivors are verified against their contracts
+  (`client-api.md:449-467` for `overview`'s Adjacency section, the `internal_dependencies` field for
+  `module`); do **not** drop `overview` — it does carry adjacency.
 - **Done when:** `doc/concepts/code-intelligence.adoc` no longer names `info` as an adjacency/edge
   surface, and every verb it does name is confirmed to emit an edge or dependency field.
 - **Effort:** S
@@ -191,15 +217,16 @@ None of them is a regression caused by the removal.
 - **Kind:** doc-defect
 - **Severity:** low
 - **Topic:** documentation-surface
-- **Where:** `marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md:941-946`
-  and again at `1111-1116`
-- **Evidence:** 941-946 states the flag "adds `re.IGNORECASE` on an axis orthogonal to `--literal`" and
-  that "the echoed `ignore_case` boolean names which population the match set was computed over";
-  1111-1116 restates both in the edge-case recap. Recorded as deferred finding 4 in `report-01.md`.
+- **Where:** `marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md:936-947`
+  (the `**Case-insensitivity — the one combination \`--literal\` could not express.**` paragraph)
+  and again at `1111-1116` (the `- \`--ignore-case\`:` edge-case bullet)
+- **Evidence:** 941 states the flag "adds `re.IGNORECASE` on an axis orthogonal to `--literal`" and
+  946-947 that "The echoed `ignore_case` boolean names which population the match set was computed
+  over"; 1111-1116 restates both. Recorded as deferred finding 4 in `report-01.md`.
 - **Why it matters:** two statements of one rule drift apart on the next edit, and the reader cannot
   tell which is authoritative — the failure mode the repository's own "No duplication —
   cross-reference instead" documentation standard exists to prevent.
-- **Action:** keep the contract statement at 941-946 and reduce the recap at 1111-1116 to a
+- **Action:** keep the contract statement at 936-947 and reduce the recap at 1111-1116 to a
   cross-reference, or vice versa — one statement, one place.
 - **Done when:** the `--ignore-case`/`--literal` composition rule is stated once in `client-api.md`, with
   any second mention being a pointer.
@@ -211,11 +238,11 @@ None of them is a regression caused by the removal.
 - **Kind:** doc-defect
 - **Severity:** low
 - **Topic:** documentation-surface
-- **Where:** `marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md:1034-1038`
-  and again at `1117-1120`
-- **Evidence:** 1034-1038 explains that `count` (rows) and `file_count` (distinct paths) coincide unless
-  a file is attributed to two modules; 1117-1120 restates the same distinction and the same "read
-  `file_count` for how many files contain this" guidance. Recorded as deferred finding 4 in
+- **Where:** `marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md:1034-1040`
+  and again at `1117-1121`
+- **Evidence:** 1034-1040 explains that `count` (rows) and `file_count` (distinct paths) coincide unless
+  a file is attributed to two modules; 1117-1121 restates the same distinction and the same "Read
+  `file_count` for 'how many files contain this?'" guidance. Recorded as deferred finding 4 in
   `report-01.md`.
 - **Why it matters:** identical to G8 — a second copy of a measurement definition is a drift source, and
   this particular pair is load-bearing (a caller reading the wrong field over-counts).
@@ -228,11 +255,15 @@ None of them is a regression caused by the removal.
 ## G10 — Resolve the cross-reference from plan 240 into this plan's `rationale.md`
 
 - **Kind:** doc-defect
-- **Severity:** medium
+- **Severity:** low — the link is **not yet** dangling (`rationale.md` is present at `a90adeb`), the
+  target is recoverable from git history, and nothing outside `doc/plans/` is affected. It is a
+  scheduled future breakage in a plan-directory document, not a false claim in shipped
+  documentation, so it does not reach the medium bar. (The audit filed this as medium; re-calibrated.)
 - **Topic:** plan-lane-contract
-- **Where:** `doc/plans/code-intelligence-substrate/240-skill-lsp-server/proposal-protocol-surface.md:46`
-- **Evidence:** the line reads "…the same zero-adoption signature that condemned the `lsp` query facade
-  in plan [`135`](../135-remove-lsp-query-facade/rationale.md)." `report-01.md` § Residue states
+- **Where:** `doc/plans/code-intelligence-substrate/240-skill-lsp-server/proposal-protocol-surface.md:45-46`
+- **Evidence:** the sentence reads "…the same zero-adoption signature that condemned the `lsp` query facade
+  in plan [`135`](../135-remove-lsp-query-facade/rationale.md)." (the markdown link itself is on 46).
+  `report-01.md` § Residue states
   "`rationale.md` lives in the plan directory and **is removed at collect** (git history retains it)."
   The two cannot both hold: when collect removes `rationale.md`, plan 240's live proposal document
   acquires a dangling relative link.

@@ -1,14 +1,15 @@
 # Gaps — 060-dispatch-boundary-ledger-is-not-a-commensurable-population
 
-The plan landed and its four behavioural deliverables are present, but three of them are incomplete
-in ways that leave the original defect reachable. The D2 failure verdict is gated on the wrong field
-and cannot fire for a boundary file whose rows sum to zero — the one row shape the code's own
-comments say the row count exists to make legible. D4's agreement signal is unreachable for a
-same-population exact agreement (the tie resolves to `total_tokens`, which suppresses the annotation
-entirely) and is emitted only in a cross-population comparison where "measures agree" is unsound.
-D3's exclusion list is a hand-maintained literal that claims source-derivation with no guard
-enforcing it, omits one dispatch class, and is not referenced by the coverage figure as the plan
-required. Nine gaps follow.
+The plan landed and all five deliverables are present, but every behavioural one carries a shortfall.
+The D2 failure verdict is gated on the wrong field and cannot fire for a boundary file whose rows sum
+to zero — the one row shape the code's own comments say the row count exists to make legible. D4's
+agreement signal is unreachable for a same-population exact agreement (the tie resolves to
+`total_tokens`, which suppresses the annotation entirely) and is emitted only in a cross-population
+comparison where "measures agree" is unsound; the same cross-population defect covers the `<`
+relation, though not `>`. D3's exclusion list is a hand-maintained literal that claims
+source-derivation with no guard enforcing it, omits one dispatch class, and is not referenced by the
+coverage figure as the plan required. D5's suite is non-vacuous and genuinely fail-first, but the
+negative control the plan specified by name was replaced by a weaker one. Nine gaps follow.
 
 ## G1 — Gate the boundary coverage verdict on the coverage state, not on a truthy boundary sum
 
@@ -36,6 +37,13 @@ required. Nine gaps follow.
   ("the peek itself is the clean signal — there is no agent return to parse, so token / tool-use /
   duration counters are recorded as `0`"). A phase whose boundary file holds only such rows sums to
   `0` while `dispatch_boundary_rows_recorded` counts them all.
+  The **minimal realistic instance** needs no contrived fixture: a `5-execute` phase whose queue was
+  already drained at the pre-dispatch peek writes exactly one synthesized zero row, and a window
+  `enrich` sampled nothing in writes `subagent_samples: 0` (`:3513`). That row —
+  `{'dispatch_boundary_rows_recorded': 1, 'subagent_samples': 0}` — classifies `over` and rendered,
+  on probe, no bullet, no `FAILURE`, **and** no `(boundary sum, over-covering)` marker: the
+  `_unclosed_boundary_floor` fold at `:618-658` is gated on the same falsy sum, so the two surfaces
+  that could each have carried the signal fall silent together.
 - **Why it matters:** an over-covering ledger — the impossible ratio this plan was written to make
   loud — renders completely silently on any phase whose boundary rows carry no token measurement.
   The reader sees a phase with no boundary bullet at all, which is indistinguishable from a phase
@@ -44,9 +52,10 @@ required. Nine gaps follow.
   is decidable, independently of the sum. Concretely: compute `boundary_state =
   _boundary_coverage_state(phase)` first and render the bullet when
   `boundary_state is not None or boundary_total` — showing the sum as `0` where that is the measured
-  value. Consider also persisting `dispatch_boundary_total` unconditionally when
-  `dispatch_boundary_rows_recorded` is persisted, so the two fields never disagree about whether the
-  file existed.
+  value. Persist `dispatch_boundary_total` (as `0`) whenever `dispatch_boundary_rows_recorded` is
+  persisted at `:1439-1446`, so the two fields never disagree about whether the file existed; a
+  measured `0` beside a row count of `n` is legible as the empty sum it is, which is the rule
+  `data-format.md` already states for `{total}_population_count`.
 - **Done when:** a `generate` over a phase row carrying `dispatch_boundary_rows_recorded: 8`,
   `subagent_samples: 3` and no non-zero `dispatch_boundary_total` renders a `FAILURE` coverage
   verdict naming both producers, and a regression test in
@@ -100,17 +109,25 @@ required. Nine gaps follow.
 
 - **Kind:** bug
 - **Severity:** high
-  (Raised from medium on adversarial review: this is a measurement that misreports in shipped
-  output, and its scope is wider than the `equal` branch — see Evidence.)
+  (Raised from medium on a first adversarial review: this is a measurement that misreports in
+  shipped output, and its scope is wider than the `equal` branch. A second adversarial pass **bounded
+  that widening** — it covers `=` and `<`, not `>`, which is sound; see Evidence. High stands on the
+  `<` branch alone, which is the shipped test's own scenario and the more common path.)
 - **Topic:** measurement/metrics
 - **Where:** `marketplace/bundles/plan-marshall/skills/manage-metrics/scripts/manage-metrics.py:1793`
   and `:1800-1801` (`beaten = raw_tokens`), consumed by `_reconciliation_relation_clause` at
   `:661-683` and rendered under the preamble at `:2019-2025`
 - **Evidence:** `beaten` is the row's raw `total_tokens` regardless of whether that field was ruled
   *ineligible* as cross-population at `:593` (`if field == 'total_tokens' and population ==
-  POPULATION_INLINE: continue`). Given G2, an `inline`-population row is the **only** row that
-  reaches the clause at all — so it is not just `=` that compares across populations, but `>` and
-  `<` as well. Two probes against a pristine copy of the shipped module:
+  POPULATION_INLINE: continue`). The defect covers **two of the three relations**, not one and not
+  all three. `=` is unreachable same-population because the tie resolves to `total_tokens` (G2), and
+  `<` is unreachable same-population because a winner below an *eligible* `total_tokens` would have
+  lost the maximum to it — so both render only on an `inline` row. (`>` is unaffected: it renders
+  whenever a dispatched measure beats an eligible `total_tokens`, which is a same-population
+  comparison. Counter-probe: an **unstamped** row `{'total_tokens': 439628,
+  'subagent_total_tokens': 577452}` renders `4-plan → subagent_total_tokens 577,452 (> total_tokens
+  439,628)` — `_token_population` defaults an absent stamp to `dispatched` at `:433-453`.) Two
+  probes against a pristine copy of the shipped module:
   - `{'total_tokens': 5000, 'total_tokens_population': 'inline', 'subagent_total_tokens': 5000}` →
     `4-plan → subagent_total_tokens 5,000 (= total_tokens 5,000; measures agree)`;
   - `{'total_tokens': 5000, 'total_tokens_population': 'inline', 'subagent_total_tokens': 3000}` →
@@ -130,13 +147,13 @@ required. Nine gaps follow.
   `total_tokens_population = inline` on any row whose `total_tokens` is falsy at that moment
   (`:3579-3584`). A phase that *did* dispatch but never closed with `--total-tokens` therefore ends
   up carrying dispatched measures under an `inline` stamp — the exact row shape above.
-- **Why it matters:** every relation this surface currently emits is a comparison between a
-  main-context figure and a dispatched figure, announced as a reconciliation of "competing measures
-  of the dispatched population". The `=` case is the loudest instance — a reader is told two
-  independent producers agree when the module's own rule says the two are not comparable — but the
-  `<` case is the more common one and carries the same defect, dressed as an anomaly report. This is
-  the class of cross-population mislabel the epic exists to eliminate, emitted by the surface built
-  to prove it had been eliminated.
+- **Why it matters:** the `=` and `<` relations — the two the deliverable's regression arms exist to
+  pin — are emitted only as comparisons between a main-context figure and a dispatched figure,
+  announced as a reconciliation of "competing measures of the dispatched population". The `=` case
+  is the loudest instance — a reader is told two independent producers agree when the module's own
+  rule says the two are not comparable — but the `<` case is the more common one and carries the
+  same defect, dressed as an anomaly report. This is the class of cross-population mislabel the epic
+  exists to eliminate, emitted by the surface built to prove it had been eliminated.
 - **Action:** make the clause state what it compared. Either suppress it whenever `total_tokens` was
   excluded from eligibility for population reasons, or render it as `(not comparable — total_tokens
   on this row measures the inline main-context population)`. Once G2 makes the same-population path
@@ -167,7 +184,8 @@ required. Nine gaps follow.
   against the same hand-written literal. A repository-wide search for any test reading `call-graph.md`
   or the workflow docs in connection with this constant returns nothing, while the same search
   pattern does return the analogous lock-step guard for `DISPATCH_TERMINATION_CAUSES` at
-  `test/plan-marshall/manage-metrics/test_manage_metrics.py:3871-3876`, which discovers every
+  `test/plan-marshall/manage-metrics/test_manage_metrics.py:3870-3890`
+  (`test_every_documented_termination_cause_site_matches_the_enum`), which discovers every
   enumeration site in the shipped doc and compares it to the tuple. The repository states the
   obligation explicitly at
   `marketplace/bundles/plan-marshall/skills/manage-metrics/SKILL.md:446` — "When adding a new
@@ -299,9 +317,13 @@ required. Nine gaps follow.
 - **Why it matters:** it is dead production code whose docstring asserts a caller population that
   does not exist, and four tests that certify only the dead path — cost with no coverage value, and a
   false statement in a module whose whole subject is claims matching their populations.
-- **Action:** delete the wrapper and its four assertions, or (if a caller is intended) name it. If
-  kept, correct the docstring to say it is exercised by tests only.
-- **Done when:** either the symbol is gone along with its tests, or a production call site exists.
+- **Action:** delete the wrapper together with the four assertions at
+  `test_manage_metrics_record_dispatch_boundary.py:146-166`. If it is kept instead, either give it a
+  production call site or replace "preserved for callers that only need the under-coverage bit" with
+  a statement that it has no production caller and is exercised by tests only.
+- **Done when:** `_boundary_measure_is_partial` either does not exist, or has a production call site,
+  or carries a docstring that does not claim a caller population it lacks — and a repository-wide
+  search for the symbol agrees with whichever of the three the fix chose.
 - **Effort:** S
 - **Risk if fixed:** an external consumer importing the private helper would break; the leading
   underscore and the empty search result make that unlikely.
@@ -309,7 +331,11 @@ required. Nine gaps follow.
 ## G9 — Make the coverage figure reference the exclusion declaration
 
 - **Kind:** incomplete
-- **Severity:** low
+- **Severity:** medium
+  (Raised from low on adversarial review. D3's *Done when* names this clause literally — "an
+  explicit exclusion list **that the coverage figure references**" — and it is not implemented, so
+  this is "an incomplete deliverable" (medium) rather than "a cosmetic doc inconsistency" (low).
+  Blast radius is small; the calibration keys on kind, not on blast radius.)
 - **Topic:** measurement/metrics
 - **Where:** `marketplace/bundles/plan-marshall/skills/manage-metrics/scripts/manage-metrics.py:2199-2203`
   (the `partial` coverage text) versus the declaration block at `:2112-2122`

@@ -2,15 +2,19 @@
 
 The plan landed substantially as specified: the bare-root `.claude` claim ships through the Axis-D seam,
 the ownership ruling is recorded in four places, the consistency check enumerates the real tree and dies
-under mutation (re-run independently: 6 failed, 14 passed), and the core was not edited. Eight gaps
+under mutation (re-run independently: 6 failed, 14 passed), and the core was not edited. Nine gaps
 remain, none of which refutes a deliverable.
 
-Two are test-quality defects on the deliverable the plan singled out as "the enumeration *is* the
-deliverable": the count it publishes is unobservable (G1) and the population it counts is not
-deterministic (G7). One is a substantive coverage half-closure the shipped prose does not warn about
-(G2); one is a scope statement missing from the ownership contract (G3); one is a misleading comment in
-the very fixture the run's own finding 3 corrected (G8); and three are inaccuracies confined to the run
-report (G4-G6).
+Three are medium. Two of those sit on D3, the deliverable the plan singled out as "the enumeration *is*
+the deliverable": the count it publishes is unobservable (G1), and the shipped prose does not warn that
+the claim closes attribution without closing inventory coverage (G2). The third (G9) is a **false premise
+inside the D2 ownership record itself** — the docstring argues the move separates no artifact from its
+tests "because that split predates this claim", and for three of the six project-local scripts it
+demonstrably did not.
+
+The remaining six are low: a non-deterministic walk population (G7), a scope statement missing from the
+ownership contract (G3), a misleading comment in the very fixture the run's own finding 3 corrected
+(G8), and three inaccuracies confined to the run report (G4-G6).
 
 **On the `.claude` population, since two gaps turn on it.** `git ls-files .claude` → **47** — the
 report's number, correct for the tracked corpus. The walk the test performs is a live filesystem
@@ -33,12 +37,20 @@ audit and this review (`git diff` over the audited surface is empty), so the del
   ```
 
   The assertion reads back the test's own `print` from the line above, with `len(files)` interpolated on
-  both sides. It holds for every possible state of the production code and can only fail if the `print`
-  itself is deleted. And on a green run pytest captures and discards stdout: re-run independently at
-  adversarial review, `uv run python -m pytest test/pm-plugin-development/plan-marshall-plugin/test_path_attribution.py -o addopts="" -q`
-  emitted `9 passed` and nothing else — no `[D3] enumerated … files …` line appeared. Separately, the
-  mutation sweep showed the test dies at the `assert not mismatches` line above, never reaching the
-  `capsys` line, which confirms the `capsys` assertion is not what bites.
+  both sides. `files` is a local derived from a filesystem walk (`:117`), so no state of the production
+  code can make the two sides disagree; the statement can only fail if the `print` itself is edited.
+  Re-derived independently at adversarial review, three ways:
+
+  1. `uv run python -m pytest test/pm-plugin-development/plan-marshall-plugin/test_path_attribution.py -o addopts="" -q`
+     emitted `9 passed` and nothing else — no `[D3] enumerated … files …` line.
+  2. Adding `-s` does **not** surface it either. `capsys` installs its own fixture-level capture even
+     when global capturing is off, and `readouterr()` **drains** the buffer, so the text reaches neither
+     the terminal nor pytest's "Captured stdout call" section. Confirmed with a two-line probe
+     (`print("HELLO-MARKER")` → `readouterr()` → failing assert): the failure report showed the marker
+     only inside the assertion's own repr, and no captured-stdout section was emitted. The one flag a
+     developer would reach for to see the number is therefore also unable to show it.
+  3. Under the mutation sweep the test dies at `assert not mismatches` (`:129`) and never reaches the
+     `capsys` line — so the `capsys` assertion is not what bites, even on the run where the test fails.
 - **Why it matters:** the plan made the publication load-bearing — "⛔ N probes of a pure prefix function
   is ONE assertion repeated N times … the check that bites walks the actual tree and **publishes the
   population size it walked**", and D3's *Done when* is "the check enumerates rather than samples, **and
@@ -96,6 +108,23 @@ audit and this review (`git diff` over the audited surface is empty), so the del
   The general limit is documented at `code-intelligence.adoc:244-250` (§ "Inventory scope is not tree
   scope"), but the project-local section — the one a reader lands on for this tree — points there only for
   the "never inventoried" fact and does not say the claim leaves that half open.
+
+  **Demonstrated live, not inferred.** This clone has a populated `.plan/project-architecture/`, so the
+  readers were executed rather than read:
+
+  ```text
+  which-module --path .claude/commands/x.md   → module: pm-plugin-development, attributor_count: 3
+  files --module pm-plugin-development        → 0 rows matching '.claude'
+  find --pattern '.claude/**'                 → count: 0, truncated: false
+  search --content --pattern 'parse_metrics_end_time_presence'
+        → count: 11, file_count: 8, files_scanned: 5543, unreadable[0], truncated: false
+  ```
+
+  That last one is the sharp case. `parse_metrics_end_time_presence` is **defined** at
+  `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py:1139`, and the sweep returns its
+  three *consumers* under `test/` and five `doc/plans/` mentions — but never the defining file, while
+  reporting the clean coverage metadata (`unreadable[0]`, `truncated: false`) that `client-api.md`
+  § search makes the licence for treating a result as complete.
 - **Why it matters:** a reader of the ownership contract concludes the whole-tree-scan cost for `.claude`
   is closed. It is closed for the "who owns this path?" question and open for the "which files does this
   module hold?" and "which file contains X?" questions — the ones that actually trigger the expensive

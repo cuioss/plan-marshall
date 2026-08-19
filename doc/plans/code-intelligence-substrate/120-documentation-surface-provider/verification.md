@@ -20,7 +20,7 @@ population it reports on.
 | D1 | doc-corpus attribution claim through the seam | `claim_paths()` claims `doc`, `README.md`, `CONTRIBUTING.md`; `CLAUDE.md`/`AGENTS.md` deliberately not | Live seam resolves exactly that; `which-module` returns `documentation` for the three, `default` for the two agent files | CONFIRMED |
 | D2 | de-duplication precedence, documented, consumers enumerated | `_collapse_claimed_duplicate_rows` wired into `cmd_find`/`cmd_search`; claimed 2→1, unclaimed left at 2 | Live `find doc/concepts/code-intelligence.adoc` → `count: 1` (`documentation`); live `find` on a bundle `SKILL.md` → `count: 2`. Precedence written in three places, but **not** in the `find`/`search` consumer contract, and the wiring is covered by no test | PARTIAL |
 | D3 | doc-surface content search behind the existing seam | Satisfied by existing `search --content`; no parallel verb | Live `search --content` returns doc-corpus hits attributed to `documentation`; no second search verb exists anywhere in pm-documents | CONFIRMED |
-| D4 | cross-document reference resolution, both directions | "Zero false positives across 803 real references"; broken reported, valid not | Engine reports **18** unresolved over **841** live references; **10 of those 18 are false positives** on valid references. The `unresolved-target` note says "1 reference(s) suppressed" for those 18 | PARTIAL |
+| D4 | cross-document reference resolution, both directions | "Zero false positives across 803 real references"; broken reported, valid not | Engine reports **18** unresolved over **842** live references; **10 of those 18 are false positives** on valid references. The `unresolved-target` note says "1 reference(s) suppressed" for those 18 — a shared-substrate counting defect, not D4's (see G3) | PARTIAL |
 | D5 | ownership + search contract documented; attribution model in `code-intelligence.adoc` | Concept doc, pm-documents SKILL.md, both extension-point rosters updated | All four surfaces present and current; one of them carries a claim the shipped code refutes, and `client-api.md` (where a `find` consumer looks) never states the precedence | PARTIAL |
 
 ## Per-deliverable detail
@@ -81,10 +81,15 @@ population it reports on.
     claimed path is left intact exactly as the docstring promises (it does not vanish).
   - `cmd_find(pattern='marketplace/bundles/pm-documents/skills/plan-marshall-plugin/SKILL.md')` →
     `count: 2` (`default` + `pm-documents`) — the unclaimed duplicate is untouched.
-  - Inventory overlap re-derived: `documentation` inventories **417** paths, `default` **2661**, the
-    intersection is **417** (total inventory rows **5417**, distinct paths **2845**, duplicate rows
-    **2572**). So the collapse removes 417 of the 2572 duplicate rows; the remaining 2155 are the
+  - Inventory overlap re-derived: `documentation` inventories **479** paths, and every one is also in
+    the root crawl (post-collapse `find '*'` returns **5062** rows over **2907** distinct paths, so
+    the pre-collapse row total is **5541** — matching `files_scanned` exactly). Duplicate rows before
+    the collapse: **2634**. So the collapse removes 479 of them; the remaining **2155** are the
     unclaimed marketplace duplication the plan puts out of scope.
+  - `cmd_find(pattern='CONTRIBUTING.md')` → `count: 1`, row `{'module':'default',…}` — same shape as
+    `README.md`. ⚠ Both are files the documentation module *claims* but does not inventory, so
+    `find` reports them under `default` while `which-module` reports them under `documentation`. See
+    G14.
 - **Gaps against the literal contract:**
   1. **No test covers the wiring.** Mutation: both call sites replaced with `pass`. Baseline
      `test_doc_corpus_dedup.py test_search_content.py test_cmd_client.py
@@ -115,16 +120,18 @@ population it reports on.
 - **Required (plan):** *"a content query over the doc corpus is answerable through the existing
   seam"*, with an absolute prohibition on a second search verb.
 - **Claimed (report):** satisfied by the existing `search --content` seam; no parallel verb.
-- **Found / checks run:** live `cmd_search(pattern='The tier ladder', literal=True)` → `count: 2`,
-  `file_count: 2`, `files_scanned: 5409`, both hits attributed to `module: documentation`
-  (`doc/concepts/code-intelligence.adoc`, `match_count: 2`; and this plan's own `report-01.md`).
+- **Found / checks run:** live `cmd_search(pattern='The tier ladder', literal=True)` → `count: 4`,
+  `file_count: 4`, `files_scanned: 5541`, all four hits attributed to `module: documentation`
+  (`doc/concepts/code-intelligence.adoc`, `match_count: 2`; plus this plan's own `report-01.md`,
+  `gaps.md` and `verification.md` — the audit's own documents are now inside the corpus it measures).
   The only new script the plan shipped,
   `marketplace/bundles/pm-documents/skills/plan-marshall-plugin/scripts/doc_references.py`, is a
   library — it has no `argparse`, no `main`, no CLI entry point, and is imported only from
   `extension.py:235`. No second search verb exists.
-- **Verdict:** CONFIRMED. One efficiency observation, not a contract failure: `files_scanned: 5409`
-  against 2845 distinct inventoried paths, because the collapse runs *after* the body scan — every
-  claimed doc file is read and regex-scanned twice. See G9.
+- **Verdict:** CONFIRMED. One efficiency observation, not a contract failure: `files_scanned: 5541`
+  against 2907 distinct inventoried paths, because the collapse runs *after* the body scan — every
+  claimed doc file is read and regex-scanned twice. Of the 2634-row gap, only **479** is this plan's
+  doubling; the other 2155 is the pre-existing unclaimed duplication. See G9.
 
 ### D4 — cross-document reference resolution
 
@@ -147,9 +154,9 @@ population it reports on.
   file references the engine correctly flags (e.g.
   `doc/plans/code-intelligence-substrate/240-skill-lsp-server/proposal-protocol-surface.md →
   ../220-resolver-configuration.md`, which is a directory, not a file).
-- **Checks run — the negative direction FAILS.** Re-measured over the live doc corpus (407 files):
-  **841 references, 18 reported unresolved.** Ten of those eighteen are valid references falsely
-  flagged. The cause is a single line:
+- **Checks run — the negative direction FAILS.** Re-measured over the live doc corpus (479 files):
+  **842 references, 18 reported unresolved** — 10 anchor references and 8 file references. Ten of
+  those eighteen are valid references falsely flagged. The cause is a single line:
 
   `doc_references.py:109` — `github = re.sub(r'[\s-]+', '-', github).strip('-')`
 
@@ -159,25 +166,40 @@ population it reports on.
   `f1--nearly-three-quarters-…` (double hyphen, the em dash having been dropped between two spaces).
   The engine produces `f1-nearly-three-quarters-…` (single hyphen), so the live reference at
   `findings-test-corpus-review.md:74` is reported as a dangling anchor. Proof by substitution: with a
-  GitHub-exact slug added to `_heading_anchor_forms`, the same sweep over the same 841 references
-  drops from 18 unresolved to **8** — and all 8 survivors are genuine broken file paths, none an
-  anchor.
-- **Checks run — the report's own count is wrong at the reporting surface.** `build_doc_component_refs`
-  deduplicates on the `(target_bundle, dep_type, resolved)` triple (`doc_references.py:331`, `:350`),
-  so all 18 unresolved references collapse into one `component_refs` entry before `derive_edges` ever
-  sees them. Live output:
+  GitHub-exact slug added to `_heading_anchor_forms`, the same sweep over the same 842 references
+  drops from 18 unresolved to **8**, with **zero** anchor survivors — all 8 are genuine broken file
+  paths (each names `X.md` where only the directory `X/` exists).
+- **Checks run — the suppression note misreports its population, at the shared layer.** Live output,
+  verbatim:
 
   ```
   unresolved-target: 1 reference(s) suppressed - sample: documentation -> documentation [path]
-  self-edge:         1 reference(s) suppressed - sample: documentation -> documentation [path]
+  self-edge: 1 reference(s) suppressed - sample: documentation -> documentation [path]
   ```
 
-  "1 reference(s) suppressed" is false — 18 references were suppressed. The renderer
-  (`extension_base.py::DerivationResolverBase._aggregate_notes`) is doing exactly what it promises;
-  the doc resolver hands it triples and calls them references.
+  Re-derived multiplicity behind those two triples: **18** unresolved references and **504**
+  self-edge references (full per-triple census over 842 references: `documentation/False` 18,
+  `documentation/True` 504, `plan-marshall/True` 252, `default/True` 59, `pm-plugin-development/True`
+  6, `pm-documents/True` 2, `pm-dev-java-cui/True` 1). The two notes under-report **18×** and
+  **504×**.
+
+  ⚠ **The dedup is schema-mandated, so this is not a pm-documents defect.**
+  `build_doc_component_refs`'s collapse onto `(target_bundle, dep_type, resolved)`
+  (`doc_references.py:331`, `:350`) is required verbatim by
+  `extension-api/standards/module-discovery.md:164` — *"Entries are deduplicated on the
+  `(target_bundle, dep_type, resolved)` triple, keeping the field proportional to the module count
+  rather than to the raw reference count"* — and a shipped test pins it
+  (`test_doc_references.py:169-175`, `test_component_refs_deduped_on_triple`). All four Axis-C
+  resolvers build one candidate per surviving triple (`pm-documents:371`,
+  `pm-plugin-development:276`, `pm-dev-python:229`, `pm-code-intelligence:149`) and hand it to the
+  single-sourced renderer `DerivationResolverBase._aggregate_notes`
+  (`extension_base.py:1617`), which prints `len(candidates)` under the noun "reference(s)". The
+  mismatch between the schema's population and the renderer's noun is the defect, and it is shared by
+  the whole roster. See G3.
 - **Verdict:** PARTIAL — the positive direction is satisfied; the negative direction, which the plan
   singled out as the reason the deliverable is verified *in both directions*, is violated on 10 live
-  references, and the suppression note mis-states its own population by 18×.
+  references. The suppression-note under-count is real but lands on the shared substrate rather than
+  on this deliverable: D4 conforms to the schema it was given.
 
 ### D5 — documentation
 
@@ -223,11 +245,16 @@ Defects found:
    `doc/plans/test-quality/findings-test-corpus-review.md`. This is the exact failure mode the
    engine's own docstring (`:96-99`) says the over-approximation cannot produce.
 
-2. **`doc_references.py:331/350` + `extension.py:371-374` — the suppression note counts triples, not
-   references.** Because `component_refs` is deduplicated on `(target_bundle, dep_type, resolved)`
-   before the resolver runs, `_aggregate_notes` renders `len(candidates)` over a population that has
-   already been collapsed. Consequence: `unresolved-target: 1 reference(s) suppressed` for 18 real
-   suppressions. A measurement surface reporting a number 18× smaller than the thing it names.
+2. **`extension_base.py:1617` — the shared suppression note counts triples, not references.**
+   `component_refs` is deduplicated on `(target_bundle, dep_type, resolved)` **because
+   `module-discovery.md:164` mandates it**, so `_aggregate_notes` renders `len(candidates)` over an
+   already-collapsed population while calling the result "reference(s)". Consequence on this corpus:
+   `unresolved-target: 1 reference(s) suppressed` for 18 real suppressions, and `self-edge: 1
+   reference(s) suppressed` for 504. A measurement surface reporting numbers 18× and 504× smaller
+   than the thing it names. **The owning layer is the shared schema plus the shared renderer, not
+   `doc_references.py`** — all four Axis-C resolvers feed the renderer one candidate per triple, and a
+   shipped test (`test_doc_references.py:169-175`) pins the doc engine's dedup as required. A fix
+   applied inside pm-documents would put it in violation of its own schema.
 
 3. **`doc_references.py:62-72` — `_has_doc_suffix` does not do what its docstring says.** The
    docstring says it detects "a documentation or web suffix"; the body returns True for any dot in the
@@ -236,15 +263,29 @@ Defects found:
 
 4. **`_cmd_client_handlers.py:1090/1245` — the collapse runs after the work.** In `cmd_search` the
    body of every claimed doc file is read and regex-scanned once per attributing module and only then
-   de-duplicated, so 417 files are scanned twice (`files_scanned: 5409` against 2845 distinct paths).
+   de-duplicated, so 479 files are scanned twice (`files_scanned: 5541` against 2907 distinct paths).
    Correct output, wasted I/O, and `files_scanned` is a scan count presented alongside fields that are
-   carefully population-labelled.
+   carefully population-labelled. Note the field over-states distinct coverage by 2634, not by 479 —
+   the majority of the gap is the pre-existing unclaimed duplication, which this plan neither created
+   nor was scoped to fix.
 
 5. **`_cmd_client_handlers.py:1093-1101` — `cmd_find` has no `file_count`.** After the collapse its
    `count` is neither a row count nor a file count but a mixture keyed on whether a path is claimed.
    `cmd_search` names both populations; `cmd_find` names neither.
 
 Checked and found **clean**:
+
+6. **`extension.py:245` — `discover_modules` pays a full doc-corpus read on every crawl.**
+   `build_doc_component_refs('.', 'doc')` measured at **1.03 s**, reading 479 files, to return **7**
+   triples; it runs from `crawl_all_modules`, which every architecture reader triggers in a fresh
+   process. Not a correctness defect, and invisible behind the crawl memo, but it is real cost added
+   to a Tier-0 path. See G10.
+
+7. **`find` and `which-module` disagree on a claimed file's owner.** `which-module README.md` →
+   `documentation`; `find --pattern README.md` → one row carrying `module: default`. The collapse's
+   `len(rows) < 2` early-out (`:899-901`) is correct — a claimed path must never vanish — but for the
+   two repo-root files the plan claimed per-file, the two reader surfaces now name different modules
+   and nothing tells a caller which is authoritative. See G14.
 
 - The escaping-target fail-closed path (`_resolve_one:273-282`) returns before any `.exists()` /
   `.read_text()`, and two regression tests pin it with a file that genuinely exists outside the root
@@ -294,15 +335,27 @@ uv run python -m pytest test/plan-marshall/manage-architecture/test_doc_corpus_d
   test/pm-documents/plan-marshall-plugin/ -o addopts="" -q
 ```
 
-Baseline: `149 passed in 14.66s`. Mutated: `149 passed in 16.85s`. **The mutation survives.** A
-wider run over the whole of `test/plan-marshall/manage-architecture/` under the mutation produced
-`4 failed, 569 passed`, and all four failures
-(`test_enrich_all_no_global_log_leak`, `test_bare_claude_claim_covers_the_former_unclaimed_sibling`,
-and two `test_which_module_plan_claim` cases) are attributable to a *concurrent sibling session's*
-mutation of `_cmd_client_query.py` that was live in the shared worktree at that moment — none of them
-touches `cmd_find` / `cmd_search`. The file was restored from my own byte snapshot (`cp` from
-`$TMPDIR`, never `git checkout`/`restore`/`stash`); `git status --porcelain` reports it unmodified and
-a `diff -q` against the snapshot is clean.
+Baseline: `149 passed in 14.66s`. Mutated: `149 passed in 16.85s`. **The mutation survives.**
+
+**Independently reproduced during adversarial review** at HEAD `a90adeb`, with a fresh byte snapshot:
+baseline `149 passed in 3.33s`, mutated `149 passed in 5.53s`. The mutation survives. A direct search
+confirms why: `_collapse_claimed_duplicate_rows` is named by exactly one test module
+(`test_doc_corpus_dedup.py`, which calls the helper directly with a monkeypatched resolver) and by one
+docstring in `test_search_content.py:206` explaining that its fixture deliberately carries no claim.
+No test invokes `cmd_find`/`cmd_search` against a project where the collapse can fire.
+
+⚠ **The wide-run evidence in the original audit does not survive re-measurement and has been
+discounted.** The audit reported `4 failed, 569 passed` over the whole of
+`test/plan-marshall/manage-architecture/` under the mutation, attributed to a sibling session. My own
+wide run under the mutation also produced 4 failures — but a *different* four
+(`test_capabilities.py` ×2, `test_concept_model.py`, `test_derivation_resolver_configuration.py`), and
+those three files pass **58/58 in isolation under the same mutation**, while a wide run at restored
+state produced a fifth, different failure
+(`test_files_inventory.py::test_bare_claude_claim_covers_the_former_unclaimed_sibling`). Wide-run
+readings in this shared worktree are not reproducible and prove nothing in either direction; the
+narrow baseline/mutant pair is the only evidence relied on. The file was restored from my own byte
+snapshot (`cp` from the scratchpad, never `git checkout`/`restore`/`stash`); `git status --porcelain`
+does not list it and a `diff -q` against the snapshot is clean.
 
 ## Report accuracy
 

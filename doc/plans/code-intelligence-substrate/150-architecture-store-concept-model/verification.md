@@ -6,6 +6,10 @@
 the same branch. The plan's landed commit `bc86398` is an ancestor of both, and nothing under
 `marketplace/` or `test/` changed between them — verified with `git merge-base --is-ancestor bc86398 HEAD`
 and `git status --porcelain -- marketplace/ test/` returning empty.)
+**Adversarial re-verification:** at `a90adeb`, still on the same branch. `bc86398` remains an
+ancestor, and `_architecture_core.py`'s md5 is unchanged at `bc7406029e7f408e633fadf99215c04d` —
+the same digest this audit recorded — so every code citation below was re-checked against the same
+bytes the original audit read.
 **Overall verdict:** PARTIALLY REFUTED
 
 Two of the four deliverables carry a *Done when* clause that the shipped tree demonstrably does not
@@ -20,6 +24,12 @@ satisfy:
 
 D2 is fully confirmed and its guards are non-vacuous under mutation. D3 is confirmed, including its
 negative control.
+
+Separately, and not affecting any deliverable verdict: the run's beyond-diff documentation sweep is
+incomplete in both directions the plan changed vocabulary. Twelve shipped locations still teach
+either the retired dotted identity (D1) or the retired index-as-gatekeeper semantic (D3) — the
+latter against the plan's only ⛔ **MUST NOT**, and against a PR-body claim that the correction was
+made "across every document that restated it". See § Beyond-diff documentation sweep.
 
 ## Deliverable verdicts
 
@@ -144,7 +154,7 @@ migration, so `phase-3-outline` receives dotted keys.
   - `_architecture_core.py:768-779` — `iter_modules` returns
     `sorted(crawl_all_modules(project_dir).keys())`; no index read. The gatekeeper semantics the plan
     called "OBSERVED, and load-bearing" survive.
-  - `_architecture_core.py:463-469` and `tools-file-ops/scripts/constants.py:411-419` — both
+  - `_architecture_core.py:463-469` and `tools-file-ops/scripts/constants.py:415-422` — both
     docstring/comment surfaces that formerly asserted the index was the source of truth now say the
     opposite (report findings #1 and #4, confirmed fixed).
 - **Checks run:** mutated `iter_modules` to
@@ -210,6 +220,18 @@ migration, so `phase-3-outline` receives dotted keys.
   omission in. The plan's ⭐ note argues the tree identifier beats a wall-clock *expiry*, which
   justifies not deriving the verdict from a timestamp — it does not remove the requirement to record
   when. Neither the report nor the PR body discloses the omission.
+- **Found — the unrealized purpose.** D4's ⛔ constraint is that the signal "must be readable
+  without parsing the concept body, so a consumer can filter before loading". The *primitive*
+  satisfies this: `derive_freshness` touches only `generation['tree_sha']`, and
+  `test_freshness_verdict_derived_from_header_alone` (`test_concept_model.py:212-221`) exercises it
+  with no `enriched.json` on disk. But the only shipped consumer of the verdict —
+  `get_project_info` — loads **every** module's concept body at `_cmd_client_query.py:200`
+  (`load_module_enriched_or_empty`, for the `purpose` column) before it builds the row, and
+  `cmd_info` (`_cmd_client_handlers.py:92-96`) passes that dict straight to the CLI. So "filter
+  before loading" is not realized anywhere the freshness column is actually surfaced. This does not
+  refute the Done-when (which is scoped to "neither check reads the body", and neither check does)
+  and it is not carried as its own gap, because G1's fix subsumes it — but it is why G1's fix costs
+  nothing: the body is already in hand at the point the wrong verdict is computed.
 - **Verdict:** **PARTIAL** — the primitive is right and body-free as required; the shipped read
   surface inverts one Done-when clause, and two sub-clauses of the deliverable body are unmet.
 
@@ -218,7 +240,7 @@ migration, so `phase-3-outline` receives dotted keys.
 Read in full: `_architecture_core.py` concept-model block (`:100-133`, `:186-444`), load/save
 (`:451-500`, `:700-780`), `merge_module_data` (`:882-932`); `_cmd_manage.py:517-541`, `:640-796`;
 `_cmd_enrich.py:1-175`, `:300-372`, `:608-623`; `_cmd_client_query.py:167-223`, `:567-598`;
-`_cmd_client_handlers.py:253-280`; `architecture.py:365-384`;
+`_cmd_client_handlers.py:92-100` (`cmd_info`) and `:253-280` (`cmd_module`); `architecture.py:365-384`;
 `tools-input-validation/scripts/input_validation.py:197-217`;
 `script-shared/scripts/extension/_build_discover.py:403-495`.
 
@@ -232,7 +254,7 @@ Defects found, each with the failing input and the consequence:
    Input: index entry present with a matching `tree_sha`, `enriched.json` absent.
    Result: `freshness: fresh` and a non-empty `description` for a document that does not exist.
    Proven (CASE A above).
-3. **Silent data loss in migration — `_architecture_core.py:432-443`.**
+3. **Silent data loss in migration — `_architecture_core.py:436-439`.**
    Input: two dotted keys whose derived entries carry the same `path`. Result: the later value
    overwrites the earlier one, `unresolved` stays empty. Consequence: a curated package description
    disappears from every merged read with no signal, in a function whose contract is "never a silent
@@ -257,7 +279,7 @@ Checked and found **correct** (no defect): the containment check in `package_key
 (drive-letter and symlink escapes both refused — the `be98185` fix is real and effective);
 `derive_freshness`'s `not isinstance(generation, dict)` and empty-sha guards; the copy-not-mutate
 contract of `migrate_concept_document`; `_WORKTREE_SHA_CACHE` invalidation
-(`invalidate_crawl_cache:519-521` drops the sha memo wholesale, so a refresh cannot mis-report
+(`invalidate_crawl_cache`, `_architecture_core.py:519-522`, drops the sha memo wholesale, so a refresh cannot mis-report
 freshness from a stale sha); the fail-closed propagation of `InvalidConceptTypeError` out of
 `api_discover` before the atomic swap, so one bad document cannot leave a half-migrated store.
 
@@ -329,9 +351,10 @@ Claims that are **false, stale, or overstated**:
    > same commit"
 
    Partially false. `git show bc86398 -- …/manage-api.md` shows a single hunk (the "Data Sources"
-   paragraph). The `enrich package` option table at `manage-api.md:257` still reads
-   `| --package | Yes | - | Full package name |` — a shipped, now-false instruction on the surface
-   the plan committed to moving in lock-step.
+   paragraph). The `enrich package` option table at `manage-api.md:258` still reads
+   `| --package | Yes | - | Full package name |`, and the worked example at `:265` still emits
+   `package	de.cuioss.sheriff.oauth.core.pipeline` — two shipped, now-false instructions on the
+   surface the plan committed to moving in lock-step.
 
 5. > "Step 6 Verification sub-agent … all four deliverables PASS"
 
@@ -356,10 +379,66 @@ Claims that are **false, stale, or overstated**:
    **UNVERIFIABLE by design** — the brief excludes running the full suite, and the tree has advanced
    many plans past this one.
 
+9. > PR body for `bc86398`: "`architecture-persistence.md`, `SKILL.md`, `client-api.md`,
+   > `manage-api.md`, and the `FILE_PROJECT_META` comment move in lock-step — including correcting
+   > the now-false 'the index is the source of truth for which modules exist' claim **across every
+   > document that restated it**."
+
+   **False**, and it is the most consequential false claim in either surface. Eight shipped
+   locations still restate it, six of them inside the `plan-marshall` bundle the run's own Step-6
+   instruction tells it to sweep. Enumerated and itemised in `gaps.md` at G18–G20; see
+   § Beyond-diff documentation sweep below.
+
 The report is also **silent on three things it should have disclosed**: the second concept-document
 writer (`_cmd_manage.py:717`) that the plan explicitly asked to be enumerated; the absence of any
 provenance back-fill for pre-field documents; and the fact that "at what point" from D4's own text
 was not implemented.
+
+## Beyond-diff documentation sweep
+
+The run's Step-6 instruction is to "sweep beyond the diff across the owning bundle", and the
+report's own "What have we learned" section names the incomplete first-pass sweep as the run's one
+execution weakness — resolved, it says, by the re-dispatch loop. It was not resolved. Two families
+of retired vocabulary survive in shipped documentation, and each is a family the plan's own claim
+labels marked load-bearing.
+
+**Family 1 — the retired dotted identity (D1).** Surfaces still teaching `key_packages` keys as
+dotted package names, against `architecture-persistence.md:338,387` and the shipped validator
+`architecture.py:377-378`:
+
+| Location | Defect | Gap |
+|---|---|---|
+| `manage-architecture/standards/manage-api.md:258` | `--package` described as "Full package name" | G11 |
+| `manage-architecture/standards/manage-api.md:265` | `enrich package` example output emits a dotted name — the form now **refused** | G11 |
+| `phase-3-outline/standards/module-selection.md:22-28` | `key_package Pattern` table taught entirely in dotted form | G12 |
+| `phase-3-outline/templates/package-selection.md:26` | "Package name from key_packages" | G13 |
+
+**Family 2 — the retired index-gatekeeper semantic (D3).** Surfaces still asserting the index is
+the source of truth for which modules exist, or authoritative over the filesystem — against
+`_architecture_core.py:463-469`, `tools-file-ops/scripts/constants.py:415-422`,
+`architecture-persistence.md:96-97`, and the non-vacuous negative control
+`test_module_on_disk_absent_from_index_is_still_discovered` (`test_concept_model.py:304-319`):
+
+| Location | Defect | Gap |
+|---|---|---|
+| `marshall-steward/references/architecture-setup.md:40` | Normative: orphan module dirs "**MUST be ignored** — the index is authoritative, not the filesystem" | G18 |
+| `marshall-steward/references/menu-maintenance.md:144` | "source of truth for which modules exist" | G18 |
+| `marshall-steward/references/menu-configuration.md:685` | "the source of truth for the module index" | G18 |
+| `marshall-steward/references/wizard-flow.md:245` | "which is the source of truth" | G18 |
+| `marshall-steward/scripts/determine_mode.py:213-224` | Docstring framing only — the function's index-driven existence check is itself correct | G18 |
+| `extension-api/standards/module-discovery.md:23,26` | "(source of truth)" + "Orphan `<module>/` subdirectories … are ignored" | G18 |
+| `manage-solution-outline/scripts/manage-solution-outline.py:874-876` | Attributes the claim to `_architecture_core` **by name**, and its own `:890` calls `iter_modules` | G20 |
+| `pm-plugin-development/skills/plan-marshall-plugin/SKILL.md:38-43` + `scripts/plugin_discover.py:7-8` | "the index is authoritative, not the filesystem" — cross-bundle | G19 |
+
+None of these files appears in `git show --stat bc86398`'s 17-file list. Family 2 matters more than
+Family 1: D3 carries the plan's only ⛔ **MUST NOT** ("This MUST NOT reintroduce the index as the
+discovery gatekeeper"), and the plan labels the crawl-fallback semantic "**OBSERVED, and
+load-bearing**". The code defends it correctly and the negative control is real — but the
+documentation an agent reads before running `architecture discover` still instructs the inverse,
+and one instance does so in **MUST** form.
+
+This is a documentation shortfall, not a behaviour regression: no verdict above changes. It is
+recorded here because the PR body affirmatively claimed the sweep was complete.
 
 ## Declared residue — current status
 
@@ -393,7 +472,8 @@ pre-existing test files. `_cmd_client_handlers.py`, named as a HYPOTHESIS surfac
 correctly, since the handler passes the merged dict straight through.
 
 **Undisclosed collateral: none found.** No file changed in `bc86398` lies outside the plan's scope
-or the report's account of it.
+or the report's account of it. The defect in this area is the inverse — files that should have
+changed and did not; see § Beyond-diff documentation sweep.
 
 ## Method and coverage
 

@@ -6,17 +6,24 @@
 
 The observability half of the plan (D2) shipped, is correct on the paths I read and mutated, and is
 covered by tests that go red against the pre-change source. D1's numeric half and D3 are blocked
-exactly as the plan's own fallback directs, and the run said so. The gaps are: one precision defect
-in the cross-plan roll-up's *published denominator* (the same arithmetic class the PR reviewer rated
-Major one column over), one duration-grammar asymmetry inside `analyze-logs.py` that makes its two
-roll-ups disagree about the same log line, and three stale numeric claims in `report-01.md`.
+exactly as the plan's own fallback directs, and the run said so.
+
+The gaps, in the order the Correctness review takes them: a precision defect in the cross-plan
+roll-up's *published denominator* (§1 — the same arithmetic class the PR reviewer rated Major one
+column over, and re-rated **high** on adversarial review); a duration-grammar asymmetry inside
+`analyze-logs.py` that makes its two roll-ups disagree about the same log line (§2); a
+duration-bearing line silently dropped from every published counter (§3); a **missing line-shape
+guard** on the per-plan reader that lets a captured-output continuation line enter the shipped
+roll-up as a call that never happened (§4 — added on adversarial review, **high**); and schema-doc
+key-order drift in `references/log-analysis.md` (§5). Beyond the code: three stale numeric claims in
+`report-01.md`, and the run's own declared residue. Each maps to a numbered entry in `gaps.md`.
 
 ## Deliverable verdicts
 
 | # | Deliverable (short) | Report claim | Ground truth | Verdict |
 |---|---|---|---|---|
 | D1 | GATE: first-party figures + currency restatement + decide (a)/(b) | PARTIAL — corpus unreachable, numeric half blocked; structural half + currency delivered | Structural predicates confirmed in the tree; currency statement present in code and in three docs; (a) decided and shipped, (b) undecided | PARTIAL (as the plan directs) |
-| D2 | Aggregate cost reportable, ranked by share, ceiling preserved, context position included | DELIVERED at both tiers | `summarize_script_cost` + `summarize_context_position_cost` (per-plan) and `cost_rollup` (cross-plan) all present; ceiling constant and predicate untouched | CONFIRMED (with a denominator-precision defect, see Correctness) |
+| D2 | Aggregate cost reportable, ranked by share, ceiling preserved, context position included | DELIVERED at both tiers | `summarize_script_cost` + `summarize_context_position_cost` (per-plan) and `cost_rollup` (cross-plan) all present; ceiling constant and predicate untouched | CONFIRMED (with a denominator-precision defect and an unguarded per-plan input path, both **high** — see Correctness §1 and §4) |
 | D3 | Reduce the largest verified lever | NOT ATTEMPTED, reason recorded | No file in the merge commit touches the terminal-title / session-binding surface | CONFIRMED (blocked, correctly recorded) |
 | D4(a) | Roll-up ranks many-fast above few-slow; must fail against today's reporting | DELIVERED; pre-fix failure recorded | Tests exist at both tiers and both go red against the pre-change source and against a ranking mutation | CONFIRMED |
 | D4(b) | Reduction preserves the title/session contract | N/A — genuinely undischarged | No such test exists; correctly so, since D3 did not land | CONFIRMED as undischarged |
@@ -88,9 +95,15 @@ roll-ups disagree about the same log line, and three stale numeric claims in `re
     (`audit.py:2888`) → `test_ranks_by_time_owned_not_by_call_count` **failed**.
   - First-party probe of the emitted block on a synthetic corpus (see Correctness review) — the
     roll-up ranks and publishes as described.
-- **Verdict:** CONFIRMED. The *Done when* holds and the addition-not-replacement constraint holds.
-  One correctness defect found in the cross-plan tier's **published denominator** — see below; it
-  does not unseat the deliverable but it does misreport in the small-corpus regime.
+- **Verdict:** CONFIRMED. The *Done when* holds — the roll-up ranks by cumulative time, re-verified
+  first-party by emitting the shipped function's output and by killing `test_ranks_many_fast_above_few_slow`
+  with a ranking mutation — and the addition-not-replacement constraint holds. Two correctness
+  defects sit inside the confirmed deliverable and neither unseats it: the cross-plan tier's
+  **published denominator** misreports in the small-corpus regime (Correctness §1), and the per-plan
+  tier's **input path is ungated**, so a captured-output continuation line can enter the roll-up as a
+  call that never happened (Correctness §4). Both are rated **high**: the ranking contract the
+  *Done when* names is intact, but what the instrument publishes beside that ranking is not
+  trustworthy in the regimes named.
 
 ### D3 — reduce the largest verified lever
 
@@ -136,7 +149,8 @@ roll-ups disagree about the same log line, and three stale numeric claims in `re
 
 I read `summarize_script_cost`, `_is_usable_count`, `summarize_context_position_cost`,
 `analyze_folded_global_logs`, `cross_global_log_analysis` and `emit_global_log_block` end to end.
-Three defects, all first-party reproduced.
+Five defects, all first-party reproduced. (§4 and §5 were added on adversarial review; §1–§3 were
+independently re-reproduced then and are unchanged.)
 
 ### 1. The cross-plan roll-up's published denominator is rounded away (`audit.py:2931`)
 
@@ -196,6 +210,54 @@ no counter for the timed-lines-refused-by-the-grammar class, so that exclusion i
 cross-plan tier does not have this hole: an untimed notation-headed line still lands in
 `untimed_call_keys` (`audit.py:2950`).
 
+### 4. The per-plan duration reader has no line-shape guard (`analyze-logs.py:378-397`)
+
+`extract_script_durations` runs `_DURATION_RE` and `_NOTATION_RE` over **every line** it is handed.
+`read_log` (`analyze-logs.py:335`) returns every non-empty line of the script log with no shape
+filter, so the input includes an entry's indented **continuation lines** — which
+`format_log_entry` (`manage-logging/scripts/plan_logging.py:138-142`) emits for `exit_code`, `args`,
+`stdout` and `stderr` on every non-zero-exit call (`plan_logging.py:346-360`). The sibling
+`analyze_folded_global_logs` does gate, on `_GLOBAL_LOG_LINE_RE.match(raw)` at
+`analyze-logs.py:1455-1457`.
+
+Reproduced by generating one entry through the real writer and feeding both readers:
+
+```
+[2026-08-19T07:41:58Z] [ERROR] [0ee8a3] pm:b:build run (1.20s)
+  exit_code: 1
+  args: pm:b:build run --command-args verify
+  stdout: tests finished pm:t:t run (9.99s) ok
+
+per-plan extract_script_durations -> [('pm:b:build', 1200.0), ('pm:t:t', 9990.0)]
+global reader                     -> 1.20   (three continuation lines SKIPPED, no header)
+```
+
+The per-plan reader manufactured a 9.99 s `pm:t:t` call out of text a failing script printed. That
+list is the sole input to `summarize_script_cost` (`analyze-logs.py:1521`) — the deliverable this
+plan shipped — and to `total_duration_ms`, every `share_pct`, `script_duration_p50/p95/max_ms` and
+`slowest_scripts`. This is the sharper half of the §2 asymmetry: §2's bodies are synthetic and no
+current writer emits them, whereas this one has a writer path that fires on every failed script call.
+Filed as `gaps.md` **G14**, severity **high**.
+
+### 5. The schema doc's key order does not match the emitted TOON (`references/log-analysis.md:50-61`)
+
+`serialize_toon` iterates `data.items()` (`ref-toon-format/scripts/toon_parser.py:552`) and
+`_is_uniform_array` builds a uniform-array header from first-occurrence key order (`:520-527`), so
+emitted order **is** dict insertion order. Emitting the shipped function's own output first-party:
+
+```
+script_cost_rollup:
+  population / ceiling_seconds / calls_at_or_over_ceiling / total_calls / total_duration_ms
+  sub_precision_calls / distinct_scripts / ranked_count
+  ranked[2]{notation,calls,cumulative_ms,sub_precision_calls,share_pct,max_ms}:
+```
+
+The doc places `sub_precision_calls` after `ranked_count` (`log-analysis.md:60`) and documents the
+header as `{notation,calls,cumulative_ms,share_pct,max_ms,sub_precision_calls}` (`:61`). Both differ
+from what ships. Report finding #22 recorded and fixed exactly this drift class; the later
+`sub_precision_calls` addition (finding #55) reintroduced it in two places. Filed as `gaps.md` **G6**
+and **G7**, both **low** — a schema doc is read by a parser author, not by the running code.
+
 ### Paths read and found clean
 
 - `_is_usable_count` (`analyze-logs.py:511-524`) is symmetric and applied to both halves at
@@ -218,7 +280,7 @@ cross-plan tier does not have this hole: an untimed notation-headed line still l
 
 | Deliverable | Covering tests | Non-vacuity evidence |
 |---|---|---|
-| D2 per-plan roll-up | `TestScriptCostRollup` (11) at `test_analyze_logs.py:1980` | Ranking mutation (`-cumulative[n]` → `-maxima[n]`) killed 2 tests; pre-change source killed 29 of 30 in the selection |
+| D2 roll-up (`summarize_script_cost`, driven via the `folded_global_logs` wiring) | `TestScriptCostRollup` (11) at `test_analyze_logs.py:1980` | Ranking mutation (`-cumulative[n]` → `-maxima[n]`) killed 2 tests, re-run and re-confirmed on adversarial review (2 failed, 9 passed); pre-change source killed 29 of 30 in the selection. ⚠ The `plan_script_execution_log` wiring is **not** driven here — see the second coverage hole below |
 | D2 context position | `TestContextPositionCost` (17) at `test_analyze_logs.py:2204` | Dropping the numerator half of the guard at `analyze-logs.py:635` killed 4 tests (`null`, `non_numeric`, `negative`, `bool` cache-read) |
 | D2 cross-plan roll-up | `test_audit_check_global_log_analysis_cost_rollup.py` (12) | Ranking mutation killed `test_ranks_by_time_owned_not_by_call_count`; swapping `timed_call_counts[key]` for `call_counts[key]` killed `test_calls_counts_only_timed_calls_not_every_notation_line` |
 | D4(c) ceiling pins | `test_ceiling_constant_unchanged`, `test_cross_plan_ceiling_constant_unchanged` | Both are the only added tests that pass against the pre-change source — correct, since they pin unmoved behaviour |
@@ -229,11 +291,23 @@ defect §1 — leaves the whole audit suite green (`640 passed`). Nothing pins t
 denominator's precision, and `test_share_is_a_share_of_the_published_denominator`
 (`test_audit_check_global_log_analysis_cost_rollup.py:71`) uses `30.0 s` / `10.0 s`, which round
 cleanly at one decimal and so cannot see the regime the sibling sub-decisecond tests deliberately
-introduced.
+introduced. Re-run independently on adversarial review: the same mutation still gives `640 passed`,
+so the hole is current, not a stale reading.
+
+A **second coverage hole**, found on adversarial review, and it explains why defect §4 is invisible
+to the suite. `summarize_script_cost` has two wirings: `folded_global_logs`
+(`analyze-logs.py:1500`) and `plan_script_execution_log` (`analyze-logs.py:1688`). Every test in
+`TestScriptCostRollup` drives the **first**, through `analyze_folded_global_logs`, which is the
+line-shape-gated reader. The second wiring — the one that runs `extract_script_durations` over
+`read_log`'s unfiltered lines — is reached only through the end-to-end `run_script` fixtures, and
+`extract_script_durations` has **no direct test in the module at all** (`grep extract_script_durations
+test_analyze_logs.py` → no hits). The roll-up's ranking is pinned; the eligibility of its per-plan
+input is pinned nowhere.
 
 All mutations were applied to files whose original bytes I had first copied to
-`$TMPDIR/verify-270-mutsweep/`, restored from those copies, and confirmed with
-`git status --porcelain` reporting nothing for either path.
+`$TMPDIR/verify-270-mutsweep/` (and, on adversarial review,
+`$TMPDIR/adv-270-aggregate-cost-invisible-to-per-call-ceiling-mutsweep/`), restored from those
+copies, and confirmed with `git status --porcelain` reporting nothing for either path.
 
 ## Report accuracy
 
@@ -319,3 +393,45 @@ header from first-occurrence key order, so emitted order **is** dict insertion o
 something where the pattern is known to exist: the pre-change `cumulative` sweep was re-run without
 the `scripts/` scope and did return a hit, proving the filter rather than the corpus was what emptied
 it.
+
+## Adversarial review
+
+Independent review of this document and `gaps.md`. Attacks run: A1 false positives, A2 false
+negatives, A3 vacuous evidence, A4 counts and quotes, A5 actionability, A6 severity/topic,
+A7 coverage, A8 internal consistency.
+
+| # | Attack | What was found | Correction applied |
+|---|---|---|---|
+| A1 | False positives | **Nothing false.** Every gap's `path:line` was opened and the claim checked against the current tree. Verified individually: G1 (`audit.py:2931` / `:2887` / `:2907-2909`), G2 (`global-log-analysis.md:94`, `:247` — both quotes verbatim, including the word *"published"*), G3 (`…cost_rollup.py:71` does use `30.0`/`10.0` and asserts `total_script_seconds == 40.0`, which rounds identically at 1 and 3 decimals), G4 (`analyze-logs.py:88` vs `:112`), G5 (`unattributable_calls += 1` sits inside `if dur_match:` at `:1477`), G6/G7 (`log-analysis.md:61` and `:50-61` vs the dict order at `analyze-logs.py:481-496` / `:498-508`; `toon_parser.py:552` and `:520-527`), G8/G9/G10 (`report-01.md:130`, `:115-116`, `:36` — all three quotes verbatim), G11 (fixture does end at `top_error_tags[0]:`), G12 (`report-01.md:23`; no successor plan in the epic names the two hot paths — the only other epic hit for `PreToolUse` is 280's F38, an unrelated preflight-gate discussion), G13 (`plan_logging.py:344`). | None needed. |
+| A2 | False negatives | **One, and it is the most consequential finding of this review.** `extract_script_durations` (`analyze-logs.py:378-397`) has **no line-shape guard**, while its sibling `analyze_folded_global_logs` gates on `_GLOBAL_LOG_LINE_RE` at `:1455-1457`. `read_log` (`:335`) returns every non-empty line, and `format_log_entry` emits `exit_code`/`args`/`stdout`/`stderr` as indented continuation lines on every non-zero-exit call. Feeding one real writer-produced ERROR entry to both readers, the per-plan reader returned `[('pm:b:build', 1200.0), ('pm:t:t', 9990.0)]` — a 9.99 s call manufactured out of a failing script's stdout — where the global reader correctly returned only `1.20`. That list is the sole input to the per-plan `script_cost_rollup`, the deliverable this plan shipped. The audit read this function (its Method names `analyze-logs.py:380-706`) and did not catch it. | Added Correctness §4 and `gaps.md` **G14** (severity **high**, topic `measurement/metrics`), with the writer path, the reproduction, a concrete `path`, and an observable *Done when*. D2's verdict paragraph and the Test-adequacy section were rewritten to carry it. |
+| A3 | Vacuous evidence | **Both claimed mutation sweeps re-run, both reproduce.** (i) `audit.py:2931` `round(…,1)` → `round(…,3)` — the candidate G1 fix — still leaves the audit tree at **640 passed**, confirming nothing pins the published denominator. (ii) `analyze-logs.py:476` `-cumulative[n]` → `-maxima[n]` still gives **2 failed, 9 passed**, killing `test_ranks_many_fast_above_few_slow` and `test_ceiling_is_blind_to_the_script_the_rollup_ranks_first` — D4(a) is non-vacuous. Both files were byte-snapshotted to `$TMPDIR/adv-270-…-mutsweep/` and restored by copy (never `git checkout`/`restore`/`stash`); `git status --porcelain` reports nothing for either path and both md5sums match the originals. **A gap in the audit's own coverage claim:** the audit credits `TestScriptCostRollup` as covering the *per-plan* roll-up, but every one of those tests drives the `folded_global_logs` wiring; the `plan_script_execution_log` wiring is reached only end-to-end, and `extract_script_durations` has no direct test at all. | Test-adequacy row relabelled to name the wiring actually driven; second coverage hole added, explaining why §4 escaped the suite. |
+| A4 | Counts and quotes | **Every number re-derived at the moment of checking; all reproduce.** AST diff of `89edc99` against `89edc99^`: **43** added — `test_analyze_logs.py` 78→108 (30), `…cost_rollup.py` 0→12, `test_audit.py` 81→82 (1), the other two touched modules 0 — matching the audit's correction of the report exactly. Two test trees together: **750 passed**. Audit tree alone under the G1 fix: **640 passed**. G1's two emitted blocks reproduce byte-for-byte, including `dominant-cost-caller,1x 0.040s 100.0% pm:a:a run,,informational` beside `total_script_seconds: 0.0`. G4's three-line divergence table reproduces value-for-value (`5000.0/1500.0/1500.0` vs `None/None/2.00`). Every quoted line checked against its attributed file: verbatim in all cases. | None needed. |
+| A5 | Actionability | All thirteen pre-existing entries carry a concrete path, a concrete change and an observable *Done when*; none reads "review/consider/investigate". G2 is conditional on G1 but states both branches, and G12 names the instrument to use and what "stated first-party" means, so a later run that has read neither the plan nor this audit can execute them. | New G14 written to the same standard. |
+| A6 | Severity and topic | **G1 was under-rated.** The medium band covers *"a false claim in shipped documentation"* — that is G2. G1 is the code half, and it trips two high-band triggers: *a measurement misreports* (the block publishes `total_script_seconds: 0.0` for a corpus carrying measured work, with no counter marking it unreliable — `sub_precision_call_count` is `0` because a `0.04 s` call is above the writer's floor) and *a documented contract is unimplemented* (`global-log-analysis.md:94` and `audit.py:2871-2873` both promise recomputability from the printed columns; it fails below ~1 s). Decisive on the precedent the audit itself cites: the PR reviewer rated the identical rounding-before-dividing defect **Major** (finding #54), the run accepted that rating and fixed the row, and the report calls it *"the most consequential of the run"* — rating the residue of that same defect medium is inconsistent with that. **G4, by contrast, is correctly medium and stays there:** its three line bodies are synthetic, and no current writer emits them (`plan_logging.py:344` always writes a terminal, well-formed `(N.NNs)` on the header line), so it is a latent asymmetry plus a doc mismatch rather than a defect today's corpus trips — the distinction G14 makes concrete. All other severities and all fourteen `Topic` values check out against the owning surface. | G1 medium → **high**, with the two-trigger rationale and the precedent argument written into the entry. G4 held at medium but given an explicit reachability qualifier so a later run does not over- or under-invest. G14 filed **high**. |
+| A7 | Coverage | `plan.md` names D1, D2, D3 and D4(a)/(b)/(c); all six have their own verdict row and detail block. Out-of-scope compliance (all four exclusions), report accuracy, and the declared residue each have a section. No deliverable is silently unmentioned. | None needed. |
+| A8 | Internal consistency | **One real break.** `gaps.md` **G6** and **G7** (schema-doc key-order drift) traced to nothing in `verification.md` — its Correctness review declared *"Three defects"* and the drift was not among them; only the Method section mentioned the `serialize_toon` mechanism, and only in passing. The opening summary also under-listed the findings, naming three of the six classes `gaps.md` carries. The overall verdict CONFIRMED WITH GAPS does follow from the rows. | Added Correctness §5 so G6/G7 trace, with a first-party emission of the shipped function's TOON showing both mismatches; count corrected to *"Five defects"*; opening summary rewritten to enumerate every class and map it to its `gaps.md` entry. |
+
+**Residual doubt:** the sharpest remaining unknown is the *magnitude* of G14 on a real corpus — the
+guard's absence is proved and the writer path is proved, but whether a production script log actually
+contains a continuation line carrying both a notation and a parenthesised `(N.Ns)` body was not
+measurable here, for the same reason D1's numeric half was not: this clone has no archived-plan
+corpus. A further round with a corpus should measure that.
+
+It should also sweep the *other* consumers of `read_log`'s unfiltered output for the same
+missing-guard shape. A partial sweep here already found one confirmed instance, deliberately **not**
+filed as a gap of this plan: `error_lines = [line for line in work if ' ERROR ' in line]`
+(`analyze-logs.py:1517`) tests for a space-delimited `ERROR`, but `format_log_entry` writes the
+bracketed form — a real header reads `[2026-08-19T07:47:17Z] [ERROR] [c340dc] …`, and `' ERROR '
+in header` is `False` (verified first-party against the writer). `error_lines`, and therefore
+`top_error_tags`, is empty for every real log — which is consistent with the archived-plan fixture
+ending at `top_error_tags[0]:`. It is a pre-existing defect on a surface this plan did not touch, so
+it belongs to whichever plan owns the work-log reader, not to this one; it is recorded here so a
+later run knows it is *real and unfiled* rather than unexamined.
+
+Finally, `summarize_context_position_cost` was re-read but not independently mutated here; the
+audit's own mutation of the guard at `:635` was accepted on its evidence rather than re-run.
+
+**Verdict on the audit:** SOUND AFTER CORRECTION — every claim it made was true and re-derived
+first-party, but it under-rated its headline defect (G1: medium → high), missed a reachable
+misreport on the same deliverable (G14), and left two of its own gap entries untraceable to any
+finding in the verification document.

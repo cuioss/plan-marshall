@@ -1,14 +1,22 @@
 # Gaps — 190-frozen-manifest-diverges-from-live-config
 
-The plan landed and every deliverable is present in the tree. What remains splits three ways. **Two
-scope limits inside D2** are reachable and unstated: the reconciliation is structurally blind to
+The plan landed and every deliverable is present in the tree. What remains splits four ways.
+
+**One defect in D3 is high.** The on-disk post-assertion that is supposed to keep
+`executor_regenerated` honest (`executor_landed`, the round-1 F7 fix) is a *presence* check, and the
+rebase population always has an executor present — `prepare_execute` generates one at phase-5 move-in
+and self-heals it if it goes missing. So the guard cannot fire where it matters, and a generation
+that wrote nothing is reported as a successful refresh over the stale file it failed to replace (G15,
+measured).
+
+**Two scope limits inside D2** are reachable and unstated: the reconciliation is structurally blind to
 external (`project:` / `bundle:skill`) steps, so the self-modifying case it exists for is unhelped
 whenever the deleted step is a project step; and its backfill direction inserts a newly-configured
 step into `phase_6.steps` without any of the pre-filters, ceremony gates, or lane resolution the
-composer applies. **One contract in D3** — the seam's "never raises" promise — is only partly
+composer applies. **A second D3 contract** — the seam's "never raises" promise — is only partly
 implemented, and one of the three documented callers discards the payload it now receives. **Three
-counts in the run report** were never re-derived against what actually landed. Four residue items the
-report itself declared are still open. Fourteen entries, one per instance.
+counts in the run report** were never re-derived against what actually landed. All four residue items
+the report itself declared are still open. Sixteen entries, one per instance.
 
 ## G1 — Make `reconcile` able to classify an external step as stale
 
@@ -95,9 +103,9 @@ report itself declared are still open. Fourteen entries, one per instance.
   ```
 
   Those are the only three conditions. `compose` runs considerably more before a candidate becomes a
-  step: `_apply_commit_push_disabled`, `_apply_pre_push_quality_gate_inactive`,
-  `_apply_simplify_inactive`, `_apply_security_class_inactive`, `_apply_scope_gated_finalize`
-  (`manage-execution-manifest.py:1975-2010`), the six-row matrix,
+  step: `_apply_commit_push_disabled` (`:1975`), `_apply_pre_push_quality_gate_inactive` (`:1980`),
+  `_apply_simplify_inactive` (`:1994`), `_apply_security_class_inactive` (`:2023`),
+  `_apply_scope_gated_finalize` (`:2043`), the six-row matrix,
   `_apply_ceremony_finalize_selection` (`:2232`), and `_apply_lane_resolution` (`:2254`). None of
   them runs here.
 - **Why it matters:** `_apply_lane_resolution` is the execution-profile cutoff. A step added to
@@ -216,7 +224,7 @@ report itself declared are still open. Fourteen entries, one per instance.
 
 - **Kind:** doc-defect
 - **Severity:** low
-- **Topic:** documentation-surface
+- **Topic:** bundle-docs
 - **Where:** `marketplace/bundles/plan-marshall/skills/phase-6-finalize/SKILL.md:368-370`
 - **Evidence:** the step instructs *"Parse the returned TOON and branch on `status`"* and then gives
   exactly two branches: `status: success` and `status: error, error: unreconcilable_step`.
@@ -239,7 +247,7 @@ report itself declared are still open. Fourteen entries, one per instance.
 ## G8 — Stop `reconcile --apply` silently deleting a non-string `phase_6.steps` entry
 
 - **Kind:** bug
-- **Severity:** low
+- **Severity:** medium
 - **Topic:** architecture-core
 - **Where:** `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/scripts/manage-execution-manifest.py:2940`
   and `:3009-3010`
@@ -416,3 +424,85 @@ report itself declared are still open. Fourteen entries, one per instance.
 - **Risk if fixed:** a batching rule must not read as licence to withhold a commit; the durability
   rule outranks it and the new text has to say so, which is exactly what the proposal's own wording
   ("The lever is ordering, never withholding a commit") already handles.
+
+## G15 — Make the executor-refresh success verdict distinguish a NEW executor from the stale one it failed to replace
+
+- **Kind:** bug
+- **Severity:** high
+- **Topic:** dispatch/finalize
+- **Where:** `marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/git-workflow.py:916-936`
+  (`_refresh_worktree_executor`, the post-generation verdict), via
+  `marketplace/bundles/plan-marshall/skills/workflow-integration-git/scripts/_executor_slot.py:38-59`
+  (`executor_landed`)
+- **Evidence:** three measurements, each of which could have come back the other way.
+
+  1. `executor_landed` is a **presence** check: `is_file() and not is_symlink() and st_size > 0`. It
+     has no way to tell an executor this generation wrote from one that was already sitting in the
+     slot.
+  2. The rebase population always has one in the slot. `prepare_execute` generates the worktree
+     executor at phase-5 move-in and *self-heals* it when it is missing
+     (`prepare_execute.py:253-262`, `:318-327`, `:598`) — so by the time a finalize rebase runs in
+     that worktree, `worktree_executor_path(worktree)` is occupied. The `not landed` branch at
+     `git-workflow.py:922-931` is therefore effectively unreachable in production; it fires only in
+     the test fixture, whose cloned worktree has no `.plan/execute-script.py` at all
+     (`test_worktree_rebase_executor_refresh.py:60-91` never creates one).
+  3. The exit code is not a fallback. `generate_executor.py`'s `main` prints the TOON and
+     `return 0` unconditionally (`generate_executor.py:2418-2419`), so a `cmd_generate` that
+     returns `{'status': 'error'}` still exits 0. Measured directly:
+     `generate_executor.py generate --marketplace-root <dir-with-no-bundles>` prints
+     `status: error` and exits **RC=0**. `cmd_generate`'s own comment at `:1961-1965` asserts the
+     opposite ("surfaces here as the command's status: error (non-zero exit via the safe_main
+     contract), preserving any pre-existing working executor") — `safe_main` converts only raised
+     exceptions to exit 1, never a returned error payload.
+
+  Adding a pre-existing executor to the fixture and re-running the landed-check test turns it red
+  the other way: with `drift_status='drift'` and a generator that writes nothing, the verb returns
+  `executor_regenerated: True` and `executor_detail: 'script set changed by the rebase; worktree
+  executor regenerated'`, while the stale bytes in the slot are untouched.
+- **Why it matters:** D3's *Done when* is an on-disk outcome ("a rebase changing the script set
+  leaves a regenerated executor"), and F7 was recorded as the behavioural fix that tied the verdict
+  to disk rather than to intent. It is tied to disk, but to the wrong property. The refresh is
+  non-fatal by design, which makes the payload the **only** signal that it degraded (this is exactly
+  G6's argument), and the payload now reports success for the one outcome the refresh exists to
+  prevent: every later dispatch in that worktree resolving notations against a stale map, with the
+  work-log line at `finalize-step-sync-baseline.md:188` reporting `regenerated=True`.
+- **Action:** stop deriving the verdict from presence alone. Require **both** that the generator's
+  own TOON reports `status: success` (parse `gen_out` the way the drift probe already parses its
+  stdout — the exit code carries no information here) **and** that the slot is occupied. Report the
+  generator's `error` text in `executor_detail` when it is not.
+- **Done when:** a test seeds `worktree_executor_path(worktree)` with a pre-existing file **before**
+  the rebase, drives a `drift` verdict with a generation that exits 0 without writing (or whose TOON
+  carries `status: error`), and asserts `executor_regenerated is False` with the generator's failure
+  named in `executor_detail`; the existing
+  `TestSuccessIsDerivedFromDiskNotExitCode::test_generation_exiting_zero_without_landing_a_file_is_not_success`
+  still passes.
+- **Effort:** S
+- **Risk if fixed:** a byte-comparison approach (hash the slot before and after) would misreport a
+  legitimate regeneration that happens to produce identical output as a failure — which is why the
+  fix is the generator's own `status` field plus the existing presence check, not a content diff.
+
+## G16 — Close or pin the interpreter-version-sensitive guard predicate
+
+- **Kind:** test-gap
+- **Severity:** low
+- **Topic:** tests
+- **Where:** `test/plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing.py:589`
+- **Evidence:** the predicate reads
+  `if token.type != tokenize.NAME or token.string == own_symbol:` — it scans `tokenize` **NAME**
+  tokens for queue/train vocabulary. Before PEP 701 (Python < 3.12) an f-string is a single `STRING`
+  token, so an identifier interpolated into an f-string produces no NAME token and the guard finds
+  nothing. The report records this as the root cause of the withdrawn finding F15
+  (`report-01.md:196`) and lists it as residue (`:324`). Unchanged at the audited tree; pre-existing
+  in a file this plan never touched.
+- **Why it matters:** the guard goes **vacuous-then-red** rather than loudly wrong if the
+  `requires-python` floor ever moves below 3.12, and it already cost one verification round to
+  diagnose. Nothing in the file records the dependency, so the next reader re-derives it.
+- **Action:** either add an explicit `sys.version_info >= (3, 12)` assertion (or a `pytest.skip`
+  with the reason) at the top of the predicate's test class, or state the dependency in the
+  predicate's own docstring naming PEP 701 and the `requires-python` floor it relies on.
+- **Done when:** `test_branch_cleanup_merge_queue_routing.py` names the ≥3.12 tokenization
+  dependency either as an executable assertion or in the predicate's docstring, so a floor change
+  produces a stated failure rather than a silent vacuity.
+- **Effort:** S
+- **Risk if fixed:** none; `pyproject.toml` already pins `requires-python >= 3.12` and
+  `UV_PYTHON = "3.12"`, so an assertion cannot fail on a supported toolchain.

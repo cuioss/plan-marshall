@@ -9,9 +9,11 @@ migration was applied to `phase-6-finalize/SKILL.md` only, while two dispatch si
 skill still use the pre-seam shape — one of them emitting nothing at all for its spawn — and two
 more step docs still instruct a hand-written emit the dispatcher no longer performs. The fused
 completion line fires for `loop_back`, an outcome the same documents say owes no completion, and no
-test covers it. The start half of the marker pair is still prose. Finally, the test the run's report
-names as its N>1 verification for D2 passes against the D2 defect (proved by mutation), so the
-property is guarded only by the roster-closure detector.
+test covers it. The start half of the marker pair is still prose. The D6 check's *derivation* is
+real but its realized comparison population is **one doc of twenty-five** (G11), because only
+`architecture-refresh.md` carries a self-classification sentence. Finally, the test the run's report
+names as its N>1 verification for D2 passes against the D2 defect (proved by mutation, twice
+independently), so the property is guarded only by the roster-closure detector.
 
 ## G1 — Migrate the `finalize-step-simplify` in-body dispatch onto the resolve seam
 
@@ -21,20 +23,32 @@ property is guarded only by the roster-closure detector.
 - **Where:** `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/finalize-step-simplify.md:113` (resolve) and `:127` (`Task: plan-marshall:{target}`)
 - **Evidence:** the resolve is bare —
   `effort resolve-target --phase phase-6-finalize` with no `--workflow`, `--plan-id` or `--caller`.
-  `_cmd_effort.py:546` emits the `[DISPATCH]` line and the paired decision-log record **only** when
-  `--workflow` is supplied, and no `--message "[DISPATCH]"` command exists anywhere in that file
-  (swept the whole `marketplace/bundles/` tree). The spawn at `:127` therefore leaves no dispatch
-  record on either surface. `default:finalize-step-simplify` is on the dispatched roster
+  `_cmd_effort.py:546` (`if workflow:`) gates `_emit_dispatch_records`, so the `[DISPATCH]` line and
+  the paired decision-log record are emitted **only** when `--workflow` is supplied; and no
+  `--message "[DISPATCH]"` command exists anywhere in that file (re-swept the whole
+  `marketplace/bundles/` tree — the eleven surviving hand-written emits are in `plan-marshall`,
+  `workflow-pr-doctor`, `phase-3-outline`, and the three finalize files named in G2/G3/G4; none is
+  in `finalize-step-simplify.md`). The spawn at `:127` therefore leaves no dispatch record on either
+  surface. `default:finalize-step-simplify` is on the dispatched roster
   (`dispatch-inline-split.md:25`).
 - **Why it matters:** this is exactly the condition D2 exists to remove — a finalize spawn the
-  dispatch count cannot see. The retrospective's `check-dispatch-audit.py` derives
-  `dispatch_coverage` and the D3 channel ratio from these lines, so the channel silently
-  under-reports for every run that reaches the simplify step's cognitive phase.
+  dispatch count cannot see. `check-dispatch-audit.py:388` computes
+  `missing = max(0, len(dispatched) - finalize_dispatch_line_count)`, where `dispatched` is the set
+  of terminal finalize steps with non-zero token attribution. `default:finalize-step-simplify` is a
+  registered terminal step that dispatches, so it enters the minuend while contributing nothing to
+  the subtrahend — and because a *re-fire* of any other step adds a line without adding a step, that
+  shortfall is silently absorbed rather than surfacing as a `missing_dispatch_emission` finding. The
+  detector under-reports precisely when other steps looped back.
 - **Action:** replace the bare resolve with the canonical seam form used at `SKILL.md:1015` —
   `effort resolve-target --phase phase-6-finalize --workflow plan-marshall:phase-6-finalize/standards/finalize-step-simplify.md --plan-id {plan_id} --caller plan-marshall:phase-6-finalize` —
   and state, as SKILL.md:629 does, that the resolve and the spawn are one indivisible pair.
-- **Done when:** the resolve at `:113` carries `--workflow`/`--plan-id`/`--caller`, and a detector
-  over the whole `phase-6-finalize` skill (see G5) reports no unpaired `Task:` spawn.
+- **Done when:** the resolve at `:113` carries `--workflow`, `--plan-id` and
+  `--caller plan-marshall:phase-6-finalize` (the `--caller` is load-bearing: `_cmd_effort.py:493`
+  falls back to `plan-marshall:manage-config` when it is absent, and
+  `check-dispatch-audit.py:98` (`FINALIZE_DISPATCH_CALLER`) counts finalize lines by that caller,
+  so a migration without `--caller` still leaves the line uncounted), and `grep -n 'Task: '` over
+  `finalize-step-simplify.md` shows every spawn preceded by that resolve. Independently of this
+  entry, G5 widens the automated detector so the condition is machine-checked.
 - **Effort:** S
 - **Risk if fixed:** one extra `[DISPATCH]` + decision-log record per simplify dispatch; any
   archived-corpus comparison of dispatch counts across the change point shifts by that amount.
@@ -45,8 +59,9 @@ property is guarded only by the roster-closure detector.
 - **Severity:** high
 - **Topic:** dispatch/finalize
 - **Where:** `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/pre-submission-self-review.md:194` (bare resolve), `:204` (hand-written emit), `:210` (`Task:`)
-- **Evidence:** `:204` reads
-  `--message "[DISPATCH] (plan-marshall:phase-6-finalize) target={target} level={level} role=default workflow=…/pre-submission-self-review.md plan_id={plan_id}"`.
+- **Evidence:** `:204` reads, verbatim,
+  `--message "[DISPATCH] (plan-marshall:phase-6-finalize) target={target} level={level} role=default workflow=plan-marshall:phase-6-finalize/workflow/pre-submission-self-review.md plan_id={plan_id}"`,
+  and `:192-195` is the bare `effort resolve-target --phase phase-6-finalize` that precedes it.
   `ref-workflow-architecture/standards/dispatch-logging.md:44`: "The caller's only obligation is to
   pass the dispatch context to the resolve it already performs; it MUST NOT also hand-write a
   separate `manage-logging work "[DISPATCH]"` line (that reintroduces the per-role blind spot and
@@ -57,7 +72,11 @@ property is guarded only by the roster-closure detector.
   also falsifies the comment at `check-dispatch-audit.py:91-95`, which asserts that every finalize
   `[DISPATCH]` line comes from the seam.
 - **Action:** convert `:194` to the seam form (`--workflow plan-marshall:phase-6-finalize/workflow/pre-submission-self-review.md --plan-id {plan_id} --caller plan-marshall:phase-6-finalize`) and delete the `:198-205` emit block, replacing it with the "the same seam call has already written the line" sentence used at `SKILL.md:627`. Leave the `:168` inline-gate instruction ("do NOT emit a `[DISPATCH]` log line") intact — it stays correct once the emission rides the resolve, since the inline branch performs no resolve.
-- **Done when:** no `--message "[DISPATCH]"` occurrence remains under `skills/phase-6-finalize/`, and the resolve at `:194` carries `--workflow`.
+- **Done when:** the resolve at `:194` carries `--workflow`/`--plan-id`/`--caller`, and
+  `grep -n -- '--message "\[DISPATCH\]' pre-submission-self-review.md` returns nothing. (The
+  skill-wide condition — no such occurrence anywhere under `skills/phase-6-finalize/` — is only
+  reachable once G3 and G4 also land, since `lessons-capture.md:66` and `adr-propose.md:51` carry the
+  other two; do not treat this entry as blocked on them.)
 - **Effort:** S
 - **Risk if fixed:** the emitted `role=` field changes from the hand-written literal `default` to the seam's resolved role key (`phase-6-finalize` when no `--role` is passed); any consumer matching on `role=default` for this step would need updating.
 
@@ -107,13 +126,15 @@ property is guarded only by the roster-closure detector.
 - **Kind:** test-gap
 - **Severity:** medium
 - **Topic:** tests
-- **Where:** `test/plan-marshall/phase-6-finalize/test_dispatch_roster_closure.py:256-282` (`_dispatch_branch_scoped_skill_text`), `:659-692` (checks (e))
-- **Evidence:** the sweep reads `_SKILL_DOC` only and blanks every line outside
+- **Where:** `test/plan-marshall/phase-6-finalize/test_dispatch_roster_closure.py:256-281` (`_dispatch_branch_scoped_skill_text`), `:659-677` (`test_every_task_spawn_is_preceded_by_a_seam_resolve`) and `:680-697` (`test_no_hand_written_dispatch_emit_survives`)
+- **Evidence:** the sweep reads `_SKILL_DOC` only (`:85`) and blanks every line outside
   `### Step 3: Execute Step Pipeline`. Consequently G1's unpaired spawn
   (`finalize-step-simplify.md:127`) and G2's hand-written emit
-  (`pre-submission-self-review.md:204`) are invisible to it — I confirmed both detectors are alive
-  by mutating `SKILL.md:1015`, which turned `test_every_task_spawn_is_preceded_by_a_seam_resolve`
-  red, while the same suite stayed green with the two real out-of-section violations present.
+  (`pre-submission-self-review.md:204`) are invisible to it — confirmed twice independently by
+  mutating `SKILL.md:1015` (dropping the `--workflow/--plan-id/--caller` continuation), which turned
+  `test_every_task_spawn_is_preceded_by_a_seam_resolve` red naming `line 1031`, while the same suite
+  stayed green with the two real out-of-section violations present. The detectors are alive; their
+  *population* is the defect.
 - **Why it matters:** the plan's D2 asks for the dispatch count to equal the spawn count for the
   phase; a detector scoped to one section of one file can only ever certify that one section, and it
   is the only guard the run left behind (the test its report names is vacuous — see G7).
@@ -159,18 +180,27 @@ property is guarded only by the roster-closure detector.
 ## G7 — Replace or delete the vacuous `test_finalize_dispatch_emits_one_line_per_spawn`
 
 - **Kind:** test-gap
-- **Severity:** low
+- **Severity:** medium
 - **Topic:** tests
-- **Where:** `test/plan-marshall/manage-config/test_dispatch_seam_emission.py:144-173`
+- **Where:** `test/plan-marshall/manage-config/test_dispatch_seam_emission.py:144-173` (the test),
+  `:135-141` and `:167-168` (the in-tree comments that misdescribe it)
 - **Evidence:** the test drives `manage-config effort resolve-target` directly with `--workflow`,
-  three times, and asserts three `[DISPATCH]` lines. It reads no finalize document. Mutation proof:
-  after removing `--workflow/--plan-id/--caller` from `phase-6-finalize/SKILL.md:1015`, this file's
-  9 tests all passed while `test_dispatch_roster_closure.py::test_every_task_spawn_is_preceded_by_a_seam_resolve`
-  failed. It is a re-parameterisation of `test_role_fired_n_times_produces_n_records` (already green
-  before this plan, since the seam landed in #1200) with a different `--caller` literal.
-- **Why it matters:** `report-01.md` presents it as the D2 "Verification (N>1)" artifact, so a
-  reader believes the finalize migration carries a per-spawn regression test that it does not. The
-  plan's Verification section explicitly rejects tests that pass against the defect.
+  three times, and asserts three `[DISPATCH]` lines. It reads no finalize document. **Mutation
+  proof, re-run independently:** after removing `--workflow/--plan-id/--caller` from
+  `phase-6-finalize/SKILL.md:1015`, all **9** tests in this file passed while
+  `test_dispatch_roster_closure.py::test_every_task_spawn_is_preceded_by_a_seam_resolve` failed with
+  `["line 1031: 'Task: plan-marshall:{target}'"]`. It is a re-parameterisation of
+  `test_role_fired_n_times_produces_n_records` (`:124-132`, already green before this plan — the
+  seam landed in #1200) with `--phase phase-6-finalize` and a different `--caller` literal; its one
+  extra assertion (the line starts with `[DISPATCH] ({caller})`) is already covered generically at
+  `:218` in `test_dispatch_line_fields_match_the_resolved_envelope`.
+- **Why it matters:** the false attribution is **in the shipped test tree**, not only in the run
+  report. The comment at `:139-140` claims the test "pins the N>1 per-spawn property specifically for
+  the finalize dispatch path", and the inline comment at `:167-168` claims three lines is "the
+  property that fails against the pre-migration finalize emission" — mutation shows it does not fail
+  against that state. A maintainer reading the file believes a load-bearing regression guard exists
+  where none does; that is what lifts this above a report-only stale claim. (The property itself *is*
+  guarded — by roster-closure check (e) — so nothing is unprotected today.)
 - **Action:** delete the test and point the D2 verification at the roster-closure (e) checks, or
   rewrite it so its subject is the finalize document (e.g. assert that every finalize resolve block
   in `SKILL.md` § Step 3 carries the three seam flags — which is G5's remit, in which case deletion
@@ -184,22 +214,30 @@ property is guarded only by the roster-closure detector.
 ## G8 — Decide and pin the fused emission's behaviour for `loop_back`
 
 - **Kind:** bug
-- **Severity:** medium
+- **Severity:** high
 - **Topic:** dispatch/finalize
-- **Where:** `marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_mark_step.py:182-216` (`_emit_completion_marker`), called at `:420` and `:478`
-- **Evidence:** neither call site nor the function inspects `outcome`, so a
-  `mark-step-done --phase 6-finalize --outcome loop_back` write emits
-  `[STEP] (plan-marshall:phase-6-finalize) Completed step: {step}`. `phase-6-finalize/SKILL.md:1100`
+- **Where:** `marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_mark_step.py:182-216` (`_emit_completion_marker`), guard at `:209`, called at `:420` and `:478`
+- **Evidence — executed, not inferred:** neither call site nor the function inspects `outcome`; the
+  only guard is `if suppress or phase != _COMPLETION_MARKER_PHASE` (`:209`). Driving
+  `cmd_mark_step_done` with `phase='6-finalize'`, `outcome='loop_back'`,
+  `loop_back_target='5-execute'` and reading the work log back returns exactly
+  `['[STEP] (plan-marshall:phase-6-finalize) Completed step: step-lb']`. `phase-6-finalize/SKILL.md:1100`
   calls a loop-back "a PRODUCTIVE non-completion"; `SKILL.md:1297` states the governing principle —
   "the item-7a `defer` branch records nothing (the step did not settle, so it owes no completion)";
-  `manage-status/SKILL.md:374` describes the emission as riding "the **terminal** write". The test
+  `manage-status/SKILL.md:374` describes the emission as riding "the terminal write". The test
   suite's own docstring (`test_mark_step_completion_emission.py:14-16`) enumerates the emitting
   outcomes as "done / skipped / failed" — `loop_back` is neither documented nor tested.
 - **Why it matters:** the operational log asserts a completion for a step the dispatcher is about to
-  re-fire, and the step emits a second line when it finally settles.
-  `check-dispatch-audit.py:521` counts every such line into `completion_count`, the denominator of
-  the D3 channel ratio, so the audit's trustworthiness signal is computed over a population whose
-  definition nobody stated.
+  re-fire (`SKILL.md:722` — a `loop_back` record is read back as "RE-FIRE (treat as no record)"), and
+  the step emits a second line when it finally settles. `check-dispatch-audit.py:521` counts every
+  such line into `completion_count`; `:436` divides `dispatch_line_count / completion_count` and
+  `:441` downgrades the audit's own confidence to `low` when that ratio falls under
+  `_SPARSE_RATIO = 0.5` (`:132`). A step that loops back once moves from 2/1 to 2/2, so the extra
+  line pushes the ratio *down*, toward a spurious `low`-confidence verdict.
+- **Severity note (why high, not medium):** the entry offers two remedies, but *both* concede the
+  shipped text is wrong — (a) suppresses the line, (b) requires renaming/qualifying it. There is no
+  reading under which "Completed step: X" is a true statement about a step that did not settle, so
+  this is shipped behaviour that is wrong and that feeds a measurement, not merely an undecided one.
 - **Action:** pick one and make code, both SKILL.md sections and a test agree: (a) suppress the
   emission for `outcome == 'loop_back'` (matching "settled" semantics and the `defer` precedent), or
   (b) keep it per firing and rename/qualify the line and the `completion_count` documentation so a

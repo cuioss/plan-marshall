@@ -9,8 +9,17 @@ from the concept document's own header, and because no enrich verb refreshes tha
 diverge on the first enrich after a discover — at which point `architecture info` reports `fresh`
 for a document written against a different tree, and for a module with no concept document at all.
 **Provenance** is never back-filled: a pre-field document survives `discover` with no `generation`
-header and stays permanently `unknown`. Fourteen gaps below, one per instance, plus the shipped
-documentation that still describes the retired dotted identity.
+header and stays permanently `unknown`.
+
+Beyond the four constructs, the run's documentation sweep stopped at the diff's own bundle
+neighbourhood: the shipped docs still teach the **retired dotted identity** (G11–G13) and still
+teach the **index as the discovery gatekeeper** (G18–G20), the exact semantic D3's ⛔ constraint
+exists to defend and which the PR body claims was corrected "across every document that restated
+it".
+
+Twenty gaps below, one per instance except where a single sentence is repeated verbatim across
+several files under one owner, in which case the entry enumerates every location it must be fixed
+at.
 
 ---
 
@@ -390,27 +399,40 @@ documentation that still describes the retired dotted identity.
 - **Kind:** doc-defect
 - **Severity:** medium
 - **Topic:** bundle-docs
-- **Where:** `marketplace/bundles/plan-marshall/skills/manage-architecture/standards/manage-api.md:257`
+- **Where:** `marketplace/bundles/plan-marshall/skills/manage-architecture/standards/manage-api.md:258`
+  (the option table) and `:265` (the worked-example output)
 - **Evidence:** the shipped row reads
 
   ```
   | `--package` | Yes | - | Full package name |
   ```
 
-  while `architecture.py:377-378` validates the argument as a repo-relative path and
-  `architecture-persistence.md:338` states keys are "**Repo-relative paths (path is identity)**, not
-  dotted pseudo-identifiers". `git show bc86398 -- …/manage-api.md` shows the run changed exactly one
-  hunk in this file (the "Data Sources" paragraph); this table was not touched, contradicting the
-  report's finding #4 ("the two borderline items (`manage-api.md`, module docstring) tightened in the
-  same commit").
+  and the `enrich package` worked example twelve lines below it emits a dotted name:
+
+  ```
+  package	de.cuioss.sheriff.oauth.core.pipeline
+  ```
+
+  while `architecture.py:377-378` validates the argument as a repo-relative path
+  (`type=validate_relative_path`, help `'Repo-relative path to the package (path IS the identity
+  key; must resolve to a real location)'`) and `architecture-persistence.md:338` states keys are
+  "**Repo-relative paths (path is identity)**, not dotted pseudo-identifiers". `git show bc86398 --
+  …/manage-api.md` shows the run changed exactly one hunk in this file (the "Data Sources"
+  paragraph); neither the table nor the example was touched, contradicting the report's finding #4
+  ("the two borderline items (`manage-api.md`, module docstring) tightened in the same commit").
+  ⚠ Not every dotted name in this file is a defect: the derived `packages` block at `:162-165` is
+  the dotted→path **bridge**, which legitimately keeps dotted names. Only `:258` and `:265` describe
+  `key_packages` / `--package`.
 - **Why it matters:** `manage-api.md` is the API reference an agent reads before invoking
   `enrich package`. Following it produces a dotted name, which is now **refused** with
-  `error: non_resolving_package_key` — the documentation actively instructs a failing call.
+  `error: non_resolving_package_key` — the documentation actively instructs a failing call, and the
+  worked example shows the refused form as a success output.
 - **Action:** change the description to "Repo-relative path to the package (path is identity; must
-  resolve to a real filesystem location)" and note the `non_resolving_package_key` refusal, matching
-  `SKILL.md:576`.
-- **Done when:** `manage-api.md` contains no description of `--package` as a package *name*, and its
-  `enrich package` section states the path-identity rule and the named error.
+  resolve to a real filesystem location)", rewrite the `:265` example value to a repo-relative path,
+  and note the `non_resolving_package_key` refusal, matching `SKILL.md:577` (and `SKILL.md:196`).
+- **Done when:** `manage-api.md` contains no description of `--package` as a package *name* and no
+  dotted `package` value in the `enrich package` example output, and its `enrich package` section
+  states the path-identity rule and the named error.
 - **Effort:** S
 - **Risk if fixed:** none.
 
@@ -421,8 +443,9 @@ documentation that still describes the retired dotted identity.
 - **Kind:** doc-defect
 - **Severity:** medium
 - **Topic:** bundle-docs
-- **Where:** `marketplace/bundles/plan-marshall/skills/phase-3-outline/standards/module-selection.md:20-27`
-- **Evidence:** the shipped table teaches `key_packages` as dotted package patterns:
+- **Where:** `marketplace/bundles/plan-marshall/skills/phase-3-outline/standards/module-selection.md:22-28`
+- **Evidence:** the shipped table teaches `key_packages` as dotted package patterns (header at
+  `:22`, five data rows at `:24-28`):
 
   ```
   | key_package Pattern | Typical Role |
@@ -432,8 +455,9 @@ documentation that still describes the retired dotted identity.
   ```
 
   Keys are now repo-relative paths (`architecture-persistence.md:387`;
-  `client-api.md:343` shows the corrected form
-  `oauth-sheriff-core/src/main/java/…/pipeline`). The file was not touched by `bc86398`.
+  `client-api.md:344` shows the corrected form
+  `oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/pipeline`). The file was not touched
+  by `bc86398`.
 - **Why it matters:** this standard drives module and package selection in `phase-3-outline`. It
   teaches the retired identity system to the phase that consumes `key_packages` most directly, and
   it lives in the **same bundle** (`plan-marshall`) that the run's Step-6 instruction says to sweep
@@ -456,8 +480,9 @@ documentation that still describes the retired dotted identity.
 - **Topic:** bundle-docs
 - **Where:** `marketplace/bundles/plan-marshall/skills/phase-3-outline/templates/package-selection.md:26`
 - **Evidence:** `| `package` | `architecture module --module X --full` | Package name from key_packages |`
-  — the named source now emits repo-relative paths, not names
-  (`client-api.md:343,391`).
+  — the named source now emits repo-relative paths, not names (`client-api.md:344` in the default
+  `module` example and `:392` in the `--full` example, both showing
+  `oauth-sheriff-core/src/main/java/de/cuioss/sheriff/oauth/core/pipeline`).
 - **Why it matters:** the template shapes what an outline records for package placement; describing
   the value as a name invites an author to convert the path back into a dotted name, reintroducing
   by hand exactly the sync burden D1 removed. Separate instance from G12 — different file, different
@@ -582,3 +607,144 @@ documentation that still describes the retired dotted identity.
   (`get_module_dir`, `_architecture_core.py:171-173`); persisting a non-module concept needs a key
   space decision that this plan deliberately deferred. Do not add the CLI flag without settling
   where a `standard` concept document lives.
+
+---
+
+## G18 — Retract the "index is authoritative, not the filesystem" claim from the `plan-marshall` bundle docs
+
+- **Kind:** doc-defect
+- **Severity:** medium
+- **Topic:** bundle-docs
+- **Where:** six surfaces in the `plan-marshall` bundle, all still asserting the retired semantic:
+
+  | Location | Shipped text (abridged) | Status |
+  |---|---|---|
+  | `skills/marshall-steward/references/architecture-setup.md:40` | "a top-level `_project.json` whose `modules` index is the single source of truth for \"which modules exist\" … Per-module directories present on disk but absent from `_project.json[\"modules\"]` **MUST be ignored** — the index is authoritative, not the filesystem" | **False, and normative** — the strongest instance; the section heading is literally "Discover Project Architecture (Source of Truth)" |
+  | `skills/marshall-steward/references/menu-maintenance.md:144` | "a refreshed `_project.json` (whose `modules` index is the source of truth for which modules exist)" | False |
+  | `skills/marshall-steward/references/menu-configuration.md:685` | "a refreshed `_project.json` (the source of truth for the module index)" | False |
+  | `skills/marshall-steward/references/wizard-flow.md:245` | "The module list comes from `_project.json[\"modules\"]` (Step 8), which is the source of truth" | False |
+  | `skills/marshall-steward/scripts/determine_mode.py:213-224` | "(the source of truth for \"which modules exist\") … The `_project.json` `modules` index is authoritative — orphan or half-written per-module directories are ignored" | Wording only — `check_structure` really is index-driven, and correctly so for an existence marker; the "source of truth for which modules exist" framing is what must go |
+  | `skills/extension-api/standards/module-discovery.md:23,26` | "`_project.json[\"modules\"]` — canonical module set (source of truth)" / "Orphan `<module>/` subdirectories not listed in `_project.json` are ignored." | False |
+
+- **Evidence:** the shipped code says the opposite in three places the plan itself edited or cited —
+  `_architecture_core.py:463-469` ("NOT the source of module discovery: `iter_modules` crawls the
+  live worktree … not the discovery gatekeeper"), `tools-file-ops/scripts/constants.py:415-422`
+  ("The index is NOT the discovery gatekeeper"), and
+  `architecture-persistence.md:96-97` ("The index is a denormalized pre-flight snapshot; the
+  per-module concept document is authoritative"). The negative-control test
+  `test_module_on_disk_absent_from_index_is_still_discovered`
+  (`test_concept_model.py:304-319`) pins the crawl behaviour, and it is non-vacuous (mutating
+  `iter_modules` to read the index turns it red with `assert 'orphan' in []`). The PR body for
+  `bc86398` claims the run corrected this claim "across **every document that restated it**"; the
+  six rows above are counterexamples, and none of them appears in `git show --stat bc86398`'s
+  17-file list.
+- **Why it matters:** D3 carries the plan's only ⛔ **MUST NOT** on this point — "This MUST NOT
+  reintroduce the index as the discovery gatekeeper" — and the plan labels the crawl-fallback
+  semantic "**OBSERVED, and load-bearing**". The code defends it; the documentation an agent reads
+  before running `architecture discover` still instructs the inverse, and
+  `architecture-setup.md:40` does so in **MUST** form. An agent following that text ignores modules
+  that genuinely exist.
+- **Why it is a separate instance from G11–G13:** those are the retired *dotted identity* (D1);
+  this is the retired *index-gatekeeper* semantic (D3). Different deliverable, different sentence,
+  different files.
+- **Action:** rewrite each row to the `constants.py:415-422` formulation — the index is a read-side
+  pre-flight surface (per-module `description` + `generation`), discovery crawls the live worktree,
+  and a module on disk but absent from the index is still discovered. For
+  `determine_mode.py:213-224`, keep the index-driven behaviour and reword the docstring to say the
+  index is the *seeded-layout marker* this check reads, not the source of truth for which modules
+  exist. Prefer a cross-reference to `manage-architecture/standards/architecture-persistence.md`
+  § index over restating the rule a seventh time.
+- **Done when:** no file under `marketplace/bundles/plan-marshall/` states that
+  `_project.json`'s `modules` index is the source of truth for which modules exist, or that
+  per-module directories absent from it are ignored / that the index is authoritative over the
+  filesystem — checkable with a content search for `source of truth for "which modules exist"`,
+  `source of truth for which modules exist`, and `index is authoritative`.
+- **Effort:** S
+- **Risk if fixed:** `extension-api/standards/module-discovery.md:24` and
+  `extension-api/standards/build-execution.md:300,682` also name the store as `.plan/architecture/`
+  where the real path is `.plan/project-architecture/`. That stale path is a **pre-existing defect
+  this gap does not own** — fix it or leave it, but do not let it expand the gap's scope, and do not
+  let its presence be read as evidence the gatekeeper wording is correct.
+
+---
+
+## G19 — Retract the same claim from the `pm-plugin-development` bundle
+
+- **Kind:** doc-defect
+- **Severity:** medium
+- **Topic:** bundle-docs
+- **Where:** `marketplace/bundles/pm-plugin-development/skills/plan-marshall-plugin/SKILL.md:38-43`
+  and `marketplace/bundles/pm-plugin-development/skills/plan-marshall-plugin/scripts/plugin_discover.py:7-8`
+- **Evidence:** `SKILL.md:40-43` reads
+
+  ```
+  top-level `_project.json` whose `modules` index is the source of truth for
+  which modules exist, plus one `{module}/derived.json` per indexed module
+  holding this extension's discovery output. Per-module subdirectories present
+  on disk but absent from `_project.json["modules"]` are ignored — the index is
+  authoritative, not the filesystem.
+  ```
+
+  and the module docstring at `plugin_discover.py:7-8` restates "`manage-architecture` writes a
+  top-level `_project.json` whose `modules` index is the source of truth". Both describe
+  `manage-architecture`'s contract, which `_architecture_core.py:463-469` now states as the
+  opposite.
+- **Why it matters:** same defect as G18 and the same D3 ⛔ constraint, but this bundle is the
+  plan-marshall **plugin extension** — the surface that tells a developer how the architecture store
+  behaves for marketplace bundles, i.e. for this very repository.
+- **Why it is a separate instance from G18:** a different bundle with a different owner. The run's
+  Step-6 instruction sweeps "beyond the diff **across the owning bundle**", so the `plan-marshall`
+  instances (G18) were in scope of an instruction the run had and did not complete, while these were
+  not — they need a deliberate cross-bundle decision to fix, and grouping them with G18 would hide
+  that difference from whoever schedules the fix.
+- **Action:** rewrite both to the `constants.py:415-422` formulation, or replace the restatement
+  with a cross-reference to `manage-architecture/standards/architecture-persistence.md` § index.
+- **Done when:** neither `plan-marshall-plugin/SKILL.md` nor `plugin_discover.py` describes the
+  `modules` index as the source of truth for which modules exist or as authoritative over the
+  filesystem.
+- **Effort:** S
+- **Risk if fixed:** none — no behaviour depends on the wording; `plugin_discover.py` only *returns*
+  module dicts and never reads the index.
+
+---
+
+## G20 — Correct `manage-solution-outline`'s docstring, which cites a contract `_architecture_core` no longer codifies
+
+- **Kind:** doc-defect
+- **Severity:** medium
+- **Topic:** bundle-docs
+- **Where:** `marketplace/bundles/plan-marshall/skills/manage-solution-outline/scripts/manage-solution-outline.py:874-876`
+  (the docstring of `_read_module_context`, which begins at `:870`)
+- **Evidence:** the docstring reads
+
+  ```python
+  The ``not_found`` status keys off ``_project.json`` existence — that file
+  is the single source of truth for "which modules exist", matching the
+  contract codified in ``_architecture_core``.
+  ```
+
+  Two independent falsehoods. (a) `_architecture_core` codifies the **opposite** contract —
+  `load_project_meta`'s docstring at `_architecture_core.py:463-469` states the index is "NOT the
+  source of module discovery" and "not the discovery gatekeeper". (b) The function's own body
+  contradicts it: `:890` calls `iter_modules(project_dir)`, which is
+  `sorted(crawl_all_modules(project_dir).keys())` (`_architecture_core.py:768-779`) — a filesystem
+  crawl, not an index read. Only the `not_found` *guard* keys off `_project.json` existence, which
+  is a separate and defensible thing.
+- **Why it matters:** this is the strongest instance of the family because it does not merely
+  restate a stale claim — it **attributes the stale claim to `_architecture_core` by name**, so a
+  reader who trusts the cross-reference is told the wrong contract about the module this plan
+  rewrote. It also sits in the same file as G4, so a fixer is already in it.
+- **Why it is a separate instance from G18:** G18's rows are prose restatements that a rewrite
+  fixes uniformly; this one requires distinguishing the two behaviours the docstring conflates (an
+  existence *guard* on `_project.json` versus module *enumeration* by crawl), which is a different
+  edit.
+- **Action:** rewrite to state that the `not_found` guard keys off `_project.json` existence (the
+  "has discovery ever run" marker), while the module list comes from `iter_modules`, which crawls
+  the live worktree — and drop the "single source of truth for which modules exist" attribution to
+  `_architecture_core`.
+- **Done when:** `_read_module_context`'s docstring (`:871-876`) contains no claim that `_project.json` is the
+  source of truth for which modules exist, and names `iter_modules`/the crawl as the source of the
+  module list it returns.
+- **Effort:** S
+- **Risk if fixed:** none — docstring only; do not change the `not_found` guard itself, which is
+  correct as written.

@@ -18,7 +18,7 @@ describes the removed behaviour as current.
 | # | Deliverable (short) | Report claim | Ground truth | Verdict |
 |---|---|---|---|---|
 | D1 | Derive the population of footprint reads (gate) | 13 files / 5 providers / 11 grading sites / 7 skills / 4 affected | All 11 sites exist and behave as tabulated; 13-file count reconciles; one further deciding consumer (`check_build_verdict_consistent`) is in neither the population nor the excluded table | PARTIAL |
-| D2 | Third state at the read seam, with a reason token | Two sites fixed; both directions asserted | Both sites carry the third state; both directions asserted and mutation-proven. Reason token present at 2 of 4 unresolved-reporting sites | PARTIAL |
+| D2 | Third state at the read seam, with a reason token | Two sites fixed; both directions asserted | Both sites carry the third state; both directions asserted and mutation-proven. A named reason token is present at 3 of the 5 reader sites that report an unresolved footprint | PARTIAL |
 | D3 | Fix the recall denominator | `extract_modification_intent_files` is the denominator; 3 filtered consumers + 1 deliberately unfiltered | Confirmed at `check-artifact-consistency.py:322`, both footprint consumers, and `request-result-alignment.md`; unfiltered composer consumer confirmed fail-closed | CONFIRMED |
 | D4 | Composer fails CLOSED | Already satisfied; second option taken, discrepancy against literal *Done when* disclosed | All four predicates verified fail-closed; the literal *Done when* is indeed not met and the report says so | CONFIRMED (with disclosed deviation) |
 | D5 | Blast radius on archived corpus | BLOCKED on corpus availability; 11 examined / 4 affected reported separately | `.plan/archived-plans` absent in this clone; the two counts are reported separately and are internally consistent | CONFIRMED (blocked, honestly) |
@@ -56,6 +56,15 @@ describes the removed behaviour as current.
   belonged in the *"Adjacent, deliberately excluded"* table rather than nowhere. See **G5**.
   The `lsp_client.py:217` `if not footprint` hit was checked and is a different concept (a
   `WorkspaceEdit` footprint), correctly outside the population.
+- **Split guard (plan's ⚠ on D1), assessed:** the plan requires a SPLIT if D1 finds the population
+  *materially larger* than the named sites. The population is larger by count (11 sites versus the 3
+  surfaces the plan named), and the run proceeded unsplit with a stated rationale — 9 of the 11 were
+  already correct, so the remaining work was two sites. That rationale was re-derived here and holds:
+  the population document's own "State when this run began" column names exactly two ❌ rows
+  (`analyze-logs` ARTIFACT floor, `verify_failure_scope`), and both are the sites the commit changes.
+  The guard's operative test is the work the population implies, not its cardinality, so the unsplit
+  decision is a disclosed, evidence-backed deviation rather than an unmet obligation. Not charged as a
+  gap.
 
 ### D2 — a third state at the read seam
 
@@ -93,13 +102,18 @@ describes the removed behaviour as current.
     (`test_unresolvable_worktree_does_not_classify_against_the_current_directory`,
     `test_footprint_resolver_never_diffs_the_current_directory`); restored.
 - **Verdict:** PARTIAL — the third state is real, non-vacuous, and asserted in both directions at every
-  site. The *reason token* half of the deliverable is applied at 2 of the 4 places an unresolved
-  footprint is reported: `analyze-logs` (token inside the message) and `verify_failure_scope` (typed
-  field). The recall and exact-match `inconclusive` returns
-  (`check-artifact-consistency.py:540-551`, `:593-600`) publish `footprint_resolved: false` — the
-  *state* — plus prose, which is precisely the half-implementation CodeRabbit raised as P2 against the
-  sibling site. See **G4**. And the one typed token that does exist is not in its consumer contract
-  (**G3**).
+  site. The *reason token* half of the deliverable is applied at **3 of the 5** reader sites that report
+  an unresolved footprint (population-doc readers #1–#5), not the 2 of 4 an earlier count gave:
+  `analyze-logs` (`ARTIFACT_COVERAGE_UNMEASURABLE` inside the message),
+  `verify_failure_scope` (typed `unresolved_reason` field), and — the site the earlier count omitted —
+  `check-routing-decisions`, which publishes a top-level `footprint_source: unresolved` (`:766`, emitted
+  at `:790`) and a per-check `removal_cause: not_evaluated` (`_CAUSE_NOT_EVALUATED`, `:212`) with
+  `detail: 'footprint unresolvable'` (`:574-581`). The two that carry no named token are the recall and
+  exact-match `inconclusive` returns (`check-artifact-consistency.py:540-551`, `:593-600`): recall
+  publishes `footprint_resolved: false` — the *state* — plus prose, and exact-match publishes only the
+  `inconclusive` status plus prose, with no state field at all in the block `cmd_run` emits
+  (`:909-915`). That is precisely the half-implementation CodeRabbit raised as P2 against the sibling
+  site. See **G4**. And the one typed token that does exist is not in its consumer contract (**G3**).
 
 ### D3 — fix the recall denominator
 

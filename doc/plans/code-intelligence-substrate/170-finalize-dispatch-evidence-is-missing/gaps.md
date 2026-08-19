@@ -2,15 +2,28 @@
 
 The plan landed: a deterministic, testable, fail-able dispatch audit exists
 (`check-dispatch-audit.py`), it is registered as aspect 11, and its `not_evaluated` guard is proven
-load-bearing by mutation. Twelve gaps remain. The two that matter most are in D3's
-`channel_completeness`: its numerator counts `[DISPATCH]` lines from **every** caller while both its
-denominators are **finalize-only**, so a plan with an entirely empty finalize dispatch channel is
-graded `confidence: nominal` — the exact reading D3 was built to prevent; and the same block has no
-"did not evaluate" state, so a plan with no logs at all is also graded `nominal`, contradicting the
-module's own docstring. Beyond those: one production branch has no test at all (proved by mutation),
-the aggregate `counts` block re-introduces the bare-zero ambiguity the plan set out to kill, D4's
-`N == 0` case is silent because the floor it defers to cannot fire, and the run left two
-plan-mandated cross-notes unwritten plus one stale label unfixed.
+load-bearing by mutation. Fourteen gaps remain.
+
+The one that matters most is **G13**: D2's whole mechanism rests on a token record whose two branches
+are not distinguishable. `dispatched` requires a positive integer; **everything else** — an explicit
+measured zero, a dispatched step whose `<usage>` tag never arrived, a row with no `total_tokens`
+column at all — falls through to `ran_inline`, which the detector's docstring and the shipped
+standard both describe as *proof* that the step ran inline. The producer says the opposite in so many
+words (`manage-execution-manifest.py:2613-2614`: *"a step dispatched without a `<usage>` tag reports
+zeros rather than a missing column"*). Because `dispatched` under-counts, `missing_dispatch_emission`
+— D2's own headline finding — cannot fire for exactly the steps whose instrumentation failed, and
+D3's shortfall branch is suppressed with it.
+
+Next are the two D3 defects. `channel_completeness`'s numerator counts `[DISPATCH]` lines from
+**every** caller while both its denominators are **finalize-only**, so a plan with an entirely empty
+finalize dispatch channel is graded `confidence: nominal` — the exact reading D3 was built to
+prevent (G1); and the same block has no "did not evaluate" state, so a plan with no logs at all is
+also graded `nominal`, contradicting the module's own docstring (G2). Beyond those: the aggregate
+`counts` block publishes four bare zeros and so re-introduces the exact ambiguity D1 exists to kill —
+including in the *same output* where the nested block correctly says `not_evaluated` (G3); D4's
+`N == 0` case is silent because the floor it defers to provably cannot fire (G7); one production
+branch has no test at all (G6, proved by mutation); and the run left two plan-mandated cross-notes
+unwritten plus two stale doc claims (G11, G12, G14).
 
 ## G1 — Scope `channel_completeness`'s dispatch-line count to the finalize caller
 
@@ -89,8 +102,8 @@ plan-mandated cross-notes unwritten plus one stale label unfixed.
 
 ## G3 — Publish the population beside `counts.by_category.shape_violation`
 
-- **Kind:** incomplete
-- **Severity:** medium
+- **Kind:** bug
+- **Severity:** high
 - **Topic:** detectors/auditor
 - **Where:** `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/check-dispatch-audit.py:542-550`
   (the `counts` block in `cmd_run`)
@@ -99,22 +112,32 @@ plan-mandated cross-notes unwritten plus one stale label unfixed.
   `counts: {total: 0, by_category: {shape_violation: 0, …}}`. `counts.by_category.shape_violation`
   is `shape['violations']`, which is `0` in *both* the never-evaluated and the evaluated-clean case,
   with nothing beside it. `test_check_dispatch_audit.py:124` asserts exactly this bare `0` for the
-  not-evaluated case.
-- **Why it matters:** `plan.md`'s ⭐ paragraph states the rule this violates — *"Every check that can
-  return zero from an empty population MUST publish the evaluated-population size next to the
-  count"* — and `counts` is the block a summarising consumer reads first (it is the documented
-  fragment-schema key, per `extension-api/standards/ext-point-retrospective.md`). A reader who reads
-  only `counts` gets exactly the never-evaluated-wearing-an-evaluated-clean-face verdict D1 exists
-  to abolish.
+  not-evaluated case. Re-derived at adversarial-review time by running the shipped script against a
+  plan directory holding only an empty `logs/`.
+- **Why it matters:** this violates D1's *Done when* verbatim — *"never a bare `0`"* — and `plan.md`'s
+  ⭐ rule (*"Every check that can return zero from an empty population MUST publish the
+  evaluated-population size next to the count"*), in the one block a summarising consumer reads
+  first. The plan's own § Verification states the acceptance test: *"Hand the audit output to the
+  pre-PR verification sub-agent cold and ask, for each zero, whether the check evaluated anything.
+  If it cannot tell, D1 has not been met."* A reader given only `counts` cannot tell.
+  **The in-tree consumer makes this worse rather than catching it.** `compile-report.py`'s
+  `_names_checked_set` (`:213-250`) is the ambiguity probe for exactly this failure — and `counts` is
+  a member of `ZERO_ATTRIBUTION_FIELDS` (`retro_sections.py:148-154`), so a non-empty `counts` dict
+  *by itself* satisfies the probe. The log-less fragment therefore passes the "this fragment names
+  what it checked" test on the strength of the very block that names nothing.
 - **Action:** either omit `shape_violation` from `counts.by_category` when
   `shape['status'] == 'not_evaluated'`, or emit it as a structured value carrying its population
   (e.g. `shape_violation: {count: 0, evaluated_population: 0, status: not_evaluated}`). Mirror the
   choice in `standards/execution-context-dispatch-audit.md:105-111`.
 - **Done when:** no consumer can read `counts.by_category` alone and mistake a `not_evaluated`
-  shape check for an evaluated-clean one; a test asserts the distinguishing field.
+  shape check for an evaluated-clean one; a test asserts the distinguishing field; and
+  `test_check_dispatch_audit.py:124`'s assertion of the bare `0` is replaced by an assertion of the
+  new shape.
 - **Effort:** S
-- **Risk if fixed:** `compile-report`'s `_names_checked_set` reads `counts` as an attribution field
-  (`compile-report.py:235-250`); a shape change there must keep that probe working.
+- **Risk if fixed:** `compile-report`'s `_names_checked_set` (`compile-report.py:213-250`) reads
+  `counts` as an attribution field; a shape change there must keep that probe working — and the
+  probe should be tightened in the same change, since today it is satisfied by any non-empty
+  `counts` dict regardless of what the counts attribute to.
 
 ## G4 — Publish an evaluated population for `envelope_violation` and `generic_subagent_violation`
 
@@ -201,8 +224,8 @@ plan-mandated cross-notes unwritten plus one stale label unfixed.
 ## G7 — Make the total per-task ARTIFACT emission failure (`N == 0`) reportable
 
 - **Kind:** bug
-- **Severity:** medium
-- **Topic:** measurement/metrics
+- **Severity:** high
+- **Topic:** detectors/auditor
 - **Where:** `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/analyze-logs.py:1559-1571`
   (the comment's `N == 0` deferral and the `0 < N < M` guard), against the floor it defers to at
   `:1551` and the count it uses at `:1519`
@@ -216,9 +239,17 @@ plan-mandated cross-notes unwritten plus one stale label unfixed.
   `artifact_emission: {completed_tasks: 3, tasks_with_artifacts: 0, tasks_without_artifacts:
   ['TASK-001','TASK-002','TASK-003']}`, `artifact_entries: 2`, and **zero findings**.
 - **Why it matters:** `N == 0, M > 0` is the *worst* instance of the defect D4 exists for — per-task
-  emission entirely bypassed — and it is the only instance that raises nothing. The published
-  population still makes it readable, so this is not a silent-wrong-number defect; it is a guard that
-  cannot fire on its own worst case, which is the archetype `plan.md` names at n≥5.
+  emission entirely bypassed — and it is the only instance that raises nothing. Severity is **high**
+  under the "a guard cannot fire" clause: the plan-level floor the comment defers to is not merely
+  unlikely to fire, it is provably dead for any plan that ran `phase-1-init`. The published
+  population still makes the state readable, so this is not a silent-wrong-number defect; it is the
+  vacuous-guard archetype `plan.md` names, surviving inside a fix for it.
+- **Independently re-derived** at adversarial-review time against a pristine copy of
+  `analyze-logs.py` (`git show HEAD:…`, so a concurrent agent's in-tree mutation could not influence
+  the reading), archived mode, `references.modified_files` supplying a non-empty footprint so the
+  floor's own precondition was satisfied: `completed_tasks: 3`, `tasks_with_artifacts: 0`,
+  `tasks_without_artifacts: [TASK-001, TASK-002, TASK-003]`, `artifact_entries: 2`, `findings[0]:`
+  — zero findings, matching the original probe exactly.
 - **Action:** either (a) widen the partiality guard to `N < M` and give the `N == 0` case its own
   message distinguishing "this plan uses no per-task emission" from "emission was bypassed" — the
   discriminator is whether the plan's footprint is non-empty, already resolved at `:1532`; or (b)
@@ -283,10 +314,10 @@ plan-mandated cross-notes unwritten plus one stale label unfixed.
 - **Effort:** S
 - **Risk if fixed:** none.
 
-## G10 — Warn readers that `shape_violation` is near-tautological now that one seam writes both surfaces
+## G10 — Cross-reference the corroboration limit from the `shape_violation` interpretation rule
 
 - **Kind:** doc-defect
-- **Severity:** medium
+- **Severity:** low
 - **Topic:** detectors/auditor
 - **Where:** `marketplace/bundles/plan-marshall/skills/plan-retrospective/standards/execution-context-dispatch-audit.md:122`
   (the LLM interpretation rule for `shape_violation`), against the corroboration-limit paragraph at
@@ -300,19 +331,26 @@ plan-mandated cross-notes unwritten plus one stale label unfixed.
   The interpretation rule at `:122` nonetheless reads: *"`shape_violation` findings indicate a
   resolve that never emitted its canonical `[DISPATCH]` line — usually a missing instrumentation
   step."*
-- **Why it matters:** the plan was written to abolish a check whose `0` means nothing. D1 replaced a
-  never-evaluated `0` with an honest `not_evaluated` — correct at the time — but at HEAD the check
-  reports `evaluated, violations: 0` over a populated population, which reads as a strong clean
-  verdict for a check that is structurally almost unable to fail. The standard records the
-  corroboration limit at `:40`, but that paragraph is about completeness, and the reader acting on
-  the count is told the opposite at `:122`.
+- **Why it matters, and how far this actually goes.** The plan was written to abolish a check whose
+  `0` means nothing. D1 replaced a never-evaluated `0` with an honest `not_evaluated` — correct at
+  the time — but at HEAD the check reports `evaluated, violations: 0` over a populated population,
+  which reads as a strong clean verdict for a check that is structurally almost unable to fail.
+  **The substantive warning is nevertheless already shipped**, in a prominent blockquote at `:40`:
+  *"BOTH Surface A … and Surface B … are written by the SAME call … Their agreement proves only that
+  the seam ran; it does NOT prove that a dispatch actually rode the canonical envelope or completed
+  … pairing Surface A against Surface B is a **consistency** check on the emitter's own output,
+  never a **completeness** check."* That is the disclosure this gap once claimed was missing, so the
+  gap reduces to a navigation defect: the reader who acts on the count reads `:122`, four sections
+  away from `:40`, and `:122` carries no pointer back. Severity is **low** accordingly — a reader who
+  reads the whole standard is correctly informed today.
 - **Action:** extend the `:122` interpretation rule to state that both surfaces are emitted from one
   call (`_cmd_effort.py::_emit_dispatch_records`), so a `shape_violation: 0` over a populated
   population confirms only that the seam's two writes agree — a partial-logging-failure detector, not
-  a dispatch-discipline detector. Cross-reference `:40`. Consider re-labelling the block
-  `seam_write_consistency` so the name states what it measures.
-- **Done when:** a reader of the standard cannot conclude from a clean `shape_violation` that
-  dispatch discipline was verified, and the rule at `:122` names the shared emitter.
+  a dispatch-discipline detector. Add an explicit cross-reference to the corroboration-limit
+  blockquote at `:40` in the same rule.
+- **Done when:** the interpretation rule at `:122` names `_cmd_effort.py::_emit_dispatch_records` as
+  the single writer of both surfaces and links the `:40` blockquote, so a reader who lands on `:122`
+  alone cannot conclude from a clean `shape_violation` that dispatch discipline was verified.
 - **Effort:** S
 - **Risk if fixed:** documentation only; no behaviour change.
 
@@ -320,9 +358,11 @@ plan-mandated cross-notes unwritten plus one stale label unfixed.
 
 - **Kind:** omission
 - **Severity:** low
-- **Topic:** plan-lane-contract
+- **Topic:** documentation-surface
 - **Where:** `doc/plans/code-intelligence-substrate/170-finalize-dispatch-evidence-is-missing/report-01.md`
-  § "Residue" (`:272-284`), against `plan.md:113-118` § "Out of scope"
+  § "Residue" (`:272-284`), against `plan.md:113-118` § "Out of scope". (Topic is
+  `documentation-surface`, not `plan-lane-contract`: the fix edits `report-01.md`, the same file G9
+  edits, and asks for no change to the lane contract.)
 - **Evidence:** `plan.md` excludes the execute-phase re-entry-marker defect with the instruction
   *"Record it rather than absorbing it"*, and the aspect-naming defect as *"a different surface,
   cross-noted only"*. `report-01.md` mentions neither — the Residue section lists only the

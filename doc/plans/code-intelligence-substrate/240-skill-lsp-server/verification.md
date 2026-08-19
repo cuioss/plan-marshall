@@ -10,8 +10,10 @@ satisfies its literal *Done when*. The shipped surface works when driven for rea
 versioned plugin cache, and an unconfigured project gets `capabilities: {}` with no index built. The
 gaps are (a) one demonstrated start-up-class defect the four verification rounds did not reach — an
 unhandled exception in a request handler kills the resident server *and* writes a TOON error payload
-onto the LSP stdout stream; (b) the `verified` provenance flag over-claiming on 296 of 4 858 real
-reference sites; and (c) a family of stale D3 justifications: the hard gate `230-validate-precision`
+onto the LSP stdout stream; (b) the `verified` provenance flag over-claiming on 296 of 4 858 verified
+reference sites, **and being dropped entirely on the LSP projection**, so the 162 sites the index
+itself marks unconfirmed reach an editor as ordinary `Location`s despite two shipped pages promising
+they are "never presented as exact"; and (c) a family of stale D3 justifications: the hard gate `230-validate-precision`
 **landed on `main` 74 minutes before this plan merged**, and the "≈380 unresolved, ~97 % false
 positives" figures shipped into the user, developer, concepts and skill docs are now 61 of 5 081.
 
@@ -21,8 +23,8 @@ positives" figures shipped into the user, developer, concepts and skill docs are
 |---|---|---|---|---|
 | D0(a) | Re-verify the asserted absence | Done — claim partially refuted, 4 dated searches + 2 fetches | Method and date recorded in `report-01.md` §D0(a); the *conclusion* is reflected in `doc/developer/corpus-language-server-protocol.adoc:56-60`. The external searches themselves cannot be re-run offline | CONFIRMED (method + record); external evidence UNVERIFIABLE |
 | D0(b) | Written proposal, not a decision | Done; operator then decided A+D | `proposal-protocol-surface.md` compares A/B/C/D with per-option consequences and E1–E5 evidence; the analysis is authored undecided and the decision is quarantined in a trailing § "Decision (operator, this run)" | CONFIRMED (artifact); the operator escalation itself is UNVERIFIABLE |
-| D1 | Measure interactive latency | ≈2.0 s one-shot, ≈1.87 s build, <0.1 ms warm primitives | Re-measured: 2.50 s build, 2.61 s one-shot `preflight`, `definition` 0.7 µs, `hover` 1.2 µs, `references` 29.4 ms first / 4.70 ms repeat on the 443-edge component | CONFIRMED |
-| D2 | definition / references / hover from the index, with provenance | Done; index consumed not edited | `_corpus_index.py:159,171,189`; live: definition → `manage-architecture/SKILL.md:0`, hover → description + frontmatter + edge counts, references → 50 sites, 49 verified. Zero files under `tools-marketplace-inventory/` in the landing commit | CONFIRMED (with a provenance precision defect — see Correctness review) |
+| D1 | Measure interactive latency | ≈2.0 s one-shot, ≈1.87 s build, <0.1 ms warm primitives | Re-measured on a quiet machine: 1.80 s build, `definition` 0.51 µs, `hover` 0.94 µs, `references` 20.1 ms first / 4.97 ms 2nd / 2.91 ms 3rd on the 443-edge component (`plan-marshall:manage-logging:manage-logging`, inbound = 443, re-derived as the corpus maximum) | CONFIRMED |
+| D2 | definition / references / hover from the index, with provenance | Done; index consumed not edited | `_corpus_index.py:159,171,189`; driven both through `query` **and** through a live `serve` subprocess: definition → `manage-architecture/SKILL.md:0`, hover → description + frontmatter + edge counts, references → 50 sites, 49 verified. Zero files under `tools-marketplace-inventory/` in the landing commit | CONFIRMED (with two provenance defects — precision, and the flag being dropped on the LSP projection; see Correctness review) |
 | D3 | Live broken-reference diagnostics | ⛔ NOT DONE — hard gate unmet | Correctly not built (`active_capabilities()` advertises no diagnostic provider, 2 tests pin it). **But the stated gate is no longer unmet**: `230-validate-precision` merged as `3d96e40` at 2026-08-16T08:54Z, this plan as `5edca5a` at 10:08Z | PARTIAL — deliverable correctly deferred, justification stale |
 | D4 | Strictly opt-in, documented no-op | Done, verified 3 ways | Reproduced on this real unconfigured repo: `preflight` → `degraded/not_configured/provider_count 0/fallback read_grep`; `serve` handshake with `PYTHONPATH` stripped → `{"capabilities": {}}`, exit 0; `corpus.index is None` | CONFIRMED |
 | D5 | Documentation across three trees | Done; cold read passed | `doc/user/corpus-language-server.adoc`, `doc/concepts/code-intelligence.adoc` § "A presentation surface, not a tier", `doc/developer/corpus-language-server-protocol.adoc`; both READMEs updated | CONFIRMED (content), with stale figures — see Report accuracy |
@@ -69,19 +71,22 @@ positives" figures shipped into the user, developer, concepts and skill docs are
   `references` ≈18–20 ms first call / ≈3 ms repeat at 443 inbound edges.
 - **Found / checks run:** re-derived on this clone against the real corpus —
 
-  | Path | Report | Re-measured here |
+  | Path | Report | Re-measured here (quiet machine, best-of-5 where applicable) |
   |---|---|---|
-  | `CorpusIndex` construction | ≈1.87 s | **2.50 s** |
-  | one-shot CLI (`preflight`, end to end) | ≈2.0 s | **2.61 s** |
-  | `definition`, warm | µs | **0.68 µs** (1 000 iterations) |
-  | `hover`, warm | µs | **1.18 µs** (100 iterations) |
-  | `references`, 443-edge component, first call | ≈18–20 ms | **29.4 ms** |
-  | `references`, same, repeat | ≈3 ms | **4.70 ms** |
+  | `CorpusIndex` construction | ≈1.87 s | **1.80 s** |
+  | `definition`, warm | µs | **0.51 µs** (2 000 iterations) |
+  | `hover`, warm | µs | **0.94 µs** (500 iterations) |
+  | `references`, 443-edge component, first call | ≈18–20 ms | **20.1 ms** |
+  | `references`, same, 2nd / 3rd call | ≈3 ms | **4.97 ms / 2.91 ms** |
 
-- **Verdict:** CONFIRMED. Absolute numbers are ~30 % higher on this machine, which does not change
-  the conclusion the gate drew (build dominates; residency, not caching, is the answer). ⚠ The docs'
-  phrasing *"answers in under 5 ms thereafter"* is marginal here at 4.70 ms — true, but with no
-  headroom. Recorded, not filed as a gap.
+- **Verdict:** CONFIRMED, and the report's own figures reproduce closely. ⚠ **An earlier pass of this
+  audit recorded 2.50 s build / 2.61 s one-shot / 29.4 ms first-call and attributed the ~30 % excess
+  to "this machine". That attribution was wrong**: the excess is contention from the concurrent audit
+  agents working in this shared tree, and a re-take under quiet conditions lands on the report's
+  numbers. The docs' *"~20 ms at 443 inbound edges"* is exact, and the 443-edge component is
+  `plan-marshall:manage-logging:manage-logging` (re-derived as the corpus's most-referenced
+  component). The docs' *"answers in under 5 ms thereafter"* holds with little headroom on the second
+  call (4.97 ms) and comfortably from the third (2.91 ms). Recorded, not filed as a gap.
 
 ### D2 — the surface
 

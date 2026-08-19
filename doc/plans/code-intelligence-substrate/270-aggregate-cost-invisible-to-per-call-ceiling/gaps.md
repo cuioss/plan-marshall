@@ -1,16 +1,19 @@
 # Gaps — 270-aggregate-cost-invisible-to-per-call-ceiling
 
 The observability deliverable (D2) landed and works; what remains is a precision defect in the
-cross-plan roll-up's *published denominator*, a duration-grammar asymmetry that makes the two
-per-plan roll-ups disagree about the same log line, the schema-doc drift that the last round of
-fixes reintroduced, three stale numeric claims in the run report, and the four residue items the run
-itself declared open (of which one has since been closed elsewhere). Thirteen entries, one per
-instance.
+cross-plan roll-up's *published denominator* (G1), an unguarded input path that feeds the per-plan
+roll-up calls that never happened (G14), a duration-grammar asymmetry that makes the two roll-ups
+disagree about the same log line (G4), a silent exclusion class in the folded-global reader (G5),
+the reconcilability claim the docs and code comments make and the code does not keep (G2), the
+missing precision pin that let G1 ship (G3), the schema-doc key-order drift the last round of fixes
+reintroduced (G6, G7), three stale numeric claims in the run report (G8–G10), and the four residue
+items the run itself declared open, of which one has since been closed elsewhere (G11–G13).
+Fourteen entries, one per instance.
 
 ## G1 — Publish `total_script_seconds` at the precision its shares are computed against
 
 - **Kind:** bug
-- **Severity:** medium
+- **Severity:** high
 - **Topic:** measurement/metrics
 - **Where:** `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py:2931`
   (`"total_script_seconds": round(total_seconds, 1)`), against `audit.py:2887`
@@ -20,11 +23,30 @@ instance.
   `sub_precision_call_count: 0` beside the row
   `dominant-cost-caller,1x 0.040s 100.0% pm:a:a run,,informational`. A second corpus
   (`pm:a:a run (0.24s)`, `pm:b:b run (0.20s)`) publishes `total_script_seconds: 0.4` with shares
-  `54.5 %` / `45.5 %`; recomputing those from the printed columns gives `60.0 %` / `50.0 %`.
+  `54.5 %` / `45.5 %`; recomputing those from the printed columns gives `60.0 %` / `50.0 %`, which
+  sum to 110 %. Both cases re-reproduced independently on adversarial review, byte-for-byte,
+  including the emitted line `dominant-cost-caller,1x 0.040s 100.0% pm:a:a run,,informational`.
 - **Why it matters:** the block publishes a corpus total of `0.0 s` while naming a caller that owns
   100 % of it — a measured non-zero rendered as zero, in the instrument built to stop exactly that.
   It is the same arithmetic class as report finding #54 (rated Major by the PR reviewer), fixed for
   the row and left in the denominator the row is a share of.
+- **Why high, not medium** (severity re-rated on adversarial review): this trips two of the high
+  band's triggers at once, not the medium band's. **(1) A measurement misreports** — the emitted
+  block is the measurement as far as any orchestrator reading it is concerned, and it publishes
+  `total_script_seconds: 0.0` for a corpus that carries measured work, with no counter flagging the
+  shortfall (`sub_precision_call_count: 0`, because a `0.04 s` call is *above* the writer's floor and
+  so is not sub-precision — nothing in the block marks the total as unreliable). **(2) A documented
+  contract is unimplemented** — `checks/global-log-analysis.md:94` promises each row's `share_pct` is
+  a share *"of the published `total_script_seconds`"*, and `audit.py:2871-2873` promises *"a reader
+  recomputing it from the printed columns gets the printed value back"*; neither holds below ~1 s.
+  The medium band covers *"a false claim in shipped documentation"* — that is G2, the doc half. The
+  code half is shipped behaviour that is wrong. The precedent settles it: the run's own reviewer
+  rated the identical rounding-before-dividing defect **Major** one column over (finding #54), the
+  run accepted that rating and fixed the row, and the report calls it *"the most consequential of the
+  run … it made the roll-up misreport the very class of script the plan was written about"*. Rating
+  the residue of that same defect medium is inconsistent with the precedent this entry itself cites.
+  The misreporting regime — sub-second per-call durations — is precisely the many-fast-calls regime
+  the plan exists to surface.
 - **Action:** change `round(total_seconds, 1)` to `round(total_seconds, 3)` at `audit.py:2931` so the
   published denominator matches `rollup_total`.
 - **Done when:** `cross_global_log_analysis` over a single `(0.04s)` call publishes
@@ -101,6 +123,22 @@ instance.
   global: pm:z:z run (1.5s) retried (2.00s) -> 2.00
   ```
 
+  ⚠ **Reachability, added on adversarial review.** All three line bodies above are *synthetic*. The
+  only writer of these logs is `plan_logging.py:344`
+  (`message = f'{notation} {subcommand} ({duration:.2f}s)'`), and `format_log_entry`
+  (`plan_logging.py:112-142`) puts every extra field on its own indented continuation line, so a
+  real entry's **header** line always ends in a well-formed `(N.NNs)`. No current writer emits
+  `(5.s)`, and none emits a second parenthesised duration on a header line. This entry is therefore
+  a **latent asymmetry and a documentation mismatch**, not a defect that today's corpus trips — which
+  is why it stays at medium while the sibling G14, whose writer path is real, is high. Fix them
+  together: they are the same file, the same function and the same principle (make the per-plan
+  reader as strict as the global one).
+
+  ⚠ The `except ValueError` at `analyze-logs.py:394` is **unreachable**: `\d+\.?\d*` can only capture
+  `5`, `5.` or `5.5`, all of which `float()` accepts, and `(1.2.3s)` does not match the pattern at all
+  (verified first-party — `extract_script_durations(['pm:q:q run (1.2.3s)'])` returns `[]`). Keeping
+  it is harmless, but it must not be described as a live guard.
+
 - **Why it matters:** `_DURATION_RE` feeds `script_cost_rollup`, the deliverable this plan shipped. A
   malformed `(5.s)` enters that roll-up as a measured **5 s**; a line with two parenthesised
   durations enters as the **first** while the global roll-up takes the **last**, so the two
@@ -110,8 +148,8 @@ instance.
   zero") and applied it to one of the two readers, which is the exact
   guard-on-one-half-of-a-pair shape the run's own Proposal 3 names.
 - **Action:** anchor and tighten `_DURATION_RE` to `r'\((\d+(?:\.\d+)?)s\)\s*$'`, or replace both
-  uses with the single strict pattern; keep the `except ValueError` in `extract_script_durations` as
-  defence in depth.
+  uses with the single strict pattern; the `except ValueError` in `extract_script_durations` may
+  stay, but comment it as unreachable rather than as an active guard.
 - **Done when:** `extract_script_durations` returns `[]` for `pm:x:x run (5.s)` and for
   `pm:y:y run (1.5s) failed`, and returns `2000.0` (not `1500.0`) for
   `pm:z:z run (1.5s) retried (2.00s)`; a test asserts each of the three.
@@ -321,3 +359,55 @@ instance.
 - **Risk if fixed:** every historical log line stays at the old precision, so any cross-era total
   mixes two floors; the change is a `manage-logging` boundary and would want its own `CHECK_ERA`
   treatment.
+
+## G14 — Gate the per-plan duration reader on the log-line shape
+
+- **Kind:** bug
+- **Severity:** high
+- **Topic:** measurement/metrics
+- **Where:** `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/analyze-logs.py:378-397`
+  (`extract_script_durations`), against `analyze-logs.py:1455-1462` (`analyze_folded_global_logs`)
+- **Evidence:** `extract_script_durations` applies `_DURATION_RE` and `_NOTATION_RE` to **every line
+  handed to it**, with no check that the line is a log *entry header*. Its sibling
+  `analyze_folded_global_logs` gates on `_GLOBAL_LOG_LINE_RE.match(raw)` first and `continue`s
+  otherwise. The writer produces the lines this exploits: on a non-zero exit,
+  `log_script_execution` (`manage-logging/scripts/plan_logging.py:346-360`) passes `exit_code`,
+  `args`, `stdout` and `stderr` to `format_log_entry`, which emits each as an indented
+  **continuation line** (`plan_logging.py:138-142`) inside the same entry. Fed one real writer-produced
+  entry:
+
+  ```
+  [2026-08-19T07:41:58Z] [ERROR] [0ee8a3] pm:b:build run (1.20s)
+    exit_code: 1
+    args: pm:b:build run --command-args verify
+    stdout: tests finished pm:t:t run (9.99s) ok
+
+  per-plan extract_script_durations -> [('pm:b:build', 1200.0), ('pm:t:t', 9990.0)]
+  global reader                     -> 1.20   (three continuation lines SKIPPED, no header)
+  ```
+
+  The per-plan reader invented a `pm:t:t` call of 9.99 s that never ran, from text a failing script
+  printed to stdout. The global reader, correctly, saw only the header's 1.20 s.
+- **Why it matters:** `extract_script_durations` is the sole input to `summarize_script_cost`
+  (`analyze-logs.py:1521`), i.e. to `script_cost_rollup` — **the deliverable this plan shipped** — and
+  also to `total_duration_ms`, every `share_pct`, `script_duration_p50/p95/max_ms` and
+  `slowest_scripts`. A captured-output line can therefore add a call that never happened, attribute
+  wall-clock to a script that did not spend it, and outrank a genuinely dominant script. The function
+  predates this plan, but before this plan it only fed percentiles; the plan promoted it to the input
+  of a published cumulative cost roll-up, which is what makes the missing guard consequential now.
+  Unlike G4, the writer path is real: every non-zero-exit script call writes `args`/`stdout`/`stderr`
+  continuation lines, and the `args` line always carries a notation. Whether a specific corpus is
+  inflated depends on whether a captured body also carries a parenthesised `(N.Ns)`; the guard's
+  absence does not.
+- **Action:** in `extract_script_durations`, match each line against the entry-header grammar before
+  parsing it — reuse `_GLOBAL_LOG_LINE_RE` and search only within its `rest` group, mirroring
+  `analyze_folded_global_logs:1455-1462` — so continuation lines are skipped.
+- **Done when:** `extract_script_durations` over the four-line entry above returns exactly
+  `[('pm:b:build', 1200.0)]`, and a test in
+  `test/plan-marshall/plan-retrospective/test_analyze_logs.py` asserts that a `stdout:` continuation
+  line carrying a notation and a `(N.Ns)` body contributes nothing to `script_cost_rollup`.
+- **Effort:** S
+- **Risk if fixed:** `script_duration_p50/p95/max_ms` and `slowest_scripts` are pre-existing figures
+  computed from the same list, so gating the input can move them for any plan whose script log
+  contains ERROR entries — a correction, but one that changes previously published per-plan numbers.
+  Land it with G4, which touches the same function, and re-read the archived-plan fixtures.

@@ -1,7 +1,8 @@
 # Verification — 060-dispatch-boundary-ledger-is-not-a-commensurable-population
 
 **Audited:** `plan.md`, `report-01.md`
-**Tree state:** `61a43e5` on `claude/code-intelligence-substrate-analysis-kah884`; every finding
+**Tree state:** `a90adeb` on `claude/code-intelligence-substrate-analysis-kah884` (the audit was first
+written at `61a43e5`; the intervening commits touch only `doc/plans/` documents). Every finding was
 re-derived in an independent adversarial pass against the same `manage-metrics.py` bytes
 (md5 `b9c88ef9c59542e53a483498aaac4b03`, matching `git show HEAD:`) — see § Adversarial review.
 **Landed as:** `3f64b71 fix(manage-metrics): dispatch-boundary ledger is a declared, commensurable population (#1173)`
@@ -20,7 +21,7 @@ unsound, and never in the same-population case the deliverable was written for.
 | D1 | GATE: declare the population; class count and registering count as two source-derived figures | 9 classes exist, 3 register; fork REFUTED | Independently re-derived from `call-graph.md` + every `record-dispatch-boundary` invocation block: 3 register (4-plan, 5-execute, 6-finalize). The "9" folds the change-type-heuristic LLM fallback into `phase-3-outline`, and `report-01.md:43` declares that fold in the class table; the fold is not carried onto the shipped surfaces | CONFIRMED |
 | D2 | An impossible ratio is a loud failure naming both populations; never `complete`; no clamping | `_boundary_coverage_state` + `over` → `FAILURE`, refused the maximum | Implemented at `manage-metrics.py:525-562`, `:600`, `:2204-2215`. But the whole bullet is gated on a truthy `dispatch_boundary_total` (`:2183`), so an over-covering row whose boundary sum is `0` renders **no verdict at all** | PARTIAL |
 | D3 | Every class registers, or the non-registering classes appear in an explicit exclusion list the coverage figure references | `DISPATCH_BOUNDARY_EXCLUDED_CLASSES`, 6 classes, rendered as a declaration | Constant at `:515-522`, rendered at `:2112-2122`, persisted at `:1941`. The list is a hand-maintained literal with no guard tying it to the call sites, is missing the change-type fallback, and the coverage figure does not reference it (the reference runs the other way) | PARTIAL |
-| D4 | Equal figures annotated as agreement; a test pins smaller/equal/larger | `_reconciliation_relation_clause` renders the true relation | Implemented at `:661-683`. But the `equal` branch is unreachable for a same-population row (the tie resolves to `total_tokens`, which suppresses the annotation entirely), and the only rows that reach the clause at all are `inline`-population rows, where all three relations compare across populations | PARTIAL |
+| D4 | Equal figures annotated as agreement; a test pins smaller/equal/larger | `_reconciliation_relation_clause` renders the true relation | Implemented at `:661-683`. But the `equal` branch is unreachable for a same-population row (the tie resolves to `total_tokens`, which suppresses the annotation entirely), and the `equal` and `smaller` relations are reachable **only** on `inline`-population rows, where both compare across populations. (`larger` is also reachable same-population and is sound there) | PARTIAL |
 | D5 | Three tests, each verified to FAIL pre-fix; characterization arm labelled | 8 tests; 7 failed / 1 passed pre-fix | 8 tests present and passing (`test_dispatch_boundary_ledger_population.py`, 299 lines). Fail-first reproduced independently against `3f64b71^`. The characterization arm is labelled. The D3 negative control the plan specified was not performed | CONFIRMED WITH GAPS |
 
 ## Per-deliverable detail
@@ -41,7 +42,7 @@ unsound, and never in the same-population case the deliverable was written for.
   - Independent enumeration from `call-graph.md`: five phase envelopes (`:67-72`) plus four shared
     workflows — `verification-feedback`, `q-gate-validation`, `research`, `enrich-module` (`:341-384`).
     `phase-1-init` runs inline and is correctly excluded (`:395`).
-  - Independent registration sweep: the marketplace holds **four** executable
+  - Independent registration sweep: the **phase workflow docs** hold **four** executable
     `record-dispatch-boundary` invocation blocks, resolving to **three** registering phases —
     `plan-marshall/workflow/planning-outline.md:463` (`--phase 4-plan`),
     `plan-marshall/workflow/execution.md:212` (`--phase 5-execute`, the ordinary post-dispatch
@@ -52,8 +53,11 @@ unsound, and never in the same-population case the deliverable was written for.
     The registering-phase count of 3 is unaffected — both execution.md blocks write the same
     phase — but the fourth block is load-bearing for G1, because it prescribes an all-zero
     boundary row.
-    Positive control: the same grep pattern returns those four hits, so a zero result elsewhere is
-    a real absence, not a filtered search.
+    Two further executable blocks exist in `manage-metrics/SKILL.md` (`:421`, `:768`); they are the
+    command's own canonical-invocation documentation, not dispatch sites, and are excluded from the
+    count for that reason. Every remaining match in the marketplace is prose.
+    Positive control: the same pattern returns those hits, so a zero result elsewhere is a real
+    absence, not a filtered search.
   - The asserted **absences** were each confirmed by reading: no `record-dispatch-boundary` appears
     in the q-gate-validation, verification-feedback, research, or enrich-module workflow surfaces.
 - **Verdict:** CONFIRMED — the derivation method is correct, both figures are reported separately
@@ -101,6 +105,13 @@ unsound, and never in the same-population case the deliverable was written for.
     `--total-tokens 0 --tool-uses 0 --duration-ms 0` whenever the pre-dispatch queue peek finds the
     queue already drained ("the peek itself is the clean signal — there is no agent return to parse,
     so token / tool-use / duration counters are recorded as `0`").
+  - **Second defect probe, the realistic shape.** A `5-execute` row carrying exactly the synthesized
+    clean-exit row and nothing else — `dispatch_boundary_rows_recorded: 1`, `subagent_samples: 0`
+    (the value `enrich` writes when its walk sampled nothing, `:3513`) — classifies `over` and
+    renders **no bullet, no `FAILURE`, and no `(boundary sum, over-covering)` marker**: the
+    `_unclosed_boundary_floor` fold at `:618-658` is gated on the same falsy sum, so both surfaces
+    that could have carried the signal fall silent together. This shape needs no unusual input at
+    all — one drained queue plus one window `enrich` sampled nothing in produces it.
 - **Verdict:** PARTIAL — the classifier and the ineligibility rule are correct and the failure text
   names both populations. The verdict cannot fire on rows whose boundary sum is zero, which is
   precisely the row the code's own comment at `:1440-1443` says the row count exists to make
@@ -132,7 +143,8 @@ unsound, and never in the same-population case the deliverable was written for.
     `manage-metrics/SKILL.md:446` — "When adding a new full-set enumeration, either derive it from
     the tuple or add a structural-equality test, and prefer deriving" — and is implemented for
     `DISPATCH_TERMINATION_CAUSES` by the contract test at
-    `test/plan-marshall/manage-metrics/test_manage_metrics.py:3871-3876`, which discovers every
+    `test/plan-marshall/manage-metrics/test_manage_metrics.py:3870-3890`
+    (`test_every_documented_termination_cause_site_matches_the_enum`), which discovers every
     enumeration site in the shipped doc and compares it to the tuple. (`data-format.md:944`,
     "Restating surfaces (lock-step obligation)", states the same obligation for the boundary-row
     *column schema*, a different enumeration — it is the convention's sibling, not its statement
@@ -170,16 +182,29 @@ unsound, and never in the same-population case the deliverable was written for.
     `total_tokens` (`:1793`, `:1800-1801`) — a **main-context** figure — so "measures agree" is
     asserted between two populations the same module declares non-comparable at `:483-486` and
     `data-format.md:306-310`.
-  - **The cross-population problem is not confined to the `equal` branch.** An `inline` row is the
-    only row that reaches the clause at all, so `>` and `<` are computed against the same
-    main-context `beaten`. Probe against a pristine `HEAD` copy, `total_tokens: 5000` stamped
-    `inline` with `subagent_total_tokens: 3000`, rendered
-    `> Tokens reconciled across the competing measures of the dispatched population … 4-plan →
-    subagent_total_tokens 3,000 (< total_tokens 5,000)` — while the population annotation lower in
-    the same report says the phase dispatched nothing and the cell is the main-context-window
-    measurement. The annotation's own preamble calls `total_tokens` a competing measure of the
-    dispatched population on a row the render simultaneously declares inline. The `<` branch is the
-    shipped test's own scenario (`:262-278`), so this is the *common* path, not a corner.
+  - **The cross-population problem is not confined to the `equal` branch — but it is confined to
+    two of the three.** Reachability, re-derived branch by branch: a `<` relation requires the
+    winner to be smaller than `total_tokens`, which an eligible `total_tokens` would have beaten, so
+    `<` — like `=` — is reachable only when `total_tokens` was ruled ineligible at `:593`, i.e. only
+    on an `inline` row. `>` is different: it renders whenever a dispatched measure exceeds an
+    **eligible** `total_tokens`, which is a same-population comparison and is sound. Probes against
+    a pristine `HEAD` copy:
+    - `total_tokens: 5000` stamped `inline` with `subagent_total_tokens: 3000` →
+      `> Tokens reconciled across the competing measures of the dispatched population … 4-plan →
+      subagent_total_tokens 3,000 (< total_tokens 5,000)`, while the population annotation lower in
+      the same report says the phase dispatched nothing and the cell is the main-context-window
+      measurement. The annotation's own preamble calls `total_tokens` a competing measure of the
+      dispatched population on a row the render simultaneously declares inline.
+    - **Counter-probe** (the correction an earlier pass missed): `total_tokens: 439628` with **no**
+      population stamp and `subagent_total_tokens: 577452` → `4-plan → subagent_total_tokens 577,452
+      (> total_tokens 439,628)`. `_token_population` defaults an absent stamp to `dispatched`
+      (`:433-453`), so this row reaches the clause with both figures in one population. A second
+      counter-probe with an exact-coverage `dispatch_boundary_total: 150000` against
+      `total_tokens: 100000` renders the same way. So the claim that only `inline` rows reach the
+      clause is **false**; the defect is scoped to `=` and `<`.
+    The `<` branch is the shipped test's own scenario (`:262-278`) and the `=` branch is the other
+    (`:237-260`), so both regression arms sit on the unsound row shape; only the characterization
+    arm (`:280-299`) exercises a same-population row.
   - Reachable on real data, not only in fixtures: `enrich` writes `subagent_total_tokens` /
     `subagent_samples` first (`:3509-3513`), then stamps `total_tokens_population = inline` on any
     row whose `total_tokens` is falsy at that moment (`:3579-3584`). A dispatching phase that never
@@ -187,8 +212,9 @@ unsound, and never in the same-population case the deliverable was written for.
   - The gate itself is documented, so this is a design gap rather than a code/doc mismatch:
     `data-format.md:325-332` states the annotation renders "When the winner is NOT `total_tokens`".
 - **Verdict:** PARTIAL — the wording defect the plan named is fixed and the three-way test exists.
-  The agreement signal is unreachable in the same-population case, and every relation the clause
-  does emit is a cross-population comparison. See G2, G3.
+  The agreement signal is unreachable in the same-population case, and the two relations that carry
+  the deliverable's regression arms (`=` and `<`) are emitted only as cross-population comparisons.
+  The `>` relation is sound. See G2, G3.
 
 ### D5 — tests, each verified to FAIL pre-fix
 
@@ -204,8 +230,8 @@ unsound, and never in the same-population case the deliverable was written for.
   - `uv run python -m pytest test/plan-marshall/manage-metrics/ -o addopts=""` → 456 passed.
   - **Fail-first independently reproduced.** Extracted `3f64b71^`'s `manage-metrics.py` to
     `$TMPDIR` and rendered the same three scenarios against it:
-    - D5(a): `- **Dispatch-boundary total**: 900,000 (dispatched-subagent population; **8 of 3
-      dispatch(es) recorded — complete**; won the reconciliation maximum)` — the plan's OBSERVED-but-
+    - D5(a), verbatim: `- **Dispatch-boundary total**: 900,000 (dispatched-subagent population; 8 of
+      3 dispatch(es) recorded — complete; won the reconciliation maximum)` — the plan's OBSERVED-but-
       unreachable artifact reproduced exactly, and worse than claimed: the impossible measure also
       *won* the maximum.
     - D5(b): no `excluded by declaration` string anywhere in the pre-fix render.
@@ -240,14 +266,17 @@ Two defects and one dead symbol found; both defects reproduced by execution agai
    render".
 
 2. **`manage-metrics.py:615` + `:1798` + `:1793` — the agreement identity is unreachable where it
-   matters, and every relation the clause does emit is cross-population.** `max()` over
+   matters, and the `=` and `<` relations are emitted only cross-population.** `max()` over
    `_DISPATCHED_MEASURE_FIELDS` resolves a tie to `total_tokens`, and a `total_tokens` winner is
    never added to `reconciled_phases`, so a same-population three-way exact agreement produces no
-   annotation. The clause is therefore reached only when `total_tokens` was ruled ineligible as
-   cross-population (`:593`) — and `beaten` is that same cross-population figure, so `>`, `=` and
-   `<` alike compare a dispatched measure against a main-context one, under a preamble that calls
-   both "competing measures of the dispatched population". The `equal` case is the loudest
-   instance ("measures agree"), not the only one.
+   annotation. `=` and `<` are consequently reachable only when `total_tokens` was ruled ineligible
+   as cross-population (`:593`) — and `beaten` is that same cross-population figure (`:1793`,
+   `:1800-1801`), so both compare a dispatched measure against a main-context one, under a preamble
+   that calls both "competing measures of the dispatched population". The `equal` case is the
+   loudest instance ("measures agree"); the `<` case is the more common one. The `>` relation is
+   **not** affected: it renders whenever a dispatched measure beats an *eligible* `total_tokens`,
+   which is a same-population comparison (probe: an unstamped row `total_tokens: 439628` /
+   `subagent_total_tokens: 577452` renders `(> total_tokens 439,628)`).
 
 3. **`manage-metrics.py:565-576` — `_boundary_measure_is_partial` has no production caller.** A
    repository-wide search returns the definition and four test assertions
@@ -283,6 +312,10 @@ Weaknesses, none vacuous but each under-powered:
   `'q-gate-validation' in report`, which is true for *any* report carrying a boundary surface
   because the declaration is unconditional. The assertion cannot distinguish a phase-specific
   shortfall from the global banner.
+- Both D4 **regression** arms (`test_equal_boundary_and_total_annotated_as_agreement` `:237-260`,
+  `test_smaller_dispatched_winner_annotated_as_below_total` `:262-278`) stamp
+  `total_tokens_population = inline`, so the suite pins the cross-population comparison rather than
+  catching it (G3). Only the characterization arm (`:280-299`) runs on a same-population row.
 - No test covers the zero-sum over-coverage row (G1).
 - No test covers a same-population exact agreement (G2).
 
@@ -351,15 +384,18 @@ classifier correctly.
 
 - **Read:** the epic README, `plan.md`, `report-01.md`; `manage-metrics.py` (the whole
   reconciliation, persistence, render, and writer blocks); `standards/data-format.md`;
-  `ref-workflow-architecture/standards/call-graph.md`; the three `record-dispatch-boundary` call
-  sites; the D5 test file in full; the neighbouring metrics test files for guard coverage.
+  `ref-workflow-architecture/standards/call-graph.md`; the four `record-dispatch-boundary` call
+  blocks in the workflow docs; the D5 test file in full; the neighbouring metrics test files for
+  guard coverage.
 - **Ran:** the full `test/plan-marshall/manage-metrics/` suite (456 passed); five audit probes and
   three mutation probes, each loading a **copy** of the production module from
   `$TMPDIR/verify-060-mutsweep/` so the repository file was never written; a pre-fix reconstruction
   from `git show 3f64b71^:…` to reproduce the fail-first evidence.
 - **Counts re-derived at audit time, and again in the adversarial pass:** 8 tests in the D5 file
-  (299 lines); 456 tests in the metrics suite; **4** executable `record-dispatch-boundary`
-  invocation blocks resolving to **3** registering phases; 6 names in
+  (299 lines); 456 tests in the metrics suite (re-run in the adversarial pass: `456 passed`);
+  **4** executable `record-dispatch-boundary` invocation blocks **in the phase workflow docs**
+  (plus 2 in `manage-metrics/SKILL.md` that document the command itself) resolving to
+  **3** registering phases; 6 names in
   `DISPATCH_BOUNDARY_EXCLUDED_CLASSES`; 5 phase envelopes + 4 shared workflows in the call graph.
 - **False-negative control:** before treating any "not found" as an absence, the same pattern was
   confirmed to hit where the target is known to exist (`record-dispatch-boundary` returns the four
@@ -367,8 +403,12 @@ classifier correctly.
   persist site and the tests).
 - **Concurrency hazard, disclosed.** Sibling audit agents were mutating the same working tree during
   this audit; at one point `manage-metrics.py` carried a foreign `# MUTATED-050` edit at line 1426.
-  Every finding reported here was re-confirmed against a pristine `git show HEAD:` copy after that
-  was observed, and the file's `md5sum` was checked to match `HEAD` at the end of the audit.
+  The adversarial pass hit the same hazard independently — `git status --porcelain` showed
+  `manage-metrics.py` modified by another agent mid-pass (md5 `6b1ffcd4…` against `HEAD`'s
+  `b9c88ef9…`). Consequence for method: the adversarial pass **never wrote to the repository file**.
+  Its mutation sweep ran entirely against `git show HEAD:` copies, and every probe was re-taken
+  against a pristine copy after the foreign edit was observed. The repository file was verified
+  `b9c88ef9…` and `git status`-clean at the end.
 - **Could not check:** the full `./pw verify` totals (out of scope per the brief); the branch-local
   commit SHAs and per-commit quality-gate logs (squashed away, shallow clone); PR review and CI
   states (not readable from the clone); the machine-local `.plan/` run record that originally

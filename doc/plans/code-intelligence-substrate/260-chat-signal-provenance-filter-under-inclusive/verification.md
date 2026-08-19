@@ -5,12 +5,14 @@
 **Overall verdict:** CONFIRMED WITH GAPS
 
 The plan's four deliverables are implemented, in the shape the plan specified, and the shipped tests
-are non-vacuous on every load-bearing line probed (10 of 10 mutants killed). One reachable
-fail-toward-operator hole survives in the positive predicate — a wholly synthetic `<system-reminder>`
-turn whose body quotes the literal `<system-reminder>` token is classified operator-authored and
-carries `no_signal: false` on its own — and the aspect contract publishes a guarantee that this
-counterexample falsifies. One run-report record (the build gate) is stale against the PR's own
-history.
+are non-vacuous on every load-bearing line probed (10 of 10 mutants killed). One fail-toward-operator
+hole survives in the positive predicate — an envelope whose body quotes its **own outermost tag name**
+without balancing it escapes stripping, is classified operator-authored, and carries `no_signal: false`
+on its own — and the aspect contract publishes a guarantee that this counterexample falsifies. The hole
+has **two** variants (a quoted unmatched open, and a quoted close that terminates the envelope early);
+only the second fires on the one envelope class observed reaching the reducer as inline text. Neither
+is present in the reachable transcript corpus, so the hole is latent rather than active. One
+run-report record (the build gate) is stale against the PR's own history.
 
 ## Deliverable verdicts
 
