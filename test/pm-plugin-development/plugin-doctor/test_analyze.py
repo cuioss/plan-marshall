@@ -15,7 +15,7 @@ from pathlib import Path
 # Import shared infrastructure
 from _plugin_doctor_dispatching_executor import write_dispatching_executor
 
-from conftest import PROJECT_ROOT, create_temp_file, get_script_path, load_script_module, run_script
+from conftest import PROJECT_ROOT, create_temp_file, get_script_path, load_script_module, parse_ns, run_script
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', '_analyze.py')
@@ -36,6 +36,29 @@ _analyze_argument_naming_mod = _load_module('_analyze_argument_naming', '_analyz
 cmd_crossfile_analyze = _analyze_crossfile_mod.cmd_cross_file
 cmd_markdown = _analyze_markdown_mod.cmd_markdown
 cmd_structure = _analyze_structure_mod.cmd_structure
+
+# Argument namespaces come from the script's OWN parser, so each carries every
+# default the real CLI applies — a hand-built Namespace carries only the keys its
+# author remembered, and a test against one passes for a namespace the CLI would
+# never produce. Parsed once at module scope: parse_ns re-executes the script
+# module on every call.
+_MARKDOWN_NS = parse_ns(
+    'pm-plugin-development', 'plugin-doctor', '_analyze.py',
+    'markdown', '--file', 'placeholder.md', register=False,
+)
+_STRUCTURE_NS = parse_ns(
+    'pm-plugin-development', 'plugin-doctor', '_analyze.py',
+    'structure', '--directory', '.', register=False,
+)
+_CROSSFILE_NS = parse_ns(
+    'pm-plugin-development', 'plugin-doctor', '_analyze.py',
+    'cross-file', '--skill-path', '.', register=False,
+)
+
+
+def _ns(template: Namespace, **overrides) -> Namespace:
+    """A parser-produced namespace with this test's values overlaid."""
+    return Namespace(**{**vars(template), **overrides})
 analyze_subdocuments = _doctor_analysis_mod.analyze_subdocuments
 extract_issues_from_subdoc_analysis = _doctor_analysis_mod.extract_issues_from_subdoc_analysis
 analyze_argument_naming = _analyze_argument_naming_mod.analyze_argument_naming
@@ -76,7 +99,7 @@ def test_structure_table_refs_no_unreferenced():
     test_dir = SKILL_STRUCTURE_FIXTURES / 'table-references'
     assert test_dir.exists(), f'tracked fixture missing: {test_dir}'
 
-    args = Namespace(directory=str(test_dir))
+    args = _ns(_STRUCTURE_NS, directory=str(test_dir))
     data = cmd_structure(args)
     unreferenced = data.get('standards_files', {}).get('unreferenced_files', [])
     assert len(unreferenced) == 0, f'Should have no unreferenced files, found {len(unreferenced)}'
@@ -87,7 +110,7 @@ def test_structure_table_refs_no_missing():
     test_dir = SKILL_STRUCTURE_FIXTURES / 'table-references'
     assert test_dir.exists(), f'tracked fixture missing: {test_dir}'
 
-    args = Namespace(directory=str(test_dir))
+    args = _ns(_STRUCTURE_NS, directory=str(test_dir))
     data = cmd_structure(args)
     missing = data.get('standards_files', {}).get('missing_files', [])
     assert len(missing) == 0, f'Should have no missing files, found {len(missing)}'
@@ -98,7 +121,7 @@ def test_structure_table_refs_perfect_score():
     test_dir = SKILL_STRUCTURE_FIXTURES / 'table-references'
     assert test_dir.exists(), f'tracked fixture missing: {test_dir}'
 
-    args = Namespace(directory=str(test_dir))
+    args = _ns(_STRUCTURE_NS, directory=str(test_dir))
     data = cmd_structure(args)
     score = data.get('structure_score', 0)
     assert score >= 100, f'Score should be 100, got {score}'
@@ -109,7 +132,7 @@ def test_structure_code_block_no_false_positive():
     test_dir = SKILL_STRUCTURE_FIXTURES / 'code-block-examples'
     assert test_dir.exists(), f'tracked fixture missing: {test_dir}'
 
-    args = Namespace(directory=str(test_dir))
+    args = _ns(_STRUCTURE_NS, directory=str(test_dir))
     data = cmd_structure(args)
     missing = data.get('standards_files', {}).get('missing_files', [])
     assert len(missing) == 0, f'Should not flag code block examples as missing, found {len(missing)}'
@@ -120,7 +143,7 @@ def test_structure_cross_skill_no_false_positive():
     test_dir = SKILL_STRUCTURE_FIXTURES / 'cross-skill-references'
     assert test_dir.exists(), f'tracked fixture missing: {test_dir}'
 
-    args = Namespace(directory=str(test_dir))
+    args = _ns(_STRUCTURE_NS, directory=str(test_dir))
     data = cmd_structure(args)
     missing = data.get('standards_files', {}).get('missing_files', [])
     assert len(missing) == 0, f'Cross-skill refs should not be flagged as missing, found {len(missing)}'
@@ -131,7 +154,7 @@ def test_structure_real_plugin_doctor():
     skill_dir = PROJECT_ROOT / 'marketplace' / 'bundles' / 'pm-plugin-development' / 'skills' / 'plugin-doctor'
     assert skill_dir.exists(), f'tracked fixture missing: {skill_dir}'
 
-    args = Namespace(directory=str(skill_dir))
+    args = _ns(_STRUCTURE_NS, directory=str(skill_dir))
     data = cmd_structure(args)
     score = data.get('structure_score', 0)
     assert score >= 90, f'plugin-doctor should score >= 90, got {score}'
@@ -161,7 +184,7 @@ def test_structure_cross_skill_xref_not_flagged_missing(tmp_path):
         encoding='utf-8',
     )
 
-    args = Namespace(directory=str(skill_dir))
+    args = _ns(_STRUCTURE_NS, directory=str(skill_dir))
     data = cmd_structure(args)
 
     missing = data.get('standards_files', {}).get('missing_files', [])
@@ -186,7 +209,7 @@ def test_structure_noun_suffix_flags_executor(tmp_path):
     target.mkdir()
     (target / 'SKILL.md').write_text((fixture_src / 'SKILL.md').read_text(encoding='utf-8'), encoding='utf-8')
 
-    args = Namespace(directory=str(target))
+    args = _ns(_STRUCTURE_NS, directory=str(target))
     data = cmd_structure(args)
 
     noun_suffix = data.get('noun_suffix', {})
@@ -206,7 +229,7 @@ def test_structure_noun_suffix_flags_plurals(tmp_path):
     target.mkdir()
     (target / 'SKILL.md').write_text((fixture_src / 'SKILL.md').read_text(encoding='utf-8'), encoding='utf-8')
 
-    args = Namespace(directory=str(target))
+    args = _ns(_STRUCTURE_NS, directory=str(target))
     data = cmd_structure(args)
 
     noun_suffix = data.get('noun_suffix', {})
@@ -219,7 +242,7 @@ def test_structure_noun_suffix_passes_verb_first_name():
     skill_dir = PROJECT_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'execute-task'
     assert skill_dir.exists(), f'tracked fixture missing: {skill_dir}'
 
-    args = Namespace(directory=str(skill_dir))
+    args = _ns(_STRUCTURE_NS, directory=str(skill_dir))
     data = cmd_structure(args)
 
     noun_suffix = data.get('noun_suffix', {})
@@ -234,7 +257,7 @@ def test_structure_noun_suffix_passes_verb_first_name():
 
 def test_crossfile_invalid_path():
     """Test returns error for invalid path."""
-    args = Namespace(skill_path='/nonexistent/path', similarity_threshold=0.6)
+    args = _ns(_CROSSFILE_NS, skill_path='/nonexistent/path', similarity_threshold=0.6)
     data = cmd_crossfile_analyze(args)
     assert data.get('status') == 'error', 'Should return error for invalid path'
     output = str(data).lower()
@@ -246,7 +269,7 @@ def test_crossfile_duplicates_valid_json():
     skill_path = CROSS_FILE_FIXTURES / 'skill-with-duplicates'
     assert skill_path.exists(), f'tracked fixture missing: {skill_path}'
 
-    args = Namespace(skill_path=str(skill_path), similarity_threshold=0.6)
+    args = _ns(_CROSSFILE_NS, skill_path=str(skill_path), similarity_threshold=0.6)
     data = cmd_crossfile_analyze(args)
     assert data is not None, 'Should return valid dict'
 
@@ -256,7 +279,7 @@ def test_crossfile_detect_exact_duplicates():
     skill_path = CROSS_FILE_FIXTURES / 'skill-with-duplicates'
     assert skill_path.exists(), f'tracked fixture missing: {skill_path}'
 
-    args = Namespace(skill_path=str(skill_path), similarity_threshold=0.6)
+    args = _ns(_CROSSFILE_NS, skill_path=str(skill_path), similarity_threshold=0.6)
     data = cmd_crossfile_analyze(args)
     exact_duplicates = data.get('exact_duplicates', [])
     assert len(exact_duplicates) >= 1, f'Should detect exact duplicates, found {len(exact_duplicates)}'
@@ -267,7 +290,7 @@ def test_crossfile_extraction_candidates():
     skill_path = CROSS_FILE_FIXTURES / 'skill-with-duplicates'
     assert skill_path.exists(), f'tracked fixture missing: {skill_path}'
 
-    args = Namespace(skill_path=str(skill_path), similarity_threshold=0.6)
+    args = _ns(_CROSSFILE_NS, skill_path=str(skill_path), similarity_threshold=0.6)
     data = cmd_crossfile_analyze(args)
     assert 'extraction_candidates' in data, 'Should have extraction_candidates field'
 
@@ -277,7 +300,7 @@ def test_crossfile_llm_review_flag():
     skill_path = CROSS_FILE_FIXTURES / 'skill-with-duplicates'
     assert skill_path.exists(), f'tracked fixture missing: {skill_path}'
 
-    args = Namespace(skill_path=str(skill_path), similarity_threshold=0.6)
+    args = _ns(_CROSSFILE_NS, skill_path=str(skill_path), similarity_threshold=0.6)
     data = cmd_crossfile_analyze(args)
     summary = data.get('summary', {})
     assert 'llm_review_required' in summary, 'Should contain llm_review_required flag in summary'
@@ -288,7 +311,7 @@ def test_crossfile_clean_skill():
     skill_path = CROSS_FILE_FIXTURES / 'skill-clean'
     assert skill_path.exists(), f'tracked fixture missing: {skill_path}'
 
-    args = Namespace(skill_path=str(skill_path), similarity_threshold=0.6)
+    args = _ns(_CROSSFILE_NS, skill_path=str(skill_path), similarity_threshold=0.6)
     data = cmd_crossfile_analyze(args)
     assert data is not None, 'Should return valid dict for clean skill'
 
@@ -298,7 +321,7 @@ def test_crossfile_custom_threshold():
     skill_path = CROSS_FILE_FIXTURES / 'skill-clean'
     assert skill_path.exists(), f'tracked fixture missing: {skill_path}'
 
-    args = Namespace(skill_path=str(skill_path), similarity_threshold=0.3)
+    args = _ns(_CROSSFILE_NS, skill_path=str(skill_path), similarity_threshold=0.3)
     data = cmd_crossfile_analyze(args)
     assert data is not None, 'Should accept custom similarity threshold'
 
@@ -313,7 +336,7 @@ def test_markdown_subdoc_bloat_normal():
     content = '---\nname: test\ndescription: test\n---\n\n# Test\n\n' + 'Line\n' * 100
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='subdoc')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='subdoc')
         data = cmd_markdown(args)
         assert data['bloat']['classification'] == 'NORMAL', f'Expected NORMAL, got {data["bloat"]["classification"]}'
     finally:
@@ -325,7 +348,7 @@ def test_markdown_subdoc_bloat_large():
     content = '# Test\n\n' + 'Line of content here.\n' * 450
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='subdoc')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='subdoc')
         data = cmd_markdown(args)
         assert data['bloat']['classification'] == 'LARGE', f'Expected LARGE, got {data["bloat"]["classification"]}'
     finally:
@@ -337,7 +360,7 @@ def test_markdown_subdoc_bloat_bloated():
     content = '# Test\n\n' + 'Line of content here.\n' * 650
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='subdoc')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='subdoc')
         data = cmd_markdown(args)
         assert data['bloat']['classification'] == 'BLOATED', f'Expected BLOATED, got {data["bloat"]["classification"]}'
     finally:
@@ -349,7 +372,7 @@ def test_markdown_subdoc_bloat_critical():
     content = '# Test\n\n' + 'Line of content here.\n' * 850
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='subdoc')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='subdoc')
         data = cmd_markdown(args)
         assert data['bloat']['classification'] == 'CRITICAL', (
             f'Expected CRITICAL, got {data["bloat"]["classification"]}'
@@ -385,7 +408,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 """
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='agent')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='agent')
         data = cmd_markdown(args)
         rule_12 = data.get('rules', {}).get('workflow_prose_param_violations', [])
         assert len(rule_12) >= 1, f'Should detect body section reference, found {len(rule_12)}'
@@ -415,7 +438,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 """
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         rule_12 = data.get('rules', {}).get('workflow_prose_param_violations', [])
         assert len(rule_12) >= 1, f'Should detect "otherwise body" pattern, found {len(rule_12)}'
@@ -445,7 +468,7 @@ python3 .plan/execute-script.py plan-marshall:manage-plan-documents:manage-plan-
 """
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='agent')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='agent')
         data = cmd_markdown(args)
         rule_12 = data.get('rules', {}).get('workflow_prose_param_violations', [])
         assert len(rule_12) == 0, f'Should NOT flag correct original_input reference, found {len(rule_12)}'
@@ -474,7 +497,7 @@ python3 .plan/execute-script.py plan-marshall:manage-references:manage-reference
 """
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='agent')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='agent')
         data = cmd_markdown(args)
         rule_12 = data.get('rules', {}).get('workflow_prose_param_violations', [])
         assert len(rule_12) == 0, f'Should NOT flag body reference without plan-documents call, found {len(rule_12)}'
@@ -492,7 +515,7 @@ def test_markdown_skill_detects_unsupported_tools_field():
     content = '---\nname: test-skill\ndescription: Test\nallowed-tools: Read\nuser-invocable: true\n---\n\n# Test\n'
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         fm = data.get('frontmatter', {})
         required = fm.get('required_fields', {})
@@ -510,7 +533,7 @@ def test_markdown_skill_detects_misspelled_user_invocable():
     content = '---\nname: test-skill\ndescription: Test\nuser-invokable: true\n---\n\n# Test\n'
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         fm = data.get('frontmatter', {})
         required = fm.get('required_fields', {})
@@ -526,7 +549,7 @@ def test_markdown_skill_detects_correct_user_invocable():
     content = '---\nname: test-skill\ndescription: Test\nuser-invocable: true\n---\n\n# Test\n'
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         fm = data.get('frontmatter', {})
         required = fm.get('required_fields', {})
@@ -542,7 +565,7 @@ def test_markdown_skill_detects_missing_user_invocable():
     content = '---\nname: test-skill\ndescription: Test\n---\n\n# Test\n'
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         fm = data.get('frontmatter', {})
         required = fm.get('required_fields', {})
@@ -563,7 +586,7 @@ def test_checklist_detection_present():
     content = '---\nname: test\ndescription: test\n---\n\n# Test\n\n## Rules\n\n- [ ] First item\n- [ ] Second item\n- [ ] Third item\n'
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         checklists = data['checklist_patterns']
         assert checklists['has_checklists'] is True
@@ -577,7 +600,7 @@ def test_checklist_detection_absent():
     content = '---\nname: test\ndescription: test\n---\n\n# Test\n\n- First item\n- Second item\n'
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         checklists = data['checklist_patterns']
         assert checklists['has_checklists'] is False
@@ -593,7 +616,7 @@ def test_checklist_detection_mixed():
     )
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         checklists = data['checklist_patterns']
         assert checklists['has_checklists'] is True
@@ -616,7 +639,7 @@ def test_checklist_template_exempt():
     )
     assert template_path.exists(), f'tracked fixture missing: {template_path}'
 
-    args = Namespace(file=str(template_path), type='skill')
+    args = _ns(_MARKDOWN_NS, file=str(template_path), type='skill')
     data = cmd_markdown(args)
     checklists = data['checklist_patterns']
     assert checklists['has_checklists'] is False, 'Templates should be exempt from checklist detection'
@@ -625,7 +648,7 @@ def test_checklist_template_exempt():
     content = '---\nname: test\ndescription: test\n---\n\n# Test\n\n- [ ] Item\n'
     temp_file = create_temp_file(content)
     try:
-        args2 = Namespace(file=str(temp_file), type='skill')
+        args2 = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data2 = cmd_markdown(args2)
         assert data2['checklist_patterns']['has_checklists'] is True, 'Non-templates should detect checklists'
     finally:
@@ -637,7 +660,7 @@ def test_checklist_sections_extracted():
     content = '---\nname: test\ndescription: test\n---\n\n# Test\n\n## Quality Rules\n\n- [ ] Item A\n\n## Other Section\n\nNo checklists here.\n\n## Verification\n\n- [x] Item B\n'
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         checklists = data['checklist_patterns']
         assert 'Quality Rules' in checklists['sections']
@@ -693,7 +716,7 @@ def test_mark_step_done_stale_notation_detected():
     )
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         violations = data.get('rules', {}).get('mark_step_done_violations', [])
         codes = _mark_step_done_codes(violations)
@@ -718,7 +741,7 @@ def test_mark_step_done_missing_phase_detected():
     )
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         violations = data.get('rules', {}).get('mark_step_done_violations', [])
         codes = _mark_step_done_codes(violations)
@@ -746,7 +769,7 @@ def test_mark_step_done_missing_outcome_detected():
     )
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         violations = data.get('rules', {}).get('mark_step_done_violations', [])
         codes = _mark_step_done_codes(violations)
@@ -764,7 +787,7 @@ def test_mark_step_done_canonical_form_no_findings():
     content = _canonical_mark_step_done_block()
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         violations = data.get('rules', {}).get('mark_step_done_violations', [])
         assert violations == [], f'Canonical form should yield no findings, got {violations!r}'
@@ -792,7 +815,7 @@ def test_mark_step_done_non_bash_fence_no_false_positive():
     )
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         violations = data.get('rules', {}).get('mark_step_done_violations', [])
         assert violations == [], f'Non-bash fences and prose should not trigger mark-step-done rule, got {violations!r}'
@@ -819,7 +842,7 @@ def test_mark_step_done_multiline_continuation_assembled():
     )
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         violations = data.get('rules', {}).get('mark_step_done_violations', [])
         assert violations == [], (
@@ -851,7 +874,7 @@ def test_mark_step_done_multiline_continuation_detects_stale_notation():
     )
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         violations = data.get('rules', {}).get('mark_step_done_violations', [])
         codes = _mark_step_done_codes(violations)
@@ -890,7 +913,7 @@ def test_mark_step_done_stale_notation_on_line_before_anchor():
     )
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         violations = data.get('rules', {}).get('mark_step_done_violations', [])
         codes = _mark_step_done_codes(violations)
@@ -923,7 +946,7 @@ def test_mark_step_done_phase_prefix_does_not_spoof_missing_phase():
     )
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         violations = data.get('rules', {}).get('mark_step_done_violations', [])
         codes = _mark_step_done_codes(violations)
@@ -972,7 +995,7 @@ def test_display_detail_em_dash_triggers_non_ascii():
     content = _display_detail_block('no PR — nothing to clean up')
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         violations = data.get('rules', {}).get('display_detail_violations', [])
         codes = _display_detail_codes(violations)
@@ -990,7 +1013,7 @@ def test_display_detail_too_long_triggers_too_long():
     content = _display_detail_block('a' * 81)
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         violations = data.get('rules', {}).get('display_detail_violations', [])
         codes = _display_detail_codes(violations)
@@ -1024,7 +1047,7 @@ def test_display_detail_multiline_quoted_value_triggers_multiline():
     )
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         violations = data.get('rules', {}).get('display_detail_violations', [])
         codes = _display_detail_codes(violations)
@@ -1040,7 +1063,7 @@ def test_display_detail_trailing_period_triggers_trailing_period():
     content = _display_detail_block('archived plan.')
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         violations = data.get('rules', {}).get('display_detail_violations', [])
         codes = _display_detail_codes(violations)
@@ -1059,7 +1082,7 @@ def test_display_detail_canonical_value_no_findings():
     content = _display_detail_block('no PR, nothing to clean up')
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         violations = data.get('rules', {}).get('display_detail_violations', [])
         assert violations == [], f'Canonical value should yield no findings, got {violations!r}'
@@ -1075,7 +1098,7 @@ def test_display_detail_multiple_defects_all_reported():
     content = _display_detail_block(long_bad_value)
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         violations = data.get('rules', {}).get('display_detail_violations', [])
         codes = _display_detail_codes(violations)
@@ -1101,7 +1124,7 @@ def test_display_detail_non_bash_fence_no_false_positive():
     )
     temp_file = create_temp_file(content)
     try:
-        args = Namespace(file=str(temp_file), type='skill')
+        args = _ns(_MARKDOWN_NS, file=str(temp_file), type='skill')
         data = cmd_markdown(args)
         violations = data.get('rules', {}).get('display_detail_violations', [])
         assert violations == [], f'Non-bash fence should not trigger display_detail rule, got {violations!r}'

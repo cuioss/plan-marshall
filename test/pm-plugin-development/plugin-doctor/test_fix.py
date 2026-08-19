@@ -15,10 +15,36 @@ from argparse import Namespace
 from pathlib import Path
 
 # Import shared infrastructure
-from conftest import get_script_path, load_script_module, run_script
+from conftest import get_script_path, load_script_module, parse_ns, run_script
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', '_fix.py')
+
+# Argument namespaces come from the script's OWN parser, so each carries every
+# default the real CLI applies — a hand-built Namespace carries only the keys its
+# author remembered. Parsed once at module scope: parse_ns re-executes the script
+# module on every call.
+_APPLY_NS = parse_ns(
+    'pm-plugin-development', 'plugin-doctor', '_fix.py',
+    'apply', '--fix', 'placeholder.json', '--bundle-dir', '.', register=False,
+)
+_CATEGORIZE_NS = parse_ns(
+    'pm-plugin-development', 'plugin-doctor', '_fix.py',
+    'categorize', '--input', 'placeholder.json', register=False,
+)
+_EXTRACT_NS = parse_ns(
+    'pm-plugin-development', 'plugin-doctor', '_fix.py',
+    'extract', '--input', 'placeholder.json', register=False,
+)
+_VERIFY_NS = parse_ns(
+    'pm-plugin-development', 'plugin-doctor', '_fix.py',
+    'verify', '--fix-type', 'placeholder', '--file', 'placeholder.md', register=False,
+)
+
+
+def _ns(template: Namespace, **overrides) -> Namespace:
+    """A parser-produced namespace with this test's values overlaid."""
+    return Namespace(**{**vars(template), **overrides})
 FIXTURES_DIR = Path(__file__).parent / 'fixtures' / 'fix'
 
 
@@ -79,7 +105,7 @@ def test_extract_from_stdin():
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
         json.dump(diagnosis, f)
         f.flush()
-        args = Namespace(input=f.name)
+        args = _ns(_EXTRACT_NS, input=f.name)
         data = cmd_extract(args)
         assert data is not None, 'Should return valid dict'
         assert 'fixable_issues' in data or 'issues' in data, 'Should have issues field'
@@ -102,7 +128,7 @@ def test_categorize_safe_issues():
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
         json.dump(issues, f)
         f.flush()
-        args = Namespace(input=f.name)
+        args = _ns(_CATEGORIZE_NS, input=f.name)
         data = cmd_categorize(args)
         assert data is not None, 'Should return valid dict'
         assert 'safe' in data or 'safe_fixes' in data or 'categorized' in data, 'Should categorize fixes'
@@ -120,7 +146,7 @@ def test_verify_with_valid_file():
         f.write('---\nname: test\ndescription: Test\n---\n\n# Test\n')
         f.flush()
 
-        args = Namespace(fix_type='missing-frontmatter', file=f.name)
+        args = _ns(_VERIFY_NS, fix_type='missing-frontmatter', file=f.name)
         data = cmd_verify(args)
         assert data is not None, 'Should return valid dict'
 
@@ -143,7 +169,7 @@ def test_apply_rule_11_fix():
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             f.write(fix_json)
             f.flush()
-            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            args = _ns(_APPLY_NS, fix=f.name, bundle_dir=tmp_dir)
             data = cmd_apply(args)
             Path(f.name).unlink()
 
@@ -165,7 +191,7 @@ def test_apply_rule_11_fix_already_present():
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             f.write(fix_json)
             f.flush()
-            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            args = _ns(_APPLY_NS, fix=f.name, bundle_dir=tmp_dir)
             data = cmd_apply(args)
             Path(f.name).unlink()
 
@@ -190,7 +216,7 @@ def _apply_missing_frontmatter(tmp_dir, agent_rel_path):
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
         f.write(fix_json)
         f.flush()
-        args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+        args = _ns(_APPLY_NS, fix=f.name, bundle_dir=tmp_dir)
         data = cmd_apply(args)
         Path(f.name).unlink()
     return data, agent_file.read_text()
@@ -239,7 +265,7 @@ def test_verify_rule_11_fixed():
         f.write('---\nname: test\ndescription: Test\ntools: Read, Write, Skill\n---\n\n# Test\n')
         f.flush()
 
-        args = Namespace(fix_type='agent-skill-tool-visibility', file=f.name)
+        args = _ns(_VERIFY_NS, fix_type='agent-skill-tool-visibility', file=f.name)
         data = cmd_verify(args)
         assert data['issue_resolved'] is True, f'Issue should be resolved: {data}'
 
@@ -252,7 +278,7 @@ def test_verify_rule_11_still_missing():
         f.write('---\nname: test\ndescription: Test\ntools: Read, Write\n---\n\n# Test\n')
         f.flush()
 
-        args = Namespace(fix_type='agent-skill-tool-visibility', file=f.name)
+        args = _ns(_VERIFY_NS, fix_type='agent-skill-tool-visibility', file=f.name)
         data = cmd_verify(args)
         assert data['issue_resolved'] is False, f'Issue should NOT be resolved: {data}'
 
@@ -265,7 +291,7 @@ def test_verify_rule_11_no_tools_field():
         f.write('---\nname: test\ndescription: Test\n---\n\n# Test\n')
         f.flush()
 
-        args = Namespace(fix_type='agent-skill-tool-visibility', file=f.name)
+        args = _ns(_VERIFY_NS, fix_type='agent-skill-tool-visibility', file=f.name)
         data = cmd_verify(args)
         assert data['issue_resolved'] is True, f'Issue should be resolved (no tools = inherits all): {data}'
 
@@ -306,7 +332,7 @@ def test_apply_unsupported_tools_field_rejected():
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             f.write(fix_json)
             f.flush()
-            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            args = _ns(_APPLY_NS, fix=f.name, bundle_dir=tmp_dir)
             data = cmd_apply(args)
             Path(f.name).unlink()
 
@@ -327,7 +353,7 @@ def test_verify_unsupported_tools_field_falls_through_to_generic():
         f.write('---\nname: test\ndescription: Test\nallowed-tools: Read\n---\n\n# Test\n')
         f.flush()
 
-        args = Namespace(fix_type='unsupported-skill-tools-field', file=f.name)
+        args = _ns(_VERIFY_NS, fix_type='unsupported-skill-tools-field', file=f.name)
         data = cmd_verify(args)
         # verify_generic returns issue_resolved: None (manual verification recommended)
         assert data.get('issue_resolved') is None, (
@@ -420,7 +446,7 @@ def test_apply_rename_misspelled_user_invocable():
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             f.write(fix_json)
             f.flush()
-            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            args = _ns(_APPLY_NS, fix=f.name, bundle_dir=tmp_dir)
             data = cmd_apply(args)
             Path(f.name).unlink()
 
@@ -441,7 +467,7 @@ def test_apply_rename_misspelled_user_invocable_not_present():
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             f.write(fix_json)
             f.flush()
-            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            args = _ns(_APPLY_NS, fix=f.name, bundle_dir=tmp_dir)
             data = cmd_apply(args)
             Path(f.name).unlink()
 
@@ -459,7 +485,7 @@ def test_verify_misspelled_user_invocable_resolved():
         f.write('---\nname: test\ndescription: Test\nuser-invocable: true\n---\n\n# Test\n')
         f.flush()
 
-        args = Namespace(fix_type='misspelled-user-invocable', file=f.name)
+        args = _ns(_VERIFY_NS, fix_type='misspelled-user-invocable', file=f.name)
         data = cmd_verify(args)
         assert data['issue_resolved'] is True, f'Issue should be resolved: {data}'
 
@@ -472,7 +498,7 @@ def test_verify_misspelled_user_invocable_still_present():
         f.write('---\nname: test\ndescription: Test\nuser-invokable: true\n---\n\n# Test\n')
         f.flush()
 
-        args = Namespace(fix_type='misspelled-user-invocable', file=f.name)
+        args = _ns(_VERIFY_NS, fix_type='misspelled-user-invocable', file=f.name)
         data = cmd_verify(args)
         assert data['issue_resolved'] is False, f'Issue should NOT be resolved: {data}'
 
@@ -495,7 +521,7 @@ def test_checklist_pattern_is_safe():
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
         json.dump(issues, f)
         f.flush()
-        args = Namespace(input=f.name)
+        args = _ns(_CATEGORIZE_NS, input=f.name)
         data = cmd_categorize(args)
         Path(f.name).unlink()
 
@@ -515,7 +541,7 @@ def test_apply_checklist_pattern_fix():
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             f.write(fix_json)
             f.flush()
-            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            args = _ns(_APPLY_NS, fix=f.name, bundle_dir=tmp_dir)
             data = cmd_apply(args)
             Path(f.name).unlink()
 
@@ -537,7 +563,7 @@ def test_apply_checklist_pattern_fix_mixed():
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             f.write(fix_json)
             f.flush()
-            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            args = _ns(_APPLY_NS, fix=f.name, bundle_dir=tmp_dir)
             data = cmd_apply(args)
             Path(f.name).unlink()
 
@@ -597,7 +623,7 @@ def test_apply_signature_docstring_fix_removes_restating_docstring():
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             f.write(fix_json)
             f.flush()
-            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            args = _ns(_APPLY_NS, fix=f.name, bundle_dir=tmp_dir)
             data = cmd_apply(args)
             Path(f.name).unlink()
 
@@ -631,7 +657,7 @@ def test_apply_signature_docstring_fix_inserts_pass_for_sole_docstring():
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             f.write(fix_json)
             f.flush()
-            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            args = _ns(_APPLY_NS, fix=f.name, bundle_dir=tmp_dir)
             data = cmd_apply(args)
             Path(f.name).unlink()
 
@@ -662,7 +688,7 @@ def test_apply_signature_docstring_fix_preserves_intent_docstring():
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             f.write(fix_json)
             f.flush()
-            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            args = _ns(_APPLY_NS, fix=f.name, bundle_dir=tmp_dir)
             data = cmd_apply(args)
             Path(f.name).unlink()
 
@@ -679,7 +705,7 @@ def test_categorize_simplicity_signature_docstring_safe():
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
         f.write(json.dumps(extracted))
         f.flush()
-        args = Namespace(input=f.name)
+        args = _ns(_CATEGORIZE_NS, input=f.name)
         data = cmd_categorize(args)
         Path(f.name).unlink()
     safe_types = {issue['type'] for issue in data.get('safe', [])}
@@ -711,7 +737,7 @@ def test_fenced_code_no_language_is_safe():
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
         json.dump(extracted, f)
         f.flush()
-        args = Namespace(input=f.name)
+        args = _ns(_CATEGORIZE_NS, input=f.name)
         data = cmd_categorize(args)
         Path(f.name).unlink()
     safe_types = {issue['type'] for issue in data.get('safe', [])}
@@ -785,7 +811,7 @@ def test_apply_fenced_code_language_fix_via_cmd_apply():
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             f.write(fix_json)
             f.flush()
-            args = Namespace(fix=f.name, bundle_dir=tmp_dir)
+            args = _ns(_APPLY_NS, fix=f.name, bundle_dir=tmp_dir)
             data = cmd_apply(args)
             Path(f.name).unlink()
 
