@@ -203,8 +203,11 @@ This report records the proposal; the operator decides.
 
 ## Residue
 
-- **CodeRabbit's verdict** is outstanding at the time of writing; it was re-requested after the
-  condition-2 merge superseded its first attempt.
+- **CodeRabbit's review landed and is closed** — 20 Major inline findings, 50 minor, 2 nitpicks, all
+  dispositioned (see § Reviewer participation). An earlier revision of this row said its verdict was
+  "outstanding at the time of writing"; that was true when written and went stale when the review
+  arrived, which is the same measure-then-restate defect this epic audits, committed in its own
+  report. Nothing about the review is open.
 - ⛔ **`_audit/` becomes collectable when this PR merges, and that is an open risk, not a bounded
   one.** `cloud-bridge.md` § Path 3 says every directory under an epic is a plan a run has worked;
   step 2 needs a merged PR *and* a `report-NN.md`, and step 6 deletes what steps 2–5 corroborated.
