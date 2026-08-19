@@ -5,12 +5,13 @@ the ownership ruling is recorded in four places, the consistency check enumerate
 under mutation (re-run independently: 6 failed, 14 passed), and the core was not edited. Nine gaps
 remain, none of which refutes a deliverable.
 
-Three are medium. Two of those sit on D3, the deliverable the plan singled out as "the enumeration *is*
-the deliverable": the count it publishes is unobservable (G1), and the shipped prose does not warn that
-the claim closes attribution without closing inventory coverage (G2). The third (G9) is a **false premise
-inside the D2 ownership record itself** — the docstring argues the move separates no artifact from its
-tests "because that split predates this claim", and for three of the six project-local scripts it
-demonstrably did not.
+Three are medium, one per deliverable they sit on. **G1** is on D3, the deliverable the plan singled out
+as "the enumeration *is* the deliverable": the enumeration bites, but the count it is required to publish
+is observable in no run mode. **G2** is on D5: the shipped prose does not warn that the claim closes
+attribution without closing inventory coverage, so `search --content` still misses `.claude` while
+reporting clean coverage. **G9** is on D2 — a **false premise inside the ownership record itself**: the
+docstring argues the move separates no artifact from its tests "because that split predates this claim",
+and for three of the six project-local scripts it demonstrably did not.
 
 The remaining six are low: a non-deterministic walk population (G7), a scope statement missing from the
 ownership contract (G3), a misleading comment in the very fixture the run's own finding 3 corrected
