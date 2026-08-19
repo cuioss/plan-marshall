@@ -124,6 +124,14 @@ baseline), and fixed.
 at the gate — the base is current, so no merge was needed and no throwaway-branch shape was used.
 Recorded as the measurement it is; the count is re-derived immediately before arming.
 
+**A red `verify / conclusion` on the superseded head is a cancellation, not a failure.** Pushing the
+report commit `ba3e19a` superseded the in-flight run on `5679efa`, and GitHub reported that run's
+`verify / conclusion` as **`failure`** at 17:38. The run's own record says otherwise: workflow run
+`32281870698` has `conclusion: cancelled`, and its `Run verification` step likewise `cancelled` after
+8m18s — a step that was still executing, not one that failed an assertion. It is recorded here because a
+later reader browsing the PR's checks will see a red mark against an obsolete SHA and should not read it
+as a defect this run left behind.
+
 ## Findings
 
 Every finding is from the pre-PR verification round unless marked otherwise. Recorded per instance.
@@ -195,7 +203,7 @@ review.
 | Reviewer (`author_login`) | Verdict | Reopens? | Body evidence |
 |---|---|---|---|
 | `cuioss-review-bot` | `reviewed` | — | Issue comment: *"PR Reviewer Guide 🔍 — PR contains tests / No security concerns identified / No major issues detected."* A review artifact against this diff, with no actionable finding |
-| `coderabbitai` | `rate-limited` | **yes** | Issue comment: *"Review limit reached … Next review available in: 41 minutes … You've used the included review currently available."* A clock condition, stated with its clearing time — **not** a property of this diff. It listed all 14 files as selected for processing before refusing |
+| `coderabbitai` | `rate-limited` | **yes** | Issue comment: *"Review limit reached … Next review available in: **41 minutes** … You've used the included review currently available."* A clock condition stated with its clearing time — **not** a property of this diff; it listed all 14 files as selected for processing before refusing. Re-issued automatically on the report-commit push and read again at 17:37: **33 minutes**. The countdown drains |
 | `sourcery-ai` | `rate-limited` | **yes** | Review body: *"you have reached your **weekly** rate limit of 500000 diff characters."* A quota that resets, not a per-diff ceiling |
 
 **Coverage: 1 of 3.** No verdict is `unreadable` — all three surfaces read cleanly, returning 2 issue
@@ -215,30 +223,40 @@ body and never infer it from the reviewer's identity.
 
 ### Why `coderabbitai` was not re-requested, despite `Reopens? yes`
 
-⚠️ **The countdown is not simply elapsing, and this was established from evidence rather than assumed.**
-A concurrent session working PR #1305 in the same repository recorded three refusals: a notice at 16:10
-saying *"57 minutes"*, a retry at **17:16** — 66 minutes later, so after that window had passed — refused
-again with a **new 53-minute** countdown, and this PR's 17:29 notice saying **41 minutes**. Three notices
-under one account, with the window moving rather than draining.
+**Not because the window was judged unreliable — it demonstrably drains.** The notice was observed twice
+on this PR: **41 minutes** at 17:29 on head `5679efa`, and, re-issued automatically when the report
+commit `ba3e19a` was pushed, **33 minutes** at 17:37. Eight minutes of clock, eight minutes off the
+countdown. On this PR the window behaves exactly as it reads.
 
-That fits CodeRabbit's documented mechanism, which the notice itself states: the allowance is derived
-from *"a developer's included PR review attempts over the past 7 days"*. It is a **rolling per-developer
-allowance shared across every PR**, not a per-PR timer — so a retry does not merely wait out a window,
-it **consumes an attempt** and can push the window further out.
+⚠️ **An earlier draft of this section claimed the opposite, and the claim did not survive its own
+evidence.** It reasoned from a concurrent session on PR #1305 — a notice at 16:10 saying *"57 minutes"*
+and a retry at **17:16**, 66 minutes later, refused with a **new 53-minute** countdown — and concluded
+that a retry *consumes an attempt and pushes the window out*. That is **one** explanation. A simpler one
+fits the same two data points without any special mechanism: the allowance is per-developer over a
+rolling 7 days (the notice says so), reviews landed on other PRs in that hour, and they spent it. The
+41→33 observation above is inconsistent with the retry-penalty story in the form it was asserted, since a
+refused attempt here cost nothing. **The claim is withdrawn rather than repaired** — it is exactly the
+defect this run's § What have we learned is about, and it would be absurd to commit a fresh instance of
+it in the same report.
 
-Two consequences, and both point the same way:
+**What the evidence does support** is the part that decides the action: the allowance is **one
+per-developer pool shared across every PR in the organisation**, so a review spent here is a review not
+available elsewhere. Two facts then settle it:
 
-1. **Waiting is not reliably productive.** `Reopens? yes` is recorded because the notice states a
-   clearing condition — that is what the column reports, and it is not softened here. But the observed
-   behaviour is that the condition did not clear on schedule when it was tested.
-2. **An attempt spent here is an attempt taken from #1305**, where the operator *explicitly required* a
-   CodeRabbit review and the PR is not merging without one. This PR has no such requirement: the
-   operator's standing decision from run 01 — **land at 1-of-3 with the shortfall disclosed** — was
-   taken for exactly this shape of gap.
+1. **PR #1305 explicitly requires a CodeRabbit review** — its operator made that a condition, and it does
+   not merge without one. Its own retry window and this one are the same window.
+2. **This PR requires no such thing.** The operator's standing decision from run 01 — **land at 1-of-3
+   with the shortfall disclosed** — was taken for exactly this shape of gap, and this diff is 14 files of
+   mechanical test conversion, not the 112-file diff that decision was originally made against.
 
-So the attempt is left for the PR that needs it. ⛔ **This is a scheduling judgement, not a claim that
-the review was unobtainable**, and it is recorded as one so a later reader is not misled: with enough
-elapsed time and no competing PR, `coderabbitai` would presumably review this diff.
+So the slot is left to the PR that needs it. This also fixes the arming order: **pushing any commit
+re-triggers CodeRabbit automatically** (the `ba3e19a` push did, with a new Run ID), so landing this PR
+before the window clears is what *keeps* the slot for #1305, rather than spending it on an
+auto-triggered review nobody asked for.
+
+⛔ **Stated as the scheduling judgement it is, not as a claim that the review was unobtainable.** Waiting
+roughly half an hour would in all likelihood have produced a CodeRabbit review of this diff. It was not
+waited for, and the coverage figure below reflects that choice rather than an impossibility.
 
 **What stands in for the missing coverage, stated so the gap is not papered over.** The verification
 round's evidence was **executable rather than a re-read** — it simulated the collision walker on the
