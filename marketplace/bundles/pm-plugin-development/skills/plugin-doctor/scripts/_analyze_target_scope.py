@@ -138,7 +138,7 @@ def _frontmatter_block(text: str) -> str | None:
     frontmatter at all. Each fence is matched as a whole LINE, so a value that
     itself contains three hyphens does not truncate the block.
     """
-    text = text.lstrip('﻿')
+    text = text.lstrip('\ufeff')
     open_fence = _OPEN_FENCE_RE.match(text)
     if open_fence is None:
         return None
@@ -161,8 +161,7 @@ def _strip_comment(value: str) -> str:
     ``["a``. What saves that is :func:`_is_readable`'s closing-bracket test —
     the cut value no longer ends in ``]`` — and NOT :func:`_is_bare_name`,
     which never sees it. (`_is_bare_name` is what declines ``["a] #b"]``,
-    where the cut leaves the bracket intact.) An earlier version of this
-    paragraph named the wrong one of the two, which its own example refutes.
+    where the cut leaves the bracket intact.)
     """
     head, sep, _tail = value.partition('#')
     if not sep:

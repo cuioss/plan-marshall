@@ -295,6 +295,14 @@ def _soundness_corpus() -> list[tuple[str, bool]]:
     spec.loader.exec_module(fixtures)
 
     rows: list[tuple[str, bool]] = []
+    # Each derived source is asserted non-empty. Without this, renaming or
+    # emptying one drops its contribution to zero while the hardcoded rows
+    # below keep `rows` truthy — the sweep stays green over less than it
+    # claims, which is the exact regression the derivation exists to prevent.
+    for name in ('_ACCEPTED_FORMS', '_ONCE_REFUSED_NOW_READ', '_ONCE_REFUSED_WHOLE_FILE'):
+        source = getattr(fixtures, name, None)
+        assert source, f'{sibling}: {name} is missing or empty — the corpus would narrow silently'
+
     for form, _expected in fixtures._ACCEPTED_FORMS.values():
         rows.append((form, False))
     for form, _expected in fixtures._ONCE_REFUSED_NOW_READ.values():
@@ -343,13 +351,19 @@ def test_every_finding_is_a_real_build_failure(tmp_path):
     means, so a false positive on a `pr-agent`-bearing declaration would have
     been created or masked by the mismatch rather than measured.
     """
+    from marketplace.targets import TARGET_REGISTRY
     from marketplace.targets.component_targets import TargetScopeError, read_target_scope
+
+    # DERIVED, not transcribed: the fake tree must register exactly what the
+    # build resolves against, or the differential measures a registry mismatch
+    # instead of the rule. Registering a fourth target would otherwise
+    # reintroduce that disagreement with no test failure to signal it.
+    registered = tuple(sorted(TARGET_REGISTRY))
+    assert registered, 'no target registered — the differential would be vacuous'
 
     corpus = _soundness_corpus()
     for index, (text, whole_file) in enumerate(corpus):
-        bundles = _marketplace(
-            tmp_path / f'case{index}', targets=('claude', 'opencode', 'pr-agent')
-        )
+        bundles = _marketplace(tmp_path / f'case{index}', targets=registered)
         if whole_file:
             component = bundles / 'demo' / 'commands' / 'case.md'
             _write(component, text)
@@ -634,3 +648,33 @@ def test_fence_tolerance_is_pinned_here_too(text):
 
     assert declaration is not None
     assert declaration[0] == ['cluade']
+
+
+def test_the_rule_walks_every_component_kind_the_build_walks(tmp_path):
+    """`component_files` must find exactly what `iter_component_manifests` does.
+
+    The two walks are duplicated because this module is stdlib-only and cannot
+    import `marketplace.targets`. The duplication is forced; the differential
+    is not. Without it, a fourth component directory added to the build's walk
+    would silently stop being scanned here, and this suite would stay green
+    because its other tests pin this module's own literal set rather than
+    comparing the two.
+
+    This test lives in the meta-project, so it may import what the module it
+    tests may not.
+    """
+    from marketplace.targets.component_targets import iter_component_manifests
+
+    bundles = _marketplace(tmp_path)
+    bundle = bundles / 'demo'
+    for rel in ('agents/a.md', 'commands/c.md', 'skills/s/SKILL.md'):
+        _write(bundle / rel, '---\nname: x\ndescription: d\n---\n\n# B\n')
+    # Shapes neither walk counts, so the differential is not trivially equal.
+    _write(bundle / 'skills' / 'no-manifest' / 'reference.md', '# not a manifest\n')
+    _write(bundle / 'commands' / '.hidden.md', '---\nname: h\n---\n')
+
+    from_the_build = {manifest for manifest, _root in iter_component_manifests(bundle)}
+    from_the_rule = set(component_files(bundles))
+
+    assert from_the_rule, 'the walk found nothing — the comparison would be vacuous'
+    assert from_the_rule == from_the_build

@@ -82,10 +82,9 @@ registered target, so the gate is not optional.
 
 The generator runs inside the project environment because it reads component
 frontmatter with `yaml.safe_load` — `PyYAML` is a declared project dependency,
-so `uv run` (or `./pw`) is the invocation, not a bare `python3`. It replaced a
-hand-rolled line scanner whose twelve verification rounds produced sixteen
-behavioural defects, every one a divergence from YAML; see
-`component_targets.py` for what that module still owns.
+so `uv run` (or `./pw`) is the invocation, not a bare `python3`. See
+`component_targets.py` for the frontmatter extraction and the shape rules that
+module owns on top of the YAML load.
 
 
 ```bash

@@ -29,7 +29,7 @@ A verify implementor has two halves: a **producer** that declares it participate
 
 A producer opts into the verify stage by declaring a `verification_profile`. The value is a profile key (e.g. `security`) that resolves to the verify skill applied to that producer's findings (see [Resolution](#resolution)).
 
-`verification_profile` is not a top-level skill field — no contract declares it as one — so a producer SKILL.md carries the declaration under the supported `metadata:` escape hatch (see [`frontmatter-standards.md`](../../../../pm-plugin-development/skills/plugin-architecture/references/frontmatter-standards.md) § metadata):
+`verification_profile` is not a top-level skill field: this contract owns it and places it under the supported `metadata:` key, which is where a producer SKILL.md carries the declaration (see [`frontmatter-standards.md`](../../../../pm-plugin-development/skills/plugin-architecture/references/frontmatter-standards.md) § metadata):
 
 ```yaml
 metadata:

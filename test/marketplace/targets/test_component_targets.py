@@ -284,13 +284,28 @@ def test_crlf_line_endings_do_not_hide_the_declaration(tmp_path):
     assert read_target_scope(path) == {'claude'}
 
 
-def test_unreadable_component_degrades_to_every_target(tmp_path):
+def test_undecodable_bytes_that_declare_nothing_degrade_to_every_target(tmp_path):
     """A read fault must never be able to REMOVE a component from a target."""
     path = tmp_path / 'demo.md'
-    path.write_bytes(b'---\nname: demo\ntargets: [\xff\xfe]\n---\n')
+    path.write_bytes(b'---\nname: demo\ndescription: \xff\xfe\n---\n')
 
     assert read_target_scope(path) is None
     assert emits_to(path, 'claude') is True
+
+
+def test_undecodable_bytes_that_appear_to_declare_a_scope_fail_closed(tmp_path):
+    """Whether undecodable bytes HIDE a declaration is decidable — so it is decided.
+
+    Degrading past this would ship the component everywhere carrying a
+    declaration nobody has read, which is the same silent widening the module
+    refuses for unparseable YAML. The lossy re-read answers only the question
+    "does this mention the field", never what the value is.
+    """
+    path = tmp_path / 'demo.md'
+    path.write_bytes(b'---\nname: demo\ntargets: [\xff\xfe]\n---\n')
+
+    with pytest.raises(TargetScopeError, match='not valid UTF-8'):
+        read_target_scope(path)
 
 
 def test_a_four_hyphen_line_inside_the_block_fails_closed(tmp_path):

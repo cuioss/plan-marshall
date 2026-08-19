@@ -145,10 +145,9 @@ Plan Marshall adds frontmatter fields the open standard does not define. These a
 * `user-invocable` (required) — whether the skill appears in the slash menu or is loaded only internally.
 * `mode` (required) — the execution archetype (`knowledge` / `workflow` / `script-executor` / `manifest`) that tells an agent how to consume the skill.
 * `implements` (optional) — declares that the skill satisfies a Plan Marshall extension-point contract.
+* `targets` (optional) — the build targets the component ships to; absent means every target that emits a component tree. Consumed by the adapter system below, which omits the component from any target the list does not name.
 
-* `targets` (optional) — the build targets the component ships to; absent means every target. Consumed by the adapter system below, which omits the component from any target the list does not name.
-
-Further optional fields (`argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`, `profiles`, `priming_preamble`, `composes`) are named in `frontmatter-standards.md`, which is not an exhaustive register — a field may instead be declared by the extension-point contract that owns it. None of these fields is part of the agentskills.io spec; they are Plan Marshall's own workflow metadata.
+The further optional fields are listed in `frontmatter-standards.md` § Optional Fields rather than restated here, and that list is not an exhaustive register — a field may instead be declared by the extension-point contract that owns it. None of these fields is part of the agentskills.io spec; they are Plan Marshall's own workflow metadata.
 
 === How the adapter system relates to the standard
 

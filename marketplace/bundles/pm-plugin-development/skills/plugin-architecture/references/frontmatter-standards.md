@@ -203,7 +203,7 @@ Skill fields named in this document, required and optional together: `name`, `de
 
 ⛔ **That is not the whole set of frontmatter a skill may carry, and this document is not the register of it.** A field belongs to whichever contract declares it, and several are declared elsewhere: `scope:` by [`plan-marshall:ref-workflow-architecture` § manage-contract](../../../../plan-marshall/skills/ref-workflow-architecture/standards/manage-contract.md), `lane:` by [`ext-point-lane-element`](../../../../plan-marshall/skills/extension-api/standards/ext-point-lane-element.md), and a finalize-step's `order` / `default_on` / `presets` / `mutates_source` and their siblings by [`ext-point-finalize-step`](../../../../plan-marshall/skills/extension-api/standards/ext-point-finalize-step.md). Read the owning contract before concluding a field is unsupported — an enumeration here would go stale the moment a contract adds one, which is why this one does not claim to be exhaustive.
 
-The fields listed above are largely this marketplace's own: `profiles`, `priming_preamble`, and `composes` are plan-marshall fields the host platform never reads, documented here when the tooling that consumes them was built. `targets` (see [Target Scoping](#target-scoping)) is the newest such addition. `metadata:` is the escape hatch for a key that needs to be recognized but has no owning contract of its own.
+The fields listed above are largely this marketplace's own: `profiles`, `priming_preamble`, and `composes` are plan-marshall fields the host platform never reads, documented here when the tooling that consumes them was built. `targets` (see [Target Scoping](#target-scoping)) is the newest such addition. The owning contract also fixes *where* its field is written: top-level for most, but nested under `metadata:` where the contract says so — [`ext-point-verify`](../../../../plan-marshall/skills/extension-api/standards/ext-point-verify.md) declares `verification_profile` and places it under `metadata:`. `metadata:` is therefore both the location a contract may choose and the escape hatch for a key that needs to be recognized but has no owning contract at all.
 
 **implements** (optional):
 
@@ -431,7 +431,7 @@ targets: [claude]
 
 **Semantics**:
 
-- **Field absent ⇒ every target.** This is the default and the overwhelmingly common case. Omitting the field is how an author says "ship everywhere"; nearly every component in the marketplace omits it.
+- **Field absent ⇒ every target that emits a component tree.** This is the default and the overwhelmingly common case. Omitting the field is how an author says "ship everywhere"; nearly every component in the marketplace omits it. The qualifier matters only because a registered target need not emit a component tree at all — a target whose `emits_bundle_tree` capability is false ships no components, so no declaration, present or absent, puts one there.
 - **Field present ⇒ only the targets named.** On every other target the component is simply **absent** — no stub, no runtime no-op, no empty file.
 - **Format**: a YAML list, inline (`targets: [claude]`) or block form. Values are build-target registry names. The live set is never enumerated in prose because it would go stale; ask the tooling for it instead:
 

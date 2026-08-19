@@ -46,9 +46,10 @@ moment it is read and an invalid one aborts the build
   derives a single reviewer configuration from skill rules, so it has no
   component to filter) — such a declaration passes a registry-membership
   check while still shipping the component nowhere;
-* a value that is not a list of names — a mapping, a number, a boolean.
-  Coercing one into a name and then rejecting it as unregistered would name
-  a target nobody wrote;
+* a value resolving to neither a list of names nor a single name — a
+  mapping, a number, a boolean. Coercing one into a name and then rejecting
+  it as unregistered would name a target nobody wrote. A bare or quoted
+  scalar IS a valid declaration of one name;
 * frontmatter that is not well-formed YAML **and mentions the field**.
   Guessing at unparseable frontmatter is how a declaration goes unread, and
   the component then ships everywhere carrying an invalid declaration nobody
@@ -57,13 +58,11 @@ moment it is read and an invalid one aborts the build
   there, and turning target scoping into the repository's YAML linter is a
   job the plan did not give it and a failure surface it should not widen.
 
-Reading is delegated to ``yaml.safe_load`` rather than done here. Twelve
-verification rounds on a hand-rolled line scanner produced sixteen
-behavioural defects, every one of them a divergence from YAML, and three of
-them the SAME fail-open in the same function answered by three successive
-indentation rules. What this module still owns is the fence extraction —
-markdown frontmatter is not a YAML document stream — and the SHAPE rules
-above, which are policy rather than syntax.
+Reading is delegated to ``yaml.safe_load`` rather than done here, so any
+spelling YAML resolves is a spelling this field accepts. What this module
+still owns is the fence extraction — markdown frontmatter is not a YAML
+document stream — and the SHAPE rules above, which are policy rather than
+syntax.
 
 One convenience is this module's own and not YAML's: ``targets: a, b`` is a
 single string to YAML, and it is split on commas here. That is why a
@@ -97,14 +96,16 @@ target fails the suite rather than shipping quietly.
 
 Degradation
 -----------
-A component file that cannot be read or decoded yields "no declaration",
-i.e. the pre-existing emit-everywhere behaviour.
+A component file that cannot be READ (an ``OSError``) yields "no declaration",
+i.e. the pre-existing emit-everywhere behaviour. So does one that cannot be
+DECODED — but only when a lossy re-read shows it never mentions the field.
+Where it appears to declare a scope, the build fails instead: the question
+"does this hide a declaration?" is decidable even on undecodable bytes, and
+answering it is better than degrading past it.
 
-That is a choice between two bad outcomes, not a safe default, and an
-earlier version of this paragraph argued only one side of it. Failing open
+That is a choice between two bad outcomes, not a safe default. Failing open
 also SHIPS a scoped component onto a target it excluded — the same silent
-widening this module treats as a defect elsewhere, and the reason an
-unrecognised quoted key was fixed rather than tolerated. The vanish
+widening this module treats as a defect elsewhere. The vanish
 direction is judged the worse of the two: a component missing from a target
 it belongs on is absent from the output and breaks a runtime that expects
 it, while a surplus component is present and inspectable. So a read fault
@@ -373,8 +374,21 @@ def read_target_scope(path: Path) -> frozenset[str] | None:
     """
     try:
         text = path.read_text(encoding='utf-8')
-    except (OSError, UnicodeDecodeError):
+    except OSError:
         return None
+    except UnicodeDecodeError:
+        # Undecodable bytes. Whether that hides a declaration is decidable:
+        # re-read lossily and apply the same mention test unparseable YAML
+        # gets. A file that appears to declare a scope fails CLOSED, because
+        # shipping it everywhere would be shipping an unread declaration; one
+        # that does not is somebody else's defect and degrades as before.
+        if not _mentions_the_field(path.read_text(encoding='utf-8', errors='replace')):
+            return None
+        raise TargetScopeError(
+            f'{path}: the file is not valid UTF-8, and its frontmatter appears to declare '
+            f'`{TARGET_SCOPE_FIELD}:`. The build cannot read a declaration it cannot decode, '
+            f'and shipping the component everywhere would ship one nobody has read.'
+        ) from None
     try:
         value = _declared_value(text)
     except (yaml.YAMLError, RecursionError) as error:

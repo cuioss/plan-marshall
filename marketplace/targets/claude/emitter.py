@@ -137,11 +137,16 @@ def emit_bundle_verbatim(
             f'{source_root.resolve()} — the output directory must be a distinct build '
             'location, not the marketplace source'
         )
+    # Resolved BEFORE the destructive wipe. This validates every declaration
+    # in the bundle and raises on an invalid one; doing it after the rmtree
+    # would delete the previous output and then abort, leaving an empty
+    # destination for an authoring typo. The tree is regenerable and the
+    # failure is loud, so this is ordering hygiene rather than data loss.
+    scoped_out = excluded_emission_roots(bundle_dir, target_name)
+
     if dest_root.exists():
         safe_rmtree(dest_root, output_dir)
     dest_root.mkdir(parents=True, exist_ok=True)
-
-    scoped_out = excluded_emission_roots(bundle_dir, target_name)
 
     written: list[Path] = []
     for source in sorted(bundle_dir.rglob('*')):
