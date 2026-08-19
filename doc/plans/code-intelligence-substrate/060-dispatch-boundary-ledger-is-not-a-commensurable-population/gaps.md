@@ -241,12 +241,15 @@ required. Nine gaps follow.
   role key)". `plan-marshall/workflow/planning-outline.md:273-275` confirms it is a separate dispatch
   whose `<usage>` must be summed into the `3-outline → 4-plan` boundary: "…and any LLM fallback
   dispatched from `manage-status:change-type-heuristic` when its heuristic returned `ambiguous`". It
-  issues no `record-dispatch-boundary`, it resolves under no role key, and it appears in neither the
-  count of 9 nor `DISPATCH_BOUNDARY_EXCLUDED_CLASSES`.
-- **Why it matters:** D3's rule is that a non-registering class must be *named*, because "an un-named
-  omission is indistinguishable from a class that did not run". This class is un-named, and both the
-  code comment and the shipped standards doc assert a total ("9 dispatch classes") that a later
-  reader will treat as the derived population.
+  issues no `record-dispatch-boundary` and resolves under no role key. The run report folds it into
+  `phase-3-outline` and declares the fold (`report-01.md:43` — "phase-3-outline (main envelope, +
+  change-type LLM fallback)"); the two shipped surfaces carry only the folded total of "9" and never
+  mention it.
+- **Why it matters:** the shipped surfaces are what a later reader treats as the derived population.
+  A bare "9 dispatch classes", against a call graph that draws 10 `execution-context` dispatch sites,
+  cannot be reconciled without the run report — and the run report is not a surface consumers read.
+  The shortfall itself is still explained (`phase-3-outline` is in the exclusion list), so this is a
+  reconstructability gap, not the silent exclusion D3 exists to close.
 - **Action:** either add `change-type-fallback` to `DISPATCH_BOUNDARY_EXCLUDED_CLASSES` and restate
   the totals as 10 classes / 3 registering / 7 excluded in both the code comment and
   `data-format.md`, or state explicitly, at both sites, that the fallback is folded into

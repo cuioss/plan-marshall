@@ -48,11 +48,16 @@ withdrawn by decision". The other four deliverables survive and are audited agai
   (18 files, the facade among them) and `git show --stat 064b387`; `git branch --contains` for both
   squash commits.
 - **Verdict:** CONFIRMED-AT-MERGE, RETIRED BY 135. The deliverable was built as specified and was
-  then removed by a later landed plan that explicitly names it as a shim with zero adoption. **This
-  is not a gap and must not be re-filed as one.** Note for the record that the plan's claim-label
-  obligation "walk **all** subcommands against the LSP method list … derive the full residue" was
-  never discharged — `report-01.md:48-56` enumerates six verbs out of the ~30 the argparse surface
-  registers — but the obligation is moot now that the facade is gone.
+  then removed by a later landed plan that explicitly names it as a shim with zero adoption
+  (`135-remove-lsp-query-facade/plan.md:52-56`: "The `lsp` command group, its test, and every piece
+  of its documentation are gone … The three genuinely-new pieces plan 130 also shipped — the
+  `capabilities` report, the refine `UNDERIVABLE` guard, and the `search --content` measurement
+  contract — are untouched"). **This is not a gap and must not be re-filed as one.** Note for the
+  record that the plan's claim-label obligation "walk **all** subcommands against the LSP method
+  list … derive the full residue" was never discharged — `report-01.md:48-56` enumerates six verbs
+  against the **26 top-level subcommands** the argparse surface registers (re-counted from the
+  `add_parser` calls in `architecture.py`, plus 10 `enrich` sub-subcommands) — but the obligation is
+  moot now that the facade is gone.
 
 ### D2 — a capability-report verb
 

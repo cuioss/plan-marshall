@@ -48,16 +48,16 @@ shipped as documented prose that the step's own execution path never points at.
   `standards/*.md` paths. File restored from a byte snapshot at
   `/tmp/verify-100-mutsweep/_self_review_detectors.py.orig`; md5 matches and `git status --porcelain`
   is clean for it.
-  - **Stale consumer of the same value change, not caught by the run.**
-    `marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md:206` still
-    justifies `count_prose`'s exclusion from `total` as *"it anchors a **sibling-SKILL.md** re-check
-    rather than flagging an added line"* — the pre-fix file set. Rule 14 at `:256` and the schema
-    placeholder at `:178` (`{repo-relative-contract-source-path}`) both state the post-fix file set
-    correctly, so the document contradicts itself. A sweep of `marketplace/bundles/` for
-    `sibling-SKILL.md|sibling SKILL.md|SKILL.md sibling` returns exactly this one hit. This does not
-    touch the *Done when* (the resolver, the agreement test, and the negative control are all satisfied)
-    but it is a fourth stale *consumer kind* of the D1 value change, alongside the three the report's
-    § "What have we learned" enumerates. See G4.
+- **Stale consumer of the same value change, not caught by the run.**
+  `marketplace/bundles/pm-plugin-development/skills/ext-self-review-plan-marshall/SKILL.md:206` still
+  justifies `count_prose`'s exclusion from `total` as *"it anchors a **sibling-SKILL.md** re-check
+  rather than flagging an added line"* — the pre-fix file set. Rule 14 at `:256` and the schema
+  placeholder at `:178` (`{repo-relative-contract-source-path}`) both state the post-fix file set
+  correctly, so the document contradicts itself. A sweep of `marketplace/bundles/` for
+  `sibling-SKILL.md|sibling SKILL.md|SKILL.md sibling` returns exactly this one hit. This does not
+  touch the *Done when* (the resolver, the agreement test, and the negative control are all satisfied)
+  but it is a fourth stale *consumer kind* of the D1 value change, alongside the three the report's
+  § "What have we learned" enumerates. See G4.
 - **Verdict:** CONFIRMED — every clause of the *Done when* is satisfied and the negative control is
   non-vacuous by direct mutation evidence. One stale doc consumer survives outside the *Done when*
   (G4).

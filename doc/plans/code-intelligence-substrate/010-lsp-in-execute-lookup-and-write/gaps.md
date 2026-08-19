@@ -150,8 +150,9 @@ contract. A later run should take them as one change, not four.
   (`lsp_client.py:350-364`) catches only spawn-time `LspError`/`OSError`, and its `finally` closes the
   session without restoring anything. An exception raised on the second of three files therefore
   escapes to `safe_main`, which renders `status: error` and exits 1
-  (`tools-file-ops/scripts/file_ops.py:1664-1695`) — with file one already rewritten, `originals`
-  discarded, and no footprint in the output.
+  (`tools-file-ops/scripts/file_ops.py:1664-1700`; the `except Exception` →
+  `output_toon_error('internal_error', …)` → `sys.exit(1)` arm is at `:1696-1698`) — with file one
+  already rewritten, `originals` discarded, and no footprint in the output.
 - **Why it matters:** the write side's whole safety argument is that a failed edit leaves no trace.
   A half-applied multi-file rename is the worst outcome available: the tree is inconsistent, the
   consumer has no footprint to act on, and the error payload does not say which files changed.

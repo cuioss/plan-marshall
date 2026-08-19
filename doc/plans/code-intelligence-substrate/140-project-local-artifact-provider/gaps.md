@@ -76,15 +76,23 @@ audit and this review (`git diff` over the audited surface is empty), so the del
   asked `which-module` for an unclaimed one, got `module: null` … fell back to a whole-tree scan …
   and every such query paid whole-tree prices", then closes with "The bare-root claim covers every
   subtree, present and future, uniformly". What the claim covers is *attribution only*.
-  `pm-plugin-development`'s module paths are built solely from `marketplace/bundles/pm-plugin-development`
-  (`marketplace/bundles/pm-plugin-development/skills/plan-marshall-plugin/scripts/plugin_discover.py:506-510`),
+  `pm-plugin-development`'s module paths are built from the bundle directory plus
+  `test/pm-plugin-development` — there is no `.claude` entry among them
+  (`marketplace/bundles/pm-plugin-development/skills/plan-marshall-plugin/scripts/plugin_discover.py:503-512`),
   and the crawl skips every dotfile directory
-  (`marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/_cmd_manage.py:362-367`, with
+  (`marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/_cmd_manage.py:362-369`, with
   `_FILES_DOTFILE_ALLOWLIST = frozenset({'.gitignore', '.editorconfig'})` at `:85`). So after this plan
   `which-module .claude/skills/x` answers `pm-plugin-development`, while `files --module
   pm-plugin-development`, `find --pattern '.claude/*'` and `search --content` still return none of those
-  47 files — among them four production Python scripts (`.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py`,
-  `.claude/skills/sync-plugin-cache/scripts/sync.py`, `…/reconcile_daemon.py`, `…/review_retrospective.py`).
+  47 tracked files — among them **six** production Python scripts (re-derived from the tree):
+  `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py`,
+  `.claude/skills/finalize-step-era-stamp-fill/scripts/era_stamp_fill.py`,
+  `.claude/skills/finalize-step-review-retrospective/scripts/review_retrospective.py`,
+  `.claude/skills/sync-plugin-cache/scripts/list_bundles_and_versions.py`,
+  `…/sync-plugin-cache/scripts/reconcile_daemon.py`, and `…/sync-plugin-cache/scripts/sync.py`.
+  `CLAUDE.md` itself states the limit for callers ("dotfile trees outside the allowlist (`.claude/**`,
+  `.github/**`) are **not** searched"), which is why the omission is in the *substrate* docs, not in the
+  house rules.
   The general limit is documented at `code-intelligence.adoc:244-250` (§ "Inventory scope is not tree
   scope"), but the project-local section — the one a reader lands on for this tree — points there only for
   the "never inventoried" fact and does not say the claim leaves that half open.

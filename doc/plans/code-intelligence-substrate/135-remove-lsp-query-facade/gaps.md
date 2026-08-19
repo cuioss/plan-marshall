@@ -2,11 +2,18 @@
 
 The facade removal itself left nothing undone: every artefact the plan named is gone from the tree, the
 wrapped verbs are intact and green, the `SKILL.md` hazard was handled, and the run produced no
-collateral. What remains are thirteen items **around** the removal — nine pre-existing documentation
-defects in the same query-surface files (four of which the run itself surfaced and deliberately
-deferred, and which no later plan has closed), one still-open follow-up the plan named for itself, one
-forward-dangling cross-reference into this plan's own directory, and two false claims confined to
-`report-01.md`. None of them is a regression caused by the removal.
+collateral. What remains are fourteen items **around** the removal:
+
+- **nine pre-existing documentation defects** in the same query-surface files — G1, G3–G9, G11. Four
+  of these were surfaced by the run's own cold-read sub-agent and deliberately deferred (the heading
+  hierarchy → G3; the verb-set drift → G4/G5/G6; the `info` adjacency overstatement → G7; the
+  intra-doc duplication → G8/G9), and no later plan has closed any of them;
+- **one shipped-code follow-up the plan named for itself** — G2;
+- **one missing detector** that is why the G4–G6 drift survived both plan 130 and plan 135 — G14;
+- **one forward-dangling cross-reference** into this plan's own directory — G10;
+- **two false claims confined to `report-01.md`** — G12, G13.
+
+None of them is a regression caused by the removal.
 
 ## G1 — Correct the `capabilities` row in the client-api Command Summary
 
