@@ -18,6 +18,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -73,8 +75,7 @@ class TestWhitelistedGenerator:
             py,
             '# Generator\nEXECUTOR_PATH = ".plan/execute-script.py"\n',
         )
-        findings = analyze_executor_path_in_production(mp)
-        assert findings == []
+        assert_analyzer_findings(analyze_executor_path_in_production, mp, [])
 
 
 # ===========================================================================
@@ -104,8 +105,7 @@ class TestWhitelistedLintAnalyzer:
             py,
             '# Verb chain scanner\nINVOCATION_RE = r"python3 .plan/execute-script.py"\n',
         )
-        findings = analyze_executor_path_in_production(mp)
-        assert findings == []
+        assert_analyzer_findings(analyze_executor_path_in_production, mp, [])
 
 
 # ===========================================================================
@@ -172,8 +172,7 @@ class TestHelperBasedCompliance:
             'executor = get_executor_path()\n'
             'fallback = str(executor) if executor else ".plan/execute-script.py"\n',
         )
-        findings = analyze_executor_path_in_production(mp)
-        assert findings == []
+        assert_analyzer_findings(analyze_executor_path_in_production, mp, [])
 
     def test_helper_definition_site_is_compliant(self, tmp_path: Path) -> None:
         # The helper-definition site itself (file_ops.py defining
@@ -187,8 +186,7 @@ class TestHelperBasedCompliance:
             '    """Return the canonical path to .plan/execute-script.py."""\n'
             "    return root / '.plan' / 'execute-script.py'\n",
         )
-        findings = analyze_executor_path_in_production(mp)
-        assert findings == []
+        assert_analyzer_findings(analyze_executor_path_in_production, mp, [])
 
     def test_old_hardcoded_form_without_helper_still_flagged(self, tmp_path: Path) -> None:
         # A production script that embeds the literal WITHOUT adopting the
@@ -239,15 +237,12 @@ class TestCleanMarketplace:
         mp = _make_marketplace(tmp_path)
         py = mp / 'bundles' / 'b1' / 'skills' / 's1' / 'scripts' / 'clean.py'
         _write_py(py, '# No executor references\ndef do_work():\n    pass\n')
-        findings = analyze_executor_path_in_production(mp)
-        assert findings == []
+        assert_analyzer_findings(analyze_executor_path_in_production, mp, [])
 
     def test_empty_bundles(self, tmp_path: Path) -> None:
         mp = _make_marketplace(tmp_path)
-        findings = analyze_executor_path_in_production(mp)
-        assert findings == []
+        assert_analyzer_findings(analyze_executor_path_in_production, mp, [])
 
     def test_nonexistent_marketplace(self, tmp_path: Path) -> None:
         mp = tmp_path / 'does-not-exist'
-        findings = analyze_executor_path_in_production(mp)
-        assert findings == []
+        assert_analyzer_findings(analyze_executor_path_in_production, mp, [])

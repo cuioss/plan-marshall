@@ -34,7 +34,8 @@ from pathlib import Path
 
 import pytest
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
+from conftest import PROJECT_ROOT
+
 FIXTURE_DIR = PROJECT_ROOT / 'test' / 'fixtures'
 CANONICAL = FIXTURE_DIR / 'poc-agent.md'
 VARIANT_HIGH = FIXTURE_DIR / 'poc-agent-high.md'

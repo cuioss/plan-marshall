@@ -21,6 +21,8 @@ from pathlib import Path
 
 from conftest import MARKETPLACE_ROOT, load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -95,12 +97,9 @@ def test_two_personas_with_identical_primary_profile_trigger_finding(tmp_path):
     )
 
     # Act
-    findings = analyze_persona_profile_uniqueness(root)
-
     # Assert
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_persona_profile_uniqueness, root, [RULE_ID])
     finding = findings[0]
-    assert finding['rule_id'] == RULE_ID
     assert finding['severity'] == 'error'
     assert finding['details']['primary_profile'] == 'implementation'
     assert finding['details']['conflicting_skill'] == 'persona-a'
@@ -125,10 +124,7 @@ def test_collision_only_on_first_profile_not_secondary(tmp_path):
     )
 
     # Act
-    findings = analyze_persona_profile_uniqueness(root)
-
-    # Assert — a shared non-primary profile is not a collision.
-    assert findings == []
+    assert_analyzer_findings(analyze_persona_profile_uniqueness, root, [])
 
 
 def test_block_form_profiles_collide_same_as_inline(tmp_path):
@@ -171,10 +167,7 @@ def test_two_personas_with_different_primary_profiles_are_clean(tmp_path):
     )
 
     # Act
-    findings = analyze_persona_profile_uniqueness(root)
-
-    # Assert
-    assert findings == []
+    assert_analyzer_findings(analyze_persona_profile_uniqueness, root, [])
 
 
 def test_non_persona_skill_with_duplicate_profiles_is_ignored(tmp_path):
@@ -192,10 +185,7 @@ def test_non_persona_skill_with_duplicate_profiles_is_ignored(tmp_path):
     )
 
     # Act
-    findings = analyze_persona_profile_uniqueness(root)
-
-    # Assert — only persona skills participate in the uniqueness check.
-    assert findings == []
+    assert_analyzer_findings(analyze_persona_profile_uniqueness, root, [])
 
 
 def test_meta_persona_without_profiles_is_exempt(tmp_path):
@@ -205,10 +195,7 @@ def test_meta_persona_without_profiles_is_exempt(tmp_path):
     _write_skill(root, 'plan-marshall', 'persona-reviewer', _persona_body('persona-reviewer'))
 
     # Act
-    findings = analyze_persona_profile_uniqueness(root)
-
-    # Assert — personas with no primary profile are not subject to the check.
-    assert findings == []
+    assert_analyzer_findings(analyze_persona_profile_uniqueness, root, [])
 
 
 def test_empty_tree_yields_no_findings(tmp_path):
@@ -216,10 +203,7 @@ def test_empty_tree_yields_no_findings(tmp_path):
     root = _bundles_root(tmp_path)
 
     # Act
-    findings = analyze_persona_profile_uniqueness(root)
-
-    # Assert
-    assert findings == []
+    assert_analyzer_findings(analyze_persona_profile_uniqueness, root, [])
 
 
 # ===========================================================================

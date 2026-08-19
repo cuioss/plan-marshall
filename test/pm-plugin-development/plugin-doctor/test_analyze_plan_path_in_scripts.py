@@ -48,6 +48,8 @@ from pathlib import Path
 
 from conftest import MARKETPLACE_ROOT, load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -137,10 +139,8 @@ class TestEndToEndScan:
             '# Self-referential analyzer\n_MARKER = ".plan/plans/"\n',
         )
 
-        findings = analyze_plan_path_in_scripts(mp)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_plan_path_in_scripts, mp, [RULE_ID])
         f = findings[0]
-        assert f['rule_id'] == RULE_ID
         assert f['category'] == 'production_script'
         assert str(prod_py) == f['file']
         assert '.plan/plans/' in f['snippet']
@@ -256,20 +256,17 @@ class TestEmptyMarketplace:
 
     def test_empty_bundles_directory(self, tmp_path: Path) -> None:
         mp = _make_marketplace(tmp_path)
-        findings = analyze_plan_path_in_scripts(mp)
-        assert findings == []
+        assert_analyzer_findings(analyze_plan_path_in_scripts, mp, [])
 
     def test_nonexistent_marketplace_root(self, tmp_path: Path) -> None:
         mp = tmp_path / 'does-not-exist'
-        findings = analyze_plan_path_in_scripts(mp)
-        assert findings == []
+        assert_analyzer_findings(analyze_plan_path_in_scripts, mp, [])
 
     def test_bundles_without_marker(self, tmp_path: Path) -> None:
         mp = _make_marketplace(tmp_path)
         py = mp / 'bundles' / 'b1' / 'skills' / 's1' / 'scripts' / 'clean.py'
         _write_py(py, '# Nothing of interest\ndef do_work():\n    return 42\n')
-        findings = analyze_plan_path_in_scripts(mp)
-        assert findings == []
+        assert_analyzer_findings(analyze_plan_path_in_scripts, mp, [])
 
 
 # ===========================================================================
@@ -332,8 +329,7 @@ class TestDocstringSkip:
             '"""Module docstring.\n\nExample: .plan/plans/{plan_id} is the legacy form.\n"""\n\n'
             'def do_work():\n    return 42\n',
         )
-        findings = analyze_plan_path_in_scripts(mp)
-        assert findings == []
+        assert_analyzer_findings(analyze_plan_path_in_scripts, mp, [])
 
     def test_single_quote_triple_docstring_skipped(self, tmp_path: Path) -> None:
         mp = _make_marketplace(tmp_path)
@@ -351,8 +347,7 @@ class TestDocstringSkip:
             "'''Module docstring.\n\n.plan/plans/ inside single-quote triple block.\n'''\n\n"
             'def do_work():\n    return 42\n',
         )
-        findings = analyze_plan_path_in_scripts(mp)
-        assert findings == []
+        assert_analyzer_findings(analyze_plan_path_in_scripts, mp, [])
 
     def test_mixed_docstring_and_code_literal(self, tmp_path: Path) -> None:
         """Docstring hit is skipped but the code-literal hit is reported."""
@@ -371,8 +366,7 @@ class TestDocstringSkip:
             '"""Doc: .plan/plans/{id} legacy form."""\n\n'
             'plan_dir = ".plan/plans/" + plan_id\n',
         )
-        findings = analyze_plan_path_in_scripts(mp)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_plan_path_in_scripts, mp, [RULE_ID])
         assert findings[0]['category'] == 'production_script'
         # Line 3 holds the code-literal hit (line 1 is the docstring).
         assert findings[0]['line'] == 3
@@ -1049,7 +1043,7 @@ class TestFormCAntiVacuityAgainstRealTree:
 
     def test_whole_rule_is_clean_against_real_tree(self) -> None:
         """All three forms together report nothing against the real tree."""
-        assert analyze_plan_path_in_scripts(REAL_MARKETPLACE) == []
+        assert_analyzer_findings(analyze_plan_path_in_scripts, REAL_MARKETPLACE, [])
 
     def test_canonical_producer_is_whitelisted(self) -> None:
         """manage-status.py owns ``get-worktree-path`` and must stay exempt.

@@ -25,9 +25,35 @@ from profiles import (
     suggest_classifications,
 )
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, parse_ns, run_script
 
 SCRIPT_PATH = get_script_path('pm-dev-java', 'manage-maven-profiles', 'profiles.py')
+
+# Argument namespaces come from the script's OWN parser, so each carries every
+# default the real CLI applies — a hand-built Namespace carries only the keys its
+# author remembered. Parsed once at module scope: parse_ns re-executes the script
+# module on every call.
+_CLASSIFY_NS = parse_ns(
+    'pm-dev-java', 'manage-maven-profiles', 'profiles.py',
+    'classify', '--profile-id', 'placeholder', register=False,
+)
+_LIST_NS = parse_ns(
+    'pm-dev-java', 'manage-maven-profiles', 'profiles.py',
+    'list', register=False,
+)
+_UNMATCHED_NS = parse_ns(
+    'pm-dev-java', 'manage-maven-profiles', 'profiles.py',
+    'unmatched', register=False,
+)
+_SUGGEST_NS = parse_ns(
+    'pm-dev-java', 'manage-maven-profiles', 'profiles.py',
+    'suggest', register=False,
+)
+
+
+def _ns(template: Namespace, **overrides) -> Namespace:
+    """A parser-produced namespace with this test's values overlaid."""
+    return Namespace(**{**vars(template), **overrides})
 
 # =============================================================================
 # Helper Functions
@@ -482,7 +508,7 @@ def test_cli_rejects_project_dir_and_plan_id_together():
 
 def test_cmd_classify_prints_fields_and_returns_zero(capsys):
     """cmd_classify prints the four classification fields and returns 0."""
-    rc = cmd_classify(Namespace(profile_id='jmh', project_dir='.'))
+    rc = cmd_classify(_ns(_CLASSIFY_NS, profile_id='jmh', project_dir='.'))
 
     assert rc == 0
     out = capsys.readouterr().out
@@ -496,7 +522,7 @@ def test_cmd_list_prints_totals_and_module_table(capsys):
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_derived_data(tmpdir)
 
-        rc = cmd_list(Namespace(project_dir=tmpdir, module=None))
+        rc = cmd_list(_ns(_LIST_NS, project_dir=tmpdir, module=None))
 
         assert rc == 0
         out = capsys.readouterr().out
@@ -509,7 +535,7 @@ def test_cmd_list_on_greenfield_reports_zero_profiles(capsys):
     """cmd_list against a dir with no discoverable modules reports zero totals
     (the empty-crawl branch), not an error."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        rc = cmd_list(Namespace(project_dir=tmpdir, module=None))
+        rc = cmd_list(_ns(_LIST_NS, project_dir=tmpdir, module=None))
 
         assert rc == 0
         assert 'total_profiles: 0' in capsys.readouterr().out
@@ -520,7 +546,7 @@ def test_cmd_unmatched_prints_count_and_profiles(capsys):
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_derived_data(tmpdir)
 
-        rc = cmd_unmatched(Namespace(project_dir=tmpdir))
+        rc = cmd_unmatched(_ns(_UNMATCHED_NS, project_dir=tmpdir))
 
         assert rc == 0
         assert 'count: 2' in capsys.readouterr().out
@@ -531,7 +557,7 @@ def test_cmd_suggest_prints_count_and_suggestion_table(capsys):
     with tempfile.TemporaryDirectory() as tmpdir:
         create_test_derived_data(tmpdir)
 
-        rc = cmd_suggest(Namespace(project_dir=tmpdir))
+        rc = cmd_suggest(_ns(_SUGGEST_NS, project_dir=tmpdir))
 
         assert rc == 0
         assert 'count: 2' in capsys.readouterr().out

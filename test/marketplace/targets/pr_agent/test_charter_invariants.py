@@ -35,13 +35,12 @@ own, and published, so an empty derivation is a failure rather than a green run
 over nothing. The negative controls at the end prove each assertion can fail.
 """
 
-from pathlib import Path
 
 import pytest
 
+from conftest import PROJECT_ROOT
 from marketplace.targets.pr_agent.target import compose_packs, compose_selection
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
 MARKETPLACE_BUNDLES = PROJECT_ROOT / 'marketplace' / 'bundles'
 
 

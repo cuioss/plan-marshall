@@ -36,6 +36,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -112,9 +114,7 @@ def test_clean_workflow_emits_no_findings(tmp_path: Path) -> None:
     )
     file_path = _make_refine_file(tmp_path, content)
 
-    findings = analyze_phase2_refine_contract([file_path])
-
-    assert findings == []
+    assert_analyzer_findings(analyze_phase2_refine_contract, [file_path], [])
 
 
 def test_edit_to_marketplace_emits_finding(tmp_path: Path) -> None:
@@ -128,11 +128,8 @@ def test_edit_to_marketplace_emits_finding(tmp_path: Path) -> None:
     )
     file_path = _make_refine_file(tmp_path, content)
 
-    findings = analyze_phase2_refine_contract([file_path])
-
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_phase2_refine_contract, [file_path], [RULE_ID])
     finding = findings[0]
-    assert finding['rule_id'] == RULE_ID
     # Rule-specific keys are carried in the nested ``details`` dict on the
     # migrated Finding record (top-level ``type``/``rule_id``/``file``/``line``).
     assert finding['details']['tool'] == 'Edit'
@@ -165,9 +162,7 @@ def test_plan_local_path_is_allowed(tmp_path: Path) -> None:
     )
     file_path = _make_refine_file(tmp_path, content)
 
-    findings = analyze_phase2_refine_contract([file_path])
-
-    assert findings == []
+    assert_analyzer_findings(analyze_phase2_refine_contract, [file_path], [])
 
 
 def test_worktree_prefix_uppercase_placeholder_is_allowed(tmp_path: Path) -> None:
@@ -179,9 +174,7 @@ def test_worktree_prefix_uppercase_placeholder_is_allowed(tmp_path: Path) -> Non
     )
     file_path = _make_refine_file(tmp_path, content)
 
-    findings = analyze_phase2_refine_contract([file_path])
-
-    assert findings == []
+    assert_analyzer_findings(analyze_phase2_refine_contract, [file_path], [])
 
 
 def test_worktree_path_placeholder_is_allowed(tmp_path: Path) -> None:
@@ -193,9 +186,7 @@ def test_worktree_path_placeholder_is_allowed(tmp_path: Path) -> None:
     )
     file_path = _make_refine_file(tmp_path, content)
 
-    findings = analyze_phase2_refine_contract([file_path])
-
-    assert findings == []
+    assert_analyzer_findings(analyze_phase2_refine_contract, [file_path], [])
 
 
 def test_read_calls_are_ignored(tmp_path: Path) -> None:
@@ -209,9 +200,7 @@ def test_read_calls_are_ignored(tmp_path: Path) -> None:
     )
     file_path = _make_refine_file(tmp_path, content)
 
-    findings = analyze_phase2_refine_contract([file_path])
-
-    assert findings == []
+    assert_analyzer_findings(analyze_phase2_refine_contract, [file_path], [])
 
 
 def test_rules_filter_excludes_rule(tmp_path: Path) -> None:
@@ -253,9 +242,7 @@ def test_file_outside_phase2_refine_is_out_of_scope(tmp_path: Path) -> None:
     )
     outside_file = _make_outside_file(tmp_path, content)
 
-    findings = analyze_phase2_refine_contract([outside_file])
-
-    assert findings == []
+    assert_analyzer_findings(analyze_phase2_refine_contract, [outside_file], [])
 
 
 def test_directory_input_recurses(tmp_path: Path) -> None:
@@ -394,11 +381,8 @@ def test_edit_in_phase3_outline_emits_outline_rule(tmp_path: Path) -> None:
     )
     file_path = _make_phase_file(tmp_path, 'phase-3-outline', content)
 
-    findings = analyze_phase2_refine_contract([file_path])
-
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_phase2_refine_contract, [file_path], [OUTLINE_RULE_ID])
     finding = findings[0]
-    assert finding['rule_id'] == OUTLINE_RULE_ID
     assert finding['type'] == OUTLINE_RULE_ID
     assert finding['details']['tool'] == 'Edit'
     assert 'marketplace' in finding['details']['path']
@@ -416,10 +400,7 @@ def test_write_in_phase3_outline_emits_outline_rule(tmp_path: Path) -> None:
     )
     file_path = _make_phase_file(tmp_path, 'phase-3-outline', content)
 
-    findings = analyze_phase2_refine_contract([file_path])
-
-    assert len(findings) == 1
-    assert findings[0]['rule_id'] == OUTLINE_RULE_ID
+    findings = assert_analyzer_findings(analyze_phase2_refine_contract, [file_path], [OUTLINE_RULE_ID])
     assert findings[0]['details']['tool'] == 'Write'
     assert findings[0]['details']['path'] == 'src/main/foo.py'
 
@@ -433,11 +414,8 @@ def test_edit_in_phase4_plan_emits_plan_rule(tmp_path: Path) -> None:
     )
     file_path = _make_phase_file(tmp_path, 'phase-4-plan', content)
 
-    findings = analyze_phase2_refine_contract([file_path])
-
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_phase2_refine_contract, [file_path], [PLAN_RULE_ID])
     finding = findings[0]
-    assert finding['rule_id'] == PLAN_RULE_ID
     assert finding['type'] == PLAN_RULE_ID
     assert finding['details']['tool'] == 'Edit'
     assert 'phase-4-plan' in finding['description']
@@ -453,10 +431,7 @@ def test_write_in_phase4_plan_emits_plan_rule(tmp_path: Path) -> None:
     )
     file_path = _make_phase_file(tmp_path, 'phase-4-plan', content)
 
-    findings = analyze_phase2_refine_contract([file_path])
-
-    assert len(findings) == 1
-    assert findings[0]['rule_id'] == PLAN_RULE_ID
+    findings = assert_analyzer_findings(analyze_phase2_refine_contract, [file_path], [PLAN_RULE_ID])
     assert findings[0]['details']['tool'] == 'Write'
 
 
@@ -469,9 +444,7 @@ def test_plan_local_path_allowed_in_phase3_outline(tmp_path: Path) -> None:
     )
     file_path = _make_phase_file(tmp_path, 'phase-3-outline', content)
 
-    findings = analyze_phase2_refine_contract([file_path])
-
-    assert findings == []
+    assert_analyzer_findings(analyze_phase2_refine_contract, [file_path], [])
 
 
 def test_plan_local_path_allowed_in_phase4_plan(tmp_path: Path) -> None:
@@ -483,9 +456,7 @@ def test_plan_local_path_allowed_in_phase4_plan(tmp_path: Path) -> None:
     )
     file_path = _make_phase_file(tmp_path, 'phase-4-plan', content)
 
-    findings = analyze_phase2_refine_contract([file_path])
-
-    assert findings == []
+    assert_analyzer_findings(analyze_phase2_refine_contract, [file_path], [])
 
 
 def test_phase2_refine_behavior_unchanged(tmp_path: Path) -> None:
@@ -497,10 +468,7 @@ def test_phase2_refine_behavior_unchanged(tmp_path: Path) -> None:
     )
     file_path = _make_phase_file(tmp_path, 'phase-2-refine', content)
 
-    findings = analyze_phase2_refine_contract([file_path])
-
-    assert len(findings) == 1
-    assert findings[0]['rule_id'] == REFINE_RULE_ID
+    findings = assert_analyzer_findings(analyze_phase2_refine_contract, [file_path], [REFINE_RULE_ID])
     assert findings[0]['type'] == REFINE_RULE_ID
     assert 'phase-2-refine' in findings[0]['description']
 

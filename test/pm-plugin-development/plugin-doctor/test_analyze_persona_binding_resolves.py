@@ -24,6 +24,8 @@ from pathlib import Path
 
 from conftest import MARKETPLACE_ROOT, load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -98,10 +100,7 @@ def test_resolvable_binding_with_ref_composition_is_clean(tmp_path):
     )
 
     # Act
-    findings = analyze_persona_binding_resolves(root)
-
-    # Assert — ref-* edges are leaf concerns, not personas; the walk succeeds.
-    assert findings == []
+    assert_analyzer_findings(analyze_persona_binding_resolves, root, [])
 
 
 def test_resolvable_binding_composing_present_persona_is_clean(tmp_path):
@@ -125,10 +124,7 @@ def test_resolvable_binding_composing_present_persona_is_clean(tmp_path):
     )
 
     # Act
-    findings = analyze_persona_binding_resolves(root)
-
-    # Assert
-    assert findings == []
+    assert_analyzer_findings(analyze_persona_binding_resolves, root, [])
 
 
 def test_binding_with_no_composition_resolves_to_base_only(tmp_path):
@@ -143,10 +139,7 @@ def test_binding_with_no_composition_resolves_to_base_only(tmp_path):
     )
 
     # Act
-    findings = analyze_persona_binding_resolves(root)
-
-    # Assert
-    assert findings == []
+    assert_analyzer_findings(analyze_persona_binding_resolves, root, [])
 
 
 # ===========================================================================
@@ -169,12 +162,9 @@ def test_missing_composed_persona_triggers_finding(tmp_path):
     )
 
     # Act
-    findings = analyze_persona_binding_resolves(root)
-
     # Assert
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_persona_binding_resolves, root, [RULE_ID])
     finding = findings[0]
-    assert finding['rule_id'] == RULE_ID
     assert finding['severity'] == 'error'
     assert finding['details']['resolve_error'] == 'composed_persona_not_found'
     assert finding['details']['profiles'] == ['implementation']
@@ -229,10 +219,7 @@ def test_non_persona_skill_is_not_checked(tmp_path):
     )
 
     # Act
-    findings = analyze_persona_binding_resolves(root)
-
-    # Assert
-    assert findings == []
+    assert_analyzer_findings(analyze_persona_binding_resolves, root, [])
 
 
 def test_meta_persona_without_profiles_is_out_of_scope(tmp_path):
@@ -247,10 +234,7 @@ def test_meta_persona_without_profiles_is_out_of_scope(tmp_path):
     )
 
     # Act
-    findings = analyze_persona_binding_resolves(root)
-
-    # Assert
-    assert findings == []
+    assert_analyzer_findings(analyze_persona_binding_resolves, root, [])
 
 
 def test_empty_tree_yields_no_findings(tmp_path):
@@ -258,10 +242,7 @@ def test_empty_tree_yields_no_findings(tmp_path):
     root = _bundles_root(tmp_path)
 
     # Act
-    findings = analyze_persona_binding_resolves(root)
-
-    # Assert
-    assert findings == []
+    assert_analyzer_findings(analyze_persona_binding_resolves, root, [])
 
 
 # ===========================================================================

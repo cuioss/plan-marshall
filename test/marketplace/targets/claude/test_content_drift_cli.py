@@ -26,8 +26,9 @@ from pathlib import Path
 
 import pytest
 
-# test/marketplace/targets/claude/ -> repo root is four parents up.
-_REPO_ROOT = Path(__file__).resolve().parents[4]
+from conftest import PROJECT_ROOT
+
+_REPO_ROOT = PROJECT_ROOT
 _TOON_SCRIPTS = _REPO_ROOT / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'ref-toon-format' / 'scripts'
 if str(_TOON_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(_TOON_SCRIPTS))
@@ -35,6 +36,7 @@ if str(_TOON_SCRIPTS) not in sys.path:
 from marketplace.targets.claude.content_drift_cli import main  # noqa: E402
 from marketplace.targets.claude.target import ClaudeTarget  # noqa: E402
 from toon_parser import parse_toon  # noqa: E402
+
 
 _DOCUMENTED_KEYS = {
     'status',

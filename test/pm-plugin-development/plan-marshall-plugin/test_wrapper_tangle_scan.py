@@ -19,26 +19,20 @@ Plus the extension-point declaration contract and the aggregate output shape.
 
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
+from conftest import MARKETPLACE_ROOT, load_skill_module, run_script  # noqa: E402
 
 SCRIPT_PATH = (
     MARKETPLACE_ROOT / 'pm-plugin-development' / 'skills' / 'plan-marshall-plugin' / 'scripts' / 'wrapper-tangle-scan.py'
 )
 
-_EXT_PATH = (
-    MARKETPLACE_ROOT / 'pm-plugin-development' / 'skills' / 'plan-marshall-plugin' / 'extension.py'
-)
-
 
 def _load_extension():
-    spec = importlib.util.spec_from_file_location('pm_plugin_development_extension_wt', _EXT_PATH)
-    assert spec is not None
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
+    mod = load_skill_module(
+        'pm-plugin-development', 'plan-marshall-plugin', 'extension.py',
+        'pm_plugin_development_extension_wt',
+    )
     return mod.Extension()
 
 

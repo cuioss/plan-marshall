@@ -30,9 +30,10 @@ Test layers:
 
 from pathlib import Path
 
-from conftest import get_script_path, load_script_module
+from conftest import PROJECT_ROOT, get_script_path, load_script_module
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 REAL_BUNDLES_ROOT = PROJECT_ROOT / 'marketplace' / 'bundles'
 
 
@@ -83,53 +84,44 @@ class TestPositiveDetection:
             'and never by the required bot, and the step went done through the hatch.\n'
         )
         root, _ = _make_skill_file(tmp_path, content)
-        findings = analyze_incident_reference_in_docs(root)
-        assert len(findings) == 1
-        assert findings[0]['rule_id'] == RULE_ID
+        findings = assert_analyzer_findings(analyze_incident_reference_in_docs, root, [RULE_ID])
         assert findings[0]['type'] == 'incident_reference'
 
     def test_plan_marshall_ref_shape_fires(self, tmp_path: Path) -> None:
         """A ``plan-marshall#NNNN`` reference fires."""
         content = 'A later barrier could merge a tree the operator never saw (the plan-marshall#1067 shape).\n'
         root, _ = _make_skill_file(tmp_path, content)
-        findings = analyze_incident_reference_in_docs(root)
-        assert len(findings) == 1
-        assert findings[0]['rule_id'] == RULE_ID
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [RULE_ID])
 
     def test_term_of_art_failure_mode_fires(self, tmp_path: Path) -> None:
         """``the PR #866 failure mode`` (ref bound to an incident noun) fires."""
         content = 'An immediate merge here would close the PR unmerged (the PR #866 failure mode).\n'
         root, _ = _make_skill_file(tmp_path, content)
-        findings = analyze_incident_reference_in_docs(root)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [RULE_ID])
 
     def test_term_of_art_signature_fires(self, tmp_path: Path) -> None:
         """``the #1081 signature`` fires."""
         content = 'The #1081 signature is exactly a verb that reported a merge that never landed.\n'
         root, _ = _make_skill_file(tmp_path, content)
-        findings = analyze_incident_reference_in_docs(root)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [RULE_ID])
 
     def test_term_of_art_with_hyphenated_qualifier_fires(self, tmp_path: Path) -> None:
         """``the #948 sibling-worktree shape`` (qualifier between ref and noun) fires."""
         content = 'An absent plan under this scope is unknown, not authoritative absence — the #948 sibling-worktree shape.\n'
         root, _ = _make_skill_file(tmp_path, content)
-        findings = analyze_incident_reference_in_docs(root)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [RULE_ID])
 
     def test_temporal_pre_narration_fires(self, tmp_path: Path) -> None:
         """``pre-#NNNN`` temporal narration fires."""
         content = 'The pre-#1067 defect: a resolver id appended behind a bare falsiness check with no dedup.\n'
         root, _ = _make_skill_file(tmp_path, content)
-        findings = analyze_incident_reference_in_docs(root)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [RULE_ID])
 
     def test_temporal_post_narration_fires(self, tmp_path: Path) -> None:
         """``post-#NNNN`` temporal narration fires."""
         content = 'The materialized roster is the CURRENT (post-#895/#896/#898) model.\n'
         root, _ = _make_skill_file(tmp_path, content)
-        findings = analyze_incident_reference_in_docs(root)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [RULE_ID])
 
     def test_fires_inside_python_script(self, tmp_path: Path) -> None:
         """A python script comment carrying an incident label fires (scripts are in scope)."""
@@ -140,8 +132,7 @@ class TestPositiveDetection:
             '    return None\n'
         )
         root, _ = _make_skill_file(tmp_path, content, filename='_github_pr.py')
-        findings = analyze_incident_reference_in_docs(root)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_incident_reference_in_docs, root, [RULE_ID])
         assert findings[0]['file'].endswith('_github_pr.py')
 
     def test_bare_ref_after_backticked_ref_on_same_line_fires(self, tmp_path: Path) -> None:
@@ -153,19 +144,15 @@ class TestPositiveDetection:
         """
         content = 'See `plan-marshall#100` for context, but plan-marshall#101 is the live shape.\n'
         root, _ = _make_skill_file(tmp_path, content)
-        findings = analyze_incident_reference_in_docs(root)
-        assert len(findings) == 1
-        assert findings[0]['rule_id'] == RULE_ID
+        findings = assert_analyzer_findings(analyze_incident_reference_in_docs, root, [RULE_ID])
         assert findings[0]['snippet'] == 'plan-marshall#101'
 
     def test_finding_shape(self, tmp_path: Path) -> None:
         """Finding carries the expected shape fields."""
         content = 'Observed on plan-marshall#1045: the required bot never reviewed.\n'
         root, target = _make_skill_file(tmp_path, content)
-        findings = analyze_incident_reference_in_docs(root)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_incident_reference_in_docs, root, [RULE_ID])
         f = findings[0]
-        assert f['rule_id'] == RULE_ID
         assert f['type'] == 'incident_reference'
         assert f['rule'] == 'analyze_incident_reference_in_docs'
         assert f['file'] == str(target)
@@ -191,27 +178,27 @@ class TestCorrectedMechanismProseNotFlagged:
     def test_close_unmerged_failure_mode_not_flagged(self, tmp_path: Path) -> None:
         content = 'An immediate merge here would close the PR unmerged (the close-unmerged failure mode).\n'
         root, _ = _make_skill_file(tmp_path, content)
-        assert analyze_incident_reference_in_docs(root) == []
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
 
     def test_accepted_not_landed_signature_not_flagged(self, tmp_path: Path) -> None:
         content = 'The accepted-not-landed signature is exactly a verb that reported a merge that never landed.\n'
         root, _ = _make_skill_file(tmp_path, content)
-        assert analyze_incident_reference_in_docs(root) == []
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
 
     def test_sibling_worktree_shape_not_flagged(self, tmp_path: Path) -> None:
         content = 'An absent plan under this scope is unknown, not authoritative absence (the sibling-worktree shape).\n'
         root, _ = _make_skill_file(tmp_path, content)
-        assert analyze_incident_reference_in_docs(root) == []
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
 
     def test_pre_fix_defect_not_flagged(self, tmp_path: Path) -> None:
         content = 'The pre-fix defect: a resolver id appended behind a bare falsiness check with no dedup.\n'
         root, _ = _make_skill_file(tmp_path, content)
-        assert analyze_incident_reference_in_docs(root) == []
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
 
     def test_unbound_consent_shape_not_flagged(self, tmp_path: Path) -> None:
         content = 'A later barrier could merge a tree the operator never saw (the unbound-consent shape).\n'
         root, _ = _make_skill_file(tmp_path, content)
-        assert analyze_incident_reference_in_docs(root) == []
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
 
 
 # ===========================================================================
@@ -228,30 +215,30 @@ class TestReferentialAndBoundaryNotFlagged:
         """A bare provenance citation with no incident noun is not narration."""
         content = 'The parsing contract is transcribed verbatim from PR #629 review.\n'
         root, _ = _make_skill_file(tmp_path, content)
-        assert analyze_incident_reference_in_docs(root) == []
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
 
     def test_lowercase_observed_on_not_flagged(self, tmp_path: Path) -> None:
         """A bot data-sheet's lowercase ``observed on #NNNN`` is an observation record."""
         content = 'refusal_patterns:  # EMPTY — no refusal of any kind observed on #103 or #1078.\n'
         root, _ = _make_skill_file(tmp_path, content)
-        assert analyze_incident_reference_in_docs(root) == []
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
 
     def test_external_tracker_issue_not_flagged(self, tmp_path: Path) -> None:
         """An external-project issue reference with no incident noun is not flagged."""
         content = 'OpenCode does not expose a session id (issue #9292); tracked upstream.\n'
         root, _ = _make_skill_file(tmp_path, content)
-        assert analyze_incident_reference_in_docs(root) == []
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
 
     def test_commit_footer_example_not_flagged(self, tmp_path: Path) -> None:
         """A syntax-teaching commit-footer example is not incident narration."""
         content = 'Close the issue when the commit merges with `Fixes #123` in the footer.\n'
         root, _ = _make_skill_file(tmp_path, content)
-        assert analyze_incident_reference_in_docs(root) == []
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
 
     def test_clean_present_tense_prose_no_finding(self, tmp_path: Path) -> None:
         content = 'Route a destructive decision through a main-anchored staleness verdict.\n'
         root, _ = _make_skill_file(tmp_path, content)
-        assert analyze_incident_reference_in_docs(root) == []
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
 
 
 # ===========================================================================
@@ -297,9 +284,7 @@ class TestPopulationPublished:
         """
         empty_root = tmp_path / 'empty-bundles'
         empty_root.mkdir()
-        findings = analyze_incident_reference_in_docs(empty_root)
-        assert len(findings) == 1
-        assert findings[0]['rule_id'] == RULE_ID
+        findings = assert_analyzer_findings(analyze_incident_reference_in_docs, empty_root, [RULE_ID])
         assert findings[0]['pattern_family'] == 'empty_population'
         assert findings[0]['population_size'] == 0
 
@@ -321,23 +306,23 @@ class TestSkipContextExemption:
             'Normal body content.\n'
         )
         root, _ = _make_skill_file(tmp_path, content)
-        assert analyze_incident_reference_in_docs(root) == []
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
 
     def test_fenced_code_block_is_exempt(self, tmp_path: Path) -> None:
         content = '```text\nObserved on plan-marshall#1045: inside a code fence.\n```\n'
         root, _ = _make_skill_file(tmp_path, content)
-        assert analyze_incident_reference_in_docs(root) == []
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
 
     def test_source_line_is_exempt(self, tmp_path: Path) -> None:
         content = 'Source: the #866 failure mode provenance citation.\n'
         root, _ = _make_skill_file(tmp_path, content)
-        assert analyze_incident_reference_in_docs(root) == []
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
 
     def test_backticked_inline_code_ref_is_exempt(self, tmp_path: Path) -> None:
         """A back-ticked ``#NNNN`` reference is a code token, not narration."""
         content = 'The `#812` end_time-presence check stays distinguishable.\n'
         root, _ = _make_skill_file(tmp_path, content)
-        assert analyze_incident_reference_in_docs(root) == []
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
 
 
 # ===========================================================================
@@ -359,7 +344,7 @@ class TestFrontmatterDisable:
             'Observed on plan-marshall#1045: suppressed per-file.\n'
         )
         root, _ = _make_skill_file(tmp_path, content)
-        assert analyze_incident_reference_in_docs(root) == []
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
 
     def test_disable_list_for_other_rule_does_not_suppress(self, tmp_path: Path) -> None:
         content = (
@@ -370,9 +355,7 @@ class TestFrontmatterDisable:
             'Observed on plan-marshall#1045: this rule is NOT in the disable list.\n'
         )
         root, _ = _make_skill_file(tmp_path, content)
-        findings = analyze_incident_reference_in_docs(root)
-        assert len(findings) == 1
-        assert findings[0]['rule_id'] == RULE_ID
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [RULE_ID])
 
 
 # ===========================================================================

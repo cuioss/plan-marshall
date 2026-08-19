@@ -52,7 +52,7 @@ MARKER_OPEN = FIXTURE_MARKER[: FIXTURE_MARKER.index('(') + 1]
 #: Closing delimiter from the message-closing paren onwards.
 MARKER_CLOSE = FIXTURE_MARKER[FIXTURE_MARKER.rindex(')') :]
 
-#: The pre-fix delimiter this plan retired — the real one with its tildes dropped.
+#: The retired delimiter form — the real one with its tildes dropped.
 LEGACY_MARKER_CLOSE = MARKER_CLOSE.replace('~~', '')
 
 

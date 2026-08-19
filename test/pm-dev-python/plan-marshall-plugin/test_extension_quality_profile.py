@@ -12,19 +12,16 @@ Tier 2 (direct import): loads the bundle extension.py and inspects the
 get_skill_domains() return value directly.
 """
 
-import importlib.util
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH for extension_base).
-from conftest import MARKETPLACE_ROOT
+from conftest import load_skill_module
 
 
 def _load_extension():
     """Load the pm-dev-python bundle extension.py and return an Extension instance."""
-    extension_path = MARKETPLACE_ROOT / 'pm-dev-python' / 'skills' / 'plan-marshall-plugin' / 'extension.py'
-    spec = importlib.util.spec_from_file_location('extension_pm_dev_python', extension_path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = load_skill_module(
+        'pm-dev-python', 'plan-marshall-plugin', 'extension.py', 'extension_pm_dev_python'
+    )
     return module.Extension()
 
 

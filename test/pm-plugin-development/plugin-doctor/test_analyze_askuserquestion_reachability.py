@@ -19,7 +19,9 @@ Covers the askuserquestion-in-dispatched-workflow analyzer:
 """
 from pathlib import Path
 
-from conftest import load_script_module
+from conftest import PROJECT_ROOT, load_script_module
+
+from _plugin_doctor_fixtures import assert_analyzer_findings
 
 
 def _load_module(name: str, filename: str):
@@ -35,7 +37,6 @@ RULE_ID = _aar.RULE_ID
 RULE_NAME = _aar.RULE_NAME
 FINDING_TYPE = _aar.FINDING_TYPE
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 PROVENANCE_PATH = (
     PROJECT_ROOT
     / 'marketplace'
@@ -104,23 +105,18 @@ class TestFlagsDispatchedLeaf:
     def test_block_in_implements_marked_doc_flagged(self, tmp_path):
         content = _IMPLEMENTS_FM + '\n# Fixture\n\n' + _ASKUSER_BLOCK
         _make_workflow_doc(tmp_path, content)
-        findings = analyze_askuserquestion_reachability(tmp_path)
-        assert len(findings) == 1
-        assert findings[0]['rule_id'] == RULE_ID
+        assert_analyzer_findings(analyze_askuserquestion_reachability, tmp_path, [RULE_ID])
 
     def test_block_in_marked_phase_skill_flagged(self, tmp_path):
         # A phase-*/SKILL.md carrying the implements marker is a dispatched leaf.
         content = _IMPLEMENTS_FM + '\n# Phase Skill\n\n' + _ASKUSER_BLOCK
         _make_workflow_doc(tmp_path, content, skill='phase-2-refine')
-        findings = analyze_askuserquestion_reachability(tmp_path)
-        assert len(findings) == 1
-        assert findings[0]['rule_id'] == RULE_ID
+        assert_analyzer_findings(analyze_askuserquestion_reachability, tmp_path, [RULE_ID])
 
     def test_block_in_workflow_subdir_doc_flagged(self, tmp_path):
         content = _IMPLEMENTS_FM + '\n# Body\n\n' + _ASKUSER_BLOCK
         _make_workflow_doc(tmp_path, content, subdir='workflow', filename='body.md')
-        findings = analyze_askuserquestion_reachability(tmp_path)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_askuserquestion_reachability, tmp_path, [RULE_ID])
 
     def test_question_subkey_variant_flagged(self, tmp_path):
         content = (
@@ -130,8 +126,7 @@ class TestFlagsDispatchedLeaf:
             + '  question: "single question form"\n'
         )
         _make_workflow_doc(tmp_path, content)
-        findings = analyze_askuserquestion_reachability(tmp_path)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_askuserquestion_reachability, tmp_path, [RULE_ID])
 
     def test_multiple_blocks_each_flagged(self, tmp_path):
         content = (
@@ -142,8 +137,7 @@ class TestFlagsDispatchedLeaf:
             + _ASKUSER_BLOCK
         )
         _make_workflow_doc(tmp_path, content)
-        findings = analyze_askuserquestion_reachability(tmp_path)
-        assert len(findings) == 2
+        assert_analyzer_findings(analyze_askuserquestion_reachability, tmp_path, [RULE_ID] * 2)
 
 
 # ---------------------------------------------------------------------------
@@ -160,8 +154,7 @@ class TestDoesNotFlag:
             + 'envelope so the orchestrator owns the AskUserQuestion instead.\n'
         )
         _make_workflow_doc(tmp_path, content)
-        findings = analyze_askuserquestion_reachability(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_askuserquestion_reachability, tmp_path, [])
 
     def test_main_context_orchestrator_not_flagged(self, tmp_path):
         # A doc that dispatches (carries a Task: directive) is a main-context
@@ -180,8 +173,7 @@ class TestDoesNotFlag:
             + _ASKUSER_BLOCK
         )
         _make_workflow_doc(tmp_path, content)
-        findings = analyze_askuserquestion_reachability(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_askuserquestion_reachability, tmp_path, [])
 
     def test_unmarked_phase_skill_not_flagged(self, tmp_path):
         # A phase-*/SKILL.md that omits the implements marker runs inline in the
@@ -189,8 +181,7 @@ class TestDoesNotFlag:
         # NOT a dispatched leaf, so its AskUserQuestion blocks are not flagged.
         content = '# Inline Phase Skill\n\n' + _ASKUSER_BLOCK
         _make_workflow_doc(tmp_path, content, skill='phase-1-init')
-        findings = analyze_askuserquestion_reachability(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_askuserquestion_reachability, tmp_path, [])
 
     def test_non_workflow_doc_not_flagged(self, tmp_path):
         # No implements marker and not a phase skill — an ordinary knowledge
@@ -204,8 +195,7 @@ class TestDoesNotFlag:
             + _ASKUSER_BLOCK
         )
         _make_workflow_doc(tmp_path, content, skill='ordinary-skill')
-        findings = analyze_askuserquestion_reachability(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_askuserquestion_reachability, tmp_path, [])
 
     def test_bare_header_without_subkey_not_flagged(self, tmp_path):
         # A bare AskUserQuestion: line whose next non-blank line is not a
@@ -217,8 +207,7 @@ class TestDoesNotFlag:
             + 'some following prose, not a sub-key.\n'
         )
         _make_workflow_doc(tmp_path, content)
-        findings = analyze_askuserquestion_reachability(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_askuserquestion_reachability, tmp_path, [])
 
 
 # ---------------------------------------------------------------------------
@@ -230,10 +219,8 @@ class TestFindingShape:
     def test_required_fields_present(self, tmp_path):
         content = _IMPLEMENTS_FM + '\n# Fixture\n\n' + _ASKUSER_BLOCK
         _make_workflow_doc(tmp_path, content)
-        findings = analyze_askuserquestion_reachability(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_askuserquestion_reachability, tmp_path, [RULE_ID])
         f = findings[0]
-        assert f['rule_id'] == RULE_ID
         assert f['type'] == FINDING_TYPE
         assert f['rule'] == RULE_NAME
         assert isinstance(f['file'], str)
@@ -248,15 +235,13 @@ class TestFindingShape:
         # header lands on line 7 (1-based).
         content = _IMPLEMENTS_FM + '\n# Fixture\n\n' + _ASKUSER_BLOCK
         _make_workflow_doc(tmp_path, content)
-        findings = analyze_askuserquestion_reachability(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_askuserquestion_reachability, tmp_path, [RULE_ID])
         assert findings[0]['line'] == 7
 
     def test_file_path_is_absolute(self, tmp_path):
         content = _IMPLEMENTS_FM + '\n# Fixture\n\n' + _ASKUSER_BLOCK
         _make_workflow_doc(tmp_path, content)
-        findings = analyze_askuserquestion_reachability(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_askuserquestion_reachability, tmp_path, [RULE_ID])
         assert Path(findings[0]['file']).is_absolute()
 
 
@@ -267,14 +252,12 @@ class TestFindingShape:
 
 class TestCleanBaseline:
     def test_empty_marketplace_root_no_findings(self, tmp_path):
-        findings = analyze_askuserquestion_reachability(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_askuserquestion_reachability, tmp_path, [])
 
     def test_dispatched_leaf_without_askuserquestion_no_findings(self, tmp_path):
         content = _IMPLEMENTS_FM + '\n# Fixture\n\nJust some prose, no prompt.\n'
         _make_workflow_doc(tmp_path, content)
-        findings = analyze_askuserquestion_reachability(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_askuserquestion_reachability, tmp_path, [])
 
 
 # ---------------------------------------------------------------------------

@@ -27,9 +27,8 @@ import re
 import sys
 from pathlib import Path
 
-from conftest import get_scripts_dir, load_script_module
+from conftest import PROJECT_ROOT, get_scripts_dir, load_script_module
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 # Retained: inserted on sys.path (used outside the module loader) so the
 # analyzer modules' intra-bundle ``from <module> import ...`` references resolve.
 SCRIPTS_DIR = get_scripts_dir('pm-plugin-development', 'plugin-doctor')

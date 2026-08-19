@@ -25,6 +25,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -81,9 +83,7 @@ class TestDirectiveResolves:
             'Load it:\n\nSkill: my-bundle:target-skill\n',
         )
 
-        findings = analyze_skill_notation(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_skill_notation, tmp_path, [])
 
     def test_non_bundle_first_segment_ignored(self, tmp_path: Path) -> None:
         """A two-segment token whose first segment is not a real bundle is skipped."""
@@ -94,9 +94,7 @@ class TestDirectiveResolves:
             'Incidental token: Skill: not-a-bundle:something\n',
         )
 
-        findings = analyze_skill_notation(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_skill_notation, tmp_path, [])
 
     def test_three_segment_executor_notation_not_matched(self, tmp_path: Path) -> None:
         """A three-segment executor notation is not a Skill directive."""
@@ -108,17 +106,10 @@ class TestDirectiveResolves:
             'Run: Skill: my-bundle:manage-status:manage-status read\n',
         )
 
-        findings = analyze_skill_notation(tmp_path)
-
-        # The directive regex bounds the skill segment with a non-`:` lookahead,
-        # so the trailing `:manage-status` makes this an executor notation, not
-        # a Skill directive — no finding regardless of skill-dir presence.
-        assert findings == []
+        assert_analyzer_findings(analyze_skill_notation, tmp_path, [])
 
     def test_empty_root_returns_no_findings(self, tmp_path: Path) -> None:
-        findings = analyze_skill_notation(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_skill_notation, tmp_path, [])
 
 
 # ===========================================================================
@@ -138,11 +129,8 @@ class TestDirectiveUnresolved:
             'Load it:\n\nSkill: my-bundle:ghost-skill\n',
         )
 
-        findings = analyze_skill_notation(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_skill_notation, tmp_path, [RULE_ID])
         finding = findings[0]
-        assert finding['rule_id'] == RULE_ID
         assert finding['type'] == RULE_ID
         assert finding['severity'] == 'error'
         assert finding['fixable'] is False
@@ -163,9 +151,7 @@ class TestDirectiveUnresolved:
             'Skill: my-bundle:ghost-skill and again Skill: my-bundle:ghost-skill\n',
         )
 
-        findings = analyze_skill_notation(tmp_path)
-
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_skill_notation, tmp_path, [RULE_ID])
 
     def test_directive_in_agent_markdown_flagged(self, tmp_path: Path) -> None:
         """Markdown under ``agents/`` is scanned in addition to ``skills/``."""
@@ -176,9 +162,7 @@ class TestDirectiveUnresolved:
             'Skill: my-bundle:ghost-skill\n', encoding='utf-8'
         )
 
-        findings = analyze_skill_notation(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_skill_notation, tmp_path, [RULE_ID])
         assert findings[0]['details']['notation'] == 'my-bundle:ghost-skill'
 
     def test_multiple_unresolved_directives_each_flagged(self, tmp_path: Path) -> None:
@@ -192,9 +176,7 @@ class TestDirectiveUnresolved:
             'Skill: my-bundle:ghost-two\n',
         )
 
-        findings = analyze_skill_notation(tmp_path)
-
-        assert len(findings) == 2
+        findings = assert_analyzer_findings(analyze_skill_notation, tmp_path, [RULE_ID] * 2)
         skills = {f['details']['skill'] for f in findings}
         assert skills == {'ghost-one', 'ghost-two'}
 
@@ -216,6 +198,4 @@ class TestScanScope:
             'Skill: not-a-bundle:ghost-skill\n', encoding='utf-8'
         )
 
-        findings = analyze_skill_notation(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_skill_notation, tmp_path, [])

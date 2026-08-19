@@ -19,6 +19,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -84,8 +86,7 @@ class TestRelativeTempGitCDetected:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID])
         assert findings[0]['temp_path'] == '.plan/temp/{plan_id}-commit-msg.txt'
 
     def test_relative_temp_in_sh_fence(self, tmp_path):
@@ -95,8 +96,7 @@ class TestRelativeTempGitCDetected:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID])
         assert findings[0]['temp_path'] == '.plan/temp/msg.txt'
 
     def test_relative_temp_with_concrete_worktree_path(self, tmp_path):
@@ -106,8 +106,7 @@ class TestRelativeTempGitCDetected:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID])
         assert findings[0]['temp_path'] == '.plan/temp/commit-msg.txt'
 
 
@@ -124,8 +123,7 @@ class TestWorktreeAbsoluteNotFlagged:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [])
 
 
 # ---------------------------------------------------------------------------
@@ -141,8 +139,7 @@ class TestPlanTempWithoutGitCNotFlagged:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [])
 
     def test_git_without_dash_c_not_flagged(self, tmp_path):
         content = (
@@ -151,8 +148,7 @@ class TestPlanTempWithoutGitCNotFlagged:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [])
 
     def test_git_c_commit_non_temp_message_not_flagged(self, tmp_path):
         content = (
@@ -161,8 +157,7 @@ class TestPlanTempWithoutGitCNotFlagged:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [])
 
 
 # ---------------------------------------------------------------------------
@@ -177,8 +172,7 @@ class TestProseAndNonBashNotScanned:
             'Another mention: git -C wt commit -F .plan/temp/other.txt here.\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [])
 
     def test_python_fence_not_scanned(self, tmp_path):
         content = (
@@ -187,8 +181,7 @@ class TestProseAndNonBashNotScanned:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [])
 
     def test_text_fence_not_scanned(self, tmp_path):
         content = (
@@ -197,8 +190,7 @@ class TestProseAndNonBashNotScanned:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [])
 
 
 # ---------------------------------------------------------------------------
@@ -214,8 +206,7 @@ class TestCommentLinesExempt:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [])
 
     def test_indented_comment_line_not_flagged(self, tmp_path):
         content = (
@@ -224,8 +215,7 @@ class TestCommentLinesExempt:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [])
 
 
 # ---------------------------------------------------------------------------
@@ -241,10 +231,8 @@ class TestFindingShape:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID])
         f = findings[0]
-        assert f['rule_id'] == RULE_ID
         assert f['type'] == FINDING_TYPE
         assert f['rule'] == RULE_NAME
         assert isinstance(f['file'], str)
@@ -265,8 +253,7 @@ class TestFindingShape:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID])
         assert findings[0]['line'] == 4
 
     def test_file_path_is_absolute(self, tmp_path):
@@ -276,8 +263,7 @@ class TestFindingShape:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID])
         assert Path(findings[0]['file']).is_absolute()
 
 
@@ -295,8 +281,7 @@ class TestMultipleFindings:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert len(findings) == 2
+        findings = assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID] * 2)
         temp_paths = {f['temp_path'] for f in findings}
         assert temp_paths == {'.plan/temp/a.txt', '.plan/temp/b.txt'}
 
@@ -314,8 +299,7 @@ class TestAgentAndCommandScanned:
             '```\n'
         )
         _make_agent_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID])
 
     def test_command_md_is_scanned(self, tmp_path):
         content = (
@@ -324,8 +308,7 @@ class TestAgentAndCommandScanned:
             '```\n'
         )
         _make_command_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [RULE_ID])
 
 
 # ---------------------------------------------------------------------------
@@ -343,10 +326,8 @@ class TestCleanBaseline:
             'Reference: use `{worktree_path}/.plan/temp/msg.txt`\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [])
 
     def test_empty_marketplace_root_no_findings(self, tmp_path):
         # No plan-marshall bundle directory at all
-        findings = analyze_skill_relative_temp_path(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_skill_relative_temp_path, tmp_path, [])

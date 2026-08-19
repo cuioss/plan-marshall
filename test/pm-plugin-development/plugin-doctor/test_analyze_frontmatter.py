@@ -28,6 +28,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -100,18 +102,14 @@ class TestImplementsPresent:
         root = _bundles_root(tmp_path)
         _write_recipe_skill(root, 'my-bundle', 'recipe-foo', _frontmatter(_REQUIRED))
 
-        findings = analyze_frontmatter(root)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_frontmatter, root, [])
 
     def test_quoted_implements_value_accepted(self, tmp_path: Path) -> None:
         """A double-quoted ``implements:`` scalar is accepted after quote-strip."""
         root = _bundles_root(tmp_path)
         _write_recipe_skill(root, 'my-bundle', 'recipe-foo', _frontmatter(f'"{_REQUIRED}"'))
 
-        findings = analyze_frontmatter(root)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_frontmatter, root, [])
 
     def test_non_recipe_skill_not_scanned(self, tmp_path: Path) -> None:
         """A skill whose name is not ``recipe-*`` is out of scope."""
@@ -119,16 +117,12 @@ class TestImplementsPresent:
         # No implements: at all, but the dir is `manage-foo`, not `recipe-*`.
         _write_recipe_skill(root, 'my-bundle', 'manage-foo', _frontmatter(None))
 
-        findings = analyze_frontmatter(root)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_frontmatter, root, [])
 
     def test_empty_root_returns_no_findings(self, tmp_path: Path) -> None:
         root = _bundles_root(tmp_path)
 
-        findings = analyze_frontmatter(root)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_frontmatter, root, [])
 
 
 # ===========================================================================
@@ -143,11 +137,8 @@ class TestImplementsMissing:
         root = _bundles_root(tmp_path)
         md = _write_recipe_skill(root, 'my-bundle', 'recipe-foo', _frontmatter(None))
 
-        findings = analyze_frontmatter(root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_frontmatter, root, [RULE_ID])
         finding = findings[0]
-        assert finding['rule_id'] == RULE_ID
         assert finding['type'] == RULE_ID
         assert finding['severity'] == 'error'
         assert finding['fixable'] is False
@@ -163,9 +154,7 @@ class TestImplementsMissing:
         root = _bundles_root(tmp_path)
         (root / 'my-bundle' / 'skills' / 'recipe-empty').mkdir(parents=True)
 
-        findings = analyze_frontmatter(root)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_frontmatter, root, [])
 
     def test_multiple_missing_each_flagged(self, tmp_path: Path) -> None:
         root = _bundles_root(tmp_path)
@@ -173,9 +162,7 @@ class TestImplementsMissing:
         _write_recipe_skill(root, 'my-bundle', 'recipe-b', _frontmatter(None))
         _write_recipe_skill(root, 'my-bundle', 'recipe-c', _frontmatter(_REQUIRED))
 
-        findings = analyze_frontmatter(root)
-
-        assert len(findings) == 2
+        findings = assert_analyzer_findings(analyze_frontmatter, root, [RULE_ID] * 2)
         skills = {f['details']['skill'] for f in findings}
         assert skills == {'recipe-a', 'recipe-b'}
 
@@ -194,9 +181,7 @@ class TestImplementsDivergent:
             root, 'my-bundle', 'recipe-foo', _frontmatter('plan-marshall:wrong/notation')
         )
 
-        findings = analyze_frontmatter(root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_frontmatter, root, [RULE_ID])
         details = findings[0]['details']
         assert details['reason'] == 'implements_divergent'
         assert details['declared_implements'] == 'plan-marshall:wrong/notation'
@@ -212,9 +197,7 @@ class TestClaudeSkillsTree:
         root = tmp_path / 'marketplace' / 'bundles'
         md = _write_claude_recipe_skill(tmp_path, 'recipe-local', _frontmatter(None))
 
-        findings = analyze_frontmatter(root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_frontmatter, root, [RULE_ID])
         assert findings[0]['file'] == str(md)
         assert findings[0]['details']['skill'] == 'recipe-local'
 
@@ -223,9 +206,7 @@ class TestClaudeSkillsTree:
         root = tmp_path / 'marketplace' / 'bundles'
         _write_claude_recipe_skill(tmp_path, 'recipe-local', _frontmatter(_REQUIRED))
 
-        findings = analyze_frontmatter(root)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_frontmatter, root, [])
 
 
 class TestMultiRootLayout:

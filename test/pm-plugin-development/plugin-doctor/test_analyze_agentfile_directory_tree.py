@@ -19,6 +19,8 @@ from pathlib import Path
 
 from conftest import get_scripts_dir, load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 _adt = load_script_module(
     'pm-plugin-development',
     'plugin-doctor',
@@ -163,9 +165,7 @@ class TestNoTreeNotFlagged:
         content = '# Title\n\n```bash\npython3 run.py\n```\n'
         _write_agentfile(repo, 'CLAUDE.md', content)
 
-        findings = analyze_agentfile_directory_tree(bundles)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_agentfile_directory_tree, bundles, [])
 
     def test_glyph_in_prose_outside_fence_not_flagged(self, tmp_path: Path) -> None:
         """A tree glyph in ordinary prose (no fence) is not scanned."""
@@ -173,9 +173,7 @@ class TestNoTreeNotFlagged:
         content = '# Title\n\nThe layout is src/ ├── main.py in prose.\n'
         _write_agentfile(repo, 'CLAUDE.md', content)
 
-        findings = analyze_agentfile_directory_tree(bundles)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_agentfile_directory_tree, bundles, [])
 
     def test_ascii_pipe_table_in_fence_not_flagged(self, tmp_path: Path) -> None:
         """An ASCII-pipe table inside a fence does not match the box-drawing glyph."""
@@ -183,16 +181,12 @@ class TestNoTreeNotFlagged:
         content = '```\n| col-a | col-b |\n| ----- | ----- |\n| x | y |\n```\n'
         _write_agentfile(repo, 'CLAUDE.md', content)
 
-        findings = analyze_agentfile_directory_tree(bundles)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_agentfile_directory_tree, bundles, [])
 
     def test_no_agentfiles_no_findings(self, tmp_path: Path) -> None:
         _repo, bundles = _make_repo(tmp_path)
 
-        findings = analyze_agentfile_directory_tree(bundles)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_agentfile_directory_tree, bundles, [])
 
 
 # ===========================================================================
@@ -209,9 +203,7 @@ class TestExcludedDirectories:
         _write_agentfile(repo, '.plan/AGENTS.md', _TREE_FENCE)
         _write_agentfile(repo, 'node_modules/pkg/CLAUDE.md', _TREE_FENCE)
 
-        findings = analyze_agentfile_directory_tree(bundles)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_agentfile_directory_tree, bundles, [])
 
 
 # ===========================================================================

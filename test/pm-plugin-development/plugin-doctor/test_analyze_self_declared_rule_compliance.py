@@ -45,6 +45,8 @@ from pathlib import Path
 
 from conftest import get_script_path, load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -153,17 +155,14 @@ class TestPositiveViolation:
         """A `### Step 1a` heading in a rule-declaring file drifts."""
         content = _doc('### Step 1a Initialize\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert len(findings) == 1
-        assert findings[0]['rule_id'] == RULE_ID
+        findings = assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [RULE_ID])
         assert 'Step 1a' in findings[0]['snippet']
 
     def test_declares_rule_and_violates_with_bare_label(self, tmp_path: Path) -> None:
         """A bare `#### 3b` label heading is also a violation."""
         content = _doc('#### 3b Run the secondary check\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [RULE_ID])
         assert '3b' in findings[0]['snippet']
 
     def test_multiple_violating_headings_produce_multiple_findings(
@@ -172,8 +171,7 @@ class TestPositiveViolation:
         """Two sub-numbered headings yield two findings."""
         content = _doc('### Step 1a First\n\nbody\n\n### Step 5a Second\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert len(findings) == 2
+        findings = assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [RULE_ID] * 2)
         snippets = sorted(f['snippet'] for f in findings)
         assert 'Step 1a' in snippets[0]
         assert 'Step 5a' in snippets[1]
@@ -183,16 +181,14 @@ class TestPositiveViolation:
         # Lines: 1 '---', 2 name, 3 '---', 4 declaration, 5 violating heading.
         content = _doc('### Step 2a Configure\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [RULE_ID])
         assert findings[0]['line'] == 5
 
     def test_multi_digit_step_label_is_detected(self, tmp_path: Path) -> None:
         """A two-digit `## Step 12a` label is a violation."""
         content = _doc('## Step 12a Late step\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [RULE_ID])
 
 
 # ===========================================================================
@@ -207,8 +203,7 @@ class TestNoViolation:
         """A rule-declaring file with flat (`### Step 1`) headings is clean."""
         content = _doc('### Step 1 Initialize\n\nbody\n\n### Step 2 Verify\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [])
 
     def test_sub_numbering_without_declaration_is_not_flagged(
         self, tmp_path: Path
@@ -216,15 +211,13 @@ class TestNoViolation:
         """Sub-numbering WITHOUT a declared rule is not flagged (self-referential)."""
         content = _doc('### Step 1a Initialize\n', declaration='')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [])
 
     def test_no_headings_at_all_is_clean(self, tmp_path: Path) -> None:
         """A rule-declaring file with no step headings has nothing to violate."""
         content = _doc('Just prose with no step headings whatsoever.\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [])
 
     def test_flat_heading_with_trailing_letter_word_is_not_a_violation(
         self, tmp_path: Path
@@ -232,8 +225,7 @@ class TestNoViolation:
         """`### Step 1 Apply` (digit then space then word) is flat, not sub-numbered."""
         content = _doc('### Step 1 Apply the migration\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [])
 
 
 # ===========================================================================
@@ -250,8 +242,7 @@ class TestExemptions:
         """A `### Step 1a` line inside a fence is an example, not a live heading."""
         content = _doc('```markdown\n### Step 1a example inside a fence\n```\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [])
 
     def test_declaration_only_inside_fence_does_not_arm_rule(
         self, tmp_path: Path
@@ -267,8 +258,7 @@ class TestExemptions:
             '### Step 1a Initialize\n'
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [])
 
     def test_frontmatter_disable_suppresses_whole_file(self, tmp_path: Path) -> None:
         """A ``plugin-doctor-disable`` naming the rule suppresses every violation."""
@@ -277,8 +267,7 @@ class TestExemptions:
             '[skill-self-declared-rule-violation]',
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [])
 
     def test_frontmatter_disable_block_list_form(self, tmp_path: Path) -> None:
         """The YAML block-list ``plugin-doctor-disable`` form is honored."""
@@ -291,8 +280,7 @@ class TestExemptions:
             f'{_DECLARATION}### Step 1a Initialize\n'
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [])
 
     def test_frontmatter_disable_for_other_rule_does_not_suppress(
         self, tmp_path: Path
@@ -303,8 +291,7 @@ class TestExemptions:
             '[some-other-rule]',
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [RULE_ID])
         assert 'Step 1a' in findings[0]['snippet']
 
     def test_retired_inline_marker_no_longer_suppresses(self, tmp_path: Path) -> None:
@@ -313,8 +300,7 @@ class TestExemptions:
             '### Step 1a Initialize <!-- doctor-ignore: self-declared-rule -->\n'
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [RULE_ID])
         assert 'Step 1a' in findings[0]['snippet']
 
 
@@ -333,22 +319,19 @@ class TestDetectionShape:
             declaration='Steps follow a flat sequence with no sub-numbering.\n',
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [RULE_ID])
 
     def test_h2_heading_is_in_range(self, tmp_path: Path) -> None:
         """A `## Step 1a` (h2) heading is detected."""
         content = _doc('## Step 1a Top-level step\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [RULE_ID])
 
     def test_h1_heading_is_out_of_range(self, tmp_path: Path) -> None:
         """A `# Step 1a` (h1) heading is below the `##`..`####` range and ignored."""
         content = _doc('# Step 1a Document title\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [])
 
     def test_prose_mention_of_sub_numbered_label_is_not_a_heading(
         self, tmp_path: Path
@@ -356,8 +339,7 @@ class TestDetectionShape:
         """A `2b`-shaped token in prose (not a heading) is not flagged."""
         content = _doc('See step 1a above for the prerequisite detail.\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [])
 
 
 # ===========================================================================
@@ -372,15 +354,13 @@ class TestScope:
         """A `SKILL.md` under `{bundle}/agents/` is in scope."""
         content = _doc('### Step 1a Initialize\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content, sub='agents')
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [RULE_ID])
 
     def test_commands_directory_is_scanned(self, tmp_path: Path) -> None:
         """A `SKILL.md` under `{bundle}/commands/` is in scope."""
         content = _doc('### Step 1a Initialize\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content, sub='commands')
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [RULE_ID])
 
     def test_non_skill_md_file_is_not_scanned(self, tmp_path: Path) -> None:
         """A non-`SKILL.md` markdown file is out of scope (only SKILL.md scans)."""
@@ -388,8 +368,7 @@ class TestScope:
         marketplace_root, _ = _make_skill_md(
             tmp_path, content, filename='standards.md'
         )
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [])
 
     def test_out_of_scope_path_not_scanned(self, tmp_path: Path) -> None:
         """A `SKILL.md` under the bundle root but not in a scanned sub is ignored."""
@@ -398,8 +377,7 @@ class TestScope:
         (bundle_dir / 'SKILL.md').write_text(
             _doc('### Step 1a Initialize\n'), encoding='utf-8'
         )
-        findings = analyze_self_declared_rule_compliance(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_self_declared_rule_compliance, tmp_path, [])
 
 
 # ===========================================================================
@@ -414,16 +392,14 @@ class TestClaudeSkillsTree:
         """A violating SKILL.md under ``.claude/skills/`` is flagged."""
         content = _doc('### Step 1a Initialize\n')
         marketplace_root, target = _make_claude_skill_md(tmp_path, content)
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [RULE_ID])
         assert findings[0]['file'] == str(target)
 
     def test_missing_claude_skills_tree_is_tolerated(self, tmp_path: Path) -> None:
         """When no ``.claude/skills`` tree exists, only the bundles tree scans."""
         content = _doc('### Step 1a Initialize\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_self_declared_rule_compliance(marketplace_root)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [RULE_ID])
 
     def test_claude_and_bundles_findings_combine(self, tmp_path: Path) -> None:
         """Findings from the bundles tree and ``.claude/skills`` combine."""
@@ -438,8 +414,7 @@ class TestClaudeSkillsTree:
         claude_dir.joinpath('SKILL.md').write_text(
             _doc('### Step 3a Project-local step\n'), encoding='utf-8'
         )
-        findings = analyze_self_declared_rule_compliance(bundles_root)
-        assert len(findings) == 2
+        assert_analyzer_findings(analyze_self_declared_rule_compliance, bundles_root, [RULE_ID] * 2)
 
 
 # ===========================================================================
@@ -451,10 +426,8 @@ def test_finding_shape(tmp_path: Path) -> None:
     """A finding carries the documented shape fields."""
     content = _doc('### Step 1a Initialize\n')
     marketplace_root, md_path = _make_skill_md(tmp_path, content)
-    findings = analyze_self_declared_rule_compliance(marketplace_root)
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_self_declared_rule_compliance, marketplace_root, [RULE_ID])
     f = findings[0]
-    assert f['rule_id'] == RULE_ID
     assert f['type'] == FINDING_TYPE
     assert f['rule'] == RULE_NAME
     assert f['file'] == str(md_path)
