@@ -171,3 +171,99 @@ def test_the_cell_still_claims_parity():
         f'assertion above no longer matches what the cell asserts. Re-read the cell '
         f'and re-scope this check.'
     )
+
+
+# ---------------------------------------------------------------------------
+# Population COMPLETENESS — every reported coverage dimension has a parity cell
+# ---------------------------------------------------------------------------
+#
+# Raised by automated review: `parity_population` is hand-maintained, so a
+# non-empty check plus one bound cell still permits an OMITTED dimension -- the
+# gate could report parity while a whole verification dimension went uncompared.
+#
+# Binding every cell's `note` to its substrate is not tractable (three cells are
+# property claims, not path lists). Binding the population's MEMBERSHIP is, and
+# it closes the specific hole named: a dimension the gate reports must have at
+# least one parity cell speaking to it. Adding a `record_checked` arm to
+# `cmd_verify` without a parity cell now fails here rather than silently
+# shrinking the table's reach.
+
+#: The dimension label each `boundary.record_checked(...)` call in build.py emits,
+#: reduced to its stable leading token. Derived from the source, never transcribed.
+_RECORD_CHECKED_RE = re.compile(r'record_checked\(\s*f?[\'"]([^\'"{\[]+)')
+
+#: Maps a gate coverage dimension to the parity-cell names that speak to it.
+#: Several dimensions warrant more than one cell (ruff has both a rule-set and a
+#: path-scope cell), so this is one-to-many by construction.
+_DIMENSION_TO_CELLS = {
+    'mypy(production)': {'mypy-production'},
+    'mypy(test)': {'mypy-test'},
+    'ruff': {'ruff-rules', 'ruff-paths'},
+    'SPDX headers': {'spdx-paths'},
+    'plugin-doctor': {'plugin-doctor'},
+    'module-tests': {'pytest-scope'},
+}
+
+
+def _recorded_dimensions() -> set[str]:
+    """The coverage dimensions `cmd_verify`'s arms record, read from build.py.
+
+    The f-string arm at the mypy helper records `{dimension}`, whose two concrete
+    values are passed at its call sites; those are picked up separately so the
+    set is complete rather than carrying an unexpanded placeholder.
+    """
+    source = _BUILD_PY.read_text(encoding='utf-8')
+    dims = {m.strip() for m in _RECORD_CHECKED_RE.findall(source) if m.strip()}
+    dims |= set(re.findall(r"dimension=['\"]([^'\"]+)['\"]", source))
+    return dims
+
+
+def test_the_dimension_extraction_is_not_vacuous():
+    """Anti-vacuity: an extraction that found nothing would make the check below pass."""
+    dims = _recorded_dimensions()
+    assert len(dims) >= 5, (
+        f'expected the gate to record at least five coverage dimensions, extracted {sorted(dims)} — '
+        f'the regex has probably drifted from build.py, which would make the completeness '
+        f'assertion below vacuous'
+    )
+
+
+def test_every_recorded_coverage_dimension_has_a_parity_cell():
+    """No dimension the gate reports is missing from the parity population.
+
+    This is the assertion the finding asked for. Without it, `parity_population`
+    can omit a dimension entirely and every existing check still passes: the
+    non-empty test sees eight other cells, and the per-cell substrate test only
+    looks at the cell it names.
+    """
+    cell_names = {cell.dimension for cell in parity_population()}
+    dims = _recorded_dimensions()
+
+    uncovered = []
+    for dim in sorted(dims):
+        expected = _DIMENSION_TO_CELLS.get(dim)
+        if expected is None:
+            uncovered.append(f'{dim!r}: no parity cell mapped for this dimension at all')
+        elif not (expected & cell_names):
+            uncovered.append(f'{dim!r}: expected one of {sorted(expected)}, present cells {sorted(cell_names)}')
+
+    assert not uncovered, (
+        'The gate records coverage dimensions that the parity population does not speak to, so a '
+        'parity verdict would be reported over an incomplete comparison:\n  ' + '\n  '.join(uncovered)
+    )
+
+
+def test_the_mapping_names_only_cells_that_exist():
+    """The map is bound in both directions — a renamed cell fails here.
+
+    Without this the map could name a cell that was deleted or renamed, and the
+    completeness check above would report a dimension uncovered for the wrong
+    reason (or, if the dimension also vanished, silently stop checking it).
+    """
+    cell_names = {cell.dimension for cell in parity_population()}
+    mapped = {name for names in _DIMENSION_TO_CELLS.values() for name in names}
+
+    missing = mapped - cell_names
+    assert not missing, (
+        f'the dimension→cell map names cells absent from parity_population(): {sorted(missing)}'
+    )

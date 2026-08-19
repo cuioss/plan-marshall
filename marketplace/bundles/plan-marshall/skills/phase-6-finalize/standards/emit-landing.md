@@ -242,30 +242,53 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 The `display_detail` string appears in the renderer's per-step `[OK]` row.
 
 `work_performed=true` records that a landing message actually reached the inbox on this path. The
-step declares `records_facts: [work_performed]` because it has an `--outcome done` branch reachable
-WITHOUT having performed its characteristic work — the Error Handling row below marks `done` after an
-inbox write that failed — which is the contract's stated trigger for the declaration. A consumer
-asking *"did this run actually emit a landing?"* reads the fact; `outcome: done` alone cannot answer
-it.
+step declares `records_facts: [work_performed]` because its terminal call sites disagree about whether
+the characteristic work happened: this one emitted a landing, and the failed-write branch below records
+`work_performed=false` having emitted none. `records_facts` is the union over terminal call sites, and
+a `loop_back` is a terminal call site, so the declaration covers both.
+
+A consumer asking *"did this run actually emit a landing?"* reads the fact rather than the outcome.
+Since the failed-write branch became `loop_back`, `outcome: done` on this step does now imply the
+landing was written — but the fact remains the thing to read, because it is what the union declares and
+what survives a future branch that reintroduces a work-free `done`.
 
 ## Error Handling
 
 | Scenario | Action |
 |----------|--------|
 | A fact read (`manage-status` / `manage-solution-outline` / `manage-execution-manifest`) returns an error | Write that field as `n/a` in the fenced block (key still present) and continue — a missing field never blocks the emission or archive |
-| `orchestrator inbox write` returns an error | Non-fatal: log the failure, then mark `done` recording `work_performed=false` (the call is spelled out below); a failed landing write never blocks finalize |
+| `orchestrator inbox write` returns an error | Log the failure, then mark **`loop_back`** to `6-finalize` recording `work_performed=false` (the call is spelled out below). This does NOT silently continue: the landing is the plan's only machine-readable hand-off to the orchestrator, and `default:archive-plan` (order 1100) destroys the plan directory immediately after this step |
 | `epic` is empty / plan not orchestrated | Step 0's diagnosable skip fires — no landing is written and the misconfiguration is surfaced as a WARNING |
 
 The failed-write branch terminates with this call — spelled out rather than left to prose, because it
-is the one `done` branch on which no landing was emitted, and `work_performed=false` is the only signal
-that distinguishes it from the Step 4 success above:
+is the one terminal branch on which no landing was emitted:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step emit-landing --outcome done \
+  --plan-id {plan_id} --phase 6-finalize --step emit-landing --outcome loop_back \
+  --loop-back-target 6-finalize \
   --fact work_performed=false \
   --display-detail "landing write failed: {error}"
 ```
+
+**Why `loop_back` and not `done` or `failed`.** A landing that was never written is not recoverable
+after this step: `default:archive-plan` at order 1100 declares `destroys: [plan-directory]` and moves
+the plan out from under every later reader, so whatever this branch records is the last chance to keep
+the run recoverable. The three candidate outcomes are not interchangeable here:
+
+- **`done`** is skipped on re-entry ([`../SKILL.md`](../SKILL.md) § Resumability: *"Skip dispatch
+  entirely … do not re-execute"*), so the retry never happens and the landing is lost silently.
+- **`failed`** does not help either, and for a less obvious reason: a leaf's own `failed` record does
+  **not** halt the FOR loop — item 5e records an `error` execution-log row and the loop advances, so
+  `archive-plan` still runs and still destroys the directory. Only the *post-dispatch guard*
+  (`step_record_missing`) halts, and that is a different path.
+- **`loop_back`** is the one outcome that does both halves: the dispatcher halts and returns control
+  on the default `loop_back_without_asking: false`, so `archive-plan` never runs, and the general
+  resumability rule re-fires the step on re-entry (*"treat as no record"*). The `max_iterations`
+  ceiling bounds it, so a persistently failing inbox cannot spin.
+
+This is the same defect shape as `branch-cleanup` Branch F, and it takes the same remedy — a `done`
+record standing in for work that did not happen, on a step with no re-entry override.
 
 ## Related
 

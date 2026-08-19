@@ -113,10 +113,24 @@ A finding contributes to a preference recurrence only when it is not the
 pipeline's own control traffic. A `pr-comment` finding is admissible ONLY when it
 is positively attributed to a recognized external reviewer bot — i.e. it carries a
 `bot_kind` that is a **recognized reviewer identity**, validated against the
-registry-derived set (the ingest verb stamps `bot_kind` from the comment author
-login and `add_finding` validates it at write time; the auditor re-validates
-archived records against the live registry, since it reads JSONL directly rather
-than through that write-time check). A `pr-comment` with no `bot_kind` — or one
+registry-derived set.
+
+⚠ **The write-time check does not enforce this, and must not be mistaken for it.**
+The ingest verb stamps `bot_kind` from the comment author login, and
+`add_finding` rejects a value that is non-empty and unrecognized — but its
+predicate is `if bot_kind and bot_kind not in BOT_KINDS`, so a finding with the
+field **absent** passes untouched. That is deliberate, not a hole to close at the
+write: an absent `bot_kind` is the correct recorded state for an unattributed
+human comment and for the pipeline's own posted comments, both of which must
+still be ingestible as findings. Rejecting them at write time would discard
+legitimate `pr-comment` records entirely.
+
+The admissibility gate is therefore **load-bearing at aggregation, not
+redundant with the write**: it is the only place that distinguishes "attributed
+to a recognized reviewer" from "present in the store". Both consuming surfaces
+apply it — the auditor structurally in `_preference_admissible`, re-validating
+archived records against the live registry because it reads JSONL directly; the
+emitter per the paragraph below. A `pr-comment` with no `bot_kind` — or one
 whose `bot_kind` is not a recognized reviewer identity — cannot be told apart from
 the pipeline's own posted comments: the ingest verb records the pipeline's own PR
 comments (a review-trigger comment, a description-restore) with `bot_kind` absent,

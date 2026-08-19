@@ -1704,15 +1704,15 @@ Pass a `--display-detail` value alongside `--outcome done` so the output-templat
 
 ### Structured facts recorded here
 
-This step declares the `records_facts` union `action`, `upstream_commit_count`, `merge_mechanism`, `merge_state`, `work_performed`. The union is a step-level declaration, NOT a per-branch mandate — each of the six `--outcome done` call sites below (**Branches A through F**) records only the **honest subset** its own path produced, per [ext-point-finalize-step.md](../../extension-api/standards/ext-point-finalize-step.md) § "Structured step facts". The path conditions:
+This step declares the `records_facts` union `action`, `upstream_commit_count`, `merge_mechanism`, `merge_state`, `work_performed`. The union is a step-level declaration, NOT a per-branch mandate — each of the six terminal call sites below (**Branches A through F** — five `--outcome done`, plus **Branch F**'s `--outcome loop_back`, which is terminal for this dispatch and so carries the same fact obligation) records only the **honest subset** its own path produced, per [ext-point-finalize-step.md](../../extension-api/standards/ext-point-finalize-step.md) § "Structured step facts". The path conditions:
 
 | Fact | Recorded iff |
 |------|--------------|
 | `action` | The executing path reached **Rebase Branch onto Base** and parsed its `worktree-rebase-to` TOON. The value is that TOON's `action` — `noop` when the rebase replayed nothing, `rebased` when it moved HEAD. A path that never rebased records NO `action`; its absence is the honest signal, not a gap to fill. |
 | `upstream_commit_count` | Same condition as `action` — it is read from the same rebase-path payload. |
 | `merge_mechanism` | The merge actually **landed** and was corroborated (`{merge_landed} == true`). Value is `pr_safe_merge` when `ci pr safe-merge` returned a corroborated `merged: true`, or `merge_queue` when § "Wait for the Queue Merge to Land (bounded)" observed the platform queue merge the enqueued PR. A path that enqueued but whose merge never landed (**Branch F**) records NO `merge_mechanism` — dispatching a merge-shaped verb is not the same fact as a merge, and that branch reports the enqueue in its `display_detail` instead. A path that never merged at all likewise records none. |
-| `merge_state` | **Every** `--outcome done` call site below. Unlike `merge_mechanism` — which records HOW a merge landed and is therefore absent wherever none did — `merge_state` records WHAT STATE the PR is in, and every branch determines that: `merged` on the two branches that landed a merge (A, E), `open` on the branches that leave a live PR unmerged (C declined, F enqueued-but-not-landed), and `n/a` on the branches where no PR exists at all (B local-only, D no-PR-found). Recording it everywhere is the honest subset, not an exception: no branch lacks the value. Its consumer is the terminal `default:emit-landing` step, whose `landing-facts` block carries a required `merge_state` key. |
-| `work_performed` | **Every** `--outcome done` call site below, `true` or `false`, never omitted — the one declared exception to the honest-subset rule. |
+| `merge_state` | **Every** terminal call site below, `done` and Branch F's `loop_back` alike. Unlike `merge_mechanism` — which records HOW a merge landed and is therefore absent wherever none did — `merge_state` records WHAT STATE the PR is in, and every branch determines that: `merged` on the two branches that landed a merge (A, E), `open` on the branches that leave a live PR unmerged (C declined, F enqueued-but-not-landed), and `n/a` on the branches where no PR exists at all (B local-only, D no-PR-found). Recording it everywhere is the honest subset, not an exception: no branch lacks the value. Its consumer is the terminal `default:emit-landing` step, whose `landing-facts` block carries a required `merge_state` key. |
+| `work_performed` | **Every** terminal call site below, `true` or `false`, never omitted — the one declared exception to the honest-subset rule. |
 
 `--display-detail` on every branch is a **rendering of the facts that branch recorded**. In particular it MUST NOT assert a rebase or a merge the recorded facts do not support — a fixed literal claiming a rebase unconditionally is exactly what the per-branch facts exist to prevent. It MUST equally not render an *enqueue* as a merge, nor a queue merge as a merge this step performed: `merge_mechanism == merge_queue` records that the PLATFORM merged the PR and this step corroborated the landing, so its rendering says so rather than reusing the direct-merge phrasing.
 
@@ -1723,7 +1723,7 @@ This step declares the `records_facts` union `action`, `upstream_commit_count`, 
 
 Branch B carries one placeholder (`{base_branch}`) and is checked the same way. Branches C, D, and F carry none, so each is its own worst case; the longest of those three is Branch F at **59 chars**.
 
-Every `loop_back` call site in the pre-merge comment barrier is deliberately untouched — none is a `done` record, so none carries a fact obligation.
+The three `loop_back` call sites in the pre-merge comment barrier are deliberately untouched. The reason is that each hands control back with the cleanup **not attempted** — no branch state was determined, so there is no honest subset to record. It is NOT that `loop_back` exempts a site from the fact obligation: Branch F is a `loop_back` and does carry facts, because it determined the PR's state before deferring.
 
 **Branch A — PR mode (landed merge + cleanup)** (the merge **landed** and was corroborated, base branch pulled, feature branch deleted locally and on remote, worktree removed — preceded by a rebase on the `use_merge_queue == false` path and by no rebase on the `true` path). Branch A is the **clean-barrier** payload: use it only when the pre-merge review barrier resolved via its clean path. When the merge proceeded past a reported gap under an authorization, emit **Branch E** instead. When the PR was enqueued but the queue merge never landed, emit **Branch F** instead — Branch A requires `{merge_landed} == true`. It is the only clean-path branch that reaches a landed merge, so it carries `merge_mechanism` and `work_performed` **always**, plus the two rebase facts **on the path that rebased**:
 
@@ -1810,7 +1810,8 @@ This branch is reached only on `use_merge_queue == true`, and that is exactly th
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
-  --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
+  --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome loop_back \
+  --loop-back-target 6-finalize \
   --fact merge_state=open \
   --fact work_performed=true \
   --display-detail "enqueued to merge queue, merge not landed, cleanup deferred"
@@ -1818,6 +1819,22 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 The detail is a fixed literal (59 chars, no placeholders), so its worst case is its literal form.
 
-⚠ **The deferred cleanup is NOT picked up automatically on re-entry, and this branch previously claimed it was.** The claim was *"re-entering finalize once the queue merge lands takes the `state == merged` path, which performs the deferred local cleanup"*. It is false against the dispatcher that decides it: `default:branch-cleanup` declares no `head_dependent` fact, so [`../SKILL.md`](../SKILL.md) § Resumability applies its **general** table verbatim — `done` → *"Skip dispatch entirely … do not re-execute."* A `done` record therefore suppresses the very re-entry the deferral depends on. `push` is the step that solves this, and it solves it with machinery this step does not have: a parity-driven re-entry check on `branch-sync-state` plus an explicit dispatcher re-invocation. Recording `done` here is itself deliberate and documented (§ dispatcher contract: *"the executor always runs to completion and records `outcome=done`"*), so the two rules are individually correct and jointly leave the queue-deferred path unfinished.
+**Why this branch records `loop_back` and not `done`.** It is the one branch that ends with work still
+owed: the queue has the PR, the merge has not landed, and the local branch and worktree still exist. A
+`done` record would suppress the very re-entry that deferral depends on — `default:branch-cleanup`
+declares no `head_dependent` fact, so [`../SKILL.md`](../SKILL.md) § Resumability applies its
+**general** table verbatim, and `done` there means *"Skip dispatch entirely … do not re-execute."* The
+step has no `push`-style override (parity-driven re-entry plus explicit dispatcher re-invocation) to
+rescue it, so the deferred cleanup would simply never happen.
 
-Raised by the automated review on the PR that added this note. Closing it is a **behavioural** change — a re-enterable outcome on this branch, or a `push`-style re-entry override — with blast radius through the merge gate and the `merge_state` landing fact, so it is deliberately not made here. Until it lands, treat a Branch F record as **cleanup owed**: the local branch and worktree survive the queue merge and are removed by the next run that reaches this step with no `done` record, or by hand.
+`loop_back` is the outcome whose documented semantics are exactly this branch's need — *"re-fire (treat
+as no record — dispatch as fresh run)"* — so re-entry once the queue merge lands takes the
+`state == merged` path and performs the deferred cleanup, which is what this branch always claimed and
+now actually does. The `max_iterations` ceiling bounds the retries, and the merge mutex was already
+released above, so the loop-back holds no lock. `emit-landing`'s failed-write branch takes the same
+remedy for the same reason.
+
+⚠ This is the one `--outcome loop_back` in this document that is **not** a blocked-barrier disposition:
+the barrier loop-backs above hand control back because something must be triaged, whereas this one
+hands it back because an external event (the queue merge) has not happened yet. Both re-fire; only the
+barrier ones carry a finding.

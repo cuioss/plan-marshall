@@ -1154,3 +1154,91 @@ def test_d3_guard_fires_when_probe_moves_head(plan_context, monkeypatch):
     assert result['status'] == 'error'
     assert result['error'] == 'probe_mutated_head'
     assert result['head_before'] != result['head_after']
+
+
+# ---------------------------------------------------------------------------
+# The stale-base auto-update is authoritative for the NEXT call
+# ---------------------------------------------------------------------------
+#
+# Raised by automated review on the PR that added the return-contract docs:
+# `_maybe_auto_update_stale_base_branch` persisted a corrected `base_branch`
+# into references.json, but `_resolve_base_branch` read only the marshal config
+# and never the references file. The write was therefore inert -- every call
+# re-resolved the stale configured branch, re-detected it as stale, and
+# rewrote the same correction, so the "auto-update" never governed anything.
+#
+# These pin the resolution ORDER rather than one call's return value, because
+# the defect was only observable across two calls.
+
+
+def test_persisted_base_branch_outranks_the_configured_one(monkeypatch):
+    """The value the auto-update wrote is what the next call resolves.
+
+    This is the regression: with resolution reading only the config, the
+    persisted correction is invisible and this returns the stale configured
+    branch instead.
+    """
+    monkeypatch.setattr(_mod, '_read_references_base_branch', lambda plan_id: 'release-2')
+    monkeypatch.setattr(
+        _mod, 'load_config', lambda: {'plan': {'phase-2-refine': {'base_branch': 'stale-main'}}},
+        raising=False,
+    )
+
+    branch, source = _mod._resolve_base_branch('some-plan', None)
+
+    assert (branch, source) == ('release-2', 'plan_references'), (
+        'the persisted per-plan base_branch must outrank the project-wide config, '
+        'otherwise the stale-base auto-update can never become authoritative'
+    )
+
+
+def test_cli_override_still_outranks_the_persisted_value(monkeypatch):
+    """An explicit operator argument beats persisted state.
+
+    The control on the test above: raising the reference above the config must
+    not raise it above `--base-branch`, which is the one source a human typed.
+    """
+    monkeypatch.setattr(_mod, '_read_references_base_branch', lambda plan_id: 'release-2')
+
+    assert _mod._resolve_base_branch('some-plan', 'explicit') == ('explicit', 'cli')
+
+
+def test_resolution_falls_through_to_config_when_no_reference_is_persisted(monkeypatch):
+    """A plan with no persisted base_branch still resolves from the config.
+
+    Anti-regression for the fail-soft path: reading references must not become a
+    precondition, or every plan without a references entry would resolve to the
+    hardcoded default and silently ignore its configured branch.
+    """
+    import _config_core
+
+    monkeypatch.setattr(_mod, '_read_references_base_branch', lambda plan_id: None)
+    # `load_config` is imported INSIDE `_resolve_base_branch`, so the patch has to
+    # land on the source module -- patching `_mod.load_config` is silently
+    # ineffective and would make this test pass for the wrong reason.
+    monkeypatch.setattr(
+        _config_core, 'load_config',
+        lambda: {'plan': {'phase-2-refine': {'base_branch': 'configured'}}},
+    )
+
+    branch, source = _mod._resolve_base_branch('some-plan', None)
+
+    assert (branch, source) == ('configured', 'plan_config')
+
+
+def test_reader_is_fail_soft_on_every_unavailability_path(monkeypatch):
+    """A missing, unreadable or malformed references body yields None, never a raise.
+
+    The probe must stay usable on a plan that has no references file; an
+    exception here would turn a soft fallback into a hard failure of the whole
+    baseline-reconcile call.
+    """
+    def _raises(plan_id):
+        raise FileNotFoundError(plan_id)
+
+    monkeypatch.setattr(_mod, 'read_references', _raises, raising=False)
+    assert _mod._read_references_base_branch('absent-plan') is None
+
+    for body in ({}, {'base_branch': ''}, {'base_branch': '   '}, {'base_branch': 42}, []):
+        monkeypatch.setattr(_mod, 'read_references', lambda plan_id, b=body: b, raising=False)
+        assert _mod._read_references_base_branch('p') is None, f'body {body!r} must yield None'

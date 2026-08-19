@@ -120,12 +120,30 @@ def _resolve_base_branch(plan_id: str, override: str | None) -> tuple[str, str |
     """Resolve the upstream base branch for the plan.
 
     Returns ``(branch, source)`` where source is ``'cli'`` /
-    ``'plan_config'`` / ``'default'`` so the caller can record how the
-    value was chosen. Falls back to ``main`` when neither override nor
-    plan config provides a value.
+    ``'plan_references'`` / ``'plan_config'`` / ``'default'`` so the caller can
+    record how the value was chosen. Falls back to ``main`` when no source
+    provides a value.
+
+    **Precedence, and why the plan reference outranks the config.**
+    ``_maybe_auto_update_stale_base_branch`` persists a corrected ``base_branch``
+    into the plan's ``references.json`` when the configured branch no longer
+    resolves on origin. If resolution then read only the config, that write would
+    be inert: the very next invocation would resolve the stale configured branch
+    again, re-detect it as stale, and rewrite the same correction forever — the
+    update would never become authoritative for anything. Reading the persisted
+    value here is what closes that loop, so the auto-update means what it says.
+
+    The per-plan reference is also the more specific source: ``marshal.json``
+    carries a project-wide default, while ``references.json`` records what THIS
+    plan is actually branched from. A CLI ``--base-branch`` still wins over both,
+    because an explicit operator argument outranks any persisted state.
     """
     if override:
         return override, 'cli'
+
+    persisted = _read_references_base_branch(plan_id)
+    if persisted:
+        return persisted, 'plan_references'
 
     try:
         from _config_core import load_config
@@ -223,6 +241,32 @@ def _detect_remote_default_branch(worktree_path: str) -> str | None:
     for fallback in ('main', 'master'):
         if _remote_branch_exists(worktree_path, fallback):
             return fallback
+    return None
+
+
+def _read_references_base_branch(plan_id: str) -> str | None:
+    """Return the plan's persisted ``base_branch``, or ``None`` when unavailable.
+
+    Fail-soft on every unavailability path — a missing references module, an
+    absent or unreadable file, a non-dict body, or a blank value — so resolution
+    falls through to the config rather than erroring. The probe must stay usable
+    on a plan that has no references file at all.
+    """
+    try:
+        from _references_core import read_references
+    except ImportError:
+        return None
+
+    try:
+        refs = read_references(plan_id)
+    except (FileNotFoundError, OSError, ValueError):
+        return None
+
+    if not isinstance(refs, dict):
+        return None
+    branch = refs.get('base_branch')
+    if isinstance(branch, str) and branch.strip():
+        return branch.strip()
     return None
 
 
