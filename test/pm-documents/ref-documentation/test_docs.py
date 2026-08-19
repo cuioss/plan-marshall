@@ -9,10 +9,28 @@ import tempfile
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import get_script_path, load_script_module, run_script
+from conftest import get_script_path, load_script_module, parse_ns, run_script
 
 TEST_DIR = Path(__file__).parent
 SCRIPT_PATH = get_script_path('pm-documents', 'ref-documentation', 'docs.py')
+
+# Argument namespaces come from the script's OWN parser, so each carries every
+# default the real CLI applies — a hand-built Namespace carries only the keys its
+# author remembered. Parsed once at module scope: parse_ns re-executes the script
+# module on every call.
+_REVIEW_NS = parse_ns(
+    'pm-documents', 'ref-documentation', 'docs.py',
+    'review', '--file', 'placeholder.md', register=False,
+)
+_TONE_NS = parse_ns(
+    'pm-documents', 'ref-documentation', 'docs.py',
+    'analyze-tone', '--file', 'placeholder.md', register=False,
+)
+
+
+def _ns(template: Namespace, **overrides) -> Namespace:
+    """A parser-produced namespace with this test's values overlaid."""
+    return Namespace(**{**vars(template), **overrides})
 FIXTURES_DIR = TEST_DIR / 'fixtures'
 
 _review_mod = load_script_module('pm-documents', 'ref-documentation', '_cmd_review.py', '_cmd_review')
@@ -24,11 +42,11 @@ cmd_analyze_tone = _tone_mod.cmd_analyze_tone
 
 
 def _review_args(file=None, directory=None, recursive=False, output=None):
-    return Namespace(command='review', file=file, directory=directory, recursive=recursive, output=output)
+    return _ns(_REVIEW_NS, file=file, directory=directory, recursive=recursive, output=output)
 
 
 def _tone_args(file=None, directory=None, output=None, pretty=False):
-    return Namespace(command='analyze-tone', file=file, directory=directory, output=output, pretty=pretty)
+    return _ns(_TONE_NS, file=file, directory=directory, output=output, pretty=pretty)
 
 
 # =============================================================================

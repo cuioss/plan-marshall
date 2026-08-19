@@ -27,21 +27,10 @@ SOLE resolution route for it; ``project_local_module_for_path`` IS that route (r
 See ``plan-marshall:extension-api/standards/ext-point-path-attribution.md`` for the contract.
 """
 
-import importlib.util
 
 from extension_base import ExtensionBase, PathAttributionBase
 
-from conftest import PROJECT_ROOT, load_script_module
-
-_EXTENSION_FILE = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'pm-plugin-development'
-    / 'skills'
-    / 'plan-marshall-plugin'
-    / 'extension.py'
-)
+from conftest import PROJECT_ROOT, load_script_module, load_skill_module
 
 
 def _load_pm_plugin_dev_extension():
@@ -50,11 +39,9 @@ def _load_pm_plugin_dev_extension():
     Every bundle shares the ``extension`` basename, so a bare import would collide;
     the pm-documents attributor test loads its Extension the same way.
     """
-    spec = importlib.util.spec_from_file_location('pm_plugin_dev_extension', _EXTENSION_FILE)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_skill_module(
+        'pm-plugin-development', 'plan-marshall-plugin', 'extension.py', 'pm_plugin_dev_extension'
+    )
 
 
 Extension = _load_pm_plugin_dev_extension().Extension
