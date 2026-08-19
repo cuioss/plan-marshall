@@ -1,13 +1,14 @@
 # Verification — 130-review-bots-catch-what-in-house-gates-cannot
 
 **Landed as:** PR #1239, squash commit `622f4484`
-**Verdict:** verified-with-gaps
+**Verdict:** partially-implemented
 
-Every artifact the report names exists in the tree today, and the three deliverables it calls "done"
-are really implemented. The metric D2 ships, however, **can** produce the inversion the plan says
-must not ship — by a route the plan's own inversion test does not cover — and three further
-correctness defects sit in the landed code. The report is accurate on substance and inaccurate on two
-counts (test/file tallies).
+Every artifact the report names exists in the tree today, and the two deliverables D1 and D3 are
+really implemented. D0 and D2 are each partially discharged against their own *Done when*: two
+reachable gate-verdict render paths carry no scope limit at all, and the metric D2 ships **can**
+produce the inversion the plan says must not ship — by a route the plan's own inversion test does not
+cover. Further correctness defects sit in the landed code. The report is accurate on substance and
+inaccurate on two counts (test/file tallies).
 
 ## Method
 
@@ -20,7 +21,9 @@ Later landings over the same files: `git log --oneline 622f4484..HEAD -- <the si
 scripts>` → exactly one, `9e9e9880` (PR #1241, the `refused_structural` taxonomy member). Its diff
 was read for collisions with this plan's surfaces.
 
-Current-tree ground truth (`git rev-parse HEAD` = `61a43e53`). Files read end-to-end:
+Current-tree ground truth. Every commit after `61a43e53` touches only `doc/plans/`
+(`git diff --name-only 61a43e53..HEAD | grep -v "^doc/plans/"` → empty), so the production surfaces
+read below are the same bytes at `61a43e53` and at the tip. Files read end-to-end:
 
 - `marketplace/bundles/plan-marshall/skills/automatic-review/scripts/review_gate_delta.py`
 - `marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/review_commitments.py`
@@ -90,12 +93,12 @@ Executed:
 ### D0 — each gate states what its green does not evaluate
 
 **Build gate — implemented, and correctly derived.**
-`_gate_coverage.py:187-260` defines `AnalysisLimit` and `_ANALYSIS_LIMITS` keyed by six analysis
-stems; `dimension_stem` (`:262-276`) strips the per-run bracket suffix; `structural_limits`
+`_gate_coverage.py:192-259` defines `AnalysisLimit` and `_ANALYSIS_LIMITS` keyed by six analysis
+stems; `dimension_stem` (`:261-276`) strips the per-run bracket suffix; `structural_limits`
 (`:289-313`) derives the pairs from `boundary.checked` in first-appearance order;
-`_render_structural_limits` (`:315-360`) renders them on both verdict forms and appends the derived
-`not run in this gate at all: …` line. `render_coverage_summary` (`:362-408`) calls it on the
-COMPLETE branch (`:393`) and the PARTIAL branch (`:407`).
+`_render_structural_limits` (`:315-359`) renders them on both verdict forms and appends the derived
+`not run in this gate at all: …` line (`:343-358`). `render_coverage_summary` (`:362-408`) calls it
+on the COMPLETE branch (`:393`) and the PARTIAL branch (`:407`).
 
 The registry keys match what `build.py` actually records — verified against the six record sites
 (`build.py:319` `mypy(production)`/`mypy(test)` via `_run_mypy(dimension=…)`, `:468` `ruff`, `:484`
@@ -108,20 +111,31 @@ close:
 1. `_render_structural_limits` early-returns `[]` when `boundary.checked` is empty
    (`_gate_coverage.py:322-324`). `cmd_quality_gate` runs `cmd_compile` **first**
    (`build.py:442`), so the most reachable PARTIAL — a freshness-suspect mypy — produces
-   `checked == []` and `degraded == [('mypy(production)', …)]`. That PARTIAL verdict therefore
-   carries no per-analysis limit and no un-run line. The test that claims to cover this case
+   `checked == []` and `degraded == [('mypy(production)', …)]` (`build.py:317`), and halts to
+   `render_coverage_summary` at `build.py:448`. That PARTIAL verdict therefore carries no
+   per-analysis limit and no un-run line — reproduced by executing
+   `render_coverage_summary` on such a boundary. It also contradicts the governing standard's own
+   table row (`pre-push-quality-gate.md:87`), which states the limit is reported "on **both** the
+   COMPLETE and PARTIAL verdicts". The test that claims to cover this case
    (`test_gate_coverage.py:285 test_partial_verdict_also_states_the_structural_limit`) seeds a
-   boundary with `record_checked('ruff …')`, so it does not exercise the reachable shape.
+   boundary with `record_checked('ruff …')` at `:292`, so it does not exercise the reachable shape.
 2. `CoverageBoundary.complete` is `not self.degraded` (`_gate_coverage.py:181-184`), so a boundary
    that checked nothing and degraded nothing renders
    `>>> coverage: COMPLETE over the dimensions below — checked over full scope: (nothing)`, with no
-   limit block and no un-run line. `test_empty_boundary_does_not_claim_a_limit_block_it_cannot_populate`
-   (`test_gate_coverage.py:372`) pins exactly that behaviour as intended.
+   limit block and no un-run line (executed). `test_empty_boundary_does_not_claim_a_limit_block_it_cannot_populate`
+   (`test_gate_coverage.py:376`) pins exactly that behaviour as intended. **This second path is not
+   reachable from production**: `build.py` is the only consumer of `_gate_coverage`, and each of its
+   five `render_coverage_summary` call sites (`:448`, `:502`, `:556`, `:563`, `:572`) is preceded by
+   at least one recorded dimension.
 
-A third, narrower inaccuracy: `_skip_empty_mypy_scope` returns 0 **without recording either checked
-or degraded** (`build.py:344-346`, `:365-367`), so an analysis that was attempted and found nothing
-to check lands in the un-run list, whose wording is *"absent from the list above because this gate
-never performs them"* (`_gate_coverage.py:353-357`) — false for that case.
+A third inaccuracy, in the un-run wording (`_gate_coverage.py:352-358`, *"absent from the list above
+because this gate never performs them"*), and it has two reachable causes rather than one:
+`_skip_empty_mypy_scope` returns 0 **without recording either checked or degraded**
+(`build.py:344-345`, `:364-365`), so an analysis that was attempted and found nothing to check lands
+in the un-run list; and `cmd_quality_gate` runs plugin-doctor only when `module is None`
+(`build.py:485`), so an ordinary module-scoped `quality-gate` prints `plugin-doctor` under "never
+performs them" for a gate that performs it in whole-tree mode. The governing standard names only the
+true case (`pre-push-quality-gate.md:116-117`) and is silent on both of these.
 
 **Self-review — the field exists; the *verdict* does not carry it.**
 `self_review.py:139-171` defines `_format_structural_limit`, and `:409` emits `structural_limit` on
