@@ -54,10 +54,12 @@ _ACCEPTED_FORMS = {
 # Shapes a line scanner could not read, and that a YAML reader resolves
 # exactly. Seven were REJECTED by the hand-rolled parser at the commit it was
 # replaced at, several under a message naming a construct the author had not
-# written. The last two — the indented-block rows — were rejected by EARLIER
-# versions and had been fixed by rounds 10 and 11; they are kept because they
-# are the shapes those three successive indentation rules were written for, and
-# because a YAML reader gets them right without any rule at all.
+# written. Two were not: `uniformly-indented-block` and
+# `comment-above-an-indented-block` had already been fixed, by rounds 10 and
+# 11 respectively. They are kept because they are the shapes three successive
+# indentation rules were written for, and a YAML reader gets them right with
+# no rule at all. (`value-continued-at-column-zero` IS one of the seven — it
+# is the shape the third of those rules still got wrong.)
 _ONCE_REFUSED_NOW_READ = {
     'folded-block-scalar': ('targets: >-\n  claude', {'claude'}),
     'literal-block-scalar': ('targets: |-\n  claude', {'claude'}),
@@ -176,9 +178,10 @@ def test_shapes_a_line_scanner_refused_are_now_read(tmp_path, key, expected):
 
     Every shape here is ordinary YAML naming a registered target. Seven were
     refused by the hand-rolled parser at the commit it was replaced at, several
-    under a message naming a construct the author had not written; the two
-    indented-block rows had been fixed by then, after three successive
-    indentation rules, and are kept because a YAML reader needs none of them.
+    under a message naming a construct the author had not written. The two
+    exceptions are named in the fixture's own comment — they had been fixed by
+    then, after three successive indentation rules, and are kept because a YAML
+    reader needs none of them.
 
     They are accepted because a YAML reader resolves them, which is the point
     of using one. This test is the record that the change is deliberate: any
@@ -586,3 +589,42 @@ def test_blank_tokens_are_dropped_rather_than_reported(tmp_path, frontmatter, ex
     the character they actually typed.
     """
     assert read_target_scope(_component(tmp_path, frontmatter)) == expected
+
+
+def test_unparseable_frontmatter_declaring_the_field_off_a_line_start_is_refused(tmp_path):
+    """Round 13's own fix for a fail-open had no test at all.
+
+    Re-anchoring the mention test to a line start — the exact code round 13
+    replaced — leaves every suite green while this file's declaration goes
+    unread and the component ships everywhere.
+    """
+    path = tmp_path / 'demo.md'
+    path.write_text('---\n{targets: [typo], name: x\n---\n', encoding='utf-8')
+
+    with pytest.raises(TargetScopeError, match='not well-formed YAML'):
+        read_target_scope(path)
+
+
+def test_a_deeply_nested_flow_collection_names_the_file_rather_than_crashing(tmp_path):
+    """``safe_load`` can raise ``RecursionError``, which is not a ``YAMLError``.
+
+    Round 13 caught it and pinned it with nothing: reverting to the narrower
+    ``except`` left the suite green while the generator aborted on a raw
+    traceback instead of naming the component.
+    """
+    path = tmp_path / 'demo.md'
+    path.write_text('---\ntargets: ' + '[' * 20000 + '\n---\n', encoding='utf-8')
+
+    with pytest.raises(TargetScopeError, match='not well-formed YAML'):
+        read_target_scope(path)
+
+
+def test_a_dotfile_component_is_not_walked(tmp_path):
+    """A leading dot marks a file the emitters skip, so it is not validated."""
+    bundle = tmp_path / 'demo'
+    (bundle / 'commands').mkdir(parents=True)
+    (bundle / 'commands' / '.hidden.md').write_text(
+        '---\nname: h\ntargets: [typo]\n---\n', encoding='utf-8'
+    )
+
+    assert excluded_emission_roots(bundle, 'claude') == frozenset()

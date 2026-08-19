@@ -203,36 +203,55 @@ def test_a_declaration_reports_its_file_line_number():
 # Soundness — the promise this rule actually makes
 # ---------------------------------------------------------------------------
 
-# Every shape either suite exercises, valid and invalid together. The
-# soundness test below runs each one through BOTH the rule and the build.
-_SOUNDNESS_CORPUS = (
-    # Readable, valid.
-    'targets: [claude]', 'targets: [claude, opencode]', 'targets: claude',
-    'targets: claude, opencode', 'targets:\n  - claude', 'targets:\n- claude',
-    'targets:\n- claude\n- opencode', 'targets: [claude]  # why',
-    'targets:\n  # why\n  - claude', 'targets:\n\n- claude',
-    'targets: [claude, claude]', '"targets": [claude]', "'targets': [claude]",
-    # Readable, invalid.
-    'targets: [cluade]', 'targets: [claude, cluade]', 'targets: cluade',
-    'targets: []', 'targets:', 'targets: ~', 'targets: null', 'targets: NULL',
-    'targets: [pr-agent]', 'targets:\n- cluade', 'targets:\nname: after',
-    # Duplicate keys - YAML takes the LAST, and reading the first meant
-    # reporting on a declaration the build does not use.
-    'targets: [cluade]\ntargets: [claude]', 'targets: [claude]\ntargets: [cluade]',
-    'targets:\ntargets: [claude]', 'targets: cluade\ntargets: claude',
-    'targets: [claude]\ntargets:', 'targets: [claude]\ntargets: [opencode]',
-    # No space after the colon - a plain scalar to YAML, not a key at all.
-    'targets:#c', 'targets:[claude]', 'targets:claude',
-    # Shapes the scanner must decline rather than read.
-    'targets: >-\n  claude', 'targets: |2\n   claude', 'targets: "claude,\n  opencode"',
-    'targets: [claude,\n  opencode]', 'targets:\n  [claude]', 'targets:\n  claude',
-    'targets: claude,\n  opencode', 'targets: {claude: yes}', 'targets: 3',
-    'targets: true', 'targets: [1, 2]', 'targets: &a [claude]', 'targets: *a',
-    "targets: 'claude'", 'targets: !!str claude', 'targets:\n  -\n', 'targets: [claude,',
-    'targets: [cla#ude]', 'targets": [claude]', 'targets: [claude] extra',
-    # No declaration.
-    'name: only', 'metadata:\n  targets: nonsense',
-)
+# The corpus is DERIVED, not transcribed. Two hand-copied versions each
+# omitted the shape that was breaking soundness at the time — round 13's
+# missed the column-zero block, and its replacement missed the quoted flow
+# item that the generator suite pins as valid three files away. Pulling the
+# rows from the fixtures both suites already maintain means a shape cannot be
+# added to either suite and left out of the soundness check.
+def _soundness_corpus() -> list[str]:
+    """Every declaration shape either suite exercises, plus the known breakers."""
+    import importlib.util
+    import pathlib
+
+    sibling = (
+        pathlib.Path(__file__).resolve().parents[2]
+        / 'marketplace' / 'targets' / 'test_component_targets.py'
+    )
+    spec = importlib.util.spec_from_file_location('_ct_fixtures', sibling)
+    assert spec is not None and spec.loader is not None, sibling
+    fixtures = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fixtures)
+
+    rows = [form for form, _expected in fixtures._ACCEPTED_FORMS.values()]
+    rows += [form for form, _expected in fixtures._ONCE_REFUSED_NOW_READ.values() if form]
+    rows += [
+        # Readable, invalid.
+        'targets: [cluade]', 'targets: [claude, cluade]', 'targets: cluade',
+        'targets: []', 'targets:', 'targets: ~', 'targets: null', 'targets: NULL',
+        'targets: [pr-agent]', 'targets:\n- cluade', 'targets:\nname: after',
+        'targets: ["cluade"]', "targets: ['cluade']", 'targets:\n- "cluade"',
+        # Duplicate keys - YAML takes the LAST.
+        'targets: [cluade]\ntargets: [claude]', 'targets: [claude]\ntargets: [cluade]',
+        'targets:\ntargets: [claude]', 'targets: cluade\ntargets: claude',
+        'targets: [claude]\ntargets:', 'targets: ~\ntargets: [claude]',
+        'targets: [cluade]\ntargets:\n  claude', 'targets: >-\n  claude\ntargets: [cluade]',
+        # No space after the colon - a plain scalar to YAML, not a key at all.
+        'targets:#c', 'targets:[claude]', 'targets:claude',
+        # Shapes the scanner must decline rather than read.
+        'targets: >-\n  claude', 'targets: |2\n   claude', 'targets: "claude,\n  opencode"',
+        'targets: [claude,\n  opencode]', 'targets:\n  [claude]', 'targets:\n  claude',
+        'targets: claude,\n  opencode', 'targets: {claude: yes}', 'targets: 3',
+        'targets: true', 'targets: [1, 2]', 'targets: &a [claude]', 'targets: *a',
+        "targets: 'claude'", 'targets: "claude"', 'targets: !!str claude',
+        'targets: [!!str claude]', 'targets: [&a claude]', 'targets: [claude, "claude"]',
+        'targets:\n  -\n', 'targets: [claude,', 'targets: [cla#ude]', 'targets": [claude]',
+        'targets: [claude] extra', 'targets: [[claude]]', 'targets: a: b',
+        'targets: claude\n# why\n  opencode',
+        # No declaration.
+        'name: only', 'metadata:\n  targets: nonsense',
+    ]
+    return rows
 
 
 def test_every_finding_is_a_real_build_failure(tmp_path):
@@ -247,11 +266,19 @@ def test_every_finding_is_a_real_build_failure(tmp_path):
     of this work re-derived the same ground in a throwaway corpus that died
     with the session, and the next divergence was always found by the next
     round rather than by the suite.
+
+    The fake tree registers the SAME target set the build has, ``pr-agent``
+    included. Registering fewer made the two sides disagree about what a name
+    means, so a false positive on a `pr-agent`-bearing declaration would have
+    been created or masked by the mismatch rather than measured.
     """
     from marketplace.targets.component_targets import TargetScopeError, read_target_scope
 
-    for index, frontmatter in enumerate(_SOUNDNESS_CORPUS):
-        bundles = _marketplace(tmp_path / f'case{index}')
+    corpus = _soundness_corpus()
+    for index, frontmatter in enumerate(corpus):
+        bundles = _marketplace(
+            tmp_path / f'case{index}', targets=('claude', 'opencode', 'pr-agent')
+        )
         component = _component(bundles, 'commands/case.md', frontmatter)
         findings = analyze_target_scope(bundles)
         if not findings:
@@ -431,3 +458,74 @@ def test_further_shapes_the_scanner_declines_to_read(value):
     test that only checks the verdict.
     """
     assert declared_targets(f'---\nname: a\n{value}\n---\n') is None
+
+
+@pytest.mark.parametrize(
+    ('value', 'expected'),
+    [
+        pytest.param('targets: ~\ntargets: [claude]', ['claude'], id='null-then-list'),
+        pytest.param('targets: null\ntargets: claude', ['claude'], id='null-word-then-scalar'),
+        pytest.param('targets: [a]\ntargets: [b]\ntargets: [claude]', ['claude'], id='three-keys'),
+        pytest.param('"targets": [a]\ntargets: [claude]', ['claude'], id='quoted-then-bare'),
+    ],
+)
+def test_the_last_readable_declaration_wins_whatever_the_earlier_ones_are(value, expected):
+    """Every branch of the duplicate-key loop, not only the list-then-list one.
+
+    The null branch was unpinned and reverting it to first-wins left the suite
+    green while the rule reported an empty declaration the build accepts.
+    """
+    declaration = declared_targets(f'---\nname: a\n{value}\n---\n')
+
+    assert declaration is not None
+    assert declaration[0] == expected
+
+
+@pytest.mark.parametrize(
+    'value',
+    [
+        pytest.param('targets: [cluade]\ntargets:\n  claude', id='unreadable-block-duplicate'),
+        pytest.param('targets:\n- "claude"', id='quoted-item-in-a-block'),
+        pytest.param('targets: ["claude"]', id='quoted-item-in-a-flow-sequence'),
+        pytest.param("targets: ['claude']", id='single-quoted-item'),
+        pytest.param('targets: [!!str claude]', id='tagged-item'),
+        pytest.param('targets: [&a claude]', id='anchored-item'),
+        pytest.param('targets: [claude, "claude"]', id='one-bare-one-quoted'),
+        pytest.param('targets: "claude"', id='double-quoted-scalar'),
+        pytest.param('targets: [cluade,', id='unclosed-flow-sequence'),
+        pytest.param('targets: |', id='bare-literal-indicator'),
+        pytest.param('targets: Null', id='capitalised-null-is-empty-not-a-name'),
+    ],
+)
+def test_shapes_that_must_not_produce_a_finding(value):
+    """Each of these was unpinned, and dropping its guard breaks SOUNDNESS.
+
+    The quoted-item rows are the fifth way this rule managed to fail a valid
+    file: `_is_readable` inspected only the value's first character, so a
+    quoted item inside a flow sequence read as a bare name and was reported —
+    with its quotes — as an unknown target. The generator suite pins that
+    exact spelling as one an author may write.
+    """
+    declaration = declared_targets(f'---\nname: a\n{value}\n---\n')
+
+    assert declaration is None or declaration[0] == []
+
+
+@pytest.mark.parametrize(
+    'text',
+    [
+        pytest.param('--- \nname: a\ntargets: [cluade]\n---\n', id='open-fence-space'),
+        pytest.param('---\nname: a\ntargets: [cluade]\n--- \n', id='close-fence-space'),
+        pytest.param('---\nname: a\ntargets: [cluade]\n---', id='close-fence-at-eof'),
+    ],
+)
+def test_fence_tolerance_is_pinned_here_too(text):
+    """All three fence properties were pinned in the generator suite and neither here.
+
+    The mirror-parity gap again: parser-vs-parser behaviour is checked by a
+    differential, while each suite's own coverage is checked by reading.
+    """
+    declaration = declared_targets(text)
+
+    assert declaration is not None
+    assert declaration[0] == ['cluade']

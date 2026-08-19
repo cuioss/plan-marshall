@@ -152,9 +152,13 @@ def _strip_comment(value: str) -> str:
     """Drop a trailing YAML comment from a scalar or flow-sequence value.
 
     A ``#`` opens a comment only when it opens a token, which is what YAML
-    requires. That keeps an UNQUOTED ``#`` intact (``[cla#ude]``). It does not
-    track quote state — but a quoted value is one this scanner declines to
-    read at all, so it never reaches a case where that would matter.
+    requires. That keeps an UNQUOTED ``#`` intact (``[cla#ude]``).
+
+    It does not track quote state. A value whose FIRST character is a quote is
+    declined before it gets here, but a quote inside a flow sequence is not, so
+    ``["a #b"]`` would be cut mid-string. That value is declined too — by
+    :func:`_is_bare_name`, not by anything here — which is the only reason this
+    function is never asked a question it cannot answer.
     """
     head, sep, _tail = value.partition('#')
     if not sep:
@@ -182,17 +186,38 @@ def _unquote_key(key: str) -> str:
 def _is_readable(value: str) -> bool:
     """Whether ``value`` is a shape this scanner can read with certainty.
 
-    Readable: a flow sequence that opens and closes on the one line with no
-    nesting, and a plain unquoted scalar carrying no structural character.
-    Everything else is left to the build — see the module docstring.
+    Readable: a flow sequence of BARE names that opens and closes on the one
+    line with no nesting, and a plain unquoted scalar carrying no structural
+    character. Everything else is left to the build.
+
+    Every item is inspected, not only the value's first character. Checking
+    the opener alone made ``targets: ["claude"]`` "readable", and since
+    nothing here unquotes, the rule then reported `"claude"` — with the quotes
+    — as an unknown target while the build shipped the component fine. That
+    was the fifth way this rule managed to fail a valid file, and the branch's
+    own generator fixtures pin that exact spelling as one an author may write.
     """
     if not value:
         return False
     if value[0] in _UNREADABLE_OPENERS:
         return False
     if value.startswith('['):
-        return value.endswith(']') and '[' not in value[1:] and '{' not in value
+        if not value.endswith(']') or '[' in value[1:] or '{' in value:
+            return False
+        return all(_is_bare_name(item) for item in value[1:-1].split(','))
     return not any(character in value for character in '[]{}:')
+
+
+def _is_bare_name(item: str) -> bool:
+    """Whether a flow-sequence item is a plain name this scanner may read.
+
+    An empty item is fine — ``[a, ]`` is a one-element sequence to YAML and
+    the build drops the blank. Anything opening with a quote, tag, anchor or
+    alias is not: resolving those is YAML's job, and guessing at them is how
+    this rule reported a target nobody wrote.
+    """
+    item = item.strip()
+    return not item or item[0] not in _UNREADABLE_OPENERS
 
 
 def _split_names(value: str) -> list[str]:

@@ -263,9 +263,15 @@ def _mentions_the_field(text: str) -> bool:
     It was anchored to the line start once, and that anchor made it fail OPEN:
     ``{targets: [typo], name: x`` is unparseable frontmatter declaring the
     field NOT at a line start, so the component shipped everywhere with an
-    invalid declaration unread. The docstring at the time said that could not
-    happen. It cannot now: hiding a declaration would need the block to omit
-    the key text entirely, and a block omitting it declares no scope.
+    invalid declaration unread. The docstring at the time asserted that could
+    not happen, which is a claim this one does not repeat.
+
+    The residue, stated rather than denied: a double-quoted key can spell the
+    field with an escape (``"\\x74argets"``) and so carry no literal ``targets``
+    text for this to match. Such a file must ALSO be unparseable YAML for this
+    function to be consulted at all — on a parseable one PyYAML resolves the
+    escape and the key is read directly — so the reach is a file that is
+    already broken for every other frontmatter consumer in the tree.
     """
     block = _frontmatter_block(text)
     return block is not None and _MENTIONS_FIELD_RE.search(block) is not None
