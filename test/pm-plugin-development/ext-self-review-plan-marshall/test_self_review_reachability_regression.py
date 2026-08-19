@@ -102,7 +102,7 @@ _ANCESTOR_PATHS = (
 # Candidate-list vocabulary
 # =============================================================================
 
-#: The candidate list this plan added. Everything else predates it.
+#: The candidate list this check contributes; every other list is independent of it.
 _NEW_LIST = 'scan_derived_keys'
 
 #: The twenty-one candidate lists OTHER than the one under test. The complementary

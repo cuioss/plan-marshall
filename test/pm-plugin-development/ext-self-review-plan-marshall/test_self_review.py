@@ -1559,7 +1559,7 @@ class TestDetectCountProse:
         # POSITIVE (D2 widening): ``check`` is a cardinality noun. This is the
         # exact example the pattern's own comment claimed was matched
         # (``nine checks``) while ``checks`` was absent from the noun set — the
-        # docstring contradiction this plan fixes. FAILS against the pre-widening
+        # docstring contradiction the widening removes. FAILS against the pre-widening
         # five-noun set (``checks`` unmatched), so it proves the widening, not
         # merely the plumbing. ``the two checks`` mirrors the real corpus
         # instance (phase-1-init/SKILL.md) that motivated the addition.

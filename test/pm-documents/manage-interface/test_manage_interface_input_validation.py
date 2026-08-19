@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """6-axis identifier-validation rejection-path tests for ``manage-interface.py``.
 
-In-scope flags from TASK-5: ``--field`` (the ``update`` subcommand).
+In-scope flags: ``--field`` (the ``update`` subcommand).
 
 The 6 axes mirror the canonical fixture set established by TASK-2:
 

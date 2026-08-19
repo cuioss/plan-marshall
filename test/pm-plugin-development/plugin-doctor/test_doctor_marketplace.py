@@ -1724,7 +1724,7 @@ def _load_doctor_analysis():
 def test_analyze_component_skips_verb_chain_when_inactive(tmp_path, monkeypatch):
     """``analyze_component`` does NOT call ``analyze_verb_chains`` without opt-in.
 
-    Pins the dispatch-gating contract introduced for TASK-13: verb_chain is
+    Pins the dispatch-gating contract: verb_chain is
     opt-in via ``--rules verb_chain`` / ``--enable-verb-chain``; absence
     must keep the analyzer silent (no calls, no findings).
     """
@@ -1753,7 +1753,7 @@ def test_analyze_component_skips_verb_chain_when_inactive(tmp_path, monkeypatch)
 def test_analyze_component_runs_verb_chain_when_active(tmp_path, monkeypatch):
     """``analyze_component`` dispatches verb_chain when ``active_rules`` opts in.
 
-    Pins the active-path of the TASK-13 contract: with ``verb_chain`` in the
+    Pins the active path of that contract: with ``verb_chain`` in the
     active rule set, the analyzer is invoked exactly once per skill.
     """
     skill_dir = tmp_path / 'opted-in-skill'
@@ -1840,7 +1840,7 @@ def test_zero_hit_grep_pm_argument_naming_enabled_in_source():
 # _resolve_marketplace_root error-containment tests
 # =============================================================================
 #
-# TASK-1 added the ``_resolve_marketplace_root`` helper so every verb shares a
+# The ``_resolve_marketplace_root`` helper exists so every verb shares a
 # single bad-input boundary: a ``ValueError`` from ``find_marketplace_root``
 # (the supplied ``--marketplace-root`` / ``PM_MARKETPLACE_ROOT`` override lacks
 # a ``bundles/`` subdirectory) becomes a structured
@@ -2021,7 +2021,7 @@ def test_bad_marketplace_root_no_traceback_in_combined_streams(tmp_path):
 # Granularity-2: project config support + driver suppression integration (D3)
 # =============================================================================
 #
-# TASK-4 wired the optional project-level suppression config
+# The optional project-level suppression config is wired
 # (``.plan/plugin-doctor.yml``, Granularity-2) and the per-file frontmatter
 # disable list (``plugin-doctor-disable``, Granularity-3) through to the driver's
 # consolidated output in BOTH cmd_analyze and cmd_quality_gate via

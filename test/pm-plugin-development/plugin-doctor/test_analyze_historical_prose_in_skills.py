@@ -403,7 +403,7 @@ class TestSuppressionAwareAllowlist:
     shipped default suppression config (Granularity-1) through the shared
     ``_config_layer_suppresses`` predicate.
 
-    These cases pin the contract that the TASK-2 refactor preserves:
+    These cases pin the contract the shared matcher preserves:
 
     * Every path the former hardcoded table exempted is still exempt, now
       because it is registered under ``RULE_ID`` in
