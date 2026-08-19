@@ -165,7 +165,7 @@ def test_qgate_is_not_a_seeded_flat_finalize_field(plan_context):
     """``qgate`` is no longer a seeded flat phase-6-finalize field.
 
     The finalize `qgate` run-at-all gate was migrated onto the per-element
-    ``steps[pre-push-quality-gate].lane`` override, so a fresh config carries no
+    ``steps[default:pre-push-quality-gate].lane`` override, so a fresh config carries no
     flat ``qgate`` field under ``plan.phase-6-finalize`` (the former flat
     ``set --field qgate`` / ``get --field qgate`` round-trip no longer applies —
     the gate rides the lane channel).

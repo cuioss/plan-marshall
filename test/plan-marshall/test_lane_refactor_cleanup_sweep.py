@@ -98,9 +98,10 @@ _SKIP_DIR_PARTS = {'__pycache__', '.git', '.plan', 'node_modules', 'target'}
 # Matched on the filename under a ``doc/plans/`` ancestor, deliberately, rather
 # than by adding ``plans`` to ``_SKIP_DIR_PARTS``: a name-based skip would
 # silence any directory called ``plans`` under ``marketplace/`` or ``test/``,
-# where a retired token IS an orphan. The three tests below pin each half of
-# this: reports excluded, everything else under doc/plans still swept, and the
-# match anchored to doc/plans rather than to the name ``report-NN.md`` anywhere.
+# where a retired token IS an orphan. Four tests below pin this shape: reports
+# excluded, everything else under doc/plans still swept, the rest of doc/ still
+# swept, and the match anchored to doc/plans rather than to the name
+# ``report-NN.md`` anywhere.
 _PLANS_ROOT = PROJECT_ROOT / 'doc' / 'plans'
 _RUN_REPORT_NAME = re.compile(r'^report-\d+\.md$')
 
