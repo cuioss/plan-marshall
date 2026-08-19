@@ -229,7 +229,7 @@ class TestBrokenRelativeLink:
         assert len(no_boundary) == 1
         assert no_boundary[0]['target'] == '../skill-b/gone.md'
 
-    # -- Repo-root boundary widening (deliverable D3) ------------------------
+    # -- Repo-root boundary widening ----------------------------------------
 
     @staticmethod
     def _make_repo_layout(tmp_path: Path) -> tuple[Path, Path]:

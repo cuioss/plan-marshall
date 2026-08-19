@@ -1234,7 +1234,7 @@ def test_scoped_manage_invocation_derives_per_referenced_notation(tmp_path, monk
 
 
 # =============================================================================
-# Quality-gate manage-invocation build-failing regression (deliverable D2)
+# Quality-gate manage-invocation build-failing regression
 # =============================================================================
 #
 # cmd_quality_gate already aggregates scan_manage_invocation findings into
@@ -1244,8 +1244,8 @@ def test_scoped_manage_invocation_derives_per_referenced_notation(tmp_path, monk
 # flows through to a build-failing gate verdict — so a refactor that dropped
 # scan_manage_invocation from the gate's rule list (or stopped counting its
 # findings toward status: fail) would fail loudly instead of passing CI
-# silently (the no-op-gate class of lessons 2026-06-04-00-001 /
-# 2026-06-04-00-002).
+# silently — the no-op-gate class of defect, where the gate still reports a
+# verdict but no longer derives it from the rule.
 #
 # The fixture mirrors the synthetic-executor model used by
 # test_analyze_manage_invocation.py: a real .plan/execute-script.py shim maps a
@@ -1430,14 +1430,14 @@ def test_quality_gate_manage_invocation_drift_fails(tmp_path):
 
 
 # =============================================================================
-# Quality-gate scan_finalize_step_token registration (deliverable D2)
+# Quality-gate scan_finalize_step_token registration
 # =============================================================================
 #
 # cmd_quality_gate must register scan_finalize_step_token in its rule list so
 # the finalize-step-token-mismatch rule runs as part of every quality-gate
 # sweep. A refactor that dropped the rule from cmd_quality_gate (or never wired
-# it) would let a drifted ``mark-step-done --step`` token reach main silently —
-# exactly the PR #629 handshake-loop regression class. The observable
+# it) would let a drifted ``mark-step-done --step`` token reach main silently,
+# which is the handshake-loop class of defect. The observable
 # registration signal is the scan_finalize_step_token entry in rules_run; the
 # rule's own detection behaviour is pinned in test_analyze_finalize_step_token.py.
 
@@ -1460,7 +1460,7 @@ def test_quality_gate_registers_scan_finalize_step_token(tmp_path):
 
 
 # =============================================================================
-# Quality-gate mirror-rule registration (deliverable D1)
+# Quality-gate mirror-rule registration
 # =============================================================================
 #
 # cmd_quality_gate must register the four manually-maintained-mirror rules so
@@ -1501,7 +1501,7 @@ def test_quality_gate_registers_four_mirror_rules(tmp_path):
 
 
 # =============================================================================
-# Quality-gate agentfile-hygiene registration (deliverable D3)
+# Quality-gate agentfile-hygiene registration
 # =============================================================================
 #
 # cmd_quality_gate must register the two agentfile-hygiene backstop rules so
@@ -1536,10 +1536,10 @@ def test_quality_gate_registers_agentfile_hygiene_rules(tmp_path):
 
 
 # =============================================================================
-# --rules opt-in flag tests (replaces PM_ARGUMENT_NAMING_ENABLED env-var gate)
+# --rules opt-in flag tests
 # =============================================================================
 #
-# Pins the breaking-refactor contract from deliverable D3: the argument-naming
+# Pins the opt-in contract: the argument-naming
 # rule cluster (and the verb-chain cluster) under ``plugin-doctor analyze`` is
 # gated OFF by default. Activation is via ``--rules <name>[,<name>...]`` or the
 # two boolean aliases ``--enable-argument-naming`` / ``--enable-verb-chain``.
@@ -1635,7 +1635,7 @@ def test_parse_rules_flag_drops_unknown_names_but_keeps_valid(capsys):
 def test_parse_rules_flag_warns_on_unknown_tokens(capsys):
     """Unknown ``--rules`` tokens trigger a stderr warning naming the rejected
     token alongside the accepted registry — silent drops mask user typos in a
-    diagnostic tool. See lesson 2026-05-08-19-003 (PR #362 review).
+    diagnostic tool.
     """
     _doctor_marketplace._parse_rules_flag('argument_naming,nonsense,verb_chain')
 
@@ -1701,7 +1701,7 @@ def test_resolve_active_rules_rules_and_alias_union():
 
 
 # =============================================================================
-# verb_chain gating — TASK-13 (PR #362 review)
+# verb_chain gating
 # =============================================================================
 #
 # The verb_chain rule cluster is registered in ``_OPTIN_RULE_NAMES`` and
@@ -1837,7 +1837,7 @@ def test_zero_hit_grep_pm_argument_naming_enabled_in_source():
 
 
 # =============================================================================
-# _resolve_marketplace_root error-containment tests (deliverable 1)
+# _resolve_marketplace_root error-containment tests
 # =============================================================================
 #
 # TASK-1 added the ``_resolve_marketplace_root`` helper so every verb shares a
@@ -1939,7 +1939,7 @@ def test_invalid_marketplace_root_cli_no_traceback(tmp_path):
 
 
 # =============================================================================
-# Dispatcher-guard regression: bad root → structured TOON, never a Traceback (deliverable 2)
+# Dispatcher-guard regression: bad root → structured TOON, never a Traceback
 # =============================================================================
 #
 # The pre-fix defect is only observable end-to-end: the uncaught ``ValueError``

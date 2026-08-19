@@ -1172,9 +1172,8 @@ def test_display_detail_subdoc_em_dash_surfaces_in_subdoc_analysis():
 #         bundles/<bundle>/skills/<skill>/SKILL.md             (prose to scan)
 #         bundles/plan-marshall/skills/persona-plan-marshall-agent/standards/argument-naming.md
 #
-# The cluster is unconditionally active (gate removed per lesson
-# 2026-04-29-23-002); tests below exercise the analyzer directly without
-# any env-var setup.
+# The cluster is unconditionally active — there is no env-var gate — so the
+# tests below exercise the analyzer directly without any setup.
 
 
 def _write_fake_script(
@@ -2136,8 +2135,8 @@ def test_simplicity_unused_parameter_del_local_no_false_positive(tmp_path):
 def test_simplicity_unused_parameter_detects_marker_on_last_multiline_param(tmp_path):
     """A ``# unused`` marker on the last parameter of a multi-line signature is detected.
 
-    Regression for PR #499 review fc4fa4: the old string heuristic required the
-    line to contain ``def ``, ``):``, or ``,``. The last parameter of a
+    Detection is structural, not textual. A line-shape heuristic keyed on
+    ``def ``, ``):`` or ``,`` cannot see this case: the last parameter of a
     multi-line signature sits on its own line with none of those tokens, so the
     marker was missed. The AST-based parameter-line binding catches it.
     """
@@ -2242,9 +2241,9 @@ def test_simplicity_signature_docstring_no_false_positive_with_intent(tmp_path):
 def test_simplicity_signature_docstring_no_false_positive_with_param_descriptions(tmp_path):
     """A docstring opening with ``Args:`` but carrying real parameter descriptions is NOT flagged.
 
-    Regression for PR #499 review bfdb40: ``_restates_signature_only`` returned
-    True as soon as the first paragraph was a structural header, without
-    inspecting the rest of the body. A docstring whose remaining lines describe
+    ``_restates_signature_only`` must inspect the whole body, not stop at the
+    first paragraph: returning True as soon as a structural header appears
+    discards real content. A docstring whose remaining lines describe
     each parameter (``a: first input``) carries real documentation and must NOT
     be flagged for deletion.
     """

@@ -37,8 +37,8 @@ Test layers:
   * (e) Project-local — ``.claude/skills/finalize-step-*/SKILL.md`` is scanned
         with the ``project:{name}`` expected step_id (violating + clean).
   * (f) Finding shape — the finding carries the documented contract fields.
-  * (g) Real-marketplace-zero — the real bundles tree produces zero findings
-        (the PR #629 regression anchor).
+  * (g) Real-marketplace-zero — the real bundles tree produces zero findings,
+        which is what makes a non-empty result a real drift rather than noise.
 """
 
 from pathlib import Path
@@ -153,7 +153,7 @@ class TestBundleViolating:
     def test_drifted_token_triggers_finding(self, tmp_path: Path, monkeypatch) -> None:
         bundles_root = _bundle_marketplace(tmp_path, monkeypatch)
         # Documented token uses a bare-skill name instead of the canonical
-        # ``{bundle}:{skill}`` reference — the classic PR #629 drift.
+        # ``{bundle}:{skill}`` reference — the drift this rule exists to catch.
         content = (
             '# Plan Retrospective\n\n'
             'Finalize tail:\n\n'
@@ -390,7 +390,7 @@ class TestFindingShape:
 
 
 # ===========================================================================
-# (g) Real-marketplace-zero — the PR #629 regression anchor
+# (g) Real-marketplace-zero — the anchor that makes a finding meaningful
 # ===========================================================================
 
 
@@ -401,9 +401,9 @@ def _marketplace_available() -> bool:
 def test_real_marketplace_tree_produces_zero_findings() -> None:
     """The real bundles tree has zero finalize-step token drifts.
 
-    This is the PR #629 regression anchor: the documented
-    ``mark-step-done --step`` token in every in-scope finalize-step skill must
-    equal its canonical manifest step_id. A non-empty result means a real
+    The documented ``mark-step-done --step`` token in every in-scope
+    finalize-step skill must equal its canonical manifest step_id, so a green
+    here is what licenses reading any finding as real. A non-empty result means a real
     skill drifted and the ``phase_steps_complete`` handshake would loop
     forever.
     """

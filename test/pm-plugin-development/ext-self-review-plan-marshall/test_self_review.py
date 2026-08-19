@@ -498,8 +498,8 @@ class TestDetectFlagGuardPairs:
         assert out[0]['forms_covered'] == 'equals'
 
     def test_asymmetric_pair_one_both_one_single_form(self):
-        # Replays the PR #508 scenario: --plan-id covers both forms, while its
-        # sibling --project-dir covers only the space form.
+        # An asymmetric pair: --plan-id covers both forms, while its sibling
+        # --project-dir covers only the space form.
         added = [
             ('inject.py', 1, "    if '--plan-id' in args or '--plan-id=' in args:"),
             ('inject.py', 4, "    if '--project-dir' in args:"),
@@ -2150,7 +2150,7 @@ class TestDetectScanDerivedKeys:
     ``standards/unreachable-guard-detection.md`` for the gate verdict.
     """
 
-    # The PR #1013 pre-fix scanning derivation, in added-line-tuple form.
+    # The pre-fix scanning derivation, in added-line-tuple form.
     _SCANNING_FORM = [
         ('gen.py', 1, 'def _split_bundle_version(path):'),
         ('gen.py', 2, '    parts = Path(path).parts'),

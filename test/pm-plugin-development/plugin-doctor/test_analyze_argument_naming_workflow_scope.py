@@ -6,8 +6,8 @@
 The argument-naming analyzer previously scanned only ``SKILL.md``,
 ``agents/*.md``, ``commands/*.md``, and the ``standards/``, ``references/``,
 ``recipes/`` skill subdirectories. Workflow bodies (``skills/*/workflow/*.md``)
-were silently outside scope, which let invented subcommands such as
-``manage_status get`` slip through review (lesson 2026-05-14-00-001).
+are in scope too; leaving them out lets an invented subcommand such as
+``manage_status get`` slip through review.
 
 These tests pin the extended scope: an invented subcommand inside a
 ``workflow/*.md`` file MUST surface as an ``ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN``
@@ -100,9 +100,9 @@ def _findings_by_rule(findings: list[dict], rule_id: str) -> list[dict]:
 def test_workflow_md_invented_subcommand_emits_subcommand_unknown(tmp_path):
     """Invented subcommand inside skills/*/workflow/*.md surfaces SUBCOMMAND_UNKNOWN.
 
-    Regression guard for lesson 2026-05-14-00-001: workflow bodies were
-    previously outside the analyzer's markdown scope, so invocations such
-    as ``manage_status get`` (no such subcommand) escaped detection. The
+    Workflow bodies are inside the analyzer's markdown scope, so an
+    invocation such as ``manage_status get`` (no such subcommand) is
+    detected rather than escaping. The
     extended scope MUST flag the bad subcommand at the exact line.
     """
     marketplace_root = tmp_path / 'marketplace'
@@ -173,8 +173,8 @@ def test_workflow_md_invented_flag_emits_flag_unknown(tmp_path):
     Complements the SUBCOMMAND_UNKNOWN workflow-scope test: a flag absent
     from the resolved subparser's argparse declarations MUST surface as an
     ``ARGUMENT_NAMING_FLAG_UNKNOWN`` finding when it appears inside a
-    ``workflow/*.md`` body. Regression guard for the workflow-doc argument
-    drift documented in lesson 2026-05-20-15-004.
+    ``workflow/*.md`` body, so argument drift in a workflow doc is caught
+    where drift in a skill body already is.
     """
     marketplace_root = tmp_path / 'marketplace'
     write_dispatching_executor(tmp_path / '.plan', ['plan-marshall:manage-findings:manage-findings'])

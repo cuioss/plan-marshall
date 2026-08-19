@@ -1750,7 +1750,7 @@ class TestQualityGateWiring:
 
 
 # ---------------------------------------------------------------------------
-# Layer I — robustness fixes carried forward (PR #372 review feedback).
+# Layer I — robustness of the scanner against malformed input.
 # ---------------------------------------------------------------------------
 
 

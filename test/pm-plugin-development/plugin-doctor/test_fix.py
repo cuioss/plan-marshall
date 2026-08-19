@@ -610,10 +610,9 @@ def test_apply_signature_docstring_fix_removes_restating_docstring():
 def test_apply_signature_docstring_fix_inserts_pass_for_sole_docstring():
     """A function whose body is ONLY a signature-restating docstring gets a ``pass``.
 
-    Regression for PR #499 review 7877ca: deleting the sole-statement docstring
-    leaves an empty function body, which is a SyntaxError. The fix replaces the
-    docstring with a ``pass`` (preserving indentation) so the result still
-    parses.
+    Deleting the sole-statement docstring would leave an empty function body,
+    which is a SyntaxError, so the fixer replaces it with a ``pass``
+    (preserving indentation) and the result still parses.
     """
     import ast as _ast
 
@@ -688,7 +687,7 @@ def test_categorize_simplicity_signature_docstring_safe():
 
 
 # =============================================================================
-# fenced-code-no-language auto-fixer (deliverable D2)
+# fenced-code-no-language auto-fixer
 # =============================================================================
 #
 # The fixer appends a default ``text`` info-string to every bare *opening* code

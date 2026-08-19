@@ -187,9 +187,9 @@ def test_build_subparser_tree_nested_three_levels(tmp_path):
 def test_build_subparser_tree_registers_bare_add_parser_calls(tmp_path):
     """Bare ``subparsers.add_parser('verb', ...)`` calls must register a verb.
 
-    Regression for lesson 2026-05-02-10-001: the analyzer historically
-    only walked ``ast.Assign`` statements, so a bare-Expr ``add_parser``
-    call (whose return value is discarded) was invisible to the verb-chain
+    The analyzer walks bare-Expr statements as well as ``ast.Assign``: an
+    ``add_parser`` call whose return value is discarded is otherwise
+    invisible to the verb-chain
     scanner. Mixed-form scripts must register every verb regardless of
     whether the call's result was bound to a variable.
 
@@ -231,9 +231,8 @@ def test_build_subparser_tree_real_architecture_script_includes_bare_verbs():
     ``marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/
     architecture.py`` registers ``derived`` and ``info`` via the bare
     ``subparsers.add_parser('verb', ...)`` shape (no assignment target).
-    Per lesson 2026-05-02-10-001, both verbs must appear in the tree
-    returned by ``build_subparser_tree`` — historically they were
-    silently dropped.
+    Both verbs must appear in the tree returned by ``build_subparser_tree``;
+    a walker that only visits assignments drops them silently.
 
     This test also acts as a guard against future refactors of
     ``architecture.py`` that might switch to the assigned form for

@@ -5,8 +5,7 @@
 The analyzer walks every ``.md`` file under the marketplace bundles root, keeps
 those whose ``implements:`` frontmatter names
 ``plan-marshall:extension-api/standards/ext-point-build-verify-step``, and flags
-each implementor whose ``canonicals:`` frontmatter list is missing or empty
-(lesson ``2026-06-25-08-001``).
+each implementor whose ``canonicals:`` frontmatter list is missing or empty.
 
 Test layers:
   * Implementor with a non-empty ``canonicals:`` block sequence → no finding.

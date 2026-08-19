@@ -189,19 +189,18 @@ class TestFourTierResolverDetection:
 
 
 class TestSessionRenderTitleZeroFindings:
-    """The real-marketplace ``session_render_title`` post-D5 emits zero findings.
+    """``session_render_title`` emits no ``test_file_missing`` finding.
 
-    This is the canonical real-world detection: after Deliverable 5 lands
-    the matrix-parametrized test rewrite, the analyzer must NOT emit a
-    finding against ``session_render_title``. Until Deliverable 5 lands,
-    this test is allowed to xfail because the matrix is not yet in
-    place — but once D5 is merged, this guard becomes a strict zero-finding
-    invariant. The test asserts the weaker "no findings WITH ``test_file_missing``"
-    invariant unconditionally, and additionally checks the strict invariant
-    when ``session_render_title`` shows up in the findings.
+    Two invariants of different strengths, because only the weaker one holds
+    unconditionally. The analyzer must never report ``test_file_missing``
+    against ``session_render_title`` — asserted always. Once that function is
+    covered by a matrix-parametrized test it must emit no finding at all, so
+    the strict zero-finding form is asserted whenever the function does appear
+    in the findings, which is what makes this guard tighten by itself rather
+    than needing an edit when the coverage lands.
     """
 
-    def test_session_render_title_finding_is_strict_post_d5(self) -> None:
+    def test_session_render_title_reports_no_missing_test_file(self) -> None:
         marketplace_root = PROJECT_ROOT / 'marketplace' / 'bundles'
         findings = analyze_resolver_matrix_coverage(marketplace_root, PROJECT_ROOT)
         # Filter to findings against session_render_title specifically.
