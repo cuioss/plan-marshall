@@ -150,11 +150,100 @@ not the execution-context workflow roster — is independently correct and is le
 
 ## Deliverables
 
-_in progress_
+| D | Commit | State |
+|---|---|---|
+| D1 — derive the four populations, close 040/G3 | `28669af` | done — § Populations above |
+| D2 — six guards seen RED | `b935f14` | done — red-first ledger below |
+| D3 — bind prompt-body carriage to its declaration surface | `2217e8d` | done |
+| D4 — the finalize configuration surface names only keys that resolve | `2217e8d` | done |
+| D5 — hand-written `[DISPATCH]` emissions to zero | `17d1a87` | done — population (b) re-derived to 0 |
+| D6 — the `baseline-reconcile` return contract | `9595e5c` | done |
+| D7 — declare the advertised finalize-step facts | `974fecd` | done |
+| D8 — thirteen statements made true against their substrate | this run's final deliverable commit | done — per-gap checks below |
+
+### The red-first ledger (D2, and D3's declaration guard)
+
+One row per mutation. Every mutation was applied through a harness that snapshots the target's BYTES
+to an agent-private scratch path and restores them in a `finally` — never `git checkout`/`restore`,
+which would rewrite the file from the index and discard this run's unstaged work. `git status` was
+re-checked after each sweep; every target came back clean.
+
+| Gap | File mutated | Mutation | Test that failed | Failure message (abridged) | Restore |
+|---|---|---|---|---|---|
+| 230/G2 | `.claude/skills/finalize-step-era-stamp-fill/SKILL.md` | `order: 21` → `23` (frontmatter-anchored) | `test_finalize_edge_ordering.py::test_era_stamp_fill_runs_between_pr_creation_and_ci_verification` | `project:finalize-step-era-stamp-fill (order 23) must run strictly after default:create-pr (order 20) … and strictly before default:ci-verify (order 22)` / `assert 23 < 22` | `git diff --quiet` clean |
+| 310/G4 | `workflow-integration-git/scripts/git-workflow.py` | `push_barrier_action` also returns `re-fire` for `remote_absent_landed` | `test_git_workflow.py::TestBranchSyncState::test_verdict_token_drives_refire_skip_mapping` | `{'remote_absent_landed': 're-fire'} != {'remote_absent_landed': 'skip'}` | clean |
+| 440/G6 (a) | `.claude/skills/finalize-step-plugin-doctor/SKILL.md` | renamed ONLY the `###` heading, leaving the cross-reference | `test_verdict_currency.py::test_every_tabled_refusal_carries_its_section` | `project:finalize-step-plugin-doctor is tabled as a recorded refusal but its own doc carries no "Verdict-input surface — deliberately undeclared" section` | clean |
+| 440/G6 (b) | `phase-6-finalize/standards/pre-push-quality-gate.md` | renamed ONLY the `##` heading, leaving the cross-reference | same test | same shape, naming `default:pre-push-quality-gate` | clean |
+| 440/G1 | `.claude/skills/finalize-step-era-stamp-fill/SKILL.md` | `era_stamp_fill.py` → `era_stamp_filler.py` in `verdict_inputs` | `test_verdict_currency.py::test_every_wildcard_free_declared_glob_names_a_tracked_path` | `project:finalize-step-era-stamp-fill declares '….../era_stamp_filler.py' — does not exist` | clean |
+| 300/G1 | `phase-6-finalize/standards/archive-plan.md` | deleted the `destroys:` block | `test_finalize_orchestration_routing.py::TestCanonicalDestroysDeclarationsExist::test_each_canonical_anchor_declares_its_artifact` | `default:archive-plan declares no destroys: frontmatter … Removing it leaves both standards describing a capability with no instance` | clean |
+| 302/G8 | `plan-orchestrator/scripts/_orchestrator_inbox.py` | removed `merge_state` from `LANDING_REQUIRED_KEYS` | BOTH `test_payload_spec_table_names_exactly_the_required_keys` AND `test_emit_landing_enumeration_names_exactly_the_required_keys` | `Extra items in the left set: 'merge_state'` on each | clean |
+| D3 declaration guard (a) | `phase-6-finalize/workflow/pre-submission-self-review.md` | added a `Required: Yes` non-exempt `ghost_field` input-table row with no declaration | `test_step_prompt_fields_contract.py::test_input_table_required_keys_equal_the_declaration` (and the parser anchor test) | `declared=['candidates'] table=['candidates', 'ghost_field']` | clean |
+| D3 declaration guard (b) | `phase-6-finalize/workflow/create-pr.md` | added `requires_prompt_fields: [synthetic_field]` to a step with NO own `prompt:` block | ONLY `test_input_table_required_keys_equal_the_declaration` — the ∃-direction and the block-presence guard both PASSED | `default:create-pr: declared=['synthetic_field'] table=[]` | clean |
+| D7 read-before-destroy gate | `phase-6-finalize/standards/pre-push-quality-gate.md` | `order: 5` → `75`, past `branch-cleanup`'s `destroys: [worktree]` (70) | `test_finalize_edge_ordering.py::test_every_reader_runs_before_the_step_that_destroys_what_it_reads` | `default:pre-push-quality-gate (order 75) reads 'worktree', which default:branch-cleanup (order 70) destroys` | clean |
+| D8 / 160-G2 substrate guard | `script-shared/scripts/build/_gate_coverage.py` | dropped `targets, build.py` from the `spdx-paths` parity note | `test_gate_coverage_parity_substrate.py::test_spdx_paths_note_matches_the_gate_it_describes` | missing `'build.py'`, `'targets'` | clean |
+
+**D3's second Done-when check, and where it disagrees with the plan.** The plan's stated check is that
+adding `requires_prompt_fields` to a generic-template-dispatched step with no own `prompt:` block
+*"leaves the suite green"*. Taken literally that is unsatisfiable once **call two** lands, because the
+new input-table direction asserts declaration ≡ table for every step, and a declaration with no table
+row is exactly a divergence. The two plan calls are in tension, so the run performed BOTH halves rather
+than picking one:
+
+- **(a)** declaration alone → the ONLY failure is the input-table direction; the ∃-direction and the
+  block-presence guard pass. That is precisely what call one set out to buy — a generic-template
+  declarer is no longer rejected for lacking a block.
+- **(b)** declaration **plus** its matching `Required: Yes` input-table row, still with no own `prompt:`
+  block → **19 passed**, suite green.
+
+(b) is the honest form of the plan's check under call two, and it demonstrates the same property. The
+deviation and its reason are recorded here rather than silently resolved either way.
+
+### D8 — the per-gap check, one line each
+
+| Gap | Check run | Result |
+|---|---|---|
+| 160/G9 | Read both link targets: `ref-workflow-architecture/standards/agents.md` states no ceiling (`grep` for `display_detail`/`80` → 0 hits); `external-step-contract.md` § "Required termination" states `≤80 characters` | repointed to the doc that states it |
+| 160/G4 | Added a third `--display-detail` variant for the `whole_tree_available == false` branch; measured its expansion in Python (67 chars at `{N}`=1 digit, 68 at 2) and referenced it from branch 3 | done; Branch A's default documented as inapplicable there |
+| 160/G2 | Relabelled `parity_population` as **recorded** in all four places that called it derived (module docstring, function docstring, `pre-push-quality-gate.md`, the sibling test docstring); added `test_gate_coverage_parity_substrate.py` binding the `spdx-paths` cell to `build.py`'s real SPDX scope, mutation-confirmed | done |
+| 230/G1 | Replaced the hardcoded pair with the discriminator (`mutates_source: true` **and** `order > default:pre-push-quality-gate.order`); derived both operands from population (a) | done — the bullet now names no `mutates_source: false` step as a member, and no step at/below the gate |
+| 300/G2 | Split the Settle band into pre-push (1–11) and post-push (12–69); re-derived occupancy from population (a): 3–11 fully occupied by nine steps, so the pre-push sub-region has **no** guaranteed insertion room | done — occupancy figures match the derivation |
+| 300/G4 | Reduced the `mutates_source` obligation in the post-merge-operational and post-run-review rows to pointers at the owning contract; the Settle rewrite dropped the third | done |
+| 330/G1 | Read the corrected sibling paragraph in `finalize-step-preference-emitter.md` and mirrored it — the guard's exemption is keyed on git trackedness, not the path prefix | done |
+| 440/G2 | Lead sentence now defers the ACTION as well as the membership; the `differs from live HEAD` row points at Step 3's classifier; the closing summary is qualified. The `matches` and `field absent` rows left alone as the plan directs | done — no sentence in § Resumability prescribes an unconditional re-fire |
+| 440/G3 | Located both sentences at `:1100` and `:1105` and routed each by `use_merge_queue` | done — `grep -c "unconditional rebase"` returns 0 |
+| 410/G1 | Rewrote § (e)'s closing sentence from the presence-only test to the recognized-identity form, changing nothing else in the section | done |
+| 410/G4 | Scoped the `default` claim in § (d), `audit.py`'s `_UNATTRIBUTED_MODULE` comment AND its `_preference_module` docstring, and `preference-pattern-detector.md`. Verified the other producer is real and live at `lessons-capture.md:132` (*"the `default` module is the first-class home for cross-cutting"*), and left that file unchanged as the plan directs | done |
+| 300/G8 | Corrected the seed annotation `# order 61` → `# order 992`, the order the step's standards doc declares (`finalize-step-preference-emitter.md:7`). No assertion and no seed position changed | done |
+| 300/G9 | Rewrote the sort-rationale parenthetical to name the order the step carried **at the time of the incident** with an explicit past-tense marker, plus the order its standards doc declares today | done |
 
 ## Build gate
 
-_pending_
+**Python-change verdict.** `git diff --name-only origin/main...HEAD -- '*.py'` returns **19 files** (6
+production scripts, 13 test modules) out of 48 changed. The gate therefore fires.
+
+**Result.** `UV_PYTHON=3.12 UV_HTTP_TIMEOUT=600 ./pw verify` — the full three-sub-step form, not the
+narrower calls, so `test-compile` (mypy over the whole `test/` tree) is included:
+
+```text
+21101 passed, 14 skipped in 350.69s
+coverage: COMPLETE over the dimensions below — checked over full scope:
+  mypy(production) [415 files, cache disabled], ruff [marketplace/bundles, test, .claude],
+  SPDX headers [marketplace/bundles, test, .claude, marketplace/targets, build.py],
+  plugin-doctor [marketplace-wide], mypy(test) [780 files, cache disabled],
+  module-tests [whole-tree pytest]
+```
+
+Read from the streamed output rather than the exit code, per the lane contract: the coverage line
+names all six dimensions as checked, and reaching `module-tests` at all proves `quality-gate` and
+`test-compile` both passed — `verify` exits early on either, as this run observed directly when a ruff
+`F401` stopped an earlier gate at the ruff step with exit code still 0.
+
+Per-commit gates ran ahead of every `*.py`-touching commit. One found a real defect: after D4.3
+removed `choices=` from `--lane`, ruff reported `F401 _RESOLVED_ASK_LANE_VALUES imported but unused`
+**while the wrapper still exited 0** — the "read the output, not the exit code" case, caught by reading.
+The fix removed the restatement rather than the import: the help string now interpolates the constant.
+
+**Stale-base re-verification (§ Step 8 condition 2)** — recorded at the merge gate below.
 
 ## Findings
 
@@ -162,7 +251,27 @@ _pending_
 
 ## Reviewer participation
 
-_pending_
+**Population, derived from configuration** — the `author_login` of each
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc, not a
+list transcribed here:
+
+```bash
+grep -rn "^author_login:" marketplace/bundles/plan-marshall/skills/automatic-review/standards/*.md
+```
+
+| Registry doc | `author_login` | `trigger_comment` |
+|---|---|---|
+| `coderabbit.md` | `coderabbitai` | `@coderabbitai review` |
+| `pr-agent.md` | `cuioss-review-bot` | `/review` |
+| `sourcery.md` | `sourcery-ai` | `@sourcery-ai review` |
+
+M = **3**. Per-reviewer verdicts, each derived from the stored comment bodies across all three surfaces
+(`get_comments`, `get_reviews`, `get_review_comments`), are recorded below once the PR has been opened
+and read back.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
+|---|---|---|---|
+| _pending_ | | | |
 
 ## Cost
 
