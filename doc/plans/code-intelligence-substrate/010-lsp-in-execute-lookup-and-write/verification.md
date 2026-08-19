@@ -50,26 +50,30 @@ the server never answers is reported as `state: ok, error_count: 0` — a clean 
   The adversarial pass re-took the whole set independently; both readings are shown, because the
   spread between them is itself the finding:
 
-  | Operation | Audit (quiet box) | Audit (loaded box) | **Adversarial re-take** | Report |
-  |---|---|---|---|---|
-  | cold start (spawn + `initialize`) | 571.3 ms | 2140.1 ms | **394.3 ms** | 413.4 ms |
-  | **first** `documentSymbol` after `didOpen` | 4873.3 ms | 13384.0 ms | **970.5 ms** | 2.7 ms |
-  | `documentSymbol` repeated in same session | 4.2 ms | — | **2.3 ms** | 2.7 ms |
-  | `definition` | 3.1 ms | 32.3 ms | **1.7 ms** | 2.6 ms |
-  | `references` | 2.8 ms | 12.3 ms | **2.0 ms** | 11.9 ms |
-  | first diagnostics | 2000.4 ms | 2001.1 ms | **2000.3 ms** | 736.3 ms |
-  | `workspace/symbol` (via `wait_until_idle`) | — | — | **2163.0 ms** | 240.6 ms |
-  | `rename` → `WorkspaceEdit` | 11.9 ms | 42.4 ms | **2.3 ms** | 4.9 ms |
+  | Operation | Audit (quiet box) | Audit (loaded box) | Re-take 1 | **Re-take 2 (adversarial)** | Report |
+  |---|---|---|---|---|---|
+  | cold start (spawn + `initialize`) | 571.3 ms | 2140.1 ms | 394.3 ms | **352.9 / 357.6 ms** | 413.4 ms |
+  | **first** `documentSymbol` after `didOpen` | 4873.3 ms | 13384.0 ms | 970.5 ms | **907.8 ms** | 2.7 ms |
+  | `documentSymbol` repeated in same session | 4.2 ms | — | 2.3 ms | **1.9 ms** | 2.7 ms |
+  | `documentSymbol` after `workspace/symbol` + diagnostics | — | — | 4.7 ms | **4.3 ms** | 2.7 ms |
+  | `definition` | 3.1 ms | 32.3 ms | 1.7 ms | **2.1 ms** | 2.6 ms |
+  | `references` | 2.8 ms | 12.3 ms | 2.0 ms | **2.5 ms** | 11.9 ms |
+  | first diagnostics (≥2 s floor) | 2000.4 ms | 2001.1 ms | 2000.3 ms | **2302.1 ms** | 736.3 ms |
+  | `workspace/symbol` (≥1.5 s `wait_until_idle` floor) | — | — | 2163.0 ms | **2105.1 ms** | 240.6 ms |
+  | `rename` → `WorkspaceEdit` | 11.9 ms | 42.4 ms | 2.3 ms | **1.5 ms** | 4.9 ms |
 
-  Two of these are **deterministic** rather than load-dependent, and they are the ones the conclusion
-  should rest on: `diagnose` returns at the `settle` floor (2000.3 ms, matching `settle=2.0` at
+  Two of these are **floor-bounded** rather than load-dependent, and they are the ones the conclusion
+  should rest on: `diagnose` cannot return before the `settle` floor (`settle=2.0` at
   `_lsp_jsonrpc.py:204`) and `workspace-symbol` cannot return before `wait_until_idle`'s 1.5 s floor
-  (`:225`, invoked at `:349`). The analysis wait is **not** deterministic: the audit's 4873 ms
-  first-`documentSymbol` figure did **not** reproduce — the re-take measured 970.5 ms on the same
-  workspace. What *did* reproduce exactly is the **ordering effect**: issuing `documentSymbol` first in
-  a cold session costs 970.5 ms, and issuing it after `workspace/symbol` + diagnostics (the report's
-  own sequence) costs 4.7 ms. The report's 2.7 ms is therefore a warm figure; the magnitude of the cold
-  one is machine-state-dependent and must not be quoted as a constant.
+  (`:225`, invoked at `:349`). ⚠ *Floor-bounded, not constant* — an earlier reading of this row called
+  the 2000.3 ms figure deterministic, but the wait restarts on every inbound publish, so the second
+  re-take measured 2302.1 ms for the same call. The floor is a lower bound the call cannot beat.
+  The analysis wait is not floor-bounded at all: the audit's 4873 ms first-`documentSymbol` figure did
+  **not** reproduce — two later re-takes measured 970.5 ms and 907.8 ms on the same workspace. What
+  *did* reproduce exactly, in all three readings, is the **ordering effect**: issuing `documentSymbol`
+  first in a cold session costs ~1 s, and issuing it after `workspace/symbol` + diagnostics (the
+  report's own sequence) costs 4.7 / 4.3 ms. The report's 2.7 ms is therefore a warm figure; the
+  magnitude of the cold one is machine-state-dependent and must not be quoted as a constant.
 
 - **Verdict:** CONFIRMED — the premise holds and a live server was genuinely driven. The caveat is the
   *cost basis*: the report's per-call figures are **warm-path** figures (its sequence issued
