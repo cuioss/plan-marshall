@@ -117,7 +117,7 @@ Population derived from the registry — the `author_login` of each
 | Reviewer (`author_login`) | Verdict | Reopens? | Body evidence |
 |---|---|---|---|
 | `cuioss-review-bot` | `reviewed` | — | "PR Reviewer Guide": no relevant tests, no security concerns, no major issues — a real review artifact over the diff |
-| `coderabbitai` | see below | — | Began a full review of all 82 files against `6c2c0d1`; superseded by the condition-2 merge push. **Re-requested** with the registry's declared `@coderabbitai review` trigger |
+| `coderabbitai` | `reviewed` | — | Published a full review at `f3ac442` over all 83 files: **20 actionable inline comments** (Critical/Major prioritised), 50 minor, 2 nitpicks. Reached only on the fourth attempt — see below |
 | `sourcery-ai` | `rate-limited` | **no** | "your pull request is larger than the review limit of 150000 diff characters" — a size ceiling, a property of this diff rather than the clock, so it never reopens for this PR |
 
 **The CodeRabbit review was an explicit operator requirement**, so this PR deliberately carries **no**
@@ -125,7 +125,39 @@ Population derived from the registry — the `author_login` of each
 suppressed the very review that was required. The diff also earns its review on the lane's own rule:
 it contains eight plan files, and a plan is behavioural prose a later run executes.
 
-Its final verdict is recorded by the operator against the PR rather than predicted here.
+**Coverage: 2 of 3.** The § Step 8 shortfall disclosure fires for `sourcery-ai` only, and its
+`Reopens? no` is the material half — a 36,800-line diff exceeds its ceiling permanently, so no wait
+recovers it. Splitting the audit records from the fix plans into separate PRs is what would.
+
+⛔ **The CodeRabbit review cost four attempts, and three of them were wasted by this run.** The
+automatic review on PR creation was superseded by the condition-2 merge push; the first manual
+re-request was superseded by the report commit; the second came back **rate-limited** because those
+two aborts had spent the window. Only the fourth, issued after the head was final and the window had
+reopened, produced the review. The lane already warns that a push aborting a review consumes that
+reviewer's window — the error here was requesting a review before the head was final, when one
+request after both pushes would have done. Sequencing that binds a later run: **merge → gate →
+report → commit → push → then a single trigger.**
+
+### What the review found, and what it changed
+
+It surfaced defects six verification rounds did not, because its method differs: it cross-checks
+*between* documents, and it tests whether a fix plan's Action can satisfy that plan's own *done when*.
+
+Its sharpest finding is recorded above under § Residue: **this run's `_audit/` safety argument was
+false**, and became false the moment this report was written into the directory. Also real: a pair of
+gap entries in `300` prescribing contradictory descriptions, so applying one reinstated the false
+rationale the other exists to remove; a history query in `310` that prints nothing for a symbol added
+to an existing file (reproduced); and a coverage check in `280` that was file-scoped against its own
+"site, not module" rule.
+
+**Four findings were refuted or re-diagnosed with evidence**, and one of its suggested remedies was
+actively unsafe — `warnings.warn` under a `filterwarnings = ["error"]` config fails the test rather
+than reporting. Both are recorded on the PR thread with the evidence, per the lane's rule that a
+dismissed finding is still evidence.
+
+Fixing the findings produced two further defects, both closed: correcting `340`'s D3 created a `G11`
+cited in `verification.md` but absent from `gaps.md` — the third appearance of that dangling-reference
+class in this run — and `030`'s opening summary read stronger than its own verdict table.
 
 ## Cost
 
@@ -148,7 +180,7 @@ Its final verdict is recorded by the operator against the PR rather than predict
 | 4 Pushed | done | No unpushed commit; pushed after every commit |
 | 5 Build gate | done | Git-derived verdict and result in § Build gate |
 | 6 Verification sub-agent | done | Six rounds, all findings fixed; stop record in § Findings |
-| 7 PR cycle | done | PR #1304; no `skip-bot-review`; comment surfaces read; CodeRabbit re-triggered after the merge superseded it |
+| 7 PR cycle | done | PR #1304; no `skip-bot-review`; all three comment surfaces read; every finding dispositioned — fixed, or refuted on the thread with evidence. Reviewer verdicts and the four-attempt CodeRabbit sequence in § Reviewer participation |
 | 8 Merge gate | see § Build gate and § Reviewer participation | Condition 2 established on merge commit `eb46c15` |
 | 8 Bridge | done | No status or bookkeeping write outside `_audit/`; no other plan's directory touched |
 | 9 This check | done | This table |
