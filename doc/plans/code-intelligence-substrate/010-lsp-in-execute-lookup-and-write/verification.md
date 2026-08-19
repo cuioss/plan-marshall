@@ -2,19 +2,24 @@
 
 **Audited:** `plan.md`, `report-01.md` (the only two files in the plan directory)
 **Tree state:** `61a43e5` on `claude/code-intelligence-substrate-analysis-kah884`, re-verified at
-`f49542c` on the same branch (the adversarial pass; `git diff 61a43e5..HEAD` over every audited
-surface — `lsp-client/`, its tests, `manage-run-config`, `phase-5-execute`,
-`doc/user/lsp-code-intelligence.adoc` — is **empty**, so no citation below moved between the two
-readings)
+`f49542c` and again at `c5511dd` on the same branch (the second reading is the adversarial review's).
+`git diff 61a43e5..HEAD` over every audited surface — `lsp-client/`, its tests, `manage-run-config`,
+`execute-task`, `doc/user/lsp-code-intelligence.adoc`, `plugin.json` — is **empty** at all three
+commits, so no citation below moved between the readings. (Other agents commit to this branch
+continuously, so the branch head and `git rev-list --count HEAD` move between readings and are not
+stated as a fixed figure; the audited surfaces are what was pinned.)
 **Overall verdict:** CONFIRMED WITH GAPS
 
 All five deliverables landed as real, reachable code with real tests, and D0's premise was settled
-against a genuine language server that is still reachable from this clone. Four correctness holes were
-found by reading and then proved by execution against a live `pyright-langserver`: the read side's
-only cross-file lookup kind returns coordinates with **no file path**; `document-symbol` returns 1 of
-43 symbols on this repository's own `architecture.py` and reports that as a complete positive answer;
-the write side's post-edit diagnostics re-run returns the **pre-edit** diagnostic set on a large real
-module, so D2's "a worsened diagnostic set fails the step" guard fails open; and a diagnostics query
+against a genuine language server that is still reachable from this clone. **Five** correctness holes
+were found by reading and then proved by execution against a live `pyright-langserver`: the read
+side's only cross-file lookup kind returns coordinates with **no file path**; `document-symbol`
+returns 1 of 43 symbols on this repository's own `architecture.py` and reports that as a complete
+positive answer; the write side's post-edit diagnostics re-run returns the **pre-edit** diagnostic set
+on a large real module, so D2's "a worsened diagnostic set fails the step" guard fails open — proved
+through the shipped `edit` verb end to end, which reports `status: success, applied: true` and leaves
+the broken file in the tree; the same guard compares an **aggregate error count**, so an edit that
+merely *moves* breakage from one footprint file to another lands as a pass; and a diagnostics query
 the server never answers is reported as `state: ok, error_count: 0` — a clean file.
 
 ## Deliverable verdicts
@@ -23,7 +28,7 @@ the server never answers is reported as `state: ok, error_count: 0` — a clean 
 |---|---|---|---|---|
 | D0 | GATE: warm server reachable from a leaf; hosting decision | CONFIRMED against live `pyright-langserver` 1.1.408; host in-envelope per-call | A live server is reachable and answers (36/36 tests pass here with pyright installed); hosting decision recorded and matches the shipped code. Re-measured latencies reproduce the *warm* figures but not the per-call cost basis the rationale uses | CONFIRMED (with a cost-basis caveat — G7) |
 | D1 | Read side + coverage contract | `lookup` verb returns coordinates; `state`+`provider_count` keep the three states separate | Coverage contract shipped and non-vacuous (mutation-proved). But `workspace-symbol` rows carry **no `path`**, and `document-symbol` drops every nested symbol — 1 row returned where the server sent 43, reported as a complete answer | PARTIAL |
-| D2 | Write side through the recorded footprint path | footprint from the edit → apply → re-diagnose → worsened fails and rolls back; adversarially verified | Mechanism shipped and the verdict guard is non-vacuous (mutation-proved, incl. the real-server adversarial test). But the re-diagnose reads a stale set on a large real module (fail-open, reproduced against live pyright), the verdict is a bare error **count** so a swapped error passes, resource-op parts of an edit are silently dropped, a mid-apply failure leaves the tree half-edited, and **no test exercises a multi-file rename through the verb** | PARTIAL |
+| D2 | Write side through the recorded footprint path | footprint from the edit → apply → re-diagnose → worsened fails and rolls back; adversarially verified | Mechanism shipped and the verdict guard is non-vacuous (mutation-proved, incl. the real-server adversarial test). But the re-diagnose reads a stale set on a large real module (fail-open, reproduced **through the shipped verb** against live pyright), the verdict is a bare aggregate error **count** so a swapped *or relocated* error passes, resource-op parts of an edit are silently dropped, a mid-apply failure leaves the tree half-edited, a declined rename returns `status: success`, and **no test exercises a multi-file rename through the verb** | PARTIAL |
 | D3 | Diagnostics as a pre-build signal, with the boundary | `diagnose` verb + boundary note in payload, SKILL and user page; cold read passed | Boundary prose present in all three places and in the module docstring; wording is unambiguous ("supplements … not replaces"). D3's *done-condition is about the text* and the text holds; the verb itself reports an unanswered query as a clean file (G13) — a defect the done-condition does not reach | CONFIRMED (done-condition met; see G13 for a verb defect outside it) |
 | D4 | Opt-in config, no-op degradation, docs | machine-local `language_servers` + 4 verbs; unconfigured is byte-identical; `not_configured` ≠ `unreachable` | All present and tested; the unconfigured path makes no server contact and no mutation | CONFIRMED |
 
