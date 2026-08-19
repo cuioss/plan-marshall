@@ -7,8 +7,8 @@ existence (#1295)")
 **Overall verdict:** CONFIRMED WITH GAPS
 
 The shipped code does what D1–D4 asked for, and the guards that protect it are non-vacuous — eight
-independent mutants were applied and every one went red at the guard that names it, and five of them
-plus one new one were re-applied by the adversarial review with identical results. The gaps are almost
+independent mutants were applied and every one went red at the guard that names it; the adversarial
+review re-ran five of them and added a ninth of its own, all detected. The gaps are almost
 entirely in the *records*: two of run 01's eleven commits never reached the branch that became
 PR #1295, so the merged `report-01.md` carries a defect run 01 had already fixed and loses a
 build-gate result run 01 had already recorded — while `report-02.md` states that run 01 pushed nine
@@ -349,7 +349,7 @@ had this figure right and an earlier version of this row said six. Still open �
 
 ## Report accuracy
 
-### ⛔ The headline finding — run 02's rebase dropped two of run 01's commits, and reported the recovery as complete
+### ⛔ The headline finding — two of run 01's eleven commits never reached the PR branch, and the recovery is reported as complete
 
 `report-02.md:19-36` states run 01 "committed and pushed **nine** commits", that those "nine commits
 were **rebased** onto current `origin/main` and re-pushed", and that "the rebase was conflict-free, and
@@ -359,7 +359,7 @@ Re-derived: `git log --oneline eb0124c..origin/claude/derived-set-closure-integr
 → **11** (and `git merge-base origin/main …g7n8x2` confirms `eb0124c` is the base). Only the first
 nine (up to `ce4292c`) reached the branch that became PR #1295; the last two did not:
 
-| Dropped commit | What it fixed | State of the merged tree |
+| Commit not carried over | What it fixed | State of the merged tree |
 |---|---|---|
 | `f614b9a` "docs(plans): record the final clean verify result" | Replaced report-01 § Final gate's "_pending a clean re-run_" with the recorded clean gate (`=== verify: SUCCESS ===`, `20840 passed, 14 skipped in 385.92s`, run at `0f10d16` with nothing else touching the tree) and updated `actual-state.md` § 7 to match | `report-01.md:331` still reads "**Final gate** — _pending a clean re-run._" |
 | `33392fd` "docs(plans): correct the report header and the stale commit enumeration" | Replaced "D1–D5 land across **four** commits" with a named list of **five** deliverable-bearing commits, adding the round-3 fix the count omitted | `report-01.md:73` still reads "D1–D5 land across four commits: …, and the round-2 fix commit" — the round-3 fix is still missing |
@@ -397,8 +397,9 @@ Consequences, each a false statement standing in the landed tree:
    it is not there. → **G4**
 
 This is proposal 1 in `report-02.md` § "What have we learned" materialising one level worse than
-proposed: the run correctly foresaw that a rebase falsifies quoted SHAs, and did not notice that its
-rebase had also dropped content.
+proposed: the run correctly foresaw that a rebase falsifies quoted SHAs, and did not notice that the
+recovery step had also lost content — it verified the *SHAs* it carried forward and never verified the
+*count*.
 
 ### Other claims
 
@@ -502,3 +503,48 @@ pattern was confirmed to match `manage-solution-outline/examples/refactoring.md`
 afterwards. A concurrently-running audit agent's own modification to
 `platform-runtime/scripts/claude_runtime.py` was observed mid-sweep and deliberately left untouched;
 it was gone by the end of this audit. No file outside this plan's directory was written.
+
+## Adversarial review
+
+Independent review of this document and `gaps.md`. Attacks run: A1 false positives, A2 false
+negatives, A3 vacuous evidence, A4 counts and quotes, A5 actionability, A6 severity/topic,
+A7 coverage, A8 internal consistency.
+
+Re-derived at `91235b6` on `claude/code-intelligence-substrate-analysis-kah884`. Nothing outside
+`doc/plans/` changed between the audit's stated tree state (`9f8cc38`) and this one
+(`git log 9f8cc38..HEAD --name-only` is documentation-only), so every code citation the audit made was
+re-checkable at face value.
+
+| # | Attack | What was found | Correction applied |
+|---|---|---|---|
+| 1 | **A1** false positives | **The headline finding holds.** `eb0124c..origin/…-g7n8x2` is **11** commits (base confirmed by `git merge-base`); `git show ce4292c:…/report-01.md` diffed against the landed file shows only SHA rewrites and run 02's own round-4 edits — not one hunk of `f614b9a` or `33392fd`. G2's line (`report-01.md:73`, "four commits") and G3's (`:331`, "pending a clean re-run") and G4's (`actual-state.md:168`) are all verbatim at the cited lines. But the audit asserted a **mechanism** the tree cannot establish: the two commits are dated 10:59:37 / 11:00:00 UTC against run 02's first commit at 11:03:13, so a fetch predating run 01's last push explains the loss as well as a dropping rebase. | § headline and G1 rewritten to claim the **effect** and disclaim the mechanism; a ⛔ bound added recording that both lost commits are docs-only (`git show --stat`), so **no code or test was lost** — which the audit never said, leaving the reader to over-read the finding. |
+| 2 | **A1** false positives | Every other gap citation resolves: G7 (the ten sites it named are all real reads — three more exist, see row 8), G9 (`SKILL.md:1047` verbatim, contradicted by `:61` and `:936-950`), G10 (`_lessons_query.py:155`), G11 (`test_qgate_closure.py:696`), G12 (`:994/:1004/:1019`), G13 (all **13** enumerated sites reproduce a `grep` for `Step 8b` + manifest exactly), G14 (`:360-370` never compares the two lists; `outline-workflow-detail.md:822` states the rule), G15 (all four consumers at the cited lines), G16 (reproduced by execution), G17 (no normative home), G19 (all 11 SHAs MISSING, all 16 citation sites correct). No gap was found that does not exist. | None needed. Recorded here so an empty row is distinguishable from an attack not run. |
+| 3 | **A1** false positive, nearly created | The audit's search-negative control names "the recipe skill's aspect numbering" as proof its `5+6+7` grep can return hits; a first sweep over `marketplace/` found none and this looked like an unreproducible control. Re-run without a `head` truncation: the hits are in `.claude/skills/recipe-marshal-json-config-audit/SKILL.md:145,147`, exactly as described, and the `marketplace/` result is genuinely clean. | None — the audit was right and the challenge was wrong. Recorded because the near-miss is the same shape as the defects under review. |
+| 4 | **A2** false negatives | **G8 reproduced, and its diagnosis sharpened.** Executed against the live tree: a deliverable declaring `Files to survey: doc/plans/README.md` + `Files expected to mutate: src/newthing/*.py`, with one task targeting the declared survey path, returns `CLOSURE gaps: []` / `RECON gaps: []` / `population_complete: True` on both. **Control the audit did not run:** replacing the pattern with the literal `src/newthing/thing.py` fires the projection closure, so the glob spelling is the sole cause. But the audit's framing — "a measured-looking verdict over a scope the checks structurally cannot examine" — overstates it: the population publishes `matches_enumerated: 0` honestly; what is absent is the **projection obligation**. | § Correctness review item 1, the D1 verdict and G8's Evidence rewritten with the control and the corrected diagnosis. |
+| 5 | **A2** false negatives | No fail-open found beyond what the audit reports. `expand_declared_glob`'s handler, the `~`/absolute guard, the directory-only carve-out, the match ceiling and the unmapped-task path all resolve to *unmeasured* and flip `ambiguous` (`_cmd_qgate_mechanical.py:721-728`, read). D4's structural claim re-verified at the call site (`:674-675`, no predicate) and behaviourally by M7. D3's positive-population guard read line by line: `:311` asserts the slice non-empty, `:322-323` asserts every known hit named, and the oracle at `:97` is a tree walk + `fnmatch`, not `Path.glob`. | None. |
+| 6 | **A3** vacuous evidence | **The audit's mutation sweep is real and reproducible.** M1, M3, M5, M7 and M8 were re-applied independently (snapshot + verbatim restore, never `git checkout`/`restore`/`stash`) and every failure count reproduced verbatim, with the same named tests failing. One coverage gap in the sweep itself: D1's whole *Done when* rests on `files_exist: 0` being a measurement, and the audit verified that by reading the fixture rather than by attacking the predicate the fixture depends on. | Added **M9** — widen `_check_files_exist`'s skip from `write-replace` to `write-replace`+`read`, the exact pre-round-1 shape. **DETECTED** (1 failed: `test_files_exist_zero_is_load_bearing_not_vacuous`, 37 passed). Recorded in § Test adequacy. `git status --porcelain` clean for every mutated file. |
+| 7 | **A4** counts | **`report-01.md`'s 34 / 8 / 4 / 1 / 2 = 49 were exact at run 01's tip.** Re-derived at `origin/…-g7n8x2`: 34, 8, 4, and the two pre-existing suites at 12 (from 11) and 15 (from 13). Run 02's own commits added the five tests that falsify them — B1's guard, B2's two guards, F-R1's parametrized guard and its absent-key case. The audit called this "the third recorded false version" and located the drift nowhere. | G5 Evidence and Why-it-matters rewritten: the figures were true and were invalidated by the same run that re-derived them, which is a different — and more instructive — defect than a miscount. Verification's "Other claims" row rewritten to match. |
+| 8 | **A4** counts | **The audit's own sweep-and-count under-enumerates.** `_cmd_qgate_mechanical.py` reads `number` raw at **13** sites, not 10: the 8 `int(…)` conversions are right, but the raw-format sites are `:213`, `:215`, `:532` (inline in finding titles/details) as well as `:243` and `:371`. Correcting a report's under-enumeration with an under-enumeration is this plan's subject reproduced at the audit level. | G6 Evidence/Action and G7's `Where`/Evidence/Action corrected to 8 + 5 = 13; verification's "Other claims" row corrected. |
+| 9 | **A4** counts | Two further arithmetic errors. (a) B4/G11: 14 hits against a cap of 20 under `<=` needs **seven** additions to break, not six — `report-02.md:286` had it right and the audit changed a correct figure to a wrong one. (b) The preamble said "**seven** independent mutants" above a table of **eight** (M1–M8). | Both corrected in place. |
+| 10 | **A4** quotes | Every quoted line checked against its file. All verbatim except one attribution: the exact line `detector_population ⊇ fix_set_population` is at `q-gate-validation.md:407`, not `:392` — `:392` is the § 2.9a heading. Verified verbatim and at the cited line: `SKILL.md:1047`, `:61`, `:932`, `q-gate-validation.md:403`, `outline-workflow-detail.md:811`/`:822`, `_qgate_closure.py:177`/`:504`/`:383`, `test_qgate_closure.py:556`/`:696`, `280-…/report-01.md:33,489`, and the "8 production / 9 test" and "37 files, +2831/−250, 8 commits" figures (both exact). | Citation split into heading `:392` + line `:407`. |
+| 11 | **A5** actionability | **G8's *Done when* was unsatisfiable as written.** "the same deliverable with a matching step target reports none" is false of any correct fix: `compute_referrer_gaps` matches by literal string equality **by design**, so a task targeting `src/newthing/thing.py` under a declared `src/newthing/*.py` fires a referrer gap today and must keep doing so — `test_referrer_reports_a_target_covered_only_by_a_glob` pins it and M1 proves it load-bearing. A later run following the criterion literally would have broken the guard the plan shipped. | G8's *Done when* rewritten around the reconciliation/projection verdict, with a valid negative control (literal declaration + matching target) and an explicit ⛔ forbidding the referrer relaxation. G8's Action carries the same prohibition. |
+| 12 | **A5** actionability | G18's Action was "Nothing to build … carry the distinction forward", and its *Done when* pointed at "wherever the rule is stated" — no path, so not executable. Located the rule's one shipped home: `q-gate-validation.md:405-407`. G11's *Done when* ("passes with `_MAX_HITS_NAMED` at or below the live count") was satisfiable by only one of its two proposed remedies. | G18 rewritten to a concrete edit at a named file and section; G11's *Done when* restated as the property (outcome independent of the directory's size; seven additions leave it green; still red under the `[:1]` mutant). |
+| 13 | **A6** severity | G13 (13 false "Step 8b" claims in shipped skill documentation) was **low** while G9 (one false claim in shipped documentation) was **medium** — the same calibration band applied inconsistently to the same kind of defect. | G13 raised to **medium**, with the calibration reasoning stated in the entry. Every other severity re-checked against the brief's bands and left as assigned; the report-defect band (G1–G3 medium, G4–G6 low) is arguable but internally coherent and was not churned. |
+| 14 | **A6** topic | G5 was topiced `tests` and G6 `measurement/metrics`, but both are edits to `report-01.md` / `report-02.md` and belong with the other record-integrity gaps a single follow-up would carry. | Both retopiced to `plan-lane-contract`, so G1–G6 + G19 group as one fix plan. |
+| 15 | **A7** coverage | Every deliverable D0–D5 is covered, plus out-of-scope compliance, declared/undeclared collateral, report accuracy and all nine residue items. One hole: the plan's **third** expected-surface entry (`check-artifact-consistency.py`, HYPOTHESIS) is dispositioned by neither run report nor the audit, while the first two are. | § "Plan clauses dispositioned by the run" extended: the hypothesis is **confirmed** — the file is in the diff, `_extract_bullet_entries` was widened at `:185-189`/`:295`, guarded by `test_recall_survey_scope.py` and re-mutated here as M5. No new gap. |
+| 16 | **A8** internal consistency | The overall verdict follows from the rows (D0–D4 CONFIRMED, D5 PARTIAL, one code hole). Every actionable finding in `verification.md` has a gap (G1–G19) and every gap traces back to a finding; the "checked and found clean" notes correctly carry no gap. Re-verified two of those clean notes by reading the code: `_build_haystack` does append the deliverable's prose body (`:486-487`, sourced from `:154`), and `scope_creep_check.py:69` does union the `TASK-*.json` step targets. | None. |
+
+**Residual doubt:** the largest unexamined surface is the same one the audit named — every `./pw`
+figure, every reviewer body and every CI interaction is a measurement of a tree and a PR state that no
+longer exist, and a further round cannot change that. Within reach, the likeliest further finding is
+another **under-enumerated sweep**: two of this review's own corrections (G6/G7's 10→13 and G11's
+six→seven) were counts the audit re-derived and still got wrong, so the residue lists in G7 and G13
+deserve one more independent count before a fix plan consumes them. A second candidate is the shipped
+`declared_scope_reconciliation` population: `globs_expanded` counts a pattern that matched nothing as
+expanded, and G8 is the first consequence of that conflation — there may be others reachable through
+`directories_matched` or the truncation path that no test names.
+
+**Verdict on the audit:** SOUND AFTER CORRECTION — its headline finding, its one code gap and all
+nineteen entries survive independent re-derivation, but it asserted an unprovable mechanism for the
+commit loss, mis-diagnosed the stale test counts, under-enumerated the residue it was itself
+correcting, and shipped a *Done when* for G8 that would have broken a deliberate guard.

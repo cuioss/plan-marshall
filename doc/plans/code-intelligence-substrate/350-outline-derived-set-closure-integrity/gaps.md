@@ -1,9 +1,9 @@
 # Gaps — 350-outline-derived-set-closure-integrity
 
 The shipped closure machinery is sound: D1–D4 are implemented as specified, every load-bearing guard
-was proven non-vacuous by mutation (eight mutants by the audit, all detected; six re-applied
-independently by the adversarial review, including one it devised itself — all detected, with the
-audit's failure counts reproduced exactly), and no fail-open was found on the closure path. What
+was proven non-vacuous by mutation (eight mutants by the audit, all detected; the adversarial review
+then re-applied five of them and devised a sixth — all six detected, with the audit's failure counts
+reproduced verbatim), and no fail-open was found on the closure path. What
 remains splits three ways. **(a) Record integrity** — two of run 01's eleven commits never reached the
 branch that became PR #1295, so the landed `report-01.md` carries a count run 01 had already corrected
 and loses a build-gate result run 01 had already recorded, while `report-02.md` states nine commits
@@ -16,7 +16,7 @@ open** (G7, G10–G15). D5 is the one partial deliverable: the tests are real, b
 characterization-corpus **rule** was applied without being codified anywhere a later run would find it
 (G17).
 
-## G1 — Correct `report-02.md`'s account of the rebase: two of run 01's eleven commits were dropped
+## G1 — Correct `report-02.md`'s recovery account: two of run 01's eleven commits never reached the PR branch
 
 - **Kind:** report-defect
 - **Severity:** medium
@@ -89,7 +89,8 @@ characterization-corpus **rule** was applied without being codified anywhere a l
   re-derived at the moment of the claim." It was re-run and it was recorded: `f614b9a` replaced this
   paragraph with `=== verify: SUCCESS ===` / `20840 passed, 14 skipped in 385.92s (0:06:25)` at
   `0f10d16`, run with nothing else touching the tree, plus the six-sub-dimension coverage line. The
-  rebase dropped it, so the document now carries an unfulfilled promise and no gate.
+  commit never reached the PR branch (G1), so the document now carries an unfulfilled
+  promise and no gate.
 - **Why it matters:** Run 01's build-gate record is the only evidence that the halted run's committed
   state was verified undisturbed. `report-02.md`'s gate measures a different head (`117d351`) after
   further commits, so it does not substitute.

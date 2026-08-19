@@ -108,7 +108,7 @@ content is verified instead.
     key-emission filter extended to drop `*_population_count` → 4 tests fail, including
     `test_a_rendered_total_without_a_persisted_population_count_is_caught`.
   - **Vocabulary check:** `git diff 85abeeb^ 85abeeb` touches `TOKEN_POPULATIONS` on **no** line
-    (only a comment referencing it was added at `:350`). The out-of-scope prohibition was respected.
+    (only a comment referencing it was added, at `:349`). The out-of-scope prohibition was respected.
   - Documentation round-trip: `data-format.md:503-527` documents every persisted field, the
     present-iff-fresh rule, the two scoping exceptions (`phase-boundary`,
     `dispatch_boundary_excluded_classes`), and the "not satisfied by parsing metrics.md" clause.
@@ -139,21 +139,33 @@ content is verified instead.
     `test_which_rows_are_reported_does_not_depend_on_input_order` and
     `test_the_sort_key_is_total_over_the_rows_own_values` **FAIL**.
   - **Mutation that SURVIVES:** `if holder is None or _augment(holder, visited):` → `if holder is None:`
-    (i.e. maximum matching degraded to plain first-fit greedy) → **22 passed**. The R3-F6 regression
-    test does not fail against it, because the fix's actual mechanism is not what that corpus
-    distinguishes.
-  - **Characterisation:** over **5 000 random corpora** (0–6 rows per side, windows 60/300/600 s), a
-    first-fit greedy in the module's own sort order produced a matching of the same size as `pair_rows`
-    in **5 000/5 000** cases. The eligibility sets are contiguous index intervals with monotone
-    endpoints, for which first-fit in sorted order is already maximum — so the augmenting path cannot
-    change the result on this input shape, and no in-tree test could distinguish the two. See G2/G3.
+    (i.e. index-order first-fit) → **22 passed**, and **456 passed** across all of
+    `test/plan-marshall/manage-metrics/`. This is not a hole: the surviving form is provably
+    output-identical (next bullet), so there is nothing for a test to catch.
+  - **Mutation that goes RED — the R3-F6 defect itself:** sorting each `eligible` list by absolute
+    timestamp gap **and** dropping the augmenting path — which is nearest-first greedy, the algorithm
+    `report-01.md:188` records `pair_rows` as having been before round 3 — drives
+    `test_a_nearer_partner_is_given_up_when_another_row_needs_it` red (**1 failed, 21 passed**). The
+    regression test is non-vacuous against the defect it names.
+  - **Characterisation:** over **21 056 corpora** in four probes (5 000 random at 0–6 rows per side,
+    windows 60/300/600 s; 7 056 exhaustive over a six-value offset alphabet at ≤3 rows per side; 3 000
+    dense-tie on the window boundary; 6 000 including unparseable timestamps), index-order first-fit
+    produced a matching of the same size as `pair_rows` in every case, both equal to a brute-force
+    maximum in every case, and **the identical set of unpaired rows** in every case. The structural
+    reason is that `pair_rows` sorts both sides itself (`:301-302`), so eligibility sets are contiguous
+    index intervals with monotone endpoints — a convex bipartite graph traversed in non-decreasing
+    right-endpoint order, for which smallest-free-index first-fit is already maximum. The augmenting path
+    therefore cannot change any output this module can produce, and no test could distinguish the two.
+    That is a redundancy to record, not a gap to pin. See G2/G3.
   - **F18 re-checked:** whole-tree grep for `reconcile-ledgers` (excluding `doc/plans/` and
     `__pycache__`) → `SKILL.md` ×3, `manage-metrics.py` ×3 (usage banner, parser, `set_defaults`),
     `test_ledger_reconciliation.py:68`, and the generated executor's surface registry. **Zero workflow
     call sites.** The residue is still open.
-- **Verdict:** PARTIAL. The deliverable's literal *Done when* is met, but two things fall short of the
-  report's account: the maximality that R3-F6 introduced is unpinned by any shipped test (G2), and the
-  verb's `--help` description restates a claim round 2 refuted (G1).
+- **Verdict:** PARTIAL. The deliverable's literal *Done when* is met and the maximality R3-F6 introduced
+  **is** pinned against the defect it replaced. Two things still fall short of the report's account: the
+  verb's `--help` description restates a claim round 2 refuted (G1), and the augmenting path is provably
+  redundant on this input shape while nothing in the module records that — which makes G3's fix read as a
+  rewrite when it is a deletion (G2).
 
 ### D5 — fold a recorded-but-unclosed phase's boundary sum into its cell, LABELLED
 
@@ -256,8 +268,10 @@ Defects found:
    state rather than taking the process down (`_parse_iso.__doc__`, `:100-113`); this path does not.
    Carried in the report as survivor R4-F4. → **G3**.
 
-3. **A boolean is summed as a count.** `check-routing-decisions.py:496` —
-   `if isinstance(value, int): total += value`. `True` is an `int`, so a `total_tokens: true` row adds 1.
+3. **A boolean is summed as a count.** `check-routing-decisions.py:496-497` —
+   `if isinstance(value, int):` / `total += value`. `True` is an `int`, so a `total_tokens: true` row
+   adds 1 — executed in adversarial review: a one-row `True` manifest returns `1`, three boolean rows
+   (`True`, `True`, `False`) return `2`.
    The sibling module explicitly refuses this: `_ledger_reconciliation.py:145-147`,
    `"""Coerce a TOON scalar to int … Booleans are not counts."""`. Unreachable from the current writers,
    but the two readers of the same column disagree about the same input. → **G6**.
@@ -283,18 +297,20 @@ test_check_routing_decisions.py test_plan_retrospective_manifest.py -o addopts="
 |---|---|---|
 | D2 | `TestExecutionLogPopulation` (2), `TestExecutionLogSumMatchesItsPublishedPopulation` (2), `TestRoutingDecisionsAspect` cost-preview (11) | Refusal gate → `if False:` ⇒ 2 refusal tests red |
 | D3 | `TestPersistedAggregate` (9), `TestInlineCostFieldOnEveryRow` (3) | Invalidation → `if False:` ⇒ red; count → `breakdown_n` ⇒ 8 red; population counts withheld from the file write ⇒ 4 red |
-| D4 | `TestManifestParsing`, `TestDivergentRowsProduceFindings` (5), `TestTheTwoPartialityShapes` (4), `TestDeclaredAndUndecidableStates` (4), `TestPairingIsMaximal` (4), `TestMixedTimezoneAwarenessDoesNotCrash` (3) + 1 module-level drift test | Window → `10**9` ⇒ 2 red; sort key neutralised ⇒ 2 red. **Maximality mutation SURVIVES** |
+| D4 | `TestManifestParsing`, `TestDivergentRowsProduceFindings` (5), `TestTheTwoPartialityShapes` (4), `TestDeclaredAndUndecidableStates` (4), `TestPairingIsMaximal` (4), `TestMixedTimezoneAwarenessDoesNotCrash` (3) + 1 module-level drift test | Window → `10**9` ⇒ 2 red; sort key neutralised ⇒ 2 red; **nearest-first greedy restored ⇒ 1 red**. Index-order first-fit survives, and provably must (G2) |
 | D5 | `TestUnclosedBoundaryFold` (7), `TestOverCoveringBoundaryIsNotCalledAFloor` (5) | `end_time` guard removed ⇒ red; `over` discrimination in both directions ⇒ 3 and 4 red; never-lowers rule ⇒ red |
 | D6 | `TestWorkedTimeExcludesTheIdleGap` (3, substrate only), `test_four_field_persistence_walks_the_canonical_label_set` (source-level) | Not mutated — arm 1 has no production code to mutate; arm 2's guard is a source-text assertion |
 
-Two adequacy gaps, both proven rather than suspected:
+One adequacy gap, proven rather than suspected — plus one that adversarial review retracted:
 
-- **`pair_rows`' maximality is unpinned.** Replacing the augmenting recursion with plain first-fit
-  (`if holder is None or _augment(holder, visited):` → `if holder is None:`) leaves **all 22 tests
-  green**. `test_a_nearer_partner_is_given_up_when_another_row_needs_it` names *nearest-first* greedy,
-  which the implementation never was — it iterates candidates in index order, and on that corpus
-  index-order first-fit already pairs both rows. The 3 000-corpus brute force the report cites was an
-  out-of-tree exercise; nothing in the suite would catch a regression. → **G2**.
+- **RETRACTED: "`pair_rows`' maximality is unpinned."** This audit first recorded that replacing the
+  augmenting recursion with plain first-fit leaves all 22 tests green (true), and inferred that the
+  property is defended by nothing (false). Restoring the actual R3-F6 defect — *nearest-first* greedy,
+  which `report-01.md:188` records the implementation as having been — drives
+  `test_a_nearer_partner_is_given_up_when_another_row_needs_it` red. The surviving mutant is a different
+  algorithm, **index-order** first-fit, which is provably output-identical here (see D4's
+  Characterisation), so there is no regression for a test to catch. G2 is re-based on the redundancy
+  itself rather than on a missing test, and re-severitied to `low`.
 - **The `worked_seconds_per_task` key name is unasserted.** The only in-tree occurrences outside
   `plan-efficiency.md` are the fixture (`fragment-plan-efficiency.toon:12`) and a comment in
   `test_persisted_aggregate_round_trip.py:307`. No assertion reads the key, so F14's remediation
@@ -313,7 +329,16 @@ Re-derived at the moment of writing, and true of the tree now:
 - D5's "12 tests (7 fold + 5 over-covering)" ✓ (collection).
 - D6 arm 1's "3 tests over a real 8-hour idle gap" ✓ (collection; the 8 h / 10 min constants are at
   `test_persisted_aggregate_round_trip.py:317-319`).
-- Every D1 code citation lands on the claimed symbol ✓ (line numbers differ, as the report warns).
+- Every D1 code citation lands on the claimed symbol ✓ (line numbers differ, as the report warns) —
+  re-checked in adversarial review: `_manifest_core.py:247`, `manage-execution-manifest.py:2618`,
+  `DISPATCH_BOUNDARY_EXCLUDED_CLASSES` at `:515-522` (**6** classes, re-counted), and
+  `phase-1-init/SKILL.md`'s `--field execution_profile` all land.
+- **The split-guard verdict was recorded, as the plan required.** The plan's ⚠ "Evaluate the split at
+  outline and record the verdict" is discharged at `report-01.md:107-117`: **DO NOT SPLIT**, with three
+  stated reasons (shared population constants across the proposed halves; the second PR would restate the
+  first's vocabulary; the lane is one plan → one PR). The verdict is recorded, not merely asserted, and
+  the natural cut it names is the one the plan named. ✓ *(This row was added by adversarial review — the
+  first pass covered every deliverable but omitted this plan-level instruction.)*
 - The writer list "`start-phase`, `end-phase`, `phase-boundary`, `enrich`" ✓ — the five `write_metrics`
   call sites resolve to exactly those four plus `cmd_generate`.
 - "`TOKEN_POPULATIONS` … this plan consumes it and defines no new member" ✓ — untouched in the diff.
@@ -350,7 +375,7 @@ claim is corroborated: the plan did land, as squash commit `85abeeb`.
 | Residue item (from report) | Still open? | Evidence |
 |---|---|---|
 | The verification loop stopped on its budget, not convergence; more claim-family instances likely, "most densely in this report" | **Yes — and one is in production, not only in the report** | `manage-metrics.py:3744-3745` restates R2-F3's refuted claim in the shipped `--help` description (G1). The report's own prediction was right about the *rate*, wrong about the *location* |
-| "At least one further test in the new modules probably asserts a property it cannot fail on" | **Yes — confirmed by mutation** | The maximality mutation leaves all 22 `test_ledger_reconciliation.py` tests green (G2) |
+| "At least one further test in the new modules probably asserts a property it cannot fail on" | **Not confirmed** | The one candidate — `test_a_nearer_partner_is_given_up_when_another_row_needs_it` — **does** fail against the defect it names (nearest-first greedy restored ⇒ red). The index-order first-fit mutant that survives it is output-identical, so its survival is not vacuity. Every other guard tested in this audit went red under its own mutation. The prediction is neither confirmed nor refuted by what was reachable here |
 | "Any figure not re-derived at the moment of writing is stale" | **Yes — one instance** | D4's "19 tests" against a module that collects 22 (G5) |
 | **F18** — `reconcile-ledgers` has no caller | **Yes, unchanged** | Whole-tree grep: definition, parser, `SKILL.md`, tests, executor registry. Zero workflow call sites (G4) |
 | **F19** — the D3/D5 guards' pre-fix failure is a module-level collection error | **Moot** | Superseded by direct evidence: this audit mutation-tested those guards individually and each went red. The bound's stated remedy has no behavioural gain |
@@ -416,3 +441,44 @@ comparable. → **G7**.
   modules were run instead.
 - **Whether the contract-amendment proposal was carried to the orchestrator.** Outside this plan's
   artifacts.
+
+## Adversarial review
+
+Independent review of this document and `gaps.md`. Attacks run: A1 false positives, A2 false
+negatives, A3 vacuous evidence, A4 counts and quotes, A5 actionability, A6 severity/topic,
+A7 coverage, A8 internal consistency.
+
+Performed at `0d7f102` (`git diff --stat a55a9eb 0d7f102 -- marketplace/ test/` is empty, so every
+citation the first audit made is still addressed to the same bytes). Two files were mutated and restored
+from a byte snapshot under `$SCRATCH/adv-340-…-mutsweep/`; `git checkout` / `git restore` / `git stash`
+were never used, and both files were confirmed byte-identical and `git status --porcelain`-clean
+afterwards. ⚠ Other agents were mutation-testing this tree concurrently: two baseline readings came back
+red on files this plan does not own (`check-manifest-consistency.py`, then `check-routing-decisions.py`),
+and both cleared on re-take. Every reading below was taken with `git status --porcelain` verified clean
+for the file under test immediately before and after.
+
+| # | Attack | What was found | Correction applied |
+|---|---|---|---|
+| A1 | False positives | **G2's two load-bearing claims were both false.** (i) "`test_a_nearer_partner_is_given_up_when_another_row_needs_it` names *nearest-first* greedy, **which the implementation never was**" — `report-01.md:188` (R3-F6) states in the run's own record that `pair_rows` *was* nearest-first greedy until round 3 replaced it. (ii) "That property is currently defended by nothing" — restoring the exact R3-F6 defect (sort each `eligible` list by absolute gap **and** drop the augmenting path) drives that test **red** (`1 failed, 21 passed`). The mutant the first audit ran is a *different* algorithm, index-order first-fit. Every other gap's `path:line` was opened and lands on the claimed symbol: G1 (`manage-metrics.py:3744-3745`, quote verbatim, whole-tree grep returns that one production site), G3, G5 (`report-01.md:127`), G6 (`check-routing-decisions.py:495-499`, quote verbatim), G7 (`data-format.md:15-31`, `routing-decision-verification.md:64-82`, and both greps still empty), G8 (`fragment-plan-efficiency.toon:12`; `grep -rn worked_seconds_per_task test/` returns exactly the two lines claimed), G9 (`:162` and `:180`), G10 (`:129`). | **G2 re-based, re-kinded `test-gap` → `doc-defect`, and rewritten around the redundancy rather than a missing test**, with the two refuted claims recorded inside the entry so a later run does not re-derive them. This document's D4 row, D4 Characterisation, D4 verdict, Test-adequacy bullet and Declared-residue row all rewritten to match. |
+| A2 | False negatives | No CONFIRMED verdict was found unwarranted. Five load-bearing guards were re-driven red independently of the first audit: the population-mismatch refusal (`if predicted_population != EXECUTION_LOG_POPULATION:` → `if False:` ⇒ the two refusal tests fail), aggregate invalidation (`if not preserve_totals:` → `if False:` ⇒ red), the D7(c) faithful mutant (render the qualifier, withhold `*_population_count` from the file write ⇒ **4 red**, including `test_a_rendered_total_without_a_persisted_population_count_is_caught`), the D5 `end_time` guard (deleted ⇒ `test_a_closed_phase_takes_no_floor_marker` red), and nearest-first greedy (⇒ red). D3's persist-then-render block (`:1908-1980`) and `write_metrics`' scoping (`:948-957`) were read directly rather than through the audit's reasoning; the render's figures each resolve to a key written in the same call. | None needed on the verdicts. One coverage addition (A7). |
+| A3 | Vacuous evidence | The mutation sweep this document claims was re-run, not re-read — see A2. The one place the first audit asserted vacuity was **itself wrong**: it read the surviving index-order-first-fit mutant as proof that `TestPairingIsMaximal` cannot fail, when that class's headline test fails against the defect it names. The surviving mutant is provably output-identical, so its survival is evidence of redundancy, not of a vacuous test. | Test-adequacy section now carries a **RETRACTED** entry rather than a silent edit, and the Declared-residue prediction "at least one further test … asserts a property it cannot fail on" is downgraded from *confirmed* to *neither confirmed nor refuted*. |
+| A4 | Counts and quotes | Re-derived at the moment of checking, all correct: **22** collected in `test_ledger_reconciliation.py`; **141** passed across the four affected modules (on a clean tree — see the concurrency note above); **11** cost-preview tests by `-k` collection, plus 2 drift (`:644`, `:663`) and 2 filter (`:684`, `:704`); **58** findings rows counted programmatically, split 21/13/7/14 with 3 self-caught; **6** members of `DISPATCH_BOUNDARY_EXCLUDED_CLASSES`; **9** `.py` paths and **18** files in `git show --stat 85abeeb`; 279 458 + 278 356 + 214 719 + 225 251 = **997 784**; the five `write_metrics` call sites resolve to `start-phase` / `end-phase` / `phase-boundary` / `enrich` + `cmd_generate`. Two imprecisions: the `TOKEN_POPULATIONS` comment is at `:349`, not `:350`; the boolean-sum statement spans `:496-497`, not `:496`. And **`gaps.md`'s preamble accounted for 8 of its 10 entries** ("ten instances in three families", then enumerating 1 + 2 + 1 + 4). | Both citations corrected in place. `gaps.md`'s preamble rewritten to five families whose counts sum to ten. |
+| A5 | Actionability | **G2's *Done when* was unsatisfiable** ("reverting `_augment` to `if holder is None:` makes at least one test fail" — no test can, on any input this module can produce), and its *Action* (a randomised property test on matching size) passes against both forms, so it could not have delivered that *Done when*: it would have been written, landed green and pinned nothing. Its Action also contained an "Optionally …" clause. G7's *Done when* ("both documents cross-reference each other") was checkable but not stated as a check. Every other entry names a concrete path, a concrete change and an observable *Done when*; G6's is an exact call and return value, which was executed here and returns `1` (and `2` for three boolean rows). | G2's Action and *Done when* replaced with a recorded-equivalence note whose completion is observable, and the impossibility is now stated **inside the entry** rather than being silently unreachable. The "Optionally" clause is gone. G7's *Done when* restated as two named greps that return nothing today. |
+| A6 | Severity and topic | Three corrections. **G2 medium → low**: `high` was considered and rejected (the shipped pairing *is* maximum — nothing mis-measures, no guard fails to fire, and the documented result contract is implemented), and `medium` no longer applies now that the missing-test framing is retracted; what is left is an unrecorded redundancy, the calibration's "harmless unstated deviation". **G8 low → medium**: it is a missing test on the load-bearing half of a deliverable this document could only mark PARTIAL — the calibration's "missing test on a load-bearing path" — and it is none of the `low` cases. **G7 `documentation-surface` → `bundle-docs`**: it edits two in-bundle documents, the same surface as G1; `documentation-surface` is carrying the three `report-01.md` defects, and grouping a bundle-standards change with them would route it into a report-correction plan that never opens `marketplace/`. G1, G3, G4, G5, G6, G9 and G10 were each re-checked against the calibration and stand. | Applied, each with its reasoning recorded in the entry so the next reader can disagree with the argument rather than the label. |
+| A7 | Coverage | All seven deliverables, the four out-of-scope exclusions, report accuracy and the residue list are covered. **One plan-level instruction was uncovered:** the plan's ⚠ "Evaluate the split at outline and record the verdict". The run discharged it at `report-01.md:107-117` (**DO NOT SPLIT**, three stated reasons, over the cut the plan itself named). | A Report-accuracy row added recording the split-guard verdict as CONFIRMED. |
+| A8 | Internal consistency | The overall verdict follows from its rows (5 CONFIRMED + 2 PARTIAL ⇒ CONFIRMED WITH GAPS). Every gap traces back to a finding here (G1←Correctness 1, G2←Test adequacy, G3←Correctness 2, G4←D4/F18, G5/G9/G10←Report accuracy, G6←Correctness 3, G7←Out-of-scope, G8←Test adequacy) and every finding warranting action appears in `gaps.md`. The one inconsistency was inside `gaps.md` itself (A4's preamble arithmetic), plus G2's internal contradiction between its own evidence ("no hand-written corpus will separate them") and its *Done when* (which demanded exactly such a separation). | Preamble rewritten; G2's contradiction removed by re-basing the entry. |
+
+**Residual doubt:** a further round would most likely go at **D3's round-trip claim from the other
+direction** — this review re-read the persist-then-render block and confirmed every figure the Total row
+prints is a key written in the same `write_metrics` call, but it did not enumerate the *rendered report*
+top-down and check each figure back into the store, which is the literal shape of the plan's *Done when*.
+The annotation blockquotes (`:2014-2097`) render per-phase values that are persisted per phase row, so
+the likely finding is a formatted or derived figure in an annotation with no direct counterpart rather
+than a missing one. Second most likely: `G6`'s reachability bound — this review confirmed no *current*
+writer emits a boolean into `total_tokens`, but did not audit archived manifests, so the "unreachable"
+qualifier that holds G6 at `low` rests on the writers alone.
+
+**Verdict on the audit:** SOUND AFTER CORRECTION — every deliverable verdict, every mutation result and
+every count in the original audit held up under independent re-derivation, but its single most-argued
+gap (G2) rested on two claims that the run's own report and one further mutation refute, and it was
+filed at the wrong severity, the wrong kind and with an unsatisfiable *Done when*.
