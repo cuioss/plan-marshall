@@ -741,6 +741,37 @@ each on a different corpus, which is why it now always carries one: **34.5%** at
 **After the fixes: 49 mutants, 49 killed, no survivors** — including R15-01's new guard, the severity
 descriptor, and every guard round 15 found bare.
 
+### Post-PR — the merge conflict, and why no CI ran
+
+PR **#1313** was opened at 22:36Z. Thirty minutes later it had **no `verify` check run at all** — only
+`Sourcery review / skipped`. Two things were wrong, and they were the same thing:
+
+- **`mergeable_state: dirty`.** `main` had moved while the fifteen rounds ran (PRs #1307, #1310,
+  #1311 and others landed the same afternoon). GitHub could not build the PR's merge ref, and a
+  `pull_request` workflow runs against that ref — so `python-verify.yml` never fired. The absent
+  check was a symptom of the conflict, not a second fault.
+- The negative was **verified before it was believed**, per this contract's own rule: a branch-filtered
+  `list_workflow_runs` returned `total_count: 0`, and a positive control on the same workflow returned
+  rows including a `pull_request` run on another `claude/*` head. Only then was the zero treated as
+  real.
+
+`origin/main` was merged into the branch. Git resolved every path itself — including main's rename of
+`test/pm-plugin-development/plugin-doctor/_fixtures.py` to `_plugin_doctor_fixtures.py`, which this
+branch had modified.
+
+**One test then failed, and it was this branch's to fix.** A loader-contract guard that landed on main
+during the run bounds how many loader call sites it cannot resolve statically, at 90. This branch adds
+a plugin-doctor test file, and every file in that directory uses a `_load_module(name, filename)`
+helper whose forwarded parameters are invisible to the guard — so the count became 91.
+
+The bound was **not raised**. Raising it is what the guard's own docstring calls widening the blind
+spot, and the remedy it asks for is to pass literals. The call site now does, which puts this file
+*inside* what the guard can see and returns the count to 90 — a fix that shrinks the gap rather than
+documenting a larger one. Measured both ways to be sure the delta was this branch's: `origin/main`'s
+test tree scans at 90, this branch's at 91, and the one added entry named this file.
+
+`./pw verify` on the merged tree: **SUCCESS — 21277 passed, 14 skipped**.
+
 ### Cold read (the plan's § Verification requirement)
 
 A sub-agent that had seen no implementation, no test and no git history read **only** the

@@ -31,11 +31,16 @@ import pytest
 from conftest import load_script_module
 
 
-def _load_module(name: str, filename: str):
-    return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
-
-
-_ats = _load_module('_analyze_target_scope', '_analyze_target_scope.py')
+# Called with LITERALS rather than through a `_load_module(name, filename)`
+# helper, which is the pattern this directory's other suites use. The loader
+# contract guard (`test/plan-marshall/script-shared/`) resolves a call site
+# statically only when its arguments are literals or module-level constants;
+# a helper that forwards its parameters is invisible to it, and every such
+# site widens the blind spot the guard bounds. Passing literals keeps this
+# file inside what the guard can see.
+_ats = load_script_module(
+    'pm-plugin-development', 'plugin-doctor', '_analyze_target_scope.py', '_analyze_target_scope'
+)
 
 analyze_target_scope = _ats.analyze_target_scope
 component_files = _ats.component_files
