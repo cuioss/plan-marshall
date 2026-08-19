@@ -73,9 +73,12 @@ mis-resolves and the new refusal does not fire.
   - Mutation M1 (resolver body replaced by `return _current_repo_root()`, applied to the shipped file
     from a byte snapshot): `6 failed, 13 passed`, and the drift test reproduced the reported symptom
     verbatim (`main_sha, 4-plan → 5-execute, 142cb53f… -> e6ae285b…`).
-- **Verdict:** CONFIRMED. Caveat: under an active base-dir override the main-scoped resolution still
-  follows cwd, and from a worktree **subdirectory** it returns that subdirectory — reproduced here
-  (see § Correctness review, G1). The shipped docs disclose this; nothing tests or closes it.
+- **Verdict:** CONFIRMED for the production branch, which is what the plan's *Done when* is about and
+  what the probe confirms. Caveat: under an active **non-canonical** base-dir override the main-scoped
+  resolution still follows cwd — returning the worktree from its root and the subdirectory from a
+  subdirectory — so the resolver does not satisfy the *Done when* universally. Reproduced here across
+  the full override × cwd sweep (see § Correctness review 1, G1). The shipped docs disclose it;
+  nothing tests or closes it.
 
 ### D3 — fail loud on the impossible state
 
@@ -195,9 +198,13 @@ the registry), `_handshake_commands.py` (`cmd_capture`, `cmd_verify`, the payloa
    which is required — it resolves `{root}/.plan/execute-script.py` and the subprocess cwd, and the
    7 plan-state captures depend on reaching the worktree-resident executor. Redirecting it, as the
    plan's refuted hypothesis implied, would have broken those 7. The layer-D drift check
-   (`_handshake_commands.py:288`) is gated to planning-phase boundaries, so the declared collateral
-   ("both sides of the `verify --phase 4-plan` comparison are now main's set") follows from the code
-   as read.
+   (`_handshake_commands.py:288`) is gated to planning-phase boundaries
+   (`:335`, `_PLANNING_PHASES_ON_MAIN`), so the declared collateral ("both sides of the
+   `verify --phase 4-plan` comparison are now main's set") follows from the code as read. That gate
+   also bounds G1: a mislabelled `main_dirty_files` cannot turn layer-D into a false
+   `main_checkout_dirtied_during_plan` hard block, because the hole lives at the phase-5/6 boundaries
+   the gate excludes. Checked explicitly — that would have been a materially worse finding than G1,
+   and it is not present.
 
 ## Test adequacy
 

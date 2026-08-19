@@ -325,16 +325,30 @@ were **rebased** onto current `origin/main` and re-pushed", and that "the rebase
 **every commit's tree is preserved**".
 
 Re-derived: `git log --oneline eb0124c..origin/claude/derived-set-closure-integrity-g7n8x2 | wc -l`
-→ **11**. The rebase carried the first nine (up to `ce4292c`) and dropped the last two:
+→ **11** (and `git merge-base origin/main …g7n8x2` confirms `eb0124c` is the base). Only the first
+nine (up to `ce4292c`) reached the branch that became PR #1295; the last two did not:
 
 | Dropped commit | What it fixed | State of the merged tree |
 |---|---|---|
 | `f614b9a` "docs(plans): record the final clean verify result" | Replaced report-01 § Final gate's "_pending a clean re-run_" with the recorded clean gate (`=== verify: SUCCESS ===`, `20840 passed, 14 skipped in 385.92s`, run at `0f10d16` with nothing else touching the tree) and updated `actual-state.md` § 7 to match | `report-01.md:331` still reads "**Final gate** — _pending a clean re-run._" |
 | `33392fd` "docs(plans): correct the report header and the stale commit enumeration" | Replaced "D1–D5 land across **four** commits" with a named list of **five** deliverable-bearing commits, adding the round-3 fix the count omitted | `report-01.md:73` still reads "D1–D5 land across four commits: …, and the round-2 fix commit" — the round-3 fix is still missing |
 
-Proof: `git show ce4292c:…/report-01.md` and the merged `report-01.md` differ only in the rewritten
-SHAs (`a583652` → `51829af`, `d9f9534` → `3b57b7e`, …), not in content. The merged document is
-`ce4292c`'s text.
+Proof: `git show ce4292c:…/report-01.md` diffed against the merged `report-01.md` differs only in the
+rewritten SHAs (`a583652` → `51829af`, `d9f9534` → `3b57b7e`, …), in run 02's own round-4 edits
+(A1/A2/A3/A7/A8) and in the header block run 02 added — **not one hunk of `f614b9a` or `33392fd`
+appears**. The merged document is `ce4292c`'s text plus run 02's, with the two later run-01 commits
+missing from both.
+
+⚠ **What is established is the effect, not the mechanism, and this document does not assert one.**
+`git log --date=iso-strict` puts `f614b9a` at `10:59:37` and `33392fd` at `11:00:00` UTC, and run 02's
+first commit `d898934` at `11:03:13` — three minutes later. A rebase that dropped them and a fetch
+taken before run 01's last push are equally consistent with the tree, and neither is recoverable now
+that `…-3i53aj` is deleted. The claim under test is `report-02.md`'s, and it is false either way:
+run 01 pushed eleven commits, not nine, and two of their trees are not preserved.
+
+⛔ **Bound on the damage.** `git show --stat` on both commits: `f614b9a` touches `report-01.md` and
+`actual-state.md`; `33392fd` touches `report-01.md`. **No production script and no test was lost** —
+the loss is entirely in the record, which is why G1–G4 are report-defects and not code gaps.
 
 Consequences, each a false statement standing in the landed tree:
 
@@ -359,8 +373,8 @@ rebase had also dropped content.
 
 | Claim | Verdict |
 |---|---|
-| `report-01.md:184-192` — 34 / 8 / 4 tests, "**49** new test functions" | **FALSE now.** Re-derived: 36 / 10 / 5 / 1 / 2 = **54**. No later commit touched those files. → G5 |
-| `report-02.md:242-246` (F-R1 sweep) — "The identical raw pattern appears at **six** sites in `_cmd_qgate_mechanical.py`" | **Not reproducible.** Re-derived, `int(x['number'])` appears at :154, :184, :296, :300, :309, :310, :311, :502 (**8**), plus bare `t['number']` fed to a `:03d` format at :243 and :371 (**2 more**). No reading of the file yields 6. → G6 |
+| `report-01.md:184-192` — 34 / 8 / 4 tests, "**49** new test functions" | **FALSE now, but true when run 01 wrote it.** Re-derived at HEAD: 36 / 10 / 5 / 1 / 2 = **54**. Re-derived at run 01's own tip (`origin/…-g7n8x2`): **34 / 8 / 4**, foreign-column 12 (from 11), pr-gate 15 (from 13) — all five figures exact there. Run 02's own commits added the five that falsify them (B1's guard, B2's two guards, F-R1's parametrized guard + absent-key case). No commit after the merge touched those files. → G5 |
+| `report-02.md:242-246` (F-R1 sweep) — "The identical raw pattern appears at **six** sites in `_cmd_qgate_mechanical.py`" | **Not reproducible, and larger than either count.** Re-derived, `int(…['number'])` appears at :154, :184, :296, :300, :309, :310, :311, :502 (**8**), plus **five** raw reads fed to a `:03d` format — :213 and :215 (inline), :243 and :371 (assigned, formatted downstream) and :532 (inline) — **13** read sites. An earlier version of this row named only :243 and :371 and undercounted at 10. No reading of the file yields 6. → G6 |
 | `report-02.md:569` (R3) — "re-derived … it is **13**" | **TRUE.** Re-derived exactly 13 sites naming phase-4-plan Step 8b as the manifest composer (enumerated in `gaps.md` G13). |
 | `report-02.md:82-85` (Bridge) — the pre-move-path sweep "returns exactly **one** hit … the sentence above this one" | **TRUE.** `grep -rn '350-outline-derived-set-closure-integrity\.md' --include=*.md .` returns exactly that one line. |
 | `report-02.md:346-348` — the reviewer registry returns three `author_login`s, M = 3 | **TRUE.** `coderabbit.md:36`, `pr-agent.md:58`, `sourcery.md:29`. |

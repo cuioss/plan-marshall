@@ -241,15 +241,22 @@ No gap is `high` — nothing shipped mis-measures, and no guard was found unable
   distinct, separately-owned family, with a cross-reference to
   `routing-decision-verification.md` § "The cost-preview comparison is population-gated"; and add the
   reciprocal pointer there.
-- **Done when:** both documents cross-reference each other and state that a measurement-method population
-  and a phase-set population are not comparable.
+- **Done when:** `grep -n execution_log_population marketplace/bundles/plan-marshall/skills/manage-metrics/standards/data-format.md`
+  and `grep -n total_tokens_population marketplace/bundles/plan-marshall/skills/plan-retrospective/references/routing-decision-verification.md`
+  each return at least one line (both return nothing today), and each hit sits in a sentence stating that
+  a measurement-method population and a phase-set population are not comparable.
 - **Effort:** S
 - **Risk if fixed:** none.
 
 ## G8 — Assert the `worked_seconds_per_task` key name, which F14's fix left unpinned
 
 - **Kind:** test-gap
-- **Severity:** low
+- **Severity:** medium *(raised from `low` by adversarial review: this is the calibration's "a vacuous or
+  missing test on a load-bearing path" applied to the load-bearing half of a deliverable the audit itself
+  could only mark **PARTIAL**. D6 arm 1 IS the rename plus the numerator change; nothing executable
+  covers either, so the deliverable rests on an unverified edit to an LLM-read contract. It is not any of
+  the `low` cases — it is neither confined to the run report, nor cosmetic, nor a harmless deviation.
+  G10, which is the separate defect of the **report** overstating this coverage, correctly stays `low`.)*
 - **Topic:** tests
 - **Where:** `test/plan-marshall/plan-retrospective/fixtures/archived-plan/work/fragment-plan-efficiency.toon:12`
   and `test/plan-marshall/plan-retrospective/test_registered_aspects_render.py`

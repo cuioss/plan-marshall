@@ -1,16 +1,20 @@
 # Gaps — 350-outline-derived-set-closure-integrity
 
 The shipped closure machinery is sound: D1–D4 are implemented as specified, every load-bearing guard
-was proven non-vacuous by mutation (eight mutants, eight detected), and no fail-open was found on the
-closure path. What remains splits three ways. **(a) Record integrity** — run 02's rebase silently
-dropped two of run 01's commits, so the landed `report-01.md` carries a count run 01 had already
-corrected and loses a build-gate result run 01 had already recorded, while `report-02.md` states that
-every commit's tree was preserved (G1–G6, G19). **(b) One real coverage hole in the shipped code** — a
-declared glob in a deliverable's write-set is enforced by neither closure when it matches nothing yet
-(G8), plus a false clause in operator-facing spec text (G9) and a byte-exact dedupe contradicting its
-own docstring (G16). **(c) Declared residue, all confirmed still open** (G7, G10–G15). D5 is the one
-partial deliverable: the tests are real, but the characterization-corpus **rule** was applied without
-being codified anywhere a later run would find it (G17).
+was proven non-vacuous by mutation (eight mutants by the audit, all detected; six re-applied
+independently by the adversarial review, including one it devised itself — all detected, with the
+audit's failure counts reproduced exactly), and no fail-open was found on the closure path. What
+remains splits three ways. **(a) Record integrity** — two of run 01's eleven commits never reached the
+branch that became PR #1295, so the landed `report-01.md` carries a count run 01 had already corrected
+and loses a build-gate result run 01 had already recorded, while `report-02.md` states nine commits
+were pushed and every tree preserved (G1–G6, G19). ⛔ Both lost commits are documentation-only, so **no
+production code or test was lost** — the damage is confined to the record. **(b) One real coverage
+hole in the shipped code** — a declared glob in a deliverable's write-set is enforced by neither
+closure when it matches nothing yet (G8), plus a false clause in operator-facing spec text (G9) and a
+byte-exact dedupe contradicting its own docstring (G16). **(c) Declared residue, all confirmed still
+open** (G7, G10–G15). D5 is the one partial deliverable: the tests are real, but the
+characterization-corpus **rule** was applied without being codified anywhere a later run would find it
+(G17).
 
 ## G1 — Correct `report-02.md`'s account of the rebase: two of run 01's eleven commits were dropped
 
@@ -304,16 +308,19 @@ being codified anywhere a later run would find it (G17).
 - **Topic:** tests
 - **Where:** `test/plan-marshall/manage-tasks/test_qgate_closure.py:696`
 - **Evidence:** `assert len(hits) <= _closure._MAX_HITS_NAMED` where `hits` is the live expansion of
-  `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/*.py`. Re-derived: 14 files today
-  against a cap of 20, so six additions to that directory turn this into a hard failure of an unrelated
-  change. Declared open with a `(b)` bound in `report-02.md:322`; confirmed open.
+  `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/*.py` (`_MULTI_HIT_GLOB`, `:72`).
+  Re-derived: **14** files today against a cap of **20**, and the comparison is `<=`, so **seven**
+  additions to that directory (14 → 21) turn this into a hard failure of an unrelated change — not
+  six, as an earlier version of this entry said; `report-02.md:286` had the figure right.
+  Declared open with a `(b)` bound in `report-02.md:322`; confirmed open.
 - **Why it matters:** A deterministic, loud false red on a change that has nothing to do with the
   closure — the cost lands on whoever next adds scripts to `manage-tasks`.
-- **Action:** Either monkeypatch `_MAX_HITS_NAMED` above the live count for this test, or point the
+- **Action:** Either monkeypatch `_MAX_HITS_NAMED` above the live hit count for this test, or point the
   multi-hit glob at a fixture directory the test creates, so the property under test stops depending on
   the size of a production directory.
-- **Done when:** the test passes with `_MAX_HITS_NAMED` set to any value at or below the live script
-  count, and still fails under the `unenumerated[:1]` mutant.
+- **Done when:** the test's outcome no longer depends on how many files
+  `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/` holds — adding seven `.py` files
+  there leaves it green — and it still goes red under the `unenumerated[:1]` mutant.
 - **Effort:** S
 - **Risk if fixed:** None.
 
@@ -343,7 +350,7 @@ being codified anywhere a later run would find it (G17).
 ## G13 — Correct the thirteen sites naming phase-4-plan **Step 8b** as the execution-manifest composer (residue R3)
 
 - **Kind:** doc-defect
-- **Severity:** low
+- **Severity:** medium
 - **Topic:** documentation-surface
 - **Where:** the thirteen instances are enumerated in place, so nothing is hidden inside an aggregate —
   they are one mechanical substitution across a closed, named list:
@@ -367,7 +374,9 @@ being codified anywhere a later run would find it (G17).
   `phase-4-plan/SKILL.md:61` is correct).
 - **Why it matters:** Thirteen documents send an implementer to the wrong step of the phase they are
   reading about, and one of them (`phase-5-execute/standards/workflow.md:134`) is the standard that
-  explains why the manifest exists at all.
+  explains why the manifest exists at all. Severity is **medium** on the same calibration that puts
+  G9 there — a false claim in shipped documentation — and this is thirteen instances of one, not a
+  stale claim confined to a run report.
 - **Action:** Substitute "Step 7b" at all thirteen sites in one `chore/` change; no code moves.
 - **Done when:** `grep -rn "Step 8b" marketplace/ --include=*.md | grep -i manifest` returns only
   `phase-4-plan/SKILL.md:61` (which correctly distinguishes 7b from 8b).
@@ -499,12 +508,16 @@ being codified anywhere a later run would find it (G17).
 - **Why it matters:** A deliverable satisfied by a different mechanism than specified is a deviation
   even when the alternative is better; the deviation should be findable from the contract, not only
   from the record of one execution.
-- **Action:** Nothing to build. When this plan's lesson is folded, carry the distinction forward: the
-  predicate axis of a *set* detector is exercised by mutation, not by a verbatim negative fixture — a
-  verbatim fixture applies only to content detectors.
-- **Done when:** the distinction appears wherever the "every set-guarding detector must be
-  population-derived" rule is stated, so a future plan does not write an inapplicable verification
-  clause.
+- **Action:** Add one sentence to the § 2.9a **Normative population assertion** block in
+  `marketplace/bundles/plan-marshall/skills/plan-marshall/workflow/q-gate-validation.md:405-407` —
+  the one shipped site where the "every set-guarding check is held to
+  `detector_population ⊇ fix_set_population`" rule is stated — recording that the *predicate* axis of
+  a **set** detector is exercised by mutating the set computation, not by a verbatim negative fixture;
+  a verbatim pre-fix fixture applies to **content** detectors only. Carry the same sentence into the
+  lesson when this plan's lesson is folded.
+- **Done when:** `q-gate-validation.md` § 2.9a states the set-detector/content-detector distinction
+  alongside the population assertion, so a future plan writing a "fixture carries the pre-fix text
+  verbatim" clause can see from the rule itself when it does not apply.
 - **Effort:** S
 - **Risk if fixed:** None.
 
