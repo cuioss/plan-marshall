@@ -5,15 +5,20 @@
 
 Every deliverable landed and every named symbol, test class and doc edit the report claims still
 exists in the current tree. The gaps are (a) one newly-introduced false statement at D2's declared
-*primary fix site*, (b) a member of D0's population that the derivation missed entirely, and (c) a
-silent-drop path D1 left open on the very flag D1 converted.
+*primary fix site*, false for **ten** `ci` subcommands; (b) a hole in the widened exit-code
+convention itself — it keys on the exit code alone, while `ci`'s own three-tier output model returns
+**exit 0** with `status: error`; (c) a member of D0's population that the derivation missed entirely;
+(d) a silent-drop path D1 left open on the very flag D1 converted; and (e) a flag-FORM enumeration
+in `review_completeness.py`'s own prose that is false for two of its nine list flags.
 
 ## Method
 
 Read in full: `plan.md`, `report-01.md`, `git show 3c7a1cc8` (message + full diff for all seven
 non-plan paths).
 
-Ground truth taken from the current tree at `61a43e53` (`git rev-parse HEAD`). Later churn on the
+Ground truth taken from the working tree. (`HEAD` has since advanced to `500d8061`; every commit
+between `61a43e53` and it touches only `doc/plans/review-apparatus/**`, so no production path moved
+— `git diff --name-only 61a43e53..HEAD | grep -v '^doc/plans/'` returns nothing.) Later churn on the
 same paths was enumerated with `git log --oneline 3c7a1cc8..HEAD -- <path>` for each of the five
 production files and the two test files; `review_completeness.py`, `automatic-review/SKILL.md`,
 `phase-6-finalize/SKILL.md`, `branch-cleanup.md` and both test files were all touched again
@@ -53,10 +58,10 @@ file and `gaps.md`.
 
 | # | *Done when* (plan) | Report claim | Ground truth in the tree | Verdict |
 |---|---|---|---|---|
-| D0 | The population is derived and stated with its derivation method, and a rejected call in any member site fails its step, proven by a test that passes today and fails after | Convention widened past `manage-*` in three docs; obligation derived per-doc by `TestExitCodeConventionCoversEveryScript`; doc SET accepted-with-reason as hand-scoped | Three wide headings present (`automatic-review/SKILL.md:172`, `phase-6-finalize/SKILL.md:44`, `branch-cleanup.md:59`); test present and green (3 parametrized cases). **But** `branch-cleanup-rereview.md` — loaded and executed *from inside the barrier* — carries no convention at all, and 13 further `phase-6-finalize` docs invoking non-`manage-*` scripts keep the narrow one | partially met |
-| D1 | Both directions tested — a pair fed to the bare-form flag and a bare kind fed to the pair-form flag — each a visible caller error rather than an `absent` verdict | `MalformedBotFlag`; `parse_participation` raises; `_split_bots` rejects pairs; `--stale-participation-bots` made pair-form; `TestMalformedBotFlagRejection`, `TestStaleParticipationIsPairForm` | All symbols and both test classes exist and pass. **But** the pair-form parse still silently drops a pair whose `evidence_kind` is not in the bot's registry `participation_evidence`, resolving that bot to `absent` | met, with a residual silent-drop path |
-| D2 | Every prescribed invocation in the derived population parses against its own parser | `execution-context.md` universal replaced by a per-script/per-position statement; `automatic-review/SKILL.md` item 4 rendered as pairs; three null results | All six derived invocations parse (verified by running them). **But** the replacement text at the declared primary fix site is itself false for `ci pr` / `ci issue` | met for the parse sweep, defective at the primary fix site |
-| D3 | The test exists, its population size is published in its own output, and it fails against a deliberately reintroduced divergence | `TestDocumentedReviewMergeInvocationsParse`, population 6, floor ≥ 4, non-emptiness asserted first, mutation-proven | Test exists and is green; population re-derived independently as exactly 6. **But** the size is emitted only inside failure messages — a passing run publishes no number | met, except the "published in its own output" clause |
+| D0 | The population is derived and stated with its derivation method, and a rejected call in any member site fails its step, proven by a test that passes today and fails after | Convention widened past `manage-*` in three docs; obligation derived per-doc by `TestExitCodeConventionCoversEveryScript`; doc SET accepted-with-reason as hand-scoped | Three wide headings present (`automatic-review/SKILL.md:172`, `phase-6-finalize/SKILL.md:44`, `branch-cleanup.md:59`); test present and green (3 parametrized cases), mutation-proven by re-running it. **But** the widened convention keys on the exit code alone while `ci` returns exit 0 on a routing failure (G2); `branch-cleanup-rereview.md` — loaded and executed *from inside the barrier* — carries no convention at all (G3); and 13 further `phase-6-finalize` docs invoking non-`manage-*` scripts keep the narrow one (G5) | partially met |
+| D1 | Both directions tested — a pair fed to the bare-form flag and a bare kind fed to the pair-form flag — each a visible caller error rather than an `absent` verdict | `MalformedBotFlag`; `parse_participation` raises; `_split_bots` rejects pairs; `--stale-participation-bots` made pair-form; `TestMalformedBotFlagRejection`, `TestStaleParticipationIsPairForm` | All symbols and both test classes exist and pass. **But** the pair-form parse still silently drops a pair whose `evidence_kind` is not in the bot's registry `participation_evidence`, resolving that bot to `absent` (G4), and the module's own flag-FORM prose now names two pair-form flags where four exist (G7) | met, with a residual silent-drop path |
+| D2 | Every prescribed invocation in the derived population parses against its own parser | `execution-context.md` universal replaced by a per-script/per-position statement; `automatic-review/SKILL.md` item 4 rendered as pairs; three null results | All six derived invocations parse (verified by running them), as do the three `## Canonical invocations` blocks the sweep excludes. **But** the replacement text at the declared primary fix site is false for **ten** `ci pr` / `ci issue` subcommands (G1) | met for the parse sweep, defective at the primary fix site |
+| D3 | The test exists, its population size is published in its own output, and it fails against a deliberately reintroduced divergence | `TestDocumentedReviewMergeInvocationsParse`, population 6, floor ≥ 4, non-emptiness asserted first, mutation-proven | Test exists and is green; population re-derived independently as exactly 6, and the reintroduced-divergence mutation re-run to failure. **But** the size is emitted only inside failure messages — a passing run publishes no number (G8) | met, except the "published in its own output" clause |
 
 ### D0 — enforce the exit-code convention across the merge-and-review population
 
@@ -75,7 +80,7 @@ The enforcement test `TestExitCodeConventionCoversEveryScript`
 three parametrized cases, and derives each doc's widening *obligation* from that doc's own
 non-`manage-*` invocations rather than asserting it. Both directions of its mutation-proof claim are
 structurally present: `assert _WIDE_HEADING in text` and `assert _NARROW_HEADING not in text`
-(`:271`, `:276`). CONFIRMED.
+(`:272`, `:277`). Re-run: `11 passed`. CONFIRMED.
 
 **Where it falls short of the *Done when*.** The plan's D0 is emphatic: "⛔ **Derive the
 population.** It is *every script invocation reachable in the finalize merge-and-review path*" and
@@ -93,15 +98,15 @@ found `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branc
 carrying **no exit-code convention section at all** (`grep -n "^## "` over that file returns exactly
 one heading, `## Re-review the rebased HEAD (trigger A)`), while invoking two non-`manage-*` scripts:
 
-- `:45` — `plan-marshall:workflow-integration-github:github_re_review re-review …`
-- `:55` — `plan-marshall:workflow-integration-github:github_pr fetch_findings --pr-number
+- `:46` — `plan-marshall:workflow-integration-github:github_re_review re-review …`
+- `:55-56` — `plan-marshall:workflow-integration-github:github_pr fetch_findings --pr-number
   {pr_number} --plan-id {plan_id}`
 
 That file is not a distant relative of the barrier. `branch-cleanup.md:489` says of it: "The full
 walkthrough … lives in the same-directory sub-standard `branch-cleanup-rereview.md`. **Load and
-execute it here**". It is inside the barrier's own execution, it produces `{declined_bots}` which the
-barrier feeds to `review_completeness check`, and it existed at the landing commit
-(`git cat-file -e 3c7a1cc8:…/branch-cleanup-rereview.md` succeeds). CONFIRMED gap — see G2.
+execute it here**". It is inside the barrier's own execution, it produces `{declined_bots}` (retained
+at `branch-cleanup.md:812` and forwarded at `:833`), and it existed at the landing commit
+(`git cat-file -e 3c7a1cc8:…/branch-cleanup-rereview.md` succeeds). CONFIRMED gap — see G3.
 
 The same sweep found 13 further `phase-6-finalize` docs that invoke non-`manage-*` scripts and keep
 the narrow heading, several of them squarely in the PR/review path: `workflow/create-pr.md` (`ci`),
@@ -109,7 +114,35 @@ the narrow heading, several of them squarely in the PR/review path: `workflow/cr
 `standards/architecture-refresh.md` (`ci`), plus `standards/ci-verify.md` and
 `standards/verdict-currency.md` with no convention at all. The report's justification — "the ~35
 other docs carrying the boilerplate convention are **other phases/steps**, out of scope" — is
-inaccurate as written: these are the same phase. See G4.
+inaccurate as written: these are the same phase. Re-derived independently by running the landed
+test's own `_invoked_notations` / `_is_manage_star` / heading constants over every `*.md` in the four
+skills: **3 WIDE, 13 NARROW, 6 NONE** (the six NONE being `branch-cleanup-rereview.md`,
+`ci-verify.md`, `verdict-currency.md`, `workflow-integration-github/SKILL.md`,
+`workflow-pr-doctor/SKILL.md` and `workflow-pr-doctor/standards/automated-review-lifecycle.md`). See
+G5.
+
+**A hole in the widened convention itself.** The widened text keys on the exit code alone —
+"`exit_code == 0`: parse the returned TOON and use the value as the step describes" — while `ci`'s
+own documented three-tier model returns **exit 0** for an expected error: `ci_base.output_error`
+(`:790-798`) prints `status: error` and returns `EXIT_SUCCESS`. Reproduced by running the real router
+from a directory with no configured provider:
+
+```
+$ ci.py checks pull-request-runs --pr-number 1
+status: error
+operation: router
+error: CI provider not configured. Run /marshall-steward first.
+EXIT 0
+```
+
+So the class the plan's Goal names — "a value the surface accepts and misreads … absorbed into a
+green result" — survives the widening at every `ci` call site whose step does not *separately*
+validate the payload shape. Two sites do: the barrier's `checks pull-request-runs` read
+(`branch-cleanup.md:825`, "**Every other shape is an UNKNOWN input**") and its sibling at
+`automatic-review/SKILL.md:671`. The `checks status` snapshot at `branch-cleanup.md:425-430` does
+not: it says "Parse `overall_status` from the returned TOON. `pending`, `success`, and `none` all
+proceed", and a `status: error` return carries no `overall_status` at all, matching no branch while
+the convention says the exit-0 value is usable. CONFIRMED — see G2.
 
 **On "a rejected call … fails its step, proven by a test that passes today and fails after".** No code
 path can fail an LLM-executed prose step, and the report says so plainly. What landed is prose plus a
@@ -136,7 +169,7 @@ The two test classes exist and pass: `TestMalformedBotFlagRejection`
 rejection. `10 passed` when run. CONFIRMED.
 
 Note that a later refactor (#1241) moved the parse out of `cmd_check` into
-`_parse_bot_observations` (`:1195`) and gave `cmd_deficit` the same `MalformedBotFlag` handling
+`_parse_bot_observations` (`:1196`) and gave `cmd_deficit` the same `MalformedBotFlag` handling
 (`:1277`) — the D1 behaviour was extended, not eroded.
 
 **The residual defect.** `--stale-participation-bots` now goes through `parse_participation`, which
@@ -163,7 +196,34 @@ nonexistent-bot:issue_comment -> {}
 `participated_stale` DID publish … so the productive action is a re-review trigger"), and the
 in-code comment at `:1216-1218` asserts the opposite of what the code does: "it takes the same pair
 form and **the classifier reads only the bot_kinds**". The classifier does read only the bot_kinds —
-but only for the records that survive a filter the comment does not mention. CONFIRMED — see G3.
+but only for the records that survive a filter the comment does not mention. The same omission rides
+in the user-facing argparse `help=` string at `:1380-1394`, which says the flag names a bot "whose
+observed comment matched a declared `participation_evidence` publish shape" and that "the classifier
+reads only the bot_kind", never that a non-admissible kind is dropped. CONFIRMED — see G4.
+
+**It is a residual, not a regression — checked.** The landed diff shows the pre-fix wiring was
+`stale_participation_bots=_split_bots(args.stale_participation_bots)`, a *bare-form* parse fed the
+producer's pairs, so every stale record became a bot literally named `pr-agent:issue_comment` and was
+lost unconditionally. Post-fix the drop needs the producer's emitted `evidence_kind` and the
+consumer's registry read to diverge, and both sides read the same registry
+(`github_pr.py:952-953` admits only `kind in participation_evidence(bot_kind)` before recording).
+The precondition is therefore an unregistered bot or a registry edit between the two reads — narrow,
+and strictly better than what it replaced.
+
+**A second stale enumeration, in the module's own prose.** `review_completeness.py:128-133` states
+"The list flags split into two FORMS … The two EVIDENCE-TYPED (pair-form) flags —
+``--participated-bots`` and ``--stale-participation-bots`` … The remaining list flags are bare-form
+(``bot_kind`` tokens only)." That is false for two of the nine list flags: `--refused-causes` and
+`--refusal-size-caps` route through `parse_causes` (`:382-422`), which requires `bot_kind:value`
+pairs and raises `MalformedBotFlag` on a bare token — confirmed by execution
+(`parse_causes('pr-agent', '--refused-causes')` raises; `parse_causes('pr-agent:whatever', …)`
+returns `{'pr-agent': 'whatever'}`). The same two-form claim is repeated in the `MalformedBotFlag`
+docstring (`:315-322`) and in the `_split_bots` rejection message (`:1186-1190`), which tells a caller
+holding a rejected pair token that pairs "belong on a pair-form flag
+(--participated-bots / --stale-participation-bots)" — wrong advice for a `bot_kind:cause` token. And
+the module's `deficit` usage line (`:116`) omits `--refusal-size-caps`, which the shared
+`_add_bot_observation_flags` factory does declare on `deficit` and which
+`automatic-review/SKILL.md:1006` documents. CONFIRMED — see G7.
 
 ### D2 — reconcile the prescribed invocations to the live surfaces
 

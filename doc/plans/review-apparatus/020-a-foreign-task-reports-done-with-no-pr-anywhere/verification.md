@@ -5,10 +5,12 @@
 
 The three deliverables all landed and all survive in the tree. The verb, the predicate, the column,
 the gate and the archive-plan wiring exist as named, and the named tests exist and pass. But the gate
-as built cannot reliably answer the question it was created to answer — it never names the branch it
-classifies — and it clears the one state (`unpushed`) that most obviously has no PR. One load-bearing
-factual claim in `report-01.md` (the single-seam finding under D0) is false against the tree that was
-current when it was written.
+as built clears in three situations where it should not: when the deliverable payload carries no
+`foreign` classification at all (proven by driving `check()` directly — C9), when the change is
+`unpushed` (C2), and — because it never names the branch it classifies (C1) — whenever the foreign
+checkout has moved off the branch the change was committed to. One load-bearing factual claim in
+`report-01.md` (the single-seam finding under D0) is false against the tree that was current when it
+was written.
 
 ## Method
 
@@ -17,7 +19,9 @@ Read in full: `plan.md`, `report-01.md`.
 Landed diff: `git show --stat 9c679c99`, plus `git show 9c679c99 -- <path>` for `ci_base.py`,
 `github_ops.py`, `manage-solution-outline.py`, `foreign_pr_gate.py`, the two doc files.
 
-Ground truth read at `HEAD` = `61a43e53` on branch `claude/review-apparatus-analysis-mcf8md`:
+Ground truth read on branch `claude/review-apparatus-analysis-mcf8md`, first at `61a43e53` and
+re-derived at `500d8061`; `git log --oneline 61a43e53..HEAD --name-only` touches only
+`doc/plans/review-apparatus/`, so no citation below moved between the two:
 
 - `marketplace/bundles/plan-marshall/skills/phase-6-finalize/scripts/foreign_pr_gate.py` (whole file)
 - `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/archive-plan.md` lines 1–80
@@ -137,7 +141,7 @@ spelled as STOP. **CONFIRMED.**
 NOT archive.** … The condition is **blocking**, not advisory"*. Read cold, that is a prohibition.
 The report's BLOCKING verdict is **ACCURATE**.
 
-**Where D1 is defective — see Correctness review G1, G2, G3, G5.**
+**Where D1 is defective — see Correctness review C1, C2, C3, C4 and C9–C12.**
 
 ### D2 — the structured signal and the column
 
@@ -172,13 +176,13 @@ un-addressed in any consumer.
 | D1: `ci_base.derive_landing_state` + `LANDING_STATES` exist | ACCURATE | `ci_base.py:817`, `:820` |
 | D1: registered as `('pr','landing-state')` with a `--branch` subparser, github-only, gitlab untouched | ACCURATE | `github_ops.py:1834–1868`; no gitlab registration (grep) |
 | D1: "Auth failure / unparseable output / gh-list failure all hard-error" | ACCURATE | `_github_pr.py:762`, `:781`, `:777` |
-| D1: the gate "iterates the foreign deliverables (from `list-deliverables`' `foreign` column)" | ACCURATE | `foreign_pr_gate.py:186–222`, `:265` |
-| D1: "resolves each foreign repository's landing state via `ci pr landing-state --project-dir {root}`" | ACCURATE but incomplete | `foreign_pr_gate.py:155–166`. The command as built carries **no** `--branch`, which the plan's D1 signature specified (`--project-dir P --branch B`). The report does not disclose the omission |
+| D1: the gate "iterates the foreign deliverables (from `list-deliverables`' `foreign` column)" | ACCURATE | `foreign_pr_gate.py:186–220`, `:280` |
+| D1: "resolves each foreign repository's landing state via `ci pr landing-state --project-dir {root}`" | ACCURATE but incomplete | `foreign_pr_gate.py:147–164`. The command as built carries **no** `--branch`, which the plan's D1 signature specified (`--project-dir P --branch B`). The report does not disclose the omission |
 | D1: tests "each parametrized over `LANDING_STATES` so the population is asserted against the verb's own declared set" | ACCURATE | `test_pr_landing_state.py:52–68`; `set(_CASE_PER_STATE) == set(LANDING_STATES)` plus a produced-set equality and a non-vacuity guard |
 | D1: "plus the archive-refusal test proving a `pushed_no_pr` foreign deliverable is `blocked`" | OVERSTATED | `test_foreign_pr_gate.py:71` proves `check()` returns `blocked`. Nothing proves *archive* is refused; the archive-plan wiring is prose and is exercised by no test (`grep -rn "foreign_pr_gate"` → one prose site, one docstring, two test references, all to the module) |
 | D1: "All fail before the change (the verb/gate did not exist)" | ACCURATE (trivially) | The modules and symbols are new in `9c679c99`; import would fail |
-| D1: gate "fails closed … an unresolvable project root … yield `status: error`" | ACCURATE but the guard is decorative | `foreign_pr_gate.py:261` resolves `project_root` and then never uses it for classification — classification happens inside the `list-deliverables` subprocess, which resolves its own root and has no flag to be told one |
-| D2: `is_foreign_path` correct on every named trap | ACCURATE | Six passing predicate tests |
+| D1: gate "fails closed … an unresolvable project root … yield `status: error`" | ACCURATE, but narrower than it reads | `foreign_pr_gate.py:260–268` catches only the gate process's OWN `cwd_checkout_root()` failure; the classification that decides the population runs inside the `list-deliverables` subprocess, which resolves its own root and fails **open**. The guard is a correlated proxy (both resolve from the same cwd), not an enforcement of the root it resolved — see C4 |
+| D2: `is_foreign_path` correct on every named trap | ACCURATE | Seven passing predicate tests at `test_foreign_deliverable_column.py:33–61` — the six traps the report names, plus an empty/whitespace-path case |
 | D2: "`list-deliverables` now stamps `foreign` on each `affected_files` entry and a per-deliverable roll-up" | ACCURATE for the landed state | At landing only `affected_files` was stamped; `mutation_scope`/`survey_scope` were left unstamped until `63943f55` |
 | D2: "the sole intended ripple; no other existing assertion changed" | ACCURATE | Only `test_manage_solution_outline.py` changed among pre-existing tests (7 lines in the stat) |
 | Build gate: "`./pw verify plan-marshall`: green — 15848 passed, 1 skipped" vs Contract check step 5: "final green run 15859 passed" | INTERNALLY INCONSISTENT | Both figures appear in the same report as the green run. The story is reconcilable (pre- and post-fix-commit) but § Build gate presents 15848 as final |
@@ -190,7 +194,7 @@ un-addressed in any consumer.
 ## Correctness review
 
 **C1 — the gate never names the branch it classifies. CONFIRMED.**
-`foreign_pr_gate.py:155–166` builds:
+`_resolve_landing_state` (`foreign_pr_gate.py:147–164`) builds:
 
 ```python
 cmd = [sys.executable, str(executor), _CI_NOTATION, '--project-dir', repo_root, 'pr', 'landing-state']
@@ -208,6 +212,14 @@ follow from the code, both reasoned from the handler body rather than observed:
 - the foreign checkout has been switched away from the work branch: the work branch is never examined
   at all.
 
+**Precondition, stated so the severity is not over-read.** The fallback is the verb's *documented*
+default (`leaf-command-reference.md:34`: "default: the routed working tree's checked-out branch"), and
+in the ordinary flow — the foreign checkout still sitting on the branch the change was just committed
+to — it names the right ref and the gate is correct. The defect is that the gate depends on that
+coincidence: it asserts nothing about which ref it classified, and neither reports nor refuses when the
+checkout has moved. The `branch` field IS returned by the verb (`_github_pr.py:821`) and the gate
+discards it.
+
 **C2 — `unpushed` clears the gate, and the plan's Goal says it must not. CONFIRMED.**
 `foreign_pr_gate.py:78` `BLOCKING_LANDING_STATE = 'pushed_no_pr'` is the only refusal, and
 `test/plan-marshall/phase-6-finalize/test_foreign_pr_gate.py:101` locks it in:
@@ -224,30 +236,50 @@ plan's D1 body does say "refuse to archive while any is `pushed_no_pr`", so the 
 faithful to the instruction and unfaithful to the goal. A foreign change that was committed and never
 pushed is the strictly worse case, and it is the one that passes.
 
-**C3 — the gate's population ignores declared intent. CONFIRMED.**
-`_foreign_paths_by_deliverable` (`foreign_pr_gate.py:186–222`) and `_annotate_foreign`
+**C3 — the gate's population ignores declared intent. CONFIRMED, by execution.**
+`_foreign_paths_by_deliverable` (`foreign_pr_gate.py:186–220`) and `_annotate_foreign`
 (`manage-solution-outline.py:505–547`) collect every entry with a truthy `foreign` flag, with no
 reference to `entry['intent']`. `_extract_affected_files` explicitly returns
-`{'path': str, 'intent': str | None}` (`_plan_parsing.py:447`), and the repository already owns the
-authoritative write-set helper `_plan_parsing.deliverable_write_set` (line 455), whose docstring states
+`{'path': str, 'intent': str | None}` (`_plan_parsing.py:447`), and the repository owns the
+authoritative write-set helper `_plan_parsing.deliverable_write_set` (line 456), whose docstring states
 the rule: *"every `affected_files` **or** `mutation_scope` entry whose declared intent is not
-`STEP_INTENT_READ`"*. The gate does not use it. A foreign path declared `(read)` — a file the plan
-merely consults in another repository — therefore enters the blocking population, and the gate can
-refuse to archive over a repository nothing was written to.
+`STEP_INTENT_READ`"*. The gate does not use it.
 
-**C4 — the "fail closed on an unresolvable project root" guard cannot enforce what it claims.
-CONFIRMED (mechanism) / PLAUSIBLE (impact).**
+Driven end-to-end rather than reasoned: a deliverable whose sole declaration is
+``- `/elsewhere/other-repo/src/Ref.java` (read)`` passed through `extract_deliverables` →
+`_annotate_foreign` → `_foreign_paths_by_deliverable` yields
+`[(1, ['/elsewhere/other-repo/src/Ref.java'])]` — the read-only path is in the blocking population, so
+the gate can refuse to archive over a repository nothing was written to.
+
+Two qualifications the finding must carry:
+
+- `deliverable_write_set` did **not** exist at landing. `git show 9c679c99:.../_plan_parsing.py` has no
+  `deliverable_write_set` and no `STEP_INTENT_READ` import; the helper arrived with `aeab5ab5` (#1283).
+  The rule the gate should follow is therefore a later standard, not one the run ignored.
+- `survey_scope` is in the gate's field list **deliberately**, added by `63943f55` (#1295) with a test
+  that pins it (`test_foreign_pr_gate.py:214`, "the population this gate iterates must be the whole
+  declared surface"). Since `extract_survey_scope` stamps every marker-less bullet `read`
+  (`_plan_parsing.py:413`), an intent filter and that test are in direct tension — a remedy must settle
+  which rule wins rather than silently reverting #1295. Note the pinning test's fixture entries carry no
+  `intent` key at all, so an intent filter would leave it green while changing real behaviour.
+
+**C4 — the "fail closed on an unresolvable project root" guard is a correlated proxy, not an
+enforcement. CONFIRMED (mechanism).**
 `check()` resolves `project_root` at line 261 and thereafter uses it only in the error message and in
 the emitted payload. The classification that decides the population is performed by
 `_annotate_foreign` inside the `list-deliverables` **subprocess**, which resolves its own root and,
-on failure, deliberately fails **open** (stamps everything host, `manage-solution-outline.py:518–522`).
-`list-deliverables` accepts only `--plan-id` — there is no flag by which the gate could impose the root
-it resolved. The two agree only because the subprocess inherits the gate's cwd; nothing asserts that,
-and nothing detects a divergence.
+on failure, deliberately fails **open** (stamps everything host — code at
+`manage-solution-outline.py:524–527`, stated at `:518–522`). `list-deliverables` accepts only
+`--plan-id`, so there is no flag by which the gate could impose the root it resolved.
+
+The guard is not decorative: the subprocess inherits the gate's cwd, so the case it was written for —
+running outside a git checkout at all — fails in both processes and the gate does error. What it cannot
+do is detect a **divergence**: nothing asserts that the two roots agree, and nothing reports which root
+the classification actually used. C9 is the failure this leaves open.
 
 **C5 — relative foreign paths are resolved against two different bases. CONFIRMED.**
 `is_foreign_path` joins a relative path onto `project_root` (`_plan_parsing.py:95`), while
-`_resolve_repo_root` (`foreign_pr_gate.py:120–140`) does `os.path.dirname(path)` and `os.path.isdir()`
+`_resolve_repo_root` (`foreign_pr_gate.py:123–144`) does `os.path.dirname(path)` and `os.path.isdir()`
 against the **process cwd**. A `../other-repo/src/Foo.java` entry is classified against the git toplevel
 and then resolved against the cwd. Equal when the gate runs from the checkout root; divergent otherwise.
 
@@ -264,10 +296,66 @@ but with an unactionable message. `leaf-command-reference.md:34` documents "**Gi
 the gate does not read that and cannot say it.
 
 **C8 — a `blocked` verdict exits 0 even when items are also unresolved.** `cmd_check` returns
-`1 if result.get('status') == 'error' else 0`, and the precedence at `foreign_pr_gate.py:330–336` puts
+`1 if result.get('status') == 'error' else 0`, and the precedence at `foreign_pr_gate.py:331–339` puts
 `blocked` above `error`. A caller relying only on the exit code proceeds on a `blocked` result. The
 `archive-plan.md` contract does instruct parsing `status`, so this is documented rather than latent —
 noted, not filed as a gap.
+
+**C9 — the gate clears when the `foreign` column is absent or unclassified. CONFIRMED, by execution.**
+`_foreign_paths_by_deliverable` selects on `deliverable.get('foreign')` / `entry.get('foreign')`
+truthiness, and an empty selection takes the early `clear` return (`foreign_pr_gate.py:280–288`).
+Driven directly:
+
+```
+check('p', deliverables_loader=lambda _: {'status': 'success', 'deliverables':
+        [{'number': 1, 'affected_files': [{'path': '/elsewhere/other/x.py'}]}]}, ...)
+→ {'status': 'clear', 'foreign_deliverable_count': 0, 'repos': []}
+
+check('p', deliverables_loader=lambda _: {'status': 'success'}, ...)
+→ {'status': 'clear', 'foreign_deliverable_count': 0, 'repos': []}
+```
+
+Both payloads are `status: success` with **no classification in them at all**, and both clear. This
+contradicts the module's own posture at `foreign_pr_gate.py:50–52`: *"The gate CLEARS only when it has
+POSITIVELY read a landing state in the declared model for every foreign deliverable's repository …
+never on an absence of evidence."* The absence of evidence it fails to catch is one level up — the
+population itself. Since `_annotate_foreign` fails open on an unresolvable root (C4) and reports no
+classification status, an unclassified population and a genuinely host-only one are the same bytes on
+the wire. This is the only defect found here whose failure direction is a **false clear**.
+
+*(Not a defect: the flags survive the TOON boundary as real booleans. `serialize_toon` →
+`parse_toon` round-trip of a deliverables payload returns `bool` for `foreign` and `int` for `number`,
+so a `"false"` string is not being read as truthy. Checked because a string-typed `false` would have
+inverted the whole population; it does not.)*
+
+**C10 — push evidence rests on unrefreshed remote-tracking refs, and the docstring overclaims.
+CONFIRMED (code) / reasoned (impact).**
+`_branch_pushed_state` (`_github_pr.py:706–723`) derives the entire pushed/unpushed axis from
+`git branch -r --contains <branch>`, and its docstring states *"`rc == 0` with empty output proves it is
+not [on a remote]"*. That is proof about the local **remote-tracking** refs, not about the remote.
+`grep -n "fetch\|ls-remote"` over `_github_pr.py` returns only PR-comment helpers — nothing in the
+landing-state path refreshes refs. In a foreign checkout whose refs are behind, a pushed branch reads
+`unpushed`, which under C2 clears the gate. The handler's advertised fail-closed posture covers
+*unreadable* evidence; it does not cover *stale but readable* evidence.
+
+**C11 — `unresolved[]` conflates two different kinds of path. CONFIRMED.**
+The module docstring documents the row as `unresolved[K]{path,reason}: … # foreign paths whose repo
+could not be resolved` (`foreign_pr_gate.py:30`). Two writers populate it: `:300` puts a declared
+**file path** there, `:324` puts a resolved **repository root** there. An operator reading
+`unresolved[].path` cannot tell which kind a row is, and `archive-plan.md:51` says only that the rows
+"name each".
+
+**C12 — one subprocess has no timeout, and a timeout on the other two escapes the documented error
+contract. CONFIRMED.**
+`_resolve_repo_root`'s `git rev-parse --show-toplevel` (`foreign_pr_gate.py:135–140`) passes no
+`timeout`, while the module's two other calls pass `timeout=120` (`:107`, `:165`); the repository's own
+standard is *"`timeout=N` | Always recommended for external calls"*
+(`pm-plugin-development:plugin-script-architecture` `standards/cross-skill-integration.md:266`, with a
+`subprocess.run(['git', 'status'], check=True, timeout=30)` example at `:283`). Separately, both
+timeout-bearing calls sit **outside** the `try` blocks that guard `parse_toon` (`:117–120`, `:175–178`),
+so a `subprocess.TimeoutExpired` propagates out of `check()` and `cmd_check` as an unhandled traceback —
+no TOON is printed, though `archive-plan.md:51` instructs the dispatcher to "return the error TOON
+verbatim". The direction is fail-closed (non-zero exit), but off-contract.
 
 ## Completeness review
 
@@ -279,11 +367,18 @@ noted, not filed as a gap.
 | `workflow-integration-github/SKILL.md:280` | yes |
 | `tools-integration-ci/SKILL.md:310` — § Canonical invocations, `### pr` "Sub-verbs:" enumeration | **no** — the list runs `view … create` with no `landing-state` |
 | `tools-integration-ci/standards/api-contract.md:136–148` — § "PR Operations" response-field table | **no** — every other `pr` read verb has a row naming its response fields; `landing-state`'s (`branch`, `tip_sha`, `pushed`, `pr_count`, `landing_state`, `landing_states`) are documented nowhere |
-| `phase-6-finalize/SKILL.md:1813–1822` — § Scripts inventory, and § Canonical invocations | **no** — all seven other scripts in `phase-6-finalize/scripts/` have rows; `foreign_pr_gate.py` has none. `grep -rn "foreign" phase-6-finalize/` returns only `archive-plan.md` and unrelated `foreign-safe` lock prose |
+| `phase-6-finalize/SKILL.md:1814–1822` — § Scripts inventory table | **no** — the directory holds eight scripts and the table has seven rows; the missing one is `foreign_pr_gate.py`. Re-derived by comparing `ls phase-6-finalize/scripts/` against the table's `scripts/…` cells |
 
 No test catches this: `test/plan-marshall/tools-integration-ci/test_ci_base.py:1212` defines
 `_CHECKS_ROW` and asserts doc parity for `checks` verbs only. `Grep _PR_ROW|pr \(\?P<verb>` over
 `test/` → no matches.
+
+**Not a defect, checked:** the § Canonical invocations preamble at `phase-6-finalize/SKILL.md:1826`
+names five entry-point scripts and omits `foreign_pr_gate.py` — but it omits `ci_verify.py` and
+`derive_gate_bundles.py` too, so that half is a pre-existing house pattern rather than this plan's
+omission. The plugin-doctor rule the preamble backs (`manage-invocation-invalid` /
+`missing-canonical-block`) is satisfied either way, because `archive-plan.md:42–45` carries an explicit
+inline call rather than an xref. Only the Scripts-table row is specific to this change.
 
 **The `foreign` column is undocumented in its owning skill. CONFIRMED.**
 `grep -rn "foreign"` over `manage-solution-outline/SKILL.md` and `manage-solution-outline/standards/*.md`
@@ -319,11 +414,27 @@ in unrelated modules (`audit-archived-plan-retrospectives`, `manage-architecture
 `_run(...)` (`test_foreign_pr_gate.py:38–63`). The omitted `--branch`, the `--project-dir` routing and
 the TOON parse path are covered by nothing.
 
-**Nothing enforces the gate.** `grep -rn "foreign_pr_gate"` across the repo returns four sites: the
-prose invocation in `archive-plan.md:43`, the module's own docstring, and two test references. The
-archive step is executed by an LLM dispatcher following a standards document. The plan's own D2 states
-*"Prose that no gate reads must not be the record of a blocking condition"* — the gate's invocation is
-itself exactly that.
+**The archive refusal is proven at `check()` and nowhere further up. CONFIRMED — and narrower than it
+first reads.** `grep -rn "foreign_pr_gate"` across the tracked tree returns four sites: the prose
+invocation in `archive-plan.md:43`, the module's own docstring (`:58`), and two test files
+(`test_foreign_pr_gate.py:18`, and a cross-reference in
+`test/plan-marshall/manage-solution-outline/test_survey_scope_declaration.py:202`). No code path calls
+the gate; the archive step is executed by an LLM dispatcher following a standards document.
+
+**That much is the house convention, not a defect of this plan.** Every one of the eight scripts in
+`phase-6-finalize/scripts/` is invoked the same way — `ci_verify`, `verdict_currency`,
+`post_run_source_guard`, `derive_gate_bundles`, `ci_complete_precondition`, `pr_intent_section` and
+`review_commitments` each appear only in a fenced block inside `SKILL.md` or a `standards/*.md`
+(`grep -rn "execute-script.py plan-marshall:phase-6-finalize"`), and `archive-plan.md` is itself a
+registered finalize step (`order: 1100`, `default_on: true`) that the phase-6 dispatcher runs. The
+plan's D2 objection — *"Prose that no gate reads must not be the record of a blocking condition"* — is
+about prose **carrying** an obligation no code evaluates; here the obligation is computed in code and
+the prose only invokes it. Reading this as "the same failure shape" overstates it.
+
+What is genuinely missing is the proof: the plan's D1 *Done when* asks that "a plan with a
+`pushed_no_pr` foreign deliverable is refused **at archive**", and the only assertion is that `check()`
+returns `blocked` (`test_foreign_pr_gate.py:71`). Nothing exercises the archive path itself, so deleting
+the whole § "Pre-Archive Foreign-PR Landing Gate" section from `archive-plan.md` breaks no test.
 
 ## Out-of-scope compliance
 
@@ -351,18 +462,86 @@ test files.
 
 ## Summary
 
-**Counts by severity:** 3 major, 6 minor, 0 blocker. One of the majors is a false report claim.
+**Counts by severity:** 5 major, 14 minor, 0 blocker — 19 gaps, matching `gaps.md` G1–G19. One of the
+majors is a false report claim; one is a false-clear path found by driving `check()` directly.
 
 Everything the report says was built is in the tree, under the names it gives, and the named tests
 exist and pass (56 tests, run directly). The plan's literal *Done when* clauses are all satisfiable
-against the tree. What does not hold up is the substance behind two of them. The gate that D1 exists to
-provide asks `ci pr landing-state` a question about *whichever branch the foreign checkout is sitting
-on*, because it never passes the `--branch` the plan's own D1 signature specified — so it can both
-refuse a plan whose foreign work is done and examine the wrong ref entirely; and it clears `unpushed`,
-the state in which a foreign change most unambiguously has no pull request anywhere. D2's column is
-real but consumed by exactly one caller, so the coverage-pooling defect it was justified by is
-untouched, and the column is absent from the two sibling read verbs and from its own skill's docs.
-The report's D0 finding that `done` is written in exactly one place is false — `_cmd_step.py:73` wrote
-it then and writes it now — which matters because that finding is what the plan's single-seam
-HYPOTHESIS was marked confirmed on. Finally, the enforcement point is a paragraph in a standards
-document that no code calls, which is the precise failure shape the plan set out to remove.
+against the tree. What does not hold up is the substance behind two of them.
+
+The gate clears on evidence it never read: a `list-deliverables` payload carrying no `foreign`
+classification at all — the exact output `_annotate_foreign` produces when it cannot resolve the project
+root — is indistinguishable from a host-only plan, and archives cleanly (C9). That is the one failure
+direction the gate exists to prevent, and it is the correction that matters most here. Alongside it, the
+gate asks `ci pr landing-state` about *whichever branch the foreign checkout is sitting on*, because it
+never passes the `--branch` the plan's own D1 signature specified; and it clears `unpushed`, the state in
+which a foreign change most unambiguously has no pull request anywhere — a state that a stale
+remote-tracking ref can also produce for a branch that really was pushed (C10).
+
+D2's column is real but consumed by exactly one caller, so the coverage-pooling defect it was justified
+by is untouched, and the column is absent from the two sibling read verbs and from its own skill's docs.
+The report's D0 finding that `done` is written in exactly one place is false — `_cmd_step.py:73` wrote it
+then and writes it now — which matters because that finding is what the plan's single-seam HYPOTHESIS was
+marked confirmed on. The enforcement point is a paragraph in a standards document that no code calls;
+that is how every step in this phase is dispatched, so it is not itself the failure the plan set out to
+remove, but nothing tests the archive path, so the refusal is proven only at `check()`.
+
+## Adversarial review
+
+This document and `gaps.md` were re-derived end to end by a second reviewer working from the plan and
+the run report first, then from the tree, without accepting any citation on trust. Everything below is
+current state of the review, not a log of edits.
+
+**Method, precisely enough to re-run.** Anchor: branch `claude/review-apparatus-analysis-mcf8md`,
+`HEAD` `500d8061`; `git log --oneline 61a43e53..HEAD --name-only` touches only `doc/plans/`, so the
+earlier anchor and this one are equivalent for every citation here. Every `path:line` in both documents
+was opened and compared against the quoted text. Historical claims were re-checked at the landing commit
+and its parent (`git show 9c679c99^:…`, `git show 9c679c99:…`). Counts were re-derived rather than
+copied: the 15-file stat (`git show --stat 9c679c99`), the four `foreign_pr_gate` grep sites, the four
+`'status'] = ` writers in `manage-tasks/scripts/`, the seven-of-eight `phase-6-finalize` Scripts rows,
+the predicate-test population, and the test total —
+`uv run python -m pytest test/plan-marshall/phase-6-finalize/test_foreign_pr_gate.py
+test/plan-marshall/workflow-integration-github/test_pr_landing_state.py
+test/plan-marshall/manage-solution-outline/test_foreign_deliverable_column.py -o addopts="" -q`
+→ **56 passed**, reproducing the figure. Three claims about executable behaviour were settled by running
+them rather than reading them, each an in-process import of the real modules with no file mutated
+anywhere in the tree: the read-intent population (C3), the absent-column clear (C9), and a
+`serialize_toon`/`parse_toon` round-trip of a deliverables payload.
+
+**Outcome.** Of the findings the first pass recorded, all were reproduced except in the respects noted
+here. **Upheld unchanged:** C1 (no `--branch`), C2 (`unpushed` clears), C5 (two resolution bases), C6
+(the ordering comment), C7 (github-only registration), C8 (exit code on `blocked`), the D0 single-seam
+refutation (`_cmd_step.py:73`, present at `9c679c99^` too), the "PR not yet opened" absence, the four
+completeness findings (the three unupdated doc surfaces, the undocumented column, the unstamped sibling
+read verbs, the absent coverage-ratio consumer), the untested I/O seams, the still-owed API-Sheriff
+check, and the two test-count figures in the report. **Overstated, now downgraded:** C4 (the project-root guard was
+called "decorative" — it is a correlated proxy that does catch the co-located failure, and the real
+residue is that divergence is undetectable); "nothing enforces the gate" (prose invocation from a
+registered finalize-step document is how all eight scripts in that skill are dispatched, so the
+actionable residue is the missing archive-path test, not the dispatch shape); and the
+Canonical-invocations half of the doc gap (`ci_verify` and `derive_gate_bundles` are absent from that
+preamble too). **Nothing was refuted outright**; one claim was found to rest on a later standard than
+the run had (C3's `deliverable_write_set` post-dates the landing commit) and one on a deliberate later
+decision (`survey_scope` in the gate's field list, pinned by a test from #1295) — both now stated in C3.
+**Unverifiable, unchanged:** the reviewer-participation table and the cost figures, which have no
+in-repo substrate. **Citations repaired:** `_plan_parsing.deliverable_write_set` 455→456,
+`_resolve_repo_root` 120–140→123–144, `_resolve_landing_state` 155–166→147–164,
+`_foreign_paths_by_deliverable` 186–222→186–220, the `blocked`/`error` precedence 330–336→331–339, the
+phase-6 Scripts table 1813→1814, and the `archive-plan.md` operator-text anchor for the `unpushed`
+finding (`:49`, which is the `clear` bullet) → `:38` and `:50`. **Counts corrected:** the severity tally
+read "3 major, 6 minor" against a gap list that held four majors and eleven minors; it now reads 5 major
+/ 14 minor and is re-derived from `gaps.md` itself. The predicate-test count read "six" where the file
+holds seven.
+
+**Added by this pass** — four findings neither document named, all filed as gaps: C9, the false clear on
+an unclassified population (the one new finding whose direction is unsafe); C10, push state derived from
+remote-tracking refs nothing refreshes, against a docstring that calls empty output *proof*; C11,
+`unresolved[]` rows that are sometimes a declared file path and sometimes a repository root under one
+field comment; and C12, a subprocess with no `timeout` beside two with one, and a `TimeoutExpired` that
+escapes the documented TOON error contract. Two things were checked and found **not** to be defects, and
+are recorded as such rather than filed: the TOON boolean round-trip, and the plugin-doctor
+canonical-block rule, which `archive-plan.md`'s explicit inline call satisfies.
+
+**Verdict unchanged: verified-with-gaps.** The added false-clear path strengthens the case for the
+verdict without crossing into "not verified" — the deliverables did land and do function on the paths the
+tests cover.

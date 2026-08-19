@@ -20,10 +20,19 @@ without re-deriving the analysis.
   drops the bot from `stale_participation_bots[]`, so the barrier sees a clean `participated`.
   Reachable for the only currency-subject bot: `automatic-review/standards/pr-agent.md:80-83` declares
   two publish shapes, `issue_comment` (the Guide) and `inline` (`/improve` suggestions, one comment
-  each). CONFIRMED by code reading. No test covers it — the only two-comment case,
-  `test_a_fresh_comment_outranks_a_stale_one_through_the_subtraction`
+  each). No pre-filter narrows it: participation is derived from `raw_comments` before filtering and
+  `cmd_fetch_findings` fetches with `unresolved_only=False` (`github_pr.py:881`), so even an
+  already-resolved inline comment supplies the bypassing credit.
+  CONFIRMED **and reproduced end-to-end** against the shipped producer: driving the real
+  `cmd_fetch_findings` twice with two unchanged `pr-agent` evidence comments present at both fetches
+  and `head_sha` advanced between them returns `participated_bots = [{pr-agent, issue_comment}]` on
+  BOTH fetches, with `stale_participation_bots = []` on the second. No test covers it — the only
+  two-comment case, `test_a_fresh_comment_outranks_a_stale_one_through_the_subtraction`
   (`test/plan-marshall/workflow-integration-github/test_github_pr.py:2553`), introduces its second
   comment only on the second fetch, so it exercises a genuinely new comment.
+  The module docstring at `github_pr.py:779-782` compounds it by describing the ledger as recording
+  each credit "uniformly whether the comment was stored as a finding or dropped as noise" — true of the
+  storage axis, false of the per-comment axis.
 - **Impact:** A `/improve` inline suggestion posted at commit N credits participation at commit N+1
   with no re-review. This is the plan's own headline false positive, still live: the pre-merge barrier
   passes for a tree the required bot never saw.
@@ -32,9 +41,9 @@ without re-deriving the analysis.
   each comment whose `kind` is a declared publish shape, whether or not the bot is already credited on
   this fetch. Keep the participation verdict "credited if ANY of the bot's evidence comments passes",
   but ensure every evaluated comment is recorded so no comment can arrive at a later HEAD without a
-  history. Add a test: fetch at HEAD_A with two evidence comments of the same bot present, advance to
-  HEAD_B with both unchanged, assert `participated_bots == []` and the bot in
-  `stale_participation_bots[]`.
+  history. Correct the `github_pr.py:779-782` docstring in the same change. Add a test: fetch at HEAD_A
+  with two evidence comments of the same bot present, advance to HEAD_B with both unchanged, assert
+  `participated_bots == []` and the bot in `stale_participation_bots[]`.
 - **Done when:** With two unchanged evidence comments of a `participation_requires_update` bot present
   at both fetches, a HEAD advance resolves the bot to `participated_stale`, and the new test fails
   against the current code.
@@ -53,7 +62,12 @@ without re-deriving the analysis.
   presence of a declared publish shape, computed from `raw_comments` before any filtering
   (`github_pr.py:917-919`) — a comment posted at commit N is still present and still credits at N+1.
   `report-01.md` § D0 row S2 records this exactly ("no currency test runs at all for these bots …
-  currency-blind") and no deliverable disposes of it. CONFIRMED.
+  currency-blind") and no deliverable disposes of it. The contract does disclose the *scope* twice in
+  passing — `bot-participation-contract.md:478-479` ("today, only PR-Agent") and `:674` ("neither bot
+  declares `participation_requires_update`, so neither can reach `participated_stale`") — but both sit
+  in sections about something else and neither states the consequence, so the shipped defect is a
+  contradiction between the rule's stated reach and the code's rather than an undisclosed restriction.
+  CONFIRMED.
 - **Impact:** The plan's original false positive survives unchanged for any project whose
   `required_bots` includes coderabbit or sourcery. It is inert in this repository only because
   `.plan/marshal.json` sets `"required_bots": "pr-agent"` — an operator knob, not an invariant.
@@ -94,42 +108,58 @@ without re-deriving the analysis.
   residual assumption instead of calling it a definition.
 - **Suggested grouping:** workflow-integration-github / participation currency
 
-## G4 — Sweep the six prose sites that still describe the deleted two-arm predicate
+## G4 — Sweep the eight prose sites that still describe the deleted two-arm predicate or its abandoned two-source anchor
 
 - **Severity:** major
 - **Kind:** stale-doc
 - **Where:**
+  - `marketplace/bundles/plan-marshall/skills/workflow-integration-github/SKILL.md:129`
+  - `marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md:230-232`
   - `marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md:233`
   - `marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md:491-498`
   - `marketplace/bundles/plan-marshall/skills/automatic-review/SKILL.md:652`
   - `marketplace/bundles/plan-marshall/skills/automatic-review/standards/pr-agent.md:86`
   - `marketplace/bundles/plan-marshall/skills/automatic-review/standards/pr-agent.md:363`
   - `marketplace/bundles/plan-marshall/skills/automatic-review/scripts/bot_registry.py:486-487`
-  - Test prose repeating the two-source framing:
-    `test/plan-marshall/workflow-integration-github/test_pr_agent_contentless_guide_interaction.py:396-404,425`
+  - Test prose repeating the noise-sidecar framing:
+    `test/plan-marshall/workflow-integration-github/test_pr_agent_contentless_guide_interaction.py:38-45,396-404,423-426`
 - **Evidence:** Surviving text, each contradicted by `github_pr.py:600-708`:
+  - `workflow-integration-github/SKILL.md:129` — "for a bot declaring `participation_requires_update` —
+    the comment is **first-present or its `updated_at` has moved**". The deleted two-arm predicate,
+    restated verbatim in the canonical `fetch_findings` step body of the skill that OWNS `github_pr.py`
+    — the single most-read description of the behaviour, and the one an executing agent follows.
+  - `bot-participation-contract.md:230-232` — the SHA arm read as two sources: "the
+    `reviewed_commit_sha` stamped on the stored finding, or … the merge-candidate SHA the noise sidecar
+    recorded when the comment was **first observed**". The shipped ledger is one source, covers stored
+    and dropped comments alike, and is refreshed on every credit rather than frozen at first
+    observation.
   - `:233` — "it was **edited in place** (`updated_at` differs from `created_at`) since it was posted".
     The code compares against the **recorded** `updated_at` (`:707-708`); the `created_at` form is the
     permanent "was ever edited" flag the PR reviewer flagged and the same landing removed.
   - `:491-498` — "the `reviewed_commit_sha` stamped on the `pr-comment` finding … evaluates the currency
     rule against the **union** of the stored-finding SHAs and the recorded sidecar SHAs". There is no
     union; `github_pr.py:915` reads one ledger, and no findings-derived SHA source exists.
-  - `SKILL.md:652` — "only on first presence or observed `updated_at` movement", a verbatim restatement
-    of the deleted predicate, in a workflow body an executing agent reads.
+  - `automatic-review/SKILL.md:652` — "only on first presence or observed `updated_at` movement", a
+    verbatim restatement of the deleted predicate, in a workflow body an executing agent reads.
   - `pr-agent.md:86` / `:363` and `bot_registry.py:486-487` — the same "first presence OR updated_at
     movement" formulation, one of them inside the machine-readable registry record and one in
     production-code docstring prose.
-  CONFIRMED by `grep -rni "first presence|first-presence|updated_at movement|updated_at.*created_at"`
-  over `marketplace/bundles/plan-marshall/skills/`, excluding the `wait-for-comments` predicate (site
-  S8), which is legitimately timestamp-keyed.
+  CONFIRMED by **two** grep passes over `marketplace/bundles/plan-marshall/skills/` and `test/` —
+  `first presence|first-presence|updated_at movement|updated_at.*created_at` for the arm-wording
+  family, and `first.present|updated_at (has )?mov|union of the stored|sidecar` for the rest. One pass
+  is not enough: the first pattern misses `workflow-integration-github/SKILL.md:129` (which writes
+  "first-present … has moved") and both two-source-anchor paragraphs. The `wait-for-comments`
+  completion predicate (site S8) and the `github_re_review` matchers (S3/S4) are excluded from both —
+  they are legitimately timestamp-keyed and are not the currency test.
 - **Impact:** An agent or maintainer reading any of these implements or reasons against a predicate
-  that no longer exists. Two of them were written by this landing and invalidated by its own late fix,
-  so the contract now describes a design the code deliberately abandoned.
-- **Task:** Rewrite all six (plus the test prose) to the shipped three-arm predicate: SHA currency
+  that no longer exists. Three of them were written by this landing and invalidated by its own late
+  fix, so the contract now describes a design the code deliberately abandoned — and one of the
+  survivors sits in the owning skill's own workflow body.
+- **Task:** Rewrite all eight (plus the test prose) to the shipped three-arm predicate: SHA currency
   against the ledger's recorded `reviewed_commit_sha`; first observation, guarded on a resolvable
   merge-candidate SHA; fresh edit measured against the ledger's recorded `updated_at`. Delete the
-  union-of-two-sources paragraph in favour of the single currency ledger.
-- **Done when:** The search above returns no hit that describes the currency test, and each rewritten
+  union-of-two-sources paragraphs in favour of the single currency ledger.
+- **Done when:** Both searches above return no hit that describes the currency test, and each rewritten
   site names the ledger as the sole source.
 - **Suggested grouping:** automatic-review / participation contract
 
@@ -176,9 +206,10 @@ without re-deriving the analysis.
   the PR"; `SKILL.md:729` says "`matched: true` — that bot published a fresh review for this HEAD".
   `grep -c head_sha_verified marketplace/bundles/plan-marshall/skills/automatic-review/SKILL.md`
   returns **0**. `SKILL.md:679` does not interpolate `--declined-bots`, and
-  `test/plan-marshall/automatic-review/test_bot_participation_contract.py:775` records the omission as
-  intentional: "``--declined-bots`` is documented in the canonical block but not interpolated at the
-  FIND-step site". `report-01.md` § Residue names trigger B only; the `not_triggered`-remediation
+  `test/plan-marshall/automatic-review/test_bot_participation_contract.py:806-807` — the header comment
+  on the `_CONFIRMED_SITES` roster at `:817` — records the omission as intentional: "the participation
+  guard passes six (``--declined-bots`` is documented in the canonical block but not interpolated at
+  the FIND-step site)". `report-01.md` § Residue names trigger B only; the `not_triggered`-remediation
   consumer with the identical defect is not named anywhere. CONFIRMED.
 - **Impact:** A decline observed at the FIND-step loop-back or during `not_triggered` remediation is
   credited as a completed re-review, and never reaches the quorum as `declined`. D3 closes half of the
