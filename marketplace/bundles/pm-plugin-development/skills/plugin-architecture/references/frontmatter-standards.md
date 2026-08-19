@@ -436,7 +436,7 @@ targets: [claude]
 - **Format**: a YAML list, inline (`targets: [claude]`) or block form. Values are build-target registry names. The live set is never enumerated in prose because it would go stale; ask the tooling for it instead:
 
   ```bash
-  python3 marketplace/targets/generate.py --help
+  uv run python marketplace/targets/generate.py --help
   ```
 
   The `--target` choices it prints are the registry as it stands at the moment you run it, derived from `TARGET_REGISTRY` in `marketplace/targets/__init__.py`, plus the literal `all` — a run-every-target convenience, not a target name and not a valid `targets:` value.
@@ -447,16 +447,16 @@ targets: [claude]
 | Declaration | Outcome |
 |---|---|
 | A name absent from `TARGET_REGISTRY` (a typo) | Build fails, naming the component and the unknown value |
-| `targets: []` | Build fails — a component shipped nowhere is an authoring error, not an intent |
+| `targets: []`, or `targets:` with nothing after it | Build fails — a component shipped nowhere is an authoring error, not an intent. Omit the field to say "everywhere" |
 | Only targets that emit no component tree | Build fails — such a declaration also ships the component nowhere |
-| A value that is not on the key's own line alone | Build fails — the build reads a value from the key's own physical line, so accepting one would silently narrow the scope to whatever fitted there |
-| An indented frontmatter block containing a line shallower than its own keys | Build fails — that is either a multi-line value's continuation or malformed YAML, and the build cannot tell which. Unindent the block so its keys start at column 1 |
+| A value that is not a list of names — a mapping, a number, a boolean | Build fails, naming the shape you wrote. Coercing it into a name and then rejecting the coercion would report a target nobody wrote |
+| Frontmatter that is not well-formed YAML **and mentions `targets:`** | Build fails, quoting YAML's own complaint. Unparseable frontmatter that never mentions the field is not this check's business — target scoping is not the repository's YAML linter |
 
-The value row is **one** rule, and the build reports it under whichever of three YAML constructs you wrote: a plain scalar continued across lines, a quoted scalar continued across lines, or a block scalar (`>` / `|`, whose value is the indented lines beneath it). A YAML reader parses all three perfectly well — the build declines them because it does not read them, so being told you wrote the wrong one sends you looking for a defect that is not in your file. Write the list inline or as a `- ` block and none of them arises.
+**Write it however YAML lets you.** The build reads frontmatter with `yaml.safe_load`, so any spelling YAML accepts is a spelling this field accepts: inline flow (`[a, b]`) or spanning lines, a `- ` block, a bare scalar, a quoted scalar, a block scalar (`>` / `|`), a value opening on the line below the key, a comment between the key and its list. There is no list of blessed shapes to learn, and a duplicate key resolves the way YAML resolves it — the last one wins.
 
-A flow sequence is the exception: it is one value however many lines it spans, whether it opens on the key line (`targets: [claude,` continued below) or on the line beneath it (`targets:` then an indented `[claude, opencode]`). A `- ` block spans lines too, and so does a `targets: # note` whose list follows underneath.
+One convenience is the build's own rather than YAML's: `targets: a, b` is a single string to YAML, and the build splits it on commas. That is why a registered target name may contain neither a comma nor whitespace.
 
-The plugin-doctor `targets-scope-invalid` rule reports these at authoring time with two gaps, both of which the build still catches. The ships-nowhere case needs each target's `emits_bundle_tree` capability, so it is checked by the build alone. And the unknown-name check needs the `marketplace/targets/` tree to derive the registered set from — a meta-project tree that a consumer install does not have — so in a consumer project that check is skipped rather than answered from a transcribed list. The empty-declaration and multi-line checks need no registry and always run.
+The plugin-doctor `targets-scope-invalid` rule surfaces what it can at authoring time, and it is deliberately **an approximation rather than a mirror**: a doctor script is stdlib-only, because a consumer project installs the bundles without this repository's dependencies, so it cannot parse YAML. It reads the shapes it is certain of and stays silent on the rest — a block scalar, a value spanning lines, an indented frontmatter block — leaving those to the build. What it promises is that anything it *does* report is a real build failure, never that it reports every one. Two further gaps are structural: the ships-nowhere case needs each target's `emits_bundle_tree` capability, and the unknown-name check needs the `marketplace/targets/` tree to derive the registry from. The empty-declaration check needs neither and always runs.
 
 ### Admission test — when a target-scoped component is the right answer
 

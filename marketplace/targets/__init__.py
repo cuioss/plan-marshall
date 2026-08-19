@@ -34,17 +34,17 @@ def register_target(name: str, target_cls: type[TargetBase]) -> None:
     accidents do not silently replace a target.
 
     Raises:
-        ValueError: ``name`` is empty or contains whitespace.
+        ValueError: ``name`` is empty, or contains a comma or whitespace.
         RuntimeError: ``name`` is already registered to a different class.
     """
-    if not name or any(ch.isspace() for ch in name):
+    if not name or ',' in name or any(ch.isspace() for ch in name):
         raise ValueError(
-            f'Target name {name!r} must be non-empty and contain no whitespace. '
-            'Component target scoping relies on this: when it folds a flow sequence '
-            'across lines it joins the pieces with a SPACE, so a token drawn from '
-            'more than one source line always carries one — and can therefore never '
-            'match a registered name. A name containing a space would break that '
-            'argument and let a mis-parse produce a scope no author wrote.'
+            f'Target name {name!r} must be non-empty and contain neither a comma nor '
+            'whitespace. The comma is load-bearing: component target scoping accepts '
+            '`targets: a, b`, which YAML reads as one string, and splits it on commas — '
+            'so a name containing one could never be matched by that spelling while '
+            'still matching in a list. Whitespace is a naming convention, since a '
+            'registry name is also a `--target` command-line value.'
         )
     existing = TARGET_REGISTRY.get(name)
     if existing is target_cls:

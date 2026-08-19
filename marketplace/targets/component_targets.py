@@ -46,33 +46,35 @@ moment it is read and an invalid one aborts the build
   derives a single reviewer configuration from skill rules, so it has no
   component to filter) — such a declaration passes a registry-membership
   check while still shipping the component nowhere;
-* a value that is not on the key's own line alone — this parser reads a
-  value from the key's own physical line, so accepting one would silently
-  narrow the scope to whatever fitted there;
-* a frontmatter block whose indentation a line scan cannot read — an
-  indented block containing a line shallower than its own keys. Guessing
-  here failed OPEN three separate times, shipping the component everywhere
-  with its declaration unread and letting an invalid declaration past the
-  build unreported, so the ambiguity is refused instead.
+* a value that is not a list of names — a mapping, a number, a boolean.
+  Coercing one into a name and then rejecting it as unregistered would name
+  a target nobody wrote;
+* frontmatter that is not well-formed YAML **and mentions the field**.
+  Guessing at unparseable frontmatter is how a declaration goes unread, and
+  the component then ships everywhere carrying an invalid declaration nobody
+  was told about. Unparseable frontmatter that never mentions ``targets:``
+  is somebody else's defect: this module has no declaration to misread
+  there, and turning target scoping into the repository's YAML linter is a
+  job the plan did not give it and a failure surface it should not widen.
 
-The value rejection is ONE condition, tested at two sites that cannot both
-apply: an INLINE value that is not a flow sequence and is followed by an
-indented line, or a key with no inline value whose indented continuation is
-neither a ``- `` item nor a flow sequence. (A ``- `` block IS followed by an
-indented line and is accepted, so the condition is about the value's shape,
-not about indentation alone.) Three names appear in the message because
-three different YAML constructs produce it — a plain scalar continued across
-lines, a quoted scalar continued across lines, and a block scalar
-(``>``/``|``) — and naming the wrong one sends the author looking for a
-defect that is not in their file. Which name is chosen is a DIAGNOSIS made
-after the decision to reject; misclassifying cannot change whether the build
-fails, only what the failure calls the construct.
+Reading is delegated to ``yaml.safe_load`` rather than done here. Twelve
+verification rounds on a hand-rolled line scanner produced sixteen
+behavioural defects, every one of them a divergence from YAML, and three of
+them the SAME fail-open in the same function answered by three successive
+indentation rules. What this module still owns is the fence extraction —
+markdown frontmatter is not a YAML document stream — and the SHAPE rules
+above, which are policy rather than syntax.
 
-Adding a rejection means adding it here **and** in the doctor rule that
-mirrors this validation, its rule-catalog and rule-provenance rows, and the
-authoring standards' validation table. A behaviour change has landed in the
-code alone before; every one of those registers then stated a count that was
-one short.
+One convenience is this module's own and not YAML's: ``targets: a, b`` is a
+single string to YAML, and it is split on commas here. That is why a
+registered target name may contain neither whitespace nor a comma.
+
+Adding a rejection means adding it here **and** in the authoring standards'
+validation table, and considering whether the doctor rule can see it. That
+rule is an APPROXIMATION rather than a mirror — it is stdlib-only, so it
+cannot parse YAML, and it stays silent on every shape it is not certain of.
+Its promise is that anything it reports is a real build failure, never that
+it reports every one; a soundness test over a shared corpus holds it to that.
 
 The valid names are derived from ``TARGET_REGISTRY`` and from each
 target's own :attr:`~marketplace.targets.base.TargetBase.emits_bundle_tree`
@@ -116,23 +118,10 @@ import re
 from collections.abc import Iterator
 from pathlib import Path
 
+import yaml
+
 #: Frontmatter field a component uses to declare the targets it ships to.
 TARGET_SCOPE_FIELD = 'targets'
-
-#: Approximates "a new key starts here" — an unquoted, letter-or-underscore
-#: initial identifier at column 0 followed by a colon. It bounds the fold of
-#: an unclosed flow sequence.
-#:
-#: Requiring an identifier before the colon is what distinguishes this from
-#: the looser ``^[^\s#][^:]*:`` it replaced, which matched any non-indented,
-#: non-comment line containing a colon anywhere. That looser form broke two
-#: VALID declarations: a continuation line carrying a trailing comment with a
-#: URL in it, and one whose value is a quoted string containing a colon. Both
-#: are ordinary YAML, and both were then rejected naming a target nobody
-#: wrote — the defect the fold exists to prevent. This form is still only an
-#: approximation of a YAML key; see :func:`_join_flow_sequence` for what it
-#: misses and why that is safe here.
-_TOP_LEVEL_KEY_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_.-]*\s*:')
 
 #: Bundle sub-directories holding single-file components, keyed to nothing
 #: else: the file itself is both the declaration site and the emission unit.
@@ -145,82 +134,17 @@ _SKILLS_DIR = 'skills'
 #: Manifest filename of a directory-shaped component.
 _SKILL_MANIFEST = 'SKILL.md'
 
-
-#: A whole YAML block-scalar header: the ``>`` or ``|`` indicator, plus an
-#: optional indentation indicator and an optional chomping indicator in
-#: either order. A value of this shape is not a plain scalar at all — the
-#: indented lines beneath it are the value's content — so calling it "a
-#: plain scalar continued across lines" is a wrong diagnosis on a
-#: declaration a YAML reader parses perfectly well.
+#: A frontmatter fence line: three hyphens, then only spaces or tabs.
 #:
-#: The first version of this matched a fixed set of the six chomping
-#: spellings and so misdiagnosed every header carrying an indentation
-#: indicator (``|2``, ``>3-``, ``|-2``). The grammar admits 96 headers — two
-#: indicators × {bare, indent 1-9, chomp, and both orders of the two} — so
-#: that set covered 6 and misdiagnosed **90**, under the very message it was
-#: added to remove. This form matches all 96, and over-matches only the ten
-#: ``0``-bearing spellings, which YAML rejects as headers anyway.
-_BLOCK_SCALAR_HEADER_RE = re.compile(r'^[>|](?:[0-9][-+]?|[-+][0-9]?)?$')
-
-#: A frontmatter fence line: exactly three hyphens, then only spaces or
-#: tabs. Trailing whitespace on a fence is invisible in an editor, and the
-#: tree's own canonical frontmatter reader (``_dep_detection`` in the
-#: ``tools-marketplace-inventory`` skill, which the plugin-doctor imports)
-#: accepts it — so refusing it here made the two parsers
-#: disagree about whether such a file has frontmatter at all, and a
-#: ``targets:`` declaration beneath a space-suffixed fence went unread.
-#:
-#: Parity is restored for trailing whitespace and for nothing else. Two
-#: disagreements remain: that reader matches ``\n---`` as a PREFIX, so it also
-#: closes on ``----`` where this one does not; and it does not strip a UTF-8
-#: BOM, so it reports no frontmatter for a BOM'd file this one reads.
-#: Adopting the prefix match would re-open the defect the whole-line match
-#: exists to prevent: a value containing three hyphens would truncate the
-#: block and hide every field after it.
+#: The fences are found by pattern rather than handed to the YAML parser,
+#: because a markdown frontmatter block is not a YAML document stream: the
+#: body beneath the closing fence is markdown, and feeding the whole file to
+#: ``safe_load_all`` would parse it as a second document. Each fence is
+#: matched as a whole LINE, so a value containing three hyphens does not
+#: truncate the block and hide the fields after it. Trailing spaces or tabs
+#: are accepted because they are invisible in an editor.
 _OPEN_FENCE_RE = re.compile(r'^---[ \t]*\n')
 _CLOSE_FENCE_RE = re.compile(r'\n---[ \t]*(?:\n|$)')
-
-#: The three YAML constructs that can produce a value spanning more than one
-#: line. Naming them is a DIAGNOSIS, never a decision — see
-#: :func:`_multiline_shape`.
-_SHAPE_BLOCK_SCALAR = 'block-scalar'
-_SHAPE_QUOTED_SCALAR = 'quoted-scalar'
-_SHAPE_PLAIN_SCALAR = 'plain-scalar'
-
-#: How each shape is named in the build failure. The remedy is the same for
-#: all three, so only the noun differs — but a YAML reader parses each of
-#: them perfectly well, and an author told they wrote the wrong construct
-#: goes looking for a defect that is not in their file.
-_MULTILINE_NOUN = {
-    _SHAPE_BLOCK_SCALAR: 'a YAML block scalar (`>` or `|`), whose value is the indented '
-                         'lines beneath it',
-    _SHAPE_QUOTED_SCALAR: 'a quoted scalar continued across lines',
-    _SHAPE_PLAIN_SCALAR: 'a plain scalar continued across lines',
-}
-
-
-class _AmbiguousIndent(Exception):
-    """Internal marker: the block's indentation cannot be read by a line scan.
-
-    Raised by :func:`_dedent_block` when a structural line sits shallower than
-    the block's base indent. Turned into a :class:`TargetScopeError` by
-    :func:`read_target_scope`, which knows the component path.
-    """
-
-
-class _MultilineValue(Exception):
-    """Internal marker: the value spans more than one physical line.
-
-    Carries the name of the construct it is written in (one of the
-    ``_SHAPE_*`` constants) so the diagnostic names the shape the author
-    actually wrote. Raised by the parser, which has no component path, and
-    turned into a :class:`TargetScopeError` by :func:`read_target_scope`,
-    which does.
-    """
-
-    def __init__(self, shape: str) -> None:
-        super().__init__(shape)
-        self.shape = shape
 
 
 class TargetScopeError(RuntimeError):
@@ -279,11 +203,6 @@ def _frontmatter_block(text: str) -> str | None:
     a file carrying one would otherwise look like it had no frontmatter at
     all — which reads as "declares no scope" and silently ships the component
     everywhere.
-
-    Each fence is matched as a whole LINE rather than as a bare ``---``
-    substring, so a value that itself contains three hyphens does not
-    truncate the block and hide the fields after it. Trailing spaces or tabs
-    on either fence are accepted \u2014 see :data:`_OPEN_FENCE_RE`.
     """
     text = text.lstrip('\ufeff')
     open_fence = _OPEN_FENCE_RE.match(text)
@@ -292,323 +211,105 @@ def _frontmatter_block(text: str) -> str | None:
     start = open_fence.end()
     # From start - 1, so the newline ending the opening fence can also serve
     # as the newline opening the closing one. What that changes is a block
-    # closed immediately (`---` / `---` / more text): the block is then EMPTY,
-    # and any keys below the second fence are body, not frontmatter. Searching
-    # from `start` skips that fence, and where a LATER fence closes the block
-    # the body's lines are then read as fields. With no later fence the file
-    # reads as having no frontmatter at all.
+    # closed immediately (`---` / `---` / more text): the block is EMPTY, and
+    # where a LATER fence closes it the body would otherwise be read as fields.
     close_fence = _CLOSE_FENCE_RE.search(text, start - 1)
     if close_fence is None:
         return None
     return text[start:close_fence.start()]
 
 
-def _strip_comment(value: str) -> str:
-    """Drop a trailing YAML comment from a scalar or flow-sequence value.
-
-    ``targets: [claude]  # note`` and ``targets: claude  # note`` both carry a
-    comment the value parser would otherwise fold into a token, producing a
-    diagnostic that names ``[claude] # note`` as the unknown target. A ``#``
-    is a comment only when it opens a token, which is what YAML requires.
-
-    That keeps an UNQUOTED ``#`` intact (``[cla#ude]``). It does not rescue a
-    quoted one: ``["a #b"]`` is the single name ``a #b`` to YAML and this
-    splits it, because nothing here tracks quote state. Both readings reject,
-    so the cost is the diagnostic's wording, not the emitted tree.
-    """
-    head, sep, _tail = value.partition('#')
-    if not sep:
-        return value
-    if head and not head[-1].isspace():
-        return value
-    return head.rstrip()
+#: Returned when the ``targets:`` key is not present at all. A distinct
+#: object from ``None``, because ``targets:`` with nothing after it IS
+#: present and its value IS ``None`` — YAML's null. Conflating the two turns
+#: an empty declaration, which must fail the build, into "ship everywhere".
+_ABSENT = object()
 
 
-def _join_flow_sequence(value: str, rest: list[str]) -> str:
-    """Return ``value``, extended across the lines a flow sequence spans.
+def _declared_value(text: str) -> object:
+    """Return the raw ``targets:`` value declared by ``text``, or :data:`_ABSENT`.
 
-    ``targets: [claude,`` continued on the next line is one value, not a
-    truncated one. Reading only the first physical line yields the token
-    ``[claude`` and a diagnostic naming a target nobody wrote, so the
-    continuation lines are folded in until the closing bracket.
+    :data:`_ABSENT` covers "no frontmatter", "frontmatter that is not a
+    mapping", and "no such key" — all of which mean ship everywhere. The
+    value is otherwise whatever YAML says it is, and :func:`_tokens` decides
+    which shapes are a declaration.
 
-    A sequence that never closes is malformed YAML, and folding in the rest
-    of the block would make the diagnostic name the following FIELDS as
-    targets — the same "names a target nobody wrote" defect one shape over.
-    So the fold stops at the first non-indented line matching
-    :data:`_TOP_LEVEL_KEY_RE`.
-
-    That pattern is a HEURISTIC for "a new key starts here", not a YAML key
-    parser, and it is wrong in both directions: a digit-initial or quoted key
-    (``2fa: no``, ``"q": v``) does not match it and is folded in, while a
-    flow item whose first token ends in a colon (a bare ``https://…`` at
-    column 0) does match it and ends the fold early.
-
-    Both misreads are safe HERE, and the reason is specific rather than
-    hopeful: in the bracketed form every misread leaves the joined value
-    holding a token no registered name matches — an absorbed ``2fa: no``, or
-    a truncated ``[claude`` — so :func:`_validate` rejects it and the build
-    stops. A misread can widen or truncate the text that gets REJECTED; it
-    cannot produce a scope the author did not write, and the reason is
-    structural rather than statistical:
-
-    * a fold that runs too far joins the surplus line in with a **space**
-      (``' '.join``), and no registered target name contains a space, so any
-      token drawn from more than one source line cannot match one;
-    * a fold that stops too early leaves the value opening ``[`` with no
-      closing ``]``, which :func:`_split_inline` therefore does not unwrap,
-      so the first token keeps its bracket.
-
-    Both land outside the registry, so :func:`_validate` rejects. The space
-    is the load-bearing half: an earlier version of this paragraph claimed
-    the surplus always carries a colon, which is false — absorbing a plain
-    continuation line yields ``opencode opencode``, no colon in sight. It is
-    still rejected, but for the reason stated here rather than that one.
-
-    This is a property of THIS fold only — a duplicate top-level key
-    resolves to the first declaration here and to the last in YAML, and both
-    spellings may be bracketed.
-    """
-    head = _strip_comment(value)
-    if not head.startswith('[') or ']' in head:
-        return head
-    parts = [head]
-    for line in rest:
-        if _TOP_LEVEL_KEY_RE.match(line):
-            break
-        segment = _strip_comment(line.strip())
-        if segment:
-            parts.append(segment)
-        if ']' in segment:
-            break
-    return ' '.join(parts)
-
-
-def _split_inline(value: str) -> list[str]:
-    """Split an inline scalar or flow-sequence value into tokens.
-
-    Accepts both ``[a, b]`` and the bare ``a, b`` spelling. ``[]`` yields the
-    empty list, which the validator rejects — an empty declaration is an
-    authoring error rather than a silent no-op.
-    """
-    inner = _strip_comment(value)
-    if inner.startswith('[') and inner.endswith(']'):
-        inner = inner[1:-1]
-    return [token.strip().strip('"').strip("'") for token in inner.split(',') if token.strip()]
-
-
-def _collect_block_items(lines: list[str]) -> list[str]:
-    """Collect a YAML block sequence's items, stopping at the first non-item.
-
-    A blank line and a whole-line ``#`` comment are skipped rather than
-    ending the sequence: ending there would read a commented list as an
-    EMPTY one and reject a component that declares its targets perfectly
-    well, under a message describing a file that does not exist.
-    """
-    items: list[str] = []
-    for line in lines:
-        stripped = line.strip()
-        if not stripped or stripped.startswith('#'):
-            continue
-        if not stripped.startswith('-'):
-            break
-        item = _strip_comment(stripped[1:].strip()).strip().strip('"').strip("'")
-        if item:
-            items.append(item)
-    return items
-
-
-def _unquote_key(key: str) -> str:
-    """Return ``key`` with a MATCHED pair of surrounding quotes removed.
-
-    ``"targets": [claude]`` is the same declaration as ``targets: [claude]``
-    to any YAML reader, and not recognising it fails OPEN — the component
-    ships everywhere with its declaration unread.
-
-    The pair must MATCH. ``str.strip`` takes a character set rather than a
-    prefix, so stripping quotes with it also turns ``targets"`` into
-    ``targets`` — and that key is NOT ``targets`` to YAML, so a component
-    that declared no scope would be silently narrowed to someone else's
-    list. That is the same defect in the opposite direction, and the one the
-    module docstring calls prohibited, so the quotes are removed only when
-    they genuinely surround the key.
-    """
-    key = key.strip()
-    if len(key) >= 2 and key[0] == key[-1] and key[0] in {'"', "'"}:
-        return key[1:-1]
-    return key
-
-
-def _first_meaningful(lines: list[str]) -> tuple[int, str]:
-    """Return ``(index, line)`` of the first line that carries structure.
-
-    Blank lines and whole-line ``#`` comments carry none: YAML ignores both
-    when deciding what a block contains and how deeply it is indented.
-    ``(-1, '')`` when there is no such line.
-    """
-    for index, line in enumerate(lines):
-        stripped = line.strip()
-        if stripped and not stripped.startswith('#'):
-            return index, line
-    return -1, ''
-
-
-def _dedent_block(block: str) -> list[str]:
-    """Split ``block`` into lines, dedented by the indent its keys sit at.
-
-    Top-level is relative to the BLOCK, not to column zero: a frontmatter
-    block whose every key is indented by the same amount has all of them at
-    top level, and YAML reads it that way. Scanning for column-zero keys
-    instead reported "no declaration" — the component then shipped to every
-    target with its declaration unread, and an INVALID declaration passed the
-    build unreported.
-
-    The base indent is the FIRST structural line's, because that is what sets
-    a YAML block mapping's indentation. Two earlier rules were wrong here and
-    each re-opened the same hole one shape over: ``textwrap.dedent`` counts
-    comment lines, so one ``# note`` at column zero pinned the prefix at zero;
-    and a ``min()`` over structural lines counts the CONTINUATION of a
-    multi-line value, so ``description: "one`` / ``two"`` did the same.
-
-    Ambiguity is refused rather than guessed. Below an indented base, a
-    shallower structural line is either a continuation of a multi-line value
-    or malformed YAML, and a line scanner cannot tell which — so it raises
-    :class:`_AmbiguousIndent` instead of silently picking one. That is a
-    deliberate move from failing OPEN to failing CLOSED: the previous three
-    rules all answered this shape by shipping the component everywhere with
-    its declaration unread. A block whose base indent is zero — every
-    component in this marketplace — cannot reach the guard at all.
-    """
-    lines = block.split('\n')
-    structural = [
-        line for line in lines if line.strip() and not line.strip().startswith('#')
-    ]
-    if not structural:
-        return lines
-    base = len(structural[0]) - len(structural[0].lstrip())
-    if not base:
-        return lines
-    if any(len(line) - len(line.lstrip()) < base for line in structural):
-        raise _AmbiguousIndent
-    return [line[base:] if line[:base].isspace() else line.lstrip() for line in lines]
-
-
-def _has_continuation(rest: list[str]) -> bool:
-    """Whether the next meaningful line continues the value rather than ending it.
-
-    An indented line after a plain-scalar value is YAML's multi-line plain
-    scalar: ``targets: claude,`` / ``  opencode`` is the single value
-    ``claude, opencode``. Reading only the first physical line yields
-    ``claude`` alone — the declared scope SILENTLY NARROWED by one target,
-    which is the one direction this module must never fail in. Detecting it
-    is what lets the caller reject rather than guess.
-    """
-    return _first_meaningful(rest)[1][:1].isspace()
-
-
-def _multiline_shape(value: str) -> str:
-    """Name the YAML construct a rejected multi-line value is written in.
-
-    Diagnosis only. The caller has ALREADY decided to reject; this picks the
-    noun the message uses, so a misclassification can change what the failure
-    calls the construct but never whether the build fails. That separation is
-    deliberate: every earlier version tangled the shape test into the
-    rejection condition, and each one then changed the verdict on some valid
-    input while trying to improve a sentence.
-
-    ``value`` is the raw post-``strip`` value, not the comment-stripped one.
-    An earlier note claimed stripping would HIDE a quote; an exhaustive probe
-    over every string of length 1-5 in the relevant alphabet found no such
-    input. The 54 that differ go the other way — ``" #"`` is a closed quoted
-    scalar raw, and an open one once the comment stripper cuts it to ``"`` —
-    so the raw value is what keeps the noun off a construct the author did
-    not write.
-
-    The quoted test asks only whether the opening quote recurs, so a value
-    carrying an ESCAPED quote reads as terminated and falls through to
-    ``plain-scalar``. Both spellings of that are valid YAML rather than
-    malformed input, so the noun is simply wrong on them; they are rejected
-    either way, and getting it right would need a second quote parser, which
-    is the cure this module keeps trying not to re-invent.
-    """
-    if _BLOCK_SCALAR_HEADER_RE.match(_strip_comment(value)):
-        return _SHAPE_BLOCK_SCALAR
-    if value[:1] in {'"', "'"} and value.count(value[0]) < 2:
-        return _SHAPE_QUOTED_SCALAR
-    return _SHAPE_PLAIN_SCALAR
-
-
-def _declared_tokens(text: str) -> list[str] | None:
-    """Return the raw ``targets:`` tokens declared by ``text``, or ``None``.
-
-    ``None`` means the field is absent (ship everywhere). An empty list means
-    the field is present but names nothing, which the validator rejects.
-
-    Only a TOP-LEVEL key counts — see :func:`_dedent_block` for what
-    "top-level" means here. A ``targets:`` indented BEYOND its siblings still
-    belongs to a nested mapping and is still a different field.
-
-    The inline value is tested AFTER its comment is stripped. ``targets: # w``
-    has no inline value to YAML, so the list that follows is the value;
-    testing the raw text instead treated the comment as the value and
-    reported the declaration empty.
+    Raises:
+        yaml.YAMLError: The frontmatter block is not well-formed YAML.
     """
     block = _frontmatter_block(text)
     if block is None:
-        return None
-    lines = _dedent_block(block)
-    for index, line in enumerate(lines):
-        if line[:1].isspace():
-            continue
-        key, separator, value = line.partition(':')
-        if not separator or _unquote_key(key) != TARGET_SCOPE_FIELD:
-            continue
-        head = _strip_comment(value.strip())
-        rest = lines[index + 1:]
-        if head:
-            # ONE rejection, three diagnoses. A flow sequence spans lines
-            # legitimately and is folded; anything else that is continued is
-            # a value this parser reads only the first line of.
-            if not head.startswith('[') and _has_continuation(rest):
-                raise _MultilineValue(_multiline_shape(value.strip()))
-            return _split_inline(_join_flow_sequence(head, rest))
-        return _continued_value(rest)
-    return None
+        return _ABSENT
+    document = yaml.safe_load(block)
+    if not isinstance(document, dict):
+        return _ABSENT
+    return document.get(TARGET_SCOPE_FIELD, _ABSENT)
 
 
-def _continued_value(rest: list[str]) -> list[str]:
-    """Read the value of a ``targets:`` key that carries none on its own line.
+#: A ``targets`` key, however it is spelled, anywhere in a frontmatter block.
+#: Used only to decide whether UNPARSEABLE frontmatter is this module's
+#: business — never to read a value, which is what a scanner like this got
+#: wrong sixteen times.
+_MENTIONS_FIELD_RE = re.compile(rf'^\s*[\'"]?{TARGET_SCOPE_FIELD}[\'"]?\s*:', re.MULTILINE)
 
-    Three shapes are legal and one is not:
 
-    * a ``- `` block sequence — the ordinary block spelling;
-    * a flow sequence opening on the next line (``targets:`` / ``  [a, b]``),
-      which is one value spanning as many lines as it needs;
-    * nothing at all, or a non-indented next line — an EMPTY declaration,
-      which the validator rejects under its own name;
-    * an indented line that is none of the above — a plain scalar whose
-      content begins on the next line (``targets:`` / ``  claude`` is the
-      value ``claude`` to YAML). Reporting that as "declares an empty list"
-      describes a file the author did not write.
+def _mentions_the_field(text: str) -> bool:
+    """Whether unparseable frontmatter appears to declare ``targets:`` at all.
+
+    Deliberately over-inclusive: it matches at any indentation and inside a
+    quoted string, so it can only ever cause a malformed file to be REFUSED
+    rather than let one through. What it cannot do is hide a declaration,
+    because hiding one would need the block to omit the key entirely — and a
+    block that omits the key declares no scope.
     """
-    items = _collect_block_items(rest)
-    if items:
-        return items
-    index, line = _first_meaningful(rest)
-    if not line[:1].isspace():
-        return items
-    head = _strip_comment(line.strip())
-    if head.startswith('['):
-        return _split_inline(_join_flow_sequence(head, rest[index + 1:]))
-    # The shape is diagnosed from the line, not assumed. Hard-coding
-    # "plain scalar" here reinstated the very misdiagnosis three earlier
-    # rounds were spent removing, at a site the fix for them created.
-    raise _MultilineValue(_multiline_shape(line.strip()))
+    block = _frontmatter_block(text)
+    return block is not None and _MENTIONS_FIELD_RE.search(block) is not None
 
 
-# ---------------------------------------------------------------------------
-# Validation and the public predicate
-# ---------------------------------------------------------------------------
+def _tokens(value: object) -> list[str] | None:
+    """Return the target names ``value`` declares, or ``None`` for "absent".
+
+    YAML has already resolved the syntax, so what is left is the value's
+    SHAPE, and exactly three shapes are a declaration:
+
+    * a sequence — the canonical form, inline (``[a, b]``) or block (``- a``);
+    * a string — ``targets: claude``, and by a deliberate convenience
+      ``targets: claude, opencode``, which YAML reads as the single string
+      ``"claude, opencode"``. Splitting it is this module's own rule, not
+      YAML's, and it is why a registered target name may not contain a comma;
+    * ``None`` — ``targets:`` with nothing after it. YAML calls that null;
+      here it is an empty declaration, and the validator rejects it under its
+      own name. Absence is :data:`_ABSENT`, a different object entirely.
+
+    Anything else — a mapping, a number, a boolean, a date — is not a list of
+    names in any reading, so it is reported as such rather than coerced into
+    one and then rejected as an unknown target.
+
+    Returns:
+        The declared names, or ``None`` when the field is absent. Note that an
+        EMPTY list is a declaration (and an invalid one), which is why absence
+        is ``None`` and not ``[]``.
+
+    Raises:
+        _NotAList: The value is present but is not a sequence or a string.
+    """
+    if value is _ABSENT:
+        return None
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [token.strip() for token in value.split(',') if token.strip()]
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    raise _NotAList(value)
+
+
+class _NotAList(Exception):
+    """Internal marker: ``targets:`` holds a value that is not a list of names.
+
+    Raised by :func:`_tokens`, which has no component path, and turned into a
+    :class:`TargetScopeError` by :func:`read_target_scope`, which does.
+    """
 
 
 def _named(names: frozenset[str] | list[str]) -> str:
@@ -664,24 +365,23 @@ def read_target_scope(path: Path) -> frozenset[str] | None:
     except (OSError, UnicodeDecodeError):
         return None
     try:
-        tokens = _declared_tokens(text)
-    except _AmbiguousIndent:
+        value = _declared_value(text)
+    except yaml.YAMLError as error:
+        if not _mentions_the_field(text):
+            return None
         raise TargetScopeError(
-            f'{path}: the frontmatter block is indented, and a line inside it is '
-            f'indented LESS than the block\'s own keys. That is either a value '
-            f'continued across lines or malformed YAML, and this parser cannot tell '
-            f'which — so it refuses to guess which lines are fields rather than read '
-            f'`{TARGET_SCOPE_FIELD}:` wrongly or miss it entirely. Unindent the '
-            f'frontmatter block so its keys start at column 1.'
+            f'{path}: the frontmatter block is not well-formed YAML, so the build cannot '
+            f'tell whether it declares `{TARGET_SCOPE_FIELD}:` at all. Refusing rather '
+            f'than guessing, because a declaration read wrongly — or missed — ships the '
+            f'component to targets it never named. YAML says: {error}'
         ) from None
-    except _MultilineValue as multiline:
+    try:
+        tokens = _tokens(value)
+    except _NotAList as not_a_list:
         raise TargetScopeError(
-            f'{path}: `{TARGET_SCOPE_FIELD}:` is {_MULTILINE_NOUN[multiline.shape]}. '
-            f'That value is not on the key\'s own line alone, and this parser reads a value '
-            f'from the key\'s own physical line — so accepting it would silently narrow the '
-            f'declared scope to whatever fitted there rather than read what you wrote. Write '
-            f'the list explicitly — `{TARGET_SCOPE_FIELD}: [a, b]` or a `- ` block — so what '
-            f'ships is what you wrote.'
+            f'{path}: `{TARGET_SCOPE_FIELD}:` is {type(not_a_list.args[0]).__name__}, not a '
+            f'list of target names. Write `{TARGET_SCOPE_FIELD}: [a, b]`, a `- ` block, or a '
+            f'single name. Registered targets are: {_named(registered_target_names())}.'
         ) from None
     if tokens is None:
         return None

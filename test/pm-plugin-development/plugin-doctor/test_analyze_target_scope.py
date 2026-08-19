@@ -3,18 +3,20 @@
 """Tests for the ``targets-scope-invalid`` rule analyzer.
 
 A component may declare the build-time ``targets:`` frontmatter field naming
-the build targets it ships to. The multi-target generator rejects an unknown
-target name, an empty declaration, and a value spanning more than one line;
-this analyzer surfaces each at authoring time. An absent field means "every
-target" and is never flagged.
+the build targets it ships to. The build reads it with ``yaml.safe_load``;
+this analyzer is stdlib-only and cannot, so it reads the shapes it is certain
+of and stays SILENT on the rest rather than guessing.
+
+The promise it makes is soundness, not completeness: anything it reports is a
+real build failure. ``test_every_finding_is_a_real_build_failure`` is that
+promise, enforced over a corpus rather than asserted in prose.
 
 Test layers:
   * Absent / valid declarations → no finding (positive)
   * Unknown target name → one finding, ``reason == targets_unknown``
   * Empty declaration → one finding, ``reason == targets_empty``
-  * A multi-line value → one finding under the reason naming its shape:
-    ``targets_multiline_scalar``, ``targets_quoted_scalar``, or
-    ``targets_block_scalar``
+  * Shapes the scanner will not read → no finding, and the build decides
+  * Soundness: every finding it does produce is a build failure
   * Every component kind (agent, command, skill) is in scope
   * The registered set is DERIVED from the targets' own registrations
   * A tree without ``marketplace/targets/`` still runs the registry-free check
@@ -71,26 +73,86 @@ def _component(bundles: Path, rel: str, frontmatter: str = '') -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Declaration parsing
+# What the scanner reads, and what it declines to
 # ---------------------------------------------------------------------------
 
 
-def test_absent_field_is_not_a_declaration():
-    """The common case — no field — is never flagged."""
-    assert declared_targets('---\nname: a\ndescription: d\n---\n\n# Body\n') is None
+@pytest.mark.parametrize(
+    ('value', 'expected'),
+    [
+        pytest.param('targets: [claude, opencode]', ['claude', 'opencode'], id='inline-flow'),
+        pytest.param('targets: claude', ['claude'], id='bare-scalar'),
+        pytest.param('targets: claude, opencode', ['claude', 'opencode'], id='bare-list'),
+        pytest.param('targets:\n  - claude\n  - opencode', ['claude', 'opencode'], id='block'),
+        pytest.param('targets: [claude]  # why', ['claude'], id='trailing-comment'),
+        pytest.param('targets:\n  # why\n  - claude', ['claude'], id='comment-in-a-block'),
+        pytest.param('targets: [cla#ude]', ['cla#ude'], id='hash-inside-a-name'),
+        pytest.param('"targets": [claude]', ['claude'], id='quoted-key'),
+        pytest.param('targets: []', [], id='empty-flow'),
+        pytest.param('targets:', [], id='no-value'),
+        pytest.param('targets: ~', [], id='tilde-null'),
+        pytest.param('targets: null', [], id='null'),
+        pytest.param('targets:\nname: after', [], id='next-key-follows'),
+    ],
+)
+def test_shapes_the_scanner_reads(value, expected):
+    """The spellings this rule is certain of, and the names each yields."""
+    declaration = declared_targets(f'---\nname: a\n{value}\n---\n')
+
+    assert declaration is not None
+    assert declaration[0] == expected
 
 
-def test_inline_and_block_forms_parse_to_the_same_tokens():
-    """Both YAML list spellings yield the same token list."""
-    inline = declared_targets('---\nname: a\ntargets: [claude, opencode]\n---\n')
-    block = declared_targets('---\nname: a\ntargets:\n  - claude\n  - opencode\n---\n')
+@pytest.mark.parametrize(
+    'value',
+    [
+        pytest.param('targets: >-\n  claude', id='folded-block-scalar'),
+        pytest.param('targets: |2\n   claude', id='literal-with-indicator'),
+        pytest.param('targets: "claude,\n  opencode"', id='quoted-across-lines'),
+        pytest.param('targets: [claude,\n  opencode]', id='flow-across-lines'),
+        pytest.param('targets:\n  [claude]', id='flow-below-the-key'),
+        pytest.param('targets:\n  claude', id='scalar-below-the-key'),
+        pytest.param('targets: claude,\n  opencode', id='scalar-across-lines'),
+        pytest.param('targets: {claude: yes}', id='mapping'),
+        pytest.param('targets: &anchor [claude]', id='anchor'),
+        pytest.param("targets: 'claude'", id='quoted-scalar'),
+    ],
+)
+def test_shapes_the_scanner_declines_to_read(value):
+    """Silence, not a guess. Every one of these is legal YAML the build reads.
 
-    assert inline is not None and block is not None
-    assert inline[0] == ['claude', 'opencode']
-    assert block[0] == ['claude', 'opencode']
+    The previous version of this rule tried to read them and was wrong about
+    six of the ten across twelve verification rounds — twice reporting a
+    perfectly good declaration as an error, and three times reading a whole
+    block as "no declaration" while the build did the same. Declining is the
+    accurate answer for a scanner that cannot parse YAML, and it is what keeps
+    the rule's findings trustworthy.
+    """
+    assert declared_targets(f'---\nname: a\n{value}\n---\n') is None
 
 
-def test_declaration_reports_its_file_line_number():
+@pytest.mark.parametrize(
+    'text',
+    [
+        pytest.param('---\n  name: a\n  targets: [claude]\n---\n', id='indented-block'),
+        pytest.param('---\nname: a\nmeta:\n  targets: nonsense\n---\n', id='nested-key'),
+        pytest.param('# no frontmatter\n', id='no-frontmatter'),
+        pytest.param('---\nname: a\n---\n', id='no-field'),
+        pytest.param('---\nname: a\ntargets": [claude]\n---\n', id='mismatched-quote'),
+    ],
+)
+def test_blocks_that_yield_no_declaration(text):
+    """No key here, or none this scanner will claim. Either way: silence.
+
+    The indented block is the interesting row — the build reads it correctly
+    and this does not, so the honest answer is to say nothing rather than to
+    reimplement YAML's indentation rules, which took three attempts and never
+    came out right.
+    """
+    assert declared_targets(text) is None
+
+
+def test_a_declaration_reports_its_file_line_number():
     """The finding anchors on the declaring line, not on line 1."""
     declaration = declared_targets('---\nname: a\ndescription: d\ntargets: [claude]\n---\n')
 
@@ -98,334 +160,56 @@ def test_declaration_reports_its_file_line_number():
     assert declaration[1] == 4
 
 
-def test_nested_targets_key_is_not_a_declaration():
-    """Only a TOP-LEVEL key counts; an indented one is a different field."""
-    assert declared_targets('---\nname: a\nmetadata:\n  targets: nonsense\n---\n') is None
+# ---------------------------------------------------------------------------
+# Soundness — the promise this rule actually makes
+# ---------------------------------------------------------------------------
 
-
-def test_comments_do_not_turn_a_declaration_into_an_empty_one():
-    """A commented list declares its targets; reporting it empty names a file that does not exist."""
-    block = declared_targets('---\nname: a\ntargets:\n  # why\n  - claude  # here\n---\n')
-    inline = declared_targets('---\nname: a\ntargets: [claude]  # here\n---\n')
-
-    assert block is not None and block[0] == ['claude']
-    assert inline is not None and inline[0] == ['claude']
-
-
-def test_a_byte_order_mark_does_not_hide_the_declaration():
-    """A BOM'd file must not read as having no frontmatter at all."""
-    declaration = declared_targets('﻿---\nname: a\ntargets: [cluade]\n---\n')
-
-    assert declaration is not None
-    assert declaration[0] == ['cluade']
-
-
-@pytest.mark.parametrize(
-    ('value', 'expected'),
-    [
-        pytest.param('["#claude"]', ['#claude'], id='quoted-leading-hash'),
-        pytest.param('[cla#ude]', ['cla#ude'], id='hash-inside-a-name'),
-        pytest.param('[claude]#note', ['[claude]#note'], id='hash-with-no-preceding-space'),
-    ],
+# Every shape either suite exercises, valid and invalid together. The
+# soundness test below runs each one through BOTH the rule and the build.
+_SOUNDNESS_CORPUS = (
+    'targets: [claude]', 'targets: [claude, opencode]', 'targets: claude',
+    'targets: claude, opencode', 'targets:\n  - claude', 'targets: [cluade]',
+    'targets: [claude, cluade]', 'targets: []', 'targets:', 'targets: ~',
+    'targets: null', 'targets: [pr-agent]', 'targets: [claude]  # why',
+    'targets:\n  # why\n  - claude', 'targets: >-\n  claude', 'targets: |2\n   claude',
+    'targets: "claude,\n  opencode"', 'targets: [claude,\n  opencode]',
+    'targets:\n  [claude]', 'targets:\n  claude', 'targets: claude,\n  opencode',
+    'targets: {claude: yes}', 'targets: 3', 'targets: true', 'targets: [1, 2]',
+    'targets: &a [claude]', "targets: 'claude'", 'targets: [claude,',
+    '"targets": [claude]', 'targets": [claude]', 'targets: [cla#ude]',
+    'name: only', 'targets: [claude]\ntargets: [opencode]',
 )
-def test_a_hash_that_opens_no_token_is_not_a_comment(value, expected):
-    """The comment stripper must not eat a ``#`` that is part of a value.
 
-    The analyzer's `_strip_comment` docstring claims it mirrors the
-    generator's parser; this is what holds the two to the same answer.
+
+def test_every_finding_is_a_real_build_failure(tmp_path):
+    """The rule's one promise, enforced over a corpus rather than asserted.
+
+    This analyzer is an approximation of a build that reads YAML properly, so
+    it may MISS a defect — that is the documented trade. What it must never do
+    is report one the build accepts: a false positive spends an author's time
+    on a correct file and teaches them to distrust the rule.
+
+    Written as a test rather than left to review because every previous round
+    of this work re-derived the same ground in a throwaway corpus that died
+    with the session, and the next divergence was always found by the next
+    round rather than by the suite.
     """
-    declaration = declared_targets(f'---\nname: a\ntargets: {value}\n---\n')
+    from marketplace.targets.component_targets import TargetScopeError, read_target_scope
 
-    assert declaration is not None
-    assert declaration[0] == expected
-
-
-@pytest.mark.parametrize(
-    ('block', 'expected'),
-    [
-        pytest.param('targets: [claude,\n  opencode]', ['claude', 'opencode'], id='across-lines'),
-        pytest.param(
-            'targets: [claude,  # and\n  opencode]', ['claude', 'opencode'], id='with-comment'
-        ),
-        pytest.param('targets: [\n  claude\n  ]', ['claude'], id='opened-on-its-own-line'),
-        pytest.param(
-            'targets: [claude,\ndescription: a demo\nmode: workflow',
-            ['[claude'],
-            id='unclosed-does-not-swallow-the-following-fields',
-        ),
-        pytest.param(
-            'targets: [claude,\nopencode] # see https://example.com',
-            ['claude', 'opencode'],
-            id='continuation-with-a-url-comment',
-        ),
-        pytest.param(
-            'targets: [claude,\n"a: b"]',
-            ['claude', 'a: b'],
-            id='continuation-quoting-a-colon',
-        ),
-    ],
-)
-def test_a_flow_sequence_spanning_lines_is_read_whole(block, expected):
-    """Reading only the first physical line would report a target nobody wrote.
-
-    The unclosed case is the mirror of that defect: folding in the rest of
-    the block would name the FOLLOWING FIELDS as targets instead.
-    """
-    declaration = declared_targets(f'---\nname: a\n{block}\n---\n')
-
-    assert declaration is not None
-    assert declaration[0] == expected
-
-
-@pytest.mark.parametrize(
-    'value',
-    [pytest.param('"targets"', id='double-quoted'), pytest.param("'targets'", id='single-quoted')],
-)
-def test_a_quoted_key_is_still_a_declaration(value):
-    """``"targets":`` is the same key as ``targets:`` to any YAML reader.
-
-    Missing it failed OPEN in the generator — the component shipped
-    everywhere — and silently here, so the authoring-time net missed it too.
-    """
-    declaration = declared_targets(f'---\nname: a\n{value}: [cluade]\n---\n')
-
-    assert declaration is not None
-    assert declaration[0] == ['cluade']
-
-
-@pytest.mark.parametrize(
-    'value',
-    [pytest.param('"targets"', id='double-quoted'), pytest.param("'targets'", id='single-quoted')],
-)
-def test_a_quoted_key_reaches_the_rule_itself(tmp_path, value):
-    """The NET must flag it, not merely the parser underneath the net.
-
-    Asserting only the parser leaves the claim "the authoring-time net
-    missed it too" resting on an entry point no test exercises.
-    """
-    bundles = _marketplace(tmp_path)
-    _component(bundles, 'commands/quoted.md', f'{value}: [cluade]')
-
-    findings = analyze_target_scope(bundles)
-
-    assert len(findings) == 1
-    assert findings[0]['details']['unknown_targets'] == ['cluade']
-
-
-@pytest.mark.parametrize(
-    'value',
-    [pytest.param('targets"', id='trailing-quote-only'), pytest.param('"targets', id='leading-quote-only')],
-)
-def test_a_mismatched_quote_is_not_the_targets_key(tmp_path, value):
-    """A mismatched quote is a different key — or no key at all — so nothing is flagged.
-
-    ``targets"`` is a distinct key to YAML; ``"targets`` is not well-formed
-    YAML at all. Either way the component declares no scope here.
-    """
-    bundles = _marketplace(tmp_path)
-    _component(bundles, 'commands/mismatched.md', f'{value}: [cluade]')
-
-    assert analyze_target_scope(bundles) == []
-
-
-@pytest.mark.parametrize(
-    ('block', 'expected'),
-    [
-        pytest.param('targets: [claude,\n2fa: no', ['[claude', '2fa: no'], id='digit-initial-key'),
-        pytest.param('targets: [claude,\n"q": v', ['[claude', 'q": v'], id='quoted-key'),
-        pytest.param(
-            'targets: [claude,\nhttps://example.com', ['[claude'], id='bare-url-at-column-zero'
-        ),
-    ],
-)
-def test_the_fold_boundary_misreads_exactly_where_it_is_documented_to(block, expected):
-    """Pin the two misreads the fold's docstring names, so neither can drift.
-
-    Both were unguarded: each could be falsified in code with this suite
-    fully green. Every one of these inputs is rejected downstream, which is
-    the property that makes the heuristic tolerable.
-    """
-    declaration = declared_targets(f'---\nname: a\n{block}\n---\n')
-
-    assert declaration is not None
-    assert declaration[0] == expected
-
-
-def test_a_plain_scalar_continued_across_lines_is_flagged(tmp_path):
-    """The authoring-time net reports the shape the build rejects."""
-    bundles = _marketplace(tmp_path)
-    _component(bundles, 'commands/multiline.md', 'targets: claude,\n  opencode')
-
-    findings = analyze_target_scope(bundles)
-
-    assert len(findings) == 1
-    assert findings[0]['details']['reason'] == 'targets_multiline_scalar'
-    assert 'continued across lines' in findings[0]['description']
-
-
-def test_a_supported_form_is_not_flagged_as_a_continued_scalar(tmp_path):
-    """The block form is indented too; it must not trip the continuation check."""
-    bundles = _marketplace(tmp_path)
-    _component(bundles, 'commands/block.md', 'targets:\n  - claude')
-
-    assert analyze_target_scope(bundles) == []
-
-
-@pytest.mark.parametrize(
-    'value',
-    [
-        pytest.param('targets: claude,\n  - opencode', id='dash-continuation'),
-        pytest.param('targets: claude\n  - opencode', id='dash-continuation-bare'),
-    ],
-)
-def test_a_dash_continuation_does_not_escape_the_guard(tmp_path, value):
-    """A continuation beginning with ``-`` is still a continuation."""
-    bundles = _marketplace(tmp_path)
-    _component(bundles, 'commands/dash.md', value)
-
-    findings = analyze_target_scope(bundles)
-
-    assert len(findings) == 1
-    assert findings[0]['details']['reason'] == 'targets_multiline_scalar'
-
-
-@pytest.mark.parametrize(
-    'value',
-    [
-        pytest.param('targets: >-\n  claude', id='folded'),
-        pytest.param('targets: |-\n  claude', id='literal'),
-        pytest.param('targets: |2\n   claude', id='indent-indicator'),
-        pytest.param('targets: >3-\n   claude', id='indent-then-chomp'),
-        pytest.param('targets: |-2\n   claude', id='chomp-then-indent'),
-    ],
-)
-def test_a_block_scalar_is_reported_as_one(tmp_path, value):
-    """The finding names the construct the author wrote, not a different one.
-
-    The indentation-indicator spellings are here because the first version
-    matched a fixed SET of the six chomping spellings, leaving 54 of the 60
-    legal headers reported as continued plain scalars.
-    """
-    bundles = _marketplace(tmp_path)
-    _component(bundles, 'commands/block.md', value)
-
-    findings = analyze_target_scope(bundles)
-
-    assert len(findings) == 1
-    assert findings[0]['details']['reason'] == 'targets_block_scalar'
-    assert 'block scalar' in findings[0]['description']
-
-
-@pytest.mark.parametrize(
-    'value',
-    [
-        pytest.param('targets: "claude,\n  opencode"', id='double-quoted'),
-        pytest.param("targets: 'claude,\n  opencode'", id='single-quoted'),
-    ],
-)
-def test_a_quoted_scalar_continued_across_lines_is_reported_as_one(tmp_path, value):
-    """A quoted multi-line value is flagged, but it is not a PLAIN scalar."""
-    bundles = _marketplace(tmp_path)
-    _component(bundles, 'commands/quoted.md', value)
-
-    findings = analyze_target_scope(bundles)
-
-    assert len(findings) == 1
-    assert findings[0]['details']['reason'] == 'targets_quoted_scalar'
-    assert 'quoted scalar continued across lines' in findings[0]['description']
-
-
-@pytest.mark.parametrize(
-    'sentinel_text',
-    [
-        pytest.param('\x00multiline-plain-scalar', id='plain'),
-        pytest.param('\x00quoted-scalar', id='quoted'),
-        pytest.param('\x00block-scalar', id='block'),
-    ],
-)
-def test_a_real_token_equal_to_a_sentinel_is_not_mistaken_for_one(tmp_path, sentinel_text):
-    """EVERY sentinel is compared by IDENTITY, and that is what makes them safe.
-
-    A component could declare a sentinel's literal text as a target name. It
-    must be treated as an unknown NAME, not as the shape the sentinel stands
-    for — which is why the comparison is ``is`` and not ``==``. Nothing pinned
-    that: swapping the operator left the suite green, and when the check was
-    later duplicated per shape only one of the copies was covered.
-    """
-    bundles = _marketplace(tmp_path)
-    _component(bundles, 'commands/collide.md', f'targets: ["{sentinel_text}"]')
-
-    findings = analyze_target_scope(bundles)
-
-    assert len(findings) == 1
-    assert findings[0]['details']['reason'] == 'targets_unknown'
-
-
-def test_every_multiline_shape_has_a_finding_of_its_own(tmp_path):
-    """The sentinel table and the finding table cover the same shapes.
-
-    A shape added to the parser with no finding to report it would classify
-    silently and then fall through to the empty-declaration branch, reporting
-    a component that ships nowhere — a message describing a file that does
-    not exist.
-    """
-    assert set(_ats._MULTILINE_SENTINELS) == set(_ats._MULTILINE_FINDING)
-    reasons = {reason for _description, reason in _ats._MULTILINE_FINDING.values()}
-    assert len(reasons) == len(_ats._MULTILINE_FINDING)
-
-
-def test_the_fold_joins_with_a_space_and_that_is_what_rejects_an_overrun(tmp_path):
-    """The space join is the load-bearing half of the fold's safety argument.
-
-    ``targets: [open`` / ``code]`` closes its bracket, so only the space in
-    ``open code`` keeps it out of the registry; ``''.join`` would yield an
-    accepted ``opencode``. There must be NO comma in the fixture — with one,
-    the comma does the splitting and the test passes either way. The generator
-    suite had exactly that defect, and this suite had no such test at all.
-    """
-    bundles = _marketplace(tmp_path)
-    _component(bundles, 'commands/fold.md', 'targets: [open\ncode]')
-
-    findings = analyze_target_scope(bundles)
-
-    assert len(findings) == 1
-    assert findings[0]['details']['reason'] == 'targets_unknown'
-    assert findings[0]['details']['unknown_targets'] == ['open code']
-
-
-@pytest.mark.parametrize(
-    'text',
-    [
-        pytest.param('--- \nname: demo\ntargets: [cluade]\n---\n', id='opening-space'),
-        pytest.param('---\nname: demo\ntargets: [cluade]\n--- \n', id='closing-space'),
-        pytest.param('---\n  name: demo\n  targets: [cluade]\n---\n', id='uniform-indent'),
-    ],
-)
-def test_shapes_the_column_zero_scan_missed_are_still_scanned(tmp_path, text):
-    """Two fail-open shapes: a whitespace-suffixed fence, and a uniform indent.
-
-    Both read as "no declaration" before, in the build and here alike, so a
-    typo'd component shipped everywhere with nothing reported at authoring
-    time either.
-    """
-    bundles = _marketplace(tmp_path)
-    _write(bundles / 'demo' / 'commands' / 'shape.md', text)
-
-    findings = analyze_target_scope(bundles)
-
-    assert len(findings) == 1
-    assert findings[0]['details']['reason'] == 'targets_unknown'
-
-
-def test_dedenting_does_not_promote_a_genuinely_nested_key(tmp_path):
-    """A key indented BEYOND its siblings stays nested after the dedent."""
-    bundles = _marketplace(tmp_path)
-    _write(
-        bundles / 'demo' / 'commands' / 'nested.md',
-        '---\n  name: demo\n  metadata:\n    targets: [cluade]\n---\n',
-    )
-
-    assert analyze_target_scope(bundles) == []
+    for index, frontmatter in enumerate(_SOUNDNESS_CORPUS):
+        bundles = _marketplace(tmp_path / f'case{index}')
+        component = _component(bundles, 'commands/case.md', frontmatter)
+        findings = analyze_target_scope(bundles)
+        if not findings:
+            continue
+        try:
+            scope = read_target_scope(component)
+        except TargetScopeError:
+            continue
+        raise AssertionError(
+            f'{frontmatter!r}: the rule reported '
+            f'{findings[0]["details"]["reason"]} but the build accepted it as {scope}'
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -568,268 +352,3 @@ def test_a_skill_directory_without_a_manifest_is_not_scanned(tmp_path):
     _write(bundles / 'demo' / 'skills' / 'empty-skill' / 'notes.md', '# notes\n')
 
     assert component_files(bundles) == []
-
-
-def test_a_valueless_key_with_an_indented_scalar_is_not_an_empty_declaration(tmp_path):
-    """``targets:`` / ``  claude`` is the value ``claude``, not an empty list."""
-    bundles = _marketplace(tmp_path)
-    _component(bundles, 'commands/valueless.md', 'targets:\n  claude')
-
-    findings = analyze_target_scope(bundles)
-
-    assert len(findings) == 1
-    assert findings[0]['details']['reason'] == 'targets_multiline_scalar'
-
-
-@pytest.mark.parametrize(
-    'value',
-    [
-        pytest.param('targets:\nextra: after', id='next-key-at-column-zero'),
-        pytest.param('targets:', id='nothing-follows'),
-    ],
-)
-def test_a_valueless_key_with_no_indented_content_is_still_empty(tmp_path, value):
-    """The other side, so the fix above cannot become an over-correction."""
-    bundles = _marketplace(tmp_path)
-    _component(bundles, 'commands/empty.md', value)
-
-    findings = analyze_target_scope(bundles)
-
-    assert len(findings) == 1
-    assert findings[0]['details']['reason'] == 'targets_empty'
-
-
-# ---------------------------------------------------------------------------
-# Round 11: the same shapes and guards, mirrored.
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    'text',
-    [
-        pytest.param('---\n# note\n  targets: [cluade]\n---\n', id='comment-above'),
-        pytest.param('---\n  name: d\n# note\n  targets: [cluade]\n---\n', id='comment-among'),
-    ],
-)
-def test_a_comment_does_not_defeat_the_dedent(tmp_path, text):
-    """A comment line carries no structure and must not set the block's indent.
-
-    ``textwrap.dedent`` ignores blank lines but not comment lines, so one
-    ``#`` at column 0 left every key unscanned — and the authoring-time net
-    reported nothing about a declaration the build also failed to read.
-    """
-    bundles = _marketplace(tmp_path)
-    _write(bundles / 'demo' / 'commands' / 'shape.md', text)
-
-    findings = analyze_target_scope(bundles)
-
-    assert len(findings) == 1
-    assert findings[0]['details']['reason'] == 'targets_unknown'
-
-
-@pytest.mark.parametrize(
-    'value',
-    [
-        pytest.param('targets: # note\n- opencode', id='block-at-column-zero'),
-        pytest.param('targets: # note\n  - opencode', id='block-indented'),
-    ],
-)
-def test_a_comment_is_not_an_inline_value(tmp_path, value):
-    """``targets: # note`` has no inline value; the list below is the value."""
-    bundles = _marketplace(tmp_path)
-    _component(bundles, 'commands/commented.md', value)
-
-    assert analyze_target_scope(bundles) == []
-
-
-@pytest.mark.parametrize(
-    ('value', 'expected'),
-    [
-        pytest.param('targets:\n  [claude, opencode]', ['claude', 'opencode'], id='one-line'),
-        pytest.param('targets:\n  [claude,\n  opencode]', ['claude', 'opencode'], id='two-lines'),
-    ],
-)
-def test_a_flow_sequence_may_open_on_the_line_below_the_key(value, expected):
-    """A flow sequence is one value however many lines it spans."""
-    declaration = declared_targets(f'---\nname: a\n{value}\n---\n')
-
-    assert declaration is not None
-    assert declaration[0] == expected
-
-
-def test_a_three_hyphen_prefix_line_does_not_close_the_block():
-    """The closing fence is a whole LINE; the line-end anchor was unpinned.
-
-    The ``----`` must START a line: a mid-line ``---x`` is green either way
-    and pins nothing. This also pins the documented divergence from
-    ``_dep_detection.extract_frontmatter``, which closes here and would
-    truncate the block before ``targets:``.
-    """
-    declaration = declared_targets('---\ndescription: a\n----\ntargets: [cluade]\n---\n')
-
-    assert declaration is not None
-    assert declaration[0] == ['cluade']
-
-
-@pytest.mark.parametrize(
-    'value',
-    [
-        pytest.param('targets: claude,\n# why\n  opencode', id='inline-value'),
-        pytest.param('targets:\n# why\n  claude', id='no-inline-value'),
-    ],
-)
-def test_a_comment_at_column_zero_does_not_end_a_continuation(tmp_path, value):
-    """A comment carries no structure, so it cannot be what ends a value.
-
-    Treating it as structure let the continuation go undetected, and the value
-    was read as its first line alone - silent narrowing.
-    """
-    bundles = _marketplace(tmp_path)
-    _component(bundles, 'commands/comment.md', value)
-
-    findings = analyze_target_scope(bundles)
-
-    assert len(findings) == 1
-    assert findings[0]['details']['reason'] == 'targets_multiline_scalar'
-
-
-def test_an_immediately_closed_block_has_no_fields():
-    """``---`` / ``---`` is an EMPTY block; the fence search's offset was unpinned."""
-    assert declared_targets('---\n---\ntargets: [cluade]\n---\n') is None
-
-
-@pytest.mark.parametrize(
-    ('value', 'expected_reason'),
-    [
-        pytest.param('targets: >gibberish\n  claude', 'targets_multiline_scalar', id='not-a-header'),
-        pytest.param('targets: |x\n  claude', 'targets_multiline_scalar', id='indicator-then-junk'),
-        pytest.param('targets: > # c\n  claude', 'targets_block_scalar', id='header-with-a-comment'),
-        pytest.param('targets: "claude"\n  extra', 'targets_multiline_scalar', id='quote-closed'),
-        pytest.param('targets: "claude,\n  opencode"', 'targets_quoted_scalar', id='quote-open'),
-    ],
-)
-def test_the_shape_boundaries_are_where_they_are_documented(tmp_path, value, expected_reason):
-    """Pin each edge of the two shape tests; all three were unguarded here too."""
-    bundles = _marketplace(tmp_path)
-    _component(bundles, 'commands/shape.md', value)
-
-    findings = analyze_target_scope(bundles)
-
-    assert len(findings) == 1
-    assert findings[0]['details']['reason'] == expected_reason
-
-
-# ---------------------------------------------------------------------------
-# Round 12: mirrored.
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    'text',
-    [
-        pytest.param(
-            '---\n  description: "one\ntwo"\n  targets: [cluade]\n---\n', id='quoted-continuation'
-        ),
-        pytest.param('---\n  tools: [a,\nb]\n  targets: []\n---\n', id='flow-continuation'),
-    ],
-)
-def test_an_unreadable_indent_is_reported_rather_than_passed_over(tmp_path, text):
-    """The authoring-time net must report what the build refuses.
-
-    Reading such a block as "no declaration" is how an invalid declaration
-    reached the build unreported by BOTH parsers.
-    """
-    bundles = _marketplace(tmp_path)
-    _write(bundles / 'demo' / 'commands' / 'ambiguous.md', text)
-
-    findings = analyze_target_scope(bundles)
-
-    assert len(findings) == 1
-    assert findings[0]['details']['reason'] == 'targets_ambiguous_indent'
-
-
-def test_an_indented_continuation_inside_an_indented_block_is_not_ambiguous(tmp_path):
-    """The other side, so the guard is not an over-correction."""
-    bundles = _marketplace(tmp_path)
-    _write(
-        bundles / 'demo' / 'commands' / 'fine.md',
-        '---\n  description: "one\n  two"\n  targets: [claude]\n---\n',
-    )
-
-    assert analyze_target_scope(bundles) == []
-
-
-@pytest.mark.parametrize(
-    ('value', 'expected_reason'),
-    [
-        pytest.param('targets:\n  >-\n  claude', 'targets_block_scalar', id='block-below-key'),
-        pytest.param('targets:\n  "a,\n  b"', 'targets_quoted_scalar', id='quoted-below-key'),
-        pytest.param('targets:\n  claude', 'targets_multiline_scalar', id='plain-below-key'),
-    ],
-)
-def test_a_value_opening_below_the_key_is_diagnosed_not_assumed(tmp_path, value, expected_reason):
-    """The no-inline-value path diagnoses the shape rather than assuming one."""
-    bundles = _marketplace(tmp_path)
-    _component(bundles, 'commands/below.md', value)
-
-    findings = analyze_target_scope(bundles)
-
-    assert len(findings) == 1
-    assert findings[0]['details']['reason'] == expected_reason
-
-
-def test_a_shallow_comment_is_dedented_without_becoming_a_key():
-    """A line shorter than the base indent is left-stripped, not sliced."""
-    declaration = declared_targets('---\n#targets: [opencode]\n targets: [cluade]\n---\n')
-
-    assert declaration is not None
-    assert declaration[0] == ['cluade']
-
-
-@pytest.mark.parametrize(
-    ('value', 'expected'),
-    [
-        pytest.param('targets: claude', ['claude'], id='bare-inline-scalar'),
-        pytest.param('targets: claude, opencode', ['claude', 'opencode'], id='bare-inline-list'),
-        pytest.param('targets: [claude]\n2fa: no', ['claude'], id='closed-value-then-a-key'),
-    ],
-)
-def test_a_value_that_is_not_continued_is_read_as_written(value, expected):
-    """The continuation check was pinned in the generator suite and not here.
-
-    Every doctor fixture for it used a bracketed value, where the ``and``
-    short-circuits before the check runs — so forcing it to ``True`` left this
-    suite green while flagging every bare declaration as a continued scalar.
-    """
-    declaration = declared_targets(f'---\nname: a\n{value}\n---\n')
-
-    assert declaration is not None
-    assert declaration[0] == expected
-
-
-def test_the_fold_stops_at_the_closing_bracket():
-    """The fold's exit was pinned in the generator suite and not here.
-
-    Without it the following FIELD is folded into the value and a well-formed
-    declaration is reported as an unknown target.
-    """
-    declaration = declared_targets('---\nname: a\ntargets: [claude,\n  opencode]\n2fa: no\n---\n')
-
-    assert declaration is not None
-    assert declaration[0] == ['claude', 'opencode']
-
-
-def test_the_shape_is_read_from_the_raw_value_not_the_comment_stripped_one(tmp_path):
-    """Which text the shape test sees is observable, and was unpinned here.
-
-    ``targets: "a # b"`` closes its quote; cutting the comment first would
-    leave ``"a``, whose quote does not recur, and the finding would name a
-    construct the author did not write.
-    """
-    bundles = _marketplace(tmp_path)
-    _component(bundles, 'commands/shapesrc.md', 'targets: "a # b"\n  x')
-
-    findings = analyze_target_scope(bundles)
-
-    assert len(findings) == 1
-    assert findings[0]['details']['reason'] == 'targets_multiline_scalar'

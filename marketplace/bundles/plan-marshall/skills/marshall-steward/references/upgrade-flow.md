@@ -171,7 +171,7 @@ plan emitted for the resolved kind:
   regenerate the Claude target tree:
 
   ```bash
-  python3 marketplace/targets/generate.py --target claude --output target/claude
+  uv run python marketplace/targets/generate.py --target claude --output target/claude
   ```
 
 - **`regenerate-executor`** (both kinds) — regenerate the executor. Invoke the

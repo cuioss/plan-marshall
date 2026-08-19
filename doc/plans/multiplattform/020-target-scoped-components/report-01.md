@@ -36,10 +36,10 @@ The plan's claim table required re-derivation. All were re-checked against the t
 
 | Deliverable | What was done | Commit | Verification state |
 |---|---|---|---|
-| **D1 — filter mechanism** | New `marketplace/targets/component_targets.py` parses the `targets:` declaration and answers `emits_to(path, target_name)`. Both component-tree-emitting targets consult it: the Claude verbatim emitter (`excluded_emission_roots` + `is_under_any`, skipping a scoped-out file or a whole scoped-out skill directory) and its manifest generator (`plugin_json_gen` drops the same entries), and the OpenCode emitter (per-skill / per-agent / per-command skip). The governed set is derived from `TARGET_REGISTRY` filtered by each target's `emits_bundle_tree` capability — never enumerated. Absent field still means every target. | `fab9611` | `test_component_targets.py`, `test_target_scoped_emission.py` — **122 and 14 collected at HEAD**. Counts are stated at HEAD only, never against the implementing commit: `test_component_targets.py` has grown in most rounds and had 24 cases at `fab9611`, so attributing its current count there would name a number that commit never had. (`test_target_scoped_emission.py` has been 14 since `a9c90ef`; the HEAD-only rule is uniform, not a claim that every file moved.) |
+| **D1 — filter mechanism** | New `marketplace/targets/component_targets.py` parses the `targets:` declaration and answers `emits_to(path, target_name)`. Both component-tree-emitting targets consult it: the Claude verbatim emitter (`excluded_emission_roots` + `is_under_any`, skipping a scoped-out file or a whole scoped-out skill directory) and its manifest generator (`plugin_json_gen` drops the same entries), and the OpenCode emitter (per-skill / per-agent / per-command skip). The governed set is derived from `TARGET_REGISTRY` filtered by each target's `emits_bundle_tree` capability — never enumerated. Absent field still means every target. | `fab9611` | `test_component_targets.py`, `test_target_scoped_emission.py` — **66 and 14 collected at HEAD**. Counts are stated at HEAD only, never against the implementing commit: `test_component_targets.py` has grown in most rounds and had 24 cases at `fab9611`, so attributing its current count there would name a number that commit never had. (`test_target_scoped_emission.py` has been 14 since `a9c90ef`; the HEAD-only rule is uniform, not a claim that every file moved.) |
 | **D2 — fail-closed validation** | `_validate` rejects an unknown target name, an empty list, and a list naming only non-component-tree targets. Every message names the component path and the offending value. Validation fires wherever the emission predicate is CALLED: both component-tree targets' emit paths, and the Claude target's validate-only mode (which re-walks each bundle's components for this check alone). Reading a component is not the same as validating it — a `pr-agent`-only run opens skill manifests to harvest rule text, yet never asks whether a component is in scope, because it emits no component. The doctor rule is the authoring-time net there. | `fab9611` | `test_component_targets.py` + `test_target_scoped_emission.py::test_generation_fails_*` |
 | **D3 — first consumer** | `marketplace/bundles/plan-marshall/commands/tools-fix-intellij-diagnostics.md` declares `targets: [claude]`. | `fab9611` | Asserted by generation-output listing (below) |
-| **D4 — authoring surface** | New `targets-scope-invalid` plugin-doctor rule (`_analyze_target_scope.py`), registered in `_rule_registry.py` and wired into both the quality gate and analyze mode, with rows in `rule-provenance.md` and `rule-catalog.md` and a firing positive fixture in `_fixtures.py`. The field, its semantics, its validation table, and the three-condition admission test are documented in `plugin-architecture/references/frontmatter-standards.md` § "Target Scoping". | `fab9611` | `test_analyze_target_scope.py` — **86 collected at HEAD** (same HEAD-only rule); the doctor runs clean over the real tree with D3's declaration in place |
+| **D4 — authoring surface** | New `targets-scope-invalid` plugin-doctor rule (`_analyze_target_scope.py`), registered in `_rule_registry.py` and wired into both the quality gate and analyze mode, with rows in `rule-provenance.md` and `rule-catalog.md` and a firing positive fixture in `_fixtures.py`. The field, its semantics, its validation table, and the three-condition admission test are documented in `plugin-architecture/references/frontmatter-standards.md` § "Target Scoping". | `fab9611` | `test_analyze_target_scope.py` — **42 collected at HEAD** (same HEAD-only rule); the doctor runs clean over the real tree with D3's declaration in place |
 
 ### D3 generation-output listing (the plan's own "Done when" evidence)
 
@@ -60,7 +60,9 @@ pr-agent: produced 1 entries
 ## Build gate
 
 `git diff --name-only origin/main...HEAD -- '*.py'` reports **17 changed Python files**, so the gate
-applies.
+applies. The count is unchanged by the `yaml.safe_load` switch because that rewrote files already in
+the set rather than adding any; what it did change is their size — the two parsers fell from 785 and
+664 lines to 475 and 431.
 
 `./pw verify` — **SUCCESS**, all three sub-steps clean. It was re-run after every commit that changed
 a Python file; the figures below are from the last such run, and every earlier run is superseded
@@ -69,7 +71,7 @@ rather than reported here:
 - quality-gate: `ruff … All checks passed!`, `mypy … Success: no issues found in 415 source files`,
   `SPDX-header check passed`, plugin-doctor `total_issues: 0`
 - test-compile: mypy over 775 test files, clean
-- module-tests: **21182 passed, 14 skipped** — 0 failed, 0 errors
+- module-tests: **21082 passed, 14 skipped** — 0 failed, 0 errors
 
 One `./pw verify` run in round 10 reported 3 failures in `test_component_targets.py`; they were an
 artefact of a mutation sweep editing the parser while the build was reading it, and the run is
@@ -548,6 +550,60 @@ additions — including every guard round 12 found unpinned, in both directions 
 halves, and `register_target`. Two doctor-side survivors appeared on the first pass, both guards
 pinned on the generator side only; the mirror-parity gap R12-08 and R12-12 name is what that sweep
 was widened to catch, and it caught two more instances of it immediately.
+
+### Operator decision — the generator reads YAML
+
+**Put to the operator after round 12; answered "switch the generator to `yaml.safe_load`".**
+
+The § Residue decision this report had been deferring for two rounds. The evidence for putting it
+rather than a thirteenth round: every behavioural defect across twelve rounds was the hand-rolled
+parser disagreeing with YAML, and three of them — R10-06, R11-01, R12-01 — were the SAME fail-open in
+the same function, answered by three successive indentation rules, each wrong about YAML in a new
+way. Two verifiers reached the same conclusion independently.
+
+**What changed**
+
+| | |
+|---|---|
+| **Reading** | `marketplace/targets/component_targets.py` calls `yaml.safe_load` on the fenced block. What it still owns is finding the fence — markdown frontmatter is not a YAML document stream, and the body beneath the closing fence would parse as a second document — and the SHAPE rules, which are policy rather than syntax. |
+| **Dependency** | `PyYAML>=6.0.2` declared in `[project].dependencies`, `types-PyYAML` in the dev group, `uv.lock` regenerated. The generator now runs inside the project environment, so every documented `python3 marketplace/targets/generate.py` invocation became `uv run python …` — 15 sites across the developer docs, two project-local skills, `CLAUDE.md` and two READMEs. |
+| **Doctor rule** | Narrowed from a mirror to an **approximation**, and says so. A plugin-doctor script is stdlib-only because a consumer project installs the bundles without this repository's dependencies, so it cannot follow. It now reads the shapes it is certain of and stays SILENT on the rest, reporting only `targets_unknown` and `targets_empty`. Three reason codes and ~230 lines of parser were deleted. |
+| **The promise it makes** | Soundness, not completeness: anything it reports is a real build failure. That is now a TEST — a shared corpus run through both the rule and the build, failing if the rule ever flags something the build accepts — rather than a sentence. |
+
+**What the decision deletes.** Sixteen behavioural defects' worth of surface: the shape/noun
+machinery (three constructs × two parsers), the indentation rules, the fold and its boundary
+heuristic, the comment-vs-value guard, the quote-matching key reader, the ambiguous-indent refusal,
+and every "is this claim about the parser true?" finding those generated. Survivor **B3** goes with
+them — a duplicate `targets:` key now resolves the way YAML resolves it, last-one-wins, so the
+eight-round-old open behavioural survivor is closed without a policy decision. Nine shapes the line
+scanner refused are now simply read; `test_shapes_a_line_scanner_refused_are_now_read` is the record
+that accepting them is deliberate, so a future edit that re-refuses one has to argue for it there.
+
+**What it costs, stated rather than glossed:**
+
+- A build dependency where there was none. `marketplace/targets/` was pure stdlib.
+- The two parsers stop being mirrors. The "0 divergences over 308,400 cases" property rounds 11 and
+  12 relied on no longer means anything, because they are no longer trying to agree. The soundness
+  test replaces it and is a weaker guarantee — deliberately, since the stronger one was only
+  available while both sides were equally wrong.
+- Two shapes now fail closed that previously passed: a bare `----` line inside frontmatter (invalid
+  YAML; the old scanner skipped it), and unparseable frontmatter that mentions `targets:`. The
+  second is scoped ON PURPOSE — unparseable frontmatter that never mentions the field is refused by
+  nothing here, because turning target scoping into the repository's YAML linter is a job the plan
+  did not give it and a failure surface it should not widen.
+- One test fixture in the OpenCode variant suite was itself invalid YAML (`description:` with an
+  unquoted `: ` in it) and had to be repaired. The real agent it imitates uses a `|` block scalar.
+
+**Reach check before landing.** All 160 components' frontmatter parses under `yaml.safe_load` — zero
+unparseable — and generation is unchanged: `--target all` exits 0 at 1166 / 1090 / 1 entries, 160
+components walked, exactly 1 scoped, `tools-fix-intellij-diagnostics.md` present in the Claude tree
+and absent from OpenCode's.
+
+**Size, as a proxy for what was carrying the defects.** The generator parser fell from 785 lines to
+**475**, the doctor rule from 664 to **431**, and the two suites from 122 + 86 collected tests to
+**66 + 42**. Roughly half of each suite existed to pin a hand-rolled rule against YAML, and those
+tests went with the rule they pinned; what replaced them is one soundness test over a shared corpus
+and one list of shapes that used to be refused and are now read.
 
 ### Cold read (the plan's § Verification requirement)
 

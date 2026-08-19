@@ -80,26 +80,34 @@ registered target, so the gate is not optional.
 
 ## CLI Usage
 
+The generator runs inside the project environment because it reads component
+frontmatter with `yaml.safe_load` — `PyYAML` is a declared project dependency,
+so `uv run` (or `./pw`) is the invocation, not a bare `python3`. It replaced a
+hand-rolled line scanner whose twelve verification rounds produced sixteen
+behavioural defects, every one a divergence from YAML; see
+`component_targets.py` for what that module still owns.
+
+
 ```bash
 # Verbatim Claude mirror + plugin.json regeneration
-python3 marketplace/targets/generate.py --target claude --output target/claude
+uv run python marketplace/targets/generate.py --target claude --output target/claude
 
 # Equality check only (no emit) — exits 2 if committed plugin.json drifts
-python3 marketplace/targets/generate.py --target claude
+uv run python marketplace/targets/generate.py --target claude
 
 # OpenCode emit
-python3 marketplace/targets/generate.py --target opencode --output target/opencode
+uv run python marketplace/targets/generate.py --target opencode --output target/opencode
 
 # PR-Agent reviewer pack → ./.pr_agent.toml at the repository root
 # --packs composes one pack from several derived domains; omit it for the default
-python3 marketplace/targets/generate.py --target pr-agent --output . --packs python,plugin
+uv run python marketplace/targets/generate.py --target pr-agent --output . --packs python,plugin
 
 # Every target at once (claude → target/claude/, opencode → target/opencode/,
 # pr-agent → target/pr-agent/.pr_agent.toml)
-python3 marketplace/targets/generate.py --target all --output target
+uv run python marketplace/targets/generate.py --target all --output target
 
 # Scope to specific bundles
-python3 marketplace/targets/generate.py --target opencode --output target/opencode \
+uv run python marketplace/targets/generate.py --target opencode --output target/opencode \
     --bundles plan-marshall,pm-dev-java
 ```
 
