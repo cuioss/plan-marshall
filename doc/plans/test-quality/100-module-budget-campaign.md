@@ -158,7 +158,10 @@ two to three deliverables, and one slice is one deliverable.
 * **Any file under `marketplace/bundles/**` or `test/conftest.py`.** Excluded because test refactoring
   that changes production code is not test refactoring, and because plan `090` owns the shared harness.
   A production or harness defect found while splitting is **recorded**, not fixed.
-* **`EXEMPT_RULE_IDS` in `test/pm-plugin-development/plugin-doctor/_fixtures.py`.** Excluded
+* **`EXEMPT_RULE_IDS`, which lives in
+  `test/pm-plugin-development/plugin-doctor/test_zero_match_suite_coverage.py` — not in the fixture
+  corpus beside it, `_plugin_doctor_fixtures.py`, which holds `registered_rule_ids` and
+  `fired_rule_ids`.** Excluded
   explicitly because it is the single most available wrong move when splitting that directory: the
   suite-coverage meta-test asserts
   `registered_rule_ids − fired_rule_ids − EXEMPT_RULE_IDS == ∅`, and a split that separates the

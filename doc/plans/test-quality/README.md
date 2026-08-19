@@ -297,7 +297,7 @@ it, and where a run cannot finish, **report what was not reached rather than thi
 
 | Plan | Surface | May run concurrently with |
 |---|---|---|
-| `010` | `marketplace/bundles/pm-dev-python/skills/pytest-testing/**`, `marketplace/bundles/plan-marshall/skills/persona-module-tester/**`, `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/**`, `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py`, `test/pm-plugin-development/plugin-doctor/fixtures/test_conventions/rule*/`, `test/pm-plugin-development/plugin-doctor/test_doctor_marketplace_commands.py` (the `cmd_test_conventions` cases only), `test/pm-plugin-development/plugin-doctor/_fixtures.py` | `020` only |
+| `010` | `marketplace/bundles/pm-dev-python/skills/pytest-testing/**`, `marketplace/bundles/plan-marshall/skills/persona-module-tester/**`, `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/**`, `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py`, `test/pm-plugin-development/plugin-doctor/fixtures/test_conventions/rule*/`, `test/pm-plugin-development/plugin-doctor/test_doctor_marketplace_commands.py` (the `cmd_test_conventions` cases only), `test/pm-plugin-development/plugin-doctor/_plugin_doctor_fixtures.py` | `020` only |
 | `020` | `test/conftest.py`, `test/_shared/**`, `test/README.md`, and the ≤10 modules it converts as proof-of-use | `010` only |
 | `030`–`080` | one disjoint slice of `test/` each, listed in the plan | each other, once `010` **and** `020` have landed |
 | `090` | `marketplace/bundles/**` (the doctor analyzers, `script-shared`, `manage-providers`) — **the only plan in the epic that may edit it** — plus `test/conftest.py`'s loader mechanics, and the tests for its own production changes | see § "The collision matrix" — it is the authoritative set, and this cell deliberately does not restate it |
@@ -405,9 +405,9 @@ as a **gating, halting derivation**, run before its first deliverable:
    ⚠️ **`test/pm-code-intelligence/` is NOT an exclusion — it belongs to plan `080`'s slice**, and
    `080`'s Expected surface names it. It is a `pm-*` bundle test directory, which is the shape `080`
    already owns; the assignment is recorded here so the next run does not re-derive the halt a fourth
-   time. Its one open finding — a preamble the shared loader cannot address, because the file it loads
-   is a bundle skill's root-level `extension.py` rather than a `scripts/` module — is **plan `090` §
-   D2's**, not `080`'s.
+   time. Its preamble finding is **closed**: it loaded a bundle skill's root-level `extension.py`,
+   which `load_script_module` cannot address, and plan `090` then shipped `conftest.load_skill_module`
+   for exactly that shape — so plan `080` fixed it rather than deferring it.
 3. An entry in **two** lists, or in **none**, is a partition defect: **halt and report it** rather
    than claiming or skipping it unilaterally. An entry claimed by no plan is the dangerous case,
    because it looks exactly like a clean run.

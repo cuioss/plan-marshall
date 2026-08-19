@@ -261,7 +261,7 @@ def _classify_paths_via_extensions(
             :func:`extension_discovery.discover_build_extensions` and uses
             every loaded build-extension module. The override is intended for the
             fake-extension test fixture in
-            ``test/plan-marshall/manage-execution-manifest/_fixtures.py``.
+            ``test/plan-marshall/manage-execution-manifest/_execution_manifest_fixtures.py``.
 
     Returns:
         A 2-tuple ``(bucket, unclaimed_paths)`` where ``bucket`` is one of
