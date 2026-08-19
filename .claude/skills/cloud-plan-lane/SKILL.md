@@ -1314,6 +1314,11 @@ Confirm the review by reading the surfaces (§ Step 7), never by reading that re
 
 **So, when a retry is accepted but yields nothing, the remedy is a NEW HEAD SHA, not a new PR.** Merge
 `origin/main` in — usually owed anyway under § Step 8 condition 2 — or land the next real commit.
+**When neither is available** — the base has not moved and the plan has no further commit to make —
+there is no unreviewed head to offer, and further attempts cannot become productive. Record that,
+treat the budget as spent for this reviewer, and proceed under § Step 8 condition 5. Spending the
+remaining attempts on a head already known to be seen is the non-option this contract exists to
+eliminate.
 That gives the reviewer material it has genuinely not seen. A new PR on the *same* head hits the same
 trap while also spending an attempt on the open event.
 
@@ -1519,9 +1524,13 @@ hold:**
    spent without obtaining it; `sourcery-ai` rate-limited on a size ceiling, does not reopen."
    **A run that merges on 1-of-3 must _say_ 1-of-3.**
 
-   ⛔ **The example says "six attempts spent" for a reason.** A live countdown is not a state this
-   disclosure may describe: condition 6 forbids arming there. A CodeRabbit line here reports a budget
-   that ran out, a refusal that cannot reopen, or a `skip-bot-review` PR — never a clock still ticking.
+   ⛔ **The example says "six attempts spent" for a reason.** A CodeRabbit line here reports one of
+   four states, and no other: a budget that ran out; a refusal that cannot reopen; a `skip-bot-review`
+   PR; or **a run that could not re-enter to spend the budget, naming the missing affordance**. A
+   live countdown that the run *could* still wait out is not among them — condition 6 forbids arming
+   there. The fourth state is what a headless run discloses, and its sentence says so plainly: for
+   example "`coderabbitai` rate-limited on a countdown, one attempt made; no self-wake available in
+   this session, so the budget could not be spent." 
 
    A `silent` verdict reaches this disclosure only after its recovery check (§ Step 7) — so what is
    disclosed here is a shortfall that survived an attempt to fix it, not merely one that was noticed.
@@ -1531,8 +1540,9 @@ hold:**
    the shortfall falls under:
 
    - **A clearing rate limit (`Reopens? yes`) is not a shortfall yet.** § Step 7 retries it on a
-     jittered schedule; it reaches this disclosure only once that budget is spent. Recording it here
-     on first sight discloses a gap the run never tried to close.
+     jittered schedule; it reaches this disclosure once that budget is spent — or, for a run that
+     cannot re-enter to spend it, once that inability is established and named (condition 6).
+     Recording it here on first sight discloses a gap the run never tried to close.
    - **CodeRabbit, on a PR carrying no `skip-bot-review` label, is gated by condition 6.** Disclosure
      does not discharge that condition; obtaining the review, or exhausting its budget, does.
    - **Every other shortfall proceeds on disclosure** — a ceiling that cannot reopen, a silence that
@@ -1556,9 +1566,10 @@ hold:**
    - **Obtained** — `get_reviews` carries a `coderabbitai` summary body, or `get_review_comments`
      carries its inline threads, and every finding in them is handled per § Step 7. This is the
      intended outcome.
-   - **Budget spent** — § Step 7's six retry attempts were made, each after its stated window plus
-     jitter, and each was refused or yielded nothing. Record every attempt with its time and notice,
-     then proceed under condition 5's disclosure.
+   - **Budget spent** — § Step 7's budget of six attempts is exhausted, counted as that section
+     counts it: every attempt draws it down, including the one fired by opening the PR and any that
+     was accepted but yielded nothing. Each *retry* was made after its stated window plus jitter.
+     Record every attempt with its time and notice, then proceed under condition 5's disclosure.
 
    ⛔ **A `Reopens? yes` refusal does NOT satisfy this condition** — it is the state the retry
    schedule exists to work through. ⛔ **Nor does an accepted attempt that produced no review**: read
@@ -1573,11 +1584,14 @@ hold:**
    invited, so there is nothing to wait for. § Step 7 governs when that label may be applied, and it
    is narrow.
 
-   **A `silent` or `Reopens? unknown` CodeRabbit satisfies it after ONE recovery attempt.** Neither
-   posts a countdown, so § Step 7's retry schedule — which waits "the window the notice states" — has
-   nothing to key on and does not apply. Run the § Step 7 recovery check (post the registry's
-   `trigger_comment`, re-read the surfaces); if that yields no review, the condition is satisfied and
-   the run proceeds under condition 5. Do not invent a wait for a clock that was never stated.
+   **A `silent` or `Reopens? unknown` CodeRabbit satisfies it once the § Step 7 recovery check has
+   been RUN.** Neither posts a countdown, so § Step 7's retry schedule — which waits "the window the
+   notice states" — has nothing to key on and does not apply. Run that check **as it is written,
+   including its split**: post the `trigger_comment` only where no workflow run exists; where a run
+   concluded `skipped` or failed, or where the reviewer posted a bare refusal naming no clearing
+   condition, the check is discharged by *establishing that*, with no comment posted. Either way the
+   condition is satisfied once the check has been run and yielded no review, and the run proceeds
+   under condition 5. Do not invent a wait for a clock that was never stated.
 
    ⛔ **This condition delays; it must never deadlock — and the run that cannot wait is the case to
    get right.** § Step 7's retry schedule needs a timer, and § Cloud session affordances records that
