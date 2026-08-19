@@ -402,12 +402,18 @@ False, stale, or overstated:
    re-derived at the moment of the claim. At this HEAD `pytest --collect-only` over `test/` reports
    **21084 collected**, consistent with the ~18 PRs merged since. Recorded so the drift is not
    mistaken for a discrepancy.
-6. Ambiguous, not counted as a finding: § Reviewer participation says the Step 8 shortfall disclosure
-   *"fired before auto-merge was armed, stating coverage as 2-of-3"*, while the commit that carried
-   that disclosure (`15f1988`, 18:51 UTC) says *"Coverage is 1 of 3 and the report says 1 of 3."*
-   CodeRabbit's review landed at 18:59 and the coverage rose to 2-of-3 before the merge at 20:21, so
-   the final table is right; whether the disclosure the operator saw said 1-of-3 or 2-of-3 cannot be
-   settled from the artifacts available to me. **UNVERIFIABLE.**
+6. Not a finding — **resolved on re-examination.** § Reviewer participation says the Step 8 shortfall
+   disclosure *"fired before auto-merge was armed, stating coverage as 2-of-3"*, while commit
+   `15f1988` (18:51 UTC) says *"Coverage is 1 of 3 and the report says 1 of 3"* and claims to be the
+   last pre-merge commit. The artifact record settles which is right: `15f1988` is **not** the last
+   commit — the PR's commit list (11 commits, re-derived from the GitHub API) shows `5d3673f` (19:15),
+   `b34ec31` (19:25) and `817d959` (19:45) landing after it, and `817d959`'s own message says *"This is
+   the last pre-merge commit."* Auto-merge was therefore armed after 19:45, by which time CodeRabbit's
+   18:59 review had already raised coverage to 2-of-3. The disclosure that fired before arming
+   necessarily stated 2-of-3, and `15f1988`'s text is a superseded 18:51 snapshot the report itself
+   accounts for (§ Reviewer participation records the `coderabbitai` verdict being corrected once the
+   re-request returned "nineteen minutes later"). The report's statement is accurate; the earlier
+   **UNVERIFIABLE** label was over-cautious.
 
 ## Declared residue — current status
 

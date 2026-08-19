@@ -205,7 +205,9 @@ n−1-of-n residue class the run's own stop record predicted. The declared condi
 - **Effort:** S
 - **Risk if fixed:** if the aspect runs in a context where the executor is unavailable (a fresh clone,
   a cloud lane), the script route fails where the file read would have worked — so the archived/no-
-  executor fallback must survive rather than be deleted outright.
+  executor fallback must survive rather than be deleted outright. (In this checkout the executor *is*
+  present at `.plan/execute-script.py`, so the risk is about the cloud lane and consumer clones, not
+  about the meta-repository.)
 
 ---
 
@@ -265,8 +267,12 @@ n−1-of-n residue class the run's own stop record predicted. The declared condi
 - **Where:** `marketplace/bundles/plan-marshall/skills/tools-script-executor/standards/cwd-policy.md:79`
 - **Evidence:** the standard asserts *"The ONE sanctioned main-anchored resolver is
   `resolve_main_anchored_path`"*. `marketplace_paths.main_checkout_root()` (`:473-484`) is a second
-  public main-anchored resolver; it predates this plan (build-queue holders) and this plan added a
-  second consumer, `_invariants._main_repo_root` (`:412`). The run recorded a round-1 "verified
+  public main-anchored resolver, and it predates this plan with **four** call sites across three
+  modules — `manage-build-server/scripts/manage_build_server.py:138` and `:644`,
+  `manage-locks/scripts/build_queue.py:396`, `build-server-client/scripts/build_server.py:146`. This
+  plan added the fifth, `_invariants._main_repo_root` (`:412`). (An earlier draft of this entry said
+  the plan added "a second consumer"; the pre-existing population is four, not one.) The run recorded
+  a round-1 "verified
   negative" that the addition does not violate the standard — correct in substance, because the
   standard's binding clause is scoped to `.plan/`-path resolution for plan-scoped state — but the
   quoted sentence is a whole-repo universal that is now literally false.

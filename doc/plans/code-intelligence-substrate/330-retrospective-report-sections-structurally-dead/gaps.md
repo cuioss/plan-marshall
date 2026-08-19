@@ -214,12 +214,13 @@ written-implies-non-empty invariant itself; that was the part searched hardest a
 - **Severity:** medium
 - **Topic:** bundle-docs
 - **Where:** `plan-retrospective/SKILL.md:52` (heading) and `:54` (body)
-- **Evidence:** the heading reads *"Dispatch shape: 9 aspects iterate inside one envelope"*; the body
-  reads *"The 8 in-context analytical aspects (metrics, decision/work logs, references vs
-  deliverables, deliverable vs lesson alignment, scope-deviation footprint, behavioural observations,
-  execution-context dispatch audit, chat-history aspect when `--session-id` is present, lesson-quality
-  audit)"* — the parenthetical enumerates **nine** items under the label "8", and both figures
-  disagree with the 15-row table.
+- **Evidence:** the heading reads *"## Dispatch shape: 9 aspects iterate inside one envelope"*; the
+  body reads, verbatim, *"The 8 in-context analytical aspects (metrics, decision/work logs,
+  references vs deliverables, deliverable vs lesson alignment, scope-deviation footprint, behavioural
+  observations, execution-context dispatch audit — deterministic facts judged in-context,
+  chat-history aspect when `--session-id` is present, lesson-quality audit)"* — the parenthetical
+  enumerates **nine** comma-separated items under the label "8" (the em-dash clause qualifies the
+  seventh item, it is not a tenth), and both figures disagree with the 15-row table.
 - **Why it matters:** a sentence that miscounts its own inline list is a false claim in a shipped
   consumer-facing document, and it is the file that defines the dispatch envelope's cost argument
   ("Per-aspect dispatch would pay 8× envelope cost").
@@ -232,7 +233,7 @@ written-implies-non-empty invariant itself; that was the part searched hardest a
 ## G9 — Add the `registry → table` direction to the aspect-table correspondence guard
 
 - **Kind:** test-gap
-- **Severity:** low
+- **Severity:** medium
 - **Topic:** tests
 - **Where:** `test/plan-marshall/plan-retrospective/test_registered_aspects_render.py:321-404`
   (`TestAspectTableKeysMatchTheRegistry`)
@@ -242,7 +243,10 @@ written-implies-non-empty invariant itself; that was the part searched hardest a
   'dispatch_boundaries']`, which is exactly why the reverse assertion is not shipped.
 - **Why it matters:** a new registry row added without a table row ships undocumented and its
   registration key is unobtainable from the document that instructs registrations — the defect D3
-  exists to prevent, uncovered in the other direction.
+  exists to prevent, uncovered in the other direction. It is **medium**, not low, because it is a
+  missing test on a load-bearing path: G5 and G6 are both instances of exactly the state this
+  assertion would catch, and they reached production undetected. The limitation being documented in
+  the class docstring makes it honest, not covered.
 - **Action:** once G5 and G6 land, add the reverse assertion (`_spec_fragment_keys()` minus
   `_`-prefixed keys ⊆ scanned table keys) with no exemption list.
 - **Done when:** the reverse assertion exists, has no exemptions, and passes.

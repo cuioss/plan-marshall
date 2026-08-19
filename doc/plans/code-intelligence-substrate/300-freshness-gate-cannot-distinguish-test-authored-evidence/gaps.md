@@ -211,9 +211,10 @@ severity is corrected to `low` accordingly.**
 - **Severity:** low
 - **Topic:** tests
 - **Where:** `_freshness_crosscheck.py:237-238` (`if not isinstance(notations, (frozenset, set)):`)
-- **Evidence:** Replacing the condition with `if False:` leaves the same 504 tests green. Every stub
-  in the suite (`_FakeQueryModule`, `_stub_expected`) returns a `frozenset` or raises, so the branch
-  is unreachable from any test.
+- **Evidence:** Replacing the condition with `if False:` leaves the same 504 tests green — **verified
+  independently in adversarial review**, with the file byte-restored from a snapshot and
+  `git status --porcelain` clean afterwards. Every stub in the suite (`_FakeQueryModule`,
+  `_stub_expected`) returns a `frozenset` or raises, so the branch is unreachable from any test.
 - **Why it matters:** The guard's own comment concedes it defends a future resolver rather than a
   live hazard (R3-14). Untested defensive code that is also unreachable in production is dead weight
   a later reader cannot distinguish from a live guard; if it is kept, it should be pinned so its
