@@ -195,6 +195,28 @@ in `_fragment_has_payload`, `_names_checked_set` and `_has_attribution_field`, s
 survives; the metadata append commits inside `rmw_json`'s critical section, so there is no
 check-then-act window; and the orchestrator store refuses `--append` instead of silently overwriting.
 
+## Documentation-standards sweep of the shipped surfaces
+
+`CLAUDE.md` § Documentation Standards forbids version history and transitional narrative. Three
+places the plan touched now carry a paragraph about the plan's own editing history, all read
+first-party:
+
+- `plan-retrospective/SKILL.md:311` — *"…deliberately **not enumerated here**: an earlier version of
+  this sentence listed the fields and then told the reader not to restate them, and it was left
+  naming three when the registry had grown to five."* The gate that would catch this,
+  `no-historical-prose-in-skills`, cannot: `plan-retrospective/**` is one of the seven allowlisted
+  paths recorded at `plugin-doctor/references/rule-provenance.md:205` (verified verbatim).
+- `compile-report.py:442-445` — *"testing the container was one of several attempts that each closed
+  a narrower case than the invariant needs — no count is given here, because a count of attempts goes
+  stale on the next one."*
+- `retro_sections.py:132-134` — *"Those last two were added after a sweep over the eight in-tree
+  deterministic producers, which flagged `check-artifact-consistency` and `summarize-invariants` on
+  every clean run."*
+
+The last two are outside `no-historical-prose-in-skills`'s file scope entirely — that rule is
+markdown-only (`rule-catalog.md:754` describes its `.py`-covering sibling as deliberately broader) —
+so the allowlist reasoning applies to the first only. Filed as G10, G11, G12, all low.
+
 ## Test adequacy
 
 | Deliverable | Covering tests | Non-vacuity evidence |
@@ -292,8 +314,9 @@ Respected. Nothing forbidden was built:
 
 Collateral beyond the retrospective bundle is all D4-driven and declared: `manage-status` (3 scripts
 + SKILL.md), `platform-runtime` (3 scripts + SKILL.md), and four read-side documentation surfaces.
-The one undeclared item is `platform-runtime/SKILL.md:38` (the verb-table row), which the report's
-six-surface enumeration omits.
+`platform-runtime/SKILL.md:38` (the verb-table row) is a **write**-side surface, correctly outside
+the report's six-surface *read*-side enumeration; it is covered by the report's own beyond-diff sweep
+commit (`533fe2d`, "describe session capture as an append at every surface"). Nothing undeclared.
 
 ## Method and coverage
 

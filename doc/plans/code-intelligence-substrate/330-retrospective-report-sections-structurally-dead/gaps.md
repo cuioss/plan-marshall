@@ -285,7 +285,7 @@ path today, so it leads.
 - **Kind:** doc-defect
 - **Severity:** low
 - **Topic:** bundle-docs
-- **Where:** `compile-report.py:441-447`
+- **Where:** `compile-report.py:442-445` (inside `_fragment_renders_empty`'s docstring, `:427-472`)
 - **Evidence:** *"⛔ **A non-empty CONTAINER is not the same as a usable BODY**, and testing the
   container was one of several attempts that each closed a narrower case than the invariant needs —
   no count is given here, because a count of attempts goes stale on the next one."*

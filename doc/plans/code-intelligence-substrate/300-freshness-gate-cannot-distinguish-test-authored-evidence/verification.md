@@ -209,7 +209,10 @@ Three real coverage gaps, each proven:
 - **The R2-12 guard has no test** (G7). Replacing `if not isinstance(notations, (frozenset, set)):`
   with `if False:` also leaves **504 passed**. (This one is documented as future-defence, so it is
   low severity — but it is untested defensive code either way.)
-- **The gate-level anti-vacuity control cannot detect the fault it names, in a full-suite run** (G8).
+- **The gate-level anti-vacuity control cannot detect the fault it names, in a full-suite run** (G8;
+  re-rated **high** by adversarial review, which reproduced the masking directly — the control is
+  red when its file runs alone under a by-name import block, and **fully green** when
+  `test_project_build_notations.py` is collected ahead of it).
   Its docstring says "an import path … that stopped working is a test failure rather than a silent
   no-op". `resolve_expected_notations` does `from _cmd_client_query import …`, which consults
   `sys.modules` first. Every test file in `test/plan-marshall/manage-architecture/` registers that
@@ -264,7 +267,7 @@ squash-merged, the reviewer-participation timeline, and the CodeRabbit/Sourcery 
 | The gate is still tier-blind — reads `notation`, not `args`/`command` | **Open** | `_freshness_crosscheck.py` reads only `notation` (`:244-247, 322-323`); no consumer of `args`/`command` exists. No plan under `doc/plans/` owns it |
 | The resolve path can still raise on a malformed persisted command map | **Open** | `_cmd_client_query.py:652` — `cmd_data if isinstance(cmd_data, str) else cmd_data.get('executable', '')`, unguarded, as documented at `:634-651` |
 | Producer-side provenance is unowned | **Open** | `_ledger_core.build_record:135-148` carries no writer field. No test-isolation plan exists in any `doc/plans/` epic |
-| Cost on a Maven/Gradle/npm project is unmeasured | **Open — and its premise is wrong** | The crawl does **not** run build-tool discovery verbs; see § Out-of-scope and collateral and G2–G5 |
+| Cost on a Maven/Gradle/npm project is unmeasured | **Open — and its premise is wrong** | The crawl does **not** run build-tool discovery verbs. Instrumented twice independently: exactly **one** child process, `git rev-parse --git-common-dir`, and it comes from LSP-binding resolution, not from a build tool. See G2–G5 |
 | The polluting consumer test is still unnamed | **Open** | Not identifiable from this clone, as the plan itself states |
 | `notation_absent` loses to `notation_unrelated` on a mixed set | **Open by design** | `_freshness_crosscheck.py:342`; documented at `SKILL.md:321-327`. Behaviour matches the doc |
 
@@ -289,9 +292,14 @@ report):** the change added a **new public API in a different skill** —
 All are consequential restatements of the changed predicate rather than unrelated work, and all were
 declared.
 
-**One undeclared behavioural consequence:** the gate's happy path now runs a live architecture crawl
-that takes **7.6–10.6 s on this machine** (four measurements, § Method). It is paid at phase-5 Step
-12a and again at phase-6 `push`. The shipped budget guidance says 1–5 s (G1).
+**One undeclared behavioural consequence:** the gate's happy path now runs a live architecture crawl,
+paid at phase-5 Step 12a and again at phase-6 `push`. ⚠ **My cost figure for it was wrong.** I
+reported **7.6–10.6 s on this machine** and charged the shipped 1–5 s guidance as understated.
+Adversarial review re-measured nine times in fresh processes and got **2.99–3.70 s**, entirely inside
+the shipped range, then reproduced my original figures (**7.19–11.56 s**) by re-running under
+deliberate CPU contention. My four measurements were taken while concurrent agents ran full pytest
+suites in this shared tree: I measured load, not the machine. The shipped guidance stands; G1 is
+reduced to a request that it name its measurement condition.
 
 ## Method and coverage
 
@@ -325,8 +333,10 @@ What I did, in order:
 - Cost on a Maven/Gradle/npm project — no such project in this clone. But I *was* able to falsify the
   claimed *mechanism* of that cost by reading the discovery path and instrumenting the crawl.
 - The crawl timings I report are from this container; they are not directly comparable to the run's
-  own machine. I state them as a contradiction of a range presented as a repository property, not as
-  proof that the run's four measurements were wrong.
+  own machine. ⛔ **This caveat was not strong enough.** I stated them as a contradiction of the
+  shipped range; adversarial review showed they contradict nothing — they were taken under
+  concurrent load, and unloaded re-measurement lands inside the shipped range. A timing taken on a
+  tree shared with other running agents is not a measurement of the tree.
 
 **Files I wrote:** only `verification.md` and `gaps.md` in this plan's directory. Two files elsewhere
 in the tree (`manage-metrics/scripts/manage-metrics.py`, `plan-retrospective/scripts/check-artifact-consistency.py`)

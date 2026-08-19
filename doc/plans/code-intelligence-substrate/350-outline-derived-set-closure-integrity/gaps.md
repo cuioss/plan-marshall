@@ -116,21 +116,30 @@ being codified anywhere a later run would find it (G17).
 
 - **Kind:** report-defect
 - **Severity:** low
-- **Topic:** tests
+- **Topic:** plan-lane-contract
 - **Where:** `doc/plans/code-intelligence-substrate/350-outline-derived-set-closure-integrity/report-01.md:184-192`
 - **Evidence:** The paragraph claims, "Re-derived with `grep -c '^def test_'` at the moment of this
   claim … **34** in `test_qgate_closure.py`, **8** in `test_survey_scope_declaration.py`, **4** in
   `test_recall_survey_scope.py`, **1** added to `test_foreign_deliverable_column.py` (11 → 12) and **2**
   to `test_foreign_pr_gate.py` (13 → 15) — **49** new test functions". Re-derived at HEAD with the same
   command: **36**, **10**, **5**, 12 (pre-merge 11), 15 (pre-merge 13) — **54**. No commit after the
-  merge touched those files (`git log --oneline 63943f5..HEAD -- <the three new files>` is empty), so
-  the drift arose inside the run.
-- **Why it matters:** This is the third recorded false version of this one sentence (report-02 § A1
-  fixed the previous one and asserted the figures were re-derived). A count presented as freshly
-  measured, and wrong, is worse than no count.
+  merge touched those files (`git log --oneline 63943f5..HEAD -- <the three new files>` is empty).
+  ⚠ **The figures were not miscounted — they were true and then invalidated.** Re-derived against run
+  01's own tip (`git show origin/claude/derived-set-closure-integrity-g7n8x2:<file> | grep -c '^def
+  test_'`): **34 / 8 / 4 / 12 / 15** — every one of the five figures holds exactly there. Run 02's
+  own later commits added the five that make them stale: the B1 guard in `test_recall_survey_scope.py`
+  (4 → 5), the two B2 guards in `test_survey_scope_declaration.py` (8 → 10), and the F-R1
+  parametrized guard plus its absent-key case in `test_qgate_closure.py` (34 → 36).
+- **Why it matters:** The sentence carries "re-derived … at the moment of this claim", and run 02
+  re-derived it in the same commit that added two of the tests that falsify it. The defect is not
+  arithmetic; it is that a mid-run count is stale the instant the same run adds a test, and the
+  sentence states no ref against which it could be re-checked. That is the third recorded failure of
+  this one sentence, each by a different route.
 - **Action:** Follow `33392fd`'s own rule and stop counting: name the five modules and state each
-  count alongside the command and the ref it was measured at, or drop the total.
-- **Done when:** every figure in § D5 reproduces from `grep -c '^def test_'` against the named ref.
+  count alongside the command **and the ref it was measured at** (`63943f5`, the squash merge, is the
+  only ref that still resolves for the landed state), or drop the total.
+- **Done when:** every figure in § D5 reproduces from `grep -c '^def test_'` against the ref the
+  sentence names.
 - **Effort:** S
 - **Risk if fixed:** None.
 
@@ -138,17 +147,23 @@ being codified anywhere a later run would find it (G17).
 
 - **Kind:** report-defect
 - **Severity:** low
-- **Topic:** measurement/metrics
+- **Topic:** plan-lane-contract
 - **Where:** `doc/plans/code-intelligence-substrate/350-outline-derived-set-closure-integrity/report-02.md:242-246` (§ F-R1, "Sweep-and-count on the same claim")
 - **Evidence:** "The identical raw pattern appears at **six** sites in `_cmd_qgate_mechanical.py`."
-  Re-derived: `int(x['number'])` appears at `_cmd_qgate_mechanical.py:154, 184, 296, 300, 309, 310,
-  311, 502` — **eight** — and two further sites feed a bare `t['number']` to a `:03d` format
-  (`:243`, `:371`), which raises on the same inputs. No grouping of the file's occurrences yields six.
+  Re-derived with `grep -n "\['number'\]\|\[\"number\"\]" `: `int(…['number'])` appears at
+  `_cmd_qgate_mechanical.py:154, 184, 296, 300, 309, 310, 311, 502` — **eight** — and **five**
+  further sites read the field raw and hand it straight to a `:03d` format, which raises on the same
+  inputs: `:213` and `:215` (inline in the coverage finding's title and detail), `:243` (assigned,
+  formatted at `:249/:251/:264/:266`), `:371` (assigned, formatted at `:393/:395/:411/:413/:420/:422`)
+  and `:532` (inline in the keyword-drift title). **Thirteen** distinct read sites in total. No
+  grouping of the file's occurrences yields six.
 - **Why it matters:** The paragraph is the sweep-and-count discipline applied to the reviewer's finding;
   a wrong denominator understates the residue G7 has to clear, and the whole point of the sweep is that
-  the count is the deliverable.
-- **Action:** Re-run the sweep, state the pattern used, and record 8 (conversions) + 2 (unguarded
-  format sites) with their line numbers.
+  the count is the deliverable. ⚠ This entry's own first version undercounted it too — it named the
+  two assigned format sites and missed the three inline ones — which is the same under-enumeration one
+  level further out.
+- **Action:** Re-run the sweep, state the pattern used, and record 8 (conversions) + 5 (raw reads fed
+  to a `:03d` format) = 13 read sites with their line numbers.
 - **Done when:** the figure in § F-R1 matches a grep a reader can re-run.
 - **Effort:** S
 - **Risk if fixed:** None.
@@ -158,11 +173,12 @@ being codified anywhere a later run would find it (G17).
 - **Kind:** bug
 - **Severity:** medium
 - **Topic:** architecture-core
-- **Where:** `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_cmd_qgate_mechanical.py:154`, `:184`, `:243`, `:296`, `:300`, `:309`, `:310`, `:311`, `:371`, `:502`
-- **Evidence:** All ten read a `number` field straight off a JSON record.
-  `:243` (`number = t['number']`, then `f'files_exist: TASK-{number:03d}…'` at `:393`) and `:371` raise
-  `TypeError` on a `None` or string value before the finding is built; the eight `int(…)` sites raise
-  `KeyError` / `TypeError` / `ValueError`. `_qgate_closure.py:85` already ships the fix (`_as_int`) and
+- **Where:** `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_cmd_qgate_mechanical.py:154`, `:184`, `:213`, `:215`, `:243`, `:296`, `:300`, `:309`, `:310`, `:311`, `:371`, `:502`, `:532`
+- **Evidence:** All thirteen read a `number` field straight off a JSON record.
+  The five raw reads (`:213`, `:215`, `:532` inline; `:243` and `:371` assigned and then formatted at
+  `:249/:251/:264/:266` and `:393/:395/:411/:413/:420/:422`) hand the value to a `:03d` format, which
+  raises `TypeError` on `None` and `ValueError` on a string before the finding is built; the eight
+  `int(…)` sites raise `KeyError` / `TypeError` / `ValueError`. `_qgate_closure.py:85` already ships the fix (`_as_int`) and
   `_qgate_closure.py:376-383` documents exactly why it matters: these accesses sit on the path that
   **emits** a finding, so the gate crashes when it has something to report and passes when it does not.
   Declared as residue in `report-02.md:572` and confirmed open here.
@@ -170,7 +186,7 @@ being codified anywhere a later run would find it (G17).
   found in the new module (F-R1), at sites the module's own sibling still carries. `_check_files_exist`
   and `_check_acyclic` are the two checks with the widest reach.
 - **Action:** Import `_as_int` from `_qgate_closure` (or lift it into a shared helper) and apply it at
-  all ten sites, rendering an unusable number as `000` exactly as the closure does. Where a deliverable
+  all thirteen sites, rendering an unusable number as `000` exactly as the closure does. Where a deliverable
   number is unusable, drop the record from the map and let the population report the loss rather than
   raising.
 - **Done when:** a parametrized regression test seeds a task whose `number` is `None`, `''` and

@@ -17,7 +17,7 @@ mis-resolves and the new refusal does not fire.
 |---|---|---|---|---|
 | D1 | GATE: enumerate main-scoped captures + resolver callers | Pop. A = 3 of a 15-entry registry; Pop. B = 4 callers, 3 inherit; sibling shape occurs once | Registry is 15 (`_invariants.py:1656-1673`); 3 `main_*` entries; pre-fix `_repo_root` had exactly 4 callers (`7612c3a^`); `_run_script` has 10 call sites reaching 7 registry captures — all re-derived, all match | CONFIRMED |
 | D2 | Fix the RESOLUTION, not the call site | `_repo_root` → `_current_repo_root`; new `_main_repo_root` via `git rev-parse --git-common-dir`, `None` not cwd-fallback | `_invariants.py:336`, `:362`; asserted directly on the resolver at `test_invariants_main_resolution.py:114`; reproduced by first-party probe | CONFIRMED (one override hole — G1) |
-| D3 | Fail loud on the impossible state | `MainCaptureReadTheWorktree`, keyed on same-tree resolution rather than equal SHAs; both verbs, one payload builder | `_invariants.py:214`, `:1813`; `_handshake_commands.py:354`, `:445`, `:557`; in `VERIFY_REFUSAL_ERRORS` (`_cmd_lifecycle.py:51`) and the strict-exit list (`phase_handshake.py:141`) | CONFIRMED — **deviates from the literal *Done when*** (see D3 detail) |
+| D3 | Fail loud on the impossible state | `MainCaptureReadTheWorktree`, keyed on same-tree resolution rather than equal SHAs; both verbs, one payload builder | `_invariants.py:214`, `:1813`; `_handshake_commands.py:354`, `:445`, `:557`; in `VERIFY_REFUSAL_ERRORS` (`manage-status/scripts/_cmd_lifecycle.py:51` — a different skill from the rest of this row) and the strict-exit list (`phase_handshake.py:141`) | CONFIRMED — **deviates from the literal *Done when*** (see D3 detail) |
 | D4 | Quarantine already-written rows; two separate numbers | Plans examined **0**; records affected **BLOCKED**; documented rule shipped | Both numbers present (`report-01.md:169-173`); `.plan/local/` in this clone carries no `plans/` — re-checked, still true; rule at `invariant-check-summary.md:46-55` | PARTIAL — rule is unexecutable as written (G2, G4) |
 | D5 | Tests, each verified to fail pre-fix | 19 tests in two modules; 11-mutation matrix, red-set union 19 of 19 | 19 collected and green; M1/M2/M3 independently reproduced at exactly 6/4/2 red | CONFIRMED |
 
@@ -235,8 +235,19 @@ its **eleven** mutations, not about these three, and must not be read across —
 where an earlier draft of this document did exactly that.
 
 **One test gap:** `test_main_repo_root_honours_base_dir_override:154` pins only the *canonical* override
-shape (`<root>/.plan/local` → `<root>`). The **flat** override shape — the one that returns `Path.cwd()`
-and produces the defect in § Correctness review 1 — has no test in either direction. Folded into G1.
+shape (`<root>/.plan/local` → `<root>`). Every **non-canonical** shape — the ones that return
+`Path.cwd()` and produce the defect in § Correctness review 1 — has no test in either direction.
+Folded into G1.
+
+**Fix viability, measured rather than reasoned.** G1's proposed containment check
+(`main_root.resolve().is_relative_to(worktree_path.resolve())` in place of the `!=` at `:1856`) was
+applied to the shipped file and measured: every `did not fire` row in § Correctness review 1's sweep
+becomes `FIRED`, the two new modules stay at 19 passed, and the whole owning directory stays at
+570 passed. G1's alternative limb — making the override branch return `None` for a non-canonical base
+dir — was also measured and **fails**: `test/conftest.py:1183-1185`'s autouse `_plan_base_dir_sandbox`
+gives every test a flat `PLAN_BASE_DIR`, so the `main_*` columns empty out suite-wide and 7 tests in
+`test/plan-marshall/plan-marshall/` go red. Both results are carried into G1 so a later run does not
+take the second limb as safe.
 
 ## Report accuracy
 
@@ -247,9 +258,10 @@ captures, tests 10 + 9 = 19, build-gate 11 Python files (6 production, 5 test �
 
 1. **Overstated (low).** *"no consumer of the `main_*` columns is unexamined — `summarize-invariants.py`
    is the only one"* (`report-01.md:485-486`). `_handshake_commands._check_main_dirty_drift:288` reads
-   `captured_row['main_dirty_files']` and `_diffs:485-512` reads every `main_*` column. The report did
-   examine the former (it is D5's declared collateral), so *"unexamined"* holds; *"the only one"* does
-   not. → G8
+   `captured_row['main_dirty_files']` and `_diffs:485-512` reads `main_sha` and `main_dirty` — **not**
+   `main_dirty_files`, which `_diffs` explicitly `continue`s past at `:493-494` because that column is
+   owned by `_check_main_dirty_drift`'s proper-superset semantics. The report did examine the former
+   (it is D5's declared collateral), so *"unexamined"* holds; *"the only one"* does not. → G8
 2. **True but scope-limited (low).** *"The defect's shape … occurs **exactly once** across
    `marketplace/`"* (`:79-80`). Verified true for `marketplace/`. The sweep's boundary is not stated,
    and a second instance of the same shape sits in the project-local
@@ -259,6 +271,15 @@ captures, tests 10 + 9 = 19, build-gate 11 Python files (6 production, 5 test �
    confirmed.
 4. **UNVERIFIABLE.** The reviewer-participation table (comment ids, rate-limit bodies) and the
    wall-clock/dispatch figures. No first-party access to PR #1286's comment surfaces from this audit.
+5. **Standard falsified by the plan's own addition (low).**
+   `tools-script-executor/standards/cwd-policy.md:79` states *"The ONE sanctioned main-anchored
+   resolver is `resolve_main_anchored_path`"* as an unqualified whole-repo universal.
+   `marketplace_paths.main_checkout_root()` (`:473-484`) is a second public main-anchored resolver
+   with four pre-existing call sites (`manage_build_server.py:138`, `:644`; `build_queue.py:396`;
+   `build_server.py:146`), and this plan added the fifth at `_invariants.py:412`. The run's round-1
+   "verified negative" — that the addition does not violate the standard — is right in substance,
+   because the standard's binding clause is scoped to `.plan/`-path resolution for plan-scoped state;
+   the quoted sentence is what is now literally false. → G7
 
 Claims specifically re-checked and **true**: the two-namespace separation (`sync-with-main.md:84`); no
 production caller of `set_base_dir()` (grep over `marketplace/` — only its own definition at
@@ -276,7 +297,7 @@ post-fix.
 |---|---|---|
 | 1. A second automated review pass owed (CodeRabbit + Sourcery both rate-limited) | **Moot** | PR #1286 merged as `7612c3a`; a merged PR cannot receive the deferred pass, and later commits have since changed the touched files |
 | 2. `TaskGraphInvalid` has no handler in `cmd_capture` or `cmd_verify` | **Open** | `grep TaskGraphInvalid marketplace/…/scripts/*.py` → raised at `_invariants.py:1087`, declared in `capture_all`'s `Raises:` at `:1879`, and **no** `except TaskGraphInvalid` and no `task_graph_invalid` error code anywhere. Fail-closed as bounded (the raise precedes `_row_for_capture`), so the loss is diagnostic shape only. → G9 |
-| 3. Prose residue at sites the previous finding did not point at (n−1-of-n) | **Open — two fresh instances found** | `marketplace_paths.py:403-405` still cites `merge_lock.py`'s `_main_checkout_root`, which no longer exists in that file (G6); `invariant-check-summary.md:9-18` claims to be "From `INVARIANTS` registry" while listing 8 of the 15 entries (G5) |
+| 3. Prose residue at sites the previous finding did not point at (n−1-of-n) | **Open — two fresh instances found** | `marketplace_paths.py:402-405` still cites `merge_lock.py`'s `_main_checkout_root`, which no longer exists in that file — `merge_lock.py:326` now delegates to `resolve_main_anchored_path` (G6); `invariant-check-summary.md:7-18` claims to be "From `INVARIANTS` registry" while listing 8 of the 15 entries (G5) |
 | 4. Contract-change proposal: forbid `git checkout` as the mutation-restore mechanism | **Closed** | `b199d94` *"chore(cloud-plan-lane): require snapshot-based restore for mutation sweeps (#1289)"*; the rule is live at `.claude/skills/cloud-plan-lane/SKILL.md:773-774` |
 | *"Not residue"*: `config_hash`'s cwd-relative `marshal.json` read | **Correctly excluded** | `_invariants.py:1665` — the name makes no main claim and the ADR-002 cwd rule applies. No work owed |
 
@@ -319,10 +340,22 @@ resolver behaviours reproduced by a standalone probe against a real `git worktre
 read or order-dependency was found in the shipped resolver, the three captures, the cross-field
 assertion, or either verb's error handling, beyond the override hole recorded as G1. The registry's
 "not applicable" contract (`value is None → column omitted`, `_invariants.py:1893-1894`) is honoured by
-all three `main_*` captures. No test in either new module was found vacuous: every one of the 19 is in
-the red set of at least one of the three mutations I ran, except the four that M1/M2/M3 do not target
-by construction (the two `None`-guard tests, the `VERIFY_REFUSAL_ERRORS` membership test, and the
-clean-exit negative control) — each of which asserts a value the mutations do not perturb.
+all three `main_*` captures. No test in either new module was found vacuous, but the evidence for that
+is narrower than an earlier draft of this section claimed: **11 of the 19** are in the red set of at
+least one of the three mutations I ran, not 15. The **eight** outside that union are each unperturbed
+by construction, and each is named here so the negative is checkable rather than asserted —
+`test_current_repo_root_still_follows_pinned_worktree_cwd:134` and
+`test_main_repo_root_honours_base_dir_override:154` assert the two branches M1 deliberately leaves
+alone (M1 makes `_main_repo_root` *become* `_current_repo_root`, and the override branch already was
+it); `test_capture_main_sha_leaves_column_empty_when_main_unresolvable:241` and
+`test_capture_main_dirty_files_leaves_column_empty_when_main_unresolvable:253` are stubbed `None`
+guards; `test_permits_equal_shas_for_a_plan_with_no_worktree_path:119` asserts a permit that all three
+mutations preserve (M3 still short-circuits on the `not raw_worktree` guard);
+`test_refusal_error_code_is_a_verify_refusal_that_blocks_transition:222` reads
+`manage-status/_cmd_lifecycle.VERIFY_REFUSAL_ERRORS`, outside `_invariants.py` entirely; and
+`test_refusal_exits_non_zero_under_strict_verify:235` with its control `:268` stub `cmd_verify`
+(`:255`) so no `_invariants.py` mutation can reach them. Non-vacuity for those eight rests on the
+report's own M4-M11 rows, which this audit did not re-run.
 
 **Working-tree discipline:** this audit mutated exactly one file (`_invariants.py`) and restored it
 byte-for-byte from its own snapshot. The three files reported modified by `git status --porcelain` at

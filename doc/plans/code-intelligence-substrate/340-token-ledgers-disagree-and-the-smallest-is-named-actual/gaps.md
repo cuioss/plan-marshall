@@ -2,12 +2,20 @@
 
 The plan's seven deliverables all shipped and the five load-bearing guards (population-mismatch refusal,
 aggregate invalidation, population-count persistence, the unclosed-boundary `end_time` guard, the
-over-covering marker) were each driven red by mutation, so the core is sound. What remains is ten
-instances in three families: one refuted claim that survived into shipped `--help` text; two unpinned or
-unreachable behaviours in the new reconciliation verb (a maximum matching no test can distinguish from
-greedy, and a recursion cliff carried by the machinery that produces it); the verb having no caller, so
-the plan's Goal is reached in principle only; and four smaller report/doc/test defects. No gap is
-`high` — nothing shipped mis-measures, and no guard was found unable to fire.
+over-covering marker) were each driven red by mutation, so the core is sound. What remains is **ten
+instances in five families**:
+
+- **Two false claims in shipped documentation** — the `reconcile-ledgers` `--help` description restates a
+  claim round 2 refuted (G1), and `pair_rows`' maximality rationale justifies its machinery against an
+  algorithm the module never used (G2).
+- **One contained bug in the new verb** — a recursion cliff in the machinery G2 shows is redundant (G3).
+- **One omission** — the verb has no caller, so the plan's Goal is reached in principle only (G4).
+- **Two missing-test / cross-reader-inconsistency items** — the `worked_seconds_per_task` key name is
+  unasserted (G8) and one of two readers of `total_tokens` sums booleans as counts (G6).
+- **Four documentation-surface defects** — three in `report-01.md` (G5, G9, G10) and one missing
+  cross-reference between the two `*_population` field families (G7).
+
+No gap is `high` — nothing shipped mis-measures, and no guard was found unable to fire.
 
 ## G1 — Correct the `reconcile-ledgers` `--help` description, which restates a claim round 2 refuted
 
@@ -37,35 +45,65 @@ the plan's Goal is reached in principle only; and four smaller report/doc/test d
 - **Effort:** S
 - **Risk if fixed:** none beyond a `plugin-doctor` help-cache regeneration; no behaviour changes.
 
-## G2 — Pin `pair_rows`' maximality with a test that a greedy implementation fails
+## G2 — Correct `pair_rows`' maximality rationale, which justifies its machinery against an algorithm the module never used
 
-- **Kind:** test-gap
-- **Severity:** medium
-- **Topic:** tests
-- **Where:** `marketplace/bundles/plan-marshall/skills/manage-metrics/scripts/_ledger_reconciliation.py:328-340`
-  (`_augment`, the Kuhn's-algorithm augmenting path) and
-  `test/plan-marshall/manage-metrics/test_ledger_reconciliation.py:418-507` (`TestPairingIsMaximal`)
-- **Evidence:** mutating `if holder is None or _augment(holder, visited):` to `if holder is None:` —
-  which reduces the matching to plain first-fit greedy — leaves **all 22 tests in the module green**
-  (`22 passed in 0.48s`). `test_a_nearer_partner_is_given_up_when_another_row_needs_it` names
-  *nearest-first* greedy, which the implementation never was: it iterates `candidates[...]` in index
-  (i.e. timestamp) order, and on that corpus index-order first-fit already pairs both rows. A 5 000-corpus
-  probe (0–6 rows per side, windows 60/300/600 s) found the two algorithms produce equal-size matchings
-  in **5 000/5 000** cases — the eligibility sets are contiguous index intervals with monotone endpoints,
-  so no hand-written corpus will separate them.
-- **Why it matters:** R3-F6 introduced maximum matching precisely because a non-maximal pairing
-  "manufactures spurious findings — a false signal about the ledgers, manufactured by the verb built to
-  surface them". That property is currently defended by nothing: any future simplification of `_augment`
-  (including the one G3 invites) would land green.
-- **Action:** add a property test that generates random corpora and asserts `len(pair_rows(...)[0])`
-  equals a brute-force maximum matching computed in the test (exhaustive enumeration is fine at ≤6 rows
-  per side). That test fails against any genuinely non-maximal implementation, which a fixed corpus
-  cannot. Optionally record in `pair_rows.__doc__` that first-fit is provably equivalent on this
-  eligibility structure, so the next reader knows why the fixed-corpus test cannot bite.
-- **Done when:** reverting `_augment` to `if holder is None:` makes at least one test in
-  `test_ledger_reconciliation.py` fail.
-- **Effort:** M
-- **Risk if fixed:** a randomised test can be flaky if seeded from the clock — seed it deterministically.
+- **Kind:** doc-defect *(re-kinded from `test-gap` by adversarial review — see "cannot be closed by a
+  test" below)*
+- **Severity:** medium — the calibration's "a false claim in shipped documentation". `high` was
+  considered and rejected: the shipped pairing **is** a maximum matching, so nothing mis-measures, no
+  guard fails to fire, and the documented result contract (`pair_rows` returns a maximum-size pairing) is
+  implemented. What is false is the stated *reason* for the implementation, not the implementation.
+- **Topic:** measurement/metrics
+- **Where:** `marketplace/bundles/plan-marshall/skills/manage-metrics/scripts/_ledger_reconciliation.py:254-286`
+  (`pair_rows.__doc__`; the ⛔ rationale is `:260-269`), the augmenting path it justifies at `:328-340`,
+  and `test/plan-marshall/manage-metrics/test_ledger_reconciliation.py:418-452`
+  (`TestPairingIsMaximal` and `test_a_nearer_partner_is_given_up_when_another_row_needs_it`)
+- **Evidence:**
+  - Mutating `if holder is None or _augment(holder, visited):` (`:334`) to `if holder is None:` — which
+    reduces the matching to plain first-fit over the same candidate lists — leaves **all 22 tests in the
+    module green**, and **all 456 tests in `test/plan-marshall/manage-metrics/` green**.
+  - Re-derived over **21 056 corpora** in four out-of-tree probes: 5 000 random (0–6 rows per side,
+    windows 60/300/600 s); 7 056 **exhaustive** over a six-value offset alphabet at ≤3 rows per side;
+    3 000 dense-tie corpora clustered on the window boundary; 6 000 including unparseable timestamps on
+    both sides. In **every** corpus the two algorithms produced a matching of the same size, both equal
+    to a brute-force maximum — and, more than the size, **the identical set of unpaired rows**. Since the
+    unpaired rows are what become findings, nothing observable through this module separates them.
+  - The structural reason: `pair_rows` sorts both sides internally by `_row_sort_key` (`:301-302`), which
+    sorts unparseable stamps last, so each execution row's eligible boundary indices form a **contiguous
+    interval** whose endpoints are **non-decreasing** as the execution row's timestamp increases. That is
+    a convex bipartite graph traversed in non-decreasing right-endpoint order, for which taking the
+    smallest free eligible index is already a maximum matching.
+  - The ⛔ rationale's worked example names ***nearest-first*** greedy. The implementation's alternative
+    is not that: it iterates `candidates[...]` in index (i.e. timestamp) order and takes the first
+    **free** index, never the nearest. On that same example (boundary rows at t=0/t=250, execution rows
+    at t=240/t=500, window 300 s) index-order first-fit pairs both rows, so the failure the docstring
+    describes cannot occur here. `test_a_nearer_partner_is_given_up_when_another_row_needs_it` inherits
+    the error: its docstring says it pins "the case greedy nearest-first gets wrong", and it passes
+    identically against the implementation's own greedy.
+- **Why it matters:** the ⛔ block is the stated justification for machinery that carries a recursion
+  cliff (G3) and that a later reader would otherwise be right to delete. Because it argues against a
+  strawman, it neither justifies keeping `_augment` nor warns anyone off removing it — and the next
+  reader who checks the claim reaches the same conclusion this review did, at the same cost.
+- **⚠ This gap cannot be closed by a test, and that is itself the finding.** The first audit filed it as
+  a test-gap whose *Done when* was "reverting `_augment` to `if holder is None:` makes at least one test
+  fail". **No test can satisfy that**, on this module's own inputs: the two implementations agree on
+  every corpus, including on row identity. The remedy first proposed — a randomised property test
+  asserting `len(pair_rows(...)[0])` equals a brute-force maximum — passes against *both*, so it would
+  have been written, landed green, and pinned nothing.
+- **Action:** replace the ⛔ paragraph with what is true — the result is a maximum matching, and on this
+  eligibility structure (contiguous intervals with monotone endpoints, guaranteed by the internal sort at
+  `:301-302`) first-fit in the module's own candidate order is *already* maximum, so the augmenting path
+  changes no output. Rename `test_a_nearer_partner_is_given_up_when_another_row_needs_it` and rewrite its
+  docstring to state what it pins (both rows pair when both have a legal partner) instead of a comparison
+  with nearest-first. Do this in the same change as **G3**, which deletes `_augment` outright: the
+  equivalence note is the record that makes that deletion reviewable.
+- **Done when:** `pair_rows.__doc__` no longer asserts that the alternative to `_augment` is
+  nearest-first greedy, and states the first-fit equivalence together with the precondition that grants
+  it (the internal sort); and `grep -rn "nearest-first" marketplace/ test/` returns nothing outside a
+  sentence that names it as the algorithm the module does **not** use.
+- **Effort:** S on its own; M taken together with G3.
+- **Risk if fixed:** none to behaviour. The rewritten rationale must keep stating that the RESULT is a
+  maximum matching — that remains true and is what the verb publishes.
 
 ## G3 — Remove the `_augment` recursion cliff by replacing the recursion with its equivalent iteration
 
@@ -74,18 +112,24 @@ the plan's Goal is reached in principle only; and four smaller report/doc/test d
   workflow does)
 - **Topic:** measurement/metrics
 - **Where:** `marketplace/bundles/plan-marshall/skills/manage-metrics/scripts/_ledger_reconciliation.py:328-340`
-- **Evidence:** reproduced in this audit. With N execution rows and N boundary rows sharing one
-  timestamp: N=500 → ok, N=900 → ok, **N=999 → `RecursionError: maximum recursion depth exceeded`**,
-  N=1 200 → same (default `sys.getrecursionlimit()` is 1 000). The exception propagates out of
-  `cmd_reconcile_ledgers` as a traceback, not as a TOON error block — while the module's own stated rule
-  (`_parse_iso.__doc__`, `:100-113`) is that an input it cannot use "degrades to a reported state rather
-  than taking the process down". Carried in `report-01.md` as survivor R4-F4.
+- **Evidence:** reproduced twice — in the first audit and independently in adversarial review. With N
+  execution rows and N boundary rows sharing one timestamp: N=500 → ok, N=900 → ok, **N=999 →
+  `RecursionError: maximum recursion depth exceeded`**, N=1 200 → same (default
+  `sys.getrecursionlimit()` is 1 000). The exception propagates out of `cmd_reconcile_ledgers` as a
+  traceback, not as a TOON error block — while the module's own stated rule (`_parse_iso.__doc__`,
+  `:100-113`) is that an input it cannot use "degrades to a reported state rather than taking the process
+  down". Carried in `report-01.md` as survivor R4-F4.
 - **Why it matters:** a phase that recorded ~1 000 dispatches is the exact phase whose ledgers most need
-  reconciling, and it is the one shape where the verb dies instead of reporting.
-- **Action:** replace `_augment`'s recursion with an explicit stack, or — given G2's finding that
-  first-fit in the module's own sort order is maximum for this eligibility structure — with the plain
-  iterative first-fit, keeping G2's property test as the guarantee. Either way, add a regression test at
-  N ≈ 1 200 same-timestamp rows per side.
+  reconciling, and it is the one shape where the verb dies instead of reporting. G2 sharpens this: the
+  recursion is the **only** cost the augmenting path carries, because it changes no output.
+- **Action:** replace `_augment` with the plain iterative first-fit — take the first free eligible index
+  in candidate order. G2 establishes that this is not an approximation but an exact equivalence on every
+  input this module can produce (21 056 corpora, identical matchings *and* identical unpaired sets), so
+  the rewrite is behaviour-preserving rather than a trade. ⛔ **Do not plan to defend it with a test that
+  distinguishes the two implementations** — G2 shows none exists. What the change needs instead is the
+  equivalence note G2 asks for, in `pair_rows.__doc__`, stating the precondition (the internal sort) that
+  makes first-fit maximum here. Add a regression test at N ≈ 1 200 same-timestamp rows per side, which
+  pins the thing that *is* observable: that the call returns rather than raising.
 - **Done when:** `pair_rows` over 1 200 identical-timestamp rows on both sides returns a result instead
   of raising, and a test asserts it.
 - **Effort:** M
