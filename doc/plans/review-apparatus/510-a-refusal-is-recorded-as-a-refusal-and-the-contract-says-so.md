@@ -557,15 +557,15 @@ prose**. Where they touch, this plan cites rather than duplicates:
   and writers, or the `(bot_kind, comment_id)` dedup. If a conflict arises anyway, **report it and
   leave `500`'s side alone** rather than resolving both — a merge resolution written by the plan that
   does not own the mechanism is how a fix gets silently reverted.
-- **`bot-participation-contract.md` is a shared file, and the split inside it is by sentence, not by
-  section.** Two sentences belong to `500`, because `500` changes the behaviour they describe: the
-  currency-scope sentence (`500`'s `010 G2`) and the "by definition an observation at the merge
-  candidate" sentence in § "Evidence for a bot that edits one comment in place" (`500`'s `010 G3`,
-  which `500` rewrites as a bounded assumption). **D6's sweep covers every other stale passage in the
-  document, including the rest of that same section, and leaves those two alone.** If either still
-  states the pre-`500` claim when this run reaches it, `500` has not landed: report it as owned
+- **`bot-participation-contract.md` is a shared file, and the split inside it is by passage, not by
+  section.** The passages `500` owns are the ones whose behaviour `500` changes; **D6 names them in
+  its own ⛔ exclusion, and that list is authoritative** — do not re-derive the split from this
+  paragraph or count the passages here, because a count in this position goes stale the moment either
+  plan is edited. **D6's sweep covers every other stale passage in the document, including the rest of
+  the section those passages sit in, and leaves the excluded ones alone.** If an excluded passage
+  still states the pre-`500` claim when this run reaches it, `500` has not landed: report it as owned
   elsewhere rather than fixing it here, so the two runs cannot write conflicting rewrites of one
-  sentence. D6 rewrites the *prose* describing the
+  passage. D6 rewrites the *prose* describing the
   currency predicate, but the predicate it must describe is **whatever the code does at the time of
   the run**. Read the code, not this plan and not a landed report; if `500` has already changed the
   predicate, describe the changed one. If `500` has *not* landed, describe the predicate as it stands
