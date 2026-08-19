@@ -27,6 +27,7 @@ SCRIPT_PATH = (
     MARKETPLACE_ROOT / 'pm-plugin-development' / 'skills' / 'plan-marshall-plugin' / 'scripts' / 'wrapper-tangle-scan.py'
 )
 
+
 def _load_extension():
     mod = load_skill_module(
         'pm-plugin-development', 'plan-marshall-plugin', 'extension.py',

@@ -33,6 +33,8 @@ _ANALYZE_NS = parse_ns(
 def _ns(template: Namespace, **overrides) -> Namespace:
     """A parser-produced namespace with this test's values overlaid."""
     return Namespace(**{**vars(template), **overrides})
+
+
 FIXTURES_DIR = Path(__file__).parent / 'jsdoc'
 
 # Load the analysis surface in-process. ``analyze_jsdoc`` returns the same dict

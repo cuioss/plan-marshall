@@ -31,6 +31,8 @@ _TONE_NS = parse_ns(
 def _ns(template: Namespace, **overrides) -> Namespace:
     """A parser-produced namespace with this test's values overlaid."""
     return Namespace(**{**vars(template), **overrides})
+
+
 FIXTURES_DIR = TEST_DIR / 'fixtures'
 
 _review_mod = load_script_module('pm-documents', 'ref-documentation', '_cmd_review.py', '_cmd_review')

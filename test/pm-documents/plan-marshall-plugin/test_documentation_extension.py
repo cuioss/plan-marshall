@@ -21,8 +21,8 @@ from conftest import load_skill_module
 
 
 def _load_documentation_extension():
-    """Load the pm-documents Extension by explicit path (every bundle shares the
-    ``extension`` basename, so a bare import would collide)."""
+    """Load the pm-documents Extension by ``(bundle, skill, file)`` identity (every
+    bundle shares the ``extension`` basename, so a bare import would collide)."""
     return load_skill_module(
         'pm-documents', 'plan-marshall-plugin', 'extension.py', 'pm_documents_extension'
     )

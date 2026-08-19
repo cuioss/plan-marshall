@@ -34,7 +34,7 @@ from conftest import PROJECT_ROOT, load_script_module, load_skill_module
 
 
 def _load_pm_plugin_dev_extension():
-    """Load the pm-plugin-development Extension by explicit path.
+    """Load the pm-plugin-development Extension by ``(bundle, skill, file)`` identity.
 
     Every bundle shares the ``extension`` basename, so a bare import would collide;
     the pm-documents attributor test loads its Extension the same way.

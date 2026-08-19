@@ -34,11 +34,11 @@ from conftest import load_script_module, load_skill_module
 
 
 def _load_extension_module():
-    """Load the pm-dev-python bundle extension.py by explicit file path.
+    """Load the pm-dev-python bundle extension.py by ``(bundle, skill, file)`` identity.
 
     Every domain bundle ships an ``extension.py`` sharing the module basename
-    ``extension``; loading via ``spec_from_file_location`` against the explicit
-    path avoids the cross-bundle ``import extension`` collision.
+    ``extension``, so a distinct ``module_name`` is passed to avoid the
+    cross-bundle ``import extension`` collision.
     """
     return load_skill_module(
         'pm-dev-python', 'plan-marshall-plugin', 'extension.py', 'extension_pm_dev_python_resolver'
