@@ -11,9 +11,9 @@ Covers:
 """
 
 
-# ruff: noqa: I001
 import io
 from contextlib import redirect_stdout
+
 import pytest
 from _manage_metrics_fixtures import (
     ns_generate,

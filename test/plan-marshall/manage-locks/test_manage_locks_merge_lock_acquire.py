@@ -67,13 +67,6 @@ unique test-module basenames across the suite.
 from __future__ import annotations
 
 import json
-
-# The shared core owns the [LOCK]-log resolver and the best-effort emission
-# swallow. ``merge_lock`` does ``from _locks_core import log_lock_event``, so the
-# function closes over the _locks_core module that ``merge_lock`` imported — that
-# SAME module instance is recovered from the function's ``__module__`` (NOT a
-# fresh ``load_script_module`` copy, which would be a different instance whose
-# patches ``merge_lock`` never sees).
 from argparse import Namespace
 from pathlib import Path
 

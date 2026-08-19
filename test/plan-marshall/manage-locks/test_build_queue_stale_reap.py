@@ -63,12 +63,6 @@ pins ``build_queue.main_checkout_root`` to that same root so stamped
 
 from __future__ import annotations
 
-# The shared core owns the [LOCK]-log resolver and the best-effort emission
-# swallow. ``build_queue`` does ``from _locks_core import log_lock_event``, so the
-# function closes over the _locks_core module that ``build_queue`` imported — that
-# SAME module instance is recovered from the function's ``__module__`` (NOT a
-# fresh ``load_script_module`` copy, which would be a different instance whose
-# patches ``build_queue`` never sees).
 from argparse import Namespace
 from pathlib import Path
 

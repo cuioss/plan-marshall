@@ -3,17 +3,14 @@
 """Tests for manage-metrics.py `print-phase-breakdown` subcommand."""
 
 
-# ruff: noqa: I001
 import pytest
-from conftest import run_script
-from toon_parser import parse_toon
 from _manage_metrics_fixtures import (
     ns_generate,
     ns_print_phase_breakdown,
 )
 from _print_phase_breakdown_fixtures import (
-    SCRIPT_PATH,
     _UNSEEDED_PLAN_IDS,
+    SCRIPT_PATH,
     _render_breakdown,
     _seed_metrics_md,
     _seed_phases,
@@ -22,6 +19,9 @@ from _print_phase_breakdown_fixtures import (
     manage_metrics,
     write_metrics,
 )
+from toon_parser import parse_toon
+
+from conftest import run_script
 
 
 @pytest.fixture(autouse=True)

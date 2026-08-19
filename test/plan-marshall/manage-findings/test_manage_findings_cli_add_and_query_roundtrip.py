@@ -7,8 +7,6 @@ Tier 2 (direct import) tests with 2-3 subprocess tests for CLI plumbing.
 
 
 from _manage_findings_fixtures import SCRIPT_PATH
-
-# Import toon_parser - conftest sets up PYTHONPATH
 from toon_parser import parse_toon  # noqa: E402
 
 from conftest import run_script

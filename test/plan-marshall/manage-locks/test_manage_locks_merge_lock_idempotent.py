@@ -1,0 +1,295 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Tests for the unified ``manage-locks/merge_lock.py`` — the single main-anchored
+merge-to-main serializer fronted by a FIFO admission queue.
+
+Contract under test (lock-reconciliation-analysis.md §4 behavioural-equivalence
+criteria + §5 massive-parallel-concurrency invariants (ii) + (iv); the FIFO
+merge-queue admission layer + its canonical contract in manage-locks/SKILL.md;
+ADR-002):
+
+* **Atomic acquire** — ``acquire`` creates the lock file via ``O_EXCL`` and
+  records the holder ``plan_id`` in the file contents.
+* **FIFO admission (fairness)** — ``acquire`` first FIFO-enqueues ``--plan-id``
+  into ``merge-queue.json``; ONLY the FIFO-front plan (the oldest entry by
+  admit-``ts``) is admission-eligible. A non-front plan returns
+  ``admission: blocked`` WITHOUT attempting the ``O_EXCL`` create — it never
+  contends the kernel race — even when the lock file is FREE.
+* **Idempotent re-poll position preservation** — a plan already in the queue
+  KEEPS its FIFO position on re-poll; it is never re-appended to the back, so a
+  plan polling repeatedly never loses priority to a later-arriving plan.
+* **Release advances the front** — ``release`` dequeues ``--plan-id`` from
+  ``merge-queue.json`` so the next FIFO entry becomes the front and is admitted
+  on its next re-poll.
+* **No double-grant** — exactly one of N concurrent ``acquire`` calls holds the
+  lock; the rest return ``status: blocked``. Two plans never both hold the lock.
+* **``blocked`` still escalates** — a blocked admission returns ``status: blocked``
+  + ``blocking_plan_id`` (when a foreign live holder holds the lock) +
+  ``waiting_count``, so the Pre-Merge Gate's poll/backoff loop and last-resort
+  orchestrator escalation fire. ``blocked`` is NOT a hard error (no ``error_code``).
+* **Stale reclamation** — a lock whose recorded holder has no live plan dir (on
+  main OR in its worktree) is reclaimable (``reclaimed: true``) by the FIFO-front
+  plan; a lock whose holder IS live is NOT reclaimable.
+* **Idempotent release** — ``release`` removes the lock so the next acquire
+  succeeds; release is idempotent (already-free / foreign-holder → no-op success,
+  the foreign holder's lock left intact) and ALWAYS dequeues the FIFO entry.
+* **``check`` holder read** — ``check`` returns ``{free}`` when no lock file
+  exists and ``{held, holder_plan_id}`` when one does, without creating or
+  mutating the lock, and never touching the FIFO queue.
+* **Holder liveness via the shared core** — liveness is the imported
+  :func:`_locks_core.holder_is_dead`, NOT a re-implemented copy; both main and
+  worktree paths are consulted.
+* **Main-anchored resolution (the single exception)** — both the lock AND the
+  FIFO queue resolve to the MAIN checkout regardless of caller cwd, even when cwd
+  is pinned to a worktree fixture.
+
+Real-parallel obligations (§5 (ii) + (iv)): the no-double-grant invariant (ii) and
+the dead-holder-reclaim-without-evicting-a-live-holder invariant (iv) are BOTH
+asserted under REAL spawned-subprocess contention — N processes racing the SAME
+main-anchored ``merge.lock`` + ``merge-queue.json`` via the CLI entry point — not
+sequential calls. A sequential test can never exercise the kernel ``O_EXCL`` race
+window (ii), the FIFO enqueue read-modify-write race, nor the interleave between
+the stale-holder unlink and the atomic re-create (iv).
+
+Isolation (test-isolation lessons): every test runs against an isolated
+``PLAN_BASE_DIR`` staged under ``tmp_path`` so the suite never contends for the
+real ``.plan/merge.lock`` / ``.plan/merge-queue.json`` under ``-n auto``. Under
+``PLAN_BASE_DIR`` the lock resolves to ``<PLAN_BASE_DIR>/merge.lock``, the queue
+to ``<PLAN_BASE_DIR>/merge-queue.json``, and holder plan dirs to
+``<PLAN_BASE_DIR>/plans/{holder}``.
+
+Filename note: this file is named ``test_manage_locks_merge_lock.py`` rather than
+``test_merge_lock.py`` because pytest's default ``prepend`` import mode requires
+unique test-module basenames across the suite.
+"""
+
+
+from __future__ import annotations
+
+import json
+from argparse import Namespace
+from pathlib import Path
+
+import pytest
+from _manage_locks_merge_lock_fixtures import _make_live_plan, _TokenRecorder, _waiting_plan_ids, merge_lock
+
+# =============================================================================
+# Fixtures
+# =============================================================================
+
+
+@pytest.fixture
+def isolated_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
+    """Stage an isolated PLAN_BASE_DIR under tmp_path.
+
+    Layout::
+
+        tmp_path/main/.plan/local/                  (PLAN_BASE_DIR — main stand-in)
+        tmp_path/main/.plan/local/plans/            (holder plan dirs resolve here)
+        tmp_path/main/.plan/local/merge.lock        (the O_EXCL lock resolves here)
+        tmp_path/main/.plan/local/merge-queue.json  (the FIFO queue resolves here)
+
+    Sets PLAN_BASE_DIR to the main stand-in so the lock resolves to
+    ``<base>/merge.lock``, the FIFO queue to ``<base>/merge-queue.json``, and
+    ``holder_is_dead(holder)`` resolves the holder plan dir to
+    ``<base>/plans/{holder}``.
+    """
+    base = tmp_path / 'main' / '.plan' / 'local'
+    (base / 'plans').mkdir(parents=True)
+    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
+    return {
+        'base': base,
+        'lock_path': base / 'merge.lock',
+        'queue_path': base / 'merge-queue.json',
+    }
+
+
+@pytest.fixture(autouse=True)
+def _stub_title_tokens(monkeypatch: pytest.MonkeyPatch) -> _TokenRecorder:
+    """Autouse: stub the three best-effort title-token seams for EVERY test so the
+    direct ``run_acquire`` / ``run_release`` unit tests never spawn the real
+    executor subprocess (the token surface is best-effort and out-of-scope for the
+    lock-correctness assertions). Tests that care about the token surface request
+    this fixture by name and assert on the recorder.
+
+    The CLI-subprocess concurrency tests run in a SEPARATE spawned process where
+    this monkeypatch does not apply — there the real best-effort wrappers run and
+    swallow any executor failure, exactly as in production.
+    """
+    recorder = _TokenRecorder()
+    recorder.install(monkeypatch)
+    return recorder
+
+
+# =============================================================================
+# Idempotent re-poll — a blocked plan re-polling KEEPS its FIFO position
+# =============================================================================
+
+
+class TestIdempotentRepoll:
+    """The idempotent re-poll fast-path: a plan already in the queue KEEPS its FIFO
+    position on a re-poll — it is never re-appended to the back. A plan polling
+    repeatedly therefore never loses priority to a later-arriving plan, mirroring
+    ``build_queue.run_acquire``'s idempotent re-poll fast-path."""
+
+    def test_repoll_blocked_plan_keeps_fifo_position(self, isolated_base: dict) -> None:
+        base = isolated_base['base']
+        for name in ('front', 'w1', 'w2'):
+            _make_live_plan(base, name)
+        # front acquires (becomes the live holder); w1 then w2 queue behind it.
+        merge_lock.run_acquire(Namespace(plan_id='front', timeout=5.0))
+        w1 = merge_lock.run_acquire(Namespace(plan_id='w1', timeout=5.0))
+        w2 = merge_lock.run_acquire(Namespace(plan_id='w2', timeout=5.0))
+        assert w1['admission'] == 'blocked'
+        assert w2['admission'] == 'blocked'
+        assert _waiting_plan_ids(isolated_base['queue_path']) == ['front', 'w1', 'w2']
+
+        # w1 re-polls while still blocked — it must NOT move behind w2.
+        re_w1 = merge_lock.run_acquire(Namespace(plan_id='w1', timeout=5.0))
+        assert re_w1['admission'] == 'blocked'
+        # The FIFO order is unchanged: w1 still ahead of w2.
+        assert _waiting_plan_ids(isolated_base['queue_path']) == ['front', 'w1', 'w2']
+
+    def test_repoll_does_not_re_append_or_grow_queue(self, isolated_base: dict) -> None:
+        """Re-polling an already-queued plan is idempotent on the queue itself — the
+        ``waiting`` depth does not grow, the plan appears exactly once."""
+        for name in ('front', 'waiter'):
+            _make_live_plan(isolated_base['base'], name)
+        merge_lock.run_acquire(Namespace(plan_id='front', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='waiter', timeout=5.0))
+
+        # Re-poll the waiter several times.
+        for _ in range(3):
+            res = merge_lock.run_acquire(Namespace(plan_id='waiter', timeout=5.0))
+            assert res['admission'] == 'blocked'
+
+        waiting = _waiting_plan_ids(isolated_base['queue_path'])
+        # The waiter appears exactly once despite the repeated re-polls.
+        assert waiting.count('waiter') == 1
+        assert waiting == ['front', 'waiter']
+
+    def test_front_repoll_against_foreign_live_holder_keeps_front_position(
+        self, isolated_base: dict
+    ) -> None:
+        """The FIFO FRONT itself can be blocked when a FOREIGN live holder holds
+        the lock (e.g. a reentrant holder that pre-existed the queue). The front's
+        re-poll keeps its front position so it is first in line on release."""
+        base = isolated_base['base']
+        _make_live_plan(base, 'holder')
+        _make_live_plan(base, 'front')
+        # 'holder' holds the lock but is NOT in the FIFO queue; 'front' is the
+        # queue front behind a foreign live holder.
+        merge_lock.run_acquire(Namespace(plan_id='holder', timeout=5.0))
+        # Drop holder from the queue so 'front' is the genuine FIFO front while
+        # 'holder' still holds the lock file.
+        merge_lock._dequeue_fifo('holder')
+        isolated_base['queue_path'].write_text(
+            json.dumps({'waiting': [{'plan_id': 'front', 'ts': 1.0}]}), encoding='utf-8'
+        )
+
+        first = merge_lock.run_acquire(Namespace(plan_id='front', timeout=5.0))
+        assert first['admission'] == 'blocked'
+        assert first['blocking_plan_id'] == 'holder'
+        # Re-poll: front stays the front, still blocked by the live foreign holder.
+        again = merge_lock.run_acquire(Namespace(plan_id='front', timeout=5.0))
+        assert again['admission'] == 'blocked'
+        assert _waiting_plan_ids(isolated_base['queue_path']) == ['front']
+
+
+# =============================================================================
+# Release advances the FIFO front
+# =============================================================================
+
+
+class TestReleaseAdvancesFront:
+    """``release`` dequeues ``--plan-id`` so the NEXT FIFO entry becomes the front
+    and is admitted on its next re-poll. This is the FIFO hand-off: the
+    longest-waiting plan merges next once the current holder releases."""
+
+    def test_release_dequeues_holder_advancing_next_waiter_to_front(self, isolated_base: dict) -> None:
+        base = isolated_base['base']
+        for name in ('front', 'w1', 'w2'):
+            _make_live_plan(base, name)
+        merge_lock.run_acquire(Namespace(plan_id='front', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='w1', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='w2', timeout=5.0))
+        assert _waiting_plan_ids(isolated_base['queue_path']) == ['front', 'w1', 'w2']
+
+        # The holder releases — it is dequeued, advancing w1 to the front.
+        rel = merge_lock.run_release(Namespace(plan_id='front'))
+        assert rel['status'] == 'success'
+        assert rel['action'] == 'released'
+        assert _waiting_plan_ids(isolated_base['queue_path']) == ['w1', 'w2']
+
+        # w1 (now the front) re-polls and is admitted; w2 stays blocked behind it.
+        re_w1 = merge_lock.run_acquire(Namespace(plan_id='w1', timeout=5.0))
+        assert re_w1['admission'] == 'admitted'
+        assert re_w1['holder'] == 'w1'
+        re_w2 = merge_lock.run_acquire(Namespace(plan_id='w2', timeout=5.0))
+        assert re_w2['admission'] == 'blocked'
+        assert re_w2['blocking_plan_id'] == 'w1'
+
+    def test_non_front_waiter_stays_blocked_until_its_turn(self, isolated_base: dict) -> None:
+        """FIFO order is honoured across releases: a non-front waiter that re-polls
+        stays blocked even though it could win the kernel race, because an earlier
+        waiter holds priority and must be served first."""
+        base = isolated_base['base']
+        for name in ('front', 'w1', 'w2'):
+            _make_live_plan(base, name)
+        merge_lock.run_acquire(Namespace(plan_id='front', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='w1', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='w2', timeout=5.0))
+
+        # Holder releases → w1 advances to front. The lock file is now free.
+        merge_lock.run_release(Namespace(plan_id='front'))
+        assert not isolated_base['lock_path'].exists()
+
+        # w2 (non-front) re-polls: the lock is free, but w2 is behind w1 → blocked.
+        re_w2 = merge_lock.run_acquire(Namespace(plan_id='w2', timeout=5.0))
+        assert re_w2['admission'] == 'blocked'
+        # w2 stays behind w1 — the front did not change.
+        assert _waiting_plan_ids(isolated_base['queue_path']) == ['w1', 'w2']
+
+    def test_full_fifo_drain_serves_plans_in_arrival_order(self, isolated_base: dict) -> None:
+        """End-to-end FIFO drain: three plans queue in arrival order and are served
+        front-first across successive acquire/release rounds — never out of order."""
+        base = isolated_base['base']
+        for name in ('a', 'b', 'c'):
+            _make_live_plan(base, name)
+        # Enqueue in arrival order: a is admitted, b and c queue behind.
+        merge_lock.run_acquire(Namespace(plan_id='a', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='b', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='c', timeout=5.0))
+
+        served: list[str] = ['a']  # 'a' was admitted first.
+
+        # Drain b then c in FIFO order.
+        merge_lock.run_release(Namespace(plan_id='a'))
+        b = merge_lock.run_acquire(Namespace(plan_id='b', timeout=5.0))
+        assert b['admission'] == 'admitted'
+        served.append('b')
+
+        merge_lock.run_release(Namespace(plan_id='b'))
+        c = merge_lock.run_acquire(Namespace(plan_id='c', timeout=5.0))
+        assert c['admission'] == 'admitted'
+        served.append('c')
+
+        # Served strictly in arrival order, never out of FIFO order.
+        assert served == ['a', 'b', 'c']
+        # The queue is empty after the final holder releases.
+        merge_lock.run_release(Namespace(plan_id='c'))
+        assert _waiting_plan_ids(isolated_base['queue_path']) == []
+
+    def test_release_when_waiting_present_returns_post_removal_count(self, isolated_base: dict) -> None:
+        """``release`` reports the post-removal ``waiting_count`` — the holder's own
+        entry is gone, so the count reflects the remaining waiters."""
+        base = isolated_base['base']
+        for name in ('front', 'w1'):
+            _make_live_plan(base, name)
+        merge_lock.run_acquire(Namespace(plan_id='front', timeout=5.0))
+        merge_lock.run_acquire(Namespace(plan_id='w1', timeout=5.0))
+
+        rel = merge_lock.run_release(Namespace(plan_id='front'))
+        assert rel['action'] == 'released'
+        # Front dequeued; w1 remains → post-removal depth is 1.
+        assert rel['waiting_count'] == 1

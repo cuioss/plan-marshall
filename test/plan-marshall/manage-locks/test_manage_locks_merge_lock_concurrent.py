@@ -66,12 +66,6 @@ unique test-module basenames across the suite.
 
 from __future__ import annotations
 
-# The shared core owns the [LOCK]-log resolver and the best-effort emission
-# swallow. ``merge_lock`` does ``from _locks_core import log_lock_event``, so the
-# function closes over the _locks_core module that ``merge_lock`` imported — that
-# SAME module instance is recovered from the function's ``__module__`` (NOT a
-# fresh ``load_script_module`` copy, which would be a different instance whose
-# patches ``merge_lock`` never sees).
 from argparse import Namespace
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -335,3 +329,67 @@ class TestConcurrentReclamation:
             # Release the winner's lock so the next trial starts from a clean
             # dead-holder-held state rather than the prior winner's live lock.
             merge_lock.run_release(Namespace(plan_id=winners[0]['holder']))
+
+
+# =============================================================================
+# Main-anchored resolution (the single deliberate exception)
+# =============================================================================
+
+
+class TestMainAnchoredResolution:
+    def test_lock_resolves_to_main_even_when_cwd_is_a_worktree(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Under PLAN_BASE_DIR (the main-checkout stand-in), the lock resolves to
+        ``<base>/merge.lock`` regardless of the process cwd — pinning cwd into a
+        worktree fixture does NOT redirect the lock to a worktree-relative path."""
+        main_base = tmp_path / 'main' / '.plan' / 'local'
+        (main_base / 'plans').mkdir(parents=True)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
+
+        # A worktree fixture with its own .plan/local — cwd is pinned here.
+        worktree = tmp_path / 'worktrees' / 'some-plan'
+        (worktree / '.plan' / 'local').mkdir(parents=True)
+        monkeypatch.chdir(worktree)
+
+        resolved = merge_lock._resolve_main_lock_path()
+        # Resolves to MAIN's base, NOT the worktree-relative .plan/local.
+        assert resolved == main_base / 'merge.lock'
+        assert worktree / '.plan' / 'local' / 'merge.lock' != resolved
+
+    def test_queue_resolves_to_main_even_when_cwd_is_a_worktree(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The FIFO merge-queue resolves to ``<base>/merge-queue.json`` against the
+        MAIN checkout regardless of the process cwd — same main-anchored contract
+        as the lock file, so all sessions contend for one shared queue."""
+        main_base = tmp_path / 'main' / '.plan' / 'local'
+        (main_base / 'plans').mkdir(parents=True)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
+
+        worktree = tmp_path / 'worktrees' / 'some-plan'
+        (worktree / '.plan' / 'local').mkdir(parents=True)
+        monkeypatch.chdir(worktree)
+
+        resolved = merge_lock._resolve_merge_queue_path()
+        assert resolved == main_base / 'merge-queue.json'
+        assert worktree / '.plan' / 'local' / 'merge-queue.json' != resolved
+
+    def test_acquire_writes_to_main_base_from_worktree_cwd(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        main_base = tmp_path / 'main' / '.plan' / 'local'
+        (main_base / 'plans').mkdir(parents=True)
+        monkeypatch.setenv('PLAN_BASE_DIR', str(main_base))
+
+        worktree = tmp_path / 'worktrees' / 'some-plan'
+        (worktree / '.plan' / 'local').mkdir(parents=True)
+        monkeypatch.chdir(worktree)
+
+        result = merge_lock.run_acquire(Namespace(plan_id='plan-a', timeout=5.0))
+        assert result['status'] == 'success'
+        # The lock AND the queue landed under MAIN's base, not the worktree.
+        assert (main_base / 'merge.lock').is_file()
+        assert (main_base / 'merge-queue.json').is_file()
+        assert not (worktree / '.plan' / 'local' / 'merge.lock').exists()
+        assert not (worktree / '.plan' / 'local' / 'merge-queue.json').exists()

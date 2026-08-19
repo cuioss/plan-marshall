@@ -6,21 +6,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# =============================================================================
-# Registry-consistency regression guard (deliverable 2)
-# =============================================================================
-#
-# The class of defect this guard pins down: a producer aspect key drifting from
-# the consumer's section map. ``retro_sections.SECTION_SPEC`` is the single
-# shared registry both scripts consume — ``compile-report`` renders from it and
-# ``collect-fragments add`` validates ``--aspect`` against the derived
-# ``valid_aspect_keys()``. This guard asserts the full registry↔producer↔consumer
-# round-trip so a future aspect-key add or rename that drifts the two apart fails
-# at test time, distinct from D1's hand-picked local ``cmd_add`` unit cases.
-# Direct import of retro_sections.py from the same scripts/ directory the
-# executor puts on PYTHONPATH (conftest mirrors that path setup). Importing the
-# live registry — rather than restating the key list — is what makes this guard
-# self-maintaining: a new SECTION_SPEC row is automatically covered.
 import retro_sections as _retro_sections  # noqa: E402
 from _compile_report_fixtures import (
     _COLLECT_FRAGMENTS_SCRIPT_REGISTRY,

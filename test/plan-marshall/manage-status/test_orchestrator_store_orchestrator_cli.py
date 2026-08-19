@@ -20,34 +20,16 @@ import threading
 from argparse import Namespace
 
 import pytest
+from _orchestrator_store_fixtures import (
+    SCRIPT_PATH,
+    _core,
+    _create_args,
+    _orchestrator_status_file,
+    cmd_orchestrator_create,
+    cmd_orchestrator_metadata,
+)
 
-from conftest import get_script_path, load_script_module, run_script
-
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-status', 'manage-status.py')
-
-
-_core = load_script_module('plan-marshall', 'manage-status', '_status_core.py', '_status_core_orchestrator')
-
-
-cmd_orchestrator_create = _core.cmd_orchestrator_create
-
-
-cmd_orchestrator_read = _core.cmd_orchestrator_read
-
-
-cmd_orchestrator_update_field = _core.cmd_orchestrator_update_field
-
-
-cmd_orchestrator_metadata = _core.cmd_orchestrator_metadata
-
-
-def _create_args(slug: str, title: str = 'Test Epic', force: bool = False) -> Namespace:
-    return Namespace(plan_id=slug, title=title, force=force)
-
-
-def _orchestrator_status_file(plan_context, slug: str):
-    return plan_context.fixture_dir / 'orchestrator' / slug / 'status.json'
-
+from conftest import run_script
 
 # =============================================================================
 # CLI boundary (new verb + --store flags through the entry point)

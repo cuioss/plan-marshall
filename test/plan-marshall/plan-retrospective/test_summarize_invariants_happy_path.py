@@ -12,10 +12,7 @@ emits in production.
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
-from pathlib import Path
 
 from _plan_retrospective_fixtures import (  # noqa: E402
     _HAPPY_HANDSHAKE_ROWS,
@@ -23,27 +20,9 @@ from _plan_retrospective_fixtures import (  # noqa: E402
     setup_live_plan,
     write_handshakes,
 )
+from _summarize_invariants_fixtures import SCRIPT_PATH
 
-from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
-
-sys.path.insert(0, str(Path(__file__).parent))
-
-
-SCRIPT_PATH = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'summarize-invariants.py'
-)
-
-
-def _load_summarize_module():
-    """Import ``summarize-invariants.py`` as a module for function-level tests."""
-    spec = importlib.util.spec_from_file_location('summarize_invariants_module', SCRIPT_PATH)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-_summarize = _load_summarize_module()
+from conftest import run_script  # noqa: E402
 
 
 class TestHappyPath:

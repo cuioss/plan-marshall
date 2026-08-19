@@ -6,7 +6,6 @@ Tier 2 (direct import) tests with 2-3 subprocess tests for CLI plumbing.
 """
 
 
-# Import toon_parser - conftest sets up PYTHONPATH
 from _manage_findings_fixtures import (
     _qgate_add_ns,
     _qgate_clear_ns,
