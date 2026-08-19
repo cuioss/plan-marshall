@@ -77,6 +77,15 @@ unwritten.
   D1 has not been met"*), so this is a shortfall against the deliverable rather than a stylistic
   residue — G3 is raised to high accordingly. G4 (no population anywhere for the two preserved
   checks) and G10 (a navigation defect in the standard, downgraded to low) remain alongside.
+- **Additional finding on the pairing itself (adversarial review).** The check compares per-role
+  *counts*, not pairs (`:333-350`), and discards the negative direction entirely (`if unmatched > 0`).
+  Surface B's decision-log record carries no caller (`_cmd_effort.py:504-510`), so the comparison is
+  caller-blind: any `[DISPATCH]` line for the same role, from any caller, offsets a resolve. That is
+  live at HEAD — `role=verification-feedback` has a seam-emitting producer
+  (`plan-marshall/workflow/execution.md:287-292`) *and* a hand-writing one
+  (`workflow-pr-doctor/SKILL.md:30-38`), so one unpaired Surface-A line is present on any plan that
+  runs both, cancelling exactly the partial-logging-failure divergence G10 shows is the only kind
+  this check can still detect. → **G15.**
 
 ### D2 — consumer distinguishes dispatched / ran-inline / no-evidence
 
