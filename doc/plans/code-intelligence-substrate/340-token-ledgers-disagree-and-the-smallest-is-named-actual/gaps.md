@@ -133,9 +133,12 @@ No gap is `high` — nothing shipped mis-measures, and no guard was found unable
 - **Done when:** `pair_rows` over 1 200 identical-timestamp rows on both sides returns a result instead
   of raising, and a test asserts it.
 - **Effort:** M
-- **Risk if fixed:** an iterative rewrite could change *which* row is reported unpaired among equally
-  pairable rows — already documented as immaterial in `pair_rows.__doc__:277-286`, and the per-phase
-  counts (the figures consumers are told to read) are unaffected.
+- **Risk if fixed:** lower than the first audit recorded. It reasoned that an iterative rewrite "could
+  change *which* row is reported unpaired among equally pairable rows"; the adversarial probe measured
+  that it does not — across 21 056 corpora the first-fit form left **the same rows** unpaired as the
+  augmenting form, never merely the same number. Even had it differed, the variation is documented as
+  immaterial in `pair_rows.__doc__:277-286` and the per-phase counts consumers are told to read are
+  exact either way.
 
 ## G4 — Wire `reconcile-ledgers` into a workflow so a cross-ledger disagreement actually surfaces
 
@@ -217,7 +220,10 @@ No gap is `high` — nothing shipped mis-measures, and no guard was found unable
 
 - **Kind:** doc-defect
 - **Severity:** low
-- **Topic:** documentation-surface
+- **Topic:** bundle-docs *(re-topiced from `documentation-surface` by adversarial review: this gap edits
+  two in-bundle documents, the same surface family as G1. `documentation-surface` is carrying the three
+  `report-01.md` defects (G5, G9, G10), and grouping a bundle-standards change with them would route it
+  into a report-correction plan that never opens `marketplace/`.)*
 - **Where:** `marketplace/bundles/plan-marshall/skills/manage-metrics/standards/data-format.md:15-31`
   (the Token-Field Population Lattice) and
   `marketplace/bundles/plan-marshall/skills/plan-retrospective/references/routing-decision-verification.md:64-82`

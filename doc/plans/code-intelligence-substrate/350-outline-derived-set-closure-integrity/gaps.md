@@ -202,36 +202,53 @@ being codified anywhere a later run would find it (G17).
 - **Severity:** medium
 - **Topic:** architecture-core
 - **Where:** `marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_qgate_closure.py:177` (`compute_projection_gaps`, the `not is_glob(p)` filter) and `:504` (`check_declared_scope_reconciliation`, `unenumerated = [m for m in matches if m not in literal_declared]`)
-- **Evidence:** The projection closure deliberately excludes patterns and delegates them to the
-  reconciliation check; the reconciliation check can only report *matches the deliverable does not also
-  enumerate*. A pattern that currently matches **zero** files therefore passes both. Executed against
-  the live tree with a deliverable whose entire declared write surface is
-  `**Files expected to mutate:** - src/newthing/*.py`:
+- **Evidence:** The projection closure deliberately excludes patterns (`is_glob` filter at `:177`) and
+  delegates them to the reconciliation check; the reconciliation check can only report *matches the
+  deliverable does not also enumerate* (`:504`). A pattern that currently matches **zero** files
+  therefore passes both. Executed against the live tree — a deliverable declaring
+  `**Files to survey:** - doc/plans/README.md` and `**Files expected to mutate:** - src/newthing/*.py`,
+  with one task whose single step targets the declared `doc/plans/README.md` (so the referrer closure
+  has nothing to say):
 
   ```
-  closure gaps: []  | pop_complete: True  | declared_scanned: 1
-  recon  gaps: []  | globs_declared: 1, globs_expanded: 1, matches_enumerated: 0,
-                     directories_matched: 0, population_complete: True
+  write_set     : ['src/newthing/*.py']
+  CLOSURE gaps  : []   pop_complete: True   declared_paths_scanned: 2
+  RECON   gaps  : []   globs_declared: 1, globs_expanded: 1, matches_enumerated: 0,
+                       directories_matched: 0, population_complete: True
   ```
 
-  The validator accepts the shape: `manage-solution-outline.py:377`'s wildcard rejection (check 3a)
-  walks `affected_files` only, deliberately, and `_plan_parsing.py:503` puts the raw pattern into the
+  **Control — the glob is the sole cause.** Replacing the pattern with the literal
+  `src/newthing/thing.py` and leaving everything else identical fires the projection closure:
+  `declared_set_closure: deliverable 1 declares 'src/newthing/thing.py' as a write but no task targets
+  it`. The declared write surface is enforced when it is spelled literally and unenforced when it is
+  spelled as a pattern that matches nothing yet.
+  The validator accepts the shape: `manage-solution-outline.py:373-377`'s wildcard rejection (check 3a)
+  walks `affected_files` only, deliberately, and `_plan_parsing.py:503-513` puts the raw pattern into the
   write-set (`deliverable_write_set` returns `['src/newthing/*.py']`).
 - **Why it matters:** The one deliverable class whose mutation set is least knowable at authoring time —
   the survey-scope class this plan exists to make checkable — is the one whose declared write surface
-  the closure cannot constrain, and the result is published as `population_complete: True`. That is a
-  measured-looking verdict over an unexamined scope, which is the module's own stated failure mode
-  turned on itself. A `write-new` pattern is the natural way to hit it, since a not-yet-created file
-  matches nothing.
+  no closure requires any task to cover. ⚠ **The population block is not dishonest here**: it publishes
+  `matches_enumerated: 0`, which is exactly what
+  `q-gate-validation.md:407` says separates "a glob that matches nothing" from "a glob that matches
+  everything". What is missing is the **projection obligation** — nothing asserts on that zero, so a
+  clean `total_failed` is returned over a declared write scope that was never tied to any task. A
+  `write-new` pattern is the natural way to hit it, since a not-yet-created file matches nothing.
 - **Action:** Treat a declared glob that reaches the **write-set** (not merely the survey pool) as an
   unmeasured scope when it expands to zero matches: either report it as `unexpandable_glob` with a
   distinct cause ("a write-scope pattern that matches nothing cannot be reconciled"), or require the
   projection closure to demand at least one step target that `fnmatch`es the pattern. Prefer the
   second, because it is the property the deliverable actually owes: a declared sweep must be projected
   onto some task.
-- **Done when:** a test declares `Files expected to mutate: src/newthing/*.py` on a deliverable with a
-  task that targets nothing matching it, and the mechanical Q-Gate reports at least one finding (or
-  `population_complete: False`); the same deliverable with a matching step target reports none.
+  ⛔ **Do not reach it by relaxing the referrer closure.** `compute_referrer_gaps` matches by literal
+  string equality **by design** — `test_referrer_reports_a_target_covered_only_by_a_glob` pins it and
+  goes red under an `fnmatch`-accepting referrer. The fix belongs on the projection/reconciliation
+  side only.
+- **Done when:** for a deliverable whose only declared write path is `src/newthing/*.py` (a pattern
+  matching zero existing files), the mechanical Q-Gate reports at least one finding naming that
+  pattern, or `population_complete: False` — where today it reports neither. The negative control must
+  also hold: a deliverable declaring the literal `src/newthing/thing.py` whose task targets exactly
+  that path reports no finding at all. And `test_referrer_reports_a_target_covered_only_by_a_glob`
+  still passes unchanged.
 - **Effort:** M
 - **Risk if fixed:** Medium — could produce findings on existing outlines that legitimately declare a
   glob under `Files to survey:`; scope the new rule to the write-set fields so the read-only candidate
