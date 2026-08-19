@@ -530,8 +530,10 @@ verified anchor-for-anchor, D3's tests exist, pass, and are genuinely discrimina
 independent mutation of the real detector, and the plan's hardest discipline — routing candidates out
 rather than absorbing them because this was the file already open — was followed twice, correctly.
 The weakness is concentrated in D2, and it is a weakness of *justification*, not of code. D2's
-*Done when* is met: the widening landed, the docstring contradiction is genuinely resolved, and all
-four restatements are current. But the plan's back-feed premise produced no code at all from the
+second clause is met — the widening landed, the docstring contradiction is genuinely resolved, and
+all four restatements are current — but its first clause ("each yes has either a new detector or a
+justified widening") is met by none of the three yeses, and the report restates the clause rather
+than reporting the deviation. The plan's back-feed premise produced no code at all from the
 accepted-finding corpus; the one code change shipped is the widening the plan itself pre-specified,
 selected from the plan's own docstring rather than from the corpus the derivation scanned — and the
 single real count-prose finding the exercise surfaced uses a noun (`flags`) in a shape
@@ -542,63 +544,94 @@ narrow form the plan pre-specified.
 
 ## Adversarial review
 
-This document and `gaps.md` were re-derived end to end by a second, independent reader working from
-the clone with no prior context. Every load-bearing finding below was reproduced against the tree
-rather than accepted from the page; every `path:line` citation was opened; every count was
-recomputed.
+This document and `gaps.md` have been re-derived twice, each time by an independent reader working
+from the clone with no prior context and reproducing every load-bearing finding against the tree
+rather than accepting it from the page. Every `path:line` citation in both documents has been
+opened; every count in both has been recomputed. The two documents agree: `gaps.md` carries one
+entry per finding this document establishes, at the same severity and with the same figures, and
+nothing this document refutes remains actionable there.
 
 **Method, precisely enough to re-run.** Ground truth is the working tree of
 `claude/review-apparatus-analysis-mcf8md`; the landing commit is `bb9ab493`. Anchors were read with
-`sed -n`/`grep -n` at the paths and lines cited, and at `bb9ab493` via `git show <sha>:<path>` where
-the citation was stated against that commit. Provenance claims were re-run as
-`git log --oneline -S'<token>' -- <path>`. Counts were computed, never read off prose:
-`grep -c "^def _detect_"` for the registry; `len(CANDIDATE_LISTS)` imported and evaluated;
-`grep -n "nargs='?'"` on `review_completeness.py` with the flag name recovered by walking back to the
-enclosing `add_argument`; the contract-source corpus enumerated as
-`marketplace/bundles/*/skills/*/SKILL.md` ∪ `marketplace/bundles/*/skills/*/standards/*.md`, at HEAD
-and via `git ls-tree -r bb9ab493`. Regex behaviour was settled by execution: a probe evaluating the
-pre-fix five-noun set, the landed six-noun set, a `flags?`-extended set and an any-noun mutant against
-the fixture strings and the real prose; and a second probe monkey-patching
+`awk`/`grep -n` at the paths and lines cited, and at `bb9ab493` via `git show <sha>:<path>` where the
+citation was stated against that commit. Provenance claims were re-run as
+`git log --oneline -S'<token>' -- <path>`, and each named PR number was confirmed against the
+commit's own subject line. Counts were computed, never read off prose: `grep -c "^def _detect_"` for
+the registry; `len(CANDIDATE_LISTS)` imported and evaluated; `grep -n "nargs='?'"` on
+`review_completeness.py` with the flag name recovered by walking back to the enclosing
+`add_argument`; the contract-source corpus enumerated as `marketplace/bundles/*/skills/*/SKILL.md` ∪
+`marketplace/bundles/*/skills/*/standards/*.md`, at HEAD and via `git ls-tree -r bb9ab493`; the
+flag family derived live by `derive_bot_flags`, run under `pytest` so the shared helper's `conftest`
+import resolves. **The follower distribution is counted per line, never over whole file text** —
+`_COUNT_PROSE` is applied to one line at a time, so a whole-text scan lets `\s+` cross a newline and
+manufactures matches the detector can never make. Regex behaviour was settled by execution: a probe
+evaluating the pre-fix five-noun set, the landed six-noun set, a `flags?`-extended set and an
+any-noun mutant against the fixture strings and the real prose; and a second probe monkey-patching
 `_self_review_detectors._COUNT_PROSE` in process (no file edited, so no snapshot/restore was needed)
-and running both new tests' fixtures through the real `_detect_count_prose`.
-`pytest … -k count_prose` was run (`5 passed`). PR threads on #1167, #1170 and #1198 were re-read
-through the GitHub review-comment surface. `git status --porcelain` was clean of this review's doing
-before and after.
+and running both new tests' fixtures — and the real `the eight list flags` sentence — through the
+real `_detect_count_prose`. `pytest -k count_prose` was run (`5 passed`), as was the whole of
+`test_bot_participation_contract.py` (`78 passed`). PR threads on #1167, #1170 and #1198 were re-read
+through the GitHub review-comment surface. `git status --porcelain` was checked before and after and
+is clean of this review's doing outside these two files.
 
-**Outcome.** Upheld, reproduced exactly: the PR #1153 → #1039 misattribution; every D1 anchor
-(`tier: full`, `persona-security-expert`, `order: 9`, `_TIER_RANK` at `:23` and the keep predicate at
-`:203`, `_apply_security_class_inactive` spanning `343-396` at the landing commit, the drop-reason
-string at `:340`, `_CEREMONY_FINALIZE_DEFAULT` at `:620`, and the manifest emission lines at
-2286/2293/2294 at `bb9ab493` and 2547/2555/2556 at HEAD); the four noun-set restatements and the
-missed fifth (`SKILL.md:379`); the 20-detector registry; the nine `nargs='?'` flags and their names;
-the 517-file corpus; the `#1167` ×4 and `#1198` ×3 unanswered thread counts; the seven-path landing
-diff; the 10 `_pending_` hits across four run reports; and every `manage-findings` /
-`github_pr.py` disposition anchor. D3 discrimination was upheld and strengthened — reproduced through
-the real detector, not only the regex.
+**Upheld, reproduced exactly.** The PR #1153 → #1039 misattribution. Every D1 anchor (`tier: full`,
+`persona-security-expert`, `order: 9`, `_TIER_RANK` at `_manifest_lanes.py:23` and the keep predicate
+at `:203`, `_apply_security_class_inactive` spanning `343-396` at the landing commit, the drop-reason
+string at `:340`, `_CEREMONY_FINALIZE_DEFAULT` at `:620`, the manifest emission lines at
+2286/2293/2294 at `bb9ab493` and 2547/2555/2556 at HEAD, and `_resolve_one` at
+`doc_references.py:253` with its `/etc/passwd` comment at `:281`). The four noun-set restatements and
+the missed fifth (`SKILL.md:379`, which names six of `TestDetectCountProse`'s eight cases). The
+20-detector registry and the 22 candidate lists. The nine `nargs='?'` flags and their names. The
+517-file domain at HEAD and 510 at `bb9ab493`. The `#1167` ×4 and `#1198` ×3 unanswered thread
+counts, and #1170's four resolved threads each carrying a disposition reply. The seven-path landing
+diff. The 10 `_pending_` hits across four run reports. Every `manage-findings` / `github_pr.py`
+disposition anchor, including that the `no_resolution_detail` skip at `github_pr.py:1611-1613`
+applies to every respondable finding rather than only to `rejected`. The adjacency reach measurement
+(189 matched lines; +113 under a one-word allowance). The corrected follower distribution — `of` 303,
+`state`/`states` 25, `phase`/`phases` 24, `flag`/`flags` 20, `column`/`columns` 16, `member`/`members`
+13, `check`/`checks` 5. The noise bound of 5 added matched lines. And D3's discrimination, upheld
+through the real detector rather than only the regex.
 
-Overstated and downgraded: the noun-set derivation critique (the frequency figures were wrong — see
-below — though the critique itself survives with corrected numbers); the report's 510-file corpus
-figure, which is exact at its own commit rather than a discrepancy; and the D2 finding as a whole,
-which was rated major on the strength of a live stale count that does not exist.
+**Overstated, and corrected here.** "The derivation's own candidates were never adjudicated" —
+`deliverable`/`deliverables` (67) and `module`/`modules` (44) head the distribution and *are*
+adjudicated, as the negative test's must-not-fire fixtures; the un-adjudicated set is the five
+ranking below them. "D2's *Done when* is met" — its second clause is, its first is not, and the same
+holds for D3's "drawn from the real accepted finding" clause; both were recorded as bounds rather
+than as the gap they are (now G8). Of the five lines `check` newly matches, two are genuine
+stale-able cardinality claims and one is a non-cardinal "at least one check" phrasing, not three
+genuine. Three method statements were narrower than the searches they describe: the
+`_collect_skill_contract_sources` history returns two commits on that file, not one; the
+`cardinality noun` sweep returns eight hits whose breakdown omitted the `## Tests` row; and
+`-k count_prose` selects five of the class's eight cases rather than the class.
 
-Refuted: the claim that the count CodeRabbit flagged on PR #1167 is *still stale* and that
-`automatic-review/SKILL.md` "contradicts its own sibling paragraph". `git log -S` shows the finding
-was fixed in the next PR (`064560ab`, #1168), and `9e9e9880` (#1241) updated the FIND-step figures to
-eight and the parser-surface figure to nine **in one commit**, because they count two different
-populations — the eight flags the `:672-679` invocation passes, and the nine the parser declares. The
-ninth, `--declined-bots`, is supplied only from `branch-cleanup.md:833`. Also refuted as counts: the
-noise bound (`check`/`checks` adds 5 matches over the contract-source domain, not 13 — the 13 came
-from a broader all-`.md` sweep, not the detector's domain) and the candidate frequencies
-(`state`/`states` 25, `phase`/`phases` 24, `flag`/`flags` 20, `column`/`columns` 16,
-`member`/`members` 13, `check`/`checks` 5 — the previously stated 37/27/21/16/14/13 do not reproduce
-on this population). The follower-distribution head is `of` 303, not 307.
+**Refuted.** Two `path:line` citations did not resolve to the text they were hung on: the FIND-step
+invocation is at `automatic-review/SKILL.md:675-682`, not `:672-679` (cited twice), and the plan's
+"derived, not guessed" clause is at `plan.md:111-113`, not `:112-114`. The earlier reading that the
+count CodeRabbit flagged on PR #1167 is *still stale* stays refuted, and the diffs confirm it:
+`064560ab` (#1168) raised the FIND-step figures from six/seven to seven and the parser-surface figure
+from seven to eight; `9e9e9880` (#1241) then raised the FIND-step figures to eight and the
+parser-surface figure to nine in one commit, because they count two different populations — the eight
+flags the `:675-682` invocation passes and the nine the parser declares, the ninth (`--declined-bots`)
+being supplied only from `branch-cleanup.md:833`. The frequency figures previously written as
+37/27/21/16/14/13 and `of` 307 are not arbitrary: they reproduce exactly under a whole-file scan, and
+fail only because that scan lets the number and the noun sit on different lines — which the
+line-scoped detector cannot do.
 
-Not verifiable from the clone, and left labelled as such: the full 24-PR corpus sweep, the
-`./pw verify` result, and the `380e02d` commit hash (a pre-squash branch object).
+**Not verifiable from the clone, and left labelled as such:** the full 24-PR corpus sweep, the
+`./pw verify pm-plugin-development` result, and the `380e02d` commit hash (a pre-squash branch
+object, confirmed absent by `git cat-file -t`).
 
-Added by this pass: the adjacency reach measurement (189 matched lines, +113 under a one-word
-allowance); the eight-versus-nine scope split as a documentation gap in its own right; the
-`plugin-doctor` count-claim analyzer as a checked non-duplication; the derived-help-string and
-`twenty-two candidate lists` checks that cleared production string literals; the non-vacuity of the
-negative test's `assert out == []`; and the reframing of `plan.md:59` from a contradiction to an
-ambiguity.
+**Added by this pass.** Two live stale count claims in
+`test/plan-marshall/automatic-review/test_bot_participation_contract.py` (`:983`'s "five flags"
+against `_CONFIRMED_SITES`' six, and `:850`'s "a sixth flag" against a seven-member derived family),
+and with them the detector's third reach axis — file scope, which excludes every `.py` docstring and
+comment (G7). The D2/D3 clause restatements as a gap in their own right (G8). The re-derived
+adjudication story that puts `deliverable` and `module` at the head of the distribution and inside
+the negative test. The in-tree precedent for G3's remedy
+(`test_bot_participation_contract.py:501-523`, which reads a prose closure count out of a contract
+doc and asserts it against the derived member set). The cold read cleared: the pattern comment,
+Detection Rule 14 and `report-01.md:110` all state the adjacency requirement correctly, so the plan's
+cold-read check passes and the adjacency limit is a design decision to revisit, not a docstring
+defect reproduced by its own fix. The pre-existing silent-skip fail-open at
+`_self_review_detectors.py:1081-1082`, cleared as unable to flip a verdict. And the symmetric-pair
+count claims (`SKILL.md:232`, `:367` against `_PAIR_TOKENS`), cleared as correct.
