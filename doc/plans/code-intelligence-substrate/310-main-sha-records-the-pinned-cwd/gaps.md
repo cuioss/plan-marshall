@@ -21,7 +21,8 @@ n−1-of-n residue class the run's own stop record predicted. The declared condi
 ## G1 — Close the base-dir-override hole in the main-scoped resolution and its refusal
 
 - **Kind:** bug
-- **Severity:** medium — see § Severity below; the calibration call is deliberate, not a default.
+- **Severity:** medium — see the *"why medium and not high"* bullet below; the calibration call is
+  deliberate and was re-derived, not defaulted.
 - **Topic:** architecture-core
 - **Where:** `marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_invariants.py:409-410`
   (`_main_repo_root` override branch) and `:1856` (`_assert_main_capture_read_main` path comparison)
