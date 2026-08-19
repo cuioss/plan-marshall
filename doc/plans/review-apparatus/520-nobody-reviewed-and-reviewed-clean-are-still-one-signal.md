@@ -377,9 +377,10 @@ guards, or a documented surface with no guard at all.
   on the `deficit` line (around line 116), though `deficit_parser` accepts it. The skill marks that
   flag ⛔ load-bearing — *a cap arriving without its cause drives the fail-closed cause recovery, so a
   caller that passes it to `check` but not `deficit` reproduces exactly the disagreement the pair
-  exists to prevent*. The existing guard reads `SKILL.md` and nothing else. Add the flag to the
-  docstring line and extend the guard (or add a sibling) to read the module docstring's `Usage:`
-  lines too, so both documented surfaces are held by one assertion.
+  exists to prevent*. The existing guard reads `SKILL.md` and nothing else.
+  **This plan's share is the guard**: extend it (or add a sibling) to read the module docstring's
+  `Usage:` lines too, so both documented surfaces are held by one assertion. Touch the docstring
+  line itself only under the condition the ⚠ block above states.
 - **The untested CLI boundary (050/G10).** Every test in the retrospective's test module drives
   `aggregate` or `_grade_comparison` directly; nothing invokes `main`. So the flags'
   `nargs='?' / const='' / default=''` shapes, the CSV split, and the wiring into `aggregate` are
