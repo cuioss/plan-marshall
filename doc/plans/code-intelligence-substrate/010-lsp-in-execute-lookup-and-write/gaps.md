@@ -442,9 +442,11 @@ change, not six.
   — a payload identical in **every** field to "the server ran and found the file clean". Reproduced
   by the adversarial review.
 - **Why it matters:** this is the exact archetype the epic's coverage contract exists to remove, and
-  which this skill's own SKILL.md § "The coverage contract (no silent empty result)" claims is *"not
-  representable here"*: `provider_count: 1` + an empty result is documented as *"a **real, positive
-  answer**, not a missing capability"* (`lsp-client/SKILL.md:61`), and here it is neither. It is worse
+  which the shipped module docstring claims is impossible here — *"A silent empty result — the
+  archetype the code-intelligence epic exists to remove — is not representable here"*
+  (`lsp_client.py:14-16`). `provider_count: 1` plus an empty result is documented as *"a **real,
+  positive answer**, not a missing capability"* (`lsp-client/SKILL.md:61`), and here it is neither.
+  It is worse
   in `_run_edit`, where the same empty list makes `count_error_diagnostics` return 0 and
   `edit_verdict` score **every** such edit `success` — so against a pull-diagnostics server the write
   side's verification is inert while reporting itself as satisfied. G2 is the same return contract
