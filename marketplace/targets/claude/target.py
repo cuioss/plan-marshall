@@ -45,12 +45,12 @@ from marketplace.targets.claude.emitter import (
 from marketplace.targets.claude.equality_check import run_equality_check
 from marketplace.targets.claude.marketplace_json_gen import generate_marketplace_json
 from marketplace.targets.claude.plugin_json_gen import generate_plugin_json
-from marketplace.targets.component_targets import excluded_emission_roots
 from marketplace.targets.claude.source_fingerprint import (
     FingerprintError,
     compute_source_tree_fingerprint,
     hash_objects,
 )
+from marketplace.targets.component_targets import validate_component_scopes
 
 # Sentinel file written at the end of every successful emit. The
 # project-local ``sync-plugin-cache`` skill reads it to decide whether
@@ -140,7 +140,7 @@ class ClaudeTarget(TargetBase):
             # never lists skills, so a skill's invalid declaration would slip
             # through a validate-only run that an emit rejects.
             for bundle_dir in bundle_dirs:
-                excluded_emission_roots(bundle_dir, self.name)
+                validate_component_scopes(bundle_dir)
             equality = run_equality_check(
                 DEFAULT_VALIDATE_TARGET_DIR, bundle_dirs, target_name=self.name
             )

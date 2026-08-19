@@ -41,7 +41,10 @@ the state of nearly every component in the marketplace.
 
 Nor is any declaration this scanner cannot read with certainty: a flow
 sequence spanning lines, a block scalar, a quoted value continued across
-lines, an indented frontmatter block, a value carrying a nested structure.
+lines, an indented frontmatter block, a value carrying a nested structure,
+a flow sequence any of whose ITEMS is quoted, tagged or anchored, and a
+``targets:`` line sitting inside a construct opened on an earlier line —
+which only looks like a key.
 Every one of those is legal YAML that the build reads correctly, so silence is
 the accurate answer rather than a gap to be closed by guessing.
 
@@ -154,11 +157,12 @@ def _strip_comment(value: str) -> str:
     A ``#`` opens a comment only when it opens a token, which is what YAML
     requires. That keeps an UNQUOTED ``#`` intact (``[cla#ude]``).
 
-    It does not track quote state. A value whose FIRST character is a quote is
-    declined before it gets here, but a quote inside a flow sequence is not, so
-    ``["a #b"]`` would be cut mid-string. That value is declined too — by
-    :func:`_is_bare_name`, not by anything here — which is the only reason this
-    function is never asked a question it cannot answer.
+    It does not track quote state, so ``["a #b"]`` is cut mid-string to
+    ``["a``. What saves that is :func:`_is_readable`'s closing-bracket test —
+    the cut value no longer ends in ``]`` — and NOT :func:`_is_bare_name`,
+    which never sees it. (`_is_bare_name` is what declines ``["a] #b"]``,
+    where the cut leaves the bracket intact.) An earlier version of this
+    paragraph named the wrong one of the two, which its own example refutes.
     """
     head, sep, _tail = value.partition('#')
     if not sep:
@@ -249,6 +253,60 @@ def _is_continued(rest: list[str]) -> bool:
     return False
 
 
+def _construct_is_open(lines: list[str]) -> bool:
+    """Whether the lines given leave a flow collection or quoted scalar open.
+
+    A line that LOOKS like a top-level key can be the continuation of something
+    opened above it — an unterminated ``[``/``{``, or a quoted scalar spanning
+    lines. YAML knows that; a line-local scan does not, and read the
+    continuation as a declaration:
+
+        description: "a description
+        targets: [cluade]
+        that wraps"
+
+    Everything here is in the safe direction. A quote counts as opening a
+    scalar only in VALUE position (after ``:``, or after ``[``/``,`` inside a
+    flow), so an apostrophe in ``description: it's fine`` is not mistaken for
+    one; and where this is wrong anyway it reports MORE lines as open, which
+    makes the rule decline more often. Declining costs completeness. Reading a
+    fragment costs soundness, and soundness is the only thing this rule
+    promises.
+    """
+    depth = 0
+    quote = ''
+    for line in lines:
+        index = 0
+        expects_value = False
+        while index < len(line):
+            character = line[index]
+            if quote:
+                if character == '\\' and quote == '"':
+                    index += 2
+                    continue
+                if character == quote:
+                    quote = ''
+            elif character in '"\'' and (expects_value or depth):
+                quote = character
+            elif character in '[{':
+                depth += 1
+                expects_value = True
+            elif character in ']}':
+                depth = max(0, depth - 1)
+            elif character == ',' and depth:
+                expects_value = True
+            elif character == ':':
+                expects_value = True
+            elif character == '#' and not depth and (index == 0 or line[index - 1].isspace()):
+                break
+            elif not character.isspace():
+                expects_value = False
+            index += 1
+        if not quote and not depth:
+            continue
+    return bool(depth or quote)
+
+
 def declared_targets(text: str) -> tuple[list[str], int] | None:
     """Return ``(names, line_number)`` for a declaration this scanner can read.
 
@@ -289,6 +347,10 @@ def declared_targets(text: str) -> tuple[list[str], int] | None:
             # `targets:#c` / `targets:[a]` - no space after the colon, so YAML
             # reads the whole line as a plain scalar and there is no key here.
             continue
+        if _construct_is_open(lines[:index]):
+            # This line only LOOKS like a key: something above it is still
+            # open, so YAML reads it as that construct's continuation.
+            return None
         # +2: the opening fence occupies line 1, so block line 0 is file line 2.
         line_number = index + 2
         head = _strip_comment(value.strip()).strip()

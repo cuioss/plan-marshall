@@ -476,6 +476,30 @@ def excluded_emission_roots(bundle_dir: Path, target_name: str) -> frozenset[Pat
     return frozenset(excluded)
 
 
+def validate_component_scopes(bundle_dir: Path) -> None:
+    """Validate every component declaration in ``bundle_dir``, emitting nothing.
+
+    For a caller that wants the CHECK without the answer — the Claude target's
+    validate-only mode, which regenerates the manifest only. The manifest never
+    lists skills, so a skill's invalid declaration would slip through a
+    validate-only run that an emit rejects.
+
+    Exists so that intent is in a name rather than in a comment above a call
+    whose return value is discarded.
+
+    Raises:
+        TargetScopeError: Some component in the bundle declares an invalid
+            scope.
+    """
+    excluded_emission_roots(bundle_dir, _ANY_TARGET_NAME)
+
+
+#: Any registry name works for a validate-only walk: every component is read
+#: and validated regardless of which target is asking, and only the EXCLUSION
+#: answer depends on the name — which this caller discards.
+_ANY_TARGET_NAME = 'claude'
+
+
 def is_under_any(rel: Path, roots: frozenset[Path]) -> bool:
     """Whether the bundle-relative ``rel`` is one of ``roots`` or inside one."""
     if not roots:
@@ -484,7 +508,7 @@ def is_under_any(rel: Path, roots: frozenset[Path]) -> bool:
 
 
 __all__ = [
-    'TARGET_SCOPE_FIELD',
+    'validate_component_scopes',
     'TargetScopeError',
     'component_tree_target_names',
     'emits_to',
