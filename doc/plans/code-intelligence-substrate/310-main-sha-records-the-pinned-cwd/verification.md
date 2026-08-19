@@ -156,23 +156,35 @@ the registry), `_handshake_commands.py` (`cmd_capture`, `cmd_verify`, the payloa
 `_check_main_dirty_drift`), `marketplace_paths.py` § main-anchored resolution, `phase_handshake.py`
 `main()`, and both new test modules. One defect and two lesser observations:
 
-1. **Under a base-dir override the main-scoped resolution still follows cwd, and the new refusal
-   misses it from a subdirectory.** `_invariants.py:409-410` delegates the override branch to
-   `_current_repo_root()`, which for a flat override returns `Path.cwd()` (`:353-359`). Reproduced by
-   execution:
+1. **Under a NON-CANONICAL base-dir override the main-scoped resolution still follows cwd, and the new
+   refusal misses it from a subdirectory.** `_invariants.py:409-410` delegates the override branch to
+   `_current_repo_root()`, which returns `Path.cwd()` for any base dir that is not literally
+   `*/.plan/local` (`:353-359`). Reproduced by execution against a real linked worktree at
+   `<main>/.plan/local/worktrees/p`, sweeping the override shape against the cwd:
 
-   ```
-   flat override, cwd=wt/src: _main_repo_root -> …/main/.plan/local/worktrees/p/src
-     cwd=wt/src: refusal did NOT fire -> mislabelled row persists
-     cwd=wt:     refusal FIRED (…/main/.plan/local/worktrees/p)
-   ```
+   | `PLAN_BASE_DIR` | cwd | `_main_repo_root()` | `main_sha` reads | refusal |
+   |---|---|---|---|---|
+   | unset (production) | worktree *or* worktree/src | main | **main** | — |
+   | flat bare directory | worktree | worktree | **worktree** | FIRED |
+   | flat bare directory | worktree/**src** | worktree/src | **worktree** | **did not fire** |
+   | `<main>/.plan` | worktree | worktree | **worktree** | FIRED |
+   | `<main>/.plan` | worktree/**src** | worktree/src | **worktree** | **did not fire** |
+   | `<main>/.plan/local` | either | main | **main** | — |
+   | `<worktree>/.plan/local` | either | worktree | **worktree** | FIRED |
 
-   So the exact defect this plan fixed — a `main_sha` holding the worktree's HEAD — is still
-   reachable, and the guard that exists to catch it passes the row through, because
-   `_assert_main_capture_read_main` compares `main_root.resolve() != worktree_path.resolve()`
-   (`:1856`) by **equality** rather than containment. `PLAN_BASE_DIR` is a documented user override,
-   so this is a live if unusual configuration, not a test-only shape. The shipped rule at
-   `invariant-check-summary.md:54` discloses it; nothing tests or closes it. → **G1**
+   So the exact defect this plan fixed — a `main_*` column holding the worktree's value — is still
+   reachable, and from a worktree subdirectory the guard that exists to catch it passes the row
+   through, because `_assert_main_capture_read_main` compares
+   `main_root.resolve() != worktree_path.resolve()` (`:1856`) by **equality** rather than containment.
+   Two refinements over the first draft of this item, both from the sweep: the mislabel is **not**
+   subdirectory-specific (at the worktree root the value is equally wrong and merely fail-closed —
+   the subdirectory is what turns a refusal into a silent write), and it is **not** flat-override-
+   specific (`<root>/.plan` reaches it too; only the canonical `*/.plan/local` shape is safe). All
+   three `main_*` captures share `_main_repo_root`, so all three are mislabelled together. Nothing in
+   production sets `PLAN_BASE_DIR` (no writer under `marketplace/`) and nothing calls `set_base_dir()`
+   outside its own definition, so this is an operator-set configuration, not a default-path defect —
+   which is why G1 is rated medium and not high. The shipped rule at `invariant-check-summary.md:54`
+   and the resolver's own docstring (`:386-392`) disclose it; nothing tests or closes it. → **G1**
 
 2. **`except OSError: return` at `_invariants.py:1858` is fail-open**, as is the `main_root is None or
    not raw_worktree` early return at `:1852`. Both are documented as unreachable-by-construction

@@ -22,11 +22,20 @@ being codified anywhere a later run would find it (G17).
   commits were **rebased** onto current `origin/main`", and that "the rebase was conflict-free, and
   **every commit's tree is preserved**". Re-derived:
   `git log --oneline eb0124c..origin/claude/derived-set-closure-integrity-g7n8x2 | wc -l` → **11**.
-  The rebase carried the first nine (through `ce4292c`); `f614b9a` ("docs(plans): record the final
-  clean verify result") and `33392fd` ("docs(plans): correct the report header and the stale commit
-  enumeration") were left behind. Proof that the merged text is `ce4292c`'s:
-  `git show ce4292c:…/report-01.md` and the landed `report-01.md` differ only in the rewritten commit
-  SHAs, not in content.
+  Only the first nine (through `ce4292c`) reached the branch that became PR #1295; `f614b9a`
+  ("docs(plans): record the final clean verify result") and `33392fd` ("docs(plans): correct the
+  report header and the stale commit enumeration") did not. Proof that the merged text is
+  `ce4292c`'s: `git show ce4292c:…/report-01.md` diffed against the landed `report-01.md` differs
+  only in the rewritten commit SHAs and in run 02's own round-4 edits (A1, A2, A3, A7, A8 and the
+  header block) — the two dropped commits' hunks are absent from both.
+  ⚠ **The mechanism is not determinable from the tree, and the entry does not assert one.** The two
+  commits are dated `10:59:37` and `11:00:00` UTC and run 02's first commit `d898934` is dated
+  `11:03:13` — so a fetch taken before run 01's last push explains the loss as well as a rebase that
+  dropped them. What is established is the *effect*: two of run 01's eleven commits are absent from
+  the landed tree while `report-02.md` asserts nine were pushed and every tree preserved.
+  ⛔ **Bound:** both dropped commits touch only `report-01.md` and `actual-state.md`
+  (`git show --stat`), so **no production code and no test was lost** — the loss is confined to the
+  record, which is why this and G2–G4 are report-defects rather than code gaps.
 - **Why it matters:** The claim reads as an assurance that nothing was lost, and it is what a later
   reader would rely on rather than re-deriving. Two documented corrections — one of them a correction
   the same run's own contract-change proposal is about — were destroyed by the recovery step and the

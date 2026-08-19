@@ -9,10 +9,14 @@ no file this audit examined changed)
 
 The shipped mechanism is real, correct on every path I could drive, and non-vacuously tested in
 both directions — I proved the refusal direction and the comparison target by mutating production
-code and watching the suite go red. What is wrong is a cluster of **mechanism and measurement claims
-in shipped documentation** (the crawl's cost and what it shells out to), **three test gaps on code
-the verification rounds themselves added**, and **four stale claims inside `report-01.md`** — three of
-them the very "two rounds vs three rounds" drift the report predicted it would contain.
+code and watching the suite go red. What is wrong is a cluster of **mechanism claims in shipped
+documentation** (what the crawl shells out to), **three test gaps on code the verification rounds
+themselves added**, and **five stale claims inside `report-01.md`** — three of them the very "two
+rounds vs three rounds" drift the report predicted it would contain.
+
+⚠ **Corrected by adversarial review** (see § Adversarial review): this document originally also
+charged the shipped crawl-cost *measurement* as wrong, and said "four" stale report claims while
+listing five. The cost charge did not reproduce and is withdrawn; the count is corrected to five.
 
 ## Deliverable verdicts
 

@@ -3,10 +3,15 @@
 All five deliverables shipped and hold against their literal *Done when*, and every re-derivable
 figure in `report-01.md` matched a first-party measurement. What remains is: one unreported hole in
 the same partition (a non-dict fragment on a conditional row is lost as a "benign omission"), the six
-residue items the run declared and deliberately did not fix — all still open at `dd1eea1` — a false
-enumeration in a shipped skill file, three instances of historical prose in shipped files, and two
-minor report inaccuracies. Nothing found contradicts a shipped behaviour claim about the
+residue items the run declared and deliberately did not fix — all still open — false enumerations in
+a shipped skill file, three instances of historical prose in shipped files, one report inaccuracy and
+one undischarged plan obligation. Nothing found contradicts a shipped behaviour claim about the
 written-implies-non-empty invariant itself; that was the part searched hardest and it is sound.
+
+Sixteen gaps: **three high** (G1 silent drop-side loss, G2 false `warning` on every clean run, G6 the
+never-produced Executive Summary), **six medium** (G3, G4, G5, G7, G8, G9), **seven low**. G1–G6
+share one predicate and should be settled by one decision; G2 is the one that fires on the common
+path today, so it leads.
 
 ## G1 — Make the drop/omit split use one discriminator for non-dict fragments too
 
@@ -286,7 +291,12 @@ written-implies-non-empty invariant itself; that was the part searched hardest a
   no count is given here, because a count of attempts goes stale on the next one."*
 - **Why it matters:** the docstring of a shipped script records this plan's development history
   rather than the predicate's present contract; a reader has to filter run narrative out of an API
-  description, and the same standard that governs skill prose governs the bundle's code docs.
+  description. ⚠ No gate covers it: `no-historical-prose-in-skills` is markdown-only
+  (`rule-catalog.md:754` states the `.py`-covering sibling is deliberately "broader … because an
+  incident label in a docstring or code comment is the same misleading signal"), so the allowlist
+  reasoning that applies to G10 does not apply here — this docstring is outside the rule's file scope
+  entirely. The basis is `CLAUDE.md` § Documentation Standards ("No version history", "Current state
+  only") applied by analogy, which is a convention rather than an enforced rule.
 - **Action:** state the rule ("a non-empty container is not a usable body, so for a dict the question
   delegates to `_fragment_has_payload`") and drop the reference to previous attempts.
 - **Done when:** the docstring describes only the current predicate and its rationale.
@@ -302,9 +312,9 @@ written-implies-non-empty invariant itself; that was the part searched hardest a
 - **Evidence:** *"Those last two were added after a sweep over the eight in-tree deterministic
   producers, which flagged `check-artifact-consistency` and `summarize-invariants` on every clean
   run."*
-- **Why it matters:** same class as G11 — the registry's comment describes when and why two entries
-  were appended rather than what the vocabulary means now, and it is the block a future editor reads
-  before adding a sixth field.
+- **Why it matters:** same class as G11, and outside the same rule's file scope for the same reason —
+  the registry's comment describes when and why two entries were appended rather than what the
+  vocabulary means now, and it is the block a future editor reads before adding a sixth field.
 - **Action:** keep the per-field citations (which are current-state and load-bearing) and the live
   population note; delete the "were added after a sweep" framing.
 - **Done when:** the comment block states only what each name means and where each producer publishes

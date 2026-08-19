@@ -133,7 +133,8 @@ defect it names, and four inaccurate counts/omissions in the run report.
   - `file_ops.py:890` `_parse_get_worktree_path_output` returns the published discriminator and
     **raises** at `:949-956` on an absent or unrecognised state — fail-closed, not a guess.
   - `_status_query.py:560` — the producer derives its published state through the same function.
-  - `file_ops.py:1029` `worktree_state`, `:1051` `has_worktree` (`== MATERIALIZED` only), `:1097`
+  - `file_ops.py:1030` `worktree_state`, `:1052` `has_worktree` (`== MATERIALIZED` only, the
+    comparison itself at `:1073`), `:1097`
     `_resolve_worktree_face` (materialized → persisted path, both other states → `cwd_checkout_root()`).
   - Six consumers carry it: `manage-execution-manifest.py:684`, `integrate_into_main.py:174`,
     `_cmd_baseline_reconcile.py:89` (branches on the *state*, not the boolean — the F4 fix),
@@ -141,9 +142,11 @@ defect it names, and four inaccurate counts/omissions in the run report.
   - `manage-solution-outline.py:1108-1123` keeps only the genuine-failure degrade, with a comment
     stating it no longer covers the pre-materialization window — the "learned the lesson, not the
     example" requirement.
-- **Found — clause 2, not delivered:** `extension_base.py:565-596` still returns `None` (footprint
-  unresolvable) for both `pending` and `disabled`, with the non-derivation stated as a deliberate
-  cross-cutting deferral in the docstring at `:588-596`. The mechanism the report cites for the
+- **Found — clause 2, not delivered:** `extension_base._resolve_plan_footprint` (`:566`) still returns
+  `None` (footprint unresolvable) for both `pending` and `disabled` — the state gate is
+  `if worktree_state != WORKTREE_STATE_MATERIALIZED: return None` at `:646-647` — with the
+  non-derivation stated as a deliberate cross-cutting deferral in the docstring at `:589-595`. The
+  mechanism the report cites for the
   revert is real: `manage-execution-manifest.py:736-789` drops `pre-push-quality-gate` on a
   `not_necessary` verdict and only on that verdict.
 - **Checks run:** mutation of `has_worktree` to `!= WORKTREE_STATE_DISABLED` →
@@ -420,10 +423,10 @@ False, stale, or overstated:
 | Residue item (from report) | Still open? | Evidence |
 |---|---|---|
 | 1. Arm A of the split, handed to `350-outline-derived-set-closure-integrity` | **Closed** | `doc/plans/code-intelligence-substrate/350-outline-derived-set-closure-integrity/` exists with `plan.md`, `report-01.md`, `report-02.md`, `actual-state.md`; `_qgate_closure.py` landed in `63943f5` (#1295) |
-| 2. A `disabled` plan's footprint is derivable but reported unresolvable | **Open** | `extension_base.py:565-596` still returns `None` for `disabled`; arm A explicitly recorded it **not scoped** at `350/actual-state.md:130` |
+| 2. A `disabled` plan's footprint is derivable but reported unresolvable | **Open** | `extension_base._resolve_plan_footprint` (`:566`) still returns `None` for `disabled` — gate at `:646-647`; arm A explicitly recorded it **not scoped** at `350/actual-state.md:130` (row R2) |
 | 3. Claim 8 (routing decision's pre-override input) never sited | **Closed** | Sited by plan 350: `350/report-01.md:47` names `_cmd_planning_lane.cmd_scope_estimate_heuristic` and the `_read_scope_estimate` consumer |
 | 4. Only one bucket contradiction is adjudicated | **Open, by design** | `manage-solution-outline.py:226-237` states the un-decidable converse and leaves it to the aggregator; `TestNonProvableShapesAreNotAdjudicated` pins the three shapes as accepted |
-| 5. `_invariants._worktree_materialized` still derives from the primitive `worktree_path` | **Open** | `marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_invariants.py:429-447` — reads `metadata.get('worktree_path')` and the phase set, never `derive_worktree_state`. Consistent with the report's stated reason (it answers a phase-axis question), so this is open-as-declared rather than a regression |
+| 5. `_invariants._worktree_materialized` still derives from the primitive `worktree_path` | **Open** | `marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_invariants.py:435` (`_worktree_materialized`; its `_WORKTREE_MATERIALIZED_PHASES` constant at `:429-432`) — reads `metadata.get('worktree_path')` and the phase set, never `derive_worktree_state`. Consistent with the report's stated reason (it answers a phase-axis question), so this is open-as-declared rather than a regression |
 
 The report's proposed contract amendment ("if the clause asserts what a function RETURNS, run the
 function") was **not** self-approved and was said to ship separately. It did:
@@ -476,6 +479,7 @@ would have been distinguishable from a filter mistake.
 - The verification sub-agent's "3005 passed" and the `./pw verify` figures (`20509 passed, 14 skipped`,
   `8:18`, mypy over 410/764 files). Point-in-time build output with no artifact in the tree.
   **UNVERIFIABLE**; not treated as findings.
-- Whether the Step 8 shortfall disclosure the operator saw said 1-of-3 or 2-of-3 (see § Report
-  accuracy item 6). **UNVERIFIABLE.**
 - I did not run `./pw verify`; per the audit brief that is out of scope.
+
+(The Step 8 shortfall-disclosure question previously listed here as **UNVERIFIABLE** was resolved on
+adversarial re-examination — see § Report accuracy item 6.)

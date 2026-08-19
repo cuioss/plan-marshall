@@ -3,10 +3,12 @@
 The plan's code deliverables (D1, D2, D3, D5) landed correctly and are well tested — the resolver split
 is real, asserted at the resolver, and three of the run's eleven mutation rows reproduce exactly. What
 remains is concentrated in two places. First, one **reachable configuration** in which the fixed
-resolution still mis-resolves and the new refusal fails to catch it: with a base-dir override active
-and the working directory in a *subdirectory* of the plan worktree, `_main_repo_root()` returns that
-subdirectory, the `main_*` columns record the worktree's HEAD, and `_assert_main_capture_read_main`'s
-path-**equality** comparison passes the mislabelled row through (reproduced by execution). Second, the
+resolution still mis-resolves and the new refusal fails to catch it: with a **non-canonical** base-dir
+override active (any `PLAN_BASE_DIR` that is not literally `*/.plan/local`) the three `main_*` columns
+record the worktree's values from anywhere inside the worktree, and from a *subdirectory* of it
+`_assert_main_capture_read_main`'s path-**equality** comparison passes the mislabelled row through
+silently instead of refusing it (reproduced by execution across the full override × cwd sweep; on the
+default no-override path the fix is complete). Second, the
 **D4 prose deliverable is unexecutable as written**: its Step 2 asks the reader to compare `captured_at`
 against a cutoff the document neither states nor says how to obtain, and it instructs a direct read of a
 `.plan/`-resident file when `phase_handshake list` projects exactly the fields it needs. Four further
@@ -300,8 +302,11 @@ n−1-of-n residue class the run's own stop record predicted. The declared condi
   the only one, `execution-recovery.md`'s `main_sha` is the `status.metadata` namespace D1 excluded,
   and the archived-plan audit skill does not read handshake rows."* But
   `_handshake_commands._check_main_dirty_drift:288` consumes `captured_row['main_dirty_files']` against
-  `observed['main_dirty_files']`, and `_diffs:485-512` compares every `main_*` column across the
-  captured and observed rows.
+  `observed['main_dirty_files']`, and `_diffs:485-512` compares `main_sha` and `main_dirty` across the
+  captured and observed rows. (`_diffs` is **not** a consumer of all three columns: it iterates
+  `INVARIANTS` and explicitly `continue`s on `main_dirty_files` at `:493-494`, deferring that column to
+  `_check_main_dirty_drift`'s proper-superset semantics. An earlier draft of this entry said "every
+  `main_*` column" — that overstated it.)
 - **Why it matters:** the enumeration is the report's own evidence for an asserted absence, and an
   asserted absence is verified exactly as an asserted presence (the plan's words). The *"unexamined"*
   half holds — the run did examine `_check_main_dirty_drift`, as D5's declared collateral — but the
@@ -323,7 +328,10 @@ n−1-of-n residue class the run's own stop record predicted. The declared condi
 - **Topic:** architecture-core
 - **Where:** `marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_invariants.py:274-303`
   (the exception), `:1087` (the raise), `:1879` (declared in `capture_all`'s `Raises:`);
-  `_handshake_commands.py:415-446` (`cmd_capture`'s handler chain) and `:536-566` (`cmd_verify`'s)
+  same-directory `_handshake_commands.py:415-446` (`cmd_capture`'s handler chain, function at `:396`)
+  and `:536-566` (`cmd_verify`'s, function at `:515`). ⚠ `VERIFY_REFUSAL_ERRORS` is **not** in that
+  directory — it lives at
+  `marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_lifecycle.py:46-52`
 - **Evidence:** `grep -n "TaskGraphInvalid\|task_graph_invalid"` over the handshake scripts finds the
   class, its raise and its docstrings — and **no** `except TaskGraphInvalid` and no
   `task_graph_invalid` error code. `cmd_capture` handles its four siblings (`PhaseStepsIncomplete`,
@@ -338,12 +346,17 @@ n−1-of-n residue class the run's own stop record predicted. The declared condi
 - **Action:** add `except TaskGraphInvalid as exc` to both verbs, returning a structured payload
   (`error: task_graph_invalid`, `cycle`, `dangling`, `message`) through a shared builder in the shape
   `_main_capture_read_the_worktree_payload` uses; add the code to `VERIFY_REFUSAL_ERRORS`
-  (`_cmd_lifecycle.py:46`) and to `phase_handshake.py`'s strict-exit tuple (`:138`), matching the four
-  siblings.
+  (`marketplace/bundles/plan-marshall/skills/manage-status/scripts/_cmd_lifecycle.py:46-52`) and to
+  the strict-exit tuple in
+  `marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/phase_handshake.py:138-142`,
+  matching the four siblings.
 - **Done when:** a test drives `cmd_capture` and `cmd_verify` against a plan whose task graph carries a
   cycle and asserts `result['error'] == 'task_graph_invalid'` with the `cycle` payload present and no
   row written; the strict exit returns 1; and removing either handler reddens it.
 - **Effort:** S
 - **Risk if fixed:** adding the code to `VERIFY_REFUSAL_ERRORS` changes loop-back re-entry behaviour for
   a broken task graph from "auto-override attempted" to "refused" — check that this is the intended
-  posture against the four existing members before widening the set.
+  posture against the **five** existing members (`worktree_unresolved`, `worktree_metadata_drift`,
+  `main_checkout_dirtied_during_plan`, `worktree_dirty_at_boundary`, `main_capture_read_the_worktree`)
+  before widening the set. Note the set (5) and `phase_handshake.py`'s strict-exit tuple (3) already
+  disagree; adding to one is not adding to the other.

@@ -173,8 +173,19 @@ compiler's other discriminator, `_fragment_renders_empty` (`:427-472`), calls th
 
 So the same value is content on one render path and "nothing was lost" on the other. This is the
 loud-half-goes-quiet direction of exactly the miscalibration the plan exists to kill, and no test
-covers it. Reachability is narrow — `parse_toon` yields `''` for a valueless key and a dict for the
-normal `key: value` shape — but the asymmetry is unbounded in the code and undocumented.
+covers it.
+
+**The path is reachable in production.** `parse_toon` yields `''` only for a *valueless* key; a key
+carrying prose yields the prose. Executed:
+`parse_toon('script-failure-analysis: the producer wrote prose instead of a fragment')` →
+`{'script-failure-analysis': 'the producer wrote prose instead of a fragment'}`, and
+`build_document` on that bundle returns `Script Failure Analysis` in `sections_omitted`,
+`dropped == []`, status `success`. That is the same producer scenario — an aspect writing prose
+instead of a fragment, accepted by `collect-fragments._read_fragment` — that the run's verification
+round 2 fixed on the *written* half; the conditional half was left uncorrected. It also contradicts
+`references/report-structure.md:41`, which requires a present, payload-carrying, non-rendering
+fragment to be a drop. Filed as a **high** gap (G1) on that basis, not the medium this section
+originally assigned.
 
 Everything else read clean: the `chat-history-analysis` carve-out still sits **before** the status
 guard (`:132-135`, pinned on rendered output by
@@ -188,7 +199,7 @@ check-then-act window; and the orchestrator store refuses `--append` instead of 
 
 | Deliverable | Covering tests | Non-vacuity evidence |
 |---|---|---|
-| D1 written-half | `TestWrittenImpliesNonEmpty` (17 tests / 30 collected), `test_registered_aspects_render.py` fallback cases | Mutation A (dict branch → `return False`) turns 7 red |
+| D1 written-half | `TestWrittenImpliesNonEmpty` (12 methods / 30 collected), `test_registered_aspects_render.py` fallback cases | Mutation A (dict branch → `return False`) turns 7 red |
 | D1 zero-half | `TestZeroReportingSectionNamesItsCheckedSet` (15 methods / 21 collected) | Mutation B (drop the one-level nesting pass) turns exactly the named witness red; the class also carries its own two-directional probe (`test_probe_bites_only_on_the_defect_it_names`) |
 | D2 | none needed (a derivation that mutated nothing); `TestRegisterableAspectsRenderable` covers the adjacent completeness contract | anchor tests (`test_scanner_finds_the_routing_decisions_dispatch`, `…reaches_aspects_dispatched_from_their_reference_doc`) prevent a vacuous empty population |
 | D3 | `TestAspectTableKeysMatchTheRegistry` (5/5) | `test_guard_bites_on_a_key_that_is_not_in_the_registry` runs the real parser over a corrupted copy of the live table and asserts the clean table is clean — F13's vacuity is genuinely repaired |
@@ -222,16 +233,22 @@ Every re-derivable claim held. Specifically re-measured rather than copied:
 - F5's residue quotes — `SKILL.md:31` "dispatch the 14 aspect references", `:52` "9 aspects iterate
   inside one envelope", `:54` "The 8 in-context analytical aspects" — all still present verbatim.
 
-Two claims are inaccurate, both minor and both confined to the report:
+One claim is inaccurate, minor and confined to the report:
 
 1. **Step-8 head.** "conditions 1–3 met on head `2dd1b31` … then auto-merge armed" — the merged head
    is `1e0354390e6aed68afaa40e19d5dc53c8137adb3`, one commit later. CI did re-run and pass on that
    head (`verify / conclusion` success at 01:37, merge at 01:53), and the run *did* disclose the
-   moved head in a PR comment, but the report's contract-check row does not record it.
-2. **"Six documentation surfaces … were updated."** Seven bundle documentation surfaces changed for
-   D4 once `platform-runtime/SKILL.md:38` is counted; the report's sentence is defensible because
-   that row describes the *write* rather than the read, but the enumeration is not the whole set the
-   commit touched.
+   moved head in a PR comment, but the report's contract-check row does not record it. Re-confirmed
+   against the PR API: `head.sha` = `1e03543…`, merged `2026-08-18T01:53:25Z`, and `2dd1b31` is the
+   second-to-last of the PR's 23 commits.
+
+A second claim this section originally listed as inaccurate is **not**. `report-01.md:214` reads
+*"**Six** documentation surfaces that instruct this read were updated"* — the qualifier *that
+instruct this read* is load-bearing and the sentence is exact. All six read-side surfaces were
+re-verified verbatim at their cited lines; the seventh surface, `platform-runtime/SKILL.md:38`,
+describes the **write** (`| session capture | APPEND current session id to
+status.metadata.session_ids via manage-status; no-op on OpenCode |`), which that sentence does not
+claim to cover. It is recorded under collateral below, and no gap is filed for it.
 
 One quoted figure is **UNVERIFIABLE**: the report renders CodeRabbit's limit notice as "Next review
 available in: **38 minutes**"; the comment body on GitHub now reads "50 minutes" and carries an

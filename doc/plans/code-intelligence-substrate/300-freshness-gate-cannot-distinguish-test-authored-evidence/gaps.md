@@ -232,11 +232,21 @@ severity is corrected to `low` accordingly.**
 ## G8 — Make the gate's anti-vacuity control actually detect an import-path fault
 
 - **Kind:** test-gap
-- **Severity:** medium
+- **Severity:** high
 - **Topic:** tests
 - **Where:** `test/plan-marshall/manage-tasks/test_freshness_notation_crosscheck.py:544-584`
   (`test_the_real_resolution_path_refuses_and_corroborates_against_this_repository`), docstring at
-  `:548-560`
+  `:547-561`; the reciprocal false claim in the sibling docstring at
+  `test/plan-marshall/manage-architecture/test_project_build_notations.py:182-190`
+
+⭐ **Re-rated `medium` → `high` in adversarial review, and the mechanism was reproduced rather than
+argued.** The calibration puts "a vacuous test on a load-bearing path" at `medium`, but this is the
+`guard cannot fire` case: the control is the *entire* remedy for V1-6 — the finding the run itself
+calls "the most serious of the round", whose demonstrated symptom was the cross-check silently
+degrading to a permanent `unverified` pass **with the whole suite green**. In the only configuration
+that gates a merge (the full suite), that guard demonstrably does not fire. The plan's headline
+defect class can therefore recur with CI green, which is precisely the state this plan exists to make
+impossible.
 - **Evidence:** The docstring claims: *"If the real resolver could not be imported at runtime … the
   cross-check would collapse to a permanent `unverified` pass — and all of those cases would stay
   green … so an import path or a crawl that stopped working is a test failure rather than a silent
@@ -248,7 +258,25 @@ severity is corrected to `low` accordingly.**
   scope in `test_project_build_notations.py:28`, and what `test_on_demand_crawl.py:29` does
   transitively via `_cmd_client.py` — the identical call returns `reason: None` and the full notation
   set. Collection order makes this certain: `test_project_build_notations.py` is collected at line
-  3521 of `pytest --collect-only -q test/plan-marshall`, the crosscheck file at line 8713.
+  3521 of `pytest --collect-only -q test/plan-marshall`, the crosscheck file at line 8713 — **both
+  line numbers re-derived in adversarial review and reproduced exactly.**
+
+  ⭐ **Adversarial review reproduced the masking end to end, which is the evidence that matters.** A
+  `meta_path` finder was installed that refuses `_cmd_client_query` **by name only** (leaving
+  `spec_from_file_location` and every sibling module untouched — the exact fault the docstring claims
+  to catch):
+
+  | Invocation | Result |
+  |---|---|
+  | crosscheck file alone | **1 failed** — the control fires, `assert 'fresh' == 'stale'` |
+  | `test_project_build_notations.py` **then** the crosscheck file | ⛔ **25 passed** — fully green |
+
+  So the control detects the fault only when its file runs alone, and the sibling that masks it is
+  collected first in the real suite. ⚠ **A separate, cruder fault does still surface:** removing the
+  whole `manage-architecture/scripts` entry from `sys.path` makes `test_project_build_notations.py`
+  fail at *collection* (`ModuleNotFoundError: _architecture_core`), so the suite goes red — but via a
+  collection error in another file, never via this control. That is why the original *Done when* was
+  unreachable as written and has been replaced below.
 - **Why it matters:** This control is the fix for V1-6, which the report calls "the most serious
   finding of the round" — the demonstrated fault was *a missing `sys.path` entry*. In a full-suite
   run the control cannot see that fault, so the fix for the "nothing ever breaks" defect itself has a
@@ -258,10 +286,17 @@ severity is corrected to `low` accordingly.**
   subprocess with a controlled `sys.path` and assert it resolves — or (b) pop `_cmd_client_query`
   from `sys.modules` for the duration of the case (via `monkeypatch.delitem`) so the import genuinely
   goes through the finder, and additionally pass `register=False` in `test_project_build_notations.py`
-  so it stops publishing a shared name it does not need. Then correct the docstring to state exactly
-  which fault each case does and does not cover.
-- **Done when:** removing the `manage-architecture/scripts` entry from the suite's `sys.path` turns
-  this case red when the whole suite is run, not only when its file is run alone.
+  so it stops publishing a shared name it does not need. Then correct **both** docstrings: the
+  control's own claim at `:547-561` that "an import path … that stopped working is a test failure
+  rather than a silent no-op", **and** the sibling's claim at
+  `test_project_build_notations.py:182-190` that "Neither case alone covers both halves; **the pair
+  does**" — which is false for the same reason, since the pair only covers both halves when the
+  masking file is absent.
+- **Done when:** with `_cmd_client_query` made unresolvable **by name** (a `meta_path` finder that
+  refuses that name, leaving `spec_from_file_location` working), this case is **red** when
+  `test_project_build_notations.py` is collected ahead of it — not only when its own file runs alone.
+  The two-file invocation in the table above is the reproduction to re-run; it must go from
+  `25 passed` to at least one failure.
 - **Effort:** M
 - **Risk if fixed:** Low — `register=False` changes which module object other cases in that file
   patch; the file's own monkeypatching targets the returned object, so it is unaffected.
@@ -273,14 +308,30 @@ severity is corrected to `low` accordingly.**
 - **Kind:** omission
 - **Severity:** medium
 - **Topic:** tests
-- **Where:** `tools-script-executor/templates/execute-script.py.template:313-318`
+- **Where:** `tools-script-executor/templates/execute-script.py.template:314-319`
   (`_BUILD_CLASS_PREFIXES`, a **prefix** set) versus
   `manage-architecture/scripts/_cmd_client_build.py:76-81` (`_BUILD_NOTATIONS`, an **exact-key** map)
-- **Evidence:** Computed with the repository's own helper (`test/_shared/_build_class_roster.py`):
-  the executor's stampable build-class domain holds nine notations, `_BUILD_NOTATIONS` classifies
-  four, and the difference is `build-gradle:extension`, `build-maven:extension`, `build-npm:extension`,
-  `build-npm:js_coverage`, `build-pyproject:extension`. No test relates the two: `test_build_cli.py:746-767`
-  pins roster ⊆ `_BUILD_CLASS_PREFIXES` and its converse, and
+- **Evidence:** ⚠ **The original evidence line for this entry was wrong and is corrected here.** It
+  claimed "the executor's stampable build-class domain holds nine notations … and the difference is
+  [five]". Re-derived in adversarial review from the repository's own helper,
+  `test/_shared/_build_class_roster.py`:
+
+  ```text
+  build_class_roster()  → 4: build-gradle:gradle, build-maven:maven,
+                             build-npm:npm, build-pyproject:pyproject_build
+  _BUILD_NOTATIONS      → 4: the identical four
+  DIVERGENCE            → EMPTY (both directions)
+  ```
+
+  The nine-element set is the **prefix-matching** population (every public script under a `build-*`
+  skill: the four wrappers plus four `extension.py` and `js_coverage.py`), which is **not** the
+  stampable population. Stamping is a conjunction — the executor's own comment at `:311-313` says so
+  outright (*"It is NOT sufficient on its own"*) — and only the four wrappers routing through
+  `_build_cli.build_main` register the `run` verb in `_BUILD_EXECUTING_SUBCOMMANDS`. The original
+  entry labelled the nine "DOMAIN (stampable)" while its own next sentence conceded none of the five
+  can be stamped; the two statements cannot both hold.
+  ⭐ **The gap itself survives the correction, as a latent one:** no test relates the two registries.
+  `test_build_cli.py:746-767` pins roster ⊆ `_BUILD_CLASS_PREFIXES` and its converse, and
   `test_project_build_notations.py:47-54` sweeps `_BUILD_NOTATIONS` outward, but nothing checks that
   everything the executor can stamp is something the cross-check can classify.
 - **Why it matters:** Before this plan an unclassifiable build notation was harmless. Now a row the
@@ -291,6 +342,9 @@ severity is corrected to `low` accordingly.**
   exists today — `run` is contributed only by `script-shared/scripts/build/_build_cli.build_main`, and
   none of the five divergent scripts routes through it — which is exactly why this will be discovered
   by a hard block rather than by a test.
+  ⚠ Note the corrected framing: today the two registries **agree exactly**, so the assertion below
+  passes on the current tree. That is what a regression pin is for — it is not evidence of a present
+  defect, and this entry should not be read as reporting one.
 - **Action:** Add a test asserting that every notation in `build_class_roster()` (the scripts that can
   actually be stamped, i.e. those exposing a build-executing subcommand) is a key of
   `_cmd_client_build._BUILD_NOTATIONS`, with a failure message naming the freshness-gate consequence.
@@ -393,9 +447,10 @@ severity is corrected to `low` accordingly.**
 - **Evidence:** *"the case that keeps all the others honest — the live repository resolving its own
   build notation **through the real import path**"*. `test_the_live_repository_resolves_its_own_build_notation`
   obtains the resolver through `conftest.load_script_module` →
-  `importlib.util.spec_from_file_location` (`test/conftest.py:421-435`), i.e. by absolute path,
-  bypassing `sys.path`. The test's own docstring says so in a ⛔ paragraph
-  (`test_project_build_notations.py:183-190`) that round 2 added for exactly this reason (R2-4).
+  `importlib.util.spec_from_file_location` (named in `test/conftest.py:429-431`, implemented at
+  `:564`), i.e. by absolute path, bypassing `sys.path`. The test's own docstring says so in a ⛔
+  paragraph (`test_project_build_notations.py:182-190`) that round 2 added for exactly this reason
+  (R2-4).
 - **Why it matters:** The report over-claims a coverage property the test file itself disclaims — the
   same over-claim R2-4 fixed one layer down. Read together with G8, the run's headline anti-vacuity
   story is stronger in the report than in the tree.
@@ -412,7 +467,7 @@ severity is corrected to `low` accordingly.**
 
 - **Kind:** incomplete
 - **Severity:** low
-- **Topic:** architecture-core
+- **Topic:** bundle-docs
 - **Where:** `plan.md` D4 ("compare the matched notation against the plan's **architecture-resolved
   canonical build commands**") versus
   `manage-architecture/scripts/_cmd_client_query.py:781-830` (`resolve_project_build_notations`,

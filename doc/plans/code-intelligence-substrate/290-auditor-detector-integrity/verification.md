@@ -7,10 +7,13 @@ on each later commit touches nothing outside `doc/plans/`)
 **Overall verdict:** CONFIRMED WITH GAPS
 
 Every deliverable is implemented, at the site the plan named, by the mechanism the plan asked for, and
-every one is covered by tests that were proved non-vacuous by mutation. The gaps are one unimplemented
-documented precedence rule inside the census, one stale predicate docstring, one untested guard the code
-itself flags as load-bearing, four un-bumped era stamps, two declared-residue items still open, and a
-handful of stale counts in the run report.
+every one is covered by tests that were proved non-vacuous by mutation — re-proved on adversarial review by
+mutating the shipped files themselves, not only the loaded modules. The seventeen gaps are: one documented
+precedence rule inside the census that cannot fire on the live emitter set (G1, the only **high**), one
+stale predicate docstring (G2), one untested guard the code itself flags as load-bearing (G3), two
+enumeration/scope statements wrong on the tree (G4, G12), **three** declared-residue items still open (G5,
+G6, G7), four un-bumped era stamps (G8-G11), and five stale or misattributed claims confined to the run
+report (G13-G17).
 
 ## Deliverable verdicts
 
@@ -200,7 +203,14 @@ Three defects and one latent hazard:
    pairs are numerically identical, so nothing misreports; the moment one diverges the census silently reads
    the wrong denominator. Demonstrated: with `plans_measured: 0` before `plans_in_corpus: 7` the classifier
    returns `starved`; with the two lines swapped it returns `disciplinary`. Opposite verdicts from emission
-   order alone, in the instrument built to stop unsubstantiated verdicts. → **G1**.
+   order alone, in the instrument built to stop unsubstantiated verdicts.
+   **Sharpened on adversarial review, and this is the finding's real shape:** a sweep of all twelve emissions
+   of the three population keys shows the documented precedence is **never exercised at all**. The only two
+   checks emitting both an alias and the canonical key emit the alias first (the two named above); every
+   other check emits `plans_in_corpus` alone, where there is nothing to prefer. So "read `plans_in_corpus`
+   first" cannot change an outcome in either direction on the live emitter set — it is not a latent risk but
+   a rule that cannot fire, i.e. this plan's own flagship archetype sitting inside D6, the deliverable built
+   to detect it. Re-severitied **medium → high**. → **G1**.
 2. **`check_input_integrity`'s docstring states the retired predicate.** `audit.py:4425-4427` still says the
    bucket is *"`blind` exactly when the 5-execute phase recorded zero tokens"* — the exact predicate C4
    replaced, and the one whose vacuity the plan lists as a confirmed member. The code and
@@ -244,13 +254,25 @@ it had captured *their* mutation rather than the pristine file. Every mutation r
 applied **in process**, by a pytest plugin that patches the loaded module after collection; no production file
 was written at any point. `git status --porcelain` for `.claude/` is empty.
 
+**Mutation sweep re-run adversarially (file-level).** The independent review below re-ran the whole sweep a
+second time by editing the shipped files on disk, each preceded by a byte snapshot outside the repository and
+followed by a byte-for-byte restore verified with `md5sum` and `git status --porcelain` (never
+`git checkout`/`restore`/`stash`, since other agents hold unstaged work in this tree). Ten mutations across
+`audit.py`, `check-routing-decisions.py` and `_decision_line_shapes.py` reproduced the in-process results,
+with the two exceptions recorded in the § Adversarial review table. This matters because the in-process
+method patches the loaded module and could in principle miss a shape only the file exercises; the file-level
+re-run removes that doubt. Both files are confirmed identical to HEAD at the close of the review.
+
 **One vacuous guard found.** `suspect_zero_census` carries a comment calling its dictionary lookup
 load-bearing — *"`.get(check)` — NOT `.get(check, 0)`. An unread count must reach `_classify_zero` as None"*
-(`audit.py:5613-5616`). Modelling exactly that defect (defaulting every unread count to `0` before the call)
-leaves **all 33 census tests green**. `_classify_zero`'s own `None` contract is tested directly
-(`test_an_unread_count_is_no_count_not_disciplinary`), and the real-sweep test asserts only the *absence* of
-`no_count` — which the mutation preserves. So the census-level guard against the V3/W1 defect class is
-unpinned. → **G3**.
+(`audit.py:5613-5616`). Applying exactly that defect **to the shipped file itself** — editing
+`per_check_genuine.get(check)` to `per_check_genuine.get(check, 0)` — leaves **all 33 census tests green**,
+and, re-measured in the same mutated state, **all 640 tests in
+`test/plan-marshall/audit-archived-plan-retrospectives/` green**. The guard is therefore unpinned by the
+whole check-suite directory, not merely by its own module. `_classify_zero`'s own `None` contract is tested
+directly (`test_an_unread_count_is_no_count_not_disciplinary`), and the real-sweep test asserts only the
+*absence* of `no_count` — which the mutation preserves. So the census-level guard against the V3/W1 defect
+class is unpinned. → **G3**.
 
 ## Report accuracy
 
@@ -316,9 +338,13 @@ Nothing was changed outside what the report declares. Two obligations the run ne
 - The `CHECK_ERA` boundary stamps of the four checks whose semantics it altered were not bumped
   (**G8-G11**) — `merge-window-accounting` still reads `#877`, `global-log-analysis` `#1260`,
   `quality-chain` `plan-10`, `input-integrity` `#812` (`audit.py:394,414,428,454`) — even though the same
-  file's vocabulary shows a comparable non-roadmap PR (`#1260`) taking a bump for a smaller semantic change,
-  and the stamp is defined as *"the boundary as of which the check's computation is known accurate"*
-  (`audit.py:333-339`).
+  file's live practice stamps entries with their own plan's boundary — `global-log-analysis` carries the
+  inline rationale *"#1260 (this plan's boundary, bumped from #849)"* (`audit.py:384-394`), and other
+  entries use a `PR-PENDING` sentinel resolved at finalize by the dedicated
+  `project:finalize-step-era-stamp-fill` step, which plan 290 did not write either. The stamp is defined as
+  *"the roadmap-era boundary as of which the check's computation is known accurate"* (`audit.py:333-339`);
+  that literal wording is roadmap-scoped and would excuse a non-roadmap plan, which is why G8-G11 accept
+  either a bump or an explicit scoping of the contract rather than asserting the bump was unambiguously owed.
 - SKILL.md's check table gained the `unmeasured` state on the merge-window row (`SKILL.md:173`) but not on the
   `Global-log analysis` row (`:163`), which received the identical contract in rounds 4-5 (**G12**) — the
   run's own "fix applied at n−1 of n sites" pattern, surviving into the shipped table.
