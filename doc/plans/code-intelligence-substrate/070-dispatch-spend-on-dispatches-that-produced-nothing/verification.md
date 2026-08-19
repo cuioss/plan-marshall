@@ -147,12 +147,15 @@ still asserts the proven-waste claim that the run's own CR-7 disposition removed
   `26000 = int(26000)` against the expected `10000`. File restored from a byte snapshot in
   `/tmp/verify-070-mutsweep/`; `git status --porcelain` clean for it afterwards.
 - **Verdict:** PARTIAL — the split is real and non-vacuously tested at the reader, but the
-  retryable figure has no path to a real value: (a) on the finalize ledger the 5c gate fires "only
+  retryable figure has **no path on the timeout sub-case, and no measured value on the others**:
+  (a) on the finalize ledger the 5c gate fires "only
   when the step ran as a Task agent and did NOT time out" (`phase-6-finalize/SKILL.md:1093`) while
   its own `blocked_session_restart` row is defined as *"a session restart, harness cancellation, or
-  the per-agent timeout budget firing"* (`:1102`), so one of the three sub-cases the row claims
-  can never write a row at all, and `harness_cancellation` is absent from the finalize value list
-  (`:1110`) (G3); and (b) wherever a retryable row *is* written, its `total_tokens` is `0` unless
+  the per-agent timeout budget firing"* (`:1102`), so the **timeout** sub-case can never write a row
+  at all — the session-restart and harness-cancellation sub-cases can, and a probe proved a written
+  row is accepted (§ Correctness review item 2) — and `harness_cancellation` is absent from the
+  finalize value list
+  (`:1110`) (G3); and (b) wherever a retryable row *is* written, its `total_tokens` defaults to `0` unless
   the caller measured it — proven end-to-end below — for the very `<usage>` a cancelled dispatch
   never produces (G1); and (c) nothing pins the two cause-class tuples to the enum they partition
   (G13).
@@ -409,8 +412,12 @@ Inaccurate, stale or overstated:
   proportionate, in-surface.
 - One writer, one taxonomy: the plan's "do not ship two writers" constraint holds —
   `record-dispatch-boundary` in `manage-metrics.py` remains the only producer of the ledger, and
-  `grep -rn "termination_cause" --include="*.py" marketplace/` finds no consumer outside
-  `manage-metrics` and `plan-retrospective`.
+  `grep -rn "termination_cause" --include="*.py" marketplace/` finds no consumer **within
+  `marketplace/`** outside `manage-metrics` and `plan-retrospective`. One consumer lives outside that
+  scope: `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py:7195` carries
+  `termination_cause` in `_BC_LEDGER_FIELDS` and parses the same ledger file independently of
+  `plan-retrospective`'s reader — a lock-step surface for any ledger-format change, and one the
+  architecture inventory does not crawl (`data-format.md:944`; see `gaps.md` G1 § Risk if fixed).
 
 ## Method and coverage
 

@@ -477,9 +477,14 @@ change, not six.
 - **Topic:** lsp/resolvers
 - **Where:** `marketplace/bundles/plan-marshall/skills/lsp-client/scripts/lsp_client.py:214`
   (`_run_edit` opens the rename target) and `:232` (the `errors_before` loop re-opens every footprint
-  file, which includes that same target); `_lsp_jsonrpc.py:307-313` (`LspSession.open`)
-- **Evidence:** counted through an instrumented transport over a one-file `edit`, the notification
-  sequence is:
+  file, which includes that same target whenever the rename touches it); `_lsp_jsonrpc.py:307-313`
+  (`LspSession.open`)
+- **Scope:** the duplicate arises on an edit that reaches the footprint loop and whose footprint
+  contains the rename target — the ordinary applied-rename path. It does **not** arise on the declined
+  path: an empty footprint returns `no_workspace_edit` at `:217-227`, before the loop, so that call
+  sends exactly one `didOpen`.
+- **Evidence:** counted through an instrumented transport over a one-file applied `edit`, the
+  notification sequence is:
 
   ```
   textDocument/didOpen   version=1

@@ -18,7 +18,7 @@ one-writer constraint.
 |---|---|---|---|---|
 | D1 | GATE: name and separate the two unattributed populations | Render special-cases both residuals with denominators; contract section added; two consumer tests | `_UNATTRIBUTED_RENDER` at `manage-metrics.py:419-430`, render at `:2336-2362`, contract at `data-format.md:198-207`, tests at `test_manage_metrics.py:2048-2160` + drift test `:2289`. Mutation-proved non-vacuous | CONFIRMED |
 | D2 | Attribute `cache_read` outside the well-attributed phase, or state why not | Mechanism read (`_attribute_cache_read` / `_fold_turn_residency`), limitation documented at the emission contract, magnitude corpus-blocked | Mechanism claim is a faithful read of `claude_runtime.py:1892-1934`; limitation documented at `data-format.md:209-213`. But the **producer's own** contract (`platform-runtime/standards/contract.md:967`, `runtime_base.py:733`) still states the un-subtracted version and was not corrected | PARTIAL |
-| D3 | Emit resident context and turns per phase; settle the creation inversion | `cache_read_per_tool_use` persisted before `write_metrics`; turns = existing `tool_uses`; inversion documented as not-established | Persist loop `manage-metrics.py:1528-1541` runs before `write_metrics` at `:1954`; contract at `data-format.md:232-248`; tests `test_manage_metrics.py:2163-2286`. Mutation-proved non-vacuous | CONFIRMED |
+| D3 | Emit resident context and turns per phase; settle the creation inversion | `cache_read_per_tool_use` persisted before `write_metrics`; turns = existing `tool_uses`; inversion documented as not-established | Persist loop `manage-metrics.py:1528-1541` runs before `write_metrics` at `:1954`; contract at `data-format.md:232-248`; tests `test_manage_metrics.py:2163-2286`. Mutation-proved non-vacuous. But D3's ⛔ **one writer** is a property of the tree, and the tree has two: `analyze-logs.py:662` emits the same name over a different population (G3) | PARTIAL |
 | D4 | Every figure names its population, phase, sampling point; three-state read | Vocabulary reused, no parallel discriminator; three-state read pre-existing and tested | `MetricsEndTimePresence` / `parse_metrics_end_time_presence` at `audit.py:1052-1180`; one test per state at `test_audit_check_metrics_end_time_markers.py:72/147/163`; writer emits new keys only and drops the retired pair (`manage-metrics.py:1576-1577`) — no shim, single reader | CONFIRMED |
 
 ## Per-deliverable detail
@@ -158,14 +158,19 @@ one-writer constraint.
   - Verified the "one writer" constraint against the tree **at landing**:
     `git show 18ddd54:…/plan-retrospective/scripts/analyze-logs.py | grep -c cache_read_per_tool_use`
     → **0**. The plan was the only writer when it landed.
-- **Verdict:** CONFIRMED against the literal *Done when* — both factors are persisted fields and the
-  inversion carries an explicit "not established" with the record model ruled out. Five findings sit
-  on top of it, none of which the *Done when* tests:
-  - A **second** `cache_read_per_tool_use` was added afterwards by `#1260` in
-    `plan-retrospective/scripts/analyze-logs.py:662` over a different population (G3). Verified
-    independently on adversarial review: `18ddd54` is an ancestor of the introducing commit `89edc99`
-    (2026-08-16 vs 2026-08-11), so the second emitter post-dates the landing and this run did not
-    breach its own ⛔ one-writer constraint.
+- **Verdict:** **PARTIAL.** The three *Done when* clauses hold literally — both factors are persisted
+  fields and the inversion carries an explicit "not established" with the record model ruled out — but
+  D3's fourth requirement, ⛔ **one writer**, is a property of the resulting tree rather than of the run
+  alone, and the tree this audit targets does not have it. Five findings sit on top of the verdict, the
+  first of which is what downgrades it; the *Done when* clauses test none of them:
+  - A **second** `cache_read_per_tool_use` exists at
+    `plan-retrospective/scripts/analyze-logs.py:662`, over a different population (G3). Chronology
+    exonerates *this run*: `18ddd54` is an ancestor of the introducing commit `89edc99` (2026-08-11 vs
+    2026-08-16), so the second emitter was added afterwards by `#1260` and this run did not itself
+    breach the constraint. Chronology is not compatibility, though — the constraint asks for one writer
+    and there are two, and no reader of either figure can tell which population it holds. G3 carries the
+    remedy (rename or namespace one of the two, with the consumer sweep across `marketplace/`,
+    `.claude/` and `test/`); until it is applied, D3's outcome is not intact in the tree.
   - The render bullet and the lattice name the factor `resident_context_per_call`, which is not a
     field anywhere (G4, G5).
   - The bullet's value label asserts "resident context per tool-use" while the same bullet discloses

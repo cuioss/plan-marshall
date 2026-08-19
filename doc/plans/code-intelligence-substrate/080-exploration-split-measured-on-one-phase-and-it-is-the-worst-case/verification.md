@@ -184,7 +184,9 @@ is the code the report *cites as already sufficient*, because the residue's corr
    statement is therefore: the reusable readers exist and are sound, and wiring them into D1's host is
    outstanding work — see gap G7.
 
-No other defect was found. Read across both passes: `audit.py:1040-1181`, `:6747-6910`, `:7128-7264`,
+No other defect was found **in the code read for this section** — the lane-contract defect G6 records is
+not code and is verified in § Declared residue, last row. Read across both passes:
+`audit.py:1040-1181`, `:6747-6910`, `:7128-7264`,
 `:7326-7396`, `:7390-7460`, `:7460-7530`; `checks/exploration-share.md:1-45`;
 `manage-metrics.py:2320-2363`, `:3400-3444`, `:3505-3545`;
 `manage-metrics/standards/data-format.md:128-130`, `:162-184`.
@@ -282,7 +284,7 @@ wrong is only the report's *reason*, and the handoff it produced.
 | "nothing needs building — only the corpus needs to be present" | **Open and wrong as stated** | See Report accuracy False-2/False-3 and gaps G3/G4/G7: the per-phase sub-source aggregator does not exist, exploration-share pools phases, and it applies neither schema reader nor the re-entry guard. All three are git-derivable and none needs the corpus. |
 | Orchestrator routing: the plan must not be transitioned to `shipped`; re-route to a local session | **UNVERIFIABLE** | The orchestrator ledger lives under `.plan/`, which is git-ignored, so nothing git-reachable records the plan's status either way. |
 | Landing: auto-merge armed (SQUASH), merge queue lands it | **Closed** | PR #1178 `merged: true`, `merged_at 2026-08-12T09:24:46Z`, `merged_by cuioss-oliver`. |
-| Proposed (optional) `cloud-plan-lane` / `cloud-bridge.md` amendment: a run blocked on a missing environment prerequisite still lands its directory + report | **Open, by design** (operator decision, deliberately not shipped) | `.claude/skills/cloud-plan-lane/SKILL.md:1551-1552` — inside **§ Step 8 — Merge gate** (1310-1558), *not* § Report, which begins at `:1638` — says the report "must state the PR number and the outcome per deliverable — including a run that ended **blocked or partial**, and why"; `cloud-bridge.md:132` (§ Path 2 — Sync) says the same. Neither states that a run blocked on a missing *environment prerequisite* still establishes the directory and lands a report. `grep -rn "prerequisite\|corpus-bearing"` over both files → 0 matches, and reading the surrounding `blocked` occurrences (`SKILL.md:133,209,1098`; `cloud-bridge.md:132`) finds the rule stated in no other words either. |
+| Proposed (optional) `cloud-plan-lane` / `cloud-bridge.md` amendment: a run blocked on a missing environment prerequisite still lands its directory + report | **Open, by design** (operator decision, deliberately not shipped) | `.claude/skills/cloud-plan-lane/SKILL.md:1551-1552` — inside **§ Step 8 — Merge gate** (1310-1558), *not* § Report, which begins at `:1638` — says the report "must state the PR number and the outcome per deliverable — including a run that ended **blocked or partial**, and why"; `cloud-bridge.md:132` (§ Path 2 — Sync) says the same. Neither states that a run blocked on a missing *environment prerequisite* still establishes the directory and lands a report. `grep -rn "prerequisite\|corpus-bearing"` over both files → 0 matches, and reading the surrounding `blocked` occurrences (`SKILL.md:133,209,1098`; `cloud-bridge.md:132`) finds the rule stated in no other words either. Both cited files were opened and both negatives are controlled; this row is G6's verification and its verdict. → `gaps.md` G6. |
 
 ## Out-of-scope and collateral
 

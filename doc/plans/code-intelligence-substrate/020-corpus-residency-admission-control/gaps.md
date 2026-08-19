@@ -22,8 +22,11 @@ exactly two files, both inside this plan's directory. What remains are twelve de
 
 **G10** corrects a false mechanism claim about the review registry; **G3–G9** are record hygiene.
 
-Each defect below is tagged **wrong-when-written** or **stale**, resolved against `60c34cb` — the
-commit that landed this report — so a later run can tell a mistake from a decayed citation.
+Each defect below carries one of three kinds. The nine that are claims *in* the record are tagged
+**wrong-when-written** or **stale**, resolved against `60c34cb` — the commit that landed this report —
+so a later run can tell a mistake from a decayed citation. The remaining three (G2, G9, G11) are
+**omissions**: something the record never said at all, for which there is no when-written state to
+resolve.
 
 ## G1 — Correct the report's claim that `exploration_doc_residency_bytes` is D1's measurement
 

@@ -1,6 +1,8 @@
 # Verification — 020-corpus-residency-admission-control
 
-**Audited:** `plan.md`, `report-01.md` (the only two files in the plan directory)
+**Audited:** `plan.md`, `report-01.md` — the two pre-existing files in the plan directory at the
+audited commit, and the whole of the audit scope; `gaps.md` and this document are added *by* this audit
+and are not themselves audited
 **Tree state:** `61a43e5` at first audit; every claim below re-derived at `57c63a8` during adversarial
 review (the 16 intervening commits are all `doc/plans/**` audit documents — no source changed)
 **Overall verdict:** CONFIRMED WITH GAPS
@@ -153,8 +155,14 @@ What I read to conclude that, and what I checked in it:
   `_tool_calls` sub-split** (stated verbatim at `runtime_base.py:770` and
   `manage-metrics/standards/data-format.md:186`).
 - `marketplace/bundles/plan-marshall/skills/manage-metrics/standards/data-format.md:13,163,175-186`.
-- `.claude/skills/cloud-plan-lane/SKILL.md:479-510` — the build gate is `*.py`-only
+- `.claude/skills/cloud-plan-lane/SKILL.md:479-510` — the lane's **local** build gate is `*.py`-only
   (`SKILL.md:501-502`), so the report's "no buildable footprint, build skipped" is contract-correct.
+  That is conformance with an instruction the run follows, not an enforced outcome: `SKILL.md` is prose
+  addressed to the run, and the executable counterpart —
+  `.github/workflows/python-verify.yml:41-50` — opts the pinned reusable workflow into
+  `skip-on-docs-only`, a *non-building-path* footprint gate rather than a `*.py`-only one, while still
+  reporting `verify / conclusion`. So: the report's decision matches the lane contract, and nothing in
+  CI would have caught it had it not.
 
 **One correctness observation about the run's reasoning, not about code:** the D0 evidence chain is
 sound but the field it anchors on cannot answer D1 (§ Report accuracy item 1). Because the answer at

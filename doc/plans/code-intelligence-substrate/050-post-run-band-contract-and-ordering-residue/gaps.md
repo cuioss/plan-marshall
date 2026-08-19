@@ -313,10 +313,14 @@ appeared — did not fire when exactly that happened, because it watches `reads`
 - **Action:** Add `destroys` to `_ABSENT_CONSUMER_MARKERS` (which makes the canary fail immediately, as
   intended), then discharge the failure by re-measuring: rewrite `:18-23` and the test to state that the
   consumer-side vocabulary **exists but is not yet derived into edges**, and either extend
-  `derive_ordering_edges()` to emit `reads`→producer and `reads`-after-`destroys` edges, or state
-  explicitly that those edges are out of the current derivation's scope and why. Prefer extending the
-  derivation: `destroys` is declared and its ordering obligation is documented, so a real edge class is
-  currently underived.
+  `derive_ordering_edges()` to emit `reads`→producer and `reads`-after-`destroys` edges, or declare
+  those edges out of the current derivation's scope **and pin that policy with its own contract test** —
+  one that enumerates the step docs declaring `reads`/`destroys` today and goes red when a new
+  declaration appears, so an out-of-scope declaration is still caught rather than absorbed silently.
+  Prefer extending the derivation: `destroys` is declared and its ordering obligation is documented, so
+  a real edge class is currently underived. Whichever branch is taken, the canary must not simply be
+  widened to *accept* the vocabulary — that would satisfy the rewrite while leaving the next declaration
+  green and unrepresented, which is the failure this gap records.
 - **Done when:** Adding a `reads:` **or** a `destroys:` declaration to any finalize step doc either
   produces a derived edge that the GATE assertion checks, or turns a named test red — and no statement in
   the module claims the consumer-side vocabulary is empty while `ext-point-finalize-step.md` defines it.

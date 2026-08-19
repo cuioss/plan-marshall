@@ -1,6 +1,7 @@
 # Verification — 010-lsp-in-execute-lookup-and-write
 
-**Audited:** `plan.md`, `report-01.md` (the only two files in the plan directory)
+**Audited:** `plan.md`, `report-01.md` — the two pre-existing files in the plan directory, and the whole
+of the audit scope; `gaps.md` and this document are added *by* this audit and are not themselves audited
 **Tree state:** `61a43e5` on `claude/code-intelligence-substrate-analysis-kah884`, re-verified at
 `f49542c` and again at `c5511dd` on the same branch (the second reading is the adversarial review's).
 `git diff 61a43e5..HEAD` over every audited surface — `lsp-client/`, its tests, `manage-run-config`,
@@ -219,8 +220,8 @@ the server never answers is reported as `state: ok, error_count: 0` — a clean 
   against real pyright), the guard compares an aggregate error **count** rather than per-file sets so
   a swapped *or relocated* error passes (G15), the footprint is not honest for an edit carrying
   resource operations (G3), and the *multi-file* half of the done-condition has no test (G6). A
-  mid-apply exception additionally leaves a half-applied edit with no rollback (G4), every `edit` call
-  sends a duplicate `didOpen` for the rename target (G14), and a declined rename is reported as a
+  mid-apply exception additionally leaves a half-applied edit with no rollback (G4), an `edit` that
+  reaches the footprint loop sends a duplicate `didOpen` for the rename target (G14), and a declined rename is reported as a
   success the consumer wiring has no branch for (G16).
 
 ### D3 — diagnostics as a pre-build correctness signal
@@ -347,9 +348,11 @@ Defects found by reading the shipped code, each proved by execution where the br
    builds `new_diagnostics[]` from *every* post-edit Error without diffing the pre-edit set
    (`lsp_client.py:243-245`), so a pre-existing error is reported as new (proved: pre `[A]` / post
    `[A, B]` → the payload lists both). G15.
-8. **Every `edit` call sends a duplicate `didOpen`.** `_run_edit` opens the rename target at
-   `lsp_client.py:214`, then re-opens each footprint file — including that same target — at `:232`.
-   Counted through an instrumented transport: `didOpen` twice for one URI with no `didClose` between,
+8. **An applied `edit` sends a duplicate `didOpen` for the rename target.** `_run_edit` opens the
+   rename target at `lsp_client.py:214`, then re-opens each footprint file — including that same
+   target, whenever the rename touches it — at `:232`. The declined path is exempt: an empty footprint
+   returns `no_workspace_edit` at `:217-227`, before the loop, so that call opens once.
+   Counted through an instrumented transport over an applied edit: `didOpen` twice for one URI with no `didClose` between,
    then `didChange`. LSP forbids a second open notification without an intervening close, and
    `LspSession.open` resets `_doc_versions[abs] = 1` each time, so the version sequence a strict
    server sees is 1, 1, 2. pyright tolerates it; a different server need not, and the plan asked for a

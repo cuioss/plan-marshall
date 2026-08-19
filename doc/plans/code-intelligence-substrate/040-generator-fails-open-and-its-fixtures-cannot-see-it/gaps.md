@@ -38,12 +38,14 @@ stands.
   `PLAN_TRACKED_CONFIG_DIR=<tmp with a one-entry SCRIPT_SURFACES executor> PM_SURFACE_BUDGET_SECONDS=0 python3 …/generate_executor.py generate --marketplace --marketplace-root .`
   → `surface-stats: scripts_registered=158 surfaces_derived=0 surfaces_reused=0 surfaces_not_derivable=158`,
   `status: error`, `EXIT=0`.
-- **Why it matters:** the bootstrap's single failure detector cannot fire on **any** expected error.
+- **Why it matters:** the bootstrap's single failure detector cannot fire on **any of the six expected
+  errors reachable through it**.
   Every `generate` refusal is `status: error` at exit `0`: template not found
   (`generate_executor.py:1218-1219`), Guard 1 template-format skew (`:1296-1307`), Guard 2
   placeholder residue (`:1393-1402`), Guard 3 `py_compile` (`:1407-1416`), Guard 4 emitted-path
-  provenance, the fail-open Guard 5 (`:1372-1386`), and `cmd_generate`'s unresolvable-base-path
-  error. On each, the bootstrap returns having written nothing and having raised nothing; downstream
+  provenance, and `cmd_generate`'s unresolvable-base-path error — those six. The fail-open Guard 5
+  (`:1372-1386`) shares the shape but is **not reachable** through this bootstrap; see the narrowing
+  below. On each of the six, the bootstrap returns having written nothing and having raised nothing; downstream
   tests then fail with unrelated diagnostics or (where they guard on absence) go vacuously green.
   Observed in the first audit round: the D2 population test failed with
   `Failed: no .plan/execute-script.py under /home/user/plan-marshall` after a bootstrap that raised
@@ -210,8 +212,10 @@ stands.
   deterministic **shape** guards on the substituted content (Guard 5 is the semantic fail-open guard
   on the derivation outcome, covered in `test_generate_executor_behavior.py`)" — the count there is
   correct once it is scoped, so the fix is to scope it, not to renumber it.
-- **Done when:** a whole-tree grep for `four deterministic guards` returns exactly one hit, the
-  scoped comment at `test_generate_executor.py:1906`; the fail-closed audit row enumerates all five.
+- **Done when:** a whole-tree grep for the stable token `four deterministic` (**not** the full phrase
+  `four deterministic guards`, which site (2)'s own rewording removes) returns exactly one hit — the
+  scoped comment at `test_generate_executor.py:1906`, now reading "four deterministic **shape**
+  guards" — and `provisioning-fail-closed-audit.md:96` states five and enumerates all five.
 - **Effort:** S
 - **Risk if fixed:** none.
 
@@ -361,14 +365,21 @@ stands.
   automatic backstop is the `assert len(derivable) >= len(notations) // 2` floor at lines 151-155,
   which today admits any derivable count down to **79** — so a silent shrink from 114 to 79 (a third
   of the corpus gone) passes green and invisible.
-- **Action:** emit the counts through a channel pytest surfaces on a pass — a
-  `record_property`/`record_testsuite_property` entry, a `warnings.warn` visible in the summary, or a
-  written artifact under `.plan/temp/` — rather than captured stdout. Whichever channel is chosen,
-  name it in the docstring so a reader knows where to look.
+- **Action:** emit the counts through a channel that reaches the **terminal** on a passing default run
+  — write them via the terminal reporter, which bypasses capture:
+  `request.config.pluginmanager.get_plugin("terminalreporter").write_line(...)` from the test, or a
+  `pytest_terminal_summary` hook in the owning `conftest.py` fed by a stashed value. Name the channel
+  in the docstring so a reader knows where to look.
+  ⚠ Three channels that look like fixes and are not, checked against this repo's own config:
+  `record_property` / `record_testsuite_property` write into the JUnit XML only and print nothing;
+  a written artifact is not terminal output either; and `warnings.warn` would **fail the test** —
+  `pyproject.toml:121` sets `filterwarnings = ["error"]`. If an artifact is preferred anyway, that is a
+  different deliverable and the *Done when* below must be restated to name the artifact's path.
 - **Done when:** a default `uv run python -m pytest <file>` (no extra flags, repo addopts applied)
-  shows the enumerated population size on a passing run.
+  prints the enumerated population size to the terminal on a passing run.
 - **Effort:** S
-- **Risk if fixed:** a noisier default test output; `record_property` avoids that.
+- **Risk if fixed:** a noisier default test output — one line per run, which is the price of the ⛔ the
+  plan set.
 
 ## G13 — Correct the D2 docstring's claim to cover only the attributes it can actually see
 

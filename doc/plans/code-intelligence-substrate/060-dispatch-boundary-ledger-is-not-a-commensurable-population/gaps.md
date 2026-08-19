@@ -353,8 +353,12 @@ negative control the plan specified by name was replaced by a weaker one. Nine g
 - **Why it matters:** a reader who lands on the Phase Details bullet sees a bare shortfall with no
   indication that it is expected and declared. That is a weaker version of the silent-exclusion
   defect: the declaration exists but is not findable from the figure it explains.
-- **Action:** append a short pointer to the `partial` (and `over`) coverage strings, e.g. "— see the
-  declared dispatch-boundary exclusions above".
+- **Action:** append a short pointer to the `partial` coverage string, e.g. "— see the declared
+  dispatch-boundary exclusions above". ⛔ **Not** to the `over` string: `over` is the FAILURE state
+  where the boundary-row numerator *exceeds* `subagent_samples` (`manage-metrics.py:2204-2215`), which
+  the exclusion list cannot explain — the excluded classes only ever make a phase fall *short*.
+  Pointing `over` at that list would assert the opposite of the failure's own message, which already
+  names the two incommensurable producers and needs no exclusion pointer.
 - **Done when:** the PARTIAL coverage text names or points at the declared exclusion list, and a test
   asserts the pointer.
 - **Effort:** S

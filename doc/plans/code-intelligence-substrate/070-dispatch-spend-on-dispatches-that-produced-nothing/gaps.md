@@ -442,14 +442,17 @@ in three unrelated passes. G1 is the root cause of G2 and interacts with G3 and 
   from both without any signal. This is a guard that cannot fire rather than one that fires wrongly,
   which is why grep and the green suite both look clean.
 - **Action:** add a test asserting that every member of `DISPATCH_TERMINATION_CAUSES` appears in
-  exactly one of a declared set of classes — terminal, retryable, productive, and an explicit
-  `_BENIGN_CAUSES` (or `_UNCLASSIFIED_CAUSES`) tuple naming the seven that belong in neither
-  spend figure — so the union equals the enum and the intersections are empty. Import the enum
+  exactly one of **five** declared classes — terminal (1: `error`), retryable (2), productive
+  (1: `returned_with_findings`), the separately-**counted** `clean_exit_queue_empty` (1, which feeds
+  `clean_exit_queue_empty_count` at `analyze-logs.py:1229-1230,1251` and no spend figure), and an
+  explicit `_BENIGN_CAUSES` (or `_UNCLASSIFIED_CAUSES`) tuple naming the remaining **seven** that
+  belong in no published figure — so the five sets are pairwise disjoint and their union is exactly
+  the 12-member enum (1+2+1+1+7 = 12). Import the enum
   rather than re-typing it (`test_dispatch_waste_and_finalize_scope.py` already loads scripts via
   `conftest.load_script_module`). Pair it with a negative control that appends a fictitious member
   and requires the assertion to raise.
-- **Done when:** appending a member to `DISPATCH_TERMINATION_CAUSES` without adding it to one of
-  the `analyze-logs.py` cause-class tuples turns a named test red.
+- **Done when:** appending a member to `DISPATCH_TERMINATION_CAUSES` without placing it in one of
+  the five declared classes turns a named test red.
 - **Effort:** S
 - **Risk if fixed:** the test couples two bundles, so `plan-retrospective`'s test suite gains an
   import of `manage-metrics`' script; that direction already exists in this repository's contract
