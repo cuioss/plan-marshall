@@ -1,0 +1,298 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Tests for the `phase-boundary` subcommand of manage_metrics.
+
+Covers:
+  - end-of-prev + start-of-next persisted in a single call
+  - optional token/duration/tool-uses forwarded to end-phase
+  - metrics.md regenerated as a side-effect
+  - invalid phase names rejected for either side
+  - boundary works even when the previous phase had no start_time
+"""
+
+
+import pytest
+from _manage_metrics_fixtures import (
+    ns_phase_boundary,
+    ns_start_phase,
+)
+from _manage_metrics_phase_boundary_fixtures import (
+    _UNSEEDED_PLAN_IDS,
+    _seed_status_created,
+    cmd_phase_boundary,
+    cmd_start_phase,
+    manage_metrics,
+)
+
+
+@pytest.fixture(autouse=True)
+def _seed_guarded_plan_dirs(plan_context, monkeypatch):
+    """Auto-seed ``status.json`` at the require_plan_exists chokepoint.
+
+    The patched guard resolves the plan dir via the real ``get_plan_dir`` and, for
+    any plan_id NOT registered as unseeded, writes the ``status.json`` sentinel
+    before delegating to the genuine ``require_plan_exists``. This keeps every
+    positive test's happy path intact without per-test seeding, while the
+    negative tests (which call ``_register_unseeded``) still exercise the real
+    ``plan_not_found`` failure.
+    """
+    _UNSEEDED_PLAN_IDS.clear()
+    real_require = manage_metrics.require_plan_exists
+    real_get_plan_dir = manage_metrics.get_plan_dir
+
+    def _seeding_require(plan_id):
+        if plan_id not in _UNSEEDED_PLAN_IDS:
+            plan_dir = real_get_plan_dir(plan_id)
+            plan_dir.mkdir(parents=True, exist_ok=True)
+            sentinel = plan_dir / 'status.json'
+            if not sentinel.is_file():
+                sentinel.write_text('{}', encoding='utf-8')
+        return real_require(plan_id)
+
+    monkeypatch.setattr(manage_metrics, 'require_plan_exists', _seeding_require)
+    return plan_context
+
+
+# =============================================================================
+# Successful boundary semantics
+# =============================================================================
+
+
+def test_phase_boundary_records_end_and_start_atomically(plan_context, monkeypatch):
+    """phase-boundary writes end_time on prev and start_time on next in one call."""
+    # Freeze the clock so cmd_start_phase and cmd_phase_boundary observe the
+    # SAME instant. now_utc_iso() truncates to whole seconds, so without this the
+    # two real reads can straddle a 1-second boundary (start=…:11, end=…:12),
+    # making the wall span 1000 ms instead of ~0 and the clamp below assert 1000.
+    # Capturing the real value once preserves its exact ISO format while making
+    # the wall span deterministically zero.
+    frozen_now = manage_metrics.now_utc_iso()
+    monkeypatch.setattr(manage_metrics, 'now_utc_iso', lambda: frozen_now)
+
+    cmd_start_phase(ns_start_phase('boundary-basic', '1-init'))
+
+    result = cmd_phase_boundary(
+        ns_phase_boundary(
+            'boundary-basic',
+            prev_phase='1-init',
+            next_phase='2-refine',
+            total_tokens=12000,
+            duration_ms=180000,
+            tool_uses=8,
+        )
+    )
+
+    assert result['status'] == 'success'
+    assert result['prev_phase'] == '1-init'
+    assert result['next_phase'] == '2-refine'
+    assert 'end_time' in result
+    assert 'start_time' in result
+    assert result['prev_total_tokens'] == 12000
+
+    metrics_file = plan_context.plan_dir_for('boundary-basic') / 'work' / 'metrics.toon'
+    content = metrics_file.read_text()
+
+    # Previous phase closed with token data
+    assert '[1-init]' in content
+    assert 'end_time:' in content
+    assert 'total_tokens: 12000' in content
+    assert 'tool_uses: 8' in content
+    # start→boundary fire back-to-back, so the wall span is ~0 and the forwarded
+    # worked window (180000 ms) is clamped to the wall span by _clamp_worked_to_wall.
+    assert 'agent_duration_ms: 0' in content
+
+    # Next phase opened
+    assert '[2-refine]' in content
+    # Both blocks present, with start_time on the next phase
+    next_idx = content.index('[2-refine]')
+    # Make sure the next-phase block has a start_time line
+    assert 'start_time:' in content[next_idx:]
+
+
+def test_phase_boundary_generates_metrics_md(plan_context):
+    """phase-boundary regenerates metrics.md as a side effect."""
+    cmd_start_phase(ns_start_phase('boundary-generate', '1-init'))
+    result = cmd_phase_boundary(
+        ns_phase_boundary(
+            'boundary-generate',
+            prev_phase='1-init',
+            next_phase='2-refine',
+            total_tokens=5000,
+        )
+    )
+    assert result['status'] == 'success'
+    assert result.get('metrics_file') == 'metrics.md'
+    # The generated report must exist
+    metrics_md = plan_context.plan_dir_for('boundary-generate') / 'metrics.md'
+    assert metrics_md.exists()
+    report = metrics_md.read_text()
+    assert '1-init' in report
+    # phases_recorded is at least 2 (prev + next)
+    assert int(result.get('phases_recorded', 0)) >= 2
+
+
+def test_phase_boundary_optional_token_args_omitted(plan_context):
+    """phase-boundary works with no token/duration/tool-uses flags (main-context phase)."""
+    cmd_start_phase(ns_start_phase('boundary-no-tokens', '2-refine'))
+    result = cmd_phase_boundary(ns_phase_boundary('boundary-no-tokens', prev_phase='2-refine', next_phase='3-outline'))
+    assert result['status'] == 'success'
+    # No prev_total_tokens since not provided
+    assert 'prev_total_tokens' not in result
+
+    content = (plan_context.plan_dir_for('boundary-no-tokens') / 'work' / 'metrics.toon').read_text()
+    # No token fields should have been written for the closing phase
+    prev_idx = content.index('[2-refine]')
+    next_idx = content.index('[3-outline]') if '[3-outline]' in content else len(content)
+    prev_block = content[prev_idx:next_idx]
+    assert 'total_tokens' not in prev_block
+    assert 'tool_uses' not in prev_block
+    # But end_time MUST be present
+    assert 'end_time:' in prev_block
+
+
+def test_phase_boundary_without_prev_start_records_end_only(plan_context):
+    """phase-boundary tolerates a previous phase with no recorded start (no duration)."""
+    # No start-phase called for 1-init
+    result = cmd_phase_boundary(ns_phase_boundary('boundary-no-start', prev_phase='1-init', next_phase='2-refine'))
+    assert result['status'] == 'success'
+    # No prev_duration_seconds in the result since start_time was missing
+    assert 'prev_duration_seconds' not in result
+
+
+# =============================================================================
+# Invalid input rejection
+# =============================================================================
+
+
+def test_phase_boundary_invalid_prev_phase_rejected(plan_context):
+    """Invalid prev-phase name returns invalid_phase error."""
+    result = cmd_phase_boundary(ns_phase_boundary('boundary-bad-prev', prev_phase='nope', next_phase='2-refine'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_phase'
+    assert 'prev_phase' in result['message']
+
+
+def test_phase_boundary_invalid_next_phase_rejected(plan_context):
+    """Invalid next-phase name returns invalid_phase error."""
+    result = cmd_phase_boundary(ns_phase_boundary('boundary-bad-next', prev_phase='1-init', next_phase='nope'))
+    assert result['status'] == 'error'
+    assert result['error'] == 'invalid_phase'
+    assert 'next_phase' in result['message']
+
+
+def test_phase_boundary_equivalent_to_three_call_sequence(plan_context, monkeypatch):
+    """The fused call persists the same key fields the three-call sequence would.
+
+    We don't assert byte-equivalence (timestamps differ between calls), but the
+    set of recorded keys per phase MUST match: prev gets end_time + token data;
+    next gets start_time. Both must be present after the fused call.
+    """
+    # Freeze the clock so cmd_start_phase and cmd_phase_boundary observe the same
+    # instant — otherwise the two whole-second reads can straddle a 1-second
+    # boundary, making the wall span 1000 ms and the clamp assert 1000 instead of
+    # 0 (same flake as test_phase_boundary_records_end_and_start_atomically).
+    frozen_now = manage_metrics.now_utc_iso()
+    monkeypatch.setattr(manage_metrics, 'now_utc_iso', lambda: frozen_now)
+
+    cmd_start_phase(ns_start_phase('boundary-equiv', '4-plan'))
+    result = cmd_phase_boundary(
+        ns_phase_boundary(
+            'boundary-equiv',
+            prev_phase='4-plan',
+            next_phase='5-execute',
+            total_tokens=42000,
+            duration_ms=600000,
+            tool_uses=15,
+        )
+    )
+    assert result['status'] == 'success'
+    content = (plan_context.plan_dir_for('boundary-equiv') / 'work' / 'metrics.toon').read_text()
+
+    # Same fields end-phase would have written
+    assert 'total_tokens: 42000' in content
+    assert 'tool_uses: 15' in content
+    # start→boundary fire back-to-back, so the wall span is ~0 and the forwarded
+    # worked window (600000 ms) is clamped to the wall span by _clamp_worked_to_wall.
+    assert 'agent_duration_ms: 0' in content
+    # Same field start-phase would have written for next
+    assert '[5-execute]' in content
+
+
+def test_phase_boundary_backfills_1init_start_time_from_status_created(plan_context):
+    """1-init lacks start_time → cmd_phase_boundary backfills from status.json.created."""
+    # status.json with a known `created` timestamp, well before end_now.
+    created_ts = '2026-03-27T09:00:00+00:00'
+    plan_dir = plan_context.plan_dir_for('boundary-backfill-01')
+    _seed_status_created(plan_dir, created_ts)
+
+    # No cmd_start_phase call → metrics.toon has no 1-init.start_time.
+    result = cmd_phase_boundary(
+        ns_phase_boundary('boundary-backfill-01', prev_phase='1-init', next_phase='2-refine')
+    )
+    assert result['status'] == 'success'
+
+    content = (plan_dir / 'work' / 'metrics.toon').read_text()
+    # Backfilled start_time matches status.json.created.
+    assert f'start_time: {created_ts}' in content
+    # Duration computation kicked in (real wall-clock between created_ts and end_time).
+    assert 'duration_seconds:' in content
+    # Surfaced via prev_duration_seconds on the result (positive number).
+    assert 'prev_duration_seconds' in result
+    assert result['prev_duration_seconds'] > 0
+
+
+def test_phase_boundary_preserves_existing_1init_start_time(plan_context):
+    """1-init.start_time already present → cmd_phase_boundary does NOT overwrite it."""
+    cmd_start_phase(ns_start_phase('boundary-backfill-02', '1-init'))
+    # Override status.json.created with a value that would differ if backfill ran.
+    plan_dir = plan_context.plan_dir_for('boundary-backfill-02')
+    _seed_status_created(plan_dir, '1999-01-01T00:00:00+00:00')
+
+    # Capture the start_time written by cmd_start_phase.
+    content_pre = (plan_dir / 'work' / 'metrics.toon').read_text()
+    # Extract start_time from the 1-init block.
+    init_idx = content_pre.index('[1-init]')
+    block = content_pre[init_idx:]
+    start_line = next(line for line in block.splitlines() if line.strip().startswith('start_time:'))
+    original_start = start_line.split('start_time:', 1)[1].strip()
+    assert original_start != '1999-01-01T00:00:00+00:00'
+
+    cmd_phase_boundary(ns_phase_boundary('boundary-backfill-02', prev_phase='1-init', next_phase='2-refine'))
+
+    content_post = (plan_dir / 'work' / 'metrics.toon').read_text()
+    # status.json.created stays UNUSED — the original start_time wins.
+    assert '1999-01-01T00:00:00+00:00' not in content_post
+    assert f'start_time: {original_start}' in content_post
+
+
+def test_phase_boundary_no_backfill_for_non_1init_prev_phase(plan_context):
+    """prev_phase != '1-init' → no status.json read, no backfill, regression guard preserved."""
+    # status.json present and would be readable, but the phase is not 1-init.
+    plan_dir = plan_context.plan_dir_for('boundary-backfill-03')
+    _seed_status_created(plan_dir, '2026-03-27T09:00:00+00:00')
+
+    # Transition 2-refine → 3-outline without a prior start-phase.
+    cmd_phase_boundary(ns_phase_boundary('boundary-backfill-03', prev_phase='2-refine', next_phase='3-outline'))
+
+    content = (plan_dir / 'work' / 'metrics.toon').read_text()
+    # The status.json.created timestamp must not have leaked into the 2-refine row.
+    refine_idx = content.index('[2-refine]')
+    next_idx = content.index('[3-outline]') if '[3-outline]' in content else len(content)
+    prev_block = content[refine_idx:next_idx]
+    assert 'start_time' not in prev_block
+
+
+def test_phase_boundary_status_json_missing_no_exception(plan_context):
+    """status.json missing → call succeeds, 1-init.start_time remains absent, no exception raised."""
+    # Do NOT seed status.json. No prior cmd_start_phase either.
+    result = cmd_phase_boundary(
+        ns_phase_boundary('boundary-backfill-04', prev_phase='1-init', next_phase='2-refine')
+    )
+    assert result['status'] == 'success'
+    # Backfill skipped silently → no start_time, no duration_seconds.
+    content = (plan_context.plan_dir_for('boundary-backfill-04') / 'work' / 'metrics.toon').read_text()
+    init_idx = content.index('[1-init]')
+    refine_idx = content.index('[2-refine]') if '[2-refine]' in content else len(content)
+    prev_block = content[init_idx:refine_idx]
+    assert 'start_time' not in prev_block
+    assert 'duration_seconds' not in prev_block

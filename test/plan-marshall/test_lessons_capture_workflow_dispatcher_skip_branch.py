@@ -1,0 +1,250 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Regression tests for the dispatcher-level lessons-capture Signal Gate (B4).
+
+The deterministic three-signal Signal Gate (pending Q-Gate findings,
+``automatic-review`` step outcome, script-failure clusters) was relocated
+from the body of
+``marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/lessons-capture.md``
+into the phase-6-finalize SKILL.md dispatcher (Step 3 item 4b). When all
+three signal counts are zero, the dispatcher marks the step skipped
+WITHOUT dispatching the LLM envelope, eliminating the spawn cost. When at
+least one signal is non-zero, the dispatcher forwards the three observed
+counts to the LLM body as runtime inputs so the body never re-issues the
+signal queries.
+
+These tests assert the structural shape of both endpoints:
+
+* The dispatcher-level gate in ``phase-6-finalize/SKILL.md`` names all
+  three signal sources, exposes the three-zero short-circuit, marks the
+  step ``--outcome skipped`` with the canonical display-detail, and
+  forwards the three count fields on dispatch when at least one signal
+  is non-zero.
+* The workflow body in ``lessons-capture.md`` no longer carries the
+  Signal Gate section (the early-return guard, the three signal-source
+  queries, the skip branch). The body's intro prose explicitly names the
+  dispatcher-level move and documents the three runtime-input fields.
+* The body's Mark Step Complete section no longer carries a Branch C
+  example for the skipped outcome — that responsibility now sits in the
+  dispatcher.
+
+These assertions are deliberately structural — they catch drift between
+the dispatcher narrative and the workflow body's behavioural contract
+without re-implementing the gate logic in Python.
+"""
+
+
+from pathlib import Path
+
+_BUNDLE_ROOT = (
+    Path(__file__).parent.parent.parent
+    / 'marketplace'
+    / 'bundles'
+    / 'plan-marshall'
+    / 'skills'
+    / 'phase-6-finalize'
+)
+
+
+_WORKFLOW_PATH = _BUNDLE_ROOT / 'workflow' / 'lessons-capture.md'
+
+
+_DISPATCHER_PATH = _BUNDLE_ROOT / 'SKILL.md'
+
+
+def _read_workflow() -> str:
+    """Read the workflow body once per test for substring assertions."""
+    return _WORKFLOW_PATH.read_text(encoding='utf-8')
+
+
+def _read_dispatcher() -> str:
+    """Read the phase-6-finalize SKILL.md dispatcher once per test."""
+    return _DISPATCHER_PATH.read_text(encoding='utf-8')
+
+
+class TestDispatcherSkipBranch:
+    """The dispatcher's all-zero skip branch MUST emit the canonical
+    ``mark-step-done`` call directly so the phase_steps_complete
+    invariant is satisfied even when no LLM dispatch fires."""
+
+    _EXPECTED_DETAIL = 'no lesson-bearing signals'
+
+    def test_skip_branch_uses_skipped_outcome(self) -> None:
+        """The dispatcher MUST mark lessons-capture with
+        ``--outcome skipped`` on the three-zero branch."""
+        body = _read_dispatcher()
+        assert '--outcome skipped' in body, (
+            'Dispatcher Signal Gate skip branch must invoke '
+            'mark-step-done with "--outcome skipped"'
+        )
+
+    def test_skip_branch_uses_canonical_display_detail(self) -> None:
+        """The skip branch MUST carry the exact display-detail string
+        ``"no lesson-bearing signals"`` — downstream consumers may grep
+        for this token to identify a dispatcher-level Signal Gate
+        short-circuit."""
+        body = _read_dispatcher()
+        token = f'--display-detail "{self._EXPECTED_DETAIL}"'
+        assert token in body, (
+            'Dispatcher Signal Gate skip branch must carry the '
+            'canonical display-detail string ' + repr(self._EXPECTED_DETAIL)
+        )
+
+    def test_skip_branch_logs_decision(self) -> None:
+        """The skip branch MUST log a decision-level entry naming all
+        three signal-count values for forensic reconstruction."""
+        body = _read_dispatcher()
+        marker = '(plan-marshall:phase-6-finalize:lessons-capture)'
+        assert marker in body, (
+            'Dispatcher Signal Gate skip branch must emit a decision '
+            'log line under the caller prefix ' + repr(marker)
+        )
+
+
+class TestDispatcherForwardsGateCounts:
+    """When at least one signal is non-zero, the dispatcher MUST forward
+    the three observed counts on the prompt body so the LLM workflow
+    never re-issues the signal queries."""
+
+    def test_forwarded_count_field_names_present(self) -> None:
+        """The dispatcher MUST name the three runtime-input fields the
+        body consumes."""
+        body = _read_dispatcher()
+        for field in (
+            'signal_qgate_pending_count',
+            'signal_automated_review_count',
+            'signal_script_failure_clusters_count',
+        ):
+            assert field in body, (
+                f'Dispatcher Signal Gate must forward the runtime-input '
+                f'field {field!r} when dispatching the workflow body'
+            )
+
+
+class TestBodyNoLongerCarriesGate:
+    """The workflow body MUST NOT carry the Signal Gate section (the
+    early-return guard, the three signal-source queries, the skip branch
+    mark-step-done call). That responsibility now sits in the dispatcher."""
+
+    def test_body_does_not_declare_signal_gate_section(self) -> None:
+        """The workflow body MUST NOT declare a top-level Signal Gate
+        section — the dispatcher owns the gate."""
+        body = _read_workflow()
+        assert '### Signal Gate' not in body, (
+            'lessons-capture.md must NOT declare a "### Signal Gate" '
+            'section — the gate was moved into the dispatcher (B4)'
+        )
+
+    def test_body_does_not_carry_signal_query_calls(self) -> None:
+        """The body MUST NOT re-issue the three signal-source queries
+        the dispatcher has already evaluated. Catch this by asserting
+        the body does NOT carry a bash invocation of ``qgate list`` or
+        ``--type work``. Narrative mentions (e.g. "the body MUST NOT
+        re-issue X, Y, Z") are permitted and expected."""
+        body = _read_workflow()
+        for line in body.splitlines():
+            if 'execute-script.py' in line and 'qgate list' in line:
+                msg = (
+                    'lessons-capture.md must NOT carry a bash '
+                    'invocation of "manage-findings qgate list" — the '
+                    f'dispatcher already paid that cost (offending '
+                    f'line: {line!r})'
+                )
+                raise AssertionError(msg)
+            if 'execute-script.py' in line and '--type work' in line:
+                msg = (
+                    'lessons-capture.md must NOT carry a bash '
+                    'invocation of "manage-logging read --type work" — '
+                    f'the dispatcher already paid that cost (offending '
+                    f'line: {line!r})'
+                )
+                raise AssertionError(msg)
+
+    def test_body_does_not_emit_skip_outcome_directly(self) -> None:
+        """The body MUST NOT emit the ``--outcome skipped`` shape
+        itself — Branch C of Mark Step Complete now states it is
+        emitted by the dispatcher and NOT by this body."""
+        body = _read_workflow()
+        # The body MAY mention the skip outcome in narrative prose (to
+        # explain WHY this body never emits it) but MUST NOT carry an
+        # actual bash invocation of mark-step-done with --outcome skipped.
+        # Detect bash invocations by looking for the canonical script
+        # prefix on the same line as the flag.
+        for line in body.splitlines():
+            if '--outcome skipped' in line and 'mark-step-done' in line:
+                # This indicates a bash invocation, which is forbidden.
+                # Narrative mentions (where mark-step-done is in a
+                # separate sentence or as inline code) are allowed.
+                if 'execute-script.py' in line:
+                    msg = (
+                        'lessons-capture.md must NOT carry a bash '
+                        'invocation of "mark-step-done --outcome skipped" — '
+                        f'the skipped recording is now the dispatcher\'s '
+                        f'responsibility (offending line: {line!r})'
+                    )
+                    raise AssertionError(msg)
+        # Also assert Branch C explicitly explains the delegation.
+        assert 'NOT emitted by this body' in body, (
+            'lessons-capture.md Branch C must explicitly state "NOT '
+            'emitted by this body" so future readers know the skipped '
+            'outcome is the dispatcher\'s responsibility'
+        )
+
+
+class TestBodyIntroNamesDispatcherMove:
+    """The body's intro prose MUST explicitly name the B4 dispatcher-level
+    Signal Gate move and document the three runtime-input fields."""
+
+    def test_intro_names_dispatcher_level_precondition(self) -> None:
+        """The intro MUST reference the dispatcher-level precondition so
+        future readers know where the gate lives."""
+        body = _read_workflow()
+        assert 'Dispatcher-level Signal Gate precondition' in body or (
+            'Dispatcher' in body and 'Signal Gate' in body
+        ), (
+            'lessons-capture.md intro must reference the '
+            'dispatcher-level Signal Gate precondition (B4)'
+        )
+
+    def test_intro_names_runtime_input_fields(self) -> None:
+        """The body MUST document the three runtime-input field names
+        it consumes from the dispatcher."""
+        body = _read_workflow()
+        for field in (
+            'signal_qgate_pending_count',
+            'signal_automated_review_count',
+            'signal_script_failure_clusters_count',
+        ):
+            assert field in body, (
+                f'lessons-capture.md intro must document the runtime '
+                f'input field {field!r}'
+            )
+
+    def test_signal_automated_review_field_documents_remediated_trigger(self) -> None:
+        """The ``signal_automated_review_count`` field description MUST
+        document the remediated-in-run trigger (resolution=fixed
+        pr-comment findings), not only the outstanding-state triggers."""
+        body = _read_workflow()
+        assert '--resolution fixed' in body or 'resolution=fixed' in body, (
+            'lessons-capture.md signal_automated_review_count field '
+            'description must document the remediated-in-run trigger '
+            '(review-bot findings with resolution=fixed)'
+        )
+        assert 'remediated' in body, (
+            'lessons-capture.md signal_automated_review_count field '
+            'description must state the field fires on remediated-in-run '
+            'review-bot findings'
+        )
+
+    def test_signal_script_failure_clusters_field_documents_all_markers(self) -> None:
+        """The ``signal_script_failure_clusters_count`` field description MUST
+        document all three marker classes, not only the [FAILED] marker."""
+        body = _read_workflow()
+        assert 'script_failure' in body, (
+            'lessons-capture.md signal_script_failure_clusters_count field '
+            'description must document the [ERROR] ... script_failure marker'
+        )
+        assert 'voluntary_checkpoint' in body, (
+            'lessons-capture.md signal_script_failure_clusters_count field '
+            'description must document the voluntary_checkpoint -> error marker'
+        )
