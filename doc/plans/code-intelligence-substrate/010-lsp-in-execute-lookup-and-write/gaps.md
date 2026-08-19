@@ -326,9 +326,9 @@ change, not six.
   `report-01.md:58`
 - **Evidence:** `boundary_note` is set only in the success payload of `_run_diagnose`
   (`lsp_client.py:301`). A `diagnose` call on an unconfigured or unreachable project returns
-  `_degraded(...)` (`:109-119` via `:389-392`), which has no `boundary_note` key. The module docstring
-  states the true scope — "carried in every **diagnose** payload" (`:60-62`) — but even that is
-  imprecise for the degraded case.
+  `_degraded(...)` (`:109-119` via `:389-392`), which has no `boundary_note` key. The code comment
+  above the constant states a narrower scope — "carried in every diagnose payload" (`:60-61`, a `#`
+  comment, **not** the module docstring) — but even that is imprecise for the degraded case.
 - **Why it matters:** a consumer told that the key is always present may key off it (e.g. "if
   `boundary_note` is missing, this is not a diagnose result") and mis-route a degraded return.
 - **Action:** reword to "every payload a running server produced", or add the note to the degraded

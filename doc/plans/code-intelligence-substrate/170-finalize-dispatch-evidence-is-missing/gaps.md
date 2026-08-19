@@ -2,7 +2,7 @@
 
 The plan landed: a deterministic, testable, fail-able dispatch audit exists
 (`check-dispatch-audit.py`), it is registered as aspect 11, and its `not_evaluated` guard is proven
-load-bearing by mutation. Fourteen gaps remain.
+load-bearing by mutation. Fifteen gaps remain.
 
 The one that matters most is **G13**: D2's whole mechanism rests on a token record whose two branches
 are not distinguishable. `dispatched` requires a positive integer; **everything else** — an explicit
