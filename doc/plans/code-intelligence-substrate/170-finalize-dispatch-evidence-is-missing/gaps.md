@@ -514,3 +514,53 @@ unwritten plus two stale doc claims (G11, G12, G14).
   the table's row count.
 - **Effort:** S
 - **Risk if fixed:** none; a dropped number cannot go stale again.
+
+## G15 — `shape_violation` pairs by per-role count, and a hand-written `[DISPATCH]` line from any caller cancels a real shortfall
+
+- **Kind:** incomplete
+- **Severity:** medium
+- **Topic:** detectors/auditor
+- **Where:** `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/check-dispatch-audit.py:333-350`
+  (`evaluate_shape_violation`'s `Counter`-vs-`Counter` comparison), against the Surface B record shape
+  at `manage-config/scripts/_cmd_effort.py:504-510`
+- **Evidence:** the pairing is
+  `unmatched = resolve_roles[role] - dispatch_roles.get(role, 0)`, and only a **positive** `unmatched`
+  produces a finding. `dispatch_roles` is built from every `[DISPATCH]` line in the work log
+  regardless of caller, while Surface B's decision-log record carries **no caller at all** — the seam
+  writes `(plan-marshall:manage-config) effort resolve-target role=X -> target=Y level=Z`
+  (`_cmd_effort.py:504-510`), so the caller a resolve was made on behalf of is not recoverable from
+  Surface B and the pairing is caller-blind by construction.
+
+  This is live at HEAD, not theoretical: `role=verification-feedback` has **two** producers with
+  different callers — a seam-emitting resolve in
+  `plan-marshall/workflow/execution.md:287-292` (passes `--workflow`, `--caller
+  plan-marshall:phase-5-execute`, so it writes both surfaces) and a **hand-written** line in
+  `workflow-pr-doctor/SKILL.md:30-38` (resolves *without* `--workflow`, then logs the line by hand,
+  so it writes Surface A only). Six further hand-written sites exist for other roles
+  (`plan-marshall/workflow/planning-outline.md:112`, `:146`, `:431`, `:484`;
+  `planning.md:286`, `:326`). Any plan that runs both `verification-feedback` producers therefore
+  carries one Surface-A line with no Surface-B partner, which silently offsets a seam resolve whose
+  `log_entry('work', …)` failed: `resolve_roles == dispatch_roles` and the check reports
+  `violations: 0` over a populated population.
+- **Why it matters:** G10 establishes that the only divergence `shape_violation` can still detect at
+  HEAD is a partial logging failure inside the seam — one `log_entry` succeeding while its twin
+  fails. This gap removes the check's ability to see even that, for any role with a hand-written
+  producer. The negative direction is discarded entirely (`if unmatched > 0`), so the asymmetry that
+  would reveal the offset is never reported either.
+- **Action:**
+  1. Publish a per-role breakdown in the block — `role_pairing[]` rows carrying `role`, `resolves`,
+     `dispatch_lines` and a **signed** `delta` — so both directions are visible instead of only the
+     positive one. Keep the finding on `delta > 0`; report `delta < 0` as a fact, not a finding, so
+     plans with hand-written lines do not start failing.
+  2. State the caller-blindness in
+     `standards/execution-context-dispatch-audit.md` alongside the corroboration limit at `:40`,
+     naming the seven hand-written `[DISPATCH]` sites above as the reason a role's Surface-A count
+     can exceed its Surface-B count without any dispatch being unrecorded.
+- **Done when:** a fixture carrying one `effort resolve-target role=verification-feedback` record, no
+  seam `[DISPATCH]` line for that role, and one hand-written
+  `[DISPATCH] (plan-marshall:workflow-pr-doctor) … role=verification-feedback` line reports a
+  non-zero signal (a `delta` row, or a finding) instead of `violations: 0`, pinned by a test.
+- **Effort:** S
+- **Risk if fixed:** the per-role rows grow the fragment for plans with many roles; cap the report to
+  roles whose `delta != 0` if that proves noisy. No existing finding changes, so no plan that is
+  clean today starts failing.

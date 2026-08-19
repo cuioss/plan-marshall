@@ -281,16 +281,25 @@ change, not six.
 - **Evidence:** re-measured against a live `pyright-langserver` with the workspace scoped to
   `manage-architecture`, exactly as the report's measurement was:
 
-  | Operation | quiet box | loaded box | report |
-  |---|---|---|---|
-  | cold start (spawn + `initialize`) | 571 ms | 2140 ms | 413 ms |
-  | **first** `documentSymbol` after `didOpen` | **4873 ms** | **13384 ms** | 2.7 ms |
-  | same call repeated in the session | 4.2 ms | — | 2.7 ms |
+  | Operation | audit, quiet box | audit, loaded box | adversarial re-takes | report |
+  |---|---|---|---|---|
+  | cold start (spawn + `initialize`) | 571 ms | 2140 ms | 394 / 353 / 358 ms | 413 ms |
+  | **first** `documentSymbol` after `didOpen` | **4873 ms** | **13384 ms** | **970 / 908 ms** | 2.7 ms |
+  | same call repeated in the session | 4.2 ms | — | 2.3 / 1.9 ms | 2.7 ms |
+  | `documentSymbol` *after* `workspace/symbol` + diagnostics | — | — | 4.7 / 4.3 ms | 2.7 ms |
 
-  The report's per-call figures are warm-path: its sequence issued `workspace/symbol` and diagnostics
-  first, so the analysis wait had already been paid. In addition `workspace_symbol` calls
-  `wait_until_idle` with a 1.5 s settle floor (`_lsp_jsonrpc.py:225-243`, invoked at `:349`) and
-  `diagnostics` a 2 s settle floor (`:204`) — my `diagnose` re-measurement returned in exactly 2000 ms.
+  The **magnitude** of the cold first-query wait is machine-state-dependent and must not be quoted as
+  a constant (4873 ms in the first audit reading, 970 ms and 908 ms in two later ones). What
+  reproduces exactly, across all three readings, is the **ordering effect**: `documentSymbol` issued
+  first in a cold session costs ~1 s, and the same call issued after `workspace/symbol` + diagnostics
+  — the report's own sequence — costs ~4 ms. The report's per-call figures are therefore warm-path.
+
+  Two further costs are **floor-bounded**, not load-dependent, and are what the conclusion should rest
+  on: `workspace_symbol` calls `wait_until_idle` with a **1.5 s** settle floor
+  (`_lsp_jsonrpc.py:225-243`, invoked at `:349`) — measured 2163 ms and 2105 ms — and `diagnostics`
+  a **2 s** settle floor (`:204`) — measured 2000 ms and 2302 ms. Neither is *exactly* its floor: the
+  wait restarts on every inbound publish, so the floor is a lower bound the call cannot beat, not a
+  constant it returns at.
 - **Why it matters:** the hosting decision ("cold start ~0.4 s makes per-call boot cheap") and any
   operator's expectation are set from figures that exclude the wait every per-call invocation must pay.
   A one-shot lookup costs seconds, not milliseconds — which is the difference between "cheaper than a
