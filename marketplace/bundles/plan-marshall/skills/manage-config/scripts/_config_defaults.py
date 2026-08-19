@@ -409,7 +409,7 @@ def validate_gate_mode(value: str, field_name: str) -> None:
 #   - 'until_clean': re-run validation until it reports no blocking findings.
 # This replaces the retired planning-time `qgate` run-at-all gate on the outline
 # step; the finalize-time `qgate` gate now rides its owning step's
-# `steps['pre-push-quality-gate'].lane` override, not this knob.
+# `steps['default:pre-push-quality-gate'].lane` override, not this knob.
 VALID_Q_GATE_VALIDATION = ('off', 'once', 'until_clean')
 
 
@@ -1078,7 +1078,7 @@ DEFAULT_PLAN_FINALIZE = {
     'finalize_without_asking': True,
     'loop_back_without_asking': False,
     # The finalize `qgate` gate no longer lives here as a flat run-at-all sibling.
-    # Finalize-qgate now rides `steps['pre-push-quality-gate'].lane` — the same
+    # Finalize-qgate now rides `steps['default:pre-push-quality-gate'].lane` — the same
     # per-element `lane` override channel the other three ceremony gates
     # (`self_review`, `simplify`, `security_audit`) use — resolved by the
     # manifest ceremony transform (`off→never`, `minimal→always`, `standard/absent→auto`).
