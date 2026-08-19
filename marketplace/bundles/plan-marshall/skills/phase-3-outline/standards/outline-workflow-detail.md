@@ -204,18 +204,14 @@ Resolve the dispatch target via the resolver — no dedicated role key (the LLM 
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --default
+  effort resolve-target --default \
+  --workflow plan-marshall:phase-3-outline/workflow/detect-change-type.md --plan-id {plan_id} \
+  --caller plan-marshall:phase-3-outline
 ```
 
-Extract the `level` and `target` fields from the TOON output. Use those values as `{level}` and `{target}` in the dispatch and the post-resolve log line below. The resolver returns `target: execution-context` when `level` is `inherit` or empty, and `target: execution-context-{level}` otherwise — the mapping is centralized in the resolver, callers do not branch on level.
+The resolve carries the dispatch context (`--workflow`/`--plan-id`/`--caller`), so the seam emits the standardized `[DISPATCH]` work-log line and its paired decision-log record itself — see [`dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. Do NOT hand-write a separate `[DISPATCH]` line; every firing re-runs the resolve, so the record is re-emitted per firing. With neither `--role` nor `--phase` passed the seam falls back to the literal `default`, so the emitted `role=default` is byte-identical to the hand-written line this replaced — no explicit `--role` is needed to preserve it.
 
-Emit the standardized post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO \
-  --message "[DISPATCH] (plan-marshall:phase-3-outline) target={target} level={level} role=default workflow=plan-marshall:phase-3-outline/workflow/detect-change-type.md plan_id={plan_id}"
-```
+Extract the `level` and `target` fields from the TOON output. Use those values as `{level}` and `{target}` in the dispatch below. The resolver returns `target: execution-context` when `level` is `inherit` or empty, and `target: execution-context-{level}` otherwise — the mapping is centralized in the resolver, callers do not branch on level.
 
 Dispatch:
 

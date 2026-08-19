@@ -191,18 +191,14 @@ Compute the variant target via the role resolver:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --phase phase-6-finalize
+  effort resolve-target --phase phase-6-finalize \
+  --workflow plan-marshall:phase-6-finalize/workflow/pre-submission-self-review.md \
+  --plan-id {plan_id} --caller plan-marshall:phase-6-finalize
 ```
 
-Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
+The resolve carries the dispatch context (`--workflow`/`--plan-id`/`--caller`), so the seam emits the standardized `[DISPATCH]` work-log line and its paired decision-log record itself — see [`dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. Do NOT hand-write a separate `[DISPATCH]` line; every firing re-runs the resolve, so the record is re-emitted per firing. This resolve passes no `--role`, so the seam emits the phase key it did resolve against (`role=phase-6-finalize`). The hand-written line this replaced claimed `role=default`, which no resolve here ever passed.
 
-Emit the standardized post-resolve dispatch log line — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO \
-  --message "[DISPATCH] (plan-marshall:phase-6-finalize) target={target} level={level} role=default workflow=plan-marshall:phase-6-finalize/workflow/pre-submission-self-review.md plan_id={plan_id}"
-```
+Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch below.
 
 Dispatch the LLM workflow with the candidate envelope:
 
