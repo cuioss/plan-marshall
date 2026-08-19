@@ -91,9 +91,15 @@ n−1-of-n residue class the run's own stop record predicted. The declared condi
     `<root>/.plan/local` shape. Treat (b) as a separate decision with that migration attached; do not
     bundle it into (a).
 - **Done when:** a test builds a real linked worktree, sets a non-canonical `PLAN_BASE_DIR` (a bare
-  directory), chdirs to a worktree **subdirectory**, and asserts that `capture_all` raises
-  `MainCaptureReadTheWorktree`; the existing 19 tests in the two modules still pass; and mutating the
-  containment check back to `!=` reddens the new test.
+  directory), chdirs to a worktree **subdirectory**, and drives **`cmd_capture`** — not `capture_all`
+  alone — asserting both halves of the failure mode this entry names: the structured refusal reaches
+  the caller (`_handshake_commands.py:445-446` translates `MainCaptureReadTheWorktree` into the
+  `main_capture_read_the_worktree` payload) **and no row is written** (`upsert_row`,
+  `_handshake_commands.py:455`, is never reached, and the plan's invariants file gains no row for the
+  phase). Calling `capture_all` on its own asserts the raise but stops short of the persistence
+  boundary, which is where the defect manifests — the whole point of the entry is a *silent write*.
+  Additionally: the existing 19 tests in the two modules still pass, and mutating the containment
+  check back to `!=` reddens the new test.
 - **Effort:** S for (a); M for (b) including the sandbox migration.
 - **Risk if fixed:** for (a), measured as none in this tree — 19/19 and 570/570 green with the change
   applied, and the commit-less-feature-branch direction

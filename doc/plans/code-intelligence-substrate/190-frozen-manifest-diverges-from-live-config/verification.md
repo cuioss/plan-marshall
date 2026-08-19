@@ -213,22 +213,26 @@ report's factual claims about the code hold; three of its bookkeeping counts do 
   title token, each verified red pre-fix.
 - **Claimed (report):** the three files exist with 15 / 6 / 7 tests and the listed pre-fix failures.
 - **Found (counts re-derived at `61a43e5`, `grep -c "def test_"`):**
+
   | File | Tests now | Tests at `d2e94b4` |
   |---|---|---|
   | `test/plan-marshall/manage-execution-manifest/test_reconcile.py` | 19 | 19 |
   | `test/plan-marshall/workflow-integration-git/test_worktree_rebase_executor_refresh.py` | 10 | 10 |
   | `test/plan-marshall/manage-status/test_title_token_repeat_suppression.py` | 8 | 8 |
+
 - **Checks run:** all three files together —
   `UV_PYTHON=3.12 uv run python -m pytest <3 files> -o addopts="" -q` → **`37 passed in 12.31s`**.
   Three mutation checks (below) each turn exactly one test red.
 - **Pre-fix reds re-derived, not taken on trust.** Each landed test file was run against its own
   pre-fix production module (`git show d2e94b4^:<path>` installed over the file, then restored from a
   byte snapshot):
+
   | Test file | Against `d2e94b4^` code | Report's claim |
   |---|---|---|
   | `test_reconcile.py` | collection error — `AttributeError: module '_mem_reconcile' has no attribute 'cmd_reconcile'` | matches |
   | `test_worktree_rebase_executor_refresh.py` | `10 failed` — `AttributeError … _run_generate_executor` | matches (6 of 6 at the time; all 10 now) |
   | `test_title_token_repeat_suppression.py` | `7 failed, 1 passed` — `KeyError: 'changed'`; the pass is `test_suppressed_set_still_returns_the_record` | matches (6 of 7 at the time), including the named pre-existing pass |
+
 - **Verdict:** CONFIRMED. The coverage is genuine, not decorative, and every pre-fix red the report
   claims reproduces. The report's per-file counts are stale against what landed (gap G10) — a
   bookkeeping defect, not a coverage one. One covering test is *unrepresentative* rather than
@@ -437,7 +441,7 @@ rewrite their comments in place; this is not evidence against the report.
 | `reconcile` is called from nowhere but Step 1.5; phase 5 has the same exposure with no snapshot | **OPEN** | `grep -rn "candidate_steps\|candidate_verification_steps"` under `manage-execution-manifest/` returns hits for `phase_6` only — `phase_5.verification_steps` has no candidate snapshot and no reconcile. Gap G13. |
 | `coderabbitai`'s window reopens ~13:10 UTC; `@coderabbitai review` re-triggers | **MOOT** | PR merged 2026-08-15T12:49:53Z; no second opinion was sought. |
 | `sourcery-ai` will refuse this PR at any size | **MOOT** | PR merged; the general observation (large plans lose this reviewer) is an epic-level note, not a tracked item. |
-| Contract-change proposal open and unshipped | **PARTIALLY CLOSED** | `.claude/skills/cloud-plan-lane/SKILL.md:456-461` now carries the substance of the § Step 4 correction — *"changes the head mid-review, which aborts a bot's in-progress review **and consumes its rate window**"*. Neither proposed edit landed: no § Step 7 "land every known-pending bookkeeping edit before the review window opens" rule (`grep -n "bookkeeping"` finds only `:1131` and `:1580`, both unrelated), and no conditions-1-and-3 sequencing note at `:1424-1435` (where the report condition is now condition **4**, the document having been renumbered since — the merge gate now runs conditions 1–4 with a condition 5 disclosure, `SKILL.md:1312-1315`, `:1426`, `:1428`, `:1437`). Gap G14. |
+| Contract-change proposal open and unshipped | **PARTIALLY CLOSED** | `.claude/skills/cloud-plan-lane/SKILL.md:456-461` now carries the substance of the § Step 4 correction — *"changes the head mid-review, which aborts a bot's in-progress review **and consumes its rate window**"*. Neither proposed edit landed: no § Step 7 "land every known-pending bookkeeping edit before the review window opens" rule (`grep -n "bookkeeping"` finds only `:1131` and `:1580`, both unrelated), and no conditions-1/4 sequencing note at `:1424-1435` (the report's "condition 3" is now condition **4**, the document having been renumbered since — the merge gate now runs conditions 1–4 with a condition 5 disclosure, `SKILL.md:1312-1315`, `:1426`, `:1428`, `:1437`). Gap G14. |
 | `test_branch_cleanup_merge_queue_routing` guard predicate is interpreter-version-sensitive | **OPEN** | `test/plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing.py:589` — `if token.type != tokenize.NAME or token.string == own_symbol`. Unchanged, pre-existing, still latent below Python 3.12. Gap G16 (added by the adversarial review — the original audit named this residue item but filed no entry for it). |
 
 ## Out-of-scope and collateral
@@ -554,7 +558,8 @@ dependence I read but did not exercise; if its "unresolvable" verdict is noisier
 fix drops live steps. Third: the full `./pw verify` was not run here, so a cross-module regression
 from the landed change would not have surfaced in this audit at all.
 
-**Verdict on the audit:** SOUND AFTER CORRECTION — its fourteen gaps are all real and its code
+**Verdict on the audit:** SOUND AFTER CORRECTION — its sixteen gaps are all real (the fourteen the
+original audit filed, plus G15 and G16 added by this adversarial review) and its code
 reading is accurate, but it cleared a `high` defect in D3 by reading the guard rather than the
 population the guard runs in, and its gap cross-references had drifted out of alignment with
 `gaps.md` from G7 onward.

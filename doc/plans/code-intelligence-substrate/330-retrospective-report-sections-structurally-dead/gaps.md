@@ -9,9 +9,14 @@ one undischarged plan obligation. Nothing found contradicts a shipped behaviour 
 written-implies-non-empty invariant itself; that was the part searched hardest and it is sound.
 
 Sixteen gaps: **three high** (G1 silent drop-side loss, G2 false `warning` on every clean run, G6 the
-never-produced Executive Summary), **six medium** (G3, G4, G5, G7, G8, G9), **seven low**. G1–G6
-share one predicate and should be settled by one decision; G2 is the one that fires on the common
-path today, so it leads.
+never-produced Executive Summary), **six medium** (G3, G4, G5, G7, G8, G9), **seven low**. **G1–G4**
+share one predicate — the drop/omit discriminator over a conditional row's trigger fragment — and
+should be settled by one decision; G2 is the one that fires on the common path today, so it leads.
+**G5 and G6 are separate decisions, not instances of that predicate**: both rows reach
+`sections_omitted` because *nothing ever writes their fragment*, so neither turns on how a written
+fragment is classified. G5 is a registry decision (register `dispatch_boundaries` as its own aspect
+or delete the row); G6 is a producer decision (name and add a writer for `_executive-summary` or
+delete the row). Settling G1–G4 changes neither.
 
 ## G1 — Make the drop/omit split use one discriminator for non-dict fragments too
 
@@ -184,13 +189,32 @@ path today, so it leads.
   and unimplemented on the producer side, so every retrospective this system has ever compiled ships
   without one. That is a documented contract with no implementation behind it, which is why this is
   **high** while its sibling G5 (whose data still reaches the reader inside Log Analysis) is medium.
-- **Action:** add the documented orchestrator injection step that writes `_executive-summary` (the
-  compiler already accepts a dict with `summary` or a bare string), or remove the row and the
-  `report-structure.md` entry together.
-- **Done when:** either a retrospective run on a normal plan lists `Executive Summary` in
-  `sections_written`, or neither `SECTION_SPEC` nor `report-structure.md` names the section. Whichever
-  is chosen, `report-structure.md:13` must stop stating content requirements for a section no step
-  produces.
+- **Action:** pick one of the two, and if the injection option is chosen it must name its producer —
+  "add the documented orchestrator injection step" is not executable on its own, because no file or
+  function in the tree writes the key today and `cmd_add` refuses it by design.
+  - **Injection option — the producer is a new writer, not a use of `add`.** Add a dedicated
+    sub-verb to `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/collect-fragments.py`
+    — `set-executive-summary` (handler `cmd_set_executive_summary`, sibling of `cmd_add` at `:292`)
+    taking `--plan-id` and a `--summary-file`, writing the text under the bundle's
+    `_executive-summary` key. It is the **one** writer permitted to set an `_`-prefixed key; the
+    guard at `collect-fragments.py:297-299` stays exactly as it is for `add`, so the reserved-key
+    rule is narrowed by an explicit verb rather than weakened. The compiler needs no change (it
+    already accepts a dict with `summary` or a bare string, `compile-report.py:527-533`). Then add
+    the step that calls it: a numbered instruction in `plan-retrospective/SKILL.md` § Step 4,
+    **before** the `collect-fragments finalize` call at `:295-303`, telling the orchestrating agent
+    to author the 3–5 sentence narrative `report-structure.md:13` specifies and register it through
+    the new verb; and add the verb to the canonical argparse surface at `SKILL.md:555+` beside
+    `init` / `add` / `finalize`.
+  - **Removal option.** Delete the `_executive-summary` row from `SECTION_SPEC`
+    (`retro_sections.py:32`), the consumer branch (`compile-report.py:527-548`) and the
+    `report-structure.md:13` entry together.
+- **Done when:** either (injection) a retrospective run on a normal plan lists `Executive Summary` in
+  `sections_written`, **and** a test in `test/plan-marshall/plan-retrospective/` covers the producer
+  end to end — the new verb writes `_executive-summary` into the bundle, `compile-report` renders the
+  narrative and counts the section as written, an absent summary still omits (never drops) the
+  section, and `collect-fragments add --aspect _executive-summary` is still rejected — or (removal)
+  neither `SECTION_SPEC` nor `report-structure.md` names the section. Whichever is chosen,
+  `report-structure.md:13` must stop stating content requirements for a section no step produces.
 - **Effort:** M
 - **Risk if fixed:** an injection step adds an LLM-authored surface to a compiler documented as a
   pure assembler; removing the row deletes the only section the compiler renders verbatim.

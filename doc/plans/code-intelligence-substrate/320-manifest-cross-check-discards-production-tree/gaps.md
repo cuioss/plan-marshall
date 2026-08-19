@@ -76,9 +76,34 @@ renumbering), so read the `Severity` field per entry rather than inferring it fr
 - **Where:** `marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md:262-267` (Aspect 12's capture block; the aspect's prose heading is at `:260`), against Aspect 13's block at `:273-278` which does pass `--diff-file work/footprint.txt` (the flag is on `:275`)
 - **Evidence:** the documented command is `check-manifest-consistency run --plan-id {plan_id} --mode {live|archived}` with neither `--diff-file` nor `--base-ref`. Since the CR-4 fix, that invocation takes the no-evidence path: `test_no_diff_file_and_no_base_ref_withholds_the_verdict` pins `docs_only_diff: indeterminate` with *"no diff evidence was available"*, and M4 skips on `base_label == 'unknown'`. So as documented, the manifest cross-check aspect can never substantiate a diff-fed verdict — every applicable rule returns `indeterminate` and every other one skips. Reproduced by running the documented command against a synthetic plan: `diff.base: unknown`, `diff_available: false`, `docs_only_diff: indeterminate` with the no-diff-evidence message, and every other diff-fed check `skip`. Nor can a diff-fed rule `fail` there — M1/M2/M3 draw their culprits from an empty survivor set — so no verdict of any kind is reachable.
 - **Why it matters:** the aspect exists to compare the manifest against the realized diff. Before this plan the same invocation emitted a *misleading clean pass*; it now emits an honest non-verdict, which is better but still no signal — and the workflow already has the footprint on disk at `work/footprint.txt`, which Aspect 13 two paragraphs later passes to its own script. The plan's D4 principle ("the documentation and the script must agree") is what this misses: the documented invocation and the script's contract disagree about whether the aspect can produce a result.
-- **Action:** add `--diff-file work/footprint.txt` to Aspect 12's capture command (the same file Aspect 13 uses, resolved plan-relative by the D4 fix), or `--base-ref` where the retrospective knows the base; and state in `standards/manifest-crosscheck.md` that an invocation without either produces an all-indeterminate aspect.
-- **Done when:** the Aspect 12 command in `SKILL.md` passes a footprint, and a run of the documented command on a plan with a captured footprint produces at least one non-`indeterminate` diff-fed verdict.
-- **Effort:** S
+- **Action:** ⛔ **Do not simply copy Aspect 13's `--diff-file work/footprint.txt` into Aspect 12.**
+  That path has no producer: the audit of plan 050 records that a full-repo search finds **no writer
+  of `work/footprint.txt` anywhere** (14 hits, all `plan-retrospective` docs/scripts/tests —
+  `doc/plans/code-intelligence-substrate/050-post-run-band-contract-and-ordering-residue/verification.md:181`),
+  and that since `eb0124c` (#1288) `resolve_diff_file_path` **raises** on an unresolvable supplied
+  path instead of degrading to the resolver (`:185`). Adding the flag would turn a documented
+  no-verdict aspect into a documented command that errors. Nor does the script have a
+  `realized_footprint` fallback: `load_diff_files` (`check-manifest-consistency.py:166-222`) reads
+  only `--diff-file` or `--base-ref`. So pick one of two, and carry Aspect 13 with it since it has
+  the same broken premise:
+  - **Name and add the producer.** Add an explicit capture step to the workflow that writes the
+    footprint to `work/footprint.txt` before Aspects 12 and 13 run — the natural source is
+    `manage-references` `capture-footprint` / `compute-footprint`
+    (`_cmd_compute_footprint.py:35,90`), whose output currently lands in `references.json` under
+    `realized_footprint`, not in a `work/` file — and document the step in `SKILL.md` beside the
+    aspects that consume it.
+  - **Or use `--base-ref`.** Pass `--base-ref` in Aspect 12's block where the retrospective knows the
+    base, which needs no new file and no new producer.
+
+  Either way, state in `standards/manifest-crosscheck.md` that an invocation without either flag
+  produces an all-indeterminate aspect.
+- **Done when:** the Aspect 12 command in `SKILL.md` reaches diff evidence by a route whose producer
+  is named in the same document; **an end-to-end test executes the exact documented invocation**
+  (string-for-string, on a plan prepared exactly as the workflow prepares one) and asserts it exits
+  successfully and produces at least one non-`indeterminate` diff-fed verdict — so a documented
+  command that raises or that silently withholds cannot pass this criterion; and the same test (or a
+  sibling) covers Aspect 13's invocation, which today names the same producerless path.
+- **Effort:** M — S for the `--base-ref` route; M if the producer step is added.
 - **Risk if fixed:** the aspect starts emitting real M1/M3/M4 findings on plans where it previously emitted none; expect a first wave of genuine findings in retrospective reports.
 
 ## G7 — Add `diff_available` to the documented TOON fragment shape

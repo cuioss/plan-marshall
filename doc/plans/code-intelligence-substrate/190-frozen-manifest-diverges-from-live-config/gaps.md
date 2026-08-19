@@ -152,23 +152,31 @@ the report itself declared are still open. Sixteen entries, one per instance.
   ```
 
   `subprocess.run` can raise other `OSError` subclasses — `PermissionError` when `python3` is present
-  but not executable, `OSError` when the pinned `cwd` has become inaccessible, `MemoryError`/`OSError`
-  on fork failure. `_refresh_worktree_executor` has no handler, and neither does the call site at
-  `:1709`.
+  but not executable, `OSError` when the pinned `cwd` has become inaccessible, and `OSError` on fork
+  failure. `_refresh_worktree_executor` has no handler, and neither does the call site at `:1709`.
+  (An earlier draft of this entry also listed `MemoryError`. It is **out of scope**: `MemoryError` is
+  not an `OSError` subclass, so the widening below does not catch it, and a process out of memory is
+  not a failure this seam can meaningfully degrade around. The scope of this gap is the `OSError`
+  family only.)
 - **Why it matters:** the refresh runs **after** `git rebase` succeeded and HEAD moved
   (`:1701-1710`). An escaping exception turns a rebase that worked into a crash reported to the
   caller — `finalize-step-sync-baseline` (order 3), `automatic-review` (order 30),
   `branch-cleanup` (order 70) — which is verbatim the outcome `:867-870` argues must be prevented:
   *"converting a refresh failure into a rebase failure would make callers abort a rebase that
   worked."* The guard reads as total and is not.
-- **Action:** widen the seam's handler to `except OSError as exc:` (which subsumes `FileNotFoundError`
-  and `PermissionError`), keeping `TimeoutExpired` as its own arm and preserving the distinct return
-  codes where they are already meaningful; report the exception text in the third tuple element so it
-  reaches `executor_detail`.
-- **Done when:** a test monkeypatches `git_workflow.subprocess.run` to raise `PermissionError`,
-  invokes `cmd_worktree_rebase_to` on a rebase that replayed commits, and asserts
-  `result['status'] == 'success'`, `result['executor_regenerated'] is False`, and a non-empty
-  `result['executor_detail']`.
+- **Action:** add an `except OSError as exc:` arm to the seam as a **catch-all after** the two
+  existing arms, not in place of them. ⚠ `FileNotFoundError` is an `OSError` subclass, so an `OSError`
+  arm placed first would swallow it and lose the distinct `127, '', 'python3 executable not found on
+  PATH'` return the seam ships today; keep that arm, and keep `TimeoutExpired` (`124`) as its own.
+  The new arm reports the exception text in the third tuple element so it reaches `executor_detail`.
+- **Done when:** both hold —
+  - a test monkeypatches `git_workflow.subprocess.run` to raise `PermissionError`, invokes
+    `cmd_worktree_rebase_to` on a rebase that replayed commits, and asserts
+    `result['status'] == 'success'`, `result['executor_regenerated'] is False`, and a non-empty
+    `result['executor_detail']`;
+  - a regression test pins the pre-existing arms: `FileNotFoundError` still yields return code `127`
+    with its own message, and `TimeoutExpired` still yields `124` — so the widening is proven not to
+    have absorbed them.
 - **Effort:** S
 - **Risk if fixed:** a blanket `OSError` arm could mask a programming error that today surfaces
   loudly. Scope it to the `subprocess.run` call only — which it already is — and keep the message in
