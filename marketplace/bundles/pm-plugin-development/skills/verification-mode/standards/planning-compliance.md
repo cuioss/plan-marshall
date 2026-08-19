@@ -174,7 +174,7 @@ Contract: `plan-marshall:phase-1-init/SKILL.md`. Verify `manage-references:manag
 
 ### Phase 2 — Solution Outline Complete
 
-Contract: `plan-marshall:manage-solution-outline/standards/solution-outline-standard.md`. Verify via `manage-solution-outline:manage-solution-outline validate --plan-id {plan_id}`. Every deliverable must carry: `change_type` (create|modify|refactor|migrate|delete), `execution_mode` (automated|manual|mixed), `domain` (valid domain value), `profile` (`implementation` or `module_testing`), `depends` (`none`, `N`, `N. Title`, or `N, M`), explicit `Affected files` (no glob patterns), and a `Verification` entry (command + criteria). Optional fields: `suggested_skill`, `suggested_workflow`, `context_skills`.
+Contract: `plan-marshall:manage-solution-outline/standards/solution-outline-standard.md`. Verify via `manage-solution-outline:manage-solution-outline validate --plan-id {plan_id}`. Every deliverable must carry: `change_type` (create|modify|refactor|migrate|delete), `execution_mode` (automated|manual|mixed), `domain` (valid domain value), `profile` (`implementation` or `module_testing`), `depends` (`none`, `N`, `N. Title`, or `N, M`), an explicit declared file surface — `Affected files` (no glob patterns), or the `Files to survey:` / `Files expected to mutate:` pair a survey-scope deliverable declares instead, whose candidate pool MAY name a pattern — and a `Verification` entry (command + criteria). Optional fields: `suggested_skill`, `suggested_workflow`, `context_skills`.
 
 Common violations and fixes: vague file references → enumerate explicitly; missing `depends` → add `depends: none` or proper reference; title-only `depends` → use `N. Title`; missing `domain` → add a valid domain from config; missing `context_skills` in delegation block → add empty list or valid skills.
 
@@ -186,7 +186,7 @@ User must explicitly approve the solution outline before task creation. Verify v
 
 Contract: `plan-marshall:manage-tasks/standards/task-contract.md`. Verify via `manage-tasks list` and `manage-tasks read --task-number {N}`. Required task fields: `deliverables` (non-empty), `depends_on` (`none` or `TASK-N`), `delegation.{skill,workflow,domain}`, `delegation.context_skills` (may be empty list), `steps` in TOON tabular format with file paths in the target column, `verification.commands`, and `verification.criteria`.
 
-**Steps field contract (CRITICAL)**: steps MUST be file paths from the deliverable's `Affected files`, NEVER action descriptions. Format: `steps[N]{number,target,status}:` with file paths as targets.
+**Steps field contract (CRITICAL)**: steps MUST be file paths the deliverable declares — under `Affected files:`, or under the `Files expected to mutate:` / `Files to survey:` pair a survey-scope deliverable declares instead — NEVER action descriptions. Format: `steps[N]{number,target,status}:` with file paths as targets.
 
 Common violations: missing `context_skills`, descriptive step text, missing `deliverables` references → always map back to the solution outline.
 

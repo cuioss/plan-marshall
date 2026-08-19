@@ -25,7 +25,7 @@
 ## Provenance
 
 This is **arm A** of the split mandated by
-[`280-outline-plan-scope-derivation-integrity`](280-outline-plan-scope-derivation-integrity/plan.md).
+[`280-outline-plan-scope-derivation-integrity`](../280-outline-plan-scope-derivation-integrity/plan.md).
 That plan recorded the cut and shipped **arm B** — *the derived BUCKET or classification is wrong*,
 whose failure signature is **wrong routing**. This plan carries the other arm.
 

@@ -40,7 +40,7 @@ local ``{base}`` ref when the worktree has no ``origin`` remote.
 There is no sibling ``conftest.py`` here on purpose — module-level
 helper functions defined below provide the shared fixture-build
 logic that pytest discovery cannot reach via auto-loading. See
-``test/plan-marshall/plan-retrospective/_fixtures.py`` for the wider
+``test/plan-marshall/plan-retrospective/_plan_retrospective_fixtures.py`` for the wider
 project convention.
 """
 

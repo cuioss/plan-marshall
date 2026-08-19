@@ -196,11 +196,25 @@ def _foreign_paths_by_deliverable(deliverables: list[dict]) -> list[tuple[int, l
     for deliverable in deliverables:
         if not isinstance(deliverable, dict) or not deliverable.get('foreign'):
             continue
-        paths = [
-            str(entry.get('path', ''))
-            for entry in deliverable.get('affected_files', [])
-            if isinstance(entry, dict) and entry.get('foreign') and entry.get('path')
-        ]
+        # All THREE declaration fields — a survey-scope deliverable declares
+        # `Files expected to mutate:` instead of `Affected files:`, and its
+        # foreign paths must reach this gate like any other. Reading one field
+        # made the gate's population a strict subset of the declared surface.
+        seen: set[str] = set()
+        paths = []
+        for field in ('affected_files', 'mutation_scope', 'survey_scope'):
+            for entry in deliverable.get(field, []) or []:
+                if not isinstance(entry, dict) or not entry.get('foreign'):
+                    continue
+                path = str(entry.get('path') or '')
+                # Deduplicated rather than assumed disjoint. The survey-scope
+                # convention requires the two lists to share no path, but that
+                # is an AUTHORING rule no check enforces, so a doubly-declared
+                # path would otherwise be named twice in the operator's
+                # blocking message.
+                if path and path not in seen:
+                    seen.add(path)
+                    paths.append(path)
         if paths:
             result.append((int(deliverable.get('number', 0)), paths))
     return result

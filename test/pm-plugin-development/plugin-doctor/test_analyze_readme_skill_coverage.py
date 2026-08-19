@@ -24,6 +24,8 @@ from pathlib import Path
 
 from conftest import MARKETPLACE_ROOT, load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 _mod = load_script_module(
     'pm-plugin-development', 'plugin-doctor', '_analyze_readme_skill_coverage.py',
     '_analyze_readme_skill_coverage',
@@ -54,10 +56,8 @@ def test_flags_omitted_skill(tmp_path):
         ['alpha', 'beta', 'gamma-security'],
         '# Demo\n\n### Skills (2 skills)\n\n- `alpha`\n- `beta`\n',
     )
-    findings = analyze_readme_skill_coverage(tmp_path)
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_readme_skill_coverage, tmp_path, [RULE_ID])
     finding = findings[0]
-    assert finding['rule_id'] == RULE_ID
     assert finding['details']['skill'] == 'gamma-security'
     assert finding['details']['population_size'] == 3
 
@@ -71,7 +71,7 @@ def test_passes_complete_enumeration(tmp_path):
         # Deliberately wrong parenthetical count, but every skill is named.
         '# Demo\n\n### Skills (2 skills)\n\n- `alpha`\n- `beta`\n- `gamma-security`\n',
     )
-    assert analyze_readme_skill_coverage(tmp_path) == []
+    assert_analyzer_findings(analyze_readme_skill_coverage, tmp_path, [])
 
 
 def test_longer_sibling_name_is_not_a_match(tmp_path):
@@ -113,10 +113,10 @@ def test_missing_plugin_json_or_readme_skipped(tmp_path):
     other = tmp_path / 'nomanifest'
     other.mkdir()
     (other / 'README.md').write_text('# No manifest\n', encoding='utf-8')
-    assert analyze_readme_skill_coverage(tmp_path) == []
+    assert_analyzer_findings(analyze_readme_skill_coverage, tmp_path, [])
 
 
 def test_no_registered_skills_skipped(tmp_path):
     """A bundle whose plugin.json registers no skills is out of scope."""
     _write_bundle(tmp_path, 'empty', [], '# Empty\n\n### Skills (0)\n')
-    assert analyze_readme_skill_coverage(tmp_path) == []
+    assert_analyzer_findings(analyze_readme_skill_coverage, tmp_path, [])

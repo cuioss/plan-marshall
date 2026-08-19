@@ -2,11 +2,17 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the ``qgate-mechanical-checks`` subcommand of manage-tasks.
 
-The subcommand runs six deterministic Q-Gate checks (coverage,
-skill-resolution, acyclic, files-exist, keyword-drift,
-structural-token-drift) over the tasks and parent deliverables of a
-plan, emitting one finding per failure under ``--source qgate`` so the
-existing phase-4-plan aggregate consumes them without modification.
+The subcommand runs the deterministic Q-Gate checks over the tasks and parent
+deliverables of a plan, emitting one finding per failure under ``--source
+qgate`` so the existing phase-4-plan aggregate consumes them without
+modification. The check names this file asserts against are enumerated once, in
+:data:`_ALL_CHECKS`, and read from the result rather than restated per test.
+
+The CLOSURE checks (``declared_set_closure``,
+``declared_scope_reconciliation``) have their own suite in
+``test_qgate_closure.py``; here they are exercised only as members of the full
+result — a fixture in this file must be a well-formed plan except for the one
+fault the test injects.
 """
 
 from __future__ import annotations
@@ -18,6 +24,31 @@ from pathlib import Path
 from typing import Any
 
 from conftest import PROJECT_ROOT
+
+#: A real repository file, used as BOTH the declared path and the step target
+#: in every fixture that is not deliberately injecting a fault. Declaring one
+#: path while targeting another leaves the plan's declared set unclosed, which
+#: the declared_set_closure check now reports — correctly. The corpus is aligned
+#: rather than exempted: a fixture that quietly carried an unclosed set would
+#: pin that shape as expected behaviour, which is how a characterization corpus
+#: turns a latent defect into a green test certifying it.
+_EXISTING_FILE = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
+_MISSING_FILE = 'src/does-not-exist.java'
+
+#: Every check the subcommand reports. Named here once, and cross-checked
+#: against the live result's own key set so a check added to the script without
+#: a corresponding entry here fails loudly instead of going unasserted — a
+#: hard-coded name list silently stops covering whatever is added after it.
+_ALL_CHECKS = (
+    'coverage',
+    'skill_resolution',
+    'acyclic',
+    'files_exist',
+    'keyword_drift',
+    'structural_token_drift',
+    'declared_set_closure',
+    'declared_scope_reconciliation',
+)
 
 # Load the cmd module via importlib (mirrors the batch-add test bootstrap).
 _SCRIPTS_DIR = (
@@ -72,7 +103,7 @@ def _write_task(
     every mechanical check has at least one positive and one negative case.
     """
     task_dir.mkdir(parents=True, exist_ok=True)
-    raw_steps = steps or [{'number': 1, 'target': 'src/A.java', 'status': 'pending'}]
+    raw_steps = steps or [{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}]
     # intent is a required step member; default omitting fixtures to 'read'
     # (existence-required) so legacy files_exist cases keep their semantics.
     normalized_steps = [
@@ -98,7 +129,13 @@ def _write_task(
 
 
 def _write_outline(plan_dir: Path, deliverables: list[dict[str, Any]]) -> None:
-    """Write a minimal solution_outline.md with the given deliverables."""
+    """Write a minimal solution_outline.md with the given deliverables.
+
+    An ``affected_files`` entry may be a bare path or a ``path (intent)`` string;
+    the marker is emitted OUTSIDE the backticks, in the canonical annotated form
+    the parser reads. Fixtures need it to declare a read-only path, which owes no
+    task step and so keeps a single-fault fixture single-fault.
+    """
     lines: list[str] = ['# Solution Outline', '', '## Deliverables', '']
     for d in deliverables:
         lines.append(f'### {d["number"]}. {d["title"]}')
@@ -106,7 +143,8 @@ def _write_outline(plan_dir: Path, deliverables: list[dict[str, Any]]) -> None:
         if 'affected_files' in d:
             lines.append('**Affected files:**')
             for f in d['affected_files']:
-                lines.append(f'- `{f}`')
+                path, _, marker = str(f).partition(' (')
+                lines.append(f'- `{path}` ({marker}' if marker else f'- `{path}`')
             lines.append('')
         if 'metadata' in d:
             lines.append('**Metadata:**')
@@ -127,26 +165,26 @@ def test_qgate_mechanical_clean_plan_passes_all_checks(plan_context):
     _write_outline(
         plan_dir,
         [
-            {'number': 1, 'title': 'Add foo', 'affected_files': ['src/A.java']},
-            {'number': 2, 'title': 'Add bar', 'affected_files': ['src/B.java']},
+            {'number': 1, 'title': 'Add foo', 'affected_files': [_EXISTING_FILE]},
+            {'number': 2, 'title': 'Add bar', 'affected_files': [_EXISTING_FILE]},
         ],
     )
-    # Use real repo files so files_exist passes.
-    existing_file = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
+    # Both deliverables declare the file their task targets, so the declared set
+    # is closed as well as resolvable — files_exist AND the closure checks pass.
     task_dir = plan_dir / 'tasks'
     _write_task(
         task_dir,
         1,
         deliverable=1,
         skills=['plan-marshall:manage-tasks'],
-        steps=[{'number': 1, 'target': existing_file, 'status': 'pending'}],
+        steps=[{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}],
     )
     _write_task(
         task_dir,
         2,
         deliverable=2,
         skills=['plan-marshall:manage-tasks'],
-        steps=[{'number': 1, 'target': existing_file, 'status': 'pending'}],
+        steps=[{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}],
     )
 
     result = cmd_qgate_mechanical(_ns('qgate-clean'))
@@ -155,14 +193,8 @@ def test_qgate_mechanical_clean_plan_passes_all_checks(plan_context):
     assert result['total_failed'] == 0
     assert result['findings_emitted'] == 0  # --no-emit path
     assert result['ambiguous'] is False
-    for name in (
-        'coverage',
-        'skill_resolution',
-        'acyclic',
-        'files_exist',
-        'keyword_drift',
-        'structural_token_drift',
-    ):
+    assert set(result['checks']) == set(_ALL_CHECKS), 'the asserted name set must be the live one'
+    for name in _ALL_CHECKS:
         assert result['checks'][name]['failed'] == 0, name
 
 
@@ -177,8 +209,8 @@ def test_qgate_mechanical_coverage_missing_deliverable(plan_context):
     _write_outline(
         plan_dir,
         [
-            {'number': 1, 'title': 'Add foo', 'affected_files': ['src/A.java']},
-            {'number': 2, 'title': 'Add bar', 'affected_files': ['src/B.java']},
+            {'number': 1, 'title': 'Add foo', 'affected_files': [_EXISTING_FILE]},
+            {'number': 2, 'title': 'Add bar', 'affected_files': ['src/B.java (read)']},
         ],
     )
     # Only deliverable 1 has a task; deliverable 2 is uncovered.
@@ -187,7 +219,7 @@ def test_qgate_mechanical_coverage_missing_deliverable(plan_context):
         1,
         deliverable=1,
         skills=['plan-marshall:manage-tasks'],
-        steps=[{'number': 1, 'target': 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md', 'status': 'pending'}],
+        steps=[{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}],
     )
 
     result = cmd_qgate_mechanical(_ns('qgate-cov-missing'))
@@ -199,7 +231,7 @@ def test_qgate_mechanical_coverage_orphan_task(plan_context):
     plan_dir = plan_context.plan_dir_for('qgate-cov-orphan')
     _write_outline(
         plan_dir,
-        [{'number': 1, 'title': 'Add foo', 'affected_files': ['src/A.java']}],
+        [{'number': 1, 'title': 'Add foo', 'affected_files': [_EXISTING_FILE]}],
     )
     # deliverable=2 references unknown deliverable -> orphan.
     _write_task(
@@ -207,14 +239,14 @@ def test_qgate_mechanical_coverage_orphan_task(plan_context):
         1,
         deliverable=1,
         skills=['plan-marshall:manage-tasks'],
-        steps=[{'number': 1, 'target': 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md', 'status': 'pending'}],
+        steps=[{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}],
     )
     _write_task(
         plan_dir / 'tasks',
         2,
         deliverable=42,
         skills=['plan-marshall:manage-tasks'],
-        steps=[{'number': 1, 'target': 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md', 'status': 'pending'}],
+        steps=[{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}],
     )
 
     result = cmd_qgate_mechanical(_ns('qgate-cov-orphan'))
@@ -227,14 +259,14 @@ def test_qgate_mechanical_holistic_task_not_orphan(plan_context):
     plan_dir = plan_context.plan_dir_for('qgate-cov-holistic')
     _write_outline(
         plan_dir,
-        [{'number': 1, 'title': 'Add foo', 'affected_files': ['src/A.java']}],
+        [{'number': 1, 'title': 'Add foo', 'affected_files': [_EXISTING_FILE]}],
     )
     _write_task(
         plan_dir / 'tasks',
         1,
         deliverable=1,
         skills=['plan-marshall:manage-tasks'],
-        steps=[{'number': 1, 'target': 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md', 'status': 'pending'}],
+        steps=[{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}],
     )
     _write_task(
         plan_dir / 'tasks',
@@ -260,7 +292,7 @@ def test_qgate_mechanical_skill_resolution_missing_domain(plan_context):
     plan_dir = plan_context.plan_dir_for('qgate-skill-nodomain')
     _write_outline(
         plan_dir,
-        [{'number': 1, 'title': 'X', 'affected_files': ['src/A.java']}],
+        [{'number': 1, 'title': 'X', 'affected_files': [_EXISTING_FILE]}],
     )
     _write_task(
         plan_dir / 'tasks',
@@ -268,7 +300,7 @@ def test_qgate_mechanical_skill_resolution_missing_domain(plan_context):
         deliverable=1,
         domain='',  # missing
         skills=['plan-marshall:manage-tasks'],
-        steps=[{'number': 1, 'target': 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md', 'status': 'pending'}],
+        steps=[{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}],
     )
 
     result = cmd_qgate_mechanical(_ns('qgate-skill-nodomain'))
@@ -280,14 +312,14 @@ def test_qgate_mechanical_skill_resolution_bad_shape(plan_context):
     plan_dir = plan_context.plan_dir_for('qgate-skill-shape')
     _write_outline(
         plan_dir,
-        [{'number': 1, 'title': 'X', 'affected_files': ['src/A.java']}],
+        [{'number': 1, 'title': 'X', 'affected_files': [_EXISTING_FILE]}],
     )
     _write_task(
         plan_dir / 'tasks',
         1,
         deliverable=1,
         skills=['no-colon-here', 'plan-marshall:manage-tasks'],
-        steps=[{'number': 1, 'target': 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md', 'status': 'pending'}],
+        steps=[{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}],
     )
 
     result = cmd_qgate_mechanical(_ns('qgate-skill-shape'))
@@ -300,14 +332,14 @@ def test_qgate_mechanical_skill_resolution_empty_skills_allowed(plan_context):
     plan_dir = plan_context.plan_dir_for('qgate-skill-empty')
     _write_outline(
         plan_dir,
-        [{'number': 1, 'title': 'X', 'affected_files': ['src/A.java']}],
+        [{'number': 1, 'title': 'X', 'affected_files': [_EXISTING_FILE]}],
     )
     _write_task(
         plan_dir / 'tasks',
         1,
         deliverable=1,
         skills=[],
-        steps=[{'number': 1, 'target': 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md', 'status': 'pending'}],
+        steps=[{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}],
     )
 
     result = cmd_qgate_mechanical(_ns('qgate-skill-empty'))
@@ -324,16 +356,15 @@ def test_qgate_mechanical_acyclic_simple_cycle(plan_context):
     plan_dir = plan_context.plan_dir_for('qgate-cycle')
     _write_outline(
         plan_dir,
-        [{'number': 1, 'title': 'X', 'affected_files': ['src/A.java']}],
+        [{'number': 1, 'title': 'X', 'affected_files': [_EXISTING_FILE]}],
     )
-    existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
     _write_task(
         plan_dir / 'tasks',
         1,
         deliverable=1,
         skills=['plan-marshall:manage-tasks'],
         depends_on=['TASK-2'],
-        steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
+        steps=[{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}],
     )
     _write_task(
         plan_dir / 'tasks',
@@ -341,7 +372,7 @@ def test_qgate_mechanical_acyclic_simple_cycle(plan_context):
         deliverable=1,
         skills=['plan-marshall:manage-tasks'],
         depends_on=['TASK-1'],
-        steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
+        steps=[{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}],
     )
 
     result = cmd_qgate_mechanical(_ns('qgate-cycle'))
@@ -353,15 +384,14 @@ def test_qgate_mechanical_acyclic_dag_passes(plan_context):
     plan_dir = plan_context.plan_dir_for('qgate-dag')
     _write_outline(
         plan_dir,
-        [{'number': 1, 'title': 'X', 'affected_files': ['src/A.java']}],
+        [{'number': 1, 'title': 'X', 'affected_files': [_EXISTING_FILE]}],
     )
-    existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
     _write_task(
         plan_dir / 'tasks',
         1,
         deliverable=1,
         skills=['plan-marshall:manage-tasks'],
-        steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
+        steps=[{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}],
     )
     _write_task(
         plan_dir / 'tasks',
@@ -369,7 +399,7 @@ def test_qgate_mechanical_acyclic_dag_passes(plan_context):
         deliverable=1,
         skills=['plan-marshall:manage-tasks'],
         depends_on=['TASK-1'],
-        steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
+        steps=[{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}],
     )
 
     result = cmd_qgate_mechanical(_ns('qgate-dag'))
@@ -386,22 +416,18 @@ def test_qgate_mechanical_files_exist_missing_step_target(plan_context):
     plan_dir = plan_context.plan_dir_for('qgate-files-missing')
     _write_outline(
         plan_dir,
-        [{'number': 1, 'title': 'X', 'affected_files': ['src/Missing.java']}],
+        [{'number': 1, 'title': 'X', 'affected_files': [_MISSING_FILE]}],
     )
     _write_task(
         plan_dir / 'tasks',
         1,
         deliverable=1,
         skills=['plan-marshall:manage-tasks'],
-        steps=[{'number': 1, 'target': 'src/does-not-exist.java', 'status': 'pending'}],
+        steps=[{'number': 1, 'target': _MISSING_FILE, 'status': 'pending'}],
     )
 
     result = cmd_qgate_mechanical(_ns('qgate-files-missing'))
     assert result['checks']['files_exist']['failed'] == 1
-
-
-_EXISTING_FILE = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
-_MISSING_FILE = 'src/does-not-exist.java'
 
 
 def _files_exist_failed(plan_context, slug, target, intent):
@@ -464,15 +490,14 @@ def test_qgate_mechanical_files_exist_skips_verification_profile(plan_context):
     plan_dir = plan_context.plan_dir_for('qgate-files-verify')
     _write_outline(
         plan_dir,
-        [{'number': 1, 'title': 'X', 'affected_files': ['src/A.java']}],
+        [{'number': 1, 'title': 'X', 'affected_files': [_EXISTING_FILE]}],
     )
-    existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
     _write_task(
         plan_dir / 'tasks',
         1,
         deliverable=1,
         skills=['plan-marshall:manage-tasks'],
-        steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
+        steps=[{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}],
     )
     _write_task(
         plan_dir / 'tasks',
@@ -498,16 +523,15 @@ def test_qgate_mechanical_keyword_drift_planning_keyword_in_description(plan_con
     plan_dir = plan_context.plan_dir_for('qgate-kw-drift')
     _write_outline(
         plan_dir,
-        [{'number': 1, 'title': 'Implement foo', 'affected_files': ['src/A.java']}],
+        [{'number': 1, 'title': 'Implement foo', 'affected_files': [_EXISTING_FILE]}],
     )
-    existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
     _write_task(
         plan_dir / 'tasks',
         1,
         deliverable=1,
         skills=['plan-marshall:manage-tasks'],
         description="'Implement foo'. Update PR review workflow for CI compliance.",
-        steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
+        steps=[{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}],
     )
 
     result = cmd_qgate_mechanical(_ns('qgate-kw-drift'))
@@ -524,19 +548,18 @@ def test_qgate_mechanical_keyword_drift_keyword_in_haystack_is_ok(plan_context):
             {
                 'number': 1,
                 'title': 'Wire CI pipeline',
-                'affected_files': ['ci/main.yml'],
+                'affected_files': [_EXISTING_FILE],
                 'metadata': {'change_type': 'feature'},
             }
         ],
     )
-    existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
     _write_task(
         plan_dir / 'tasks',
         1,
         deliverable=1,
         skills=['plan-marshall:manage-tasks'],
         description="'Wire CI pipeline'. Update CI configuration to use the new runner.",
-        steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
+        steps=[{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}],
     )
 
     result = cmd_qgate_mechanical(_ns('qgate-kw-ok'))
@@ -553,15 +576,14 @@ def test_qgate_mechanical_structural_token_gap(plan_context):
     plan_dir = plan_context.plan_dir_for('qgate-numbering-gap')
     _write_outline(
         plan_dir,
-        [{'number': 1, 'title': 'X', 'affected_files': ['src/A.java']}],
+        [{'number': 1, 'title': 'X', 'affected_files': [_EXISTING_FILE]}],
     )
-    existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
     _write_task(
         plan_dir / 'tasks',
         1,
         deliverable=1,
         skills=['plan-marshall:manage-tasks'],
-        steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
+        steps=[{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}],
     )
     # Skip TASK-2 to leave a gap.
     _write_task(
@@ -569,7 +591,7 @@ def test_qgate_mechanical_structural_token_gap(plan_context):
         3,
         deliverable=1,
         skills=['plan-marshall:manage-tasks'],
-        steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
+        steps=[{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}],
     )
 
     result = cmd_qgate_mechanical(_ns('qgate-numbering-gap'))
@@ -581,15 +603,14 @@ def test_qgate_mechanical_structural_token_does_not_start_at_001(plan_context):
     plan_dir = plan_context.plan_dir_for('qgate-numbering-start')
     _write_outline(
         plan_dir,
-        [{'number': 1, 'title': 'X', 'affected_files': ['src/A.java']}],
+        [{'number': 1, 'title': 'X', 'affected_files': [_EXISTING_FILE]}],
     )
-    existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
     _write_task(
         plan_dir / 'tasks',
         2,
         deliverable=1,
         skills=['plan-marshall:manage-tasks'],
-        steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
+        steps=[{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}],
     )
 
     result = cmd_qgate_mechanical(_ns('qgate-numbering-start'))
@@ -605,13 +626,12 @@ def test_qgate_mechanical_structural_token_does_not_start_at_001(plan_context):
 def test_qgate_mechanical_missing_outline_marks_ambiguous(plan_context):
     """When solution_outline.md is missing, ``ambiguous`` flips to True."""
     plan_dir = plan_context.plan_dir_for('qgate-no-outline')
-    existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
     _write_task(
         plan_dir / 'tasks',
         1,
         deliverable=1,
         skills=['plan-marshall:manage-tasks'],
-        steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
+        steps=[{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}],
     )
 
     result = cmd_qgate_mechanical(_ns('qgate-no-outline'))
@@ -637,17 +657,16 @@ def test_qgate_mechanical_emit_writes_findings(plan_context):
     _write_outline(
         plan_dir,
         [
-            {'number': 1, 'title': 'Has tasks', 'affected_files': ['src/A.java']},
-            {'number': 2, 'title': 'No tasks', 'affected_files': ['src/B.java']},
+            {'number': 1, 'title': 'Has tasks', 'affected_files': [_EXISTING_FILE]},
+            {'number': 2, 'title': 'No tasks', 'affected_files': ['src/B.java (read)']},
         ],
     )
-    existing = 'marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md'
     _write_task(
         plan_dir / 'tasks',
         1,
         deliverable=1,
         skills=['plan-marshall:manage-tasks'],
-        steps=[{'number': 1, 'target': existing, 'status': 'pending'}],
+        steps=[{'number': 1, 'target': _EXISTING_FILE, 'status': 'pending'}],
     )
 
     result = cmd_qgate_mechanical(_ns('qgate-emit', no_emit=False))
@@ -678,8 +697,8 @@ def _seed_one_coverage_failure(plan_context, slug: str) -> Path:
     _write_outline(
         plan_dir,
         [
-            {'number': 1, 'title': 'Has tasks', 'affected_files': ['src/A.java']},
-            {'number': 2, 'title': 'No tasks', 'affected_files': ['src/B.java']},
+            {'number': 1, 'title': 'Has tasks', 'affected_files': [_EXISTING_FILE]},
+            {'number': 2, 'title': 'No tasks', 'affected_files': ['src/B.java (read)']},
         ],
     )
     _write_task(

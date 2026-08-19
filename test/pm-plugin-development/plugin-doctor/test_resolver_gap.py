@@ -2,8 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the resolver-gap rule family in plugin-doctor.
 
-Two rules guard against the resolver-gap anti-pattern from driving lesson
-2026-04-27-18-005:
+Two rules guard against the resolver-gap anti-pattern:
 
 - ``skill-resolver-gap`` (warning): flags skill ``SKILL.md`` and
   ``standards/*.md`` prose containing LLM-Glob discovery patterns

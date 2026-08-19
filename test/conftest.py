@@ -365,6 +365,32 @@ def get_scripts_dir(bundle: str, skill: str) -> Path:
     return scripts_dir
 
 
+def get_skill_dir(bundle: str, skill: str) -> Path:
+    """Return the root directory for a marketplace skill.
+
+    The anchor for every file a skill ships, wherever it lives. :func:`get_scripts_dir`
+    is the narrower accessor for the ``scripts/`` subtree and raises for a skill that
+    has none; this one resolves the skill itself, so a module at the skill ROOT is
+    addressable. The bundle ``plan-marshall-plugin`` skills are the shape that needs
+    it: each ships a root-level ``extension.py``, and most of them ship no ``scripts/``
+    directory at all for the scripts-relative accessor to resolve against.
+
+    Args:
+        bundle: Bundle name (e.g. ``'pm-dev-python'``).
+        skill: Skill name (e.g. ``'plan-marshall-plugin'``).
+
+    Returns:
+        Absolute path to ``<bundle>/skills/<skill>``.
+
+    Raises:
+        FileNotFoundError: when the resolved skill directory does not exist.
+    """
+    skill_dir = MARKETPLACE_ROOT / bundle / 'skills' / skill
+    if not skill_dir.is_dir():
+        raise FileNotFoundError(f'Skill dir not found: {skill_dir}')
+    return skill_dir
+
+
 def add_skill_scripts_to_path(bundle: str, skill: str) -> Path:
     """Put a skill's ``scripts/`` directory on ``sys.path`` (idempotent).
 
@@ -392,7 +418,14 @@ def add_skill_scripts_to_path(bundle: str, skill: str) -> Path:
     return scripts_dir
 
 
-def load_script_module(bundle: str, skill: str, script_file: str, module_name: str | None = None):
+def load_script_module(
+    bundle: str,
+    skill: str,
+    script_file: str,
+    module_name: str | None = None,
+    *,
+    register: bool = True,
+):
     """Load a marketplace script as a module via ``spec_from_file_location``.
 
     Replaces the per-test ``importlib.util.spec_from_file_location`` +
@@ -401,37 +434,145 @@ def load_script_module(bundle: str, skill: str, script_file: str, module_name: s
     so intra-module relative references and dataclass ``__module__`` lookups
     resolve correctly.
 
+    ⛔ That registration REPLACES any existing entry under the same name, and the
+    displaced object does not disappear — a module that already did ``import X``
+    keeps a reference to the old one, so the two copies coexist and only the loader's
+    is reachable through ``sys.modules``. A later ``importlib.reload`` on the
+    displaced copy then fails, and whether it does depends on collection order, which
+    makes the defect a flaky green rather than a clean red. Two escapes are provided,
+    and a caller that does not need the module reachable by name should take one:
+
+    * ``module_name='...'`` publishes under a name of the caller's choosing, which
+      can be made collision-proof;
+    * ``register=False`` publishes nothing at all. Correct whenever the test only
+      needs the returned object. It is NOT correct when the loaded module resolves
+      its own name through ``sys.modules`` — a dataclass ``__module__`` lookup, or a
+      ``pickle`` round-trip — which is what the default exists for.
+
+    A guard test enumerates the names this function is called with across the test
+    tree and fails when one of them is also imported plainly, so a collision
+    introduced later is a red build rather than an order-dependent surprise.
+
     Both root-level test layouts (``test/<bundle>/test_x.py``) and nested
     layouts (``test/<bundle>/<skill>/test_x.py``) use the same call — resolution
     is by ``(bundle, skill, script_file)``, never by the test file's own path.
 
+    ``script_file`` is relative to the skill's ``scripts/`` directory, so a skill
+    that ships none is not addressable here at all — :func:`get_scripts_dir` raises
+    first. For a module at the SKILL ROOT, call :func:`load_skill_module`.
+
     Args:
         bundle: Bundle name (e.g., ``'pm-plugin-development'``).
         skill: Skill name (e.g., ``'plugin-doctor'``).
-        script_file: Script filename (e.g., ``'_analyze_verb_chains.py'``).
+        script_file: Script filename relative to ``scripts/`` (e.g.,
+            ``'_analyze_verb_chains.py'``, or ``'build/_build_cli.py'``).
         module_name: Optional explicit module name for ``sys.modules``
             registration. Defaults to the script filename stem.
+        register: Whether to publish the loaded module in ``sys.modules``.
+            Defaults to True.
 
     Returns:
         The loaded module object.
 
     Raises:
-        FileNotFoundError: when the script file does not exist.
+        FileNotFoundError: when the scripts directory or the script file is absent.
         ImportError: when the module spec cannot be created or executed.
+    """
+    return _exec_module_from_path(get_scripts_dir(bundle, skill) / script_file, module_name, register)
+
+
+def load_skill_module(
+    bundle: str,
+    skill: str,
+    module_file: str,
+    module_name: str | None = None,
+    *,
+    register: bool = True,
+):
+    """Load a module a skill ships, addressed from the SKILL ROOT.
+
+    The companion to :func:`load_script_module` for a file that does not live under
+    ``scripts/``. Both execute the module the same way and register it under the same
+    ``sys.modules`` rule; they differ only in what the path is relative to, which is
+    stated by the function you call rather than inferred from the filename.
+
+    The shape this exists for is a bundle's ``plan-marshall-plugin`` skill, whose
+    ``extension.py`` sits at the skill root — most such skills ship no ``scripts/``
+    directory, so :func:`load_script_module` cannot address the file at all and
+    :func:`get_scripts_dir` raises before it gets the chance. Without this, a test
+    for one had no option but the per-module ``spec_from_file_location`` preamble the
+    house style exists to remove.
+
+    ⛔ **Pass ``module_name`` for that shape, or ``register=False``.** EVERY bundle
+    ships its extension under the same filename, so the default name — the stem — is
+    ``extension`` for all of them, and loading a second displaces the first. The
+    hand-rolled preambles this replaces each pass a distinct name for exactly that
+    reason, and nothing imports ``extension`` plainly, so the registration guard
+    cannot see the collision either.
+
+    Args:
+        bundle: Bundle name (e.g. ``'pm-dev-python'``).
+        skill: Skill name (e.g. ``'plan-marshall-plugin'``).
+        module_file: Path to the module, relative to the skill root (e.g.
+            ``'extension.py'``).
+        module_name: Optional explicit module name for ``sys.modules``
+            registration. Defaults to the module filename stem.
+        register: Whether to publish the loaded module in ``sys.modules``. Carries
+            the same collision hazard and the same escape as
+            :func:`load_script_module`. Defaults to True.
+
+    Returns:
+        The loaded module object.
+
+    Raises:
+        FileNotFoundError: when the skill directory or the module file is absent.
+        ImportError: when the module spec cannot be created or executed.
+    """
+    return _exec_module_from_path(get_skill_dir(bundle, skill) / module_file, module_name, register)
+
+
+def _exec_module_from_path(path: Path, module_name: str | None, register: bool):
+    """Execute ``path`` as a module, optionally registering it in ``sys.modules``.
+
+    The one construction both public loaders share, so the two cannot drift in how
+    they name, register, or execute what they load.
+
+    Registration is by the resolved name and REPLACES any existing entry — see
+    :func:`load_script_module` for what that costs a caller holding an earlier copy.
+
+    ⛔ The registration happens BEFORE execution, because a module body that
+    resolves its own name through ``sys.modules`` needs the entry to be there
+    already. That ordering means a body which raises would leave a
+    half-initialised module published under its name, and a later plain
+    ``import`` of that name would succeed and hand back the broken object —
+    failing far from its cause. The entry is therefore removed on failure,
+    which is the standard importlib pattern, so an execution error leaves
+    ``sys.modules`` exactly as it found it.
+
+    Raises:
+        FileNotFoundError: when ``path`` is not a file.
+        ImportError: when the module spec cannot be created.
+        Exception: whatever the module body raises — ``exec_module`` propagates
+            the body's own exception type rather than wrapping it.
     """
     import importlib.util
 
-    script_path = get_scripts_dir(bundle, skill) / script_file
-    if not script_path.is_file():
-        raise FileNotFoundError(f'Script not found: {script_path}')
+    if not path.is_file():
+        raise FileNotFoundError(f'Module not found: {path}')
 
-    name = module_name or script_path.stem
-    spec = importlib.util.spec_from_file_location(name, script_path)
+    name = module_name or path.stem
+    spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
-        raise ImportError(f'Could not create import spec for {script_path}')
+        raise ImportError(f'Could not create import spec for {path}')
     module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
+    if register:
+        sys.modules[name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        if register:
+            sys.modules.pop(name, None)
+        raise
     return module
 
 
@@ -566,7 +707,9 @@ def _parse_via_main(module: ModuleType, label: str, argv: list[str]) -> argparse
     )
 
 
-def parse_ns(bundle: str, skill: str, script: str, *argv: str) -> argparse.Namespace:
+def parse_ns(
+    bundle: str, skill: str, script: str, *argv: str, register: bool = True
+) -> argparse.Namespace:
     """Build an ``argparse.Namespace`` by running the script's OWN parser.
 
     The shared replacement for a hand-built ``argparse.Namespace(...)``. A
@@ -582,6 +725,11 @@ def parse_ns(bundle: str, skill: str, script: str, *argv: str) -> argparse.Names
             typed after the script name — e.g.
             ``parse_ns('plan-marshall', 'manage-files', 'manage-files.py',
             'read', '--plan-id', 'p', '--file', 'task.md')``.
+        register: Whether the script module this loads is published in
+            ``sys.modules``. Defaults to True, matching :func:`load_script_module`.
+            Pass False when the caller wants only the namespace — which is the usual
+            case here — so building one cannot displace a registration another test
+            module imports plainly. See :func:`load_script_module` for the hazard.
 
     Returns:
         The namespace the script's parser produces for ``argv``.
@@ -631,13 +779,14 @@ def parse_ns(bundle: str, skill: str, script: str, *argv: str) -> argparse.Names
     :class:`ParserSeamNotFound` rather than degrading.
 
     Cost: this re-executes the script module on every call (via
-    :func:`load_script_module`, which also re-registers it in ``sys.modules``). A
+    :func:`load_script_module`, which by default also re-registers it in
+    ``sys.modules`` — pass ``register=False`` to suppress that). A
     test that builds many namespaces should hoist the call into a fixture or a
     module-level constant rather than calling it per assertion, and should not
     assume the module object the parser came from is the same instance the test
     holds a reference to.
     """
-    module = load_script_module(bundle, skill, script)
+    module = load_script_module(bundle, skill, script, register=register)
     label = f'{bundle}:{skill}:{script}'
 
     parser = _parser_from_builder(module)
@@ -1125,12 +1274,16 @@ def _routing_namespaces(test_module) -> list[dict]:
     load-order dependent — which makes getting it wrong a FLAKY green rather
     than a clean red. Two facts combine:
 
-    1. ``test/plan-marshall/build_test_helpers.py`` loads the factory through
-       ``load_script_module``, which re-registers it in ``sys.modules`` under its
-       own stem. That REPLACES the entry, so a test module that already did
+    1. Any caller that loads the factory through :func:`load_script_module` —
+       the shared build-test helper module does, to reach the factory's
+       ``compute_command_key`` — re-registers it in ``sys.modules`` under its own
+       stem. That REPLACES the entry, so a test module that already did
        ``import _build_execute_factory as factory`` at its own import time holds
        a copy that is no longer reachable from ``sys.modules`` at all — it
-       survives only as a reference in that test module's globals.
+       survives only as a reference in that test module's globals. The helper is
+       named by its ROLE rather than its path on purpose: the mechanism belongs
+       to the loader, not to any one caller, so the explanation stays true when a
+       caller is renamed or a second one appears.
     2. ``cmd_run`` is a CLOSURE created by ``create_execute_handlers``, so it
        resolves ``_route_to_daemon`` from ``cmd_run.__globals__`` — the dict of
        whichever factory copy produced it, not from whatever ``sys.modules``

@@ -13,11 +13,36 @@ import tempfile
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import get_script_path, load_script_module, run_script
+from conftest import PROJECT_ROOT, get_script_path, load_script_module, parse_ns, run_script
 
 # Script under test
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-maintain', 'maintain.py')
+
+# Argument namespaces come from the script's OWN parser, so each carries every
+# default the real CLI applies — a hand-built Namespace carries only the keys its
+# author remembered. Parsed once at module scope: parse_ns re-executes the script
+# module on every call.
+_UPDATE_NS = parse_ns(
+    'pm-plugin-development', 'plugin-maintain', 'maintain.py',
+    'update', '--component', 'placeholder.md', '--updates', '{}', register=False,
+)
+_CHECK_DUP_NS = parse_ns(
+    'pm-plugin-development', 'plugin-maintain', 'maintain.py',
+    'check-duplication', '--skill-path', '.', '--content-file', 'placeholder.md', register=False,
+)
+_ANALYZE_NS = parse_ns(
+    'pm-plugin-development', 'plugin-maintain', 'maintain.py',
+    'analyze', '--component', 'placeholder.md', register=False,
+)
+_README_NS = parse_ns(
+    'pm-plugin-development', 'plugin-maintain', 'maintain.py',
+    'readme', '--bundle-path', '.', register=False,
+)
+
+
+def _ns(template: Namespace, **overrides) -> Namespace:
+    """A parser-produced namespace with this test's values overlaid."""
+    return Namespace(**{**vars(template), **overrides})
 
 
 def _load_module(name, filename):
@@ -72,7 +97,7 @@ def test_update_with_updates_arg():
         f.flush()
 
         updates = '{"updates": [{"type": "frontmatter", "field": "version", "value": "1.0"}]}'
-        args = Namespace(component=f.name, updates=updates)
+        args = _ns(_UPDATE_NS, component=f.name, updates=updates)
         data = cmd_update(args)
         assert data is not None, 'Should return valid dict'
 
@@ -94,7 +119,7 @@ def test_checkdup_nonexistent_skill():
         f.write('# Some content\n')
         f.flush()
 
-        args = Namespace(skill_path='/nonexistent/skill', content_file=f.name)
+        args = _ns(_CHECK_DUP_NS, skill_path='/nonexistent/skill', content_file=f.name)
         data = cmd_check_duplication(args)
         assert data is not None, 'Should return valid dict'
         assert 'error' in data, 'Should have error for nonexistent skill'
@@ -109,7 +134,7 @@ def test_checkdup_nonexistent_skill():
 
 def test_analyze_nonexistent_file():
     """Test analyze handles nonexistent file."""
-    args = Namespace(component='/nonexistent/file.md')
+    args = _ns(_ANALYZE_NS, component='/nonexistent/file.md')
     data = cmd_analyze(args)
     assert data is not None, 'Should return valid dict'
     assert 'error' in data, 'Should have error for nonexistent file'
@@ -124,7 +149,7 @@ def test_analyze_valid_agent():
         '---\nname: test-agent\ndescription: Test agent\ntools: Read, Write\n---\n\n# Test Agent\n\n## Purpose\nDoes testing.\n'
     )
 
-    args = Namespace(component=str(agent_file))
+    args = _ns(_ANALYZE_NS, component=str(agent_file))
     data = cmd_analyze(args)
     assert data is not None, 'Should return valid dict'
     assert 'quality_score' in data, 'Should have quality_score'
@@ -141,7 +166,7 @@ def test_analyze_real_agent():
     if not agent_file.exists():
         return  # Skip if not found
 
-    args = Namespace(component=str(agent_file))
+    args = _ns(_ANALYZE_NS, component=str(agent_file))
     data = cmd_analyze(args)
     assert data is not None, 'Should return valid dict'
     assert 'quality_score' in data, 'Should have quality_score'
@@ -155,7 +180,7 @@ def test_analyze_real_agent():
 
 def test_readme_nonexistent_path():
     """Test readme handles nonexistent path."""
-    args = Namespace(bundle_path='/nonexistent/bundle')
+    args = _ns(_README_NS, bundle_path='/nonexistent/bundle')
     data = cmd_readme(args)
     assert data is not None, 'Should return valid dict'
     assert 'error' in data, 'Should have error for nonexistent path'
@@ -167,7 +192,7 @@ def test_readme_real_bundle():
     if not bundle_path.exists():
         return  # Skip if not found
 
-    args = Namespace(bundle_path=str(bundle_path))
+    args = _ns(_README_NS, bundle_path=str(bundle_path))
     data = cmd_readme(args)
     assert data is not None, 'Should return valid dict'
     assert 'readme_generated' in data, 'Should have readme_generated field'

@@ -297,7 +297,7 @@ it, and where a run cannot finish, **report what was not reached rather than thi
 
 | Plan | Surface | May run concurrently with |
 |---|---|---|
-| `010` | `marketplace/bundles/pm-dev-python/skills/pytest-testing/**`, `marketplace/bundles/plan-marshall/skills/persona-module-tester/**`, `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/**`, `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py`, `test/pm-plugin-development/plugin-doctor/fixtures/test_conventions/rule*/`, `test/pm-plugin-development/plugin-doctor/test_doctor_marketplace_commands.py` (the `cmd_test_conventions` cases only), `test/pm-plugin-development/plugin-doctor/_fixtures.py` | `020` only |
+| `010` | `marketplace/bundles/pm-dev-python/skills/pytest-testing/**`, `marketplace/bundles/plan-marshall/skills/persona-module-tester/**`, `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/**`, `test/pm-plugin-development/plugin-doctor/test_test_conventions_rule*.py`, `test/pm-plugin-development/plugin-doctor/fixtures/test_conventions/rule*/`, `test/pm-plugin-development/plugin-doctor/test_doctor_marketplace_commands.py` (the `cmd_test_conventions` cases only), `test/pm-plugin-development/plugin-doctor/_plugin_doctor_fixtures.py` | `020` only |
 | `020` | `test/conftest.py`, `test/_shared/**`, `test/README.md`, and the ≤10 modules it converts as proof-of-use | `010` only |
 | `030`–`080` | one disjoint slice of `test/` each, listed in the plan | each other, once `010` **and** `020` have landed |
 | `090` | `marketplace/bundles/**` (the doctor analyzers, `script-shared`, `manage-providers`) — **the only plan in the epic that may edit it** — plus `test/conftest.py`'s loader mechanics, and the tests for its own production changes | see § "The collision matrix" — it is the authoritative set, and this cell deliberately does not restate it |
@@ -308,10 +308,12 @@ it, and where a run cannot finish, **report what was not reached rather than thi
 **`090`, `100`, `110` and `120` were added after the epic's executed half**, each from something the
 executed runs recorded and none could act on: `090` owns the production and harness defects every reduction plan is
 forbidden to fix, `100` owns the module-budget split none of them reached, and `110` owns the two run
-conditions none of them measured. `090` should land before `070` and `080` start; `100` takes their
-slices only after they land; `110` is best run before all three, because they are what it exists to
-watch. **`120` should land earliest of all** — it checks the documents every other plan is executed
-from, and nine verification rounds established that nothing else does.
+conditions none of them measured. `090`, `070` and `080` have all landed, so the sequencing that once
+governed them is spent; what remains of it is that **`100` takes a slice only after that slice's plan
+has landed** — which now holds for every slice — and that `110` is best run before `100`, because
+`100` is what it exists to watch. **`120` should land earliest of what is left** — it checks the
+documents every other plan is executed from, and nine verification rounds established that nothing
+else does.
 
 **`010` and `020` are blocking.** The reduction plans consume the harness `020` builds and the style
 `010` writes; run either reduction wave before them and it will invent its own harness, which is the
@@ -405,9 +407,9 @@ as a **gating, halting derivation**, run before its first deliverable:
    ⚠️ **`test/pm-code-intelligence/` is NOT an exclusion — it belongs to plan `080`'s slice**, and
    `080`'s Expected surface names it. It is a `pm-*` bundle test directory, which is the shape `080`
    already owns; the assignment is recorded here so the next run does not re-derive the halt a fourth
-   time. Its one open finding — a preamble the shared loader cannot address, because the file it loads
-   is a bundle skill's root-level `extension.py` rather than a `scripts/` module — is **plan `090` §
-   D2's**, not `080`'s.
+   time. Its preamble finding is **closed**: it loaded a bundle skill's root-level `extension.py`,
+   which `load_script_module` cannot address, and plan `090` then shipped `conftest.load_skill_module`
+   for exactly that shape — so plan `080` fixed it rather than deferring it.
 3. An entry in **two** lists, or in **none**, is a partition defect: **halt and report it** rather
    than claiming or skipping it unilaterally. An entry claimed by no plan is the dangerous case,
    because it looks exactly like a clean run.
@@ -468,9 +470,9 @@ analyzer capability rather than a widening. Plan `090` § Out of scope states bo
 
 ### What the executed half left open
 
-`030`–`060` have landed. Each left deliverables unreached and recorded them in its own report's
-§ Residue, which is the authoritative account — this index exists so a follow-up run can be
-commissioned without reading six reports first, not to replace them. **Every figure here is a lead
+`030`–`080` have landed, and so has `090`. Each left deliverables unreached and recorded them in its
+own report's § Residue, which is the authoritative account — this index exists so a follow-up run can be
+commissioned without reading eight reports first, not to replace them. **Every figure here is a lead
 taken from the report that recorded it; re-derive before acting.**
 
 | Plan | Still open in its own slice | Now owned elsewhere |
@@ -479,6 +481,9 @@ taken from the report that recorded it; re-derive before acting.**
 | `040` delivery pipeline (55 over budget) | D2 fixture corpus, unstarted. D3 subprocess-layer collapse, **not performed at all** — its gating survey ran and licensed no collapse, so ~124 `run_script` sites remain unpaired. D5's `parse_ns` half unstarted against ~391 `Namespace(` sites. A `fixtures/ci-wait/README.md` carrying a plan slug, a lesson id and a dated line | Its over-budget modules → `100`; the ~92 prose citations in shapes the rule does not match → `090` § D4 |
 | `050` plan state and records (60 over budget) | D2's remaining namespace builders; D3's five directories with no fixture module; D5's parametrization half, unstarted. Three findings its second run rejected as new scope with reasons recorded | Its over-budget modules → `100` |
 | `060` runtime and script substrate (53 over budget) | D4 parametrization beyond one family — ~223 families at ≥80% skeleton similarity, each needing a read because the set includes matched control pairs that must **not** collapse. D4's required cold read, never performed. The randomised hermeticity arm, unrun | Its over-budget modules → `100`, with the bound that exactly one class exceeds the budget alone; 3 latent `sys.modules` registrations → `090` § D3; the structurally-unfixable preambles it found → `090` § D2, **whose instance set that plan derives rather than takes from any count** — `060`'s figure is scoped to the fifteen directories it worked, one of which this brief now assigns to `080`; 27 seam-blocked `parse_ns` sites → `090` § D1 |
+| `070` architecture and orchestration (62 over budget) | D3's **B6** half — **494** hand-built `Namespace(` sites, none converted, against 1 `parse_ns` call. Its report says 506; that figure is the raw `grep 'Namespace('`, which also matches the slice's 12 `SimpleNamespace(` uses — the seam map it measured is unaffected, so the next run does not pay for the probe again. D4's **B5** half beyond the build family (the architecture query-filter and inbox-envelope cases, untouched). 10 `spec_from_file_location` sites across 9 modules. ~20 historical-prose citations in shapes the rule cannot match. Two hardcoded expected-population fixtures a reviewer raised — `CANONICAL_SUBDIRS` and `REAL_LESSON_IDS` — both **pre-existing**, declined with reasons on the threads | Its over-budget modules → `100`; two missing parser seams, plus three directories publishing no top-level CLI script at all (a different shape) → `090` § D1; seven structurally-unfixable preambles → `090` § D2; the stale `build_test_helpers.py` path in `conftest.py`'s docstring → `090` § D6 |
+| `080` plugin development and generator (43 over budget) | **D3 is closed** across two runs — **B6** complete at 211 of 211 (0 hand-built namespaces, 39 `parse_ns` calls, all at module scope) and **B7** down to its structural floor of 2. What remains is D1's **6 unconverted `test_analyze_*.py` modules**, each characterised in `report-01.md` § D1 and none convertible without changing what the test asserts. **Coverage was measured in neither run** and is recorded as unmeasured rather than assumed | Its over-budget modules → `100` **row 6, now unblocked**; the 2 remaining preambles → `090` § D2, which needs a new conftest accessor since `generate.py` and the repository-root `build.py` sit outside `marketplace/bundles`; a standards doc still teaching the hand-rolled preamble as house style, a stale test path in `consumer-sweep.md`, and two duplicate loader module names the collision guard structurally cannot see → `090` |
+| `090` harness and rule gaps (not a reduction slice) | Run 01's residue is untouched by run 02 — the 20 preambles, 15 `parse_ns` conversions, 12 `manage-providers` sites, 23 pinned collisions, 90 unresolvable call sites, three non-zero rule counts, 36 serial-order failures, the coverage nondeterminism, and `credentials.py`'s 52.6 %. Its three open classes **R1, R3 and R4 each rest on a single instance**, with no sweep establishing it was the only one | A follow-up per class, whose deliverable is the sweep; the reduction slices as they touch the modules |
 
 A follow-up run against a landed plan re-enters it exactly as `030`, `050` and `060` already did — a
 new report ordinal in the same plan directory, and the plan's deliverables unchanged. Its

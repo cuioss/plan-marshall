@@ -50,6 +50,8 @@ from pathlib import Path
 
 from conftest import get_script_path, load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -153,9 +155,7 @@ class TestPositiveDrift:
         """Inline ``allowed-tools: Read`` + body ``Write:`` directive drifts."""
         content = _fm('Read', 'Write: produce the output file.\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_allowed_tools_drift(marketplace_root)
-        assert len(findings) == 1
-        assert findings[0]['rule_id'] == RULE_ID
+        findings = assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [RULE_ID])
         assert findings[0]['snippet'] == 'Write'
 
     def test_yaml_list_declaration_missing_invoked_tool(self, tmp_path: Path) -> None:
@@ -170,8 +170,7 @@ class TestPositiveDrift:
             'Bash: run the verification command.\n'
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_allowed_tools_drift(marketplace_root)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [RULE_ID])
         assert findings[0]['snippet'] == 'Bash'
 
     def test_multiple_drifting_tools_produce_multiple_findings(
@@ -183,8 +182,7 @@ class TestPositiveDrift:
             'Write: emit the file.\nBash: run the command.\n',
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_allowed_tools_drift(marketplace_root)
-        assert len(findings) == 2
+        findings = assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [RULE_ID] * 2)
         snippets = sorted(f['snippet'] for f in findings)
         assert snippets == ['Bash', 'Write']
 
@@ -192,8 +190,7 @@ class TestPositiveDrift:
         """A list-bulleted ``- Skill:`` directive counts as an invocation."""
         content = _fm('Read', '- Skill: plan-marshall:persona-plan-marshall-agent\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_allowed_tools_drift(marketplace_root)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [RULE_ID])
         assert findings[0]['snippet'] == 'Skill'
 
     def test_finding_line_is_one_based_absolute(self, tmp_path: Path) -> None:
@@ -201,8 +198,7 @@ class TestPositiveDrift:
         # Lines: 1 '---', 2 name, 3 allowed-tools, 4 '---', 5 intro, 6 'Write:'.
         content = _fm('Read', 'Intro paragraph with no invocation.\nWrite: emit.\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_allowed_tools_drift(marketplace_root)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [RULE_ID])
         assert findings[0]['line'] == 6
 
 
@@ -218,15 +214,13 @@ class TestNoDrift:
         """When the declaration covers every invoked tool there is no drift."""
         content = _fm('Read, Write', 'Write: emit the file.\nRead: load context.\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_allowed_tools_drift(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [])
 
     def test_no_frontmatter_is_not_flagged(self, tmp_path: Path) -> None:
         """A component with no frontmatter has no declared list to drift against."""
         content = 'Write: emit the file.\nBash: run the command.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_allowed_tools_drift(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [])
 
     def test_missing_allowed_tools_field_is_not_flagged(
         self, tmp_path: Path
@@ -240,8 +234,7 @@ class TestNoDrift:
             'Write: emit the file.\n'
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_allowed_tools_drift(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [])
 
     def test_empty_allowed_tools_value_is_not_flagged(self, tmp_path: Path) -> None:
         """An ``allowed-tools:`` field with no value parses to an empty list.
@@ -251,8 +244,7 @@ class TestNoDrift:
         """
         content = _fm('', 'Write: emit the file.\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_allowed_tools_drift(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [])
 
     def test_unused_declared_tool_is_not_flagged(self, tmp_path: Path) -> None:
         """A declared tool the body never invokes is NOT a drift (one-directional).
@@ -262,8 +254,7 @@ class TestNoDrift:
         """
         content = _fm('Read, Write, Bash', 'Read: load context.\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_allowed_tools_drift(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [])
 
 
 # ===========================================================================
@@ -281,8 +272,7 @@ class TestExemptions:
             '```bash\nWrite: this is example text inside a fence.\n```\n',
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_allowed_tools_drift(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [])
 
     def test_fenced_block_with_info_string_is_exempt(self, tmp_path: Path) -> None:
         """A fence with any info-string still exempts its body lines."""
@@ -291,8 +281,7 @@ class TestExemptions:
             '```text\nBash: example invocation inside a fence.\n```\n',
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_allowed_tools_drift(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [])
 
     def test_frontmatter_disable_suppresses_whole_file(self, tmp_path: Path) -> None:
         """A ``plugin-doctor-disable`` naming the rule suppresses every drift in the file."""
@@ -302,8 +291,7 @@ class TestExemptions:
             'Write: emit the file.\nBash: run the command.\n',
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_allowed_tools_drift(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [])
 
     def test_frontmatter_disable_block_list_form(self, tmp_path: Path) -> None:
         """The YAML block-list ``plugin-doctor-disable`` form is honored."""
@@ -317,8 +305,7 @@ class TestExemptions:
             'Write: emit the file.\n'
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_allowed_tools_drift(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [])
 
     def test_frontmatter_disable_for_other_rule_does_not_suppress(
         self, tmp_path: Path
@@ -330,8 +317,7 @@ class TestExemptions:
             'Write: emit the file.\n',
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_allowed_tools_drift(marketplace_root)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [RULE_ID])
         assert findings[0]['snippet'] == 'Write'
 
     def test_retired_inline_marker_no_longer_suppresses(self, tmp_path: Path) -> None:
@@ -341,8 +327,7 @@ class TestExemptions:
             'Write: emit the file. <!-- doctor-ignore: allowed-tools-drift -->\n',
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_allowed_tools_drift(marketplace_root)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [RULE_ID])
         assert findings[0]['snippet'] == 'Write'
 
 
@@ -358,8 +343,7 @@ class TestDetectionShape:
         """The ``Tool: Bash`` prefixed form yields the payload tool name."""
         content = _fm('Read', 'Tool: Bash\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_allowed_tools_drift(marketplace_root)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [RULE_ID])
         assert findings[0]['snippet'] == 'Bash'
 
     def test_prose_mention_without_directive_is_not_flagged(
@@ -368,15 +352,13 @@ class TestDetectionShape:
         """A bullet/heading prose mention (``Use Write to …``) is not an invocation."""
         content = _fm('Read', 'Use Write to produce the output file.\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_allowed_tools_drift(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [])
 
     def test_unknown_capitalised_token_is_not_a_tool(self, tmp_path: Path) -> None:
         """A directive-shaped line for a non-tool word is not flagged."""
         content = _fm('Read', 'Note: this is a documentation note, not a tool.\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_allowed_tools_drift(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [])
 
 
 # ===========================================================================
@@ -393,8 +375,7 @@ class TestScope:
         marketplace_root, _ = _make_skill_md(
             tmp_path, content, sub='agents', filename='agent.md'
         )
-        findings = analyze_allowed_tools_drift(marketplace_root)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [RULE_ID])
 
     def test_commands_directory_is_scanned(self, tmp_path: Path) -> None:
         """A file under ``{bundle}/commands/`` is in scope."""
@@ -402,8 +383,7 @@ class TestScope:
         marketplace_root, _ = _make_skill_md(
             tmp_path, content, sub='commands', filename='cmd.md'
         )
-        findings = analyze_allowed_tools_drift(marketplace_root)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [RULE_ID])
 
     def test_out_of_scope_path_not_scanned(self, tmp_path: Path) -> None:
         """A file under the bundle root but not in a scanned sub is ignored."""
@@ -412,8 +392,7 @@ class TestScope:
         (bundle_dir / 'README.md').write_text(
             _fm('Read', 'Write: emit the file.\n'), encoding='utf-8'
         )
-        findings = analyze_allowed_tools_drift(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_allowed_tools_drift, tmp_path, [])
 
 
 # ===========================================================================
@@ -428,8 +407,7 @@ class TestClaudeSkillsTree:
         """A drifting invocation under ``.claude/skills/`` is flagged."""
         content = _fm('Read', 'Write: emit the project-local skill output.\n')
         marketplace_root, target = _make_claude_skill_md(tmp_path, content)
-        findings = analyze_allowed_tools_drift(marketplace_root)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [RULE_ID])
         assert findings[0]['file'] == str(target)
 
     def test_missing_claude_skills_tree_is_tolerated(self, tmp_path: Path) -> None:
@@ -441,8 +419,7 @@ class TestClaudeSkillsTree:
         """
         content = _fm('Read', 'Write: emit the file.\n')
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_allowed_tools_drift(marketplace_root)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [RULE_ID])
 
     def test_claude_and_bundles_findings_combine(self, tmp_path: Path) -> None:
         """Findings from the bundles tree and ``.claude/skills`` combine."""
@@ -457,8 +434,7 @@ class TestClaudeSkillsTree:
         claude_dir.joinpath('SKILL.md').write_text(
             _fm('Read', 'Bash: run the project-local command.\n'), encoding='utf-8'
         )
-        findings = analyze_allowed_tools_drift(bundles_root)
-        assert len(findings) == 2
+        assert_analyzer_findings(analyze_allowed_tools_drift, bundles_root, [RULE_ID] * 2)
 
 
 # ===========================================================================
@@ -470,10 +446,8 @@ def test_finding_shape(tmp_path: Path) -> None:
     """A finding carries the documented shape fields."""
     content = _fm('Read', 'Write: emit the file.\n')
     marketplace_root, md_path = _make_skill_md(tmp_path, content)
-    findings = analyze_allowed_tools_drift(marketplace_root)
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_allowed_tools_drift, marketplace_root, [RULE_ID])
     f = findings[0]
-    assert f['rule_id'] == RULE_ID
     assert f['type'] == FINDING_TYPE
     assert f['rule'] == RULE_NAME
     assert f['file'] == str(md_path)

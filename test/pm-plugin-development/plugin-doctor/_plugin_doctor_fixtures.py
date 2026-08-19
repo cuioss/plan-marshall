@@ -1552,9 +1552,9 @@ def finding_code(finding: dict) -> str:
     raise AssertionError(f'finding carries neither rule_id nor type: {finding!r}')
 
 
-def assert_analyzer_findings(
-    analyzer: Callable[[Path], list[dict]],
-    fixture: Path,
+def assert_analyzer_findings[FixtureT](
+    analyzer: Callable[[FixtureT], list[dict]],
+    fixture: FixtureT,
     expected_codes: Sequence[str],
 ) -> list[dict]:
     """Run ``analyzer`` over ``fixture`` and assert the exact multiset of codes.
@@ -1574,8 +1574,11 @@ def assert_analyzer_findings(
     (``assert analyze_x(tmp_path) == []``) is the same call with
     ``expected_codes=[]``.
 
-    ``fixture`` is the single argument the analyzer is called with — for the
-    marketplace-wide scanners that is the scratch root they walk.
+    ``fixture`` is the single argument the analyzer is called with, and its type
+    is bound to the analyzer's own parameter type rather than fixed to ``Path``:
+    the marketplace-wide scanners take a scratch root, while
+    ``analyze_phase2_refine_contract`` takes a ``list[Path]``. Binding the two
+    together keeps a mismatched analyzer/fixture PAIR an error.
 
     Returns the findings list so callers can layer rule-specific payload
     assertions (line numbers, severities, ``details`` sub-fields) on top.

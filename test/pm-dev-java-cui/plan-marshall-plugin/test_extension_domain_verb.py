@@ -9,11 +9,10 @@ tree-scan) and ``rewrite-log-parse`` (parse-rewrite-log, log-parse). Tier 2
 provides_domain_verb() directly.
 """
 
-import importlib.util
 import tempfile
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH for extension_base).
-from conftest import MARKETPLACE_ROOT
+from conftest import MARKETPLACE_ROOT, load_skill_module
 
 #: The two verbs the java-cui domain declares, keyed by verb type. Each entry is
 #: {verb_type: notation}; the parse test derives the expected script filename by
@@ -26,11 +25,9 @@ EXPECTED_VERBS = {
 
 def _load_extension():
     """Load the pm-dev-java-cui bundle extension.py and return an Extension instance."""
-    extension_path = MARKETPLACE_ROOT / 'pm-dev-java-cui' / 'skills' / 'plan-marshall-plugin' / 'extension.py'
-    spec = importlib.util.spec_from_file_location('extension_pm_dev_java_cui', extension_path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = load_skill_module(
+        'pm-dev-java-cui', 'plan-marshall-plugin', 'extension.py', 'extension_pm_dev_java_cui'
+    )
     return module.Extension()
 
 

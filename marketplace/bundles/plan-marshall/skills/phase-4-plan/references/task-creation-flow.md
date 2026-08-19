@@ -23,8 +23,8 @@ solution_outline.md                        TASK-*.toon (created by task-plan)
 ## Terminal Step — Manifest Emission
 
 After tasks are created and the execution order is computed, phase-4-plan
-emits the per-plan **execution manifest** as the terminal step before phase
-transition (SKILL.md Step 8b). The manifest is the single source of truth
+emits the per-plan **execution manifest** as the terminal step before the
+Q-Gate (SKILL.md Step 7b). The manifest is the single source of truth
 that drives Phase 5's verification step selection and Phase 6's finalize-step
 dispatch — phases 5 and 6 read it and obey, no per-doc skip logic remains in
 their standards.
@@ -32,10 +32,10 @@ their standards.
 ```text
 phase-4-plan
    │
-   ├── Step 5..7: Create tasks (per-deliverable + holistic)
-   ├── Step 8:    Compute execution order (parallel groups)
+   ├── Step 5+6: Create tasks (per-deliverable)
+   ├── Step 7:    Compute execution order (parallel groups)
    │
-   ├── Step 8b:   ┌────────────────────────────────────────────┐
+   ├── Step 7b:   ┌────────────────────────────────────────────┐
    │              │  manage-execution-manifest compose         │
    │              │  inputs: change_type, track,               │
    │              │          scope_estimate, recipe_key,       │
@@ -54,9 +54,9 @@ phase-4-plan
    │              │  step IDs                                  │
    │              └────────────────────────────────────────────┘
    │
-   ├── Step 9:    Q-Gate (verifies created tasks)
-   ├── Step 10:   Record lessons
-   └── Step 11:   Phase transition → phase-5-execute
+   ├── Step 8:    Q-Gate (verifies created tasks)
+   ├── Step 9:    Record lessons
+   └── Step 10:   Phase transition → phase-5-execute
                                 │
                                 ▼
               phase-5-execute reads execution.toon for

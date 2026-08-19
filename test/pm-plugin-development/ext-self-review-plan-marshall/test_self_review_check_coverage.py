@@ -104,7 +104,7 @@ class TestCountedListCheckCoverage:
         population = _counted_lists()
         # Guard against a silently empty population. A set-guarding test that can
         # pass having enumerated nothing is exactly the vacuous-confident-zero
-        # archetype this plan is about, so the population size is asserted > 0
+        # archetype under test, so the population size is asserted > 0
         # and PUBLISHED before the coverage claim is made.
         assert len(population) > 0
         print(f'counted candidate lists (population size): {len(population)}')

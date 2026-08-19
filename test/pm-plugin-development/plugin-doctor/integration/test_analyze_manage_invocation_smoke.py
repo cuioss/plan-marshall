@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import load_script_module
+from conftest import PROJECT_ROOT, load_script_module
 
 # ---------------------------------------------------------------------------
 # Module loader — load the analyzer directly from the marketplace scripts dir.
@@ -50,7 +50,6 @@ RULE_MANAGE_INVOCATION_INVALID = _ami.RULE_MANAGE_INVOCATION_INVALID
 
 # Repository (worktree) root:
 # test/pm-plugin-development/plugin-doctor/integration/ -> 4 up.
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
 
 
 def _real_executor() -> Path | None:

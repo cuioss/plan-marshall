@@ -193,29 +193,29 @@ Each dispatched phase envelope (phases 2–6) runs the workflow doc inside the s
 │    /manage-solution-outline load-deliverables/   (script — Step 3)                 │
 │    /manage-tasks dependency-graph/               (script — Step 4)                 │
 │                                                                                    │
-│  Inside the dispatch (Steps 5+6+7 — task-creation loop iterates HERE):             │
+│  Inside the dispatch (Steps 5+6 — task-creation loop iterates HERE):               │
 │                                                                                    │
 │    LLM judgement loop, per deliverable                                             │
 │    ─────────────────────────────────                                               │
 │    • Step 5: create tasks from profiles (1:N, optional-skill LLM matching)         │
 │    • Step 6: anchoring, breaking-refactor split                                    │
 │                ?AskUserQuestion? when split decision is ambiguous                  │
-│    • Step 7: holistic verification tasks                                           │
 │                                                                                    │
 │  Orchestrator-side post:                                                           │
-│    /manage-tasks topological-sort/               (script — Step 8)                 │
-│    /manage-execution-manifest compose/           (script — Step 8b)                │
-│    /manage-tasks qgate-mechanical-checks/        (script — Step 9)                 │
+│    /manage-tasks topological-sort/               (script — Step 7)                 │
+│    /manage-execution-manifest compose/           (script — Step 7b)                │
+│    /manage-tasks qgate-mechanical-checks/        (script — Step 8)                 │
 │      coverage / skill-resolution / acyclic / files-exist /                         │
-│      keyword-drift / structural-token-drift                                        │
+│      keyword-drift / structural-token-drift /                                      │
+│      declared-set-closure / declared-scope-reconciliation                          │
 │                                                                                    │
-│    ══►  [q-gate-validation]   (Step 9b — unconditional;                            │
+│    ══►  [q-gate-validation]   (Step 8b — unless B1/B2 suppress it;                 │
 │         module-mapping + scope-criterion validators against live ground truth)     │
 │                                                                                    │
 └────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Execution-profile routing into the manifest.** The `manage-execution-manifest compose` step above is the single resolver for the execution-profile posture (`minimal` / `standard` / `full`). `phase-1-init`'s planning-lane router projects a recommended posture over its signals and the init posture dialogue persists the chosen value to `status.metadata.execution_profile`; `compose` then reads that posture and resolves each finalize element's `lane:` frontmatter block to produce the posture-pruned `phase_6.steps`. The profile is a distinct axis from the `planning_lane` (`light` / `deep`) depth decision — the two compose but do not coerce each other (`deep_lane: always` forces a deep planning lane without forcing a `full` profile). `compose` runs twice — provisional at init, idempotent re-compose with firm signals at Step 8b — so the posture-dialogue preview (`lanes preview`) and the executed finalize flow cannot diverge. See [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) § "Execution-profile lane resolution".
+**Execution-profile routing into the manifest.** The `manage-execution-manifest compose` step above is the single resolver for the execution-profile posture (`minimal` / `standard` / `full`). `phase-1-init`'s planning-lane router projects a recommended posture over its signals and the init posture dialogue persists the chosen value to `status.metadata.execution_profile`; `compose` then reads that posture and resolves each finalize element's `lane:` frontmatter block to produce the posture-pruned `phase_6.steps`. The profile is a distinct axis from the `planning_lane` (`light` / `deep`) depth decision — the two compose but do not coerce each other (`deep_lane: always` forces a deep planning lane without forcing a `full` profile). `compose` runs twice — provisional at init, idempotent re-compose with firm signals at Step 7b — so the posture-dialogue preview (`lanes preview`) and the executed finalize flow cannot diverge. See [`manage-execution-manifest/standards/decision-rules.md`](../../manage-execution-manifest/standards/decision-rules.md) § "Execution-profile lane resolution".
 
 ### 2.5 phase-5-execute
 
@@ -364,7 +364,7 @@ The phase-scoped resolver bubbles every dispatch up from the caller phase's sub-
 │                                                                                        │
 │   phase-2-refine Step 13.5 (lesson plans only)           ═╗                            │
 │   phase-3-outline Step 11   (outline-time Q-Gate)         ═╬══►  [q-gate-validation]   │
-│   phase-4-plan Step 9b   (plan-time Q-Gate)            ═╝     (resolves under the      │
+│   phase-4-plan Step 8b   (plan-time Q-Gate)            ═╝     (resolves under the      │
 │                                                          calling phase's               │
 │                                                          default — no --role)          │
 │                                                                                        │
@@ -448,9 +448,9 @@ The granularity heuristics live in `../../extension-api/standards/dispatch-granu
 | phase-3-outline Step 4 change-type | Script + LLM fallback | Keyword classifier resolves majority; ambiguous escalates. |
 | phase-3-outline Complex Track Steps 9c+10+10b | Bundle into `phase-3-outline` | Per-deliverable loop iterates in-context. |
 | phase-3-outline Step 11 Q-Gate (outline-time) | `--phase phase-3-outline` (q-gate-validation tracks phase default) | Bypassed when `scope_estimate=surgical` AND `change_type ∈ {bug_fix, tech_debt, verification}` AND `deliverable_count=1`. |
-| phase-4-plan Steps 5+6+7 task creation | Bundle into `phase-4-plan` | Per-deliverable loop iterates in-context. |
-| phase-4-plan Step 9 mechanical Q-Gate checks | Script | Pure regex + graph + filesystem. |
-| phase-4-plan Step 9b LLM Q-Gate | `--phase phase-4-plan` (q-gate-validation tracks phase default) | Unconditional after every successful phase-4-plan invocation (module-mapping + scope-criterion validators reconcile LLM-authored shape against live ground truth). |
+| phase-4-plan Steps 5+6 task creation | Bundle into `phase-4-plan` | Per-deliverable loop iterates in-context. |
+| phase-4-plan Step 8 mechanical Q-Gate checks | Script | Pure regex + graph + filesystem. Unconditional — no knob, no predicate — which is what keeps the closure checks reachable when Step 8b is suppressed. |
+| phase-4-plan Step 8b LLM Q-Gate | `--phase phase-4-plan` (q-gate-validation tracks phase default) | After every successful phase-4-plan invocation EXCEPT when the `q_gate_validation` knob is `off` (B1) or the surgical-scope bypass (B2) fires (module-mapping + scope-criterion validators reconcile LLM-authored shape against live ground truth). |
 | phase-5-execute per-task execution | `phase-5-execute.default` per-task dispatch | One envelope per task. |
 | phase-5-execute Step 9 independent verification | Inline scripts | git diff + grep + exit-code; no LLM. |
 | phase-5-execute Step 11/11b triage | `phase-5-execute.verification-feedback` (producer=build-runner) | Producer pre-flight, then triage Steps 1-6. |

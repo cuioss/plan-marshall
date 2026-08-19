@@ -24,30 +24,25 @@ Covered:
 """
 
 import builtins
-import importlib.util
 import subprocess
 from pathlib import Path
 
 from _dep_detection import DependencyType
 from extension_base import NOTE_SAMPLE_LIMIT, DerivationResolverBase, ExtensionBase
 
-from conftest import MARKETPLACE_ROOT, load_script_module
-
-EXTENSION_FILE = MARKETPLACE_ROOT / 'pm-dev-python' / 'skills' / 'plan-marshall-plugin' / 'extension.py'
+from conftest import load_script_module, load_skill_module
 
 
 def _load_extension_module():
-    """Load the pm-dev-python bundle extension.py by explicit file path.
+    """Load the pm-dev-python bundle extension.py by ``(bundle, skill, file)`` identity.
 
     Every domain bundle ships an ``extension.py`` sharing the module basename
-    ``extension``; loading via ``spec_from_file_location`` against the explicit
-    path avoids the cross-bundle ``import extension`` collision.
+    ``extension``, so a distinct ``module_name`` is passed to avoid the
+    cross-bundle ``import extension`` collision.
     """
-    spec = importlib.util.spec_from_file_location('extension_pm_dev_python_resolver', EXTENSION_FILE)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_skill_module(
+        'pm-dev-python', 'plan-marshall-plugin', 'extension.py', 'extension_pm_dev_python_resolver'
+    )
 
 
 _extension_module = _load_extension_module()

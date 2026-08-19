@@ -65,6 +65,18 @@ point of scanning ``.py`` is to catch lesson IDs in comments, docstrings, and
 string literals, so those contexts are deliberately in scope. Only the
 path-allowlist applies to Python.
 
+That divergence from the sibling ``test-docstring-historical-prose`` rule — which
+DOES exempt a match inside a backtick span or a quoted string, because a lesson id
+in test prose is frequently the test's own data — is deliberate, and it costs
+nothing on the corpus this rule governs. Every lesson-ID-shaped token under
+``marketplace/bundles/**`` is already accounted for by an existing suppression:
+the path-allowlist, a markdown fence, or the markdown inline-code exemption. No
+token anywhere in that tree sits in a literal span that only the sibling's
+exemption would reach, so importing it here would remove no false positive while
+adding a way to hide a real citation inside backticks in a Python file. The one
+Python literal-span occurrence in the tree is itself a narrative citation, inside
+an allowlisted path — which is the shape the import would wrongly exempt.
+
 In addition, for both file classes a per-file frontmatter disable list
 (``plugin-doctor-disable: [no-lesson-id-in-skill-prose]``) suppresses every
 finding in that file (file-scoped, via the shared substrate).

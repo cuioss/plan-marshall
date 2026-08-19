@@ -27,6 +27,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -71,12 +73,12 @@ class TestValidLaneBlocks:
     def test_core_minimal_block_is_valid(self, tmp_path: Path) -> None:
         scoped = _bundle_dir(tmp_path)
         _write(scoped / 'a.md', _frontmatter('lane:\n  class: core\n  cost_size: XS\n'))
-        assert analyze_lane_frontmatter(tmp_path) == []
+        assert_analyzer_findings(analyze_lane_frontmatter, tmp_path, [])
 
     def test_adversarial_with_explicit_tier_is_valid(self, tmp_path: Path) -> None:
         scoped = _bundle_dir(tmp_path)
         _write(scoped / 'b.md', _frontmatter('lane:\n  class: adversarial\n  tier: full\n  cost_size: L\n'))
-        assert analyze_lane_frontmatter(tmp_path) == []
+        assert_analyzer_findings(analyze_lane_frontmatter, tmp_path, [])
 
     def test_prunable_with_predicate_is_valid(self, tmp_path: Path) -> None:
         scoped = _bundle_dir(tmp_path)
@@ -84,17 +86,17 @@ class TestValidLaneBlocks:
             scoped / 'c.md',
             _frontmatter('lane:\n  class: prunable\n  tier: standard\n  prunable_when: no_code_delta\n  cost_size: L\n'),
         )
-        assert analyze_lane_frontmatter(tmp_path) == []
+        assert_analyzer_findings(analyze_lane_frontmatter, tmp_path, [])
 
     def test_derived_state_block_is_valid(self, tmp_path: Path) -> None:
         scoped = _bundle_dir(tmp_path)
         _write(scoped / 'd.md', _frontmatter('lane:\n  class: derived-state\n  cost_size: XS\n'))
-        assert analyze_lane_frontmatter(tmp_path) == []
+        assert_analyzer_findings(analyze_lane_frontmatter, tmp_path, [])
 
     def test_quoted_scalar_values_accepted(self, tmp_path: Path) -> None:
         scoped = _bundle_dir(tmp_path)
         _write(scoped / 'e.md', _frontmatter('lane:\n  class: "core"\n  cost_size: \'XXL\'\n'))
-        assert analyze_lane_frontmatter(tmp_path) == []
+        assert_analyzer_findings(analyze_lane_frontmatter, tmp_path, [])
 
 
 # ===========================================================================
@@ -166,12 +168,12 @@ class TestNonParticipatingFiles:
     def test_file_without_frontmatter_is_ignored(self, tmp_path: Path) -> None:
         scoped = _bundle_dir(tmp_path)
         _write(scoped / 'a.md', '# Plain doc\n\nNo frontmatter here.\n')
-        assert analyze_lane_frontmatter(tmp_path) == []
+        assert_analyzer_findings(analyze_lane_frontmatter, tmp_path, [])
 
     def test_frontmatter_without_lane_block_is_ignored(self, tmp_path: Path) -> None:
         scoped = _bundle_dir(tmp_path)
         _write(scoped / 'a.md', '---\nname: default:demo\norder: 5\n---\n\n# Demo\n')
-        assert analyze_lane_frontmatter(tmp_path) == []
+        assert_analyzer_findings(analyze_lane_frontmatter, tmp_path, [])
 
     def test_lane_in_body_code_fence_is_not_frontmatter(self, tmp_path: Path) -> None:
         """A ``lane:`` example inside the body (not the leading frontmatter) is ignored."""
@@ -180,7 +182,7 @@ class TestNonParticipatingFiles:
             scoped / 'a.md',
             '# Doc\n\nExample block:\n\n```yaml\nlane:\n  class: bogus\n  cost_size: HUGE\n```\n',
         )
-        assert analyze_lane_frontmatter(tmp_path) == []
+        assert_analyzer_findings(analyze_lane_frontmatter, tmp_path, [])
 
     def test_recipe_lane_seed_block_is_skipped(self, tmp_path: Path) -> None:
         """A recipe lane SEED block (``profile:`` posture) is a different contract — not flagged.
@@ -195,7 +197,7 @@ class TestNonParticipatingFiles:
             scoped / 'recipe.md',
             '---\nname: recipe-demo\nlane:\n  profile: standard\n  steps:\n    sonar-roundtrip: off\n---\n',
         )
-        assert analyze_lane_frontmatter(tmp_path) == []
+        assert_analyzer_findings(analyze_lane_frontmatter, tmp_path, [])
 
 
 # ===========================================================================
@@ -229,4 +231,4 @@ class TestFindingShapeAndScope:
 
     def test_absent_tree_returns_empty_list(self, tmp_path: Path) -> None:
         missing = tmp_path / 'does-not-exist'
-        assert analyze_lane_frontmatter(missing) == []
+        assert_analyzer_findings(analyze_lane_frontmatter, missing, [])

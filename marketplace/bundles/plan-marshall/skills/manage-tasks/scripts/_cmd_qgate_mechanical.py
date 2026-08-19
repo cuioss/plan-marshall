@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Q-Gate mechanical checks for phase-4-plan Step 9.
+"""Q-Gate mechanical checks for phase-4-plan Step 8.
 
 Pure regex + graph + filesystem deterministic checks over the just-written
 tasks and parent deliverables. Each failure becomes a Q-Gate finding under
@@ -9,7 +9,7 @@ without modification; the script's return TOON reports per-check counts
 and an ``ambiguous`` flag the caller uses to decide whether the LLM
 q-gate-validation dispatch still needs to fire.
 
-Six checks:
+Eight checks:
   1. coverage              — every deliverable has >= 1 task; tasks reference real deliverables
   2. skill_resolution      — every non-verification task has domain + valid ``bundle:skill`` shape
   3. acyclic               — depends_on graph is a DAG (Kahn-style topological pass)
@@ -17,6 +17,25 @@ Six checks:
                              (read/delete require existence; write-new forbids it; write-replace skips)
   5. keyword_drift         — planning-domain keywords in description absent from deliverable haystack
   6. structural_token_drift — TASK-NNN numbering monotonic starting at 001 with no gaps
+  7. declared_set_closure  — projection + referrer closure between deliverable write-sets and
+                             task step targets (see ``_qgate_closure``)
+  8. declared_scope_reconciliation — claim-versus-index closure: every declared glob expanded
+                             against the tree and reconciled with the enumerated declaration
+
+Checks 1-6 ask whether each declared thing is WELL-FORMED and RESOLVES.
+Checks 7-8 ask whether the declared SET IS COMPLETE. Those are different
+questions, and a plan can pass every one of the first six while omitting the
+one path that mattered — the omission is invisible to them by construction,
+because what is missing is exactly what never entered the declaration they
+read.
+
+**These closure checks run unconditionally, and that is load-bearing.**
+phase-4-plan's Step 8b surgical-scope bypass can suppress the DISPATCHED LLM
+q-gate-validation when a plan declares few enough affected files — a
+suppression driven by the very declaration whose completeness is in question.
+This script is Step 8, which runs on every phase-4-plan invocation with no
+bypass, so a closure claim can never license skipping the check that would
+test it.
 """
 
 from __future__ import annotations
@@ -32,6 +51,10 @@ from _plan_parsing import (
     parse_document_sections,
     split_deliverable_blocks,
 )
+from _qgate_closure import (
+    check_declared_scope_reconciliation,
+    check_declared_set_closure,
+)
 from _tasks_core import get_all_tasks, get_tasks_dir
 from constants import FILE_SOLUTION_OUTLINE
 from file_ops import get_plan_dir
@@ -44,7 +67,7 @@ _FINDING_TYPE = 'triage'
 # Planning-domain keywords whose presence in a task.description but absence
 # from the parent deliverable haystack indicates compound-word drift
 # (PR review / CI etc. is planning vocabulary leaking into task narrative).
-# Mirrors the existing inline Step 9 prose in phase-4-plan/SKILL.md.
+# Mirrors the existing inline Step 8 prose in phase-4-plan/SKILL.md.
 _PLANNING_KEYWORDS: tuple[str, ...] = (
     'PR review',
     'CI',
@@ -398,8 +421,9 @@ def _check_files_exist(
                     detail = (
                         f'TASK-{number:03d} {t.get("title", "?")!r} declares step '
                         f'target {target!r}, which is not present on disk. '
-                        f"Phase-4-plan steps must list paths from the deliverable's "
-                        f'Affected files section; create the file or correct the '
+                        f'Phase-4-plan steps must list paths the deliverable declares '
+                        f'(Affected files, Files expected to mutate, or Files to '
+                        f'survey); create the file or correct the '
                         f'path before phase-5-execute reads it.'
                     )
                 emitted += _emit_finding(
@@ -417,7 +441,7 @@ def _check_files_exist(
 def _build_haystack(deliverable: dict[str, Any], prose: str = '') -> str:
     """Concatenate a deliverable's fields AND its prose into one haystack.
 
-    Mirrors the Step 9 keyword-drift recipe in phase-4-plan/SKILL.md.
+    Mirrors the Step 8 keyword-drift recipe in phase-4-plan/SKILL.md.
 
     ``prose`` is the deliverable's verbatim block body. It is part of the
     haystack because the check asks whether a task description says something
@@ -574,7 +598,7 @@ def _check_structural_token_drift(
 
 
 def cmd_qgate_mechanical(args) -> dict[str, Any]:
-    """Run the six mechanical Q-Gate checks for a plan.
+    """Run the mechanical Q-Gate checks for a plan.
 
     Returns a TOON-shaped dict with per-check counts and overall pass/fail
     aggregate so the caller can decide whether the LLM q-gate-validation
@@ -644,13 +668,64 @@ def cmd_qgate_mechanical(args) -> dict[str, Any]:
     findings_emitted += e
     checks['structural_token_drift'] = {'failed': structural_failed}
 
+    # Checks 7-8: the CLOSURE pass. Both compute their gaps purely (no findings
+    # store, no plan directory) and hand back records this loop persists, so the
+    # closure itself stays testable without a fixture plan.
+    closure_gaps, closure_population = check_declared_set_closure(all_tasks, deliverables)
+    scope_gaps, scope_population = check_declared_scope_reconciliation(deliverables, repo_root)
+
+    for gap in closure_gaps:
+        findings_emitted += _emit_finding(
+            plan_id,
+            title=gap['title'],
+            detail=gap['detail'],
+            persist_failures=persist_failures,
+            file_path=gap['file_path'],
+            emit=emit,
+        )
+    checks['declared_set_closure'] = {'failed': len(closure_gaps)}
+
+    for gap in scope_gaps:
+        findings_emitted += _emit_finding(
+            plan_id,
+            title=gap['title'],
+            detail=gap['detail'],
+            persist_failures=persist_failures,
+            file_path=gap['file_path'],
+            emit=emit,
+        )
+    checks['declared_scope_reconciliation'] = {'failed': len(scope_gaps)}
+
     total_failed = sum(c['failed'] for c in checks.values())
 
     # ``ambiguous`` flips when the script could not evaluate a check that
     # depended on parseable inputs — coverage and keyword_drift both fall
     # silent when solution_outline.md is missing or malformed, so the
     # caller must re-run the LLM judgement instead of trusting the zero.
-    ambiguous = not parseable
+    #
+    # A closure check whose POPULATION was incomplete flips it for the same
+    # reason, and this is the normative assertion the closure pass rests on:
+    #
+    #     detector_population ⊇ fix_set_population
+    #
+    # The set a closure check scanned must contain every element the plan
+    # claims to cover. When it does not — a task naming a deliverable the
+    # outline lacks, a declared glob that could not be expanded, an expansion
+    # stopped at the match ceiling — the check's zero is a statement about what
+    # it managed to read, not about the plan. Stating it here as a line the
+    # caller acts on, rather than leaving it as an implicit consequence of
+    # which root the scan happened to start from, is the difference between a
+    # guarantee and a coincidence: a glob that matches nothing looks identical
+    # to a glob that matches everything, and only the published population
+    # separates them.
+    population = {
+        'declared_set_closure': closure_population,
+        'declared_scope_reconciliation': scope_population,
+    }
+    population_complete = bool(
+        closure_population['population_complete'] and scope_population['population_complete']
+    )
+    ambiguous = not parseable or not population_complete
 
     return {
         'status': 'success',
@@ -658,6 +733,8 @@ def cmd_qgate_mechanical(args) -> dict[str, Any]:
         'tasks_scanned': len(all_tasks),
         'deliverables_scanned': len(deliverables),
         'checks': checks,
+        'population': population,
+        'population_complete': population_complete,
         'total_failed': total_failed,
         'findings_emitted': findings_emitted,
         'ambiguous': ambiguous,

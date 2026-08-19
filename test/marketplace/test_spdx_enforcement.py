@@ -12,7 +12,8 @@ from pathlib import Path
 
 import pytest
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+from conftest import PROJECT_ROOT
+
 BUILD_PY = PROJECT_ROOT / 'build.py'
 
 HEADER = '# SPDX-License-Identifier: FSL-1.1-ALv2'

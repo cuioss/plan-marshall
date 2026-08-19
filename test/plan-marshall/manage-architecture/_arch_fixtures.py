@@ -4,7 +4,7 @@
 Hoisted from per-file duplicate helper definitions (D5 in
 solution_outline.md). Named ``_arch_fixtures.py`` (NOT bare
 ``_fixtures.py``) to avoid pytest module-name collision with
-``test/plan-marshall/plan-retrospective/_fixtures.py``; pytest does not
+``test/plan-marshall/plan-retrospective/_plan_retrospective_fixtures.py``; pytest does not
 use ``__init__.py`` here, so identical bare module names would resolve
 to whichever helper is imported first. The helpers are loaded explicitly
 via import and never shadow ``test/conftest.py``. See

@@ -8,6 +8,11 @@ change footprint, so every classification derived from the list — the file-typ
 bucket, whether a testing profile is warranted — is a statement about the
 write-set alone.
 
+The write-set also unions a survey-scope deliverable's ``**Files expected to
+mutate:**`` field, which is declared change intent by another name. These
+fixtures exercise the ``Affected files`` half only; the survey half has its own
+suite in ``test_survey_scope_declaration.py``.
+
 Reading the wholesale list instead let one read-only reference flip a
 classification: a consulted test file made a deliverable look test-bearing, and a
 consulted ``.py`` made a documentation-only deliverable look like code. The

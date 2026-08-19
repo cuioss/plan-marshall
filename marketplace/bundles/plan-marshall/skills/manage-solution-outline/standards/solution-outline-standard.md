@@ -52,7 +52,7 @@ Classifies the change footprint. Required field; the validator rejects the docum
 | `multi_module` | Touches more than one module |
 | `broad` | Codebase-wide changes (glob-only file lists, sweeping refactors) |
 
-**Derivation helper (rule of thumb)**: Compute `scope_estimate` from the union of `affected_files` across all deliverables.
+**Derivation helper (rule of thumb)**: Compute `scope_estimate` from the union of every deliverable's **declared file surface** — `affected_files`, plus the `Files to survey:` / `Files expected to mutate:` pair a survey-scope deliverable declares instead of a flat list, across all deliverables. ⛔ Reading `affected_files` alone would band a survey-scope plan `none` (its flat list is empty) and so feed the phase-4-plan surgical-scope bypass the narrowest possible answer for the deliverables whose scope is *least* knowable — see `phase-4-plan/SKILL.md` § Step 8b B2, whose second conjunct reads the same widened surface.
 
 1. If the union is empty (analysis-only) → `none`.
 2. Else if all files map to a single module AND the count is ≤3 AND no file is in a public API surface → `surgical`.
@@ -211,8 +211,8 @@ The `manage-solution-outline validate` command checks:
 3. Solution Metadata block contains `scope_estimate` with a value in the enum (`none|surgical|single_module|multi_module|broad`)
 4. Deliverables section has numbered `### N. Title` items
 5. At least one deliverable defined
-6. Deliverable contract compliance (Metadata, Profiles, Affected files, Verification)
-7. Every `Affected files` entry carries a required `(intent)` marker whose value is one of `read|write-new|write-replace|delete` — a missing or invalid marker is a hard error
+6. Deliverable contract compliance (Metadata, Profiles, a declared file surface, Verification). The file surface is `Affected files`, OR — for a survey-scope deliverable — the disjoint pair `Files to survey:` + `Files expected to mutate:`, OR nothing at all when the deliverable is verification-only
+7. Every `Affected files` entry carries a required `(intent)` marker whose value is one of `read|write-new|write-replace|delete` — a missing or invalid marker is a hard error. The survey pair is exempt: its documented form carries no markers, and its candidate pool may name a pattern, so neither the marker requirement nor the wildcard rejection applies to it
 8. Compatibility extraction from header metadata (if present)
 
 **Validation Command**:
@@ -300,7 +300,8 @@ For the exact fill-in-the-blank structure, see:
 | `module` | Yes | Module name from architecture | Skill resolution |
 | `depends` | Yes | Dependencies on other deliverables | Ordering, parallelization |
 | `**Profiles:**` | Yes | List of profiles (implementation, module_testing) | Task creation (1:N) |
-| `Affected files` | Yes | Explicit file list, each with a required `(intent)` marker | Step generation, intent-aware files_exist gate |
+| `Affected files` | Conditional | Explicit file list, each with a required `(intent)` marker. Required UNLESS the deliverable is survey-scope (declaring the pair below instead) or verification-only | Step generation, intent-aware files_exist gate |
+| `Files to survey` + `Files expected to mutate` | Conditional | The survey-scope alternative to `Affected files`, declared as a disjoint PAIR — one field alone is not a complete declaration. Neither carries `(intent)` markers, and the candidate pool MAY name a pattern | Write-set derivation, declared-scope reconciliation at the phase-4-plan Q-Gate |
 | `Change per file` | Yes | What changes | Task description |
 | `Pattern` | Conditional | Code/format pattern | Implementation guide |
 | `Verification` | Yes | How to verify | Task verification |

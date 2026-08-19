@@ -36,7 +36,7 @@ from pathlib import Path
 
 import pytest
 from conftest import MARKETPLACE_ROOT, load_script_module
-from _fixtures import assert_analyzer_findings
+from _plugin_doctor_fixtures import assert_analyzer_findings
 
 
 def _load_module(name: str, filename: str):

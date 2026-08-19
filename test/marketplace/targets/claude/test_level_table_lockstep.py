@@ -22,14 +22,14 @@ from __future__ import annotations
 
 import json
 import re
-from pathlib import Path
 
+from conftest import PROJECT_ROOT
 from marketplace.targets.claude.variant_emitter import (
     ALIAS_GATED_EFFORTS,
     LEVEL_TABLE,
 )
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = PROJECT_ROOT
 EFFORT_LEVELS_MD = (
     REPO_ROOT
     / 'marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-levels.md'

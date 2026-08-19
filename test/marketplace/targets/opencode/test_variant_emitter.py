@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from conftest import PROJECT_ROOT
 from marketplace.targets.claude.variant_emitter import EXTENSION_POINT
 from marketplace.targets.opencode.emitter import emit_bundles
 from marketplace.targets.opencode.frontmatter import load_mapping, load_rules, parse_frontmatter
@@ -27,7 +28,7 @@ from marketplace.targets.opencode.variant_emitter import (
     selected_levels,
 )
 
-CONFIG_DIR = Path(__file__).resolve().parents[4] / 'marketplace' / 'targets' / 'opencode'
+CONFIG_DIR = PROJECT_ROOT / 'marketplace' / 'targets' / 'opencode'
 ALL_LEVELS = [f'level-{n}' for n in range(1, 8)]
 
 

@@ -301,6 +301,164 @@ def test_plan_deliverable_id_in_comment_is_flagged(tmp_path):
     assert [f['details']['kind'] for f in findings] == ['plan_deliverable_id']
 
 
+def test_unlettered_deliverable_ordinal_is_flagged(tmp_path):
+    """A deliverable cited by bare ordinal is flagged like the lettered spelling."""
+    _write(
+        tmp_path,
+        'test_unlettered.py',
+        '''
+        def test_x():
+            """Retains the guard Deliverable 2 introduced."""
+            assert True
+        ''',
+    )
+
+    findings = analyze_test_docstring_prose(tmp_path)
+
+    assert [f['details']['kind'] for f in findings] == ['plan_deliverable_id']
+    assert findings[0]['details']['matched'] == 'Deliverable 2'
+
+
+def test_bare_record_number_is_flagged(tmp_path):
+    """A record number cited without a ``PR`` prefix is flagged."""
+    _write(
+        tmp_path,
+        'test_bare.py',
+        '''
+        def test_x():
+            """Retains bot review on large plans (reviewer finding in #551)."""
+            assert True
+        ''',
+    )
+
+    findings = analyze_test_docstring_prose(tmp_path)
+
+    assert [f['details']['kind'] for f in findings] == ['pr_reference']
+    assert findings[0]['details']['matched'] == '#551'
+
+
+def test_spelled_out_pull_request_reference_is_flagged(tmp_path):
+    """The ``pull request #NNN`` spelling is flagged like the ``PR #NNN`` one.
+
+    The prefixed alternative accepts both words, and only one of them had a case.
+    An untested alternative is one nobody notices losing: this spelling carries no
+    digit bound, so a regression narrowing it would be invisible to the bare-form
+    cases above, which do.
+    """
+    _write(
+        tmp_path,
+        'test_spelled_out.py',
+        '''
+        def test_x():
+            """Keeps the ordering pull request #849 established."""
+            assert True
+        ''',
+    )
+
+    findings = analyze_test_docstring_prose(tmp_path)
+
+    assert [f['details']['kind'] for f in findings] == ['pr_reference']
+    assert findings[0]['details']['matched'] == 'pull request #849'
+
+
+def test_single_digit_bare_number_is_not_flagged(tmp_path):
+    """A one-digit bare number is intra-document enumeration, not a record id."""
+    _write(
+        tmp_path,
+        'test_enumerate.py',
+        """
+        def test_x():
+            # Mis-attribution #1: the caller's own frame is skipped.
+            assert True
+        """,
+    )
+
+    assert analyze_test_docstring_prose(tmp_path) == []
+
+
+def test_prefixed_single_digit_record_is_still_flagged(tmp_path):
+    """The digit bound is local to the bare form — an explicit ``PR`` prefix still fires.
+
+    Pinning this alongside the bare-form bound is what keeps a later widening from
+    "simplifying" the two alternatives into one and silently losing the short
+    unambiguous spelling.
+    """
+    _write(
+        tmp_path,
+        'test_short_pr.py',
+        '''
+        def test_x():
+            """Retains the guard PR #7 introduced."""
+            assert True
+        ''',
+    )
+
+    findings = analyze_test_docstring_prose(tmp_path)
+
+    assert [f['details']['kind'] for f in findings] == ['pr_reference']
+
+
+def test_number_inside_a_hyphenated_compound_is_not_flagged(tmp_path):
+    """A number embedded in a hyphenated compound names a state, not a record.
+
+    ``pre-<n>`` and ``post-<n>`` are how this corpus names schema and code eras it
+    asserts on, so the number is the test's own data.
+    """
+    _write(
+        tmp_path,
+        'test_compound.py',
+        """
+        def test_x():
+            # A pre-#812 record carries neither marker of the pair.
+            assert True
+        """,
+    )
+
+    assert analyze_test_docstring_prose(tmp_path) == []
+
+
+def test_record_number_opening_a_docstring_is_flagged(tmp_path):
+    """A citation at the very first character of a docstring is flagged.
+
+    The bound that keeps a comment's own ``#`` delimiter from reading as a citation
+    must not also silence a docstring that opens with one — the two look identical
+    to a lookbehind, and only one of them is punctuation.
+    """
+    _write(
+        tmp_path,
+        'test_opening.py',
+        '''
+        def test_x():
+            """#1014 regression: the refusal is seen only because it is filed as data."""
+            assert True
+        ''',
+    )
+
+    findings = analyze_test_docstring_prose(tmp_path)
+
+    assert [f['details']['kind'] for f in findings] == ['pr_reference']
+    assert findings[0]['details']['matched'] == '#1014'
+
+
+def test_comment_delimiter_does_not_read_as_a_record_number(tmp_path):
+    """A comment whose text begins with digits is not a citation of that number.
+
+    Comment segments arrive from ``tokenize`` with the ``#`` delimiter attached, so
+    without the preceding-character bound the delimiter itself would open a match.
+    """
+    _write(
+        tmp_path,
+        'test_delimiter.py',
+        """
+        def test_x():
+            #551 rows are emitted before the summary.
+            assert True
+        """,
+    )
+
+    assert analyze_test_docstring_prose(tmp_path) == []
+
+
 def test_present_tense_docstring_is_not_flagged(tmp_path):
     """A docstring stating the invariant in the present tense produces no finding."""
     _write(

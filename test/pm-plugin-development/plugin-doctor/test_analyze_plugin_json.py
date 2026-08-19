@@ -34,6 +34,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -109,9 +111,7 @@ class TestComponentDeclared:
         _make_skill(bundle, 'my-skill', user_invocable=True)
         _write_plugin_json(bundle, {'skills': ['./skills/my-skill']})
 
-        findings = analyze_plugin_json_orphans(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_plugin_json_orphans, tmp_path, [])
 
     def test_declared_agent_and_command_silent(self, tmp_path: Path) -> None:
         bundle = tmp_path / 'my-bundle'
@@ -125,14 +125,10 @@ class TestComponentDeclared:
             },
         )
 
-        findings = analyze_plugin_json_orphans(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_plugin_json_orphans, tmp_path, [])
 
     def test_empty_root_returns_no_findings(self, tmp_path: Path) -> None:
-        findings = analyze_plugin_json_orphans(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_plugin_json_orphans, tmp_path, [])
 
 
 # ===========================================================================
@@ -149,11 +145,8 @@ class TestOrphanComponent:
         # plugin.json declares NOTHING — the skill is an orphan.
         _write_plugin_json(bundle, {})
 
-        findings = analyze_plugin_json_orphans(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_plugin_json_orphans, tmp_path, [RULE_ID])
         finding = findings[0]
-        assert finding['rule_id'] == RULE_ID
         assert finding['type'] == RULE_ID
         assert finding['severity'] == 'warning'
         assert finding['fixable'] is False
@@ -169,9 +162,7 @@ class TestOrphanComponent:
         agent_md = _make_agent(bundle, 'orphan-agent')
         _write_plugin_json(bundle, {})
 
-        findings = analyze_plugin_json_orphans(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_plugin_json_orphans, tmp_path, [RULE_ID])
         finding = findings[0]
         assert finding['details']['component_kind'] == 'agent'
         assert finding['details']['disk_entry'] == 'agents/orphan-agent.md'
@@ -182,9 +173,7 @@ class TestOrphanComponent:
         _make_command(bundle, 'orphan-command')
         _write_plugin_json(bundle, {})
 
-        findings = analyze_plugin_json_orphans(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_plugin_json_orphans, tmp_path, [RULE_ID])
         assert findings[0]['details']['component_kind'] == 'command'
 
     def test_only_undeclared_components_flagged(self, tmp_path: Path) -> None:
@@ -193,9 +182,7 @@ class TestOrphanComponent:
         _make_skill(bundle, 'orphan-skill', user_invocable=True)
         _write_plugin_json(bundle, {'skills': ['./skills/declared-skill']})
 
-        findings = analyze_plugin_json_orphans(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_plugin_json_orphans, tmp_path, [RULE_ID])
         assert findings[0]['details']['disk_entry'] == 'skills/orphan-skill'
 
 
@@ -212,9 +199,7 @@ class TestRegistrationExemption:
         _make_skill(bundle, 'script-only-skill', user_invocable=False)
         _write_plugin_json(bundle, {})
 
-        findings = analyze_plugin_json_orphans(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_plugin_json_orphans, tmp_path, [])
 
     def test_skill_without_frontmatter_exempt(self, tmp_path: Path) -> None:
         """A SKILL.md with no frontmatter is treated as not-user-invocable → exempt."""
@@ -222,9 +207,7 @@ class TestRegistrationExemption:
         _make_skill(bundle, 'context-skill', user_invocable=None)
         _write_plugin_json(bundle, {})
 
-        findings = analyze_plugin_json_orphans(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_plugin_json_orphans, tmp_path, [])
 
     def test_malformed_manifest_skipped(self, tmp_path: Path) -> None:
         bundle = tmp_path / 'my-bundle'
@@ -233,9 +216,7 @@ class TestRegistrationExemption:
         plugin_dir.mkdir(parents=True)
         (plugin_dir / 'plugin.json').write_text('{ broken', encoding='utf-8')
 
-        findings = analyze_plugin_json_orphans(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_plugin_json_orphans, tmp_path, [])
 
     def test_directory_without_plugin_json_not_a_bundle(self, tmp_path: Path) -> None:
         """A directory lacking ``.claude-plugin/plugin.json`` is not scanned."""
@@ -245,9 +226,7 @@ class TestRegistrationExemption:
             '---\nname: orphan\nuser-invocable: true\n---\n', encoding='utf-8'
         )
 
-        findings = analyze_plugin_json_orphans(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_plugin_json_orphans, tmp_path, [])
 
 
 # ===========================================================================

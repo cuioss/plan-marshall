@@ -31,6 +31,8 @@ from pathlib import Path
 
 from conftest import MARKETPLACE_ROOT, load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 _mod = load_script_module(
     'pm-plugin-development', 'plugin-doctor', '_analyze_canonical_enum_drift.py',
     '_analyze_canonical_enum_drift',
@@ -96,10 +98,8 @@ if __name__ == '__main__':
 def test_flags_truncated_enum(tmp_path):
     """(D6a) A block documenting fewer members than choices= is flagged."""
     _write_bundle(tmp_path, doc_enum='x|y', script_body=_SCRIPT_LITERAL_CHOICES)
-    findings = analyze_canonical_enum_drift(tmp_path)
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [RULE_ID])
     finding = findings[0]
-    assert finding['rule_id'] == RULE_ID
     assert finding['details']['flag'] == '--kind'
     assert finding['details']['missing_from_doc'] == ['z']
     assert finding['details']['choices'] == ['x', 'y', 'z']
@@ -109,14 +109,13 @@ def test_flags_truncated_enum(tmp_path):
 def test_passes_correct_enum(tmp_path):
     """(D6b) A block whose documented enum equals choices= is clean."""
     _write_bundle(tmp_path, doc_enum='x|y|z', script_body=_SCRIPT_LITERAL_CHOICES)
-    assert analyze_canonical_enum_drift(tmp_path) == []
+    assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [])
 
 
 def test_flags_invented_value(tmp_path):
     """A documented member absent from choices= is flagged as not_in_choices."""
     _write_bundle(tmp_path, doc_enum='x|y|z|w', script_body=_SCRIPT_LITERAL_CHOICES)
-    findings = analyze_canonical_enum_drift(tmp_path)
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [RULE_ID])
     assert findings[0]['details']['not_in_choices'] == ['w']
 
 
@@ -173,7 +172,7 @@ if __name__ == '__main__':
     main()
 '''
     _write_bundle(tmp_path, doc_enum='x|y|z', script_body=script)
-    assert analyze_canonical_enum_drift(tmp_path) == []
+    assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [])
 
 
 def test_free_form_flag_in_documented_subcommand_not_flagged(tmp_path):
@@ -202,7 +201,7 @@ if __name__ == '__main__':
     _write_bundle(
         tmp_path, doc_enum='a|b', script_body=script, subcommand='update', flag='status'
     )
-    assert analyze_canonical_enum_drift(tmp_path) == []
+    assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [])
 
 
 def test_flag_without_choices_skipped(tmp_path):
@@ -222,7 +221,7 @@ if __name__ == '__main__':
     main()
 '''
     _write_bundle(tmp_path, doc_enum='x|y', script_body=script)
-    assert analyze_canonical_enum_drift(tmp_path) == []
+    assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [])
 
 
 def test_unresolvable_choices_fails_closed(tmp_path):
@@ -246,7 +245,7 @@ if __name__ == '__main__':
     main()
 '''
     _write_bundle(tmp_path, doc_enum='x|y', script_body=script)
-    assert analyze_canonical_enum_drift(tmp_path) == []
+    assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [])
 
 
 def test_resolves_constant_choices(tmp_path):
@@ -268,6 +267,5 @@ if __name__ == '__main__':
     main()
 '''
     _write_bundle(tmp_path, doc_enum='x|y', script_body=script)
-    findings = analyze_canonical_enum_drift(tmp_path)
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [RULE_ID])
     assert findings[0]['details']['missing_from_doc'] == ['z']

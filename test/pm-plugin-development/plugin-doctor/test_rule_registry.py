@@ -30,13 +30,11 @@ from __future__ import annotations
 
 import dataclasses
 import sys
-from pathlib import Path
 
 import pytest
 
-from conftest import get_scripts_dir, load_script_module
+from conftest import PROJECT_ROOT, get_scripts_dir, load_script_module
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 # Inserted on sys.path so the analyzer modules' intra-bundle
 # ``from _rule_registry import RuleDescriptor`` and sibling ``from _analyze_*
 # import ...`` references resolve when the registry imports them.

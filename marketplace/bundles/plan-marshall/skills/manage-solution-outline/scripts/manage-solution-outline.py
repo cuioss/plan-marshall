@@ -261,7 +261,8 @@ def validate_deliverable_contract(deliverable: dict[str, Any]) -> tuple[list[str
     - Metadata block with required fields
     - Profiles block with valid profiles
     - A declared file-type bucket consistent with the declared write-set
-    - Affected files with explicit paths
+    - A declared file surface: either **Affected files:** with explicit paths, or
+      the survey-scope pair **Files to survey:** + **Files expected to mutate:**
     - Verification section
     - Success criteria
     """
@@ -339,10 +340,34 @@ def validate_deliverable_contract(deliverable: dict[str, Any]) -> tuple[list[str
     errors.extend(_check_declared_bucket(num, deliverable, write_set))
 
     # Check 3: Affected files section
+    #
+    # A SURVEY-SCOPE deliverable declares `**Files to survey:**` +
+    # `**Files expected to mutate:**` INSTEAD of a flat `**Affected files:**`
+    # list (see phase-3-outline/standards/outline-workflow-detail.md § "Survey-
+    # scope vs mutation-scope declaration"), so the section requirement is
+    # satisfied by either form. Without this, an outline authored exactly as
+    # that standard mandates failed validation with "Missing **Affected
+    # files:** section" — the validator and the authoring standard disagreed
+    # about what a declaration looks like.
+    #
+    # Only `affected_files` is walked by 3a/3b below, deliberately. The survey
+    # pair's documented form carries no `(intent)` markers, and its candidate
+    # pool MAY legitimately name a glob — both of which 3a/3b reject. The
+    # closure reconciliation that DOES read the survey pair (a declared glob
+    # against the enumerated file list) lives in the phase-4-plan mechanical
+    # Q-Gate, where it can compare the declaration against the tree.
     affected_files = deliverable.get('affected_files', [])
+    survey_scope = deliverable.get('survey_scope', []) or []
+    mutation_scope = deliverable.get('mutation_scope', []) or []
+    declares_survey_pair = bool(survey_scope) and bool(mutation_scope)
     is_verification_only = 'verification' in profiles
-    if not affected_files and not is_verification_only:
-        errors.append(f'D{num}: Missing **Affected files:** section')
+    if not affected_files and not declares_survey_pair and not is_verification_only:
+        errors.append(
+            f'D{num}: Missing declared file surface — provide **Affected files:**, '
+            f'or BOTH **Files to survey:** and **Files expected to mutate:** for a '
+            f'survey-scope deliverable (one of the pair alone is not a complete '
+            f'declaration)'
+        )
     else:
         # Check 3a: No wildcards or vague references; Check 3b: required intent marker.
         for entry in affected_files:
@@ -478,10 +503,12 @@ def cmd_list_deliverables(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _annotate_foreign(deliverables: list[dict[str, Any]]) -> None:
-    """Stamp a ``foreign`` flag onto every deliverable and each of its
-    ``affected_files`` entries, in place.
+    """Stamp a ``foreign`` flag onto every deliverable and each of its declared
+    file entries, in place.
 
-    Each ``affected_files`` entry gains ``foreign: true/false`` derived from
+    Every entry of the deliverable's declared surface — ``affected_files``, plus
+    the ``mutation_scope`` / ``survey_scope`` pair a survey-scope deliverable
+    declares instead — gains ``foreign: true/false`` derived from
     :func:`is_foreign_path` against the project root (the git toplevel), and the
     deliverable gains a roll-up ``foreign: true`` when ANY of its paths is
     foreign. This is what lets a coverage ratio separate the two populations
@@ -501,10 +528,22 @@ def _annotate_foreign(deliverables: list[dict[str, Any]]) -> None:
 
     for deliverable in deliverables:
         any_foreign = False
-        for entry in deliverable.get('affected_files', []):
-            is_foreign = project_root is not None and is_foreign_path(entry.get('path', ''), project_root)
-            entry['foreign'] = is_foreign
-            any_foreign = any_foreign or is_foreign
+        # All THREE declaration fields, not `affected_files` alone. A
+        # survey-scope deliverable declares `Files to survey:` +
+        # `Files expected to mutate:` instead, so scanning only the flat field
+        # would leave its whole surface unstamped — and the phase-6 landing gate
+        # iterates exactly this stamped population, so an unstamped foreign path
+        # is one the gate cannot see. That is the incomplete-derived-set failure
+        # this plan exists to close, reproduced in the gate that guards landings.
+        for field in ('affected_files', 'mutation_scope', 'survey_scope'):
+            for entry in deliverable.get(field, []) or []:
+                if not isinstance(entry, dict):
+                    continue
+                is_foreign = project_root is not None and is_foreign_path(
+                    entry.get('path', ''), project_root
+                )
+                entry['foreign'] = is_foreign
+                any_foreign = any_foreign or is_foreign
         deliverable['foreign'] = any_foreign
 
 

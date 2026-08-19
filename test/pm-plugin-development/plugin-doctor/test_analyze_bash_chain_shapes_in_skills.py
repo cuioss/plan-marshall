@@ -33,6 +33,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -86,17 +88,14 @@ class TestAndAndDetection:
         """``cmd1 && cmd2`` inside bash fence is a finding."""
         content = '```bash\ncmd1 && cmd2\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_bash_chain_shapes_in_skills(marketplace_root)
-        assert len(findings) == 1
-        assert findings[0]['rule_id'] == RULE_ID
+        findings = assert_analyzer_findings(analyze_bash_chain_shapes_in_skills, marketplace_root, [RULE_ID])
         assert findings[0]['chain_type'] == 'and_and'
 
     def test_and_and_in_sh_fence_triggers_finding(self, tmp_path: Path) -> None:
         """``&&`` inside ```sh``` block is a finding."""
         content = '```sh\ngit fetch origin main && git checkout main\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_bash_chain_shapes_in_skills(marketplace_root)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_bash_chain_shapes_in_skills, marketplace_root, [RULE_ID])
         assert findings[0]['chain_type'] == 'and_and'
 
     def test_and_and_canonical_violation_example(self, tmp_path: Path) -> None:
@@ -117,15 +116,13 @@ class TestAndAndDetection:
         """``&&`` in narrative prose (outside bash fence) is NOT flagged."""
         content = 'Run cmd1 && cmd2 to do the thing.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_bash_chain_shapes_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_bash_chain_shapes_in_skills, marketplace_root, [])
 
     def test_and_and_not_detected_in_python_fence(self, tmp_path: Path) -> None:
         """``&&`` inside a python fence is NOT scanned (only bash/sh fences)."""
         content = '```python\nif a and b and c:\n    pass  # and-and\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_bash_chain_shapes_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_bash_chain_shapes_in_skills, marketplace_root, [])
 
 
 # ===========================================================================
@@ -160,8 +157,7 @@ class TestSemicolonDetection:
         """Semicolons in narrative prose are NOT flagged (out of bash fence scope)."""
         content = 'Note: run cmd1; run cmd2 if needed.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_bash_chain_shapes_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_bash_chain_shapes_in_skills, marketplace_root, [])
 
 
 # ===========================================================================
@@ -200,22 +196,22 @@ class TestProseNotScanned:
     def test_and_and_in_narrative_prose_not_flagged(self, tmp_path: Path) -> None:
         content = 'Run cmd1 && cmd2 together.\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        assert analyze_bash_chain_shapes_in_skills(marketplace_root) == []
+        assert_analyzer_findings(analyze_bash_chain_shapes_in_skills, marketplace_root, [])
 
     def test_and_and_in_json_fence_not_flagged(self, tmp_path: Path) -> None:
         content = '```json\n{"key": "val && other"}\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        assert analyze_bash_chain_shapes_in_skills(marketplace_root) == []
+        assert_analyzer_findings(analyze_bash_chain_shapes_in_skills, marketplace_root, [])
 
     def test_and_and_in_markdown_fence_not_flagged(self, tmp_path: Path) -> None:
         content = '```markdown\n```bash\ncmd1 && cmd2\n```\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        assert analyze_bash_chain_shapes_in_skills(marketplace_root) == []
+        assert_analyzer_findings(analyze_bash_chain_shapes_in_skills, marketplace_root, [])
 
     def test_and_and_in_text_fence_not_flagged(self, tmp_path: Path) -> None:
         content = '```text\ncmd1 && cmd2\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        assert analyze_bash_chain_shapes_in_skills(marketplace_root) == []
+        assert_analyzer_findings(analyze_bash_chain_shapes_in_skills, marketplace_root, [])
 
 
 # ===========================================================================
@@ -230,22 +226,19 @@ class TestCommentLinesExempt:
         """A ``# cmd1 && cmd2`` comment line produces no finding."""
         content = '```bash\n# Run: cmd1 && cmd2\npython3 cmd.py\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_bash_chain_shapes_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_bash_chain_shapes_in_skills, marketplace_root, [])
 
     def test_comment_line_with_semicolon_is_exempt(self, tmp_path: Path) -> None:
         """A ``# cmd1; cmd2`` comment line produces no finding."""
         content = '```bash\n# example: cmd1; cmd2\npython3 cmd.py\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_bash_chain_shapes_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_bash_chain_shapes_in_skills, marketplace_root, [])
 
     def test_indented_comment_line_is_exempt(self, tmp_path: Path) -> None:
         """A comment line with leading whitespace is still exempt."""
         content = '```bash\n  # Run: cmd1 && cmd2\npython3 cmd.py\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_bash_chain_shapes_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_bash_chain_shapes_in_skills, marketplace_root, [])
 
     def test_non_comment_line_with_and_and_is_still_flagged(self, tmp_path: Path) -> None:
         """A non-comment line with ``&&`` is still flagged."""
@@ -280,8 +273,7 @@ class TestBacktickSpanInBashFence:
         """A comment line containing a backtick span with ``&&`` is still skipped (comment exemption)."""
         content = '```bash\n# document: `cmd1 && cmd2` is forbidden\npython3 safe.py\n```\n'
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        findings = analyze_bash_chain_shapes_in_skills(marketplace_root)
-        assert findings == []
+        assert_analyzer_findings(analyze_bash_chain_shapes_in_skills, marketplace_root, [])
 
     def test_and_and_bare_is_flagged_alongside_backtick_span(
         self, tmp_path: Path
@@ -382,13 +374,13 @@ class TestCleanBaseline:
             '```\n'
         )
         marketplace_root, _ = _make_skill_md(tmp_path, content)
-        assert analyze_bash_chain_shapes_in_skills(marketplace_root) == []
+        assert_analyzer_findings(analyze_bash_chain_shapes_in_skills, marketplace_root, [])
 
     def test_missing_plan_marshall_dir_returns_empty(self, tmp_path: Path) -> None:
         """marketplace_root without plan-marshall/ returns empty list."""
         marketplace_root = tmp_path / 'empty'
         marketplace_root.mkdir()
-        assert analyze_bash_chain_shapes_in_skills(marketplace_root) == []
+        assert_analyzer_findings(analyze_bash_chain_shapes_in_skills, marketplace_root, [])
 
     def test_multiple_skill_files_scanned(self, tmp_path: Path) -> None:
         """Multiple *.md files are all scanned."""

@@ -7,7 +7,7 @@ The rule statically scans Python scripts under
 for ``ArgumentParser(...)`` and ``subparsers.add_parser(...)`` calls that
 are missing ``allow_abbrev=False``. Missing the flag silently enables
 argparse's prefix-matching behavior, which lets retired or renamed flags
-keep matching by accident — see lesson 2026-04-17-012.
+keep matching by accident.
 
 Tests here exercise the scanner via direct import (Tier 2) against
 synthetic fixture trees.
