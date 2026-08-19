@@ -11,9 +11,26 @@ import tempfile
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import get_script_path, run_script
+from conftest import get_script_path, parse_ns, run_script
 
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-create', 'component.py')
+
+# Argument namespaces come from the script's OWN parser, so each carries every
+# default the real CLI applies. Parsed once at module scope: parse_ns
+# re-executes the script module on every call.
+_VALIDATE_NS = parse_ns(
+    'pm-plugin-development', 'plugin-create', 'component.py',
+    'validate', '--file', 'placeholder.md', '--type', 'skill', register=False,
+)
+_GENERATE_NS = parse_ns(
+    'pm-plugin-development', 'plugin-create', 'component.py',
+    'generate', '--type', 'skill', '--config', '{}', register=False,
+)
+
+
+def _ns(template: Namespace, **overrides) -> Namespace:
+    """A parser-produced namespace with this test's values overlaid."""
+    return Namespace(**{**vars(template), **overrides})
 FIXTURES_DIR = Path(__file__).parent / 'fixtures'
 
 # Direct imports for Tier 2 testing
@@ -45,7 +62,7 @@ def test_validate_file_not_found_cli():
 
 def test_validate_file_not_found():
     """Validate returns error dict when file does not exist."""
-    args = Namespace(file='/nonexistent/file.md', type='agent', command='validate')
+    args = _ns(_VALIDATE_NS, file='/nonexistent/file.md', type='agent')
     data = cmd_validate(args)
     assert data['valid'] is False
     assert any(e['type'] == 'file_not_found' for e in data['errors'])
@@ -56,7 +73,7 @@ def test_validate_skill_with_prohibited_tools_field():
     with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
         f.write('---\nname: bad-skill\ndescription: Has tools\ntools: Read, Write\n---\n\n# Bad Skill\n')
         f.flush()
-        args = Namespace(file=f.name, type='skill', command='validate')
+        args = _ns(_VALIDATE_NS, file=f.name, type='skill')
         data = cmd_validate(args)
         assert data['valid'] is False
         assert any(e['type'] == 'prohibited_field' and e['field'] == 'tools' for e in data['errors'])
@@ -68,7 +85,7 @@ def test_validate_skill_with_prohibited_model_field():
     with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
         f.write('---\nname: bad-skill\ndescription: Has model\nmodel: sonnet\n---\n\n# Bad Skill\n')
         f.flush()
-        args = Namespace(file=f.name, type='skill', command='validate')
+        args = _ns(_VALIDATE_NS, file=f.name, type='skill')
         data = cmd_validate(args)
         assert data['valid'] is False
         assert any(e['type'] == 'prohibited_field' and e['field'] == 'model' for e in data['errors'])
@@ -80,7 +97,7 @@ def test_validate_agent_missing_name_and_description():
     with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
         f.write('---\ntools: Read, Write\n---\n\n# No Name Agent\n')
         f.flush()
-        args = Namespace(file=f.name, type='agent', command='validate')
+        args = _ns(_VALIDATE_NS, file=f.name, type='agent')
         data = cmd_validate(args)
         assert data['valid'] is False
         missing_fields = [e['field'] for e in data['errors'] if e['type'] == 'frontmatter_field_missing']
@@ -94,7 +111,7 @@ def test_validate_agent_missing_tools():
     with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
         f.write('---\nname: no-tools\ndescription: Missing tools\n---\n\n# No Tools\n')
         f.flush()
-        args = Namespace(file=f.name, type='agent', command='validate')
+        args = _ns(_VALIDATE_NS, file=f.name, type='agent')
         data = cmd_validate(args)
         assert data['valid'] is False
         assert any(e['field'] == 'tools' for e in data['errors'])
@@ -109,7 +126,7 @@ def test_validate_command_with_tools_warning():
             '# Command\n\n## WORKFLOW\n\nDo stuff.\n\n## USAGE EXAMPLES\n\nExample.\n'
         )
         f.flush()
-        args = Namespace(file=f.name, type='command', command='validate')
+        args = _ns(_VALIDATE_NS, file=f.name, type='command')
         data = cmd_validate(args)
         assert any(w['type'] == 'unexpected_field' and w['field'] == 'tools' for w in data['warnings'])
         Path(f.name).unlink()
@@ -122,7 +139,7 @@ def test_validate_command_missing_workflow_section():
             '---\nname: no-workflow\ndescription: Missing workflow\n---\n\n# Command\n\n## USAGE EXAMPLES\n\nExample.\n'
         )
         f.flush()
-        args = Namespace(file=f.name, type='command', command='validate')
+        args = _ns(_VALIDATE_NS, file=f.name, type='command')
         data = cmd_validate(args)
         assert data['valid'] is False
         assert any('WORKFLOW' in e.get('message', '') for e in data['errors'])
@@ -159,7 +176,7 @@ def test_validate_lenient_parse_of_indented_frontmatter():
             '## When to Use\n\nAlways.\n\n## Workflow\n\nDo things.\n'
         )
         f.flush()
-        args = Namespace(file=f.name, type='skill', command='validate')
+        args = _ns(_VALIDATE_NS, file=f.name, type='skill')
         data = cmd_validate(args)
         error_types = {e['type'] for e in data['errors']}
         assert 'frontmatter_missing' not in error_types
@@ -183,7 +200,7 @@ def test_validate_colonless_line_is_skipped_not_rejected():
             '## When to Use\n\nAlways.\n\n## Workflow\n\nDo things.\n'
         )
         f.flush()
-        args = Namespace(file=f.name, type='skill', command='validate')
+        args = _ns(_VALIDATE_NS, file=f.name, type='skill')
         data = cmd_validate(args)
         error_types = {e['type'] for e in data['errors']}
         assert 'frontmatter_missing' not in error_types
@@ -200,7 +217,7 @@ def test_validate_valid_skill_returns_true():
             '## When to Use\n\nAlways.\n\n## Workflow\n\nDo things.\n'
         )
         f.flush()
-        args = Namespace(file=f.name, type='skill', command='validate')
+        args = _ns(_VALIDATE_NS, file=f.name, type='skill')
         data = cmd_validate(args)
         assert data['valid'] is True
         Path(f.name).unlink()
@@ -213,7 +230,7 @@ def test_validate_valid_skill_returns_true():
 
 def test_generate_invalid_json():
     """Generate with malformed JSON returns error."""
-    args = Namespace(type='agent', config='not-json', command='generate')
+    args = _ns(_GENERATE_NS, type='agent', config='not-json')
     data = cmd_generate(args)
     assert data.get('status') == 'error'
     assert 'Invalid JSON' in data.get('message', '') or 'invalid_json' in data.get('error', '')
@@ -221,7 +238,7 @@ def test_generate_invalid_json():
 
 def test_generate_agent_missing_tools():
     """Generate agent without tools raises error."""
-    args = Namespace(type='agent', config='{"name": "no-tools", "description": "Missing tools"}', command='generate')
+    args = _ns(_GENERATE_NS, type='agent', config='{"name": "no-tools", "description": "Missing tools"}')
     data = cmd_generate(args)
     assert data.get('status') == 'error'
     assert 'tools' in data.get('message', '').lower()
@@ -229,10 +246,10 @@ def test_generate_agent_missing_tools():
 
 def test_generate_agent_empty_tools():
     """Generate agent with empty tools array raises error."""
-    args = Namespace(
+    args = _ns(
+        _GENERATE_NS,
         type='agent',
         config='{"name": "empty-tools", "description": "Empty tools", "tools": []}',
-        command='generate',
     )
     data = cmd_generate(args)
     assert data.get('status') == 'error'
@@ -241,7 +258,7 @@ def test_generate_agent_empty_tools():
 
 def test_generate_command_basic():
     """Generate command produces frontmatter without tools."""
-    args = Namespace(type='command', config='{"name": "my-cmd", "description": "A command"}', command='generate')
+    args = _ns(_GENERATE_NS, type='command', config='{"name": "my-cmd", "description": "A command"}')
     data = cmd_generate(args)
     assert data.get('status') == 'success'
     content = data.get('frontmatter', '')
@@ -251,7 +268,7 @@ def test_generate_command_basic():
 
 def test_generate_skill_defaults_user_invocable_false():
     """Generate skill defaults user-invocable to False."""
-    args = Namespace(type='skill', config='{"name": "my-skill", "description": "A skill"}', command='generate')
+    args = _ns(_GENERATE_NS, type='skill', config='{"name": "my-skill", "description": "A skill"}')
     data = cmd_generate(args)
     assert data.get('status') == 'success'
     content = data.get('frontmatter', '')
@@ -260,10 +277,10 @@ def test_generate_skill_defaults_user_invocable_false():
 
 def test_generate_skill_user_invocable_true():
     """Generate skill with user-invocable set to True."""
-    args = Namespace(
+    args = _ns(
+        _GENERATE_NS,
         type='skill',
         config='{"name": "my-skill", "description": "A skill", "user-invocable": true}',
-        command='generate',
     )
     data = cmd_generate(args)
     assert data.get('status') == 'success'
@@ -273,10 +290,10 @@ def test_generate_skill_user_invocable_true():
 
 def test_generate_agent_with_model():
     """Generate agent includes model when provided."""
-    args = Namespace(
+    args = _ns(
+        _GENERATE_NS,
         type='agent',
         config='{"name": "a", "description": "b", "tools": ["Read"], "model": "opus"}',
-        command='generate',
     )
     data = cmd_generate(args)
     assert data.get('status') == 'success'
@@ -286,10 +303,10 @@ def test_generate_agent_with_model():
 
 def test_generate_agent_without_model():
     """Generate agent omits model when not provided."""
-    args = Namespace(
+    args = _ns(
+        _GENERATE_NS,
         type='agent',
         config='{"name": "a", "description": "b", "tools": ["Read"]}',
-        command='generate',
     )
     data = cmd_generate(args)
     assert data.get('status') == 'success'
@@ -300,10 +317,10 @@ def test_generate_agent_without_model():
 
 def test_generate_frontmatter_has_delimiters():
     """Generate output contains --- delimiters in frontmatter value."""
-    args = Namespace(
+    args = _ns(
+        _GENERATE_NS,
         type='agent',
         config='{"name": "a", "description": "b", "tools": ["Read"]}',
-        command='generate',
     )
     data = cmd_generate(args)
     assert data.get('status') == 'success'
@@ -313,10 +330,10 @@ def test_generate_frontmatter_has_delimiters():
 
 def test_generate_special_chars_in_description():
     """Generate handles colons and quotes in description."""
-    args = Namespace(
+    args = _ns(
+        _GENERATE_NS,
         type='agent',
         config='{"name": "a", "description": "A desc: with \\"quotes\\"", "tools": ["Read"]}',
-        command='generate',
     )
     data = cmd_generate(args)
     assert data.get('status') == 'success'
