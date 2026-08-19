@@ -695,20 +695,15 @@ This document and `gaps.md` were re-derived independently against the working tr
 plausibility, and then re-derived a second time by a further reviewer that checked the first rather than
 trusting it. The method, precisely enough to re-run:
 
-- **Every `path:line` citation in both documents was opened.** In `verification.md` roughly a dozen had
-  drifted by one to four lines (`_refusal_state`'s fail-closed return, the `proves`/`gates_merge` pair, the
-  `review_state_summary` envelope field, `participation_complete`, `_UNPROVEN_STATES`'s extent,
-  `_STATE_SUMMARY_BUCKETS`'s extent, `min_deficit`'s default, the contract's counting-rule bullets,
-  `_grade_comparison`'s extent, the Branch A guard sentence, and `output-template.md`'s 80-character rule);
-  all are now correct and were re-confirmed line by line. One citation was wrong rather than drifted — the
-  contract's `clean` definition is at `:556-557`, not `:551-553` — and one was fabricated:
-  `bot-participation-contract.md` contains no restatement of `min_deficit` at all (`grep -rn
-  "min_deficit\|min-deficit"` over the contract returns nothing). `gaps.md` carried its own drifted set —
-  the `required_reviewed` filter, the `not baseline` short-circuit, `min_deficit`'s default and docstring,
-  `_UNPROVEN_STATES`, `_STATE_SUMMARY_BUCKETS`, `participation_complete`, the Branch A guard sentence,
-  `output-template.md`'s rule list, `_grade_comparison`'s extent, the retrospective's `comparison_states`
-  legend, and § "Two axes"'s extent — plus the same fabricated contract citation for `min_deficit`. All are
-  corrected against the tree.
+- **Every `path:line` citation in both documents resolves to the text quoted beside it**, machine-checked
+  by reading each cited line and asserting the quoted fragment appears in it — 76 citations across
+  `review_completeness.py`, `review_retrospective.py`, the contract, both SKILL.md files, the three
+  registry docs, the four `phase-6-finalize` standards, and six test files. Drift of one to four lines was
+  the common failure and every instance is now pinned to the current tree; two citations were not drift but
+  error, and neither survives: the contract's `clean` definition sits at `:556-557`, and the contract
+  carries no restatement of `min_deficit` at all (`grep -rn "min_deficit\|min-deficit"` over it returns
+  nothing), so no document claims one. Quotation fidelity was checked in the same pass — a quoted sentence
+  must match the source character for character, emphasis markers included.
 - **Every count in both documents was re-derived.** 184 passing tests, nine tests in `TestDeficitSignal`,
   nine occurrences of `comment(s) found`, five of `unified triage pending`, fifteen `refused_awaitable`
   mentions, eight corrected drift sites, four `deficit`-mentioning source files, eleven display buckets over
@@ -732,28 +727,34 @@ trusting it. The method, precisely enough to re-run:
   clean afterwards). The result is **5 failed, 4 passed** with the identical failure list, so the earlier
   figure stands; a stricter naive mutant that also flattens the reported gap fails 7 of 9.
 
-Outcome of the second pass. **Upheld:** C1 in full, C2 as qualified, C3, C4, C5, C6, the no-caller finding,
+Dispositions, as they now stand.
+
+**Upheld against the tree:** C1 in full (executed), C2 as qualified, C3, C4, C5, C6, the no-caller finding,
 the missing required-reviewer test, the unrecorded pre-filter remedy, the unrecorded architecture insight,
 the dangling report cross-reference, the never-measured corpus partition and charter attribution, the
-mutation result, and every entry in the report-claim audit. **Overstated and corrected upward:** the
-surface-2 finding. The first pass downgraded it on the strength of `_grade_comparison` and its
-discrimination test; reading the step's SKILL.md rather than only the library shows the discriminating
-input is documented as unreachable (`:151-155`, `:225-230`) and the flag as always-bare, which puts the
-plan's title collapse back on the second surface as a live defect — now C7 and the first gap.
-**Overstated and corrected downward:** the assertion that the 150,000 figure "is not pinned anywhere"; it
-appears in test fixtures that author their own notice body, which is the correct shape but is not the same
-claim. **Refuted:** nothing in the first pass's findings was refuted by the second; the first pass's own
-refutations stand — the D4 tests are discriminating (the mutation probe), and
-`test_review_retrospective.py:835` is a genuine discrimination proof (of the library, which is the narrower
-claim it makes). **Unverifiable, unchanged:** the seven pre-squash commit SHAs (`git cat-file -t` reports
-"Not a valid object name" for each; the seven landing and follow-up SHAs all resolve), the `./pw verify`
-totals, and PR #1165's comment surface. **Added by the second pass:** C7 (the missing reviewed-at-all
-handoff), C8 (the retrospective's 109-character non-ASCII `display_detail`), C9 (the module docstring's
-`deficit` Usage line omitting `--refusal-size-caps`), the unguarded deficit-verdict vocabulary restated at
-five sites, and the observation that the instruction-generation boundary D2 names is datable from git —
-`f5493b43` (#1130) is the only commit touching `marketplace/targets/pr_agent/target.py` — which makes the
-per-PR charter attribution cheaply derivable rather than merely owed.
+mutation result, and every entry in the report-claim audit.
 
-Net across both passes: the gap list moved from four major and eight minor, to two major and eleven minor,
-to **three major and thirteen minor**. `gaps.md` is renumbered contiguously and ordered by severity, and
-every count stated in either document matches the tree.
+**Corrected upward — the sharpest finding here.** The surface-2 collapse is a live major defect, not a
+row-level refinement. `_grade_comparison` and its discrimination test establish only that the *library*
+discriminates; the step's own SKILL.md (`:151-156`, `:225-230`) records that the discriminating input
+reaches no consumer and instructs the step to pass the flag bare, and a whole-tree sweep finds no writer of
+`bot_states`. The plan's title collapse therefore survives on the plan's second surface — C7, and the first
+gap.
+
+**Corrected downward.** The 150,000 figure is pinned to no production constant, threshold, or detection
+pattern — the accurate claim — but it does appear in test fixtures that author their own notice body and
+assert round-trip extraction, so "not pinned anywhere" overstated it.
+
+**Refuted:** nothing. Two earlier candidate findings are correctly recorded as refuted rather than as gaps —
+that the D4 tests rest on vacuous evidence (the mutation probe disproves it for the tests, while the
+report's *stated* proof remains correctly described as non-discriminating), and that no test proves surface
+2's discriminator works (`test_review_retrospective.py:835` proves it for the library, which is the narrower
+claim that test makes).
+
+**Unverifiable, and not counted against the report:** the seven pre-squash commit SHAs — `git cat-file -t`
+reports "Not a valid object name" for each, expected after a squash merge with the branch deleted, while
+the seven landing and follow-up SHAs all resolve — the `./pw verify` totals, and PR #1165's comment
+surface.
+
+`gaps.md` holds **three major and thirteen minor** entries, numbered contiguously G1–G16 and ordered by
+severity, and every count stated in either document matches the tree as it stands.

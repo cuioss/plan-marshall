@@ -81,6 +81,10 @@ Executed:
 - A scratch probe of `toon_parser.serialize_toon` to confirm `None` renders `null` and `0.0` renders
   `0.0` (the unmeasured-vs-genuine-zero question).
 
+An independent adversarial pass re-ran all of the above and more; its executions, its
+upheld/overstated/refuted classification and the gaps it added are recorded in § "Adversarial review"
+below.
+
 ## Deliverables
 
 | # | *Done when* (plan) | Report claim | Ground truth in the tree | Verdict |
@@ -329,9 +333,12 @@ methods the report implies, is explicitly labelled as retirement evidence for a 
 and survived PR #1241's heavy rewrite of `review_completeness.py`.
 
 The plan asks for **every** D3 test proven discriminating by mutation. The report supplies six
-mutations covering, by its own attribution, eleven tests. The remaining eighty are asserted
-red-first, which is a different (and weaker) claim than mutation-discrimination. The report does not
-overclaim here — it presents exactly what it did — but the plan's demand is not met in full.
+mutations covering, by its own attribution, eleven tests (3 + 1 + 2 + 2 + 2 + 1). The remaining eighty
+are asserted red-first, which is a different (and weaker) claim than mutation-discrimination — and the
+run's own § "What have we learned" records two cases in this very change where a test passed while
+its production predicate was dead or backwards, which is exactly the failure red-first does not catch.
+The report does not overclaim — it presents exactly what it did — but the plan's Verification clause
+is not met, and that shortfall is now carried as a gap rather than only noted here.
 
 All 86 tests in the four suites I ran pass on the current tree.
 

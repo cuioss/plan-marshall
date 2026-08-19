@@ -447,9 +447,12 @@ do not match their own enumerations.
 
 ## Adversarial review
 
-A second, independent pass re-derived every load-bearing finding above against the tree at
-`HEAD` = `61a43e53` (working tree `dc2ecc5c`), assuming the first pass plausible but fallible. Only
-this file and `gaps.md` were modified; no source file, no commit, no push.
+A second, independent pass re-derived every load-bearing finding above against the same tree the
+§ Method section names — every commit since `61a43e53` touches `doc/plans/` only
+(`git log 61a43e53..HEAD -- marketplace/ test/` is empty), so the audited surface is unchanged. The
+first pass was assumed plausible but fallible and nothing was taken on its word. Only this file and
+`gaps.md` were changed; `review_completeness.py` was mutated once and restored from a byte snapshot
+(next bullet). No source file is left modified, no commit, no push.
 
 ### What was re-derived, and how
 
