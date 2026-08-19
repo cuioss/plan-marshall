@@ -306,7 +306,7 @@ The invariant is: every audit-tracked rule ID the analyzers emit must fire at le
 registered_rule_ids(real_tree) − fired_in_suite − EXEMPT_RULE_IDS == ∅
 ```
 
-enforced by `test_zero_match_suite_coverage.py` (`registered_rule_ids` and the `fired_in_suite` derivation live in the plugin-doctor tests' `_fixtures.py`; `EXEMPT_RULE_IDS` lives in `test_zero_match_suite_coverage.py`). A registered rule that neither fires against a positive fixture nor appears in the per-entry-justified `EXEMPT_RULE_IDS` is a real coverage gap — the failing assertion names it, and the fix is a genuine positive unit test for that rule (or, only when the rule structurally cannot fire on a static positive fixture, a justified `EXEMPT_RULE_IDS` entry). Coverage is proven from the test suite itself, over the full registered population minus the exempt set — never from a parallel hand-curated corpus that duplicates the positive tests.
+enforced by `test_zero_match_suite_coverage.py` (`registered_rule_ids` and the `fired_in_suite` derivation live in the plugin-doctor tests' `_plugin_doctor_fixtures.py`; `EXEMPT_RULE_IDS` lives in `test_zero_match_suite_coverage.py`). A registered rule that neither fires against a positive fixture nor appears in the per-entry-justified `EXEMPT_RULE_IDS` is a real coverage gap — the failing assertion names it, and the fix is a genuine positive unit test for that rule (or, only when the rule structurally cannot fire on a static positive fixture, a justified `EXEMPT_RULE_IDS` entry). Coverage is proven from the test suite itself, over the full registered population minus the exempt set — never from a parallel hand-curated corpus that duplicates the positive tests.
 
 ### Fail-closed gate-read invariant
 
