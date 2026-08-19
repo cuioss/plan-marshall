@@ -1704,14 +1704,14 @@ Pass a `--display-detail` value alongside `--outcome done` so the output-templat
 
 ### Structured facts recorded here
 
-This step declares the `records_facts` union `action`, `upstream_commit_count`, `merge_mechanism`, `merge_state`, `work_performed`. The union is a step-level declaration, NOT a per-branch mandate — each of the six terminal call sites below (**Branches A through F** — five `--outcome done`, plus **Branch F**'s `--outcome loop_back`, which is terminal for this dispatch and so carries the same fact obligation) records only the **honest subset** its own path produced, per [ext-point-finalize-step.md](../../extension-api/standards/ext-point-finalize-step.md) § "Structured step facts". The path conditions:
+This step declares the `records_facts` union `action`, `upstream_commit_count`, `merge_mechanism`, `merge_state`, `work_performed`. The union is a step-level declaration, NOT a per-branch mandate — each of the eight terminal call sites below (**Branches A through E**, plus **F1/F2/F3**, the three observations the queue landing gate routes to Branch F; seven record `--outcome done` and F1 records `--outcome loop_back`, which is terminal for this dispatch and so carries the same fact obligation) records only the **honest subset** its own path produced, per [ext-point-finalize-step.md](../../extension-api/standards/ext-point-finalize-step.md) § "Structured step facts". The path conditions:
 
 | Fact | Recorded iff |
 |------|--------------|
 | `action` | The executing path reached **Rebase Branch onto Base** and parsed its `worktree-rebase-to` TOON. The value is that TOON's `action` — `noop` when the rebase replayed nothing, `rebased` when it moved HEAD. A path that never rebased records NO `action`; its absence is the honest signal, not a gap to fill. |
 | `upstream_commit_count` | Same condition as `action` — it is read from the same rebase-path payload. |
 | `merge_mechanism` | The merge actually **landed** and was corroborated (`{merge_landed} == true`). Value is `pr_safe_merge` when `ci pr safe-merge` returned a corroborated `merged: true`, or `merge_queue` when § "Wait for the Queue Merge to Land (bounded)" observed the platform queue merge the enqueued PR. A path that enqueued but whose merge never landed (**Branch F**) records NO `merge_mechanism` — dispatching a merge-shaped verb is not the same fact as a merge, and that branch reports the enqueue in its `display_detail` instead. A path that never merged at all likewise records none. |
-| `merge_state` | **Every** terminal call site below, `done` and Branch F's `loop_back` alike. Unlike `merge_mechanism` — which records HOW a merge landed and is therefore absent wherever none did — `merge_state` records WHAT STATE the PR is in, and every branch determines that: `merged` on the two branches that landed a merge (A, E), `open` on the branches that leave a live PR unmerged (C declined, F enqueued-but-not-landed), and `n/a` on the branches where no PR exists at all (B local-only, D no-PR-found). Recording it everywhere is the honest subset, not an exception: no branch lacks the value. Its consumer is the terminal `default:emit-landing` step, whose `landing-facts` block carries a required `merge_state` key. |
+| `merge_state` | **Every** terminal call site below, `done` and Branch F's `loop_back` alike. Unlike `merge_mechanism` — which records HOW a merge landed and is therefore absent wherever none did — `merge_state` records WHAT STATE the PR is in, and every branch determines that: `merged` on the two branches that landed a merge (A, E); `open` where a live PR is left unmerged (C declined, F1 still queued); `closed` where the queue dequeued it without merging (F2); `unknown` where the PR state could not be read at all (F3); and `n/a` where no PR exists (B local-only, D no-PR-found). The five values are distinct claims and are not interchangeable — `closed` is not `open`, and `unknown` asserts only that nothing was observed. Recording it everywhere is the honest subset, not an exception: no branch lacks the value. Its consumer is the terminal `default:emit-landing` step, whose `landing-facts` block carries a required `merge_state` key. |
 | `work_performed` | **Every** terminal call site below, `true` or `false`, never omitted — the one declared exception to the honest-subset rule. |
 
 `--display-detail` on every branch is a **rendering of the facts that branch recorded**. In particular it MUST NOT assert a rebase or a merge the recorded facts do not support — a fixed literal claiming a rebase unconditionally is exactly what the per-branch facts exist to prevent. It MUST equally not render an *enqueue* as a merge, nor a queue merge as a merge this step performed: `merge_mechanism == merge_queue` records that the PLATFORM merged the PR and this step corroborated the landing, so its rendering says so rather than reusing the direct-merge phrasing.
@@ -1808,33 +1808,59 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 This branch is reached only on `use_merge_queue == true`, and that is exactly the path § "Rebase Branch onto Base" routes AWAY from the rebase. It therefore **never reaches the rebase** and records neither `action` nor `upstream_commit_count` — their absence is the honest signal the fact table above names, and interpolating either placeholder here would fabricate a rebase that structurally cannot have happened on this branch. It performed real work — the enqueue — so `work_performed=true`. It records **no `merge_mechanism`**, because no merge landed: recording `merge_queue` here would assert exactly the fact this branch exists to deny, and would make Branch F indistinguishable from Branch A to any consumer reading the facts rather than the detail string:
 
+⚠ **Three different observations reach this branch, and they do NOT share an outcome.** § "Wait for the Queue Merge to Land (bounded)" routes the landing-gate failure path here from `state == open` with the budget exhausted, from `state == closed` (dequeued), and from `status: error` (unobservable). Collapsing them is a defect: `closed` is not `open`, an unreadable state is neither, and only ONE of the three can be improved by re-running. Pick the sub-path by the observation the landing gate actually made.
+
+**F1 — still queued, budget exhausted** (`state == open`). The merge is pending, not refused: the queue may land it at any time, so a later run CAN reach the `state == merged` path and perform the deferred cleanup. This is the only genuinely deferred sub-path, and the only one that loops back:
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome loop_back \
   --loop-back-target 6-finalize \
   --fact merge_state=open \
   --fact work_performed=true \
-  --display-detail "enqueued to merge queue, merge not landed, cleanup deferred"
+  --display-detail "queued, merge not landed in budget, cleanup deferred"
 ```
 
-The detail is a fixed literal (59 chars, no placeholders), so its worst case is its literal form.
+**F2 — dequeued without merging** (`state == closed`). The queue removed the PR — its re-test went red against the latest base, or an operator removed it. **Re-running cannot change this**: identical input yields the identical answer, so a `loop_back` here would spin to `max_iterations` against a state only an operator can clear. It terminates, reporting the state actually observed:
 
-**Why this branch records `loop_back` and not `done`.** It is the one branch that ends with work still
-owed: the queue has the PR, the merge has not landed, and the local branch and worktree still exist. A
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
+  --fact merge_state=closed \
+  --fact work_performed=true \
+  --display-detail "dequeued without merging, cleanup owed"
+```
+
+**F3 — state unobservable** (`status: error` on `pr view`). The gate could not read the PR at all. It fails CLOSED: it must not claim `open`, which would assert a state nobody observed, and must not loop, because an unreadable provider is not a pending merge:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
+  --fact merge_state=unknown \
+  --fact work_performed=true \
+  --display-detail "queue state unreadable, cleanup owed"
+```
+
+Every detail above is a fixed literal (F1 52, F2 38, F3 36 chars, measured not transcribed; no placeholders), so each worst case is its literal form.
+
+**Why F1 loops back and F2/F3 do not.** F1 ends with work still owed AND a path to discharging it: the queue has the PR, the merge has not landed, and the local branch and worktree still exist. A
 `done` record would suppress the very re-entry that deferral depends on — `default:branch-cleanup`
 declares no `head_dependent` fact, so [`../SKILL.md`](../SKILL.md) § Resumability applies its
 **general** table verbatim, and `done` there means *"Skip dispatch entirely … do not re-execute."* The
 step has no `push`-style override (parity-driven re-entry plus explicit dispatcher re-invocation) to
 rescue it, so the deferred cleanup would simply never happen.
 
-`loop_back` is the outcome whose documented semantics are exactly this branch's need — *"re-fire (treat
+`loop_back` is the outcome whose documented semantics are exactly F1's need — *"re-fire (treat
 as no record — dispatch as fresh run)"* — so re-entry once the queue merge lands takes the
 `state == merged` path and performs the deferred cleanup, which is what this branch always claimed and
-now actually does. The `max_iterations` ceiling bounds the retries, and the merge mutex was already
+now actually does. F2 and F3 also leave cleanup owed, but **re-running cannot discharge it**: a
+dequeued PR stays dequeued and an unreadable provider stays unreadable until something outside this
+run changes, so looping there would convert a diagnosable stop into `max_iterations` of identical
+retries. They terminate with an honest `merge_state` and carry the owed cleanup in the landing. The `max_iterations` ceiling bounds the retries, and the merge mutex was already
 released above, so the loop-back holds no lock. `emit-landing`'s failed-write branch takes the same
 remedy for the same reason.
 
-⚠ This is the one `--outcome loop_back` in this document that is **not** a blocked-barrier disposition:
-the barrier loop-backs above hand control back because something must be triaged, whereas this one
+⚠ F1's `loop_back` is the one in this document that is **not** a blocked-barrier disposition:
+the barrier loop-backs above hand control back because something must be triaged, whereas F1
 hands it back because an external event (the queue merge) has not happened yet. Both re-fire; only the
 barrier ones carry a finding.

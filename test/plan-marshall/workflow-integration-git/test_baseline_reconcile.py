@@ -1233,12 +1233,19 @@ def test_reader_is_fail_soft_on_every_unavailability_path(monkeypatch):
     exception here would turn a soft fallback into a hard failure of the whole
     baseline-reconcile call.
     """
+    import _references_core
+
     def _raises(plan_id):
         raise FileNotFoundError(plan_id)
 
-    monkeypatch.setattr(_mod, 'read_references', _raises, raising=False)
+    # `read_references` is imported INSIDE the function, so the patch must land on
+    # `_references_core` -- patching `_mod.read_references` sets a module attribute
+    # nothing reads, and every assertion below would pass without exercising the
+    # bodies at all. That vacuous form shipped once and was caught in review; the
+    # sibling config test carries the same warning for the same reason.
+    monkeypatch.setattr(_references_core, 'read_references', _raises)
     assert _mod._read_references_base_branch('absent-plan') is None
 
     for body in ({}, {'base_branch': ''}, {'base_branch': '   '}, {'base_branch': 42}, []):
-        monkeypatch.setattr(_mod, 'read_references', lambda plan_id, b=body: b, raising=False)
+        monkeypatch.setattr(_references_core, 'read_references', lambda plan_id, b=body: b)
         assert _mod._read_references_base_branch('p') is None, f'body {body!r} must yield None'
