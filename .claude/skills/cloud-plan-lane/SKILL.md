@@ -1132,40 +1132,47 @@ each path:
 | Class | Paths | Reviewable? |
 |---|---|---|
 | **R1** | `*.py` | yes |
-| **R2** | `marketplace/bundles/**` | yes |
-| **R3** | a **plan file** under `doc/plans/` — a `plan.md`, or a not-yet-moved `{NNN}-{slug}.md` | yes |
+| **R2** | `marketplace/**` — bundle sources and the multi-target adapter configuration alike | yes |
+| **R3** | prose under `doc/plans/` **whose content changed** — a `plan.md`, a not-yet-moved `{NNN}-{slug}.md`, and any other prose in a plan's own directory or an epic's `reference/` (a `rationale.md`, a `proposal-*.md`). The two paths one `git mv` prints are **not** R3. | yes |
+| **—** | the *records* under `doc/plans/` — `report-NN.md`, `verification.md`, `gaps.md`, `status-report.md`, any `README.md` | no |
 | **S** | `.claude/skills/**` — this repository's own project-level skills | no |
-| **—** | everything else: `CLAUDE.md`, `.github/**`, `pyproject.toml`, `doc/**` prose, and the *records* under `doc/plans/` (`report-NN.md`, `verification.md`, `gaps.md`, an epic `README.md`) | no |
+| **—** | everything else: `CLAUDE.md`, `.github/**`, `pyproject.toml`, and `doc/**` prose outside `doc/plans/` | no |
+
+**A path may hold more than one class**, and the reviewable one decides: `.claude/skills/foo/scripts/x.py`
+is both R1 and S, and row 1 below fires on **any** R1/R2/R3 membership. Classification is not
+most-specific-wins — a run that let S shadow R1 would build the Python at Step 5 and suppress its
+review, which is the inverse of every reason stated below.
 
 Then take the **first** row that matches. Its **arm** is the token the report records:
 
 | Order | Condition | Outcome | Arm |
 |---|---|---|---|
 | 1 | any R1, R2 or R3 path present | **no label** | `reviewable` |
-| 2 | any S path present, **and** the operator asked for a bot review | **no label** | `operator-override` |
+| 2 | any S path present, **and** the operator asked for a bot review (recorded in the Contract check) | **no label** | `operator-override` |
 | 3 | any S path present | **label** | `project-skill` |
-| 4 | otherwise | **label** | `no-footprint` |
+| 4 | otherwise | **label** | `no-reviewable-footprint` |
 
 Row 1 is why the label is **all-or-nothing**: a PR mixing a project-level skill change with any
 reviewable class keeps its review — the reviewable part decides. Rows 2 and 3 are why `project-skill`
-is the arm an operator can reverse and `no-footprint` is not. Exactly one arm matches any diff, so
+is the arm an operator can reverse and `no-reviewable-footprint` is not. Exactly one arm matches any diff, so
 "which arm produced it" always has one answer.
 
 Three classifications carry reasons, because a run will otherwise be tempted to reclassify them:
 
-**R2 — a bundle skill is the product, and is reviewed as code.** Any change under
-`marketplace/bundles/**` — a `SKILL.md`, a workflow doc, a script — keeps its review exactly as a
-`*.py` change does. It is prose, but it is *behavioural* prose that governs how every consumer
+**R2 — the marketplace is the product, and is reviewed as code.** Any change under `marketplace/**`
+— a `SKILL.md`, a workflow doc, a script, or a target adapter's `mapping.json` — keeps its review
+exactly as a `*.py` change does. It is prose, but it is *behavioural* prose that governs how every consumer
 project's runs act, which is precisely what a reviewer should see; do **not** treat it as
 documentation.
 
 **R3 — a plan is behavioural prose too.** A plan is executed by a later run that has no operator to
 ask, so a wrong path, an unobservable *done when*, a contradiction between deliverables, or an
-invented rationale is a defect that run will act on. Two boundary cases: a **pure Step 3 rename**
-with no content change is *not* an edit — the prose it moves was reviewed when it landed, so a run
-must not read the two paths `--name-only` prints for one `git mv` as R3 — but a **first-instruction-block
-repair** (§ Step 3) writes content into `plan.md` and *is* an edit, so it is R3 and the PR keeps its
-review.
+invented rationale is a defect that run will act on. That reason reaches every piece of prose a
+later run reads alongside its plan, which is why R3 is a *location* test and not a filename one —
+only the records are carved out. Two boundary cases the cell states and this paragraph explains: a
+**pure Step 3 rename** with no content change is not an edit — the prose it moves was reviewed when
+it landed — but a **first-instruction-block repair** (§ Step 3) writes content into `plan.md` and
+*is* an edit, so it is R3 and the PR keeps its review.
 
 **S — a project-level skill is not the product.** These are the operating instructions the
 meta-project runs itself by. A reviewer could act on them; the budget simply buys more elsewhere.
@@ -1185,7 +1192,8 @@ gh pr create --label skip-bot-review --fill
 ⛔ **The label is a creation-time decision, so it is disclosed before it is applied.** Adding it
 after create is too late for the PR-open trigger, which has already fired. Where an operator is
 reachable, say which way the rule comes out and why *before* creating the PR; a run that applies it
-silently has made a scrutiny decision on the operator's behalf.
+silently has made a scrutiny decision on the operator's behalf. If they ask for a review in
+response, that is row 2's predicate — re-take the table and record `operator-override`.
 
 ⛔ **On the MCP path, creation-time labelling needs the draft route.** `create_pull_request` takes no
 `labels` argument (§ Cloud session affordances maps `--label` to a *separate* call after create), so
@@ -1194,7 +1202,7 @@ suppress. Create with `draft: true`, apply the label, then `update_pull_request`
 This works only where the governing `.coderabbit.yaml` leaves `reviews.auto_review.drafts` off —
 **read it**; where drafts are reviewed, the draft route buys nothing and the run says so instead of
 assuming it worked — there, create the PR **open** and apply the label immediately, and record the
-state as `applied-late`, since the draft creation has already triggered the review. Where the
+state as `applied-late`, since the open creation has already triggered the review. Where the
 governing file is the organization's central one and **cannot be read from the clone** — the
 observed case here, the refusal notice naming a config in a different repository — that is the third
 outcome: take the draft route anyway (it cannot make things worse), record the state as
@@ -1387,7 +1395,9 @@ organization's central one) at `reviews.auto_review`. Where auto-review is on �
 on for every PR not carrying `skip-bot-review`, but **read it**, do not take that as given — CodeRabbit reviews on the PR-open and on
 each **push**, and its own reply to a manual request says the command *"is applicable only when
 automatic reviews are paused"*. ⛔ **So on an auto-review repository, posting `@coderabbitai review`
-does nothing**, however many times a run posts it, and however open the allowance is. **The lever
+does nothing**, however many times a run posts it, and however open the allowance is. **Where the
+config cannot be read** — it may be the organization's central one, in a repository this clone does
+not carry — assume auto-review is **on**, take the push route, and record the assumption. **The lever
 that works is a push**, which is what the refusal notice itself offers alongside the comment ("or
 push new commits to the PR"). Post the comment only where auto-review is genuinely paused.
 
@@ -1422,8 +1432,8 @@ condition 2 — or land the next real commit. **A new PR is not a remedy**: it n
 nor resets a per-developer allowance.
 
 **When no new head is available** — the base has not moved and the plan has no further commit to make
-— there is nothing left that could produce a review. Record it as **unobtainable** — condition 6's
-own word for this state, not "budget spent", which means something else — and proceed under § Step 8
+— there is nothing left that could produce a review. Record it as **`unobtainable`** — condition 6's
+own token for this state, not `budget-spent`, which means something else — and proceed under § Step 8
 condition 5. ⛔ **Never manufacture a head** with an empty or
 cosmetic commit to summon a reviewer: § Step 7 forbids that for CI, and the reason is the same here.
 
@@ -1647,8 +1657,10 @@ hold:**
    PR-open trigger, or was removed mid-cycle, the annotation does not apply and any gap is a real
    shortfall. Whether the label governs a given reviewer at all is read from the **governing config
    for that reviewer** — for CodeRabbit, `reviews.auto_review.labels` (§ "Obtaining a CodeRabbit
-   review"). Where that config cannot be read, the default is **not governed**: annotate nothing and
-   report the gap as a real shortfall, which is the reading that discloses more rather than less. What *is* disclosed on
+   review"). Where that config cannot be read, take the **same** default § "Obtaining a CodeRabbit
+   review" takes for the route — assume auto-review is on, so CodeRabbit **is** label-governed —
+   annotate, and record the assumption. One unreadable config must not yield two opposite readings
+   in two sections. What *is* disclosed on
    every labelled PR is the label decision itself, before creation, per § Step 7.
 
    ⛔ **The example says "six attempts spent" for a reason.** A CodeRabbit line here reports a state
@@ -1661,7 +1673,7 @@ hold:**
 
    What is forbidden is narrower than "a live countdown": it is disclosing a countdown the run could
    still have acted on and did not. A countdown may well still be ticking when the run arms —
-   `unobtainable` and `could not re-enter` both look like that from outside — and each says *why*
+   `unobtainable` and `could-not-re-enter` both look like that from outside — and each says *why*
    acting further was impossible. For example: "`coderabbitai` rate-limited on a countdown, three
    attempts made, no review on any recent PR in the repository — the limit is exhausted at the
    account level, not on this PR"; or "`coderabbitai` rate-limited on a countdown, one attempt made;
@@ -1694,10 +1706,10 @@ hold:**
 6. **CodeRabbit has reviewed, or the run has established it cannot — on a PR with no
    `skip-bot-review` label.** A plan and a bundle change are behavioural prose a later run executes with no
    operator (§ Step 7), and CodeRabbit is the reviewer that reads them as such. So on any PR the
-   label rule leaves reviewable, **do not arm auto-merge on a first CodeRabbit refusal.** A
-   Whether a PR carries the label is decided by § Step 7's decision table and nowhere else; a
-   project-level skill change normally does carry it, so this condition usually reaches such a PR
-   only by the table's `reviewable` or `operator-override` arm.
+   label rule leaves reviewable, **do not arm auto-merge on a first CodeRabbit refusal.**
+
+   Whether a PR carries the label is decided by § Step 7's decision table and nowhere else — read it
+   there; this condition states no part of that rule.
 
    **Seven arms satisfy it, and the run names the one it took.** Three are the ordinary outcomes;
    four are the exits this section goes on to define. The report records the arm by these tokens and
@@ -1924,17 +1936,16 @@ If there is something worth changing:
 
    ```bash
    gh pr create --title "chore(cloud-plan-lane): {what changed}" --body-file {file} \
-     --label skip-bot-review
+     [--label skip-bot-review, if the table says so]
    ```
 
-   On the MCP path that single command is the draft route — create as draft, label, undraft
-   (§ Step 7) — because the label must be on before the PR is visible to the reviewers.
+   On the MCP path that command is the draft route — create as draft, label, undraft (§ Step 7) —
+   because the label must be on before the PR is visible to the reviewers.
 
    **Run § Step 7's decision table for the label** — do not assume the answer. The PR above touches
-   only the skill and lane docs, so it normally lands on the `project-skill` arm and carries
-   `skip-bot-review`; a change that also reaches a plan file or a bundle lands on `reviewable` and
-   keeps its review. Here the remaining scrutiny is step 1 above: this is the one PR the operator
-   approved before it was written.
+   only the skill and lane docs, so it normally lands on the `project-skill` arm — but take the
+   table, do not take that. Here the remaining scrutiny is step 1 above: this is the one PR the
+   operator approved before it was written.
 
 Keep it out of the plan's own PR. Two changes with different review audiences in one diff means
 neither gets read properly, and it couples a contract amendment to whether the plan lands.
@@ -2064,10 +2075,11 @@ An attempt that was made and refused is different evidence from one that was nev
 this log distinguishes them. State the budget that applied (six, per § Step 7) and how many attempts
 were spent.
 
-**On every PR, labelled or not, name which arm of § Step 8 condition 6 was satisfied**, in that
-condition's own words: `obtained`, `budget spent`, `unobtainable`, `could not re-enter`, or
-`skip-bot-review` (out of scope). A record that cannot name the arm cannot be checked against the
-gate, and the two commonest arms — `skip-bot-review` and `unobtainable` — are reached without any
+**On every PR, labelled or not, name which arm of § Step 8 condition 6 was satisfied** — the arm
+**token**, in that condition's spelling. ⛔ **Do not enumerate the arms here**: a list at this
+distance goes stale, and the last one did. Read them from condition 6. A record that cannot name the
+arm cannot be checked against the gate, and the two commonest arms — `skip-bot-review` and
+`unobtainable` — are reached without any
 retry log at all.
 Where a `silent` verdict triggered the recovery check (§ Step 7), record what the check found and
 whether the reviewer was recovered; where the PR carried `skip-bot-review` when the reviewers were
