@@ -5,10 +5,11 @@ aggregate invalidation, population-count persistence, the unclosed-boundary `end
 over-covering marker) were each driven red by mutation, so the core is sound. What remains is **ten
 instances in five families**:
 
-- **Two false claims in shipped documentation** — the `reconcile-ledgers` `--help` description restates a
-  claim round 2 refuted (G1), and `pair_rows`' maximality rationale justifies its machinery against an
-  algorithm the module never used (G2).
-- **One contained bug in the new verb** — a recursion cliff in the machinery G2 shows is redundant (G3).
+- **One false claim in shipped documentation** — the `reconcile-ledgers` `--help` description restates a
+  claim round 2 refuted (G1).
+- **One contained bug in the new verb, and one unrecorded fact that makes its fix cheaper** — a recursion
+  cliff (G3) in an augmenting path that is provably redundant, which nothing says (G2). Fix them
+  together.
 - **One omission** — the verb has no caller, so the plan's Goal is reached in principle only (G4).
 - **Two missing-test / cross-reader-inconsistency items** — the `worked_seconds_per_task` key name is
   unasserted (G8) and one of two readers of `total_tokens` sums booleans as counts (G6).

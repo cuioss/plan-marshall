@@ -323,6 +323,22 @@ for each mutated file after restore.
 No vacuous guard was found. The two guards report-02 added late (B1, B2) are genuinely load-bearing —
 M5 and M6 both reach the opposite verdict, not merely a shorter list.
 
+**Adversarial re-run of this sweep.** M1, M3, M5, M7 and M8 were re-applied independently (same
+snapshot-and-restore discipline, `$TMPDIR/adv-350-…/snapshots`, no `git checkout` / `restore` /
+`stash`) and every failure count above reproduced verbatim: M1 `1 failed, 37 passed`; M3 `2 failed,
+36 passed`; M5 `1 failed, 963 passed`; M7 `1 failed, 37 passed`; M8 `2 failed, 13 passed`, with the
+same named tests failing. One further mutant, devised for this review rather than taken from the
+table, was applied to close a gap in the sweep's own coverage:
+
+| # | File | Mutation | Result |
+|---|---|---|---|
+| M9 | `_cmd_qgate_mechanical.py:383` | widen the `files_exist` skip from `write-replace` to `write-replace` **and** `read` — the exact pre-round-1 shape that made D1's fixture vacuous | **DETECTED** — 1 failed (`test_files_exist_zero_is_load_bearing_not_vacuous`), 37 passed |
+
+M9 matters because D1's whole *Done when* rests on `files_exist: 0` being a measurement rather than a
+skip, and the audit had verified that by reading the fixture rather than by attacking the production
+predicate it depends on. It holds. `git status --porcelain` was empty for every mutated file after
+restore, and no production file is modified at the close of this review.
+
 **One live-directory precondition remains**, as report-02 disclosed (B4):
 `test_qgate_closure.py:696` asserts `len(hits) <= _closure._MAX_HITS_NAMED` where `hits` is the live
 `manage-tasks/scripts/*.py` set. Re-derived: 14 scripts today against a cap of 20, and the comparison
@@ -407,6 +423,15 @@ detector. Recorded here as a labelled deviation rather than a silent one — **G
 
 `report-01.md:288-295` records the expected-surface HYPOTHESIS `consumer-sweep.md` as **REFUTED**.
 Confirmed: that file appears in no line of `git show 63943f5 --name-only`.
+
+The plan's **third** expected-surface entry —
+`plan-retrospective/scripts/check-artifact-consistency.py`, labelled HYPOTHESIS, "the recall check that
+cannot see a path absent from every write-set" — is dispositioned by neither run report explicitly, and
+an earlier version of this document left it unmentioned too. **Confirmed as the surface it was
+hypothesised to be:** the file is in the diff (`git show 63943f5 --name-only`), its
+`_extract_bullet_entries` was widened to read all three headings (`:185-189`, `:295`), and the widening
+is guarded by `test_recall_survey_scope.py` (5 functions) and re-mutated here as M5. No gap — the
+hypothesis was confirmed by the work, only never written down as confirmed.
 
 ## Declared residue — current status
 
