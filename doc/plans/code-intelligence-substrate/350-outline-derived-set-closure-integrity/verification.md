@@ -95,7 +95,10 @@ treats the merged text of those files as the claim under test.
   deliberately excludes globs and delegates them to the reconciliation check, but the reconciliation
   check can only report *matches the deliverable does not enumerate* — so a glob in the write-set that
   matches **zero existing files** falls through both and reconciles clean with
-  `population_complete: True`.
+  `population_complete: True`. It is a missing **projection obligation**, not a lying population: the
+  block does publish `matches_enumerated: 0`; nothing asserts on it. ⛔ The fix must not be reached by
+  making `compute_referrer_gaps` `fnmatch`-aware — that rule is deliberate and
+  `test_referrer_reports_a_target_covered_only_by_a_glob` (re-mutated here, M1) pins it.
 
 ### D2 — run the declared sweep before freezing the write-set
 
