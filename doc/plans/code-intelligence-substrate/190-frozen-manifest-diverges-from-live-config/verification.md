@@ -415,11 +415,11 @@ Three bookkeeping claims are false against the landed diff:
 3. `report-01.md:322` — *"(2053 insertions across 23 files)"* as the sourcery size-refusal basis.
    The PR reports `additions: 2115, deletions: 50, changed_files: 23`. The file count holds; the
    insertion count is stale by 62 (the refusal fired at `d1e6a37`, before the later fix rounds, so
-   the figure was plausibly true when read and was not re-derived at report time). Gap G10.
+   the figure was plausibly true when read and was not re-derived at report time). Gap G11.
 
 One claim is **UNVERIFIABLE** here: *"`./pw verify` SUCCESS … 19693 passed, 14 skipped … 19702
 passed, 14 skipped"*. Running the full gate is out of this audit's scope per the brief. Nothing I ran
-contradicts it — the 37 tests in the three new files pass, and the two files I mutated returned to a
+contradicts it — the 37 tests in the three new files pass, and all three files I mutated returned to a
 clean `git status`.
 
 One claim I could not re-derive because the underlying artifact was edited after the fact: the
@@ -432,13 +432,13 @@ rewrite their comments in place; this is not evidence against the report.
 
 | Residue item (from report) | Still open? | Evidence |
 |---|---|---|
-| D2's observation point owed — first plan composed after this merges, reaching Step 1.5 | **OPEN** | `grep -rn "reconcile --plan-id {plan_id} --apply" marketplace/bundles/` returns exactly one site (`phase-6-finalize/SKILL.md:364`), and nothing in the tree records a run that reached it. The `doc/plans/` lane never executes `phase-6-finalize`. Gap G11. |
+| D2's observation point owed — first plan composed after this merges, reaching Step 1.5 | **OPEN** | `grep -rn "reconcile --plan-id {plan_id} --apply" marketplace/bundles/` returns exactly one site (`phase-6-finalize/SKILL.md:364`), and nothing in the tree records a run that reached it. The `doc/plans/` lane never executes `phase-6-finalize`. Gap G12. |
 | A cloud run neither performs nor owes `/sync-plugin-cache` | **MOOT** | Correct per `CLAUDE.md` § Standalone Plan Lane; no debt tracked. |
-| `reconcile` is called from nowhere but Step 1.5; phase 5 has the same exposure with no snapshot | **OPEN** | `grep -rn "candidate_steps\|candidate_verification_steps"` under `manage-execution-manifest/` returns hits for `phase_6` only — `phase_5.verification_steps` has no candidate snapshot and no reconcile. Gap G12. |
+| `reconcile` is called from nowhere but Step 1.5; phase 5 has the same exposure with no snapshot | **OPEN** | `grep -rn "candidate_steps\|candidate_verification_steps"` under `manage-execution-manifest/` returns hits for `phase_6` only — `phase_5.verification_steps` has no candidate snapshot and no reconcile. Gap G13. |
 | `coderabbitai`'s window reopens ~13:10 UTC; `@coderabbitai review` re-triggers | **MOOT** | PR merged 2026-08-15T12:49:53Z; no second opinion was sought. |
 | `sourcery-ai` will refuse this PR at any size | **MOOT** | PR merged; the general observation (large plans lose this reviewer) is an epic-level note, not a tracked item. |
-| Contract-change proposal open and unshipped | **PARTIALLY CLOSED** | `.claude/skills/cloud-plan-lane/SKILL.md:456-461` now carries the substance of the § Step 4 correction — *"changes the head mid-review, which aborts a bot's in-progress review **and consumes its rate window**"*. Neither proposed edit landed: no § Step 7 "land every known-pending bookkeeping edit before the review window opens" rule (`grep -n "bookkeeping"` finds only `:1131` and `:1580`, both unrelated), and no conditions-1-and-3 sequencing note at `:1424-1435` (where the report condition is now condition **4**, the document having been renumbered since). Gap G13. |
-| `test_branch_cleanup_merge_queue_routing` guard predicate is interpreter-version-sensitive | **OPEN** | `test/plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing.py:589` — `if token.type != tokenize.NAME or token.string == own_symbol`. Unchanged, pre-existing, still latent below Python 3.12. Gap G14. |
+| Contract-change proposal open and unshipped | **PARTIALLY CLOSED** | `.claude/skills/cloud-plan-lane/SKILL.md:456-461` now carries the substance of the § Step 4 correction — *"changes the head mid-review, which aborts a bot's in-progress review **and consumes its rate window**"*. Neither proposed edit landed: no § Step 7 "land every known-pending bookkeeping edit before the review window opens" rule (`grep -n "bookkeeping"` finds only `:1131` and `:1580`, both unrelated), and no conditions-1-and-3 sequencing note at `:1424-1435` (where the report condition is now condition **4**, the document having been renumbered since — the merge gate now runs conditions 1–4 with a condition 5 disclosure, `SKILL.md:1312-1315`, `:1426`, `:1428`, `:1437`). Gap G14. |
+| `test_branch_cleanup_merge_queue_routing` guard predicate is interpreter-version-sensitive | **OPEN** | `test/plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing.py:589` — `if token.type != tokenize.NAME or token.string == own_symbol`. Unchanged, pre-existing, still latent below Python 3.12. Gap G16 (added by the adversarial review — the original audit named this residue item but filed no entry for it). |
 
 ## Out-of-scope and collateral
 
@@ -459,12 +459,28 @@ Collateral beyond the plan's declared surface, all declared in the report and al
   preserve the monkeypatch surface, so `test_prepare_execute.py`'s direct
   `prepare_execute._executor_landed(...)` calls still bind to the same object.
 - `ref-code-quality/standards/code-organization.md` (+32) — D4c's home; named in the plan.
-- `tools-script-executor/SKILL.md` (+10/−…) — the F6 sibling-enumeration fix.
+- `tools-script-executor/SKILL.md` (+7/−3) — the F6 sibling-enumeration fix.
 - `test/plan-marshall/phase-6-finalize/test_manifest_loadability_guard.py` (+51/−12) — the narrative
   pins the D2 heading rename broke, updated rather than reverted, with two *new* pins added
   (ordering, `unreconcilable_step`).
 
 Nothing was changed without being declared.
+
+## Plan instructions beyond the deliverable list
+
+The plan carries four instructions that are not deliverables. Each is checked here so none is
+silently unmentioned.
+
+| Instruction (`plan.md`) | Status | Evidence |
+|---|---|---|
+| ⚠ *"Evaluate the split at outline … If the outline finds D4 does not belong beside D1–D3, drop it to its own trivial plan"* (`plan.md:87-91`) | **Honoured** | `report-01.md:15-25` records the evaluation and a reasoned CARRY, with three stated grounds. The strongest is verifiable and true: D5(c) is a test **of** D4b, so splitting D4 out would have orphaned a third of D5 — `test_title_token_repeat_suppression.py` drives `cmd_title_token`, which is D4b's surface. The plan asked for the evaluation, not for a particular answer. |
+| *"D0's refutations are as valuable as its confirmations and must appear in the run report"* (`:131-132`) | **Honoured** | The one partial refutation is stated at `report-01.md:40-45` and is visibly load-bearing on D2's design. |
+| ⛔ *"D2 cannot be verified by this run's own finalize. State that explicitly and name the observation point"* (`:133-134`) | **Honoured** | `report-01.md:77-79`, and the observation point is still owed (gap G12). |
+| *"D5's tests are each verified to fail before the fix. Record the pre-fix failures."* (`:135`) | **Honoured, and re-derived** | `report-01.md:107-115`; all three reds reproduce against `d2e94b4^` (§ D5). |
+
+The plan's `⛔ ACTIVELY DOUBTED` claim — *"All four are still live at HEAD"* — resolved against the
+plan: none of the four was already closed. That is a correct outcome of the gate, not a failure of
+it; D0's value was the partial refutation it did find.
 
 ## Method and coverage
 
@@ -482,7 +498,9 @@ assertion list. Read every documentation surface the report claims to have fixed
 `finalize-step-sync-baseline.md`, `worktree-handling.md`, `tools-script-executor/SKILL.md`,
 `manage-status/SKILL.md`, `status-lifecycle.md`, `code-organization.md`). Re-derived two D0 verdicts
 against the `d2e94b4^` blobs. Ran the three test files (37 pass) and three targeted mutations.
-Verified PR #1236's state, reviews, and comments through the GitHub MCP server.
+Verified PR #1236's state, reviews, and comments through the GitHub MCP server. The adversarial pass
+added: each test file run against its own pre-fix module, both generator verbs run directly, the
+fixture mutation M4, and a re-run of M1–M3.
 
 **Search-negative control.** Before trusting *"`reconcile` has exactly one call site"*, I ran the
 same grep pattern against `reconcile --plan-id {plan_id} [--apply]` and confirmed it matches the
@@ -497,9 +515,12 @@ text exists, and the single-hit result is a real count rather than a mis-typed f
   has no `.plan/` and no generated executor, and the lane that produced the plan never runs phase 6.
   D2's runtime behaviour rests entirely on the unit tests driving `cmd_reconcile` directly — which is
   what the report itself says, and which is why the observation point remains owed.
-- **`generate_executor generate`'s actual write path.** The seam is stubbed in every test and I did
-  not run the real generator against a worktree; the disk post-assertion is what makes that gap
-  tolerable, and it is itself pinned (mutation M3).
+- **`generate_executor generate`'s actual write path against a real vendored worktree.** The seam is
+  stubbed in every test. The real generator *was* run for both verbs against a directory with no
+  `marketplace/bundles` — which is what settled the indeterminate bound and established that
+  `generate` exits **0** on `status: error` (§ Correctness review) — but no run was made against a
+  worktree whose bundles do resolve, so the successful write path itself is still read, not executed.
+  The disk post-assertion does **not** make that gap tolerable, which is gap G15.
 - **Gap G4's exception path empirically.** I established it by reading the `except` clauses rather
   than by forcing a `PermissionError` out of `subprocess.run`, which would require making `python3`
   non-executable in this environment.

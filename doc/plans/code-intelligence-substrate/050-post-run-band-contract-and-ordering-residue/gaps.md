@@ -142,35 +142,45 @@ appeared — did not fire when exactly that happened, because it watches `reads`
   `realized_footprint` → `merge_commit_sha` → `modified_files` — inside `audit.py`, and update the four
   check documents to name the resolved source rather than the raw key.
 - **Done when:** An archived plan carrying only `references.realized_footprint` (no `modified_files`)
-  reports a non-zero `modified` count and is classified as shipping by `plan_ships`.
+  reports a non-zero `modified` count at `:1571`, and `:1810` / `:3061` / `:4178` resolve the **realized**
+  set rather than falling back to `affected_files` — asserted by a test that gives a fixture plan a
+  `realized_footprint` disjoint from its `affected_files` and pins that the realized set is the one used.
 - **Effort:** M
-- **Risk if fixed:** Plans currently excluded as non-shipping will re-enter the delivery-cost corpus,
-  shifting every cross-plan aggregate the auditor computes.
+- **Risk if fixed:** Every cross-plan aggregate the auditor computes shifts, because three checks that
+  have silently been grading against the declared file set will start grading against the realized one.
 
 ## G5 — Make `finalize-step-lessons-housekeeping` read a footprint key that still exists
 
 - **Kind:** bug
 - **Severity:** medium
 - **Topic:** dispatch/finalize
-- **Where:** `.claude/skills/finalize-step-lessons-housekeeping/SKILL.md:88-90` (Step 1 read), `:55`
-  (classification input), `:318` (Error Handling fallback row)
+- **Where:** `.claude/skills/finalize-step-lessons-housekeeping/SKILL.md:88-91` (Step 1 read), `:55`
+  (classification input), `:98` and `:318` (Error Handling fallback row)
 - **Evidence:** Step 1 runs
   `manage-references get --plan-id {plan_id} --field modified_files`; `:55` says the Step 3
-  classification *"reasons about what the plan changed from `modified_files`"*; `:318` names
+  classification *"reasons about what the plan changed from `modified_files`"*; `:98` and `:318` name
   `request.md` + `modified_files` as the fallback when the quality-verification report is absent — which,
   per the D2 contract, is the normal case at this step's settle-band order.
-- **Why it matters:** Both of this step's outcome inputs are now empty for a current plan: the
-  retrospective report is normally absent at order 4, and `modified_files` is no longer written. The step
-  classifies lessons against `request.md` alone. Plan 050's R3 rationale names exactly this consequence —
-  *"Every finalize step that scopes itself from the declared file set inherits that miss"* — but scoped its
-  fix to two retrospective consumers.
+  ⚠ **The read does not return an empty list — it returns an error payload.** `_references_crud.cmd_get`
+  (`:81-89`) returns `{'status': 'error', 'error': 'field_not_found', 'message': "Field 'modified_files'
+  not found"}` when the key is absent, and `manage-references.py:133-143` emits that TOON and **exits 0**
+  by design (*"Callers branch on the TOON `status` field, never on the process exit code"*). So the step
+  receives a `status: error` document as its Step 1 outcome input, and **no row in its Error Handling
+  table covers `field_not_found`** — the table's only `modified_files` row (`:318`) is about a missing
+  retrospective report and names the dead key as the remedy.
+- **Why it matters:** Both of this step's outcome inputs are unusable for a current plan: the
+  retrospective report is normally absent at order 4, and the `modified_files` read errors. The step
+  classifies lessons against `request.md` alone, with an unhandled error payload in place of a footprint.
+  Plan 050's R3 rationale names exactly this consequence — *"Every finalize step that scopes itself from
+  the declared file set inherits that miss"* — but scoped its fix to two retrospective consumers.
 - **Action:** Change Step 1 to read the realized footprint (`--field realized_footprint`, falling back to
   `affected_files` pre-merge, since this step runs at order 4 before the capture exists), and update `:55`
   and `:318` to name the key actually read. Note the capture happens at branch-cleanup (order 70), so a
   same-run read must use the live worktree diff via `manage-references compute-footprint` rather than the
   capture.
-- **Done when:** The step's Step 1 command names a key or verb that returns a non-empty value on a current
-  plan, and the Error Handling row at `:318` names that same source.
+- **Done when:** The step's Step 1 command returns `status: success` (not `field_not_found`) on a plan
+  created after the ledger removal, and the fallback text at `:98` and the Error Handling row at `:318`
+  name that same source.
 - **Effort:** M
 - **Risk if fixed:** Lesson classification will see a real file set for the first time in a while, which
   may change retain/remove decisions on the next few runs.
@@ -178,7 +188,9 @@ appeared — did not fire when exactly that happened, because it watches `reads`
 ## G6 — Correct the `modified_files` claim in the D2 contract document
 
 - **Kind:** doc-defect
-- **Severity:** low
+- **Severity:** medium *(raised from low in adversarial review: the calibration puts "a false claim in
+  shipped documentation" at medium, and this is the same class as G3, which is rated medium. It is not a
+  cosmetic inconsistency — it is the load-bearing premise of D2's worked case.)*
 - **Topic:** bundle-docs
 - **Where:** `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/source-edit-pushability.md:76-84`
   (specifically `:81`)
@@ -271,3 +283,44 @@ appeared — did not fire when exactly that happened, because it watches `reads`
 - **Effort:** S
 - **Risk if fixed:** `check_affected_files_recall`'s signature changes; its existing tests patch the
   resolver and would need retargeting.
+
+## G10 — Make D1's coverage canary watch `destroys`, and re-measure the floor it declares
+
+- **Kind:** bug
+- **Severity:** medium
+- **Topic:** measurement/metrics
+- **Where:** `test/plan-marshall/phase-6-finalize/test_finalize_edge_ordering.py:58`
+  (`_ABSENT_CONSUMER_MARKERS`), `:18-23` (module-docstring coverage claim), `:201-221`
+  (`test_consumer_side_data_edges_are_undeclared_below_the_floor`)
+- **Evidence:** The module asserts, in prose at `:18-23` and as a test at `:201-221`, that *"the CONSUMER
+  side of an artifact-level data edge — WHICH artifact a step READS — has **no** frontmatter marker at
+  all"*. That is false against the current tree. `extension-api/standards/ext-point-finalize-step.md` now
+  defines both `reads` and `destroys` as optional consumer-side fields, and
+  `extension-api/standards/finalize-step-order-bands.md:76-99` states the ordering obligation they carry
+  (*"a step that `reads: [worktree]` is mis-ordered if it runs after the gate"*). Two steps already
+  declare the vocabulary: `phase-6-finalize/standards/branch-cleanup.md:9` → `destroys: [worktree]` and
+  `phase-6-finalize/standards/archive-plan.md:9` → `destroys: [plan-directory]`. Running the module's own
+  `_finalize_records()` with `destroys` added to the probe set finds both declarers; running it as
+  shipped finds none, because `_ABSENT_CONSUMER_MARKERS` (`:58`) lists only `reads`, `consumes`,
+  `reads_artifacts`, `consumes_artifacts`. The canary's docstring promises *"If a future plan adds a
+  `reads`/`consumes` marker, this test fails and the floor is re-measured"*; that plan arrived
+  (`308528d`, #1211, 2026-08-13 — one day after plan 050 landed) and the suite stayed green.
+- **Why it matters:** D1's deliverable was *"the enumeration mechanism's coverage is stated"*, and the
+  canary is the mechanism that keeps that statement true as the vocabulary moves. It failed at its first
+  real test, so the tree now carries a confidently-worded coverage claim that is false, guarded by a test
+  that reports green. This is the plan's own stated defect — *"a count presented without its coverage is
+  the defect this plan exists to fix"* — reproduced one level up, in the coverage rather than the count.
+- **Action:** Add `destroys` to `_ABSENT_CONSUMER_MARKERS` (which makes the canary fail immediately, as
+  intended), then discharge the failure by re-measuring: rewrite `:18-23` and the test to state that the
+  consumer-side vocabulary **exists but is not yet derived into edges**, and either extend
+  `derive_ordering_edges()` to emit `reads`→producer and `reads`-after-`destroys` edges, or state
+  explicitly that those edges are out of the current derivation's scope and why. Prefer extending the
+  derivation: `destroys` is declared and its ordering obligation is documented, so a real edge class is
+  currently underived.
+- **Done when:** Adding a `reads:` **or** a `destroys:` declaration to any finalize step doc either
+  produces a derived edge that the GATE assertion checks, or turns a named test red — and no statement in
+  the module claims the consumer-side vocabulary is empty while `ext-point-finalize-step.md` defines it.
+- **Effort:** M
+- **Risk if fixed:** Deriving `reads`/`destroys` edges may surface existing ordering violations that the
+  gate-relative derivation never checked; those are real findings but will need triage before the gate
+  can go green.

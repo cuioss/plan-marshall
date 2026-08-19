@@ -282,21 +282,37 @@ hold.** Two claims do not, and two more are imprecise:
 4. **Line number drifted.** Finding 3 cites `doc/concepts/code-intelligence.adoc:34`; the sentence now
    sits at **line 36**. The claim itself is true (see G7). Line drift in a dated record is expected and
    is not raised as a gap.
+5. **Surface misnamed, verdict correct.** § Reviewer participation attributes `cuioss-review-bot`'s
+   verdict to its *"'PR Reviewer Guide' review body"*. The GitHub API returns exactly **one** review on
+   #1214 and it is `sourcery-ai`'s rate-limit notice; `cuioss-review-bot`'s "No major issues detected"
+   is an **issue comment** (`#issuecomment-5283908171`), not a review. Both quoted strings are verbatim
+   and the `reviewed` verdict is substantively right, so this is a misnamed surface rather than a false
+   claim. No gap raised.
+
+Verified verbatim against the artifacts: `sourcery-ai`'s *"you have reached your weekly rate limit of
+500000 diff characters"* (review `4929635423`); `cuioss-review-bot`'s *"No major issues detected"* /
+*"No security concerns identified"*; PR #1214's file list (13 files) and `+434 / −509` split, which
+reconciles exactly as this document states (232+108+86+8 = 434 added; 36+1+80+4+24+4+81+59+47+173 = 509
+deleted).
 
 Claims I could **not** verify: the build-gate figures (*"19497 passed, 14 skipped"*, *"mypy production
 [396] + test [726]"*, *"351s"*) — running `./pw verify` is outside this audit's remit; and the
 sub-agent `subagent_tokens` self-reports, which leave no artifact in the tree. Both are recorded as
-UNVERIFIABLE, not as passes.
+UNVERIFIABLE, not as passes. A scoped `uv run mypy` over the three edited scripts was attempted and is
+**not** reported here: outside the pyprojectx envelope it cannot resolve the cross-skill `MYPYPATH`
+entries and reports import-not-found errors that are artifacts of the invocation, not of the shipped
+state. The type-check half of the gate therefore remains UNVERIFIABLE, corroborated only by the
+merge-queue-verified merge.
 
 ## Declared residue — current status
 
 | Residue item (from report) | Still open? | Evidence |
 |---|---|---|
 | **Landing confirmation** — auto-merge armed on #1214, `state: MERGED` read delegated | **CLOSED** | GitHub API: PR #1214 `"merged": true`, `"merged_at": "2026-08-13T17:36:20Z"`, `merged_by: cuioss-oliver`; the facade is absent from `main`-descended `61a43e5` |
-| **Pre-existing doc-hygiene: `client-api.md` H2/H3 hierarchy break** | **STILL OPEN** | `client-api.md`: last H2 before the tail is `## Error Handling` (580); the H3 sections `files` (606), `which-module` (712), `find` (817), `search` (909), `diff-modules` (1144), `descriptor-regression-check` (1284), `capabilities` (1356) all render under it — seven, exactly as reported. (G3) |
+| **Pre-existing doc-hygiene: `client-api.md` H2/H3 hierarchy break** | **STILL OPEN — and wider than reported** | `client-api.md`: the H3 sections `files` (606), `which-module` (712), `find` (817), `search` (909), `diff-modules` (1144), `descriptor-regression-check` (1284), `capabilities` (1356) render under `## Error Handling` (580) — seven, exactly as reported. Four **more** the report did not name — `module` (309), `overview` (449), `commands` (488), `resolve` (515) — render under `## Resolver provenance (the graph family)` (90), whose own opening sentence scopes it to "the four graph-family verbs". Only 2 of the document's 17 verb sections (`info` 22, `modules` 55) sit under `## Commands`. (G3) |
 | **Pre-existing doc-hygiene: `SKILL.md` ↔ `client-api.md` verb-set drift** | **STILL OPEN** | `grep -c siblings client-api.md` → 0; `profiles` appears once (540) and only inside the `resolve` `mutating` prose, never as a verb; `grep -c descriptor-regression-check SKILL.md` → 0. (G4, G5, G6) |
 | **Pre-existing doc-hygiene: `info` adjacency overstatement** | **STILL OPEN** | `doc/concepts/code-intelligence.adoc:36` — "plus the adjacency surfaces of `overview` and `module` / `info`"; `client-api.md:22-52` shows `info` returning `project` / `technologies` / `modules{name,path,purpose,description,freshness}` with no edge or dependency field, while `module` (`client-api.md:346` region) does carry `internal_dependencies`. (G7) |
-| **Pre-existing doc-hygiene: intra-doc duplication in `client-api.md § search`** | **STILL OPEN** | `--ignore-case`/`--literal` composition stated at 941-946 and again at 1111-1116; `count` vs `file_count` at 1034-1038 and again at 1117-1120. (G8, G9) |
+| **Pre-existing doc-hygiene: intra-doc duplication in `client-api.md § search`** | **STILL OPEN** | `--ignore-case`/`--literal` composition stated at 936-947 and again at 1111-1116; `count` vs `file_count` at 1034-1040 and again at 1117-1121. (G8, G9) |
 | **Rationale's permanent home** — promote to an ADR or concepts note if it should outlive collect | **STILL OPEN** | `doc/adr/` holds 17 ADRs, none about LSP conformance or the query vocabulary; no concepts page carries the argument. `rationale.md` still lives only in the plan directory. (G10, G11) |
 | **No orchestrator parent** | **N/A — correct as recorded** | Nothing to transition. Evidence corrected: `.plan/` **does** exist in this clone (`execute-script.py`, `marshal.json`, `project-architecture/`, `temp/`, `local/`), but `.plan/local/` holds only `logs/` and `marshall-state.toon` — there is no `orchestrator/` directory and so no parent plan spec. Note that this local state belongs to the audit machine, not to the cloud session that ran plan 135, which genuinely had no `.plan/` at all; the report's claim is about that session and stands |
 
@@ -319,9 +335,13 @@ therefore not undeclared collateral.
 - Whole-tree facade sweep — `git grep` over tracked files, plus `grep -rn --exclude-dir=.git` over the
   working tree including `.claude/`; each negative positive-controlled first.
 - CLI behaviour — `architecture.py lsp hover --module x` with all marketplace `scripts/` directories on
-  `PYTHONPATH` (the `.plan/` executor does not exist in this clone).
+  `PYTHONPATH`, **and** the same call through `.plan/execute-script.py` (the generated executor does
+  exist in this clone; the original "it does not" was wrong). Both registries reject `lsp`.
 - Tests — `uv run python -m pytest` over the six `manage-architecture` test files that cover the wrapped
-  verbs and the kept plan-130 behaviour: 163 passed, 21.24s.
+  verbs and the kept plan-130 behaviour (163 passed), then over the **whole** `manage-architecture`
+  module (573 passed, 26.50s), which is the population the plan's Verification section names.
+- Mutation sweep — `cmd_impact` mutated to return `[]`; `test_graph_queries.py` went red (2 failed);
+  the file restored from a byte snapshot and md5-verified.
 - Lint — `uv run ruff check` over the three edited scripts; `doctor-marketplace.py quality-gate --paths
   marketplace/bundles/plan-marshall/skills/manage-architecture` (36 rules, 0 findings).
 - Documentation state — read `SKILL.md` 36-49 and 498-556, `client-api.md` 22-52, 554-585, 909-1130,
@@ -329,6 +349,12 @@ therefore not undeclared collateral.
   index.
 - Verb census — a script comparing `add_parser` names against `### ` headings in both docs and against
   the Command Summary rows.
+- Link integrity, both directions — every relative link out of the five edited documents resolved
+  against the filesystem (0 missing), and every anchored link into them from any tracked `.md`/`.adoc`
+  outside `doc/plans/` resolved against their live heading sets (0 dangling).
+- Gitignored surfaces — `.plan/execute-script.py` and the whole `.plan/` tree swept for `cmd_lsp_` and
+  the facade invocation forms (0 hits); `.claude/` swept case-insensitively for `lsp` (0 files);
+  `target/` absent; `marketplace/targets/` carries no facade text.
 - Run history — GitHub API on PR #1214: `get`, `get_files` (13 files with patches), `get_commits` (5),
   `get_reviews` (1), `get_comments` (2).
 

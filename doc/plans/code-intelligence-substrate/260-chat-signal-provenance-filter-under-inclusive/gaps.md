@@ -79,33 +79,48 @@ hole is **latent**: it does not occur anywhere in the reachable 81-transcript co
 - **Evidence:** the contract states residue-based classification "fails toward *'synthetic'* instead,
   **for any injection that carries an envelope**", and scopes the published residual gap to
   envelope-*less* notices only. G1 is an envelope-bearing injection that fails toward *operator*.
+  A neighbouring claim needs the same scoping treatment though it is not itself false: `:43` and the
+  matching docstring at `_chat_provenance.py:93-96` say an unmatched tag "cannot suppress the
+  stripping of a well-formed envelope that follows it". That is literally true — verified,
+  `partition_turn('<sr>x<sr>body</sr>')` does strip the inner pair — but the surviving unmatched token
+  *is itself* the residue that makes the turn read as operator, which is the outcome the sentence is
+  cited to rule out.
 - **Why it matters:** both script docstrings defer to this document as normative, so it is the spec. A
   guarantee stated more broadly than the code delivers is precisely the over-claim this plan removed
   from the code, reintroduced one file over — and a reader trusting it will not look for G1's class.
 - **Action:** if G1 is fixed, restate the guarantee with the pairing rule that now backs it; if G1 is
-  deferred, scope the sentence to *well-formed* envelopes and add the same-name unmatched-open case to
-  the residual-gap section with its error direction (fail toward operator).
+  deferred, scope the sentence to envelopes whose body carries no unbalanced token of the envelope's
+  own tag name, and add **both** G1 variants (quoted unmatched open, quoted close) to the residual-gap
+  section with their error direction (fail toward operator) and the note that only the second fires
+  inside a nested envelope such as `<task-notification>`.
 - **Done when:** the sentence at `:52` is true of the shipped code, and the residual-gap section names
-  every known escape with its direction.
+  every known escape with its direction — including both G1 variants while G1 is open.
 - **Effort:** S
 - **Risk if fixed:** none beyond ordinary doc drift; the section is referenced by both script
   docstrings, so the wording must stay consistent with them.
 
-## G3 — Add the regression for an envelope containing an unmatched same-name open tag
+## G3 — Add the regressions for an envelope carrying an unbalanced token of its own tag name
 
 - **Kind:** test-gap
 - **Severity:** medium
 - **Topic:** tests
 - **Where:** `test/plan-marshall/plan-retrospective/test_chat_provenance.py:63-83` (`TestSyntheticClasses`)
 - **Evidence:** the suite pins `<a><a>x</a></a>`, `<a><a><a></a></a></a>` and `<a><b><a></a></b></a>`
-  — every one balanced. The unbalanced `<a>x<a>y</a>` shape is unexercised, which is why G1 survived
-  twelve verification rounds and a 240-probe mutation campaign.
+  — every one balanced. Both unbalanced shapes, `<a>x<a>y</a>` and `<a>x</a>y</a>`, are unexercised,
+  which is why G1 survived twelve verification rounds and a 240-probe mutation campaign. The nearest
+  existing case, `test_unmatched_close_tag_is_ordinary_text` (`:159`), pins a close tag with **no**
+  open of that name and so cannot see either shape.
 - **Why it matters:** without a witness at both the predicate and the verdict level, a later refactor
   of the pairing walk can reintroduce G1 silently; the class already demonstrates that balanced-only
-  coverage does not imply the guarantee.
-- **Action:** add a predicate-level case and a verdict-level case (a transcript of such turns must
-  report `no_signal: true`), naming the tag literally rather than iterating any constant.
-- **Done when:** both new tests exist and fail against the current implementation, then pass after G1.
+  coverage does not imply the guarantee. Two cases are needed rather than one because the two variants
+  fail through different branches and a fix for one does not imply a fix for the other.
+- **Action:** add predicate-level cases for **both** shapes and a verdict-level case for each (a
+  transcript of such turns must report `no_signal: true`), naming the tag literally rather than
+  iterating any constant. Include one case in the real `<task-notification>`/`<result>` nesting, since
+  the flat-envelope case does not discriminate it: a quoted open inside `<result>` is already
+  classified synthetic today, so a test using only that shape would pass pre-fix and be vacuous.
+- **Done when:** the new tests exist, each **fails** against the current implementation (verified by
+  running them before the fix), and all pass after G1.
 - **Effort:** S
 - **Risk if fixed:** none.
 
@@ -155,14 +170,21 @@ hole is **latent**: it does not occur anywhere in the reachable 81-transcript co
 - **Topic:** measurement/metrics
 - **Where:** `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/extract-chat-signal.py:251-253`
   (`render_reduced`) and `:244` (the kept turn stores raw `text`)
-- **Evidence:** a kept operator turn is rendered with its attached envelopes intact. Measured: an
-  operator turn of 20 characters carrying an 11 KB `<system-reminder>` renders **11,563 bytes** into
-  `reduced_transcript`, every byte counted against `read_budget_bytes` and `over_budget`.
-  `partition_turn` already computed the residue and it is discarded.
+- **Evidence:** a kept operator turn is rendered with its attached envelopes intact. Reproducible
+  measurement against the shipped `SYSTEM_REMINDER` fixture: a `user` turn of 26 bytes of operator
+  prose plus the 166-byte fixture reminder renders **199 bytes** into `reduced_transcript` where the
+  residue `partition_turn` already computed is **27** — ~86 % of the payload is envelope, and every
+  byte counts against `read_budget_bytes` and `over_budget`. The proportion scales with the reminder.
 - **Why it matters:** this epic's theme is token reduction; the reducer now knows exactly which bytes
-  are harness boilerplate and still ships them to the LLM prompt, and they can push a real transcript
-  over the budget into a false Tier-2 refusal. Behaviour is unchanged from pre-fix, so this is an
-  unclaimed opportunity rather than a regression.
+  are harness boilerplate and still ships them to the LLM prompt, and in principle they can push a
+  real transcript over the budget into a false Tier-2 refusal. Behaviour is unchanged from pre-fix, so
+  this is an unclaimed opportunity rather than a regression.
+- ⚠ **Scope, measured:** across the 81 reachable transcripts the 82 kept operator turns carry **0
+  bytes** of envelope — residue equals raw text for every one, because the reminder class does not
+  reach the reducer as an inline `user` text block on this harness surface. The saving is real only
+  where the attached-envelope shape occurs, which no reachable transcript currently exhibits; the
+  false-Tier-2-refusal argument is prospective, not observed. Measure the real saving before spending
+  the effort.
 - **Action:** render the residue (plus recovered operator-bearing text) for kept `user` turns instead
   of the raw text, leaving `assistant` context turns as they are; measure the payload reduction on a
   real transcript before and after.
@@ -181,12 +203,17 @@ hole is **latent**: it does not occur anywhere in the reachable 81-transcript co
 - **Where:** `_chat_provenance.py:48-52` (`HARNESS_NOTICE_PREFIXES`) vs
   `_chat_gate_decisions.py:33-37` (`OPERATOR_REFUSAL_MARKERS`)
 - **Evidence:** `is_operator_authored('[Request interrupted by user]')` → `True`, so the turn scores in
-  `operator_turn_count`. The identical wording is listed as a **gate decision** marker on the
-  tool-result side. `chat-history-analysis.md:28` defines `operator_turn_count` as *free-form operator
-  corrections*.
+  `operator_turn_count` (re-verified end-to-end: `operator 1, gate 0, no_signal false`). The identical
+  wording is listed as a **gate decision** marker on the tool-result side.
+  `chat-history-analysis.md:28` defines `operator_turn_count` as *free-form operator corrections*.
+  Corpus occurrences of the shape on the text channel: **0 of 6,190** `user` turns, so the
+  misattribution is latent.
 - **Why it matters:** the two counters exist precisely to keep free-form corrections and gate decisions
   apart; a harness-authored interrupt notice arriving on the text channel lands in the wrong one, so a
-  run instrumented only by interrupts reads as having free-form operator prose it never had.
+  run instrumented only by interrupts reads as having free-form operator prose it never had. Note the
+  bound on the harm, which is why this is `low` and not `high`: an interrupt *is* an operator action,
+  so `no_signal: false` remains the correct verdict — only the attribution between the two counters
+  is wrong.
 - **Action:** recognise the refusal/interrupt wordings on the text channel too and count them as gate
   decisions (rendered under `OPERATOR_DECISION_ROLE`), sharing one constant between the two modules
   rather than duplicating the literals.
@@ -206,12 +233,12 @@ hole is **latent**: it does not occur anywhere in the reachable 81-transcript co
 - **Topic:** tests
 - **Where:** `test/plan-marshall/plan-retrospective/test_chat_gate_decisions.py` and the fixture
   builders `_plan_retrospective_fixtures.py:378-385`
-- **Evidence:** across 42 reachable transcripts (8,382 parseable turns) there is not one
-  `AskUserQuestion` `tool_use` block, so `gate_decision_count` is 0 corpus-wide and the D3 channel has
-  never been exercised on real data. The fixtures are hand-built; the run report's residue lists other
-  unwitnessed shapes but not this one. (The block *shapes* the code keys on were confirmed against
-  real data: `tool_use` carries `{type,id,name,input,caller}`, `tool_result` carries
-  `{type,tool_use_id,content}`.)
+- **Evidence:** across 81 reachable transcripts (16,163 parseable turns) `decision_tool_use_ids`
+  returns not one `AskUserQuestion` `tool_use` block — 27 files contain the literal string, none as a
+  tool call — so `gate_decision_count` is 0 corpus-wide and the D3 channel has never been exercised on
+  real data. The fixtures are hand-built; the run report's residue lists other unwitnessed shapes but
+  not this one. (The block *shapes* the code keys on were confirmed against real data: `tool_use`
+  carries `{type,id,name,input,caller}`, `tool_result` carries `{type,tool_use_id,content}`.)
 - **Why it matters:** if a real `AskUserQuestion` answer differs from the fixture in any way the code
   keys on, the whole recovered channel is inert in production and nothing in the suite would notice —
   and the channel exists precisely because it is the one an operator uses on a gated run.
@@ -219,7 +246,11 @@ hole is **latent**: it does not occur anywhere in the reachable 81-transcript co
   fixture module (redacted), and assert the reducer recovers it; record in the aspect contract that the
   fixture is captured rather than constructed.
 - **Done when:** at least one gate-decision test drives a transcript fragment captured verbatim from a
-  real session, and the captured shape is named as such in the fixture module.
+  real session, and the captured shape is named as such in the fixture module. ⚠ This entry is
+  **contingent on an input that does not exist yet**: no reachable transcript contains an
+  `AskUserQuestion` exchange, so a fix run must first produce one (drive a gated run) or wait for one.
+  A run that cannot obtain a real exchange should record that and close the entry as blocked rather
+  than substitute another hand-built fixture, which would add nothing.
 - **Effort:** M
 - **Risk if fixed:** a captured fixture can carry session-specific content; it must be redacted, and it
   pins one harness version's shape, so it should complement rather than replace the constructed cases.

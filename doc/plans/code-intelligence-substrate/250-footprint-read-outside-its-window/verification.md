@@ -436,8 +436,13 @@ No `.plan/` write, no other plan's directory, no bundle outside the two skills t
   cross-check against a filtered-search false negative, by sweeping the truthiness predicate shapes
   (`if not footprint`, `if footprint`, `footprint or`, `footprint else`). The second sweep is what
   surfaced G5, and it also confirmed the first sweep was not silently empty.
-- Ran four targeted test files (76 tests) plus the two composer files (31 tests) with
-  `uv run python -m pytest <file> -o addopts=""`; all green.
+- Ran the plan's test files with `uv run python -m pytest <file> -o addopts=""`; all green. Re-counted
+  at the moment of this claim: `test_analyze_logs.py` **110**, `test_check_artifact_consistency.py`
+  **45**, `test_analyze_logs_behavior.py` **28**, `test_recall_read_intent_denominator.py` **21**,
+  `test_verify_failure_scope.py` **13** — **217** — plus the two composer files
+  (`test_canonical_verify_inactive.py` + `test_security_class_gate_regression.py`) at **31**. (An
+  earlier "four targeted test files (76 tests)" reconciled against no combination of these files and is
+  replaced by the measured figures.)
 - Performed four mutations (three defect-injections, one merge-base rollback), each preceded by a byte
   snapshot into `/tmp/verify-250-mutsweep/` and each followed by restoration from that snapshot and a
   `git status --porcelain` check on the file. Two files in the tree were dirty from concurrent audit
@@ -447,3 +452,52 @@ No `.plan/` write, no other plan's directory, no bundle outside the two skills t
 - **Not checked:** the full `./pw verify` figure, per-commit gate history, and any claim about the run's
   own process (round narratives, token usage, reviewer surface reads) — these are historical or squashed
   away, and are marked UNVERIFIABLE above rather than assumed.
+
+## Adversarial review
+
+Independent review of this document and `gaps.md`. Attacks run: A1 false positives, A2 false
+negatives, A3 vacuous evidence, A4 counts and quotes, A5 actionability, A6 severity/topic,
+A7 coverage, A8 internal consistency.
+
+Re-taken at `a90adeb` rather than the `ed7f1ad` this document stamps. That is not a stale-evidence
+problem: `git diff --name-only ed7f1ad a90adeb -- marketplace test` is **empty** — every commit between
+the two touches only `doc/plans/` — so every code citation below was checked against the same bytes the
+original audit read. Two files were dirty from concurrent agents during the review and neither was
+touched; one test module was observed transiently red from another agent's in-flight mutation and the
+reading was re-taken clean, as the concurrency caveat requires.
+
+| # | Attack | What was found | Correction applied |
+|---|---|---|---|
+| A1 | False positives | All seven gaps and both PARTIAL verdicts were re-derived from the tree and every one is true as stated. G1 was reproduced from scratch (below). G3's absence re-measured (`grep -c unresolved_reason phase-5-execute/SKILL.md` → `0`). G5's twelfth truthiness hit re-measured (12 hits, eleven mapped, `_manifest_validation.py:1026` unmapped). G6's route gap read in the test source. G7's two tier-1 policies read side by side (`_footprint_resolver.py:218-221` returns the sentinel; `analyze-logs.py:286-289` `pass`es through). No gap deleted. Four citations had drifted | `verify_failure_scope.py:79-81` → **`:78-80`**; the contradicting comment `:96-104` → **`:96-103`**; `test_verify_failure_scope.py:315-346` → **`:316-346`** and `:300-313` → **`:296-313`** (with the sentinel test named); peer docstring `manage-execution-manifest.py:673-681` → **`:673-680`**, code at `:682-690` |
+| A2 | False negatives | Shipped code read directly, not the audit's reasoning: the four D4 predicates plus the two second-order consumers the audit did **not** open (`manage-config/_cmd_build_map.py:158-167` forwards the verdict verbatim; `manage-tasks/_cmd_pre_commit_verify_freshness.py:373-381,396-407` exempts only on the positive `not_necessary` and degrades an unobtainable verdict to `build`) — all fail closed, so D4's CONFIRMED stands. `declared ⊆ all_declared` re-checked structurally (both projections call `_extract_bullet_entries(content)` on the same input), so `read_intent_excluded` cannot go negative. One real undercount on a PARTIAL row: D2's "2 of 4 unresolved-reporting sites" **omitted `check-routing-decisions`**, which does publish named tokens (`footprint_source: unresolved` at `:766`/`:790`, `removal_cause: not_evaluated` at `:212`/`:574-581`) | D2's count corrected to **3 of 5 reader sites**, with the omitted site named; G4 restated around the two genuine laggards and around the sharper loss — the exact-match peer returns `inconclusive` for two structurally different causes and the emitted block (`:909-915`) separates them by prose alone |
+| A3 | Vacuous evidence | Every mutation this document claims was **re-run**, each from its own byte snapshot verified against `git show HEAD:<path>` first and restored to a clean `git status --porcelain` after. All four reproduced exactly: `analyze-logs.py:1538` → `if False:` ⇒ 1F/137P; `verify_failure_scope.py:104` `return None` → `return set()` ⇒ 2F/11P (same two test names); the D3 filter at `:350` neutralised ⇒ 10F/11P; merge-base rollback to `5edca5a` ⇒ **19F/2P**, and `63943f5`'s diff of the test module was opened to confirm it rewrites exactly the no-declaration skip assertion. Non-vacuity spot-checked on the negative control too (`test_check_artifact_consistency.py:826` asserts `'recall_pct' not in details`). No `git checkout`/`restore`/`stash` was used | Re-run results recorded in § Test adequacy |
+| A4 | Counts and quotes | Re-derived: 19 changed files / 9 `*.py` in the quoted order (`d34f2b8` single-parent); 21 tests in `test_recall_read_intent_denominator.py` (21 `def test_`); 12 truthiness hits; 13 files = 5 providers + 8 consumers with `extension_base.py` shared; all 11 D1 site citations resolve to real anchors; 7 skills; `artifact-consistency.md:75` "Six" over exactly six bullets at `:77-82`; `constants.py:316-319` names three importers; `branch-cleanup.md` `order: 70` + `destroys:` with `capture-footprint` at `:1429`; `plan-retrospective` `order: 995` / `default_on: false` / `presets: [full]` / `lane.class: prunable` and no `reads:` key; `.plan/archived-plans` still absent; `a83fd00`'s subject verbatim; P9's grep now returns exactly two files. **Two count defects found**, both of the "enumeration lead-in" class this run's own Step 9 lesson names | "All eight test names" → **nine** (six here plus the **three** — not two — the report names under D4, which this document's own D4 section already counted as three: a self-contradiction); "four targeted test files (76 tests)" reconciled against no combination of the named files and is replaced by re-counted per-file figures (110/45/28/21/13 = **217**, plus 31 composer). G1's reproduction cardinality re-measured as **343** and explicitly marked volatile, since it is this checkout's own diff |
+| A5 | Actionability | Every gap names a concrete path, a concrete change, and an observable *Done when*; none is a "review/consider/investigate". One half-action had no *Done when*: G4's Action asks for `footprint_resolved` in the `affected_files_exact_match` block, which its *Done when* did not cover | G4's *Done when* extended to the block field and to a token that distinguishes the unresolvable cause from the both-empty one |
+| A6 | Severity / topic | G1 high is right — reproduction (b) shows shipped behaviour is not merely unmeasured but **inverted** into `exclusively_out_of_scope: true`. G3/G6 medium, G5/G7 low all hold against the calibration. Two mis-set fields | **G4 low → medium** (an incomplete load-bearing deliverable; it was also inconsistent to hold G3 — documenting a token that exists — at medium while holding the token's absence at low). **G2 `bundle-docs` → `measurement/metrics`** (the owning surface is `verify_failure_scope.py`, the same file and function as G1; the old topic would have routed a docstring and the code it sanctions into two different fix plans, contradicting G2's own "land it together with G1") |
+| A7 | Coverage | All six deliverables, out-of-scope compliance, report accuracy and the residue list are covered. One obligation was silently unmentioned: the plan's ⚠ **split guard** on D1 ("If D1 finds the population is materially larger than the named sites, SPLIT and re-stage"). The run deviated from it explicitly and the audit never assessed the deviation | D1 gained a split-guard assessment: the population is larger by cardinality (11 vs 3) but implied only two sites of work — re-derived from the population table's two ❌ rows, which are exactly the two files the commit changes — so the unsplit decision is a disclosed, evidence-backed deviation. Not charged as a gap |
+| A8 | Internal consistency | The CONFIRMED WITH GAPS verdict follows from the rows (two PARTIAL, four CONFIRMED with declared deviations, one high defect). Every finding warranting action appears in `gaps.md` and every gap traces back. One internal contradiction (the eight/three test-name count, see A4). One grouping hazard: G1, G2 and G6 are one change to one file and its test, but nothing in `gaps.md` said so, and G2's topic actively separated them | Contradiction fixed; `gaps.md` opens with an explicit "G1 and G2 must land together, G6 is G1's regression test" note, and its severity tally is restated as 1 high / 4 medium / 2 low |
+
+**G1, reproduced independently.** With `file_ops._query_worktree_path` stubbed to `('pending', '')` and
+`compute_plan_branch_diff` wrapped in a call spy: standing in this repository, `has_worktree` is `False`
+while `worktree_path` is `/home/user/plan-marshall`, and `_resolve_declared_footprint` returns a set of
+343 paths after one real diff call against that root. Standing in a **clean** throwaway checkout, the
+same stub yields `set()` — a *measured* empty footprint — so `footprint_resolved: true`,
+`out_of_scope_count: 2`, `exclusively_out_of_scope: true`, which
+`phase-5-execute/SKILL.md:833` turns into *"Stash foreign files and re-verify"* as the default
+recommended action. Both halves of the gap's claim hold, and the second is the one that matters.
+
+**Residual doubt:** the population sites this audit and this review both accepted on a *read* rather
+than on an *execution*. G1 was found because the classifier was actually run against a stubbed
+`pending` state; the ✅ verdicts for `check-routing-decisions`, `pyproject_build.cmd_resolve_test_scope`
+and the two `manage-execution-manifest` composer predicates rest on reading their guards and their
+tests, not on driving each one to its unresolvable branch and observing the emitted verdict. A further
+round that stubbed every site's resolver to the unresolvable state and asserted on the *output* is the
+one most likely to find a fourth collapse — G1 is the standing proof that a guard can read correct and
+still be reachable around. Beyond that, the run's own process claims (`./pw verify` totals, per-commit
+gate history, round narratives, token figures) remain structurally unverifiable after the squash merge
+and are marked as such rather than assumed.
+
+**Verdict on the audit:** SOUND AFTER CORRECTION — every finding it filed is real and its high-severity
+call is correct and now reproduced twice from scratch, but it under-counted D2's token coverage,
+mis-severitied and mis-topiced two entries, carried two enumeration-count defects of the exact class
+this plan's own Step 9 lesson names, and left the plan's D1 split guard unassessed.

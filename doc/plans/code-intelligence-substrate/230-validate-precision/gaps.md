@@ -4,11 +4,34 @@ The deliverables landed and their headline measurements re-derive exactly, so wh
 narrower than the plan: two regression tests that cannot fail against the defects they were written
 for (one of them the lock on the run's most dangerous fix), two sentences in the shipped `SKILL.md`
 contract that are false or mis-attributed, one live production defect the plan filed rather than
-fixed, the untriaged residue the plan deliberately deferred, and a set of one-off figures in
-`report-01.md` that are wrong against the tree they describe. Checked to reach this: the full 380-row
-D0 partition replayed through the shipped predicates, the merge-commit and HEAD baselines re-measured
-in-process, an old-vs-new resolved-edge diff over the same corpus, an 11-mutation sweep over the test
-file, and synthetic probes of every excluded shape in both directions.
+fixed, twenty-odd shipped documentation sites naming executor commands that would not run, the
+untriaged residue the plan deliberately deferred, and a set of one-off figures in `report-01.md`
+that are wrong against the tree they describe. Checked to reach this: the full 380-row D0 partition
+replayed through the shipped predicates, the merge-commit and HEAD baselines re-measured in-process,
+an old-vs-new resolved-edge diff over the same corpus, an 11-mutation sweep over the test file, and
+synthetic probes of every excluded shape in both directions.
+
+This document has since been through an independent adversarial review — see `verification.md`
+§ "Adversarial review" for what that round re-derived, corrected and added.
+
+## Index — by severity, then topic
+
+Entries below are numbered in the order they were filed, which is **not** severity order. Read this
+table first when picking work; the IDs are stable anchors and are referenced from `verification.md`.
+
+| Severity | Topic | Entries |
+|---|---|---|
+| **high** | dispatch/finalize | G5 |
+| medium | tests | G1, G2 |
+| medium | bundle-docs | G3, G4, G17, G18 |
+| medium | detectors/auditor | G15, G16, G19, G20 |
+| low | tests | G10 |
+| low | bundle-docs | G21 |
+| low | detectors/auditor | G11, G12 |
+| low | measurement/metrics | G6, G7, G8, G9, G13, G14 |
+
+Every `measurement/metrics` entry is a defect in `report-01.md` only — no shipped code or
+documentation is wrong for those six.
 
 ## G1 — Give the import-retarget guard a test that can fail
 

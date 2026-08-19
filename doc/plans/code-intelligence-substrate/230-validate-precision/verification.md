@@ -61,8 +61,14 @@ one-off or self-contradictory.
   claims, on the skill detector too — frontmatter branch `:391-395` and `Skill:` branch `:412-414`.
 - **Checks run:** mutating `_has_placeholder_segment` to `return False` turns 6 tests red including
   `TestPrecisionRegressionFixture::test_exactly_one_finding`. A synthetic probe confirms both
-  directions: `Referenced as \`probe-bundle:real-skill:script\` in docs.` yields no edge, while
-  `Run probe-bundle:real-skill:real-skill now.` yields a resolved edge.
+  directions on a bundle whose `real-skill` owns the script file `scripts/real_skill.py`:
+  `Referenced as \`probe-bundle:real-skill:script\` in docs.` yields no edge, while
+  `Run probe-bundle:real-skill:real_skill now.` yields a resolved edge.
+  ⚠ The script segment must match the on-disk filename: the same probe written
+  `…:real-skill:real-skill` yields an **unresolved** row against that fixture, because
+  `real-skill` names no component and the misspelling guard blocks the retarget. An earlier revision
+  of this line quoted the hyphenated spelling as resolving, which is true only for a fixture whose
+  file is `real-skill.py`.
 - **Verdict:** CONFIRMED.
 
 ### D2 — subcommands are no longer misread as scripts
@@ -222,14 +228,18 @@ Two shipped behaviours have **no** covering test — proven by mutation, with th
 green and the live corpus moving:
 
 - Removing the `SCRIPT_NOTATION` restriction at `_dep_index.py:502-508` leaves all 96 tests green,
-  while the corpus goes from 61 unresolved / 296 cycles to **50 unresolved / 297 cycles** — the 11
-  `extension_base` findings silently resolve. That is exactly the R‑10 defect, and
+  while the corpus goes from **61 unresolved to 50** — the 11 `extension_base` findings silently
+  resolve. (Independently reproduced. The cycle count also moves, but it is not a stable witness in
+  this working tree: two clean runs minutes apart gave 295 and 296 while other sessions held
+  unstaged edits. Assert on the unresolved delta.) That is exactly the R‑10 defect, and
   `TestRetargetAppliesToWrittenNotationOnly::test_python_import_is_not_retargeted_onto_a_same_named_entry_script`
   is the test the report cites as its regression lock. It cannot fail against it, because its probe
   bundle is named `probe-bundle` while the mapping target is `plan-marshall:ref-toon-format:…`, so
   the entry-script lookup misses on the bundle segment regardless of the guard (G1).
-- Removing the self-edge skip at `_dep_index.py:562-567` also leaves all 96 tests green, while the
-  corpus goes to **297 cycles** and +24 dependencies — the R‑11 defect, untested (G2).
+- Removing the self-edge skip at `_dep_index.py:562-567` also leaves all 96 tests green, while
+  `total_dependencies` gains **+25** (5079 → 5104 on re-measurement) and the cycle count rises by 2 —
+  the R‑11 defect, untested (G2). The gained-edge figure is the number of self-retargets currently
+  suppressed and moves with the corpus; the branch, not the number, is what a lock should assert on.
 
 Test-count claims: the file holds **96** test functions at both the merge commit and HEAD (the two
 revisions are byte-identical for this file and directory), against 65 at the merge parent — 31 added,
@@ -263,12 +273,12 @@ False, stale, or self-contradictory:
 
 | Residue item (from report) | Still open? | Evidence |
 |---|---|---|
-| `_BUCKET_B_NOTATIONS` holds two unresolvable notations (production bug) | **Open** | `execute-task/scripts/inject_project_dir.py:39-50` still lists `plan-marshall:workflow-integration-git:git` and `plan-marshall:workflow-pr-doctor:pr-doctor`; the real scripts are `git-workflow.py` and `pr_doctor.py`, and `cwd-policy.md:68` itself uses `:git-workflow` |
+| `_BUCKET_B_NOTATIONS` holds two unresolvable notations (production bug) | **Open**, and wider than filed | `execute-task/scripts/inject_project_dir.py:39-50` still lists `plan-marshall:workflow-integration-git:git` and `plan-marshall:workflow-pr-doctor:pr-doctor`; the real scripts are `git-workflow.py` and `pr_doctor.py`, and `cwd-policy.md:68` itself uses `:git-workflow`. Adversarial review found a **second, independent** blocker: the gate at `:139-141` injects only when the token after the notation is literally `run`, which is true of the four `build-*` notations alone — `ci`, `sonar`, `git-workflow` and `pr_doctor` all dispatch verbs directly, so **4 of the 8** entries are inert. See G5 |
 | `extension_base` mapping + nested-script coverage (11 rows) | **Open** | 11 unresolved rows at HEAD for `plan-marshall:extension-api:extension_base`; `discover_components` still globs `scripts/*.py` (`_dep_index.py:290`) |
-| plugin-doctor's documented `validate`/`fix`/`analyze` (13 rows) | **Open** | 6+4+3 rows at HEAD; `doctor-marketplace.py` registers `analyze`, `fix`, `report`, `quality-gate`, `list-components`, `test-conventions`, `contracts` — no `validate` |
+| plugin-doctor's documented `validate`/`fix`/`analyze` (13 rows) | **Open** | 6+4+3 rows at HEAD; `doctor-marketplace.py` registers `list-components`, `analyze`, `fix`, `report`, `quality-gate`, `test-conventions`, `validate-contracts` — no bare `validate` (an earlier revision of this row wrote the last verb as `contracts`, which does not exist) |
 | `tools-integration-ci` Executor Mapping `github`/`gitlab` (2 rows) | **Open** | 2 rows at HEAD |
-| `manage_findings` (1 row) | **Open** | 1 row at HEAD |
-| Six one-off references | **Open** | all six present at HEAD |
+| `manage_findings` (1 row) | **Open**, deliberate | 1 row at HEAD, sourced from `plugin-doctor/references/rule-catalog.md:194`, which spells the underscored notation on purpose as the documented example of the defect `manage-findings-invocation-invalid` catches. Must not be "corrected" — see G21 |
+| Six one-off references | **Open** | all six present at HEAD; sites pinned and filed as G21 |
 | The untriaged unknown-bundle rows (27) | **Open**, now 26 | one row (`pm:execute:implement-feature`) disappeared through unrelated corpus drift; nothing was partitioned or triaged |
 | Five pre-existing unconditional drops (comment lines, URLs, `http`/digit segments) | **Open**, disclosed | `_dep_detection.py:316-333`; comment-line skip still hides exactly 9 resolvable notations |
 | Retarget does not check verb registration (`…:classify`) | **Open**, disclosed | reproduced at `decision-rules.md:365`; `classify` is absent from `manage-execution-manifest.py`'s `add_parser` set |
@@ -288,6 +298,13 @@ False, stale, or self-contradictory:
   `workflow-integration-git/SKILL.md`, ADR‑002) and the plan directory. No LSP or editor code.
 - **Collateral, declared:** the ADR‑002 and cross-skill notation edits are outside the inventory
   skill but are named in the report as the D4 fixes and as round‑2 finding 6 / R‑4.
+- **Split-guard verdict — recorded, as the plan required.** `plan.md` obliges the run to "evaluate
+  the split at outline and record the verdict" for seven deliverables. `report-01.md:300-307` carries
+  the section: **not split**, with the reason that D4's re-baseline is the only evidence D1–D3
+  worked and D5's fixture is the lock for the same change. The obligation is met; no gap. (The
+  interim figures at `report-01.md:349-351` — `306 / 4998 / 4937 / 61`, residue 34/27 — are labelled
+  "as committed at that revision" and are a superseded round's reading, not a contradiction of the
+  final 62 = 35/27.)
 
 ## Method and coverage
 

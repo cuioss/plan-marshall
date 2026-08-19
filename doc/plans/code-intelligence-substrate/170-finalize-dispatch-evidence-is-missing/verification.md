@@ -1,10 +1,13 @@
 # Verification — 170-finalize-dispatch-evidence-is-missing
 
 **Audited:** `plan.md`, `report-01.md` (the only two files in the plan directory)
-**Tree state:** `62e3807` on `claude/code-intelligence-substrate-analysis-kah884` (the plan landed as
-squash commit `c93431f`, "fix(plan-retrospective): make the dispatch audit deterministic and
-fail-able (#1225)")
-**Overall verdict:** CONFIRMED WITH GAPS
+**Tree state:** originally audited at `62e3807` on `claude/code-intelligence-substrate-analysis-kah884`;
+adversarially re-derived at `a90adeb` on the same branch, with
+`check-dispatch-audit.py` confirmed byte-identical across both readings
+(md5 `c66b54c9a44ed44e6ec90678f448f0c4`). The plan landed as squash commit `c93431f`,
+"fix(plan-retrospective): make the dispatch audit deterministic and fail-able (#1225)".
+**Overall verdict:** PARTIAL — the deliverables shipped and work, but D1 and D3 fall short of their
+literal *Done when* and D2's accepted mechanism deviation carries an undisclosed blind spot
 
 All five deliverables are present in the tree, the detector was built, is registered, is tested, and
 its `not_evaluated` guard is proven load-bearing by mutation. Three of the five meet their literal
@@ -356,7 +359,7 @@ Claims re-derived at audit time. Everything material held; three items are stale
 |---|---|---|
 | "Finalize resolves still don't pass `--workflow`" — Surface B stays empty for finalize | **CLOSED by a later plan** | `7ad4d1b` "fix(finalize): emit dispatch per-spawn and fuse the step-completion marker (plan 180) (#1232)" — `phase-6-finalize/SKILL.md:618` now instructs every dispatched step to pass `--workflow`, `--plan-id` and `--caller plan-marshall:phase-6-finalize`, and `:629` forbids hand-writing the line. Surface B is now populated for finalize, which makes `shape_violation` evaluable — and near-tautological (G10). |
 | "Per-task `[ARTIFACT]` emission cannot be made deterministically complete" — a future emitter driving it from the shared task-close path would let N reach M | **STILL OPEN** | `phase-5-execute/SKILL.md:604` and `phase-5-execute/standards/workflow.md:82-113` still specify the emission as a hand-written per-file `manage-logging work` step after `[OUTCOME]`. No shared-seam emitter exists. |
-| "Three sibling docs carried 'LLM aspects' labels … fixed in this run (`d38ce99`). No further known stale sites." | **PARTIALLY CLOSED — the "no further sites" half is FALSE** | The three named sites are fixed. But a repo-wide grep for `LLM aspects` also returns `phase-6-finalize/standards/dispatch-inline-split.md:30` — *"its LLM aspects iterate inside one envelope"* — carrying the identical imprecision the run relabelled three times elsewhere. (`plan-retrospective/SKILL.md:240` and `:251` are correct: they name the genuinely-LLM aspects 4-7, 9, 14.) See G12. |
+| "Three sibling docs carried 'LLM aspects' labels … fixed in this run (`d38ce99`). No further known stale sites." | **PARTIALLY CLOSED — the "no further sites" half is FALSE, and the three "fixed" sites are still wrong in their count** | The three named sites carry the new adjective. But a repo-wide grep for `LLM aspects` (re-run at adversarial review; three hits, none in `doc/plans/`) also returns `phase-6-finalize/standards/dispatch-inline-split.md:30` — *"its LLM aspects iterate inside one envelope"* — carrying the identical imprecision the run relabelled three times elsewhere (`plan-retrospective/SKILL.md:240` and `:251` are correct: they name the genuinely-LLM aspects 4-7, 9, 14). See G12. And all three relabelled sites still say "eight"/"8" aspects against a 15-row aspect table — see G14. |
 
 ## Out-of-scope and collateral
 
@@ -404,4 +407,42 @@ Claims re-derived at audit time. Everything material held; three items are stale
   base advance). No repository-side artefact records them.
 - Whether the detector has ever been run against a real archived plan (`--mode archived`). No
   archived-plan corpus is present in this clone (`.plan/` is git-ignored and absent), so the archived
-  path is exercised only by argument parsing, not by any fixture.
+  path is exercised only by argument parsing, not by any fixture. *(Adversarial addendum: `--mode
+  archived` was subsequently exercised end-to-end against a hand-built archived fixture while
+  re-deriving G7, so the archived path is no longer untried — only untried against a real corpus.)*
+
+## Adversarial review
+
+Independent review of this document and `gaps.md`. Attacks run: A1 false positives, A2 false
+negatives, A3 vacuous evidence, A4 counts and quotes, A5 actionability, A6 severity/topic,
+A7 coverage, A8 internal consistency.
+
+| # | Attack | What was found | Correction applied |
+|---|---|---|---|
+| A1 | False positives | **None.** Every gap's `path:line` was opened and every claim re-derived at `a90adeb`. G1 and G3 reproduced with byte-identical output by running the shipped script against a rebuilt cross-phase fixture (`dispatch_line_count: 6, completion_count: 3, dispatched_step_count: 3, ratio: 2.0, confidence: nominal` alongside `missing_dispatch_emission: 3`). G2, G4 and G5 reproduced against a log-less plan directory. G6 reproduced by mutation. G7 re-derived against a **pristine** copy of `analyze-logs.py` taken from `git show HEAD:…` (a concurrent agent had the in-tree file mutated at `:1538` while I measured — the pristine copy is why the reading is trustworthy). G9's three registry line numbers re-checked (36/58/29 vs the report's 27/55/25). G11 confirmed by grepping the report for both excluded defects (zero hits). G12's repo-wide `LLM aspects` sweep re-run: three hits, exactly as claimed. | Two citations re-anchored: G3's risk note cited `compile-report.py:235-250` for a function that begins at `:213` → now `:213-250`; G14's aspect-table citation set to `SKILL.md:180-196` (the header row is 180, not 181). |
+| A2 | False negatives | **One, and it is the most consequential finding in this review.** D2's discriminator does not discriminate. `evaluate_dispatch_coverage` (`:380-386`) calls a step `no_evidence` only when it has no `execution_log` row at all; *everything else that is not a positive integer* falls through to `ran_inline`, which `:366-369` and the shipped standard `:62` both present as **proof** the step ran inline. Three distinct inputs collapse there: a genuine measured zero; a dispatched step whose `<usage>` tag never arrived (the producer says so verbatim — `manage-execution-manifest.py:2613-2614`); and a row with no `total_tokens` column, which the detector's own fail-open `else: value = 0` (`:278-279`) converts into a "measured zero" before the classifier sees it. Because `dispatched` under-counts, `missing_dispatch_emission` — D2's headline finding, computed as `max(0, len(dispatched) − finalize_dispatch_line_count)` — cannot fire for exactly the class of step whose instrumentation failed, and `dispatched_step_count` carries the same under-count into D3's `low` branch. Reproduced with two fixtures: `{outcome: error, total_tokens: 0}` and no dispatch line → `ran_inline: 1, missing_dispatch_emission: 0`; the same row with the column **absent** → identical. Separately, D1's *Done when* clause *"never a bare `0`"* is violated by the shipped `counts.by_category` block, which the original document recorded as a residual legibility issue rather than a shortfall against the deliverable. | **G13 added (high).** D2's verdict corrected: still CONFIRMED against the literal *Done when*, but the accepted mechanism deviation is **not** outcome-equivalent, and that is now stated. D1's verdict changed CONFIRMED → **PARTIAL**; G3 raised medium → **high**. Overall verdict changed CONFIRMED WITH GAPS → **PARTIAL**. |
+| A3 | Vacuous evidence | Both mutation sweeps this document claims were **re-run from scratch, not trusted**. `if population == 0:` → `if False:` at `:318` → `2 failed, 11 passed` (`test_shape_violation_not_evaluated_when_surface_b_empty`, `test_absent_inputs_degrade_cleanly`) — matches. `:441` → `elif False and …` → `13 passed` — matches, G6 stands. A third mutation was added: `else: value = 0` → `value = 999999` at `:278-279` → `13 passed`, proving the coercion branch behind G13 is dead to the suite. One weak assertion the document already flags (`:196`, `'dispatch_coverage_violation' not in _categories`) re-confirmed structurally satisfied. Every mutation was snapshot-restored from `$TMPDIR/adv-170-mutsweep/check-dispatch-audit.py.orig`; md5 `c66b54c9a44ed44e6ec90678f448f0c4` before and after each, `git status --porcelain` clean for the file. No `git checkout`/`restore`/`stash` was used. | Test-adequacy table extended with the coercion-branch result; correctness item 10 added. |
+| A4 | Counts and quotes | **One quote defect, and it is load-bearing.** The D2 section attributed to `phase-6-finalize/SKILL.md:1151` the words *"(with zero token attribution for inline steps)"*. `:1151` is blank — the text is at `:1153` — and the source actually reads *"for inline steps **that carry no `<usage>` tag**"*. The six dropped words are precisely what makes a zero ambiguous, so the truncation is what let the D2 premise pass. Separately, the report's *"count unchanged"* claim about the relabelled docs was accepted with a ✅ without the count being re-derived; it does not hold (15 aspects in the table, six in the SKILL's LLM enumeration, "eight" in the docs). Counts re-derived independently and all held: 13 tests collected/passed; 10 paths in `git show --stat c93431f`; exactly 3 `dispatch_coverage_violation` hits; exactly 3 `LLM aspects` hits; 3 reviewer logins at lines 36/58/29. | Quote corrected in place with the right line and the full clause, and the one-directional nature of the premise spelled out. The relabel bullet re-graded ✅ → ⚠️. **G14 added (low).** |
+| A5 | Actionability | One entry failed: G10's action ended *"Consider re-labelling the block `seam_write_consistency`"* — a suggestion, not a change, with no observable outcome. Every other entry names a concrete path, a concrete change and a checkable *Done when*. | G10's action rewritten to a single concrete edit (name the shared emitter in the `:122` rule and cross-reference `:40`) with a *Done when* a reader can check. |
+| A6 | Severity and topic | Four mis-gradings. G3 was medium but violates D1's *Done when* verbatim and defeats the in-tree ambiguity probe (`compile-report.py::_names_checked_set` accepts a non-empty `counts` dict as attribution, because `counts` is in `ZERO_ATTRIBUTION_FIELDS` — so the log-less fragment passes the "names what it checked" test on the strength of the block that names nothing) → **high**. G7 was medium but the floor it names is *provably dead*, which the calibration puts under "a guard cannot fire" → **high**. G10 was medium on the premise that the corroboration limit was undisclosed; it is disclosed, prominently, at `:40`, so the gap reduces to a missing cross-reference → **low**. G7's topic `measurement/metrics` and G11's topic `plan-lane-contract` both pointed away from the owning surface — G7's fix is in `analyze-logs.py` alongside G1-G5, and G11's fix edits `report-01.md` alongside G9 → **detectors/auditor** and **documentation-surface**. | All four re-graded/re-topiced, each with the reason recorded in the entry. |
+| A7 | Coverage | **Complete.** All five deliverables have a verdict row and a detail section; out-of-scope compliance, undeclared collateral, report accuracy and the three declared residue items are each covered. No deliverable is silently unmentioned. The document is also honest about what it did not check (build totals, GitHub-side facts, archived-corpus runs). | None needed beyond the archived-mode addendum noted above. |
+| A8 | Internal consistency | The overall verdict did **not** follow from the rows: the summary asserted *"each satisfies its literal Done when"* while the table graded D3 PARTIAL, and D1's own detail conceded a bare `0` in the shipped output while the row said CONFIRMED. Gap↔finding tracing is otherwise sound in both directions: all twelve original gaps trace to a numbered correctness defect, a report-accuracy bullet, a test-adequacy row or a residue row, and every finding warranting action appears in `gaps.md`. | Summary rewritten to state per-deliverable outcomes; D1 → PARTIAL; overall verdict → PARTIAL. The two new gaps are traced from the D2 detail (G13) and the report-accuracy bullet (G14). |
+
+**Residual doubt:** the most likely next finding is on the same axis as G13 — the *other* direction of
+the token discriminator. This review proved that zero does not imply inline; it did **not** prove
+that non-zero implies dispatched. If any inline finalize step can ever record a non-zero
+`total_tokens` (a hand-passed value, a mis-attributed re-entry, or a future change that starts
+costing inline steps), then `dispatched` over-counts and `missing_dispatch_emission` becomes a false
+positive against the dispatcher — the mirror of the defect the plan was written to kill. Settling it
+needs the producer-side call sites for inline steps enumerated and checked, which is a wider sweep
+than this review's scope. A second, smaller residue: `evaluate_shape_violation` compares
+per-role *counts*, not pairs, so a hand-written `[DISPATCH]` line can cancel a genuinely unmatched
+resolve of the same role — and hand-written lines still exist at HEAD
+(`plan-marshall/workflow/planning-outline.md:112`, `:146`, `:431`, `:484`, `planning.md:286`, `:326`,
+`workflow-pr-doctor/SKILL.md:38`, all resolving without `--workflow` and then logging by hand). That
+is the D1-side analogue of G8 and was left unfiled because at HEAD the roles involved do not overlap
+with any seam-emitting role; a later change to those workflows would make it live.
+
+**Verdict on the audit:** SOUND AFTER CORRECTION — every gap it filed is real and reproducible and
+its method was honest, but it accepted a truncated quote as proof of D2's central premise, and that
+one omission hid the highest-severity defect in the shipped change.

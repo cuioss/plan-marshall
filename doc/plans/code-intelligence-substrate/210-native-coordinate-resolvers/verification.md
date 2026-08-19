@@ -8,9 +8,12 @@ The plan landed as squash-merge `87c71d3` ("feat(architecture): derive module ed
 Python and npm projects (plan 210) (#1238)"). Every deliverable is present, and D0's three
 measurements were independently re-derived from scratch — including two fresh shallow clones of the
 external repositories the run used. The gaps are not in what was built but in what the join
-*cannot* reach: a Poetry-managed Python project and two ordinary PEP 508 dependency spellings still
-produce a structurally empty graph, reported as `status: ok, edge_count: 0` — the exact misreport
-class this epic exists to remove.
+*cannot* reach: a Poetry-managed Python project, a setuptools project, an unreadable descriptor and
+two ordinary PEP 508 dependency spellings all still produce a structurally empty graph, reported as
+`status: ok, edge_count: 0` — the exact misreport class this epic exists to remove.
+
+This document has since been through independent adversarial review; see § Adversarial review at the
+end for what that round changed.
 
 ## Deliverable verdicts
 
@@ -18,7 +21,7 @@ class this epic exists to remove.
 |---|---|---|---|---|
 | D0 | GATE: measure a real non-Maven project | "Three real projects measured, not one" — 1/0/0/0, 8/11/0/11, 31/83/0/83 | All three rows re-derived exactly at HEAD, two by re-cloning the same repos | CONFIRMED |
 | D1 | GATE: verify Gradle explicitly | "The coordinate path WORKS … one narrow form does not" | Confirmed at source: `_extract_gradle_module` publishes `group_id`+`artifact_id`; `_parse_dependencies_output` emits `project:{name}:compile` | CONFIRMED |
-| D2 | A Python resolver joining on `[project] name` | Resolver id `pyproject`, PEP 503 normalised | Present, registered on the existing seam, fixture yields 5 edges through the seam | CONFIRMED (Done-when met; see § Correctness review for reach limits) |
+| D2 | A Python resolver joining on `[project] name` | Resolver id `pyproject`, PEP 503 normalised | Present, registered on the existing seam, fixture yields 5 edges through the seam | CONFIRMED (Done-when met; see § Correctness review for reach limits — G1/G2/G3/G10/G11) |
 | D3 | An npm resolver, workspace members included | Resolver id `npm`, case-folded, workspace members need no special case | Present; fixture yields 5 edges, workspace globs resolved by real discovery | CONFIRMED |
 | D4 | Tests proving non-empty edges **and** non-empty impact | "59 new tests across five modules" | 59 collected, 59 pass; per-module 13/16/18/7/5 all match; impact asserted as exact sets | CONFIRMED (two guards vacuous — G5, G7) |
 | D5 | Documentation, incl. the extension-architecture page | Five documentation sites | All five present and accurate at HEAD | CONFIRMED |
@@ -95,7 +98,10 @@ class this epic exists to remove.
     5-edge set from real discovery output; the e2e module reaches the same edges through the real
     `graph` verb.
 - **Verdict:** CONFIRMED against the literal *Done when*. The deliverable's broader reach is where
-  the gaps are — see § Correctness review and G1/G2/G3.
+  the gaps are — see § Correctness review and G1/G2/G3/G10/G11. All five sit in one unchanged
+  function (`_parse_pyproject_metadata`, which this plan's diff does not touch: the diff adds the
+  Axis-C half to `build-pyproject/scripts/extension.py` and leaves `_pyproject_cmd_discover.py`
+  alone), so they are the join's *input* reach, not a defect in what was built.
 
 ### D3 — an npm resolver
 
@@ -173,6 +179,11 @@ class this epic exists to remove.
 
 ## Correctness review
 
+⚠ This section's coverage of the **Python discoverer** was incomplete on the first pass: it examined
+what `_parse_pyproject_metadata` does with the `[project]` table it reads (C1–C3) but not what
+happens when the file it reads is the wrong file (C5) or unreadable (C6). Both were found by
+adversarial review and are recorded below in their found order.
+
 I read the whole shipped surface: `_name_edge_join.py` (all 207 lines), both `extension.py`
 Axis-C halves, `_npm_cmd_discover.py`'s module builder and dependency extractor,
 `_pyproject_cmd_discover.py`'s metadata parser, `_gradle_cmd_discover.py`'s dependency parser and
@@ -238,6 +249,42 @@ both silently produce no edge. The run *did* disclose the analogous Python limit
 specifics section (`:90-98`) carries no equivalent sentence, so the two ecosystems are documented
 asymmetrically for the same class of gap. → **G4**
 
+**C5 — a setuptools project derives zero edges, and discovery names the file it never reads.**
+*(Added by adversarial review; the original pass missed it.)* `_find_descriptor_file`
+(`_pyproject_cmd_discover.py:308-321`) accepts `pyproject.toml`, `setup.cfg` **and** `setup.py`, so a
+setuptools module is admitted, stamped `build_systems: ['python']` — which places it inside the
+`pyproject` resolver's `scoped_modules` filter — and given its real descriptor path. But
+`_parse_pyproject_metadata` opens `pyproject.toml` only (`:269`) and returns early when it is absent
+(`:273-274`). Driven end to end over a synthetic three-module setuptools monorepo where `lib_app`
+declares `st-core` under `[options] install_requires`:
+
+```text
+SETUPTOOLS modules: ['default', 'lib_app', 'lib_core']
+   default  | descriptor= setup.py            metadata= {} deps= []
+   lib_app  | descriptor= lib_app/setup.cfg   metadata= {} deps= []
+   lib_core | descriptor= lib_core/setup.cfg  metadata= {} deps= []
+  edges: ([], [])
+```
+
+Same misreport as C1, with the extra defect that the module dict asserts a descriptor the parser
+never opens. → **G10**
+
+**C6 — an unreadable `pyproject.toml` is swallowed, fail-open.** *(Added by adversarial review.)*
+`_pyproject_cmd_discover.py:279-280` is a bare `except Exception` returning the empty metadata /
+dependency pair, so a malformed descriptor is indistinguishable from one declaring nothing, and the
+loss reaches no channel — not `notes[]`, which only the resolver writes, and not a log. Driven end to
+end where the root correctly declares `b-a` and `mod_a/pyproject.toml` has one unbalanced bracket:
+
+```text
+MALFORMED TOML modules: ['default', 'mod_a']
+   default  metadata= {'name': 'b-root'} deps= ['b-a:runtime']
+   mod_a    metadata= {}                 deps= []
+  edges: ([], [])
+```
+
+The npm side is not symmetric: `_load_package_json` (`_npm_cmd_discover.py:379-392`) catches the same
+class but returns `None`, dropping the module rather than admitting an empty one. → **G11**
+
 **Not defects, checked and cleared:**
 
 - The Maven lazy-enrich seam does **not** fire a subprocess for Python/npm modules: `_get_maven_metadata`
@@ -246,10 +293,10 @@ asymmetrically for the same class of gap. → **G4**
 - `normalize_pep503` (`_name_edge_join.py:42`) is equivalent to the canonical PEP 503 form; the
   substitute-then-strip order changes nothing for any legal distribution name.
 - `build_name_owners` skips a module publishing no name without emitting a note
-  (`_name_edge_join.py:132-134`) — correct, and documented as deliberate at `:112-117`.
+  (`_name_edge_join.py:131-133`) — correct, and documented as deliberate at `:112-116`.
 - `count_dispatched` / `_partition_configured_resolvers` fail **open**: an unreadable run-config
-  store leaves every resolver dispatched (`_cmd_client_query.py:1000-1003`), and
-  `DERIVATION_RESOLVER_ENABLED_DEFAULT = True` (`run_config.py:825`). Verified live: the section is
+  store leaves every resolver dispatched (`_cmd_client_query.py:1001-1002`), and
+  `DERIVATION_RESOLVER_ENABLED_DEFAULT = True` (`run_config.py:826`). Verified live: the section is
   `{}` in this clone and all seven resolvers report enabled.
 
 ## Test adequacy
@@ -275,10 +322,16 @@ resolver test modules after each, and wrote the original bytes back myself (no `
 | M6 Python `_distribution_name` falls back to the module name | CAUGHT — 3 failed |
 | M7 **npm `_package_name` falls back to the module name** | **SURVIVED — 54 passed** |
 | M8 npm discovery drops `metadata.name` | CAUGHT — 13 failed |
-| M9 `dependency.rsplit(':', 1)[0]` | SURVIVED — equivalent mutant (every emitted string has exactly one `:`) |
+| M9 `dependency.rsplit(':', 1)[0]` | SURVIVED — equivalent **over these fixtures**, where every emitted string has exactly one `:` |
 | M10 whole `name:scope` string used as the key | CAUGHT — 24 failed |
 
 `git status --porcelain` for all four files is clean afterwards.
+
+⚠ M9's "equivalent mutant" reading holds only for the two fixtures. It is **not** a general property
+of the emitted format: C2 above produces `m-core @ file:///./core:runtime`, which carries three
+colons, and `split` / `rsplit` disagree on it (`m-core @ file` vs `m-core @ file:///./core`). Both
+still fail to join, so the mutant survives either way — but the stated reason, as originally written,
+was falsified by this document's own C2. Scoped accordingly.
 
 **M7 is a genuinely vacuous guard**, and the survival is not a weak mutation. The test that names the
 rule — `test_npm_derivation_resolver.py:141-143`,
@@ -327,15 +380,24 @@ Three claims are inaccurate against the tree now:
    (`git show --name-only --format="" 87c71d3 | grep -c '\.py$'` → `13`; `87c71d3` is a single-parent
    squash, so its diff *is* the three-dot diff). The three uncounted files are the ones added after
    `10` was recorded — `test_scoped_module_name_persistence.py` (pass 3 / C4) and two of the N14
-   fixture fixes. The `./pw verify` figures in the same block *were* correctly re-derived
-   (`19716 + 5 = 19721`, `740 + 1 = 741`), so the omission is confined to the file count. → **G9**
-2. **The full-crawl figures have drifted.** The report records "29 edges across 12 modules … markdown
-   29, python-import 5, documentation 5". At HEAD: `crawl_all_modules` returns **13** modules, the
-   graph verb returns **25** edges over 11 nodes, and the per-resolver breakdown is markdown 25,
-   python 5, documentation **0**, lsp 0, maven 0, npm 0, pyproject 0. This is ordinary drift in a
-   dated record rather than a false claim — later plans changed the tree, and the load-bearing half
-   of the measurement still holds exactly (**0** modules carry a `group_id`+`artifact_id` pair, and
-   the `pyproject` resolver still sources **0** of this repo's edges). Not raised as a gap.
+   fixture fixes (`test_cmd_suggest.py`, `test_extension_implementations.py`, both confirmed in the
+   diff to carry the `lit:compile` → `lit:runtime` change). That those three arrived *after* `10` was
+   recorded is inferred from the report's pass ordering, not observed — the branch was deleted at
+   squash-merge. The `./pw verify` figures in the same block are **arithmetically consistent** with
+   the N3 correction plus pass 3's additions (`19716 + 5 = 19721`, `740 + 1 = 741`); that is a
+   consistency check, not a re-measurement — see § Method, "Not checked", (ii). The omission is
+   confined to the file count. → **G9**
+2. **The full-crawl figures have drifted — and keep drifting.** The report records "29 edges across
+   12 modules … markdown 29, python-import 5, documentation 5". This audit's own re-measurement (13
+   modules, 25 edges over 11 nodes, markdown 25 / python 5 / documentation 0) **also no longer
+   reproduces**: adversarial review, re-running `crawl_all_modules` + `get_module_graph` over this
+   repository a few commits later, measured 13 modules, **32** edges over **13** nodes, and
+   markdown 32 / python 5 / documentation 5 / lsp 0 / maven 0 / npm 0 / pyproject 0, at
+   `resolver_count: 7`. Every edge-count figure in this row is a snapshot of a tree that other plans
+   are still changing, and none of them should be quoted forward. ⛔ **Only the invariant is stable,
+   and it is what the row was cited for**: **0** modules carry a `group_id`+`artifact_id` pair, and
+   the `pyproject` resolver sources **0** of this repository's edges while reporting
+   `status: ok, edge_count: 0`. That invariant reproduced at both measurements. Not raised as a gap.
 3. **A residue item no longer reproduces.** See the table below.
 
 Two report claims are **UNVERIFIABLE**, both for structural reasons rather than doubt: the commit
@@ -408,7 +470,11 @@ worktree during my run. I substituted a reading argument plus the two zero-resol
 tests, which is weaker evidence for that one claim. (iv) `pnpm-workspace.yaml` workspace resolution
 is claimed in shipped docs and has no test anywhere in `test/plan-marshall/build-npm/`; it is
 pre-existing discovery code that this plan neither added nor was asked to cover, so it is noted here
-rather than raised.
+rather than raised. Adversarial review closed the open question behind that call by driving a
+synthetic pnpm workspace (root + `packages/core` + `packages/app`, patterns declared only in
+`pnpm-workspace.yaml`) through the real `discover_npm_modules` and the real `npm` resolver: **3
+modules, 2 edges**. The shipped claim is therefore true, merely untested — which keeps this out of
+the false-documentation class and leaves it a pre-existing test gap, as judged.
 
 **Concurrency caveat.** Other audit agents were mutating files in this worktree throughout. One
 early full-crawl reading (all seven resolvers `not_dispatched`) was produced against a transiently

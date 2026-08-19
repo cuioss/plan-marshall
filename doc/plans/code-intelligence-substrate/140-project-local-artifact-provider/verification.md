@@ -18,7 +18,7 @@ below still resolves; the corrections applied at review are marked in § Adversa
 | D1 | Project-local artifact claim through the seam, uniform over the surface | `pm-plugin-development` `Extension` opts into `PathAttributionBase`; `claim_paths()` returns bare-root `('.claude', 'pm-plugin-development')`; `plan-marshall` drops `.claude/skills`; no core edit | Both extensions read as claimed; live seam probe returns the single `.claude` claim; `git show --stat cc923b6` shows no `_architecture_core.py` in the diff | CONFIRMED |
 | D2 | Ownership decision recorded | Move from `plan-marshall` to `pm-plugin-development`, recorded in both docstrings, SKILL.md § Project-Local Artifact Ownership, and `code-intelligence.adoc` | All four records present and mutually consistent; a cold reader can state owner and rationale from any one of them. But the winning record's paragraph discharging the plan's one stated risk rests on a **false premise**: it says the artifact/test split "predates this claim", and for three of the six project-local scripts the tests sit inside `plan-marshall`'s own test path, so the move introduced the split (G9) | CONFIRMED (decision recorded; one supporting claim false — G9) |
 | D3 | Consistency verification by enumeration, publishing its count | `test_path_attribution.py` walks the real `.claude` tree (47 files), asserts every path → `pm-plugin-development`, publishes the count | The walk test exists and enumerates; mutation of the claim turns it red (re-run independently: **6 failed, 14 passed**). But the walked population is whatever is on disk, not what the repository tracks — **47 git-tracked files, 52 on disk** at adversarial-review time (`settings.local.json` plus four `__pycache__` artifacts), so the published count is build-state-dependent (G7); and the "publication" itself is a `print()` that pytest swallows on green, asserted by a self-referential `capsys` check (G1) | CONFIRMED (with two test-quality gaps, G1 and G7) |
-| D4 | Resolver distinguishes "not covered" from "covered, no matches" | Reuses the shipped `attributor_count` contract; negative-control pair asserted at the seam and at the which-module reader | The pair exists at the seam (`test_path_attribution.py:174`). At the reader only the `attributor_count > 0` half was added by this run; the 0-vs-N pair at the reader lives in `test_cmd_client.py:1040`, a file this PR did not touch | CONFIRMED (report wording overstated — G6) |
+| D4 | Resolver distinguishes "not covered" from "covered, no matches" | Reuses the shipped `attributor_count` contract; negative-control pair asserted at the seam and at the which-module reader | The pair exists at the seam (`test_path_attribution.py:174`). At the reader only the `attributor_count > 0` half was added by this run; the 0-vs-N pair at the reader lives in `test_cmd_client.py:1039-1061`, a file this PR did not touch | CONFIRMED (report wording overstated — G6) |
 | D5 | Documentation: ownership contract + `code-intelligence.adoc` row | SKILL.md § Project-Local Artifact Ownership; adoc section; `ext-point-path-attribution.md` implementations table | All three present; both relative links from SKILL.md resolve; no stale `.claude/skills → plan-marshall` statement survives anywhere outside `doc/plans/` | CONFIRMED |
 
 ## Per-deliverable detail
@@ -68,8 +68,9 @@ below still resolves; the corrections applied at review are marked in § Adversa
   never a ruling.
 - **Found:**
   - `marketplace/bundles/pm-plugin-development/skills/plan-marshall-plugin/extension.py:297-349` — a
-    four-part docstring: the decision, why it is a decision rather than a side effect, why the bare root
-    rather than an enumeration, the accepted artifact/test split, and the consumer-project inertness.
+    five-part docstring: the decision, why it is a decision rather than a side effect, why the bare root
+    rather than an enumeration, the artifact/test split at `:333-339` (whose premise is false — G9), and
+    the consumer-project inertness at `:341-346`.
   - `marketplace/bundles/plan-marshall/skills/plan-marshall-plugin/extension.py:124-131` — the mirror
     record on the losing side, pointing at the winner's `claim_paths`.
   - `marketplace/bundles/pm-plugin-development/skills/plan-marshall-plugin/SKILL.md:99-126` —
@@ -77,11 +78,24 @@ below still resolves; the corrections applied at review are marked in § Adversa
   - `doc/concepts/code-intelligence.adoc:202-210` — § "The project-local artifact tree, and the silent
     fallback it closes", including the ruling paragraph at `:208`.
 - **Checks run:** cold read of each record in isolation — each independently answers "who owns `.claude`
-  and why" (`pm-plugin-development`; owner = who understands the content). The plan's "⚠ tests live under
-  a different module's test tree" caution is addressed explicitly at `extension.py:334-339` ("A split of
-  artifacts from their tests is accepted, not introduced"). Both relative links at SKILL.md:124-126
-  resolve on disk.
-- **Verdict:** CONFIRMED.
+  and why" (`pm-plugin-development`; owner = who understands the content). Both relative links at
+  SKILL.md:124-126 resolve on disk.
+- **The plan's "⚠ tests live under a different module's test tree" caution is *addressed* but on a false
+  premise.** `extension.py:333-339` argues "A split of artifacts from their tests is accepted, not
+  introduced … that split predates this claim (it held under `plan-marshall` ownership too)". Tested at
+  adversarial review by resolving each of the six `.claude/skills/*/scripts/*.py` files' covering test
+  tree through the live `which-module`: three of them (`audit.py`, `era_stamp_fill.py`,
+  `review_retrospective.py`) are tested under `test/plan-marshall/**`, which `plugin_discover.py:503-512`
+  gives to the `plan-marshall` module — the module that owned the artifacts *before* the move. For those
+  three, artifact and tests were in the **same** module beforehand and are in different ones now, so the
+  split was introduced, not inherited. Only the `sync-plugin-cache` trio (tested under
+  `test/sync-plugin-cache/`, module `default`) was split beforehand. Recorded as **G9**. The move's
+  *conclusion* still stands — ownership tracks who understands the content — and no behaviour regressed
+  (checked: `derive-verification` on a `.claude` python path yields `compile pm-plugin-development` where
+  it once yielded `compile plan-marshall`, but `.claude` is in no module's `sources`/`tests`, so neither
+  command covered the file and the `compile` class derives no test command either way).
+- **Verdict:** CONFIRMED that the decision and a reasoning are recorded; the reasoning contains one false
+  factual claim (G9).
 
 ### D3 — consistency verification across the whole tree
 
@@ -117,7 +131,9 @@ below still resolves; the corrections applied at review are marked in § Adversa
     via git); `git status --porcelain` shows the file unmodified.
   - Green baseline after restore: the three attribution test files → **61 passed in 0.77s**;
     `test_files_inventory.py` → **33 passed**.
-- **Verdict:** CONFIRMED for the enumeration; the *publication* half is nominal only — see G1.
+- **Verdict:** CONFIRMED for the enumeration — it walks the real tree and it bites under mutation. The
+  *publication* half is nominal only: the count is unobservable in every run mode (G1) and the population
+  it counts is build-state-dependent (G7).
 
 ### D4 — "not covered" distinct from "covered, no matches"
 
@@ -134,15 +150,19 @@ below still resolves; the corrections applied at review are marked in § Adversa
     same seam).
   - `test/plan-marshall/manage-architecture/test_which_module_plan_claim.py:246-263` — at the reader,
     only the N side: `assert result['attributor_count'] > 0`.
-  - The 0-vs-N pair at the reader is `test/plan-marshall/manage-architecture/test_cmd_client.py:1040-1059`,
-    a file **not** in `git show --stat cc923b6` — it pre-dates this plan.
+  - The 0-vs-N pair at the reader is `test/plan-marshall/manage-architecture/test_cmd_client.py:1039-1061`
+    (`test_which_module_residue_distinction_is_observable_without_reading_module`), a file **not** in
+    `git show --stat cc923b6` — it pre-dates this plan.
   - Contract surface (all pre-existing, correctly reused, not duplicated):
     `marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/_cmd_client_handlers.py:1032`
     (`'attributor_count': len(attributor_reports)`), `…/standards/client-api.md:808-809`,
     `…/extension-api/standards/ext-point-path-attribution.md:92-93`.
 - **Checks run:** read `cmd_which_module` end to end
-  (`_cmd_client_handlers.py:930-1040`) to confirm the seam runs unconditionally on every call, so the
-  provenance pair is present on every response shape rather than only on rung-3 fallthrough.
+  (`_cmd_client_handlers.py:911-1040`, `def` at `:911`) to confirm the seam runs unconditionally on every
+  call, so the provenance pair is present on every response shape rather than only on rung-3
+  fallthrough. Confirmed live at adversarial review: `which-module --path .claude/commands/x.md` →
+  `module: pm-plugin-development, attributor_count: 3`; `--path doc/concepts/code-intelligence.adoc` →
+  `module: documentation, attributor_count: 3`.
 - **Verdict:** CONFIRMED against the literal *Done when* — with two qualifications. One is recorded as a
   gap: the report's "and at the which-module reader" overstates what this run added (G6). The other is
   recorded without a gap: the discriminator reused separates *capability presence* from *capability
@@ -233,12 +253,23 @@ cannot see those 47 tracked files — including six production Python scripts un
 headline cost ("every query against an unclaimed path pays whole-tree prices") the plan did not scope,
 and the shipped prose does not say so at the point a reader would over-read it.
 
+**Executed rather than inferred at adversarial review.** The audit derived this from the crawl walker
+because it believed `.plan/project-architecture/` was absent; it is present in this clone, so the readers
+were run: `files --module pm-plugin-development` → zero `.claude` rows; `find --pattern '.claude/**'` →
+`count: 0, truncated: false`; `architecture module --module pm-plugin-development` →
+`sources: [marketplace/bundles/pm-plugin-development/skills]`, `tests: [test/pm-plugin-development]`.
+The sharpest instance: `search --content --pattern 'parse_metrics_end_time_presence'` returns
+`count: 11, file_count: 8, files_scanned: 5543, unreadable[0], truncated: false` — eight files, none of
+them `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py:1139`, where the symbol is
+**defined**. A caller gets the consumers, misses the definition, and the coverage metadata says the
+result is complete.
+
 ## Test adequacy
 
 | Deliverable | Covering tests | Non-vacuity evidence |
 |---|---|---|
 | D1 | `test_path_attribution.py:87-101` (opt-in, id, exact claim); `test_which_module_plan_claim.py:266-300` (live merge yields `.plan` only for plan-marshall, `.claude` only from pm-plugin-development) | Mutation of `claim_paths()` → `test_claims_the_bare_claude_root` and `test_claude_tree_moved_to_pm_plugin_development` both red |
-| D2 | Not test-covered by design — verified by cold read (above) | n/a |
+| D2 | Not test-covered by design — verified by cold read (above) | n/a. The cold read is not sufficient on its own: it establishes that a record exists and reads coherently, not that its factual premises are true, which is how the false artifact/test-split premise (G9) survived the run's own sub-agent cold read and the audit's |
 | D3 | `test_path_attribution.py:108-132`, `:135-150`, `:153-155`, `:158-166`; `test_which_module_plan_claim.py:226-243`; `test_files_inventory.py:708-770` | Mutation to `.claude/skills` → 6 tests red across two files, incl. both enumeration tests. Re-run independently at adversarial review: identical 6-failed/14-passed split, same six test ids. The enumeration bites; its *population* does not (G7) |
 | D4 | `test_path_attribution.py:174-201` (seam pair), `:204-217` (positive control); `test_which_module_plan_claim.py:246-263` (reader, N side only) | The seam pair is real but weak: its `not_covered` arm is constructed by passing `merge([])` a synthetic empty list, so it exercises the contract, not the product's behaviour on any real path |
 | D5 | Indirectly by plugin-doctor (`broken-relative-link`), not re-run here; both SKILL.md links verified to resolve by hand | n/a |
@@ -252,8 +283,12 @@ assert f'enumerated {len(files)} files' in capsys.readouterr().out
 
 The assertion checks the test's own `print` two lines above, with `len(files)` on both sides — it cannot
 fail for any state of the production code, and it is the only thing standing behind the plan's "publishes
-its count". Worse, on a green run pytest captures and discards that output: the audit's own clean run
-printed `9 passed in 4.81s` and nothing else, so the count is not observable by anyone. See G1.
+its count". Worse, the count is observable in **no** run mode. On a green run pytest captures and
+discards the output (the audit's clean run printed `9 passed in 4.81s` and nothing else; re-run at
+adversarial review, `9 passed` and nothing else). `-s` does not help either: `capsys` installs
+fixture-level capture regardless of the global setting, and `readouterr()` *drains* the buffer, so the
+line reaches neither the terminal nor pytest's "Captured stdout call" section — verified with a
+standalone two-line probe under `$TMPDIR`. See G1.
 
 ## Report accuracy
 
@@ -272,7 +307,11 @@ Every substantive claim in `report-01.md` was re-checked against the tree. **Hel
 - "47 files" — re-derived independently: 47 **git-tracked** files under `.claude`. The number the test
   publishes is a live filesystem walk, which reads 52 on a working machine; see G7.
 - Findings 1, 2 and 3 are all present in the tree as described (`extension-architecture.adoc:29,31`;
-  `extension-topology.svg:144-145`; `test_path_attribution_merge.py:641-654`).
+  `extension-topology.svg:144-145`; `test_path_attribution_merge.py:641-654`). Finding 3's *fix* is only
+  half done, though: the values were corrected but the surrounding comment now calls the two
+  `_StubAttributor` records "the shipped claims, produced by the real merge over the two real
+  attributors" — they are stubs, and the real shipped set is five claims from three attributors. That is
+  the same invisible-fixture property the finding was about, re-encoded in prose (G8).
 - "No core edit" — confirmed by the merge commit's file list.
 - Contract-check row "3 Plan directory" — `plan.md` exists and opens with the first-instruction block.
 
@@ -350,8 +389,14 @@ for both the extension and the test the report cites by line.
 per-module test counts, mypy/ruff/plugin-doctor) — the audit brief forbids running the full suite, and
 those figures are point-in-time measurements of a tree that has since advanced. The reviewer-participation
 table and the PR comment surfaces — not reachable without querying GitHub, and outside the "does the tree
-contain what was promised" question. `search --content` / `find` behaviour was derived by reading the
-crawl walker rather than executed, because `.plan/project-architecture/` does not exist in this clone.
+contain what was promised" question.
+
+⚠ **One "not checked" reason was wrong.** The audit stated that `search --content` / `find` behaviour was
+derived by reading the crawl walker "because `.plan/project-architecture/` does not exist in this clone".
+It does exist, along with `.plan/execute-script.py`, so at adversarial review the readers were executed
+directly (`which-module`, `files`, `find`, `search --content`, `module`, `derive-verification`) and their
+output replaces the inference in § Correctness review and in G2. The conclusions were unchanged by the
+switch from reading to running; the reason given for not running was simply false.
 
 **Search-reliability note.** Every "grep found nothing" verdict above was preceded by a positive control:
 the stale-attribution sweep pattern was first confirmed to match the known-good historical sentences at

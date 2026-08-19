@@ -425,7 +425,7 @@ needs its own change.
 - **Why it matters:** This is the fail-open form of the same misreport. The resolver's `notes[]`
   channel exists precisely to surface suppressed edges, but a discovery-time parse failure never
   reaches the resolver, so `notes[]` stays empty and the row still reads `status: ok, edge_count: 0`.
-  ADR-009's fail-closed reporting discipline — cited by `client-api.md:114` as the reason the
+  ADR-009's fail-closed reporting discipline — cited by `client-api.md:113` as the reason the
   zero-edge disambiguation table exists — is not applied at this layer.
 - **Action:** Keep returning the empty pair (dropping the module would be a larger behaviour change),
   but record the failure where a consumer can see it: log a WARNING through the module's existing
@@ -433,9 +433,11 @@ needs its own change.
   I/O errors actually expected (`tomllib.TOMLDecodeError`, `OSError`, `UnicodeDecodeError`) so an
   unexpected exception is not silently absorbed too.
 - **Done when:** Discovering a module whose `pyproject.toml` is syntactically invalid emits a WARNING
-  log entry naming that file, pinned by a test in
-  `test/plan-marshall/build-pyproject/test_pyproject_discover_modules.py`; and an exception outside
-  the narrowed set propagates rather than being swallowed.
+  log entry naming that file, and an exception outside the narrowed set propagates rather than being
+  swallowed — both pinned by tests in
+  `test/plan-marshall/build-pyproject/test_pyproject_derivation_resolver.py`, which is currently the
+  only test module in the tree that loads `_pyproject_cmd_discover` at all (a new
+  `test_pyproject_discover_modules.py` is equally acceptable).
 - **Effort:** S
 - **Risk if fixed:** Low. Narrowing the catch can turn a previously-absorbed unexpected error into a
   discovery failure — which is the point, but it means the narrowed set must cover the real I/O and

@@ -10,10 +10,13 @@ every citation below was re-derived against the same code the audit read. Plan l
 The five deliverables are present, wired, and covered by non-vacuous tests (mutation-proven twice).
 Two deviations from the plan's literal wording — the binding is keyed on the resolver **id** rather
 than a file pattern, and no `precedence` knob was shipped — are declared, argued, and documented in
-the shipped docs. One real defect survives: with every resolver switched off, `capabilities` reports
-`module_edges: not_derivable` on a project whose `graph` verb still returns edges, because declared
-(`internal_dependencies`) edges bypass the resolver seam entirely. The plan's own new three-state
-tables do not cover that case.
+the shipped docs. One behavioural defect survives: with every resolver switched off, `capabilities`
+reports `module_edges: not_derivable` on a project whose `graph` verb still returns edges, because
+declared (`internal_dependencies`) edges bypass the resolver seam entirely. The plan's own new
+three-state tables do not cover that case, and an existing test writes the false generalisation down
+as an assertion. Three smaller inconsistencies survive alongside it: the rendered provenance footer
+(G2), a `configured` field computed two different ways in the two surfaces that report it (G9), and one
+Axis-C docstring still naming the retired length discriminator (G10).
 
 ## Deliverable verdicts
 
@@ -232,9 +235,12 @@ implementations.
 - Declared-wins suppression notes (`_cmd_client_query.py:1224-1230`) are keyed on producers of actual
   edges, so a `not_dispatched` record can never acquire a `declared:` note it did not earn.
 - Disabled reports are merged and re-sorted by id (`:1122`), so report order is configuration-independent.
-- The `resolver_count == len(resolvers)` invariant is gone from every normative surface: the only
-  remaining `len(resolvers)` occurrences in `marketplace/` are the two roster `count` fields
-  (`extension_api.py:176`, `run_config.py:928`), which count roster entries and are correct.
+- The `resolver_count == len(resolvers)` invariant is gone from every normative surface. Re-derived:
+  `grep -rn "len(resolvers)" marketplace/` returns **four** occurrences — two code sites that are the
+  roster `count` fields and are correct (`extension_api.py:176`, `run_config.py:928`), and two
+  documentation lines that *negate* the invariant rather than assert it (`client-api.md:99` "This is NOT
+  `len(resolvers)` once the machine-local binding is used"; `architecture-persistence.md:607` "Not
+  `len(resolvers)`, which also counts the switched-off ones"). No surviving assertion of the invariant.
 
 ## Test adequacy
 
@@ -247,8 +253,14 @@ implementations.
 | ABC method | `test_extension_base_derivation_resolver.py:110,128,131` (default `[]`, override accepted, third-party default pinned) |
 | Cross-stage | `test_graph_family_bundle_project.py:335-361` — roster names every discovered resolver; count checked against the dispatched population, not the roster's cardinality |
 
-Re-derived counts: the three new test files hold **14 + 22 + 19 = 55** tests (`--collect-only`), all
-green. The commit changed **20** `.py` files — **14** production, **6** test — matching the report.
+Re-derived counts (`--collect-only`, per file, at review time). The commit **adds** three test files —
+`test_derivation_resolver_roster.py` (**14**), `test_run_config_derivation_resolver.py` (**22**),
+`test_derivation_resolver_configuration.py` (**19**) = **55**, all green. It **modifies** three more,
+one of which is `test_extension_base_derivation_resolver.py` (**14**). The "50 passed" run recorded
+under D1 covers roster + run-config + extension-base (14 + 22 + 14), a different file set from the 55 —
+both figures are correct and neither is the other's total. `git show --diff-filter=A` confirms which
+three are new. The commit changed **20** `.py` files — **14** production, **6** test — matching the
+report (`git show --name-only`, re-counted).
 
 **Mutation evidence (two, both proving non-vacuity):**
 
@@ -260,12 +272,22 @@ green. The commit changed **20** `.py` files — **14** production, **6** test �
 
 Both mutations were restored from `$TMPDIR/verify-220-mutsweep/run_config.py.orig`; `cmp` reports the
 file byte-identical to the snapshot and `git status --porcelain` shows no modification under
-`marketplace/`.
+`marketplace/`. **Both were re-run independently in adversarial review** from a fresh byte snapshot,
+with identical readings (8 failed / 11 passed, first failure `test_unconfigured_project_still_derives_edges`;
+1 failed / 21 passed, `test_list_survives_a_raising_entry_read`), and the file restored to the same
+`md5sum` afterwards.
 
-**One coverage hole:** no test combines "every resolver disabled" with "a module carrying declared
-`internal_dependencies`". Every disabled-path fixture (`_seed_triple`,
-`test_derivation_resolver_configuration.py:74-99`) builds modules with no declared edges, which is
-exactly why the G1 defect passed four verification rounds.
+**One coverage hole, and one test that pins the defect.** No test combines "every resolver disabled"
+with "a module carrying declared `internal_dependencies`": the disabled-path fixtures
+(`_module` at `test_derivation_resolver_configuration.py:74-82`, `_seed_triple` at `:85-99`) build
+modules with **no** declared edges — `_seed_triple`'s own docstring says so ("Three modules with NO
+declared edges — every edge must come from a resolver"). Worse, `:249-269`
+(`test_capabilities_reports_not_derivable_when_every_resolver_is_disabled`) **asserts the G1 behaviour
+as correct** — `assert edges['status'] == 'not_derivable'` — and its docstring generalises beyond its
+fixture: "Disabling every resolver leaves the envelope genuinely unable to derive edges." That
+generalisation is the G1 falsehood, written into a test, which is why the defect passed four
+verification rounds. The G1 fix must re-scope that test to its precondition, not merely add a new one;
+this is now recorded in G1's *Risk if fixed*.
 
 ## Report accuracy
 
@@ -281,11 +303,13 @@ amendment having landed in `.claude/skills/cloud-plan-lane/SKILL.md:725-729`.
 Inaccuracies found:
 
 - **The round-1 finding count does not match its own table.** The report states *"the row counts below
-  are the tables' own"* and then *"| 1 | 13 | 10 from the sub-agent, 3 self-caught |"*. The round-1
-  table has **14** rows (F1, F2, F2b, F3–F10 = 11 rows attributed to the R1 sub-agent, plus S1, S2, S3).
-  Rounds 2, 3 and 4 count every suffixed row (R2-S1, R3-R are counted), so counting F2b as a non-row is
-  inconsistent with the report's own convention — the exact arithmetic-vs-table defect R4-7 claims to
-  have eliminated. See G5.
+  are the tables' own"* and then, verbatim at `:157`,
+  *"| 1 | 13 | 10 from the sub-agent, 3 self-caught while fixing |"*. The round-1 table (`:170-183`) has
+  **14** rows (F1, F2, F2b, F3–F10 = 11 rows attributed to the R1 sub-agent, plus S1, S2, S3). The other
+  three rows re-derive exactly — round 2: R2-1…R2-10 + R2-S1 = 11 (stated 11); round 3: R3-1…R3-9 + R3-R
+  = 10 (stated 10); round 4: R4-1…R4-10 = 10 (stated 10) — so every other round counts every suffixed
+  row, and counting F2b as a non-row is inconsistent with the report's own convention: the exact
+  arithmetic-vs-table defect R4-7 claims to have eliminated. See G5.
 - **R3-4's stated rationale is false about the test harness.** The row says the assertion was *"green
   only because a fresh clone and CI have no store"* and that *"a developer who disables one resolver
   through the new menu turns it red"*. `test/conftest.py:1146-1200` installs an **autouse**
@@ -294,8 +318,13 @@ Inaccuracies found:
   `test_graph_family_bundle_project.py` nor `test_graph_resolver_provenance.py` carries that marker.
   Proved: I ran `test_graph_resolver_provenance.py` and `test_native_resolver_graph_impact.py` with
   `PLAN_BASE_DIR` pointed at a store disabling `maven` and `python` — **49 passed**, because the
-  autouse fixture overrode my env. The fix R3-4 applied is still an improvement (the assertion now
-  names the right quantity); its justification is not. See G6.
+  autouse fixture overrode my env. Re-proved in adversarial review on the file R3-4 actually names:
+  `test_graph_family_bundle_project.py` under a store disabling all seven shipped resolvers → **29
+  passed**. ⛔ **And the same false rationale is in shipped source, not only in the report** — the
+  comment at `test_graph_family_bundle_project.py:353-357` repeats it verbatim in substance
+  ("Asserting the equivalence unconditionally would turn this red for that developer"). The fix R3-4
+  applied is still an improvement (the assertion now names the right quantity); its justification is
+  not, at either site. G6 is re-scoped to cover both and re-severitied to **medium** accordingly.
 - **Residue 3 does not reproduce.** The report describes a pre-existing 38-failure cross-directory
   pytest pollution mode. Two multi-directory ad-hoc invocations here were clean:
   `manage-architecture + extension-api` → **900 passed**; `manage-architecture + extension-api +
@@ -305,17 +334,21 @@ Inaccuracies found:
   (`test_argparse_surface.py::TestLiveTreeCharacterization::test_every_registered_notation_is_confident_or_explicitly_not_derivable`,
   which names `plan-marshall:manage-metrics:manage-metrics` and fails identically when that file is run
   alone — 1 failed / 47 passed). Status of residue 3 is therefore **unconfirmed**, not disproved. See G7.
-- Minor, not filed as gaps: the report's line-number citations (`run_config.py:710-802`,
-  `architecture-persistence.md:606`, `client-api.md:99/101/105`) describe the tree at the time of the
-  finding; the content is present at ±1–2 lines today. The build-gate figures (five `./pw verify` runs,
-  20103 passed / 14 skipped) are **UNVERIFIABLE** here — the brief excludes running the full suite —
-  and nothing I ran contradicts them.
+- Minor, not filed as gaps: the report's line-number citations were re-checked one by one rather than
+  waved through. `architecture-persistence.md:606/607`, `client-api.md:99`, `client-api.md:101` and
+  `run_config.py:711` (the Language-Servers banner, for the report's `:710-802`) are **exact today**.
+  One is genuinely stale: **`client-api.md:105`** (R3-6, "the fifth and last two-state table") — the
+  table gained its third row in the same commit, so the third-state row now sits at **`:111`**, six
+  lines below the report's number. That matters because `gaps.md` G3 had copied `:105` from the report
+  instead of re-deriving it; the citation is corrected there. The build-gate figures (five `./pw verify`
+  runs, 20103 passed / 14 skipped) are **UNVERIFIABLE** here — the brief excludes running the full suite
+  — and nothing I ran contradicts them.
 
 ## Declared residue — current status
 
 | Residue item (from report) | Still open? | Evidence |
 |---|---|---|
-| 1. Configuration menu Page 4 is full; next entry needs a Page 5 | **Open** | `menu-configuration.md:89-108` — Page 4 holds "Derivation Resolvers", "Merge Queue", "Full Reconfigure", "Back" = the 4-element cap. No sibling plan has landed a language-server menu entry (`010-lsp-in-execute-lookup-and-write`, `240-skill-lsp-server` reports mention no menu surface; no `menu-language-servers.md` exists) |
+| 1. Configuration menu Page 4 is full; next entry needs a Page 5 | **Open** | `menu-configuration.md:89-108` — Page 4 holds "Derivation Resolvers", "Merge Queue", "Full Reconfigure", "Back" = the 4-element cap. No sibling plan has landed a language-server menu entry (`010-lsp-in-execute-lookup-and-write`, `240-skill-lsp-server` reports mention no menu surface; no `menu-language-servers.md` exists). The surface is *internally consistent* today — `:24` states 12 options and the four pages carry exactly 12 non-navigation options — so there is nothing to fix now; what is missing is a note telling the next author what the cap costs them. See G8 |
 | 2. `run-config-standard.md` "Full Example" is drifted | **Open** | `:807-859` — the block carries `commands`, `maven`, `architecture_refresh`, `ci_durations` only; the document's own `## ` sections include Language-Servers (`:208`), Derivation-Resolvers (`:267`) and Display-Timezone (`:377`), none of which appear in the "Full" example. See G4 |
 | 3. Pre-existing cross-directory pytest pollution (38 failures) | **Unconfirmed** | Not reproduced in three multi-directory invocations (900, 1078, 1804 tests, one unrelated failure). See G7 |
 | 4. `HARVEST_LANGUAGE` is Python-only, so `lsp` declares `['**/*.py']` | **Open, accurate** | `lsp_harvest.py:86` `HARVEST_LANGUAGE = 'python'`; `pm-code-intelligence/.../extension.py:104` returns `['**/*.py']` with the coupling stated in its docstring |
