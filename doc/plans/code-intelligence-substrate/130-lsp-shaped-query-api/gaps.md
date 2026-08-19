@@ -2,13 +2,15 @@
 
 Four of the plan's five deliverables survive in the tree (D1, the `lsp` facade, was deliberately
 retired by the later landed plan `135-remove-lsp-query-facade`, PR #1214 / `064b387` on `main` —
-that absence is intended and is **not** a gap). What remains open is concentrated in D2 and D3: the
-`capabilities` verb does not draw its own cannot-derive-versus-derived-nothing distinction on the
-`content_search` row, three shipped documents assert an "uncached" property the code does not have,
-the refine `UNDERIVABLE` guard has no test that touches the shipped artifact, and two sibling
-counters in the `search` response are row populations documented as file populations. Each entry
-below is grounded in a measurement re-run at audit time (mutation runs, in-process probes, GitHub
-API reads) — see `verification.md` for the full evidence.
+that absence is intended and is **not** a gap). Nine gaps remain open, concentrated in D2 and D3:
+the `capabilities` verb does not draw its own cannot-derive-versus-derived-nothing distinction on
+the `content_search` row, three shipped documents assert an "uncached" property the code does not
+have, the documented three-state entry shape is unexpressible on the `path_attribution` row, the
+refine `UNDERIVABLE` guard has no test that touches the shipped artifact, and two sibling counters
+in the `search` response are row populations documented as file populations. Each entry below is
+grounded in a measurement re-run at audit time (mutation runs, in-process probes, GitHub API reads),
+every one of which was re-taken independently by an adversarial pass at `a90adeb` — see
+`verification.md` for the full evidence.
 
 ## G1 — Make `capabilities.content_search` distinguish "never crawled" from "crawled, nothing inventoried"
 
@@ -22,8 +24,11 @@ API reads) — see `verification.md` for the full evidence.
   (`except DataNotFoundError: continue`). Probed in this clone: an empty envelope and an envelope
   carrying two crawled but file-less modules both return
   `{"capability": "content_search", "verbs": ["files", "find", "search"], "status": "unavailable", "modules_inventoried": 0}`
-  — payload comparison `True`. The shipped tests encode the same conflation
-  (`test_capabilities.py:121-135` vs `:225-233` assert identical fields for the two envelopes).
+  — payload comparison `True`. The shipped tests encode the same conflation:
+  `test_capabilities.py:121-135` asserts the never-crawled envelope reports `unavailable`, and
+  `:225-233` asserts the crawled-but-file-less envelope reports `unavailable` with
+  `modules_inventoried == 0`; nothing anywhere asserts the two entries differ, and as shipped they
+  cannot.
 - **Why it matters:** this row is the one a dispatched leaf consults before deciding whether a
   `count: 0` from `search --content` is a trustworthy negative. As shipped it cannot tell "the crawl
   never ran here, refresh it" from "the crawl ran and inventoried nothing" — the exact ambiguity
@@ -35,10 +40,16 @@ API reads) — see `verification.md` for the full evidence.
   `available`/`unavailable` (or, better, the `derivable`/`not_derivable` vocabulary noted as a
   follow-up in `135-remove-lsp-query-facade/plan.md:226-229`) for the crawled case. Update
   `client-api.md:1392-1414`, `SKILL.md:544`, `doc/user/code-search.adoc:198` and
-  `doc/concepts/code-intelligence.adoc:252-262` to match.
+  `doc/concepts/code-intelligence.adoc:252-262` to match — **and `client-api.md:572`**, whose
+  verb-summary row already claims `capabilities` reports "Per-capability
+  `derivable`/`not_derivable` (module edges, path attribution, content search)" while the code gives
+  `content_search` only `available`/`unavailable` (`_cmd_client_handlers.py:246`). That row is wrong
+  today whichever way this gap is closed; harmonising the vocabulary makes it right, keeping the
+  split means rewording it.
 - **Done when:** a test seeds (a) an envelope with no descriptors and (b) an envelope with N crawled
-  file-less modules, and asserts the two `content_search` entries differ; and no envelope can
-  produce an entry that is silent about how many modules were inspected.
+  file-less modules, and asserts the two `content_search` entries differ; no envelope can produce an
+  entry that is silent about how many modules were inspected; and `client-api.md:572` states the
+  vocabulary the code actually emits.
 - **Effort:** S
 - **Risk if fixed:** the entry's field set changes, so the TOON examples in `client-api.md` and any
   consumer reading `status` as a two-valued enum must be updated in lock-step.
@@ -137,7 +148,11 @@ API reads) — see `verification.md` for the full evidence.
   (`client-api.md:992-1006`) rests on, and it is quoted to callers as the population size behind a
   negative result. On a tree with cross-module duplicate inventory it over-states that population —
   the same row-versus-file recurrence D4 closed one field over, left open in the field that carries
-  the trust.
+  the trust. **Severity note (why medium, not high):** the calibration reserves *high* for a
+  measurement that misreports in a way that changes an outcome. The documented complete-coverage
+  conjunction tests `files_scanned > 0`, and duplicate attribution can only inflate the counter —
+  it is zero exactly when the distinct-file count is zero — so no gate flips. What is wrong is the
+  population size quoted to a reader, not the trust decision computed from it.
 - **Action:** either count distinct paths (`len(scanned_paths)`) or keep the counter and rename/
   redocument it explicitly as scans (adding a distinct `files_scanned_distinct`), then align
   `client-api.md:988`, `doc/user/code-search.adoc:147-148` and
@@ -176,13 +191,16 @@ API reads) — see `verification.md` for the full evidence.
 - **Kind:** test-gap
 - **Severity:** low
 - **Topic:** tests
-- **Where:** plan requirement at `doc/plans/code-intelligence-substrate/130-lsp-shaped-query-api/plan.md:154-157`;
+- **Where:** plan requirement at `doc/plans/code-intelligence-substrate/130-lsp-shaped-query-api/plan.md:155-157`;
   substituted proxy at `test/plan-marshall/manage-architecture/test_capabilities.py:260-275`;
   disclosure at `report-01.md:112-117, 200-203`
 - **Evidence:** the plan states "D2 is verified inside a dispatched leaf, not in main context"; the
   run recorded that a leaf with revoked Grep/Glob could not be synthesised and used a two-project-dir
-  test instead. Nothing in the tree closes it: the only `capabilities` references outside the skill
-  are `refine-workflow-detail.md:498`, `SKILL.md:541`, `doc/user/code-search.adoc:195` and the tests.
+  test instead. Nothing in the tree closes it: a bundle-wide grep for `architecture capabilities`
+  outside `manage-architecture/` returns exactly one hit —
+  `phase-2-refine/standards/refine-workflow-detail.md:498` — and the verb's only other mentions are
+  its own documentation (`manage-architecture/SKILL.md:541`, `doc/user/code-search.adoc:195`) and the
+  tests.
 - **Why it matters:** D2 exists because a report correct in the orchestrator and wrong in a leaf is a
   failed deliverable. The proxy demonstrates project-dir scoping but not leaf behaviour, so the
   deliverable's own verification clause is still owed — and a later plan may re-encounter it as a
@@ -192,9 +210,12 @@ API reads) — see `verification.md` for the full evidence.
   future reader will find it (a note in `client-api.md § capabilities` stating that the answer is a
   pure function of `project_dir` + the producers that ran, and therefore harness-grant-independent)
   and close the constraint explicitly.
-- **Done when:** either a leaf-obtained payload is recorded in the tree, or the skill documentation
-  states and justifies why leaf verification reduces to project-dir scoping, with the plan's
-  constraint marked discharged.
+- **Done when:** either a leaf-obtained `capabilities` payload is committed under the executing
+  plan's directory alongside the orchestrator's for the same project dir, or
+  `manage-architecture/standards/client-api.md` § `capabilities` carries a named paragraph stating
+  that the answer is a pure function of `project_dir` plus the producers that ran and therefore
+  cannot vary with the harness tool grant — either artifact being readable, a later reader can check
+  which arm was taken without re-deriving the question.
 - **Effort:** M
 - **Risk if fixed:** none to shipped behaviour; a documentation-only close must not overstate — the
   harness-grant question genuinely is outside the verb's reach.

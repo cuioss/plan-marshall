@@ -405,3 +405,112 @@ unwritten plus two stale doc claims (G11, G12, G14).
   genuinely enumerate LLM-only aspects.
 - **Effort:** S
 - **Risk if fixed:** none.
+
+## G13 — `ran_inline` is a fall-through default, not a measurement: the D2 discriminator's two branches are not distinguishable
+
+- **Kind:** bug
+- **Severity:** high
+- **Topic:** detectors/auditor
+- **Where:** `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/check-dispatch-audit.py:380-386`
+  (the three-state classifier), `:271-281` (the token coercion that manufactures the "measured zero"),
+  and the premise stated in the module docstring at `:31-46`; mirrored in the shipped standard at
+  `plan-retrospective/standards/execution-context-dispatch-audit.md:62` and in
+  `plan-retrospective/SKILL.md:198`
+- **Evidence:** the classifier is
+  `if step not in tokens_by_step: no_evidence / elif tokens_by_step[step] > 0: dispatched / else:
+  ran_inline`. Only the *first* branch is a positive measurement. `ran_inline` is everything else,
+  and three materially different inputs land in it:
+
+  1. **A genuine inline step** — a real measured `0`. This is the only case the docstring describes.
+  2. **A dispatched step whose `<usage>` tag never arrived** — the producer states this outcome in so
+     many words: `manage-execution-manifest.py:2611-2614` — *"Token-attribution fields
+     (`total_tokens` / `tool_uses` / `duration_ms`) default to `0` when the caller omits them — a
+     skipped step legitimately consumes no tokens, and a step dispatched without a `<usage>` tag
+     reports zeros rather than a missing column."* The write is `max(0, int(args.total_tokens or 0))`
+     (`:2650`), so an omitted flag is indistinguishable from a measured zero on disk. The same file
+     says it again for its own consumer at `:2799-2803`: *"`record-step` receives the `<usage>`
+     triple only for steps dispatched as Task agents; every inline step records a row with zeros by
+     contract. So `total_tokens` is a FLOOR."* `phase-6-finalize/SKILL.md:1081` names the skip
+     conditions on the producing side (`5b`): *"Inline steps and timed-out steps skip this call."*
+  3. **A row with no `total_tokens` column at all, or a non-numeric one** — the detector's own
+     `else: value = 0` fail-open coercion (`check-dispatch-audit.py:278-279`) converts "not measured"
+     into "measured zero" before the classifier ever sees it.
+
+  Reproduced against the shipped script (`--mode live`, hand-built plan fixtures). A terminal step
+  with `execution_log` row `{outcome: error, total_tokens: 0}` and no `[DISPATCH]` line:
+  `dispatched: 0, ran_inline: 1, missing_dispatch_emission: 0`. The same fixture with the
+  `total_tokens` column **absent entirely**: identical output — `ran_inline: 1`, not `no_evidence`.
+- **Why it matters:** `ran_inline` is not a neutral bucket — the code presents it as *proof*.
+  `evaluate_dispatch_coverage`'s own docstring at `:366-369`: *"The token record is the second,
+  independent evidence source the coverage check consults before ever concluding 'ran inline': a
+  non-zero `total_tokens` proves a dispatched envelope ran, a measured `0` proves the step ran
+  inline, and an absent row is honest `no_evidence`."* The shipped standard repeats the contrast at
+  `:62`: `ran_inline` is *"a measured zero"* while `no_evidence` is *"no token row at all — reported
+  honestly, never as 'ran inline'"*. Both rest on a field that may never have been written, and the
+  detector's own coercion is what converts "never written" into "measured". Two consequences follow mechanically:
+  - `missing_dispatch_emission` — **D2's own headline finding** — is computed as
+    `max(0, len(dispatched) - finalize_dispatch_line_count)` (`:388`). A dispatched step that lands
+    in `ran_inline` is subtracted from the numerator, so the finding cannot fire for exactly the
+    class of step whose instrumentation failed. That is the same failure mode the plan set out to
+    abolish, relocated one surface upstream.
+  - `dispatched_step_count` feeds D3, so the `low`-confidence shortfall branch (`:439`) is suppressed
+    by the same under-count.
+
+  This also revises the audit's acceptance of the D2 **mechanism deviation**. The run substituted the
+  token record for `plan.md`'s literal *roster qualifier* and `verification.md` accepted it as
+  "outcome-equivalent for the two cases the plan enumerates". It is equivalent for the conditional-
+  inline case; it is *not* equivalent for the dispatched-but-unmeasured case, where a roster
+  qualifier ("this row dispatches") would still have classified the step as dispatching and surfaced
+  the missing emission. The deviation therefore traded one blind spot for another, and the trade was
+  never stated.
+- **Action:**
+  1. Make `finalize_token_records` distinguish *unmeasured* from *measured zero*: return
+     `dict[str, int | None]`, mapping an absent / non-integer / non-digit-string `total_tokens` to
+     `None` instead of `0` (replacing the `else: value = 0` fall-through at `:278-279`), and route a
+     `None` to `no_evidence` in `evaluate_dispatch_coverage`.
+  2. Re-document the surviving `ran_inline` bucket in the module docstring (`:36-44`), the standard
+     (`:62`) and `SKILL.md:198` as *"a recorded zero token attribution — an inline step, or a
+     dispatched step whose `<usage>` tag was not captured"*, i.e. an upper bound on inline execution,
+     never proof of it.
+  3. Extend the `missing_dispatch_emission` floor note (`:373-375`) to name this second reason the
+     count under-reports, alongside the re-fire reason G8 covers.
+- **Done when:** a fixture whose `execution_log` row carries no `total_tokens` column is classified
+  `no_evidence` (not `ran_inline`), a fixture with an explicit `total_tokens: 0` is still classified
+  `ran_inline`, both are pinned by tests, and mutating the coercion default at `:278-279` turns at
+  least one test red.
+- **Effort:** M
+- **Risk if fixed:** `no_evidence` grows on plans with legacy or hand-edited `execution.toon` rows,
+  and `no_evidence_steps[]` gets noisier; keeping an explicit integer `0` in `ran_inline` (step 1
+  above) bounds that to rows that genuinely never recorded the column. The `dispatched` count is
+  unchanged by this fix — it already required a positive integer — so no currently-clean plan starts
+  reporting `missing_dispatch_emission` because of it.
+
+## G14 — Re-derive or drop the "eight aspects" count in the three relabelled docs
+
+- **Kind:** doc-defect
+- **Severity:** low
+- **Topic:** bundle-docs
+- **Where:** `marketplace/bundles/plan-marshall/skills/plan-marshall/standards/effort-roles.md:65`,
+  `marketplace/bundles/plan-marshall/skills/ref-workflow-architecture/standards/call-graph.md:323`
+  and `:462`
+- **Evidence:** all three now read *"eight analytical aspects"* / *"8 analytical aspects"*. The run
+  changed only the adjective and `report-01.md:150-155` records the change as *"Relabelled to
+  'analytical aspects' (count unchanged)"* — the count was carried over, not re-derived. It does not
+  hold: `plan-retrospective/SKILL.md:180-196` lists **15** aspects (orders 1-15), and the SKILL's own
+  LLM enumeration at `:251` names **six** (*"LLM aspects (4-7, 9, and 14)"*). `git log -L 65,65` on
+  `effort-roles.md` shows "eight" arrived with `59b716d` (#1035) and has never been re-derived since,
+  so this is a pre-existing staleness that plan 170 inherited rather than introduced — but it edited
+  all three lines and asserted the count still held.
+- **Why it matters:** the relabel was performed precisely to stop a doc asserting something the code
+  no longer supports. Leaving a wrong count in the same sentence keeps the misleading-signal defect
+  alive under a new adjective, and `report-01.md` records the count as verified when it was only
+  preserved.
+- **Action:** replace "eight" / "8" with the count derived from the aspect table in
+  `plan-retrospective/SKILL.md` (the registry `retro_sections.py::SECTION_SPEC` is the source of
+  truth the table restates), or drop the number entirely and read "the retrospective's analytical
+  aspects", which cannot drift.
+- **Done when:** no doc outside `doc/plans/` states an aspect count that disagrees with the
+  `plan-retrospective` aspect table, checked by grepping the three cited lines and comparing against
+  the table's row count.
+- **Effort:** S
+- **Risk if fixed:** none; a dropped number cannot go stale again.

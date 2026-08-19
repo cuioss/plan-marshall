@@ -2,8 +2,12 @@
 
 The surface ships and works: all six deliverables are present, D4's no-op is reproducible on this
 real unconfigured repository, and the versioned-cache bootstrap that round 4 fixed holds up when
-driven from a real two-version cache. What remains is four code defects — one of them a demonstrated
-crash-plus-stream-corruption of the resident server — a mutation-proven vacuous test pair, four
+driven from a real two-version cache. Driven as a client drives it, a running `serve` subprocess
+answers `definition`, `hover` and `references` correctly from the real corpus. What remains is five
+code defects — one of them a demonstrated
+crash-plus-stream-corruption of the resident server, and one a documented provenance contract that
+holds on the `query` verb but is silently dropped on the LSP surface — a mutation-proven vacuous test
+pair, four
 uncovered paths, and a family of stale D3 justifications created by `230-validate-precision` landing
 on `main` 74 minutes **before** this plan merged: every artifact that explains why diagnostics are
 withheld still names an unexecuted gate and a 380/97 % measurement that is now 61 of 5 081.
@@ -55,9 +59,10 @@ withheld still names an unexecuted gate and a 380/97 % measurement that is now 6
   signal. Reproduced on a synthetic corpus: with a decoy line `prose about target_script, unrelated`
   at line 5 of `beta/skills/caller/SKILL.md` and the true citation at line 5 of
   `workflow/step.md`, the answer is `SKILL.md`, `verified=True`. Scanned the real corpus using the
-  resolver's own candidate order and token test: **296 of 4 858 resolved sites (6.1 %)** have more
-  than one candidate matching at that line, so at most one of each is correct; **1 331 (27 %)** win on
-  the tail segment alone rather than the full notation.
+  resolver's own candidate order and token test, all figures from one process: the corpus returns
+  **5 020 reference sites**, of which **4 858 are `verified: true`**; **296 of those 4 858 (6.1 %)**
+  have more than one candidate matching at that line, so at most one of each is correct; **1 331
+  (27 %)** win on the tail segment alone rather than the full notation.
 - **Why it matters:** `SKILL.md:118-121` and `doc/user/corpus-language-server.adoc:182` present
   `verified: true` as *"an exact location"*. A confidently wrong jump target is precisely the failure
   class D3 is gated to avoid, shipped through a different door.
@@ -134,9 +139,11 @@ withheld still names an unexecuted gate and a 380/97 % measurement that is now 6
 - **Evidence:** deleting the cache **read** in `_corpus_index.py:252-254` (so the directory walk runs
   once per reverse edge again — exactly report finding #4's regression) leaves **all 78 tests
   green**. Both tests only observe that `_candidate_cache` gets *written*: `test_repeat_calls_reuse_the_walk`
-  compares the dict to itself, and `test_walk_runs_once_per_owner_not_once_per_edge`'s
-  `len(walked) < len(calls)` holds whether or not the cache is consulted (with no caching, `walked`
-  is empty and `0 < len(calls)` still passes).
+  compares the dict to itself, and `test_walk_runs_once_per_owner_not_once_per_edge` derives `walked`
+  from `index._candidate_cache.get(owner) is not None` — i.e. from what the cache *contains*, not from
+  whether it was *read* — so `len(walked) < len(calls)` holds for any input with a repeated owner.
+  (Deleting the cache write as well would leave `walked` empty and `0 < len(calls)` passing too, so
+  neither half of the cache is guarded.)
 - **Why it matters:** finding #4 was a high-severity performance defect (~125 ms per `references`
   call, unchanged on repeat, defeating residency). Its fix has no guard, so it can silently regress.
 - **Action:** count actual filesystem walks — monkeypatch `Path.rglob` or wrap `_candidate_files`'s
@@ -237,14 +244,25 @@ withheld still names an unexecuted gate and a 380/97 % measurement that is now 6
   Re-derived on this tree with pristine `HEAD` copies of the validator: **61 unresolved of 5 081
   dependencies over 308 components**, against the 380–381 the gate reasoning was built on.
 - **Why it matters:** D3 is the one deliverable this plan left unbuilt, and its residue entry names a
-  blocker that no longer exists. The remaining 61 rows still contain obvious non-references
-  (`lint:js:fix` ×9, `lint:style:fix` ×6, `HH:mm:ss`, `project:core:compile` ×3,
-  `trivy:ignore:CVE-2024-XXXX`), so the decision may well stand — but it should be re-taken against
-  the current set rather than inherited from a superseded one.
-- **Action:** classify the current 61 unresolved rows, decide whether the residual false-positive
-  share clears the bar for editor diagnostics, and either implement D3 (advertise
-  `diagnosticProvider`, stream the validator's set) or record the re-taken decision with the new
-  measurement.
+  blocker that no longer exists. ⭐ **The premise has not merely drifted — it has inverted.** Tallying
+  the current 61 rows by target:
+  - **25 (41 %) are not notations at all** — `lint:js:fix` ×9, `lint:style:fix` ×6,
+    `project:core:compile` ×3, `YYYY-MM-DDTHH:MM:SSZ` ×2, `css:lint:fix`, `css:format:check`,
+    `HH:mm:ss`, `trivy:ignore:CVE-2024-XXXX`, and the truncated fragment `plan-marshall:recipe-`.
+  - **36 (59 %) are well-formed notations whose target does not exist** — `plan-marshall:extension-api:extension_base`
+    ×11 (the file is `extension_api.py`; there is no `extension_base.py`),
+    `pm-plugin-development:plugin-doctor:{validate,fix,analyze}` ×13 (no such scripts; these look like
+    verb names), `plan-marshall:tools-integration-ci:{github,gitlab}`, `pm-dev-java:build-maven:maven`,
+    `pm-plugin-development:README.md`, and ten others.
+
+  So the false-positive share the whole deferral rests on has fallen from the claimed ~97 % to at
+  most ~41 %, and the majority of what remains now looks like genuinely broken or stale references —
+  exactly the class diagnostics exist to surface. **The decision should be presumed to need
+  reversing, not upholding**, which is the opposite of what every shipped artifact currently implies.
+- **Action:** confirm the classification above against the live validator, decide whether the
+  residual false-positive share clears the bar for editor diagnostics, and either implement D3
+  (advertise `diagnosticProvider`, stream the validator's set) or record the re-taken decision with
+  the new measurement and the reason a 41 % non-reference share is still too high.
 - **Done when:** a document in this plan directory or its successor states the current unresolved
   count, its classification, and the diagnostics decision derived from it.
 - **Effort:** M
@@ -293,17 +311,21 @@ withheld still names an unexecuted gate and a 380/97 % measurement that is now 6
 - **Kind:** doc-defect
 - **Severity:** low
 - **Topic:** documentation-surface
-- **Where:** `doc/concepts/code-intelligence.adoc`, § "The bound it inherits, and the one thing it
-  withholds" (*"The corpus validator's unresolved set is presently dominated by references that are
-  not broken at all"*)
+- **Where:** `doc/concepts/code-intelligence.adoc:286` (§ "The bound it inherits, and the one thing it
+  withholds", which opens at `:282`) — *"The corpus validator's unresolved set is presently dominated
+  by references that are not broken at all"*
 - **Evidence:** qualitative rather than numeric, so less wrong than G11/G12 — but "presently" now
   describes a 61-row set produced by a validator whose precision work has landed, and the sentence's
   examples ("build-command and Maven coordinates borrowed into prose") describe the pre-precision
   partition.
 - **Why it matters:** it is the third shipped statement of the same superseded premise; leaving it
   keeps the tier-model page out of step with the code.
-- **Action:** restate once G10's re-evaluation is done, in whichever direction that lands.
-- **Done when:** the paragraph matches the current validator behaviour.
+- **Action:** replace "dominated by references that are not broken at all" with the measured split
+  (G10: 25 of 61 non-notations, 36 well-formed notations with an absent target), and drop the
+  "build-command and Maven coordinates borrowed into prose" example list, which describes the
+  pre-precision partition.
+- **Done when:** the paragraph no longer asserts that non-broken references dominate the set, and
+  either names the current counts or names none.
 - **Effort:** S
 - **Risk if fixed:** none.
 
@@ -358,8 +380,9 @@ withheld still names an unexecuted gate and a 380/97 % measurement that is now 6
 
 - **Kind:** doc-defect
 - **Severity:** low
-- **Topic:** bundle-docs
-- **Where:** `marketplace/targets/claude/plugin_json_gen.py:6-9`
+- **Topic:** documentation-surface
+- **Where:** `marketplace/targets/claude/plugin_json_gen.py:6-9` (the multi-target generator, not a
+  bundle — hence `documentation-surface` rather than `bundle-docs`)
 - **Evidence:** the module docstring enumerates the passthrough fields — *"(`name`, `version`,
   `description`, `author`, `license`, `homepage`, `repository`, `keywords`)"* — while
   `PASSTHROUGH_FIELDS` at `:59-69` now also contains `lspServers`, added by this plan.

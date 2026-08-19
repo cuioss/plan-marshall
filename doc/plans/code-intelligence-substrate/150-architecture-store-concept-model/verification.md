@@ -6,10 +6,11 @@
 the same branch. The plan's landed commit `bc86398` is an ancestor of both, and nothing under
 `marketplace/` or `test/` changed between them — verified with `git merge-base --is-ancestor bc86398 HEAD`
 and `git status --porcelain -- marketplace/ test/` returning empty.)
-**Adversarial re-verification:** at `a90adeb`, still on the same branch. `bc86398` remains an
-ancestor, and `_architecture_core.py`'s md5 is unchanged at `bc7406029e7f408e633fadf99215c04d` —
+**Adversarial re-verification:** opened at `a90adeb` and closed at `c5511dd`, still on the same
+branch (HEAD advanced again mid-review as sibling agents committed). `bc86398` remains an ancestor
+throughout, and `_architecture_core.py`'s md5 is unchanged at `bc7406029e7f408e633fadf99215c04d` —
 the same digest this audit recorded — so every code citation below was re-checked against the same
-bytes the original audit read.
+bytes the original audit read. The md5, not the HEAD sha, is the anchor that matters here.
 **Overall verdict:** PARTIALLY REFUTED
 
 Two of the four deliverables carry a *Done when* clause that the shipped tree demonstrably does not
@@ -523,3 +524,49 @@ working tree and branch. During the run I observed a transient modification to
 HEAD advanced from `61a43e5` to `8ae4805` for the same reason. Neither affected anything under
 `manage-architecture`, and `git status --porcelain -- marketplace/ test/` is empty at the close of
 this audit, confirming all four of my mutations were restored.
+
+## Adversarial review
+
+Independent review of this document and `gaps.md`. Attacks run: A1 false positives, A2 false
+negatives, A3 vacuous evidence, A4 counts and quotes, A5 actionability, A6 severity/topic,
+A7 coverage, A8 internal consistency.
+
+Reviewed across `a90adeb`…`c5511dd`, with `_architecture_core.py` at md5
+`bc7406029e7f408e633fadf99215c04d` throughout — byte-identical to what this audit read, so no
+finding below turns on tree drift. Concurrent agents held unstaged edits to unrelated files in the
+same tree for the whole review; none touched `manage-architecture`, and my own mutated file is
+absent from `git status --porcelain -- marketplace/ test/` at close.
+
+| # | Attack | What was found | Correction applied |
+|---|---|---|---|
+| A1 | False positives — the two HIGH gaps | **None. Both reproduce exactly.** I rebuilt the D4 probes from scratch against the shipped `get_project_info` (not the audit's script) and got, verbatim: `CASE A enriched.json on disk: False \| info freshness: fresh \| description: 'Does things'` and `CASE B document tree_sha: TREE-B \| current: TREE-A \| info freshness: fresh \| document-derived verdict: stale`. G1 and G2 stand as written | None needed |
+| A1 | False positives — the remaining gaps | **None substantive.** Independently reproduced G3 (`PERSISTED key_packages: ['com.example.pkg']` vs `merged: ['mod/src/pkg']`), G5 (`({'pkg': {'v': 2}}, [])`), G6 (index still `{'description': 'OLD DESC', 'generation': {…'TREE-OLD'}}` after an enrich), G7 (`after discover — generation: <ABSENT>`, index `{'description': 'Legacy R', 'generation': {}}`), G9 (`({'no/such/dir': …}, [])` with `package_key_resolves` False), G10 (`.` and `./` both `True`). Every quoted probe line matches the shipped code's actual output | None needed |
+| A1 | Stale citations | **Six off-by-N citations found**, all in doc surfaces rather than code: `manage-api.md:257`→**258**; `SKILL.md:576`→**577**; `client-api.md:343,391`→**344,392**; `module-selection.md:20-27`→**22-28**; `constants.py:411-419`→**415-422**; `invalidate_crawl_cache:519-521`→**519-522**. Every `_architecture_core.py`, `_cmd_manage.py`, `_cmd_enrich.py`, `_cmd_client_query.py`, `architecture.py`, and `manage-solution-outline.py` line citation was checked and is **exact** | All six corrected in place |
+| A2 | False negatives — the CONFIRMED deliverables | Read D2's and D3's shipped code directly rather than the audit's reasoning. **D2 is clean**: `migrate_concept_document` (`:255-277`) has no fail-open branch — absent → named `LEGACY_CONCEPT_TYPE`, present → `validate_concept_type`, which refuses non-strings too. **D3 is clean**: `iter_modules` reads no index. Both CONFIRMED verdicts survive | None needed |
+| A2 | False negatives — the missed sweep | **One substantive miss, the most consequential finding of this review.** The PR body claims the run corrected the "index is the source of truth for which modules exist" claim "**across every document that restated it**". It did not: nine shipped files still restate it, seven inside the `plan-marshall` bundle, and `marshall-steward/references/architecture-setup.md:40` does so **normatively** ("orphan module dirs **MUST be ignored** — the index is authoritative, not the filesystem"), instructing the exact inverse of D3's only ⛔ MUST NOT. The audit verified the two surfaces the *report* named as fixed and never asked whether others remained | Added § Beyond-diff documentation sweep to this document; added **G18**, **G19**, **G20** to `gaps.md`; added report-accuracy item **#9** |
+| A2 | False negatives — an unrealized purpose | D4's "filter before loading" is satisfied by the *primitive* but not by the *only shipped consumer*: `get_project_info` loads every concept body at `_cmd_client_query.py:200` before computing the row, and `cmd_info` (`_cmd_client_handlers.py:92-96`) passes it straight to the CLI. Does not refute the Done-when (scoped to "neither check reads the body") and needs no new gap — G1's fix subsumes it | Recorded under § D4 as "the unrealized purpose" |
+| A2 | False negatives — extra `manage-api.md` instance | G11 named the option table but not the `enrich package` **worked example** at `:265`, which prints `package\tde.cuioss.sheriff.oauth.core.pipeline` — the form the shipped write gate now refuses. Checked the rest of the file: the derived `packages` block at `:162-165` legitimately keeps dotted names (it *is* the bridge) and is **not** a defect | G11 extended to `:258` **and** `:265`, with the false-positive risk at `:162-165` called out |
+| A3 | Vacuous evidence — mutation sweep | **Re-ran all four mutations myself** against a byte snapshot in `$TMPDIR/adv-150-mutsweep/`, restoring by copying the snapshot back (never `git checkout`/`restore`/`stash`) and re-verifying md5 after each. Results reproduce **exactly**, including the audit's stated counts and the verbatim failure text: containment→`test_package_key_resolves_refuses_target_escaping_root` red; `FRESHNESS_UNKNOWN`→`FRESHNESS_FRESH`→`test_derive_freshness_unknown_when_sha_absent` red; `if False and concept_type not in CONCEPT_TYPES`→**4 failed, 25 passed**, the same four test names; `iter_modules`→index read→`assert 'orphan' in []`. No mutation was silently green | None needed. `git status --porcelain` confirms the file unmodified |
+| A3 | Vacuous evidence — the vacuous test | Confirmed the audit's sharpest claim by reading the test: `test_info_surfaces_freshness_from_index` (`test_concept_model.py:224-249`) seeds `derived.json` and `_project.json` but **no `enriched.json`**, then asserts `fresh`. It genuinely pins defect G2 as expected behaviour | None needed — already stated, and correctly |
+| A4 | Counts and quotes | Re-derived every number at check time: `test_concept_model.py` **29 passed** ✓; whole `manage-architecture` directory **573 passed** ✓; `git show --stat bc86398` **17 files** ✓; md5 `bc7406029e7f408e633fadf99215c04d` ✓; `7219569`/`be98185`/`f4937d2`/`f4fef2e` all `fatal: Not a valid object name` ✓; `bc86398` an ancestor of HEAD ✓; `manage-api.md` diff is a single "Data Sources" hunk ✓. Quotes spot-checked verbatim against source: `save_module_enriched`'s "the single concept-document writer", `migrate_key_packages`'s "a named outcome, never a silent drop", `package_key_resolves`'s containment line, `--package`'s help text, `architecture-persistence.md:96-97`. **One count wrong:** `gaps.md`'s preamble said "Fourteen gaps below" over a document holding seventeen | `gaps.md` preamble corrected (now twenty, with the grouping rule stated) |
+| A5 | Actionability | Every entry already carries a concrete path, a concrete change, and an observable *Done when*. No "review X"/"consider Y"/"investigate Z" anywhere. G8's Done-when is the weakest (disjunctive) but both branches are checkable. The three new entries were written to the same bar, G18's *Done when* as a content search over three literal strings | None needed; new entries written to match |
+| A6 | Severity and topic | Calibration re-applied to all twenty. G1/G2 **high** is right — both are guards that fail open and misreport. G3/G4 were weighed for promotion to high (D1's Done-when is refuted, and G4 means `phase-3-outline` and `architecture module` give two different answers for one module) and **left at medium**: the calibration's medium row names "an incomplete deliverable" exactly, and no wrong *verdict* is produced. G7 stays medium — `unknown` is honest fail-closed, not a misreport. Topics all match their owning surface; new entries take `bundle-docs`, which is where G11–G13 already sit | No changes; reasoning recorded here so a later reader sees it was weighed, not skipped |
+| A7 | Coverage | All four deliverables covered, plus out-of-scope, report accuracy, declared residue, collateral, and method. One hole: the plan's HYPOTHESIS "type and provenance can be added additively because readers use an accessor rather than a whole-dict schema assertion" is never named as settled — I checked it and it holds (no reader asserts on the whole dict; `manage-solution-outline` and `_cmd_client_handlers` both project selected keys). The larger hole was the un-swept documentation, handled under A2 | § Beyond-diff documentation sweep added; the accessor hypothesis noted here |
+| A8 | Internal consistency | PARTIALLY REFUTED follows from D1 PARTIAL + D4 PARTIAL ✓. All eight numbered correctness defects trace forward to G1–G10; the D3 caveat → G6; D4's "at what point" → G14; D2's note → G17; test-adequacy findings → G15/G16 ✓. **One break found:** G12 and G13 (the `phase-3-outline` dotted-identity docs) existed in `gaps.md` with **no corresponding finding anywhere in `verification.md`** — they traced to nothing | § Beyond-diff documentation sweep now carries G11–G13 and G18–G20 in a per-location table, so every gap traces back to a finding and every finding forward to a gap |
+
+**Residual doubt:** A further round would most likely find more of Family 1/Family 2 — surfaces
+teaching a vocabulary this plan retired. My sweep was anchored on the literal phrases the plan
+changed (`source of truth for "which modules exist"`, `index is authoritative`, `Full package name`,
+dotted `key_packages` patterns); a paraphrase that says the same thing in different words would not
+have been caught, and the store's *own* documentation in other bundles was only sampled. Two things
+remain genuinely unverifiable from here and are correctly labelled so in the original: the live
+`.plan/` store (absent from any clone, so whether real production documents carry dotted keys or
+lack a `generation` header cannot be settled) and the report's whole-tree suite figures. I did not
+re-run `./pw verify`, so the build-gate claims stay unverified rather than disputed. Finally, the
+`.` / `./` root-key finding (G10) and the Windows drive-letter reasoning were checked on POSIX only.
+
+**Verdict on the audit:** SOUND AFTER CORRECTION — every probe, count, mutation, and code citation
+in the original re-derived correctly and the PARTIALLY REFUTED verdict is fully earned, but the
+audit stopped at the two documentation surfaces the run's report happened to name and so missed
+nine files still teaching the index-as-gatekeeper semantic that D3's only ⛔ MUST NOT exists to
+defend, along with six off-by-N doc citations and a wrong gap count.

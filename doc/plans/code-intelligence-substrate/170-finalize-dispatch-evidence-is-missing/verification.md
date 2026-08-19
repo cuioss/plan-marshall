@@ -6,18 +6,31 @@ squash commit `c93431f`, "fix(plan-retrospective): make the dispatch audit deter
 fail-able (#1225)")
 **Overall verdict:** CONFIRMED WITH GAPS
 
-All five deliverables are present in the tree and each satisfies its literal *Done when*. The
-detector was built, is registered, is tested, and its `not_evaluated` guard is proven load-bearing by
-mutation. Two defects in the shipped `channel_completeness` block (D3) make the audit report
-`confidence: nominal` in exactly the situation D3 exists to expose, one uncovered branch has no test
-at all, and one code comment in the D4 change states a deferral that cannot happen.
+All five deliverables are present in the tree, the detector was built, is registered, is tested, and
+its `not_evaluated` guard is proven load-bearing by mutation. Three of the five meet their literal
+*Done when* outright; **D1 and D3 do not**.
+
+- **D1** requires *"never a bare `0`"*, and the shipped `counts.by_category` block emits four bare
+  zeros — in the same output where the nested `shape_violation` block correctly says
+  `not_evaluated` (G3, raised to high on adversarial review).
+- **D3**'s `channel_completeness` pairs an all-caller numerator with two finalize-only denominators
+  and so reports `confidence: nominal` in exactly the situation D3 exists to expose (G1), and has no
+  "did not evaluate" state at all (G2).
+- **D2** meets its literal *Done when* but its accepted mechanism deviation carries an undisclosed
+  blind spot: the token-record discriminator's `ran_inline` branch is a fall-through default, not a
+  measurement, so `missing_dispatch_emission` — D2's own headline finding — cannot fire for the
+  class of step whose instrumentation failed (G13, found on adversarial review).
+
+Beyond those: one production branch has no test at all, one code comment in the D4 change states a
+deferral to a guard that provably cannot fire, and the run left two plan-mandated cross-notes
+unwritten.
 
 ## Deliverable verdicts
 
 | # | Deliverable (short) | Report claim | Ground truth | Verdict |
 |---|---|---|---|---|
-| D1 | Make the audit able to fail; population beside every count; never a bare `0` | New deterministic `check-dispatch-audit.py`; `not_evaluated` when Surface B empty; fires on a divergent site | `check-dispatch-audit.py:303-356`; `not_evaluated` branch verified load-bearing by mutation (2 tests go red); divergent-site test present and green | CONFIRMED (with G3/G4/G10) |
-| D2 | Consumer distinguishes dispatched / ran-inline / no-evidence; `missing_dispatch_emission` against the dispatcher | Token record is the discriminator; old "ran inline" finding gone; both mis-attributions tested | `check-dispatch-audit.py:359-413`; `dispatch_coverage_violation` absent from the whole tree; both directions tested (`test_check_dispatch_audit.py:168`, `:199`) | CONFIRMED (with G8) |
+| D1 | Make the audit able to fail; population beside every count; never a bare `0` | New deterministic `check-dispatch-audit.py`; `not_evaluated` when Surface B empty; fires on a divergent site | `check-dispatch-audit.py:303-356`; `not_evaluated` branch verified load-bearing by mutation (2 tests go red); divergent-site test present and green. **But `counts.by_category` (`:542-550`) publishes four bare zeros** | PARTIAL — first clause met, "never a bare `0`" clause not (G3; also G4/G10) |
+| D2 | Consumer distinguishes dispatched / ran-inline / no-evidence; `missing_dispatch_emission` against the dispatcher | Token record is the discriminator; old "ran inline" finding gone; both mis-attributions tested | `check-dispatch-audit.py:359-413`; `dispatch_coverage_violation` absent from the whole tree; both directions tested (`test_check_dispatch_audit.py:168`, `:199`). The discriminator's `ran_inline` branch is a fall-through default, not a measurement | CONFIRMED against the literal *Done when*; mechanism deviation not outcome-equivalent (G13, G8) |
 | D3 | Publish dispatch-line count vs envelope-completion count; sparse channel downgrades confidence | `channel_completeness` with `none`/`low`/`nominal` | `check-dispatch-audit.py:416-451`. Block exists and grades, but its numerator is **all-caller** dispatch lines while its two denominators are **finalize-only** — a fixture with zero finalize dispatch lines reports `nominal` | PARTIAL (G1, G2, G6) |
 | D4 | Per-task artifact emission complete, or its scope limit declared as an N-of-M **population** | `artifact_emission: {completed_tasks, tasks_with_artifacts, tasks_without_artifacts}`; WARNING only for `0 < N < M` | `analyze-logs.py:928-975`, emitted at `:1678`, finding at `:1571-1586`. Population always published — Done-when met. The code comment's deferral of the `N == 0` case to the plan-level floor is false | CONFIRMED (with G7) |
 | D5 | Tests, each verified to FAIL pre-fix, incl. one asserting a deliberately-divergent step | 13 tests; D4 tests verified red pre-fix | `test_check_dispatch_audit.py` — **13 collected, 13 passed** (re-run at audit time). Divergent-site test present. One production branch has no test | CONFIRMED (with G6) |
@@ -52,9 +65,15 @@ at all, and one code comment in the D4 change states a deferral that cannot happ
     file.
   - **Live run against a hand-built plan with no logs at all** (`/tmp/verify170/base/plans/empty`):
     `shape_violation.status: not_evaluated` with its reason. Confirmed.
-- **Verdict:** CONFIRMED. The literal *Done when* is met and the guard is non-vacuous. Two residual
-  legibility defects sit outside the check's own block (G3, G4), and the check has become
-  near-tautological at HEAD for a reason outside this plan's control (G10).
+- **Verdict:** PARTIAL. The *Done when*'s first clause is met — the check fires on a divergent site
+  and reports `not_evaluated` with its reason — and the guard is non-vacuous under mutation. The
+  clause *"and never a bare `0`"* is **not** met: the same output's `counts.by_category` block
+  (`:542-550`) publishes `shape_violation: 0` with nothing beside it in exactly the never-evaluated
+  case, re-derived live against a log-less plan directory. The plan's own § Verification names this
+  as the acceptance test (*"for each zero, whether the check evaluated anything. If it cannot tell,
+  D1 has not been met"*), so this is a shortfall against the deliverable rather than a stylistic
+  residue — G3 is raised to high accordingly. G4 (no population anywhere for the two preserved
+  checks) and G10 (a navigation defect in the standard, downgraded to low) remain alongside.
 
 ### D2 — consumer distinguishes dispatched / ran-inline / no-evidence
 

@@ -353,3 +353,70 @@ None of them is a regression caused by the removal.
   differs.
 - **Effort:** S
 - **Risk if fixed:** none.
+
+## G14 — Add a plugin-doctor rule detecting verb-set drift between argparse and the skill's docs
+
+- **Kind:** missing-detector
+- **Severity:** medium
+- **Topic:** detectors/auditor
+- **Where:** `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/` (a new
+  `_analyze_*.py` analyzer, registered in `doctor-marketplace.py::cmd_quality_gate` via
+  `_runner.py`, with its provenance row in
+  `…/plugin-doctor/references/rule-provenance.md`); the drift it must catch is G4/G5/G6
+- **Evidence:** `doctor-marketplace.py quality-gate --paths
+  marketplace/bundles/plan-marshall/skills/manage-architecture` returns `status: pass`,
+  `total_issues: 0`, `rules_run[36]` — re-run at `a90adeb` — while `siblings` and `profiles` are
+  registered subcommands absent from `client-api.md` entirely and `descriptor-regression-check` is
+  contracted in `client-api.md` but absent from both `SKILL.md` surfaces. None of the 36 rules
+  compares a script's argparse **subcommand set** against the verbs its skill documents. The two
+  nearest rules do something else: `canonical-enum-choices-drift` compares a documented `{a|b|c}`
+  **flag enum** against that flag's `choices=`, never the subcommand set
+  (`rule-provenance.md:242`); `literal-count-drift` compares a stated **integer count** against a
+  derived population, never a name set (`rule-provenance.md:239`).
+- **Why it matters:** the repository already treats hand-maintained mirrors as a drift class and
+  guards two of them by rule (`provides-method-table-drift`, `literal-count-drift`). The verb set is
+  the same class of mirror and is unguarded, which is precisely why this drift survived plan 130
+  (which added verbs) and plan 135 (which removed one) with a green quality gate both times. Until
+  a rule exists, fixing G4–G6 by hand fixes today's instance and nothing else.
+- **Action:** add an analyzer that, for each skill with a `## Canonical invocations` block, AST-parses
+  the owning script's `subparsers.add_parser('<name>', …)` calls to derive the live verb set, then
+  compares it against the verb names appearing as `### <verb>` headings in `SKILL.md` and in the
+  skill's `standards/*.md` contract, emitting `verb_missing_from_docs` and `phantom_documented_verb`
+  findings. Follow the house discipline the sibling rules already state in `rule-provenance.md`:
+  derive the population (never hard-code a script list), publish `population_size` on every finding,
+  and fail CLOSED (SKIP, not pass) on an unparseable script or a nested/group subparser it cannot
+  resolve — the `enrich` group in `architecture.py:340-452` is exactly that case. Register it in
+  `cmd_quality_gate` so it is build-failing, and add its provenance row.
+- **Done when:** `doctor-marketplace.py quality-gate --paths
+  marketplace/bundles/plan-marshall/skills/manage-architecture` reports the new rule in
+  `rules_run[]` and emits a finding for each of `siblings`, `profiles`, and
+  `descriptor-regression-check` while G4–G6 are still open, and reports zero findings for that skill
+  once G4–G6 are closed.
+- **Effort:** M
+- **Risk if fixed:** the rule sweeps every bundle, so it will surface drift outside
+  `manage-architecture` on its first run. Land it together with a triage pass, or the quality gate
+  goes red across the tree; the fail-closed SKIP cases above are what keep that surface bounded.
+
+## G15 — Refresh the stale handler inventory in the `_cmd_client_handlers.py` module docstring
+
+- **Kind:** doc-defect
+- **Severity:** low
+- **Topic:** architecture-core
+- **Where:** `marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/_cmd_client_handlers.py:6-11`
+- **Evidence:** the module docstring says it "Covers the CLI handlers (info, modules, graph, module,
+  overview, commands, resolve, derive-verification, profiles, siblings, path, neighbors, impact,
+  files, which-module, find, search, diff-modules, descriptor-regression-check)" — **19** names,
+  while the file defines **20** `def cmd_*` functions. The omission is `cmd_capabilities`
+  (defined at line 142). Pre-existing: PR #1214's patch for this file touches only the import block
+  and the deleted 645-731 region, never the docstring, so the staleness dates from plan 130, which
+  added `cmd_capabilities` without extending the list.
+- **Why it matters:** this is another instance of the hand-maintained-mirror class G14 exists to
+  guard, sitting in a file this plan edited. A reader auditing the handler set from the docstring —
+  the cheapest surface to read — undercounts it, and a later removal plan re-deriving its surface
+  from the docstring (as plan 135 re-derived its surface from `plan.md`) inherits the omission.
+- **Action:** add `capabilities` to the parenthesised list at `_cmd_client_handlers.py:6-11`, in the
+  position matching the file's definition order.
+- **Done when:** the docstring's parenthesised handler list names all 20 `def cmd_*` functions the
+  file defines, verified by comparing the list against `grep -c "^def cmd_" _cmd_client_handlers.py`.
+- **Effort:** S
+- **Risk if fixed:** none — a docstring edit; `ruff check` over the file stays clean.

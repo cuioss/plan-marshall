@@ -27,8 +27,8 @@ negative control the plan specified by name was replaced by a weaker one. Nine g
   the one this field exists to make legible." Rendering a phase with
   `{'dispatch_boundary_rows_recorded': 8, 'subagent_samples': 3, 'total_tokens': 100000}` produced a
   report containing **no `Dispatch-boundary total` bullet and no `FAILURE`** — only the generic
-  declaration banner. (Reproduced twice, independently, against a pristine copy of the shipped
-  module.) All-zero boundary rows are not a contrived shape — they are **prescribed by the workflow
+  declaration banner. (Reproduced three times, by independent passes, each against a pristine
+  `git show HEAD:` copy of the shipped module.) All-zero boundary rows are not a contrived shape — they are **prescribed by the workflow
   contract**: `cmd_record_dispatch_boundary` defaults the `total_tokens` column to `0` (`:3157`);
   `plan-marshall/workflow/planning-outline.md:468` and `plan-marshall/workflow/execution.md:219`
   both instruct callers to "use `0` when the field is absent"; and
@@ -63,8 +63,10 @@ negative control the plan specified by name was replaced by a weaker one. Nine g
 - **Effort:** S
 - **Risk if fixed:** a bullet now renders on rows that previously showed none, so any test or
   downstream reader that asserted on the absence of the `Dispatch-boundary total` line for a
-  zero-sum phase will need updating. `_unclosed_boundary_floor` (`:618-658`) already guards on a
-  non-zero sum and is unaffected.
+  zero-sum phase will need updating. `_unclosed_boundary_floor` (`:618-658`) guards on a non-zero
+  sum and is unaffected by either half of this fix — a persisted `0` still returns `None` there, so
+  the unclosed-phase fold stays silent for a zero-sum file. That is correct (there is no floor to
+  fold), and it is why the coverage bullet is the only surface that can carry the verdict.
 
 ## G2 — Emit the agreement identity for a same-population exact agreement
 
@@ -144,9 +146,12 @@ negative control the plan specified by name was replaced by a weaker one. Nine g
   `=`, `:262-278` for `<`), so the suite pins the unsound comparison rather than catching it.
 - **Reachable on real data, not only in fixtures:** `enrich` writes `subagent_total_tokens` /
   `subagent_samples` first (`:3509-3513`) and only afterwards stamps
-  `total_tokens_population = inline` on any row whose `total_tokens` is falsy at that moment
-  (`:3579-3584`). A phase that *did* dispatch but never closed with `--total-tokens` therefore ends
-  up carrying dispatched measures under an `inline` stamp — the exact row shape above.
+  `total_tokens_population = inline` (`:3578-3586`) on a row whose `total_tokens` is falsy at that
+  moment **and** whose inline main-context sum is non-zero. A phase that *did* dispatch but never
+  closed with `--total-tokens` and did accrue main-context spend therefore ends up carrying
+  dispatched measures under an `inline` stamp — the exact row shape above. ⚠ This branch was
+  established by reading the code, not by running `enrich` over a transcript; if the combination
+  proves unreachable in practice the defect is fixture-only and this entry drops to **medium**.
 - **Why it matters:** the `=` and `<` relations — the two the deliverable's regression arms exist to
   pin — are emitted only as comparisons between a main-context figure and a dispatched figure,
   announced as a reconciliation of "competing measures of the dispatched population". The `=` case

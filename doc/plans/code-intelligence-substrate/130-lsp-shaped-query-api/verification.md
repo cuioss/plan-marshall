@@ -342,9 +342,11 @@ Claims checked against the tree now:
   shipped guard at all, and the D2 `content_search` row does not draw the distinction D2 is named
   for. Filed under G8.
 - ℹ️ The commit SHAs cited throughout (`0d12e4b`, `6126013`, `8159710`, `0df29ed`, `8469daf`) are not
-  resolvable in this clone (`git cat-file -t` → missing) because the PR was squash-merged and the
-  branch deleted; they are resolvable through the PR. Not a defect, but the report offers no
-  squash SHA (`8d5055f`) that a later reader could use locally.
+  resolvable in this clone (`git cat-file -t` → `Not a valid object name` for all eight PR SHAs)
+  because the PR was squash-merged and the branch deleted; they are resolvable through the PR. Not a
+  defect, but the report offers no squash SHA (`8d5055f`) that a later reader could use locally.
+- ✅ The PR-level figures the report implies are exact: GitHub reports `changed_files: 18`,
+  `commits: 8`, `merged: true`, matching `git show --stat 8d5055f` (18 files) in this clone.
 - 🔍 UNVERIFIABLE: *"`verify: SUCCESS` — 19480 passed, 14 skipped in 336s"* and the CI check-name
   list. The brief excludes running `./pw verify`; the scoped test files I did run are green at HEAD
   (20 + 10 + 3 passed).
@@ -354,12 +356,14 @@ Claims checked against the tree now:
 | Residue item (from report) | Still open? | Evidence |
 |---|---|---|
 | **Landing confirmation** — auto-merge armed on #1207, session could not read back `MERGED` | **Closed** | GitHub API: PR #1207 `state: closed`, `merged: true`, `merged_at 2026-08-13T11:02:03Z`, `merged_by cuioss-oliver`; squash `8d5055f` is on `main`. |
-| **D2-in-a-real-leaf** — the plan requires D2 be verified inside a dispatched leaf with revoked Grep/Glob; only a two-project-dir proxy was run | **Still open** | No leaf-scoped test or evidence exists anywhere in `test/plan-marshall/manage-architecture/`; `test_capabilities.py:260-275` is the two-project-dir proxy. No later plan in the epic closes it (grep for `capabilities` consumers finds only `refine-workflow-detail.md:498`, `SKILL.md:541`, `doc/user/code-search.adoc:195` and the tests). Filed as G7. |
+| **D2-in-a-real-leaf** — the plan requires D2 be verified inside a dispatched leaf with revoked Grep/Glob; only a two-project-dir proxy was run | **Still open** | No leaf-scoped test or evidence exists anywhere in `test/plan-marshall/manage-architecture/`; `test_capabilities.py:260-275` is the two-project-dir proxy. No later plan in the epic closes it — a bundle-wide grep for `architecture capabilities` outside `manage-architecture/` returns exactly one hit, `phase-2-refine/standards/refine-workflow-detail.md:498`; the skill's own `SKILL.md:541` and the user page `doc/user/code-search.adoc:195` are the documentation surfaces, and nothing else invokes the verb. Filed as G7. |
 | Split-guard verdict "keep together" (`report-01.md:16-30`) | N/A — a recorded decision, discharged | The plan required the verdict be recorded; it is, with rationale. |
 
 Not declared as residue but now visible: the plan's claim-label obligation to *"walk all subcommands
-against the LSP method list"* was answered with a six-verb sample rather than an enumeration
-(`report-01.md:48-56` vs ~30 registered subcommands in `architecture.py`). Moot after plan 135.
+against the LSP method list"* was answered with a sample rather than an enumeration —
+`report-01.md:48-56` names eight distinct existing verbs against the 26 top-level subcommands
+`architecture.py` registers (plus 10 `enrich` sub-subcommands), the same figures re-derived in § D1.
+Moot after plan 135.
 
 ## Out-of-scope and collateral
 
@@ -378,7 +382,9 @@ against the LSP method list"* was answered with a six-verb sample rather than an
 
 ## Method and coverage
 
-- Read `plan.md`, `report-01.md`, the epic README, and both files of `135-remove-lsp-query-facade`.
+- Read `plan.md`, `report-01.md`, the epic README, and `135-remove-lsp-query-facade`'s `plan.md` and
+  `report-01.md` (that plan also carries a `rationale.md`, not read — it argues the retirement, which
+  this audit takes as landed fact rather than as a claim to re-litigate).
 - Read the shipped code: `architecture.py` (argparse + dispatch), `_cmd_client_handlers.py`
   (`cmd_capabilities`, `cmd_search`, `cmd_graph`), `_cmd_client_query.py` (provenance counting),
   `_architecture_core.py` (path-attribution seam), `_cmd_client.py` (re-exports).

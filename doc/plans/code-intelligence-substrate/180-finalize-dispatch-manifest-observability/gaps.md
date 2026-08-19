@@ -302,3 +302,49 @@ independently), so the property is guarded only by the roster-closure detector.
 - **Effort:** S
 - **Risk if fixed:** none behavioural. The only risk is method: rewriting rather than appending would
   destroy the record of what the run actually claimed, which is the input a retrospective needs.
+
+## G11 — The roster correctness check is derived but compares exactly one step doc
+
+- **Kind:** incomplete
+- **Severity:** medium
+- **Topic:** tests
+- **Where:** `test/plan-marshall/phase-6-finalize/test_dispatch_roster_closure.py:197`
+  (`_SELF_CLASSIFICATION`), `:420-443` (`_step_doc_claims`), `:797-816`
+  (`test_touched_step_docs_agree_with_the_roster_classification`)
+- **Evidence — measured, by driving the test module's own helpers:** `_finalize_step_doc_paths()`
+  returns **26** discovered implementor docs; `_registered_steps()` returns **25** registry keys;
+  `registered − implementors = ∅` (so the derivation genuinely spans the registry, as the audit
+  found). But `_step_doc_claims()` returns **1** entry. Only
+  `phase-6-finalize/standards/architecture-refresh.md` matches
+  `_SELF_CLASSIFICATION = re.compile(r'\bThis step is \*\*(inline|dispatched)\*\*')`; the other 25
+  docs make no bold self-classification, so `_classification_mismatches` compares one doc against the
+  roster and 24 registered steps are compared against nothing. The check *is* non-vacuous for that
+  one step — re-classifying `default:architecture-refresh` into the dispatched roster turns
+  `test_touched_step_docs_agree_with_the_roster_classification` red with the exact disagreement
+  message — but the population it fires over is one.
+- **Why it matters:** D6's stated purpose is a **correctness** property over "the roster's
+  classifications" (plural), derived rather than pinned. The de-pinning succeeded and the plan's
+  literal *Done when* is met, but the realized effect is a single-instance guard wearing a derived
+  population's clothes: a roster mis-classification of any of the other 24 steps is undetectable, and
+  nothing obliges a step doc to carry the sentence. A newly added step silently contributes zero
+  coverage rather than turning anything red — the same failure mode as the hand-maintained pin the
+  plan forbade, arrived at by a different route.
+- **Action:** make the self-classification sentence an obligation rather than an accident. Either
+  (a) add it to the finalize-step implementor frontmatter contract
+  (`extension-api/standards/ext-point-finalize-step.md` § "Implementor Frontmatter") as a required
+  `classification: inline|dispatched` fact and read the claim from frontmatter, so every registered
+  step contributes a comparison by construction; or (b) keep the prose sentence but add a coverage
+  assertion that every *registered* step's doc carries one, failing on the first that does not.
+  Option (a) is preferred — a machine-readable fact cannot be phrased around, and the roster already
+  derives `--role post-run-review` from frontmatter the same way.
+- **Done when:** `_step_doc_claims()` (or its frontmatter successor) yields one claim per registered
+  finalize step, a test asserts `len(claims) == len(registered)`, and re-classifying **any**
+  registered step in `dispatch-inline-split.md` turns
+  `test_touched_step_docs_agree_with_the_roster_classification` red — verified for at least two
+  different steps, not only `architecture-refresh`.
+- **Effort:** M
+- **Risk if fixed:** option (a) touches the extension-point frontmatter contract, so every existing
+  implementor doc — including project-owned ones outside this repository — needs the new fact before
+  the coverage assertion can be made hard; land the fact as optional-with-warning first, or the
+  change breaks consumer projects' builds. `default:emit-landing` (discovered but unregistered, see
+  G9) must be excluded from the coverage denominator or G9's assert fires first.

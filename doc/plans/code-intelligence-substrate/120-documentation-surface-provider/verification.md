@@ -222,8 +222,12 @@ behind it is mandated by the `component_refs` schema and pinned by a shipped tes
     `['documentation','lsp','markdown','maven','npm','pyproject','python']`.
 - **Defects:**
   1. `SKILL.md:90-91` asserts *"The bias is one-directional — it can only make a reference resolve,
-     never falsely fail one."* The shipped engine falsely fails 10 live references. A false claim in
-     shipped documentation. See G2.
+     never falsely fail one."* The shipped engine falsely fails 10 live references, and two further
+     routes reach the same contradiction while latent on this corpus: `_has_doc_suffix`'s dotted-id
+     misclassification (defect 3) and `_resolve_one`'s `except OSError` anchor-cache stamp
+     (`doc_references.py:299-300`), which makes every anchored reference into an unreadable-but-present
+     doc file report dangling. A false claim in shipped documentation, with three counterexamples.
+     See G2.
   2. The precedence is absent from `client-api.md`, the contract a `find`/`search` consumer reads (and
      the one `CLAUDE.md` itself points at). See G8.
 - **Verdict:** PARTIAL — the plan's literal *Done when* is met (the rule is stated outside the run
@@ -302,8 +306,9 @@ Checked and found **clean**:
   classifies each walked entry exactly once), so the "owner contributes two rows" edge the collapse
   would not handle is unreachable.
 - The `----` / `....` / ``` ``` ``` fence toggle in `extract_references` is not balanced by
-  construction and a stray thematic rule could strand the parser inside a pseudo-fence; I swept all
-  407 corpus files and **0** end inside an unclosed fence, so this is theoretical here.
+  construction and a stray thematic rule could strand the parser inside a pseudo-fence; the sweep was
+  re-run over all **479** corpus files and **0** end inside an unclosed fence, so this is theoretical
+  here.
 
 ## Test adequacy
 
@@ -317,7 +322,8 @@ Checked and found **clean**:
 | D4 extraction/anchors | `test/pm-documents/plan-marshall-plugin/test_doc_references.py:27-111` | Good coverage of the spellings; **no test pins a heading with an em dash or any other run-producing character**, which is why the live false-positive class shipped |
 | D4 both directions | `…test_doc_references.py:125-166` | Non-vacuous — `test_valid_file_reference_is_resolved` asserts `all(resolved)`, so an always-False engine goes red; `test_broken_anchor_reported_valid_anchor_not` asserts both states are present, so an always-True or always-False engine goes red. It does not bind which reference produced which state |
 | D4 security fix | `…test_doc_references.py:197-226` | Strong — the fixture file genuinely exists outside the root, so the assertion cannot pass by the target simply being absent |
-| D4 resolver notes | `…test_documentation_extension.py:145-169` | Covers the three suppression categories, but each fixture supplies a single `component_refs` entry, so the count-versus-triple confusion (defect 2) is structurally invisible to them |
+| D4 resolver notes | `…test_documentation_extension.py:145-169` | Covers the three suppression categories, but each fixture supplies a single `component_refs` entry, so the count-versus-triple confusion (defect 2) is structurally invisible to them — and structurally *un*-testable at this layer, since the schema forbids a second entry sharing a triple |
+| Schema conformance | `…test_doc_references.py:169-175` (`test_component_refs_deduped_on_triple`) | Non-vacuous and load-bearing for the G3 diagnosis: it asserts `len(triples) == len(refs)`, pinning the mandated dedup as required behaviour. Any "fix" that emits one entry per reference turns this test red |
 
 **Mutation evidence for the D2 wiring gap.** Snapshot taken to
 `$TMPDIR/verify-120-mutsweep/_cmd_client_handlers.py.orig`. Both occurrences of
@@ -443,10 +449,15 @@ architecture reader was driven in-process through `iter_modules`' live worktree 
   list, and `discover_derivation_resolvers()` for the live roster.
 - `cmd_find`, `cmd_search`, `cmd_which_module` against the **real repository**, loaded through
   `test/conftest.py::load_script_module`.
-- A full re-derivation of the doc reference corpus: 407 files, 841 references, 18 unresolved; then the
-  same sweep with a GitHub-exact slug patched into `_heading_anchor_forms` → 8 unresolved.
-- An inventory-overlap re-derivation across all 13 modules (417 / 2661 / 417 / 5417 / 2845 / 2572).
-- Two pytest runs (baseline and mutated) over 149 tests spanning the five relevant test files.
+- A full re-derivation of the doc reference corpus: 479 files, 842 references, 18 unresolved (10
+  anchor + 8 file); then the same sweep with a GitHub-exact slug patched into `_heading_anchor_forms`
+  → 8 unresolved, 0 anchor.
+- A per-triple reference census (18 / 504 / 252 / 59 / 6 / 2 / 1 over the 7 shipped triples),
+  establishing the true populations the two suppression notes collapse.
+- An inventory re-derivation across all 13 modules: 5062 post-collapse rows, 2907 distinct paths,
+  `documentation` 479, pre-collapse rows 5541, duplicate rows 2634 of which 2155 remain unclaimed.
+- Four pytest runs (baseline and mutated, narrow and wide) over the five relevant test files, plus an
+  isolation re-run of the three files that failed only in the wide run.
 - `git log --diff-filter=A`, `git log -S`, and `git log --grep` to date the corpus files and the
   merge commits.
 
@@ -475,3 +486,37 @@ under me). I confined my own mutation to one file, took my own byte snapshot fir
 and verified `git status --porcelain` clean plus a `diff -q` match for every file I touched. Where a
 test result could have been contaminated I re-ran it narrowly; the narrow baseline/mutant pair above is
 the evidence I rely on, not the wide run.
+
+## Adversarial review
+
+Independent review of this document and `gaps.md`. Attacks run: A1 false positives, A2 false
+negatives, A3 vacuous evidence, A4 counts and quotes, A5 actionability, A6 severity/topic,
+A7 coverage, A8 internal consistency.
+
+| # | Attack | What was found | Correction applied |
+|---|---|---|---|
+| A1 | False positives | **No gap was fabricated.** Every cited `path:line` was opened and holds: `doc_references.py:109` is the run-collapsing `re.sub`; the collapse is at `_cmd_client_handlers.py:857-908` and wired at `:1090`/`:1245`; `cmd_find` returns `count` at `:1097` with no `file_count` while `cmd_search` returns both at `:1254-1255`; `client-api.md` § find starts 817 and § search 909, with "unclaimed cross-module duplicate" at 1036/1119 and the claimed case defined nowhere (4 grep hits, as stated); `SKILL.md:90-91` carries the "one-directional" sentence verbatim; `code-intelligence.adoc:194/196/198`, `ext-point-path-attribution.md:140` and `ext-point-derivation-resolver.md:232` are all exact. G1's premise was re-proved end to end: the 10 flagged anchors are real GitHub anchors (`f1--nearly-…`, doubled hyphen from an em dash between spaces) and all 8 survivors are genuine — each names `X.md` where only the directory `X/` exists. | None needed for existence; citations corrected only where figures had drifted (below). |
+| A2 | False negatives | Two findings the audit missed. (a) **`find` and `which-module` now name different owners for the same claimed file**: `which-module README.md` → `documentation`, `find --pattern README.md` → one row with `module: default` (same for `CONTRIBUTING.md`). The collapse's `len(rows) < 2` early-out is correct, but D1's *Done when* ("the claimed files resolve to the documentation module") is met on one reader surface and not the other, and nothing tells a caller which is authoritative. (b) **A third route to the false-positive class**: `_resolve_one`'s `except OSError` (`doc_references.py:299-300`) stamps an empty anchor set for an unreadable target, so every anchored reference into an existing-but-unreadable doc file reports dangling — a fail-open `except` producing exactly the over-report the contract forbids. Checked and found clean: the fail-closed escape path returns before any `.exists()`/`.read_text()`; the `documentation` build-system guard at `extension.py:362-364` can fire (`discover_modules:241` sets it); `derive_edges` purity; the three no-drop guards in the collapse. | New **G14** filed (low, `architecture-core`) for (a), with a concrete `client-api.md` action and a *Done when*. (b) folded into G2's evidence and D5 defect 1, and into Correctness-review defect 7. |
+| A3 | Vacuous evidence | **The mutation sweep was re-run, not trusted.** Own byte snapshot to the scratchpad; both call sites → `pass`; baseline `149 passed in 3.33s`, mutated `149 passed in 5.53s` — the mutation survives, G5/G6 stand. Corroborated by search: only `test_doc_corpus_dedup.py` names the helper (monkeypatched resolver) and `test_search_content.py:206` documents its fixture as claim-free. **But the audit's wide-run evidence does not reproduce**: under mutation I got 4 failures in a *different* three files, which then passed 58/58 in isolation under the same mutation, while a wide run at restored state produced a fifth different failure. Wide runs here are noise. G1's fix was also verified by substitution rather than asserted: patching a GitHub-exact form takes the sweep 18 → 8 with zero anchor survivors. File restored from snapshot; `git status --porcelain` does not list it and `diff -q` is clean. | Mutation-evidence block rewritten with the reproduced narrow pair; the wide-run paragraph replaced with an explicit statement that it is unreproducible and is not relied on. |
+| A4 | Counts and quotes | Every figure re-derived. **Corpus drift**: 407 files → **479**, 841 → **842** references (18 unresolved unchanged) — the audit's own sibling documents joined the corpus they measure. `files_scanned` 5409 → **5541**; the `"The tier ladder"` search is now `count: 4, file_count: 4`, not 2/2. Inventory figures re-derived: 5062 post-collapse rows, 2907 distinct, `documentation` 479, pre-collapse 5541, 2634 duplicate rows, 2155 remaining unclaimed. `build_doc_component_refs` 1.12 s → **1.03 s** (7 triples confirmed). **A misattributed number**: G9 said `files_scanned` "over-states distinct coverage by 417" — it over-states by **2634**, of which only 479 is this plan's doubling and 2155 is pre-existing unclaimed duplication. **A non-verbatim quote**: the audit's "live output" block column-aligned `self-edge:` with padding the renderer never emits. **An incomplete citation**: G12 cited `report-01.md:39` and `:56` but quoted the sentence at `:50`. | All figures updated in both documents at the point they are stated. G9's misattribution corrected and split into its two populations. Quote replaced with the verbatim two lines. G12's citation extended to `:39`, `:50`, `:56`. |
+| A5 | Actionability | Every entry already carries a concrete `path`, a concrete change and an observable *Done when*; none is a "review X" / "consider Y". G3 was the exception in substance rather than form — its *Done when* was checkable but its **Action was unexecutable**: "keep one entry per unresolved reference" would have sent a later run to violate `module-discovery.md:164` and turn `test_component_refs_deduped_on_triple` red. | G3's action rewritten into two coherent, executable options at the owning layer, with the forbidden approach called out explicitly. G14 written to the same standard. |
+| A6 | Severity/topic | Severities hold against the calibration (G1 high: shipped behaviour wrong; G3 high: a measurement misreports; G2 medium: false claim in shipped documentation; G5/G6 medium: missing test on a load-bearing path; G12/G13 low: stale claims confined to the run report). Two topic defects: **G3 was topiced `documentation-surface` but its owning surface is the shared `extension_base` renderer plus the `module-discovery` schema**, and **G8 was topiced `bundle-docs` while editing the same `client-api.md` § find section G7 (`architecture-core`) edits** — as filed they would have been split across two fix plans. | G3 re-topiced to `architecture-core` and its `Where` moved off pm-documents onto the four resolvers, the renderer and the schema. G8 re-topiced to `architecture-core` with the reason recorded inline. |
+| A7 | Coverage | Complete. All five deliverables have verdicts and per-deliverable detail; out-of-scope compliance (all four items), report accuracy (3 refuted / 6 held), the declared residue table (4 items), test adequacy, and an explicit "what I could not check" are all present. No deliverable is silently unmentioned. | None. |
+| A8 | Internal consistency | The overall verdict (CONFIRMED WITH GAPS) follows from its rows (2 CONFIRMED, 3 PARTIAL), and every verification finding traces to a gap and back — **except G10**, whose 1.12 s / 7-triple measurement appeared only in `gaps.md` with no counterpart in `verification.md`. The un-derived half of D2's consumer population (the new-module axis) is raised in the D2 verdict without a gap, but the audit states its reason explicitly, so it is a disclosed judgement rather than a hole. | G10's measurement added to the Correctness review as defect 6, giving it a trace. Correctness-review items renumbered to stay sequential after the two insertions. |
+
+**Residual doubt:** the highest-value unclosed thread is the one A8 records as a disclosed judgement
+rather than a hole — D2's mandated consumer enumeration was never derived on the *new-module* axis.
+Making `discover_modules` recursive added a `documentation` module to every project with a nested doc
+tree, and only one downstream consequence (docs-only changes deriving zero builds) has been checked.
+Phase-4 planning, task-profile resolution and module-tests scoping all read the module list, and
+none can be exercised from a reader call — a further round with an orchestrated run is where a real
+regression would most plausibly surface. Secondarily, the G3 correction widens the blast radius from
+one bundle to four: this review confirmed all four Axis-C resolvers build one candidate per triple,
+but only the `documentation` resolver's true multiplicity was censused, so the markdown/python/lsp
+under-report factors on this repository remain unmeasured.
+
+**Verdict on the audit:** SOUND AFTER CORRECTION — every gap it filed is real and no working code
+would have been changed on its word, but G3 diagnosed a schema-mandated behaviour as a pm-documents
+defect and prescribed a fix that would have broken a shipped test, G9 attributed a 2634-row
+discrepancy to a 479-row cause, and its corpus figures had drifted; with those corrected, the
+document now measures what it claims to measure.

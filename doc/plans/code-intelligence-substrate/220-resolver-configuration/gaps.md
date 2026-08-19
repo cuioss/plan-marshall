@@ -98,28 +98,41 @@ engineering, so they are recorded in `verification.md` rather than filed as gaps
 - **Kind:** doc-defect
 - **Severity:** medium
 - **Topic:** documentation-surface
-- **Where:** `marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md:105`
-  (third table row), with the same omission in the sibling tables at
+- **Where:** the third-state row of the anti-vacuity table on six surfaces —
+  `marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md:111`,
   `manage-architecture/standards/architecture-persistence.md:611-618`,
   `extension-api/standards/ext-point-derivation-resolver.md:145`,
-  `doc/concepts/code-intelligence.adoc:159-163`,
-  `doc/user/dependency-intelligence.adoc:117-123`, and
-  `doc/adr/014-An_aggregation_over_N_independent_producers…adoc:98`
-- **Evidence:** every one of these reads the third state as "Resolvers exist, but this machine switched
-  them off" with an empty or absent result — e.g. `client-api.md:105`: "`resolver_count: 0` + a
-  **non-empty** `resolvers[]` | **Resolvers exist, but this machine switched them off.**" None says
-  that `graph` can still return a non-empty `edges[]` in that state, which the probe in G1 demonstrates
-  it does (`edge_count: 1`, `producers: ['declared']`).
+  `doc/concepts/code-intelligence.adoc:159-160`,
+  `doc/user/dependency-intelligence.adoc:122-123`, and
+  `doc/adr/014-An_aggregation_over_N_independent_producers_carries_producer_identity_and_no_producer_suppresses_an_element_silently.adoc:97-98`
+  — plus two in-code docstrings carrying the same false implication:
+  `manage-architecture/scripts/_cmd_client_handlers.py:579-582` (`cmd_path`: "`resolver_count: 0` with
+  `path: null` means no resolver ran (**there were no edges to walk**)") and `:638-641` (`cmd_impact`:
+  "`resolver_count: 0` with `impact: []` means no resolver ran (**nothing could have depended on the
+  module**)"). Eight sites in total.
+- **Evidence:** each table is introduced as *zero-edge disambiguation* ("An empty result MUST be
+  readable without inspecting the edge list", `client-api.md:105`) and its third row then reads, verbatim
+  at `client-api.md:111`: "`resolver_count: 0` + a **non-empty** `resolvers[]` | **Resolvers exist, but
+  this machine switched them off.** Every record carries `status: not_dispatched`. Read the first row as
+  "no resolver ran" only when `resolvers[]` is empty too." The row states nothing about `edges[]`, and
+  no surface says `graph` can still return a non-empty `edges[]` in that state — which the probe in G1
+  demonstrates it does (`edge_count: 1`, `producers: ['declared']`). The two docstring parentheticals
+  above assert the absence outright and are simply false. ⚠ Note `client-api.md:105` is where the
+  *pre-fix* two-state table sat (`report-01.md` R3-6 cites it); the row moved to `:111` when the third
+  row landed — cite `:111`, not the report's number.
 - **Why it matters:** an agent reading the table concludes an empty edge set follows from
   `resolver_count: 0`, and will not reconcile a non-empty `edges[]` with a zero count. This is the
   documentation half of G1 and is what let G1 pass four verification rounds.
 - **Action:** add one clause to the third row (or a sentence beneath each table) stating that
   declaration-sourced and `sibling-cross-link` edges are unaffected by the binding, so a zero
-  `resolver_count` bounds *derivation*, not the response's edge set. Filed as one entry rather than six
-  because it is a single missing caveat with one wording to propagate; the six sites are enumerated
-  above so a later run can sweep them together.
-- **Done when:** each of the six surfaces names the declared/cross-link exception in or beside its
-  third-state row, and a grep for the third-state phrase finds no surface without it.
+  `resolver_count` bounds *derivation*, not the response's edge set; and strike or qualify the two
+  false parentheticals in `_cmd_client_handlers.py`. Filed as one entry rather than eight because it is
+  a single missing caveat with one wording to propagate; the eight sites are enumerated above so a later
+  run can sweep them together.
+- **Done when:** each of the six table surfaces names the declared/cross-link exception in or beside its
+  third-state row; `cmd_path`'s and `cmd_impact`'s docstrings no longer assert that a zero
+  `resolver_count` implies an absence of edges; and a grep for `Resolvers exist` plus one for
+  `resolver_count: 0` across those files finds no surface without the caveat.
 - **Effort:** S
 - **Risk if fixed:** low; prose only. The risk is the one this plan hit four times — updating some
   siblings and not others.
@@ -130,20 +143,25 @@ engineering, so they are recorded in `verification.md` rather than filed as gaps
 - **Severity:** medium
 - **Topic:** documentation-surface
 - **Where:** `marketplace/bundles/plan-marshall/skills/manage-run-config/standards/run-config-standard.md:807-859`
-- **Evidence:** the block titled "Full Example" contains `version`, `commands`, `maven`,
-  `architecture_refresh`, `ci_durations` only. The document's own section headers include
-  "Language-Servers Section" (`:208`), "Derivation-Resolvers Section" (`:267`) and "Display-Timezone
-  Section" (`:377`), and `build.queue` / `ci` keys are documented elsewhere in the skill. The maintained
-  Schema block (`:19-56`) *does* carry `derivation_resolvers`, so the two blocks now disagree with each
-  other.
+- **Evidence:** re-derived from the file. The block titled "Full Example" (json fence `:809-858`)
+  contains exactly five top-level keys — `version`, `commands`, `maven`, `architecture_refresh`,
+  `ci_durations`. Five documented keys are missing: `language_servers`, `derivation_resolvers` and
+  `display_timezone`, each of which has its own `##` section in this document (`:208`, `:267`, `:377`)
+  *and* a row in the Optional Sections table (`:69-74`); plus `build` (`build.queue.upper_limit_seconds`)
+  and `ci`, which appear in the skill's own schema example at `manage-run-config/SKILL.md:47-58` but not
+  in this standard at all. The maintained Schema block (json fence `:19-56`) *does* carry
+  `language_servers`, `derivation_resolvers` and `display_timezone`, so the standard's two JSON blocks
+  now disagree with each other — and neither carries `build` or `ci`.
 - **Why it matters:** a "Full Example" that omits five configured sections is a false claim in shipped
   documentation and is the block a reader copies when hand-authoring a store. This is the run's own
   residue item 2 (finding F8, rejected as pre-existing) — still open, and this plan added the fifth
   omission.
 - **Action:** rebuild the example from the sections the document defines, or rename the block to
-  "Example" and state which sections it deliberately omits.
-- **Done when:** every top-level key the standard documents appears in the example block, or the block
-  states its own scope; the Schema block and the example agree.
+  "Example" and state which sections it deliberately omits. Decide separately whether `build` and `ci`
+  belong in this standard's Schema block, since `SKILL.md` documents them and the standard does not.
+- **Done when:** every top-level key the standard's Schema block carries also appears in the example
+  block, or the block states its own scope in one sentence; and a reader diffing the two JSON fences
+  (`:19-56` and `:809-858`) finds no key in one that is silently absent from the other.
 - **Effort:** S
 - **Risk if fixed:** none beyond touching a widely-read reference; no code reads this block.
 
@@ -152,49 +170,62 @@ engineering, so they are recorded in `verification.md` rather than filed as gaps
 - **Kind:** report-defect
 - **Severity:** low
 - **Topic:** documentation-surface
-- **Where:** `doc/plans/code-intelligence-substrate/220-resolver-configuration/report-01.md:155-161`
-  (the per-round table, row 1)
-- **Evidence:** the paragraph above the table states "the row counts below are the tables' own"; the row
-  reads `| 1 | 13 | 10 from the sub-agent, 3 self-caught |`. The round-1 findings table holds **14**
-  rows — F1, F2, F2b, F3, F4, F5, F6, F7, F8, F9, F10 (11 attributed to the R1 sub-agent) plus S1, S2, S3.
-  Rounds 2–4 count their suffixed rows (R2-S1, R3-R are included in 11 and 10 respectively), so
-  excluding F2b contradicts the report's own convention.
+- **Where:** `doc/plans/code-intelligence-substrate/220-resolver-configuration/report-01.md:157`
+  (row 1 of the per-round table at `:155-160`)
+- **Evidence:** re-counted in the file. The paragraph above the table states "the row counts below are
+  the tables' own"; row 1 reads verbatim
+  `| 1 | 13 | 10 from the sub-agent, 3 self-caught while fixing |`. The round-1 findings table
+  (`:170-183`) holds **14** rows — F1, F2, F2b, F3, F4, F5, F6, F7, F8, F9, F10 (11 attributed to the R1
+  sub-agent) plus S1, S2, S3. The other three rows re-derive exactly: round 2 has R2-1…R2-10 plus R2-S1
+  = **11** (stated 11), round 3 has R3-1…R3-9 plus R3-R = **10** (stated 10), round 4 has R4-1…R4-10 =
+  **10** (stated 10). Every one of those counts every suffixed row, so excluding F2b contradicts the
+  report's own convention — round 1 is the only row that does not re-derive.
 - **Why it matters:** this is the defect class R4-7 recorded as fixed ("replaced with a per-round table
   whose counts are the tables' own"). Leaving it makes the retrospective corpus' finding-density figures
   wrong for this run by one row and undermines the row's stated derivation.
-- **Action:** change the round-1 row to `| 1 | 14 | 11 from the sub-agent, 3 self-caught |`, or state
-  explicitly that F2b is counted as a sub-row of F2 and apply the same rule to R2-S1 and R3-R.
+- **Action:** change the round-1 row to
+  `| 1 | 14 | 11 from the sub-agent, 3 self-caught while fixing |`, or state explicitly that F2b is
+  counted as a sub-row of F2 and apply the same rule to R2-S1 and R3-R.
 - **Done when:** each round's stated count equals the number of rows in that round's table under one
   stated counting rule.
 - **Effort:** S
 - **Risk if fixed:** none.
 
-## G6 — Correct R3-4's rationale: the test harness already isolates the machine-local store
+## G6 — Correct the "a developer's local binding would redden this" rationale, in the report *and* in the shipped test comment
 
-- **Kind:** report-defect
-- **Severity:** low
+- **Kind:** doc-defect
+- **Severity:** medium
 - **Topic:** tests
-- **Where:** `doc/plans/code-intelligence-substrate/220-resolver-configuration/report-01.md:222` (row R3-4)
-- **Evidence:** the row claims the assertion was "green only because a fresh clone and CI have no store"
-  and that "a developer who disables one resolver through the new menu turns it red". `test/conftest.py:1146-1200`
-  installs an **autouse** `_plan_base_dir_sandbox` fixture redirecting `PLAN_BASE_DIR` and
-  `_config_core.RUN_CONFIG_PATH` into a per-test tmp sandbox for every test not marked
-  `allow_pollution`; neither `test/pm-plugin-development/plan-marshall-plugin/test_graph_family_bundle_project.py`
-  nor `test/plan-marshall/manage-architecture/test_graph_resolver_provenance.py` carries that marker.
-  Proved: running the two provenance test files with `PLAN_BASE_DIR` pointed at a store containing
-  `{"maven": {"enabled": false}, "python": {"enabled": false}}` gave **49 passed** — the autouse fixture
-  overrode the environment, so the real store is unreachable from any test.
-- **Why it matters:** the report presents a machine-state hazard as the reason for a test change. A
-  future author reading it may add per-test store isolation that already exists, or may believe the
-  suite is machine-dependent when it is structurally not. The fix itself (assert the dispatched
-  population, not the roster's cardinality) is correct on its own merits.
-- **Action:** rewrite the R3-4 disposition to state the real reason — the assertion encoded an
-  invariant the change retired — and note that `test/conftest.py`'s autouse sandbox, not CI's empty
-  store, is what keeps every test independent of the machine-local binding.
-- **Done when:** R3-4 no longer claims a developer's local binding can redden the suite, and cites
-  `test/conftest.py`'s autouse `PLAN_BASE_DIR` sandbox.
+- **Where:** two sites carrying the same false rationale —
+  `test/pm-plugin-development/plan-marshall-plugin/test_graph_family_bundle_project.py:353-357`
+  (the comment justifying the assertion in `test_graph_response_names_every_discovered_resolver`), and
+  `doc/plans/code-intelligence-substrate/220-resolver-configuration/report-01.md:222` (row R3-4, the
+  disposition that wrote it)
+- **Evidence:** the shipped comment reads "It equals the discovered count only while nothing is switched
+  off, which is true of a fresh clone and of CI but NOT of a developer machine whose machine-local
+  binding disables a resolver. Asserting the equivalence unconditionally would turn this red for that
+  developer"; R3-4 states the same — "green only because a fresh clone and CI have no store … A
+  developer who disables one resolver through the new menu turns it red". No test can see a developer's
+  store: `test/conftest.py:1146-1147` installs an **autouse** `_plan_base_dir_sandbox` fixture
+  redirecting `PLAN_BASE_DIR` (and `_config_core.RUN_CONFIG_PATH`) into a per-test tmp sandbox for every
+  test not marked `allow_pollution`, and `conftest.py:849-875` locks that marker shut so no test carries
+  it. Reproduced independently on the file R3-4 actually names: running
+  `test_graph_family_bundle_project.py` with `PLAN_BASE_DIR` pointed at a store disabling all seven
+  shipped resolvers gave **29 passed** — the autouse fixture overrode the environment. (The two
+  provenance files behave the same way: **49 passed** under a store disabling `maven` and `python`.)
+- **Why it matters:** the claim is now in shipped source, not just in the run report. A future author
+  reading the comment may add per-test store isolation that already exists, or may believe the suite is
+  machine-dependent when it is structurally not. The assertion the comment justifies (compare against
+  the dispatched population, not the roster's cardinality) is correct on its own merits and must stay.
+- **Action:** rewrite both to state the real reason — `resolver_count` and roster cardinality are
+  different quantities once a dispatch control exists, so the assertion names the quantity it means —
+  and, where the harness is mentioned at all, say that `test/conftest.py`'s autouse `PLAN_BASE_DIR`
+  sandbox (not CI's empty store) is what keeps every test independent of the machine-local binding.
+- **Done when:** neither `test_graph_family_bundle_project.py` nor R3-4 claims a developer's local
+  binding can redden the suite, and a grep for `developer machine` / `fresh clone and CI` across
+  `test/` and this plan directory returns no surviving instance of that rationale.
 - **Effort:** S
-- **Risk if fixed:** none.
+- **Risk if fixed:** none — comment and report prose only; no assertion changes.
 
 ## G7 — Confirm or retire residue item 3 (cross-directory pytest pollution)
 
@@ -202,7 +233,7 @@ engineering, so they are recorded in `verification.md` rather than filed as gaps
 - **Severity:** low
 - **Topic:** tests
 - **Where:** `doc/plans/code-intelligence-substrate/220-resolver-configuration/report-01.md:378-381`
-  (Residue 3); the named files are
+  (Residue 3, re-verified at those lines); the named files are
   `test/plan-marshall/manage-architecture/test_graph_resolver_provenance.py` and
   `test/plan-marshall/manage-architecture/test_native_resolver_graph_impact.py`
 - **Evidence:** the residue claims "38 tests fail when several test directories share one ad-hoc
@@ -211,13 +242,16 @@ engineering, so they are recorded in `verification.md` rather than filed as gaps
   + pm-dev-python` → **1078 passed**; `manage-architecture + script-shared + pm-documents +
   pm-code-intelligence` → **1804 passed, 1 failed**, that one failure being an unrelated live-tree
   characterization over `plan-marshall:manage-metrics:manage-metrics` which fails identically when its
-  file is run alone.
+  file is run alone. Independently re-derived here: `manage-architecture + extension-api` → **900
+  passed** again, and `test_argparse_surface.py` alone → **1 failed, 47 passed** on the same unrelated
+  test, so the single failure is confirmed not to be a cross-directory effect.
 - **Why it matters:** a residue item that names a reproduction nobody can reproduce either misdirects a
   future cleanup plan or hides a mode that still fires under a different directory combination. The
-  named files still use module-level `monkeypatch.setattr(extension_discovery, …)`
-  (`test_graph_resolver_provenance.py`, `test_feasibility_underivable_guard.py:58`) — the exact pattern
-  the run's own F9/R2-S1 deferral replaced in its new files — so the hazard's precondition is still
-  present even though it did not fire here.
+  named files still bind `extension_discovery` at module import and patch the attribute on that binding
+  (`test_graph_resolver_provenance.py:28` + `:138`, `:144`, `:318`, `:621`;
+  `test_feasibility_underivable_guard.py:56`) — the exact pattern the run's own F9/R2-S1 deferral
+  replaced in its new files — so the hazard's precondition is still present even though it did not fire
+  here.
 - **Action:** either record the exact invocation that reproduces the 38 failures (directory set and
   order), or retire the residue item and, if the pattern is judged risky, apply the
   `importlib.import_module` deferral used in the new test files to the two legacy ones.

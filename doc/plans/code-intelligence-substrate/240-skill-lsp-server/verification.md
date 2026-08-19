@@ -203,10 +203,27 @@ edits. Defects found:
    no tie-break and no ambiguity signal. Reproduced on a synthetic corpus: a decoy line
    `prose about target_script, unrelated` at line 5 of `beta/skills/caller/SKILL.md` beats the true
    citation at line 5 of `workflow/step.md`, and the answer is reported `verified=True`. Scanned the
-   real corpus with the resolver's own candidate order and token test: of **4 858** resolved sites,
+   real corpus with the resolver's own candidate order and token test: of the **4 858 `verified: true`**
+   sites (of 5 020 returned in total),
    **296 (6.1 %)** have more than one candidate file matching at that line, so at most one of each
    pair can be right; and **1 331 (27 %)** win on the tail segment alone rather than the full
-   notation. `SKILL.md:120` and the user page call `verified` *"an exact location"*. → **G2**
+   notation. `SKILL.md:120` and the user page call `verified` *"an exact location"*. All four figures
+   re-derived in a single process — an earlier split measurement drifted ~0.5 % because concurrent
+   agents were editing the corpus between the two halves. → **G2**
+
+2b. **The `verified` flag never reaches the editor — the LSP projection drops it.** `on_references`
+   (`corpus_lsp.py:321-328`) maps every `Reference` through `_lsp_location(ref.location.path,
+   ref.location.line)` (`:343-351`), which emits only `uri` + `range`. An unconfirmed site is
+   therefore indistinguishable from a confirmed one on the surface this plan actually shipped, and an
+   LSP `Location` has no weaker form — it *is* an exact location. Measured on the real corpus:
+   **162 of 5 020 sites (3.2 %)** are `verified: false`, and each is reported against the owner's file
+   at the cited line — precisely the wrong-file/wrong-line pairing `resolve_reference_site` exists to
+   avoid. Demonstrated: `plan-marshall:manage-architecture`'s one unverified inbound edge emits
+   `manage-architecture/SKILL.md` line 515, whose text is about `--pattern` search and never mentions
+   the target. Two shipped pages promise the opposite in near-identical words — `SKILL.md:121`
+   (*"never presented as exact"*) and `doc/user/corpus-language-server.adoc:182` (*"never presented as
+   an exact location"*). The `query` payload does carry the flag; the protocol projection is where the
+   documented contract is lost, which is why `query`-only evidence could not surface it. → **G28**
 
 3. **Neither the index nor its caches are ever invalidated.** `CorpusIndex` is built once
    (`corpus_lsp.py:244-251`) and `_line_cache` / `_candidate_cache` (`_corpus_index.py:150-151`) grow
@@ -224,8 +241,17 @@ edits. Defects found:
    the docs' own words for that outcome are "empty capabilities … indistinguishable from a deliberate
    opt-out". The standard field that would fix it is available and unread. → **G4**
 
+5. **`_lsp_location`'s docstring describes a range it does not emit.** `corpus_lsp.py:343-351` is
+   documented as *"An LSP Location covering the whole line"*, but both `start` and `end` are
+   `{line, character: 0}` — a zero-width point, so an editor highlights nothing on jump. Confirmed in
+   the live `serve` payloads above, every one of which carries `character: 0` at both ends. → **G24**
+
 Checked and found sound: the fail-closed config ladder (every branch of `read_corpus_config` returns
-`{'enabled': False}`); `notation_at`'s lookbehind/lookahead (a cursor inside `https://…` yields
+`{'enabled': False}`, and all 7 cases pinned at `test_corpus_lsp_optin.py:48-77`, re-read); the
+disabled path driven as a real client on this repository — `initialize` → `{}` and then
+`definition`/`references`/`hover` → `null` / `[]` / `null`, exit 0, empty stderr, no index built, so
+the docstring's "returns an empty result for every request" is exercised rather than asserted;
+`notation_at`'s lookbehind/lookahead (a cursor inside `https://…` yields
 `None`, verified); the negative-`Content-Length` guard (`_corpus_lsp_protocol.py:60-61`, mutation-
 proven live below); the flat/versioned bootstrap and its numeric version key (driven from a real
 two-version cache); `no_op_capabilities()` being genuinely empty rather than a subset.
@@ -245,7 +271,7 @@ file restored byte-for-byte from a snapshot in `/tmp/verify-240-mutsweep/`; `md5
 | # | Mutation | Result |
 |---|---|---|
 | M1 | delete `if parsed < 0: return None` in `read_message` | **RED** — `test_negative_content_length_yields_none` fails. Guard is real |
-| M2 | delete the cache **read** in `CorpusIndex._candidate_files` (walk on every edge) | ⛔ **GREEN — all 78 pass.** The two tests in `TestCandidateFilesAreCached` are vacuous: the cache is still *written*, so `test_repeat_calls_reuse_the_walk` sees a populated dict and `test_walk_runs_once_per_owner_not_once_per_edge`'s `len(walked) < len(calls)` holds regardless. Finding #4's regression — the walk that never warms up — is unguarded |
+| M2 | delete the cache **read** in `CorpusIndex._candidate_files` (walk on every edge) | ⛔ **GREEN — all 78 pass.** The two tests in `TestCandidateFilesAreCached` are vacuous: the cache is still *written*, so `test_repeat_calls_reuse_the_walk` sees a populated dict and `test_walk_runs_once_per_owner_not_once_per_edge`'s `len(walked) < len(calls)` holds regardless. Finding #4's regression — the walk that never warms up — is unguarded → **G5** |
 | M3 | `_version_key` → lexical (`tuple(ord(c) …)`) | **RED** — `test_prefers_the_newest_version` fails (`0.1.9` selected). Finding #47's fix is guarded |
 | M4 | remove `'lspServers'` from `PASSTHROUGH_FIELDS` | **RED** — `test_lsp_servers_survive_regeneration` fails. Finding #22's fix is guarded |
 
@@ -298,7 +324,7 @@ this clone); § Reviewer participation (no network calls were made).
 | Residue item (from report) | Still open? | Evidence |
 |---|---|---|
 | D3 unbuilt, hard-gated on `230-validate-precision` | **Open, but the gate is discharged** | No diagnostic provider in `active_capabilities()`; `230` landed `3d96e40` 74 min before this plan. Validator now reports 61 unresolved, not 380 |
-| The surface has no automatic consumer | **Open** | Tree-wide grep: `lspServers` appears in no `.claude-plugin/plugin.json`; the only 14 files naming this skill are its own source, tests, docs and two config docs. Nothing dispatches it |
+| The surface has no automatic consumer | **Open** | Tree-wide grep: `lspServers` appears in no `.claude-plugin/plugin.json` (its two hits under `marketplace/bundles/` are a plugin-doctor rule and this skill's own `SKILL.md`). Excluding plan-audit documents, **12** files name this skill: its `SKILL.md`, its 4 test files, its 2 `.adoc` pages, 2 config-standard docs, `pm-plugin-development`'s manifest and README, and the plugin-doctor bootstrap rule — none of which dispatches it. (An earlier pass said 14; that figure counted this audit's own two documents.) |
 | Extension-collision behaviour unverified against a running client | **Open** | Nothing in the tree observes or tests it; it remains a claim sourced from the run's web research |
 | Finding 19 — `CLAUDE.md` component counts drifted | **Open** | `CLAUDE.md` says "157 registered components (153 skills, 2 agents, 2 commands)"; re-derived now: **156 skills, 2 agents, 2 commands = 160** |
 | Finding 20 — no `manage-config` verb writes `code_intelligence` | **Open** | `code_intelligence` appears in `manage-config` only in `standards/data-model.md` and `scripts/_config_core.py` (canonical key order); no verb writes it. The user page still instructs hand-editing |
@@ -323,7 +349,8 @@ stale-ordering correction), `run-config-standard.md` (a back-reference), `plugin
 (`lspServers` added to `PASSTHROUGH_FIELDS` + fixture and 2 tests that fix a previously vacuous
 passthrough test), `_analyze_sys_path_bootstrap.py` + `rule-provenance.md` (allowlist entry and
 category rename). One undeclared inconsistency: `plugin_json_gen.py`'s module docstring still
-enumerates the passthrough fields **without** `lspServers` (lines 6-9). → **G14**
+enumerates the passthrough fields **without** `lspServers` (lines 6-9), while `PASSTHROUGH_FIELDS`
+at `:59-69` carries it. → **G17**
 
 ## Method and coverage
 
@@ -331,9 +358,14 @@ enumerates the passthrough fields **without** `lspServers` (lines 6-9). → **G1
   `.adoc` pages, `SKILL.md`, all three production scripts, all four test files, and every collateral
   diff hunk in `git show 5edca5a`.
 - Drove the shipped artifact for real, not only its tests: `preflight` (via the generated executor
-  and directly), `query` in all three kinds against the real 308-component corpus, and three
-  `serve` handshakes as an LSP client spawns it (`PYTHONPATH` stripped) — source tree unconfigured,
+  and directly), `query` in all three kinds against the real 308-component corpus, and `serve`
+  handshakes as an LSP client spawns it (`PYTHONPATH` stripped) — source tree unconfigured,
   temp project enabled, and a synthetic **versioned** plugin cache with two versions present.
+  ⭐ Beyond the handshake, the **protocol answer path itself** was driven end to end against a running
+  `serve` subprocess: `definition`, `hover` and `references` over an enabled project pointed at the
+  real corpus (with `didOpen` supplying a buffer that differs from disk), plus the same three methods
+  on the unconfigured repository. This is the check that separates "the code looks right" from "the
+  server answers", and it is what exposed the dropped `verified` flag (G28).
 - Re-derived every number I state: component/edge/unresolved counts (twice, the second time with
   pristine `HEAD` copies of the validator, because concurrent audit agents were mutating
   `_dep_detection.py` / `_dep_index.py` in this shared tree); latencies; skill/agent/command counts;

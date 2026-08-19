@@ -240,8 +240,149 @@ audit and this review (`git diff` over the audited surface is empty), so the del
   assertion that is not there.
 - **Action:** rewrite the D4 row to say the pair is asserted at the seam by this run
   (`test_path_attribution.py:174-201`) and that the reader-level 0-vs-N pair already shipped in
-  `test_cmd_client.py:1040-1059`, with this run adding the N-side assertion for the `.github` control at
+  `test_cmd_client.py:1039-1061`, with this run adding the N-side assertion for the `.github` control at
   `test_which_module_plan_claim.py:246-263`.
 - **Done when:** the D4 row names, for each assertion, the file and whether this run added it.
 - **Effort:** S
 - **Risk if fixed:** none.
+
+## G7 — Make D3's walked population deterministic
+
+- **Kind:** test-gap
+- **Severity:** low
+- **Topic:** tests
+- **Where:** `test/pm-plugin-development/plan-marshall-plugin/test_path_attribution.py:117` (the `rglob`
+  in `test_every_path_under_the_real_claude_tree_resolves_to_pm_plugin_development`) and `:144` (the
+  `iterdir` in `test_each_top_level_claude_subtree_resolves_uniformly`)
+- **Evidence:** the walk is `files = sorted(p for p in claude_root.rglob('*') if p.is_file())`, a live
+  filesystem read, so the number the test publishes is whatever the working tree happens to hold.
+  Re-derived at adversarial review: `git ls-files .claude | wc -l` → **47**; the same `rglob`, files
+  only → **52**. The five extra entries are all git-ignored build state —
+  `.claude/settings.local.json` plus `__pycache__/audit.cpython-312.pyc`,
+  `__pycache__/era_stamp_fill.cpython-312.pyc`, `__pycache__/review_retrospective.cpython-312.pyc` and
+  `__pycache__/reconcile_daemon.cpython-312.pyc`. `git diff` over `marketplace/`, `doc/concepts/`,
+  `test/` and `.claude/` between the audit's tree state and this one is empty, so no tracked file moved:
+  the delta is build state alone. `iterdir()` is affected the same way — the top-level entry list is
+  `commands`, `skills`, `settings.json` in a clean clone and gains `settings.local.json` on a working
+  machine.
+- **Why it matters:** D3's *Done when* makes the published count the deliverable's own artifact, and the
+  run report states it as a fact ("47 files"). A figure that moves with `__pycache__` state is not
+  reproducible, so no later reader can check the report against a run — they will read 52 and conclude
+  the record is wrong. **No assertion is weakened:** every extra entry is still under `.claude` and still
+  resolves to `pm-plugin-development`, which is why this is low rather than a broken test.
+- **Action:** derive the walked population from a deterministic source. Preferred: filter the `rglob`
+  (skip any path with a `__pycache__` component, and any entry `git check-ignore -q` accepts) and filter
+  `iterdir()` the same way. `git ls-files .claude` is the other option but gives the test a hard git
+  dependency, so take it only if the suite already assumes a worktree.
+- **Done when:** on a machine that has run the suite at least once (so `__pycache__` directories exist
+  under `.claude`) and carries a `.claude/settings.local.json`, the count the walk test reports equals
+  `git ls-files .claude | wc -l`, and both enumeration tests still pass.
+- **Effort:** S
+- **Risk if fixed:** a filter that is too broad could hide a real tracked file and re-open the vacuity
+  the `assert files` guard at `:120` exists to prevent — keep that guard, and assert the filtered count
+  is non-zero.
+
+## G8 — Stop the merge fixture from calling its stubs "the two real attributors"
+
+- **Kind:** test-gap
+- **Severity:** low
+- **Topic:** tests
+- **Where:** `test/plan-marshall/extension-api/test_path_attribution_merge.py:641-654`,
+  `test_lookup_claim_consumes_the_merge_output_end_to_end`
+- **Evidence:** lines 642-647 read
+
+  ```python
+  # Arrange — the shipped claims, produced by the real merge over the two real
+  # attributors: pm-plugin-development owns the bare-root ``.claude`` tree, and
+  # plan-marshall owns ``.plan``.
+  pm_dev = _StubAttributor(claims=[('.claude', 'pm-plugin-development')])
+  plan_marshall = _StubAttributor(claims=[('.plan', 'plan-marshall')])
+  claims, _ = _merge_with(('pm-plugin-development', pm_dev), ('plan-marshall', plan_marshall))
+  ```
+
+  `_merge_with` (`:77-80`) calls the real `merge_path_claims` over those **stub** records, so "the real
+  merge" is accurate but "the two real attributors" is not — nothing is discovered here, and both claim
+  tuples are hardcoded. "The shipped claims" is wrong about the population too: re-derived live at
+  adversarial review the shipped set is **five claims from three attributors** —
+  `.claude → pm-plugin-development`, `.plan → plan-marshall`, and
+  `doc`/`README.md`/`CONTRIBUTING.md → documentation` from `pm-documents`
+  (`marketplace/bundles/pm-documents/skills/plan-marshall-plugin/extension.py:284-286`).
+- **Why it matters:** this is the same fixture the run's own finding 3 corrected, and the run's Step-9
+  lesson generalised exactly this hazard — "a test fixture or stub that hardcodes the [retired] value"
+  and passes regardless because it is not driven by the real code path. The values were updated; the
+  comment now asserts they *are* the real ones, which restores the property that made the original
+  defect invisible. If the shipped claim set moves again, this test stays green and its comment lies.
+- **Action:** rewrite the comment to say the records are stubs mirroring two of the shipped claims, and
+  that this test pins `lookup_claim`'s consumption of merge output rather than the shipped claim set.
+  Point at the tests that do pin the real set:
+  `test/pm-plugin-development/plan-marshall-plugin/test_path_attribution.py:97-100` and
+  `test/plan-marshall/manage-architecture/test_which_module_plan_claim.py:286-300`.
+- **Done when:** the comment at `:642-644` no longer calls the stub records "real attributors" or "the
+  shipped claims", and names at least one test that asserts against the discovered attributor
+  population.
+- **Effort:** S
+- **Risk if fixed:** none — comment text only, no assertion changes.
+
+## G9 — Correct the false "the split predates this claim" premise in the D2 ownership record
+
+- **Kind:** doc-defect
+- **Severity:** medium
+- **Topic:** bundle-docs
+- **Where:** `marketplace/bundles/pm-plugin-development/skills/plan-marshall-plugin/extension.py:333-339`
+  — the "A split of artifacts from their tests is accepted, not introduced" paragraph of `claim_paths()`
+- **Evidence:** the paragraph reads, verbatim:
+
+  ```text
+  **A split of artifacts from their tests is accepted, not introduced.** The
+  project-local skills under ``.claude/skills`` have their tests under
+  ``test/{skill}`` trees owned by other modules — but that split predates
+  this claim (it held under ``plan-marshall`` ownership too), so the move
+  does not newly separate anything. Ownership tracks who understands the
+  artifact's content, which is the plugin-development domain regardless of
+  where the tests live.
+  ```
+
+  The premise is false for half the population. Re-derived at adversarial review — the six production
+  scripts under `.claude/skills/*/scripts/`, their covering test trees, and the owning module of each
+  test tree (`which-module`, live):
+
+  | `.claude` script | Covering tests | Test-tree module | Artifact module **before** the move | Split before? | Split now? |
+  |---|---|---|---|---|---|
+  | `audit-archived-plan-retrospectives/scripts/audit.py` | `test/plan-marshall/audit-archived-plan-retrospectives/` | `plan-marshall` | `plan-marshall` | **no** | **yes** |
+  | `finalize-step-era-stamp-fill/scripts/era_stamp_fill.py` | `test/plan-marshall/audit-archived-plan-retrospectives/test_era_stamp_fill.py` | `plan-marshall` | `plan-marshall` | **no** | **yes** |
+  | `finalize-step-review-retrospective/scripts/review_retrospective.py` | `test/plan-marshall/finalize-step-review-retrospective/` | `plan-marshall` | `plan-marshall` | **no** | **yes** |
+  | `sync-plugin-cache/scripts/sync.py` | `test/sync-plugin-cache/` | `default` | `plan-marshall` | yes | yes |
+  | `sync-plugin-cache/scripts/reconcile_daemon.py` | `test/sync-plugin-cache/` | `default` | `plan-marshall` | yes | yes |
+  | `sync-plugin-cache/scripts/list_bundles_and_versions.py` | `test/sync-plugin-cache/` | `default` | `plan-marshall` | yes | yes |
+
+  For three of the six, artifact and tests were both owned by `plan-marshall` before the move — the
+  tests live *inside* `plan-marshall`'s own test path (`plugin_discover.py:503-512` gives every bundle
+  module `tests: ['test/{bundle_name}']`), not under a `test/{skill}` tree. The move separated them. So
+  the paragraph's "it held under `plan-marshall` ownership too" and "the move does not newly separate
+  anything" are both wrong for that half, and its "under `test/{skill}` trees" description fits only the
+  `sync-plugin-cache` half.
+- **Why it matters:** the plan made this the explicit pre-condition of the move — "⚠ The artifacts'
+  **tests live under a different module's test tree**, so a move may split an artifact from its tests
+  across two modules — **decide whether that is acceptable before moving; it may be exactly why the
+  original owner was chosen.**" D2's *Done when* is that the decision "and its reasoning" are recorded.
+  The decision is recorded; the reasoning that discharges the plan's one stated risk rests on a false
+  factual premise, so a future reader is told the risk did not exist rather than that it was accepted.
+  ⚠ **Scope check performed, so a later run need not redo it:** this is a documentation defect only, not
+  a behaviour one. `derive-verification` for `.claude/skills/**/*.py` was executed live and yields
+  `compile pm-plugin-development` where it previously yielded `compile plan-marshall` — but `.claude` is
+  in **no** module's source paths (`grep '.claude' .plan/project-architecture/_project.json` → empty),
+  so the derived command failed to cover the changed file under both owners, and the `compile`
+  build_class derives no test command either way. Nothing regressed; only the record is wrong.
+- **Action:** replace the paragraph's factual premise with the measured one — for the three skills whose
+  tests live under `test/plan-marshall/`, this claim **does** newly split artifact from tests, and that
+  is accepted because ownership tracks who understands the artifact's content — and keep the existing
+  conclusion. State the accepted consequence explicitly: a `.claude` production script and its tests now
+  resolve to different modules, so a per-module verification derived from the artifact's owner does not
+  reach its tests.
+- **Done when:** the paragraph no longer asserts that the artifact/test split predates the claim or that
+  the move "does not newly separate anything"; it names the split as newly introduced for the skills
+  tested under `test/plan-marshall/`; and a reader can name, from the paragraph alone, which module owns
+  the tests of a `.claude/skills/*/scripts/*.py` file.
+- **Effort:** S
+- **Risk if fixed:** none — docstring prose. If a later plan moves the affected tests under
+  `test/pm-plugin-development/` instead, this paragraph is retired with that move.

@@ -19,29 +19,52 @@ and one safe-but-divergent tier-1 failure policy between the two resolvers.
   (`_resolve_declared_footprint`)
 - **Evidence:** The line is
   `worktree = Path(resolve_plan_context(plan_id, ensure=False).worktree_path)`.
-  `PlanContext._resolve_worktree_face` (`tools-file-ops/scripts/file_ops.py:1097-1120`) returns
-  `cwd_checkout_root()` for the `pending` and `disabled` worktree states and raises
-  `WorktreeResolutionError` only when the `get-worktree-path` channel itself fails — so the `except`
-  at `:95` never fires for a plan that simply has no materialized worktree. Reproduced by stubbing
-  `file_ops._query_worktree_path` to return `('pending', '')`:
+  `PlanContext._resolve_worktree_face` (`tools-file-ops/scripts/file_ops.py:1097-1120`, reached through
+  the `worktree_path` property at `:1009-1027`) returns `cwd_checkout_root()` for the `pending` and
+  `disabled` worktree states and raises `WorktreeResolutionError` only when the `get-worktree-path`
+  channel itself fails — so the `except` at `:95` never fires for a plan that simply has no
+  materialized worktree. Reproduced by stubbing `file_ops._query_worktree_path` to return
+  `('pending', '')` and wrapping `compute_plan_branch_diff` in a call spy — **twice, from two different
+  working directories**, because the second measurement is the damaging one:
+
+  **(a) standing in this repository** (the classifier's ordinary situation):
 
   ```text
   worktree_state = pending
   has_worktree   = False
   worktree_path  = /home/user/plan-marshall
-  _resolve_declared_footprint(plan_dir, 'demo-pending') -> set of 310 paths
+  _resolve_declared_footprint(plan_dir, 'demo-pending') -> set of 343 paths
+  diff calls     = [('/home/user/plan-marshall', 'main')]
+  ```
+
+  The cardinality is only whatever this checkout happens to hold when measured; the stable fact is that
+  a diff of a foreign tree is attempted at all.
+
+  **(b) standing in a CLEAN checkout** (a throwaway git repo carrying `.plan/local`, `HEAD` on `main`,
+  `git status --porcelain` empty) — the ordinary case in a consumer project:
+
+  ```text
+  worktree_path             = /tmp/adv250-clean
+  _resolve_declared_footprint(...) -> set()      # a MEASURED empty set, not None
+  footprint_resolved        = True
+  total                     = 2
+  in_scope_count            = 0
+  out_of_scope_count        = 2
+  exclusively_out_of_scope  = True
   ```
 
   Both peer sites gate on `has_worktree` and document this exact hazard:
   `manage-references/scripts/_references_core.py:188-194` ("gating on the path would hand callers a
   main-checkout footprint where they previously got 'no worktree'") and
-  `manage-execution-manifest/scripts/manage-execution-manifest.py:673-681`.
-- **Why it matters:** Every error path is then classified against an unrelated tree. When that tree is
-  clean against its base — the ordinary case in a consumer project — `compute_plan_branch_diff` returns
-  a **resolved empty** set, so every failure lands out-of-scope, `exclusively_out_of_scope` becomes
-  `true`, and phase-5-execute Step 11 offers *"Stash foreign files and re-verify"* as the **default**
-  remedy on no evidence. That is verbatim the harm the module docstring (`:30-36`) and the P1 fix claim
-  to have removed; the plan's D2 is not actually closed on this path.
+  `manage-execution-manifest/scripts/manage-execution-manifest.py:673-680` (code at `:682-690`).
+- **Why it matters:** Every error path is then classified against an unrelated tree — and reproduction
+  (b) shows the failure is not a lost measurement but an **inverted** one: a clean foreign tree yields a
+  resolved empty footprint, so every failure lands out-of-scope, `exclusively_out_of_scope` becomes
+  `true`, and phase-5-execute Step 11 (`SKILL.md:833`) presents *"Stash foreign files and re-verify"* as
+  the **default recommended action** on no evidence. The unmeasurable state is thereby converted into
+  the single most confident verdict the classifier can emit. That is verbatim the harm the module
+  docstring (`:30-36`) and the P1 fix claim to have removed; the plan's D2 is not actually closed on
+  this path.
 - **Action:** Replace the direct `worktree_path` read with the shared gate — either
   `_references_core.resolve_live_worktree(plan_id)` (which already returns `None` for
   pending/disabled/non-directory) or an inline `if not context.has_worktree: return None` before taking
@@ -61,14 +84,17 @@ and one safe-but-divergent tier-1 failure policy between the two resolvers.
 
 - **Kind:** doc-defect
 - **Severity:** medium
-- **Topic:** bundle-docs
-- **Where:** `marketplace/bundles/plan-marshall/skills/phase-5-execute/scripts/verify_failure_scope.py:79-81`
+- **Topic:** measurement/metrics
+  *(the owning surface is `verify_failure_scope.py` itself — the same file and the same function as G1,
+  not a markdown bundle doc. Grouping it under `bundle-docs` would route it to a different fix plan than
+  G1, which contradicts this entry's own "land it together with G1" instruction.)*
+- **Where:** `marketplace/bundles/plan-marshall/skills/phase-5-execute/scripts/verify_failure_scope.py:78-80`
   (`_resolve_declared_footprint` docstring)
-- **Evidence:** The docstring states: *"An unresolvable worktree degrades to the current working
-  directory, preserving the previous non-fatal behaviour for archived plans and test seams."* The
-  function's own summary line at `:62` says *"Return the live plan footprint, ``None`` if unmeasurable"*
-  and the comment at `:96-104` says the cwd fallback *"is exactly the defect this module was changed to
-  remove"*. Three statements, two of them contradicting the third, inside one function.
+- **Evidence:** The docstring states, at `:78-80`: *"An unresolvable worktree degrades to the current
+  working directory, preserving the previous non-fatal behaviour for archived plans and test seams."*
+  The function's own summary line at `:62` says *"Return the live plan footprint, ``None`` if
+  unmeasurable"* and the comment at `:96-103` says the cwd fallback *"is exactly the defect this module
+  was changed to remove"*. Three statements, two of them contradicting the third, inside one function.
 - **Why it matters:** The paragraph documents the removed behaviour as current and reads as explicit
   sanction for G1 — a maintainer restoring a path-based read would find the docstring endorsing it.
   A false claim in shipped documentation about the very contract this plan established.
@@ -108,27 +134,42 @@ and one safe-but-divergent tier-1 failure policy between the two resolvers.
 ## G4 — Give the recall and exact-match `inconclusive` returns a reason token
 
 - **Kind:** incomplete
-- **Severity:** low
+- **Severity:** medium
+  *(raised from low: D2 is a load-bearing deliverable and its literal wording is unmet at these two
+  sites, which is the calibration's "incomplete deliverable". It would also be inconsistent to hold G3 —
+  documenting a token that already exists — at medium while holding the absence of the token itself at
+  low.)*
 - **Topic:** measurement/metrics
 - **Where:** `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/check-artifact-consistency.py:540-551`
-  (`check_affected_files_recall`) and `:593-600` (`check_affected_files_exact_match`)
-- **Evidence:** Both unresolvable returns carry `footprint_resolved: False` (a **state**) plus a prose
-  message; neither carries a stable token. The two sibling sites do:
-  `analyze-logs.py:1543` emits `ARTIFACT_COVERAGE_UNMEASURABLE:` inside its message, and
-  `verify_failure_scope.py:58,156` emits a typed `unresolved_reason: plan_footprint_unresolvable`.
-  P2 in the run report states the requirement precisely: *"`footprint_resolved: false` is the state, not
-  the reason."*
+  (`check_affected_files_recall`) and `:593-600` (`check_affected_files_exact_match`), plus the block
+  `cmd_run` emits at `:909-915`
+- **Evidence:** The recall unresolvable return carries `footprint_resolved: False` (a **state**) plus a
+  prose message; the exact-match one carries neither — it returns only the `inconclusive` status and
+  prose, and the `affected_files_exact_match` block `cmd_run` publishes (`:909-915`) has no resolution
+  field at all. **Three** of the five reader sites do carry a named token:
+  `analyze-logs.py:1543` emits `ARTIFACT_COVERAGE_UNMEASURABLE:` inside its message;
+  `verify_failure_scope.py:58,156` emits a typed `unresolved_reason: plan_footprint_unresolvable`; and
+  `check-routing-decisions.py` publishes `footprint_source: unresolved` (`:766`, emitted at `:790`) with
+  a per-check `removal_cause: not_evaluated` (`:212`, `:574-581`). P2 in the run report states the
+  requirement precisely: *"`footprint_resolved: false` is the state, not the reason."*
 - **Why it matters:** D2's literal wording ("`unknown` / `skipped` **with a reason token**") is met at
-  two of four unresolved-reporting sites. A consumer wanting to distinguish "no capture was written"
-  from "the diff failed" has only free prose to match on, and the exact-match block returned at
-  `cmd_run` (`:909-915`) does not even carry `footprint_resolved`.
+  three of five reader sites; these two are the outliers, not the norm. The concrete loss is at the
+  exact-match peer: `inconclusive` is returned for **two structurally different** causes — an
+  unresolvable footprint (`:593-600`) and a both-empty comparison (`:580-586`) — and the emitted block
+  distinguishes them by nothing but the prose message, so a consumer must string-match to tell "never
+  measured" from "measured, and both sides empty". (Note what a single shared constant does *not* buy:
+  one token spelt `plan_footprint_unresolvable` cannot separate "no capture was written" from "the diff
+  failed" either, at any site — the value of the fix is a uniform machine-readable unresolved contract
+  across the reader set, not finer-grained causes.)
 - **Action:** Add a shared constant (e.g. `FOOTPRINT_UNRESOLVABLE_REASON = 'plan_footprint_unresolvable'`,
-  ideally exported from `_footprint_resolver` so all four sites share one spelling) and publish it in
+  ideally exported from `_footprint_resolver` so every site shares one spelling) and publish it in
   `details` on both `inconclusive` branches; surface `footprint_resolved` in the
-  `affected_files_exact_match` block too.
-- **Done when:** both `inconclusive` returns publish a reason token drawn from one shared constant, and
-  `references/artifact-consistency.md` documents the key alongside `read_intent_excluded` and
-  `declared_unfiltered`.
+  `affected_files_exact_match` block too, and give the both-empty `inconclusive` its own distinct token
+  so the two causes separate.
+- **Done when:** both `inconclusive` returns publish a reason token drawn from one shared constant; the
+  `affected_files_exact_match` block carries `footprint_resolved` and a token that differs between the
+  unresolvable and both-empty causes; and `references/artifact-consistency.md` documents the key
+  alongside `read_intent_excluded` and `declared_unfiltered`.
 - **Effort:** S
 - **Risk if fixed:** A `details` key addition; the production-shape fixture
   (`fixtures/archived-plan/work/fragment-artifact-consistency.toon`) and any test asserting an exact
@@ -155,7 +196,13 @@ and one safe-but-divergent tier-1 failure policy between the two resolvers.
   deliverable. The behaviour is safe (an unresolvable footprint disables the assertion, which fails
   toward passing compose), which is precisely why it belonged in the "Adjacent, deliberately excluded"
   table with that reasoning recorded — an unlisted site invites a later run to rediscover it and read
-  the silence as coverage.
+  the silence as coverage. The omission is an inconsistency rather than a methodological choice: the
+  excluded table **already** lists receiver-style sites that derive nothing and are handed a footprint
+  by their caller (`phase-6-finalize/derive_gate_bundles.py`,
+  `script-shared/build/_test_scope_divergence.py`), and this site is exactly that shape. The code at the
+  call site is not at fault — `manage-execution-manifest.py:2016-2019` documents the normalization
+  deliberately ("the build-verdict assertion is handed `[]` so its non-empty-footprint precondition
+  disables it") — so what is missing is only the document's account of it.
 - **Action:** Add a row to the excluded table naming the site, the normalization at the call site, and
   why the collapse is benign there (an assertion that declines to fire subtracts no gate). If a future
   plan wants the stricter form, note that passing `live_footprint` through unnormalized plus an explicit

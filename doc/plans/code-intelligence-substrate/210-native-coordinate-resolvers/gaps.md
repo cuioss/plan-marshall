@@ -2,13 +2,19 @@
 
 The plan's six deliverables all landed and D0's three measurements reproduce exactly at HEAD. What
 remains is reach, not construction: the joins this plan built are correct, but the *discoverers* that
-feed them cannot see a Poetry-managed Python project at all (G1), silently mangle two ordinary PEP 508
-dependency spellings (G2, G3), and read only two of npm's four dependency kinds (G4) — in every case
-producing an empty graph that the seam reports as `status: ok, edge_count: 0`, i.e. as a measured
-absence rather than a missing capability. Alongside that, two test guards that name a rule cannot fail
-(G5, G7), one test docstring misdescribes its own fixture (G6), one live count in shipped user
-documentation is wrong (G8, inherited from a later plan), and the run report's build-gate file count is
-stale (G9).
+feed them cannot see a Poetry-managed Python project at all (G1), cannot see a setuptools
+`setup.cfg` / `setup.py` project either (G10), silently swallow an unreadable descriptor (G11),
+silently mangle two ordinary PEP 508 dependency spellings (G2, G3), and read only two of npm's four
+dependency kinds (G4) — in every case producing an empty graph that the seam reports as
+`status: ok, edge_count: 0`, i.e. as a measured absence rather than a missing capability. Alongside
+that, two test guards that name a rule cannot fail (G5, G7), one test docstring misdescribes its own
+fixture (G6), one live count in shipped user documentation is wrong (G8, inherited from a later plan),
+and the run report's build-gate file count is stale (G9).
+
+G1, G2, G3, G10 and G11 all live in one function —
+`_pyproject_cmd_discover.py::_parse_pyproject_metadata`, which reads exactly one table of exactly one
+file — and are listed separately because each has its own observable *Done when*, not because each
+needs its own change.
 
 ## G1 — Read Poetry's own tables so a Poetry-managed Python project derives edges
 
@@ -18,10 +24,11 @@ stale (G9).
 - **Where:** `marketplace/bundles/plan-marshall/skills/build-pyproject/scripts/_pyproject_cmd_discover.py:282`
   (`_parse_pyproject_metadata`, `project = data.get('project', {})`)
 - **Evidence:** The parser reads the PEP 621 `[project]` table and nothing else. A project declaring
-  `[tool.poetry] name` and `[tool.poetry.dependencies]` — still the majority of the Poetry installed
-  base, since `[project]` support only arrived in Poetry 2.0 — therefore emits no name and no
-  dependencies. Driven end to end over a synthetic three-module Poetry monorepo in which `pkg_app`
-  declares `mono-core`:
+  `[tool.poetry] name` and `[tool.poetry.dependencies]` — the only spelling Poetry offered before
+  `[project]` support arrived in Poetry 2.0, and still the spelling of every project that has not
+  migrated — therefore emits no name and no dependencies. (How large that population is has not been
+  measured here and no share is claimed.) Driven end to end over a synthetic three-module Poetry
+  monorepo in which `pkg_app` declares `mono-core`:
 
   ```text
   POETRY MONOREPO modules: ['default', 'pkg_app', 'pkg_core']
@@ -34,10 +41,15 @@ stale (G9).
 - **Why it matters:** This is the plan's own Problem statement, unresolved for a whole class of
   consumer: "every Python … consumer project gets its graph, path, neighbours and impact verbs
   structurally vacuous … while every verb reports success." Worse than silence, the answer actively
-  misreports — `client-api.md:110` defines `resolver_count: N` with no edges as "a real, positive
-  result … your modules genuinely declare no dependencies on each other", and
-  `doc/user/dependency-intelligence.adoc:48` promises that consumer "the graph verbs work on a fresh
-  checkout with no configuration".
+  misreports. `client-api.md:110` defines `resolver_count: N` with no edges as "**N resolvers ran and
+  found nothing.** The empty answer is a real, positive result", and the user-facing page renders that
+  same row as "This is a real answer: your modules genuinely declare no dependencies on each other"
+  (`doc/user/dependency-intelligence.adoc:120`). A live `graph` over this repository shows the row a
+  Poetry consumer would get: `{'id': 'pyproject', 'status': 'ok', 'edge_count': 0}`.
+  `doc/user/dependency-intelligence.adoc:48` tells that consumer "the graph verbs work on a fresh
+  checkout with no configuration" — the ecosystem table below it does qualify the Python identity as
+  "The PEP 621 `[project] name`" (`:62-63`), so the documentation is imprecise rather than false, and
+  the severity rests on the misreport, not on the doc.
 - **Action:** In `_parse_pyproject_metadata`, fall back to `[tool.poetry]` when `[project]` is absent
   or carries no `name`: read `tool.poetry.name` / `version` / `description` into `metadata`, and read
   `tool.poetry.dependencies` (skipping the `python` key) and `tool.poetry.group.dev.dependencies`
@@ -74,21 +86,38 @@ stale (G9).
     edges: ([], [])
   ```
 
+  Both PEP 508 spellings fail, and the whitespace-free one is the more dangerous:
+
+  ```text
+    app    -> ['m-core@file:///./core:runtime']
+    edges: ([], [])
+  ```
+
+  The apparatus is live: with the same four modules and the plain spelling `m-core>=1.0`, the join
+  returns `[('default', 'core')]`, so the spelling alone destroys the edge.
+
 - **Why it matters:** `name @ url` is a legal and common way to wire a sibling in a plain PEP 621
   monorepo without a workspace tool. The edge is lost with no signal at all: `derive_name_edges`
   classifies an unmatched name as an external dependency and deliberately emits no note
   (`_name_edge_join.py:170-175`), so `notes[]` — the seam's own suppression channel — stays empty
   and the loss is invisible to the consumer.
-- **Action:** Split the requirement on `@` before the version-specifier chain (PEP 508 requires
-  whitespace around the `@` of a URL reference, so `dep.split(' @ ')[0]` is safe and does not touch
-  a leading `@` in a name). Add a fixture module whose dependency is a direct reference and assert
-  the edge appears.
-- **Done when:** A `[project] dependencies` entry of the form `sample-core @ file:///./sample_core`
-  yields the same edge as `sample-core>=1.0.0` does, pinned by a test in
-  `test_pyproject_derivation_resolver.py`.
+- **Action:** Split the requirement on the **bare** `@` before the version-specifier chain —
+  `dep.split('@')[0]` — not on `' @ '`. ⛔ PEP 508 does **not** require whitespace around the `@` of a
+  URL reference: its grammar is `urlspec = AT wsp* URI_reference` after `name wsp* extras? wsp*`, so
+  every one of `m-core@file:///./core`, `m-core@ file:///./core` and `m-core @ file:///./core` is
+  legal, and `packaging.requirements.Requirement` (the reference implementation) parses all three to
+  `name='m-core'`. A `' @ '` split would therefore leave the whitespace-free spelling — the one pip
+  itself emits in `pip freeze` output — still broken while passing a test written only for the spaced
+  form. Splitting on the bare `@` is safe because `@` is not a legal character in a PEP 508 `name`
+  (`identifier = letterOrDigit identifier_end*`, `identifier_end = letterOrDigit | (('-'|'_'|'.')*
+  letterOrDigit)`), and an npm-style leading `@scope/` never appears in a Python requirement. Add two
+  fixture modules — one for each spelling — and assert the edge appears for both.
+- **Done when:** `[project] dependencies` entries of **both** the forms
+  `sample-core @ file:///./sample_core` and `sample-core@file:///./sample_core` yield the same edge as
+  `sample-core>=1.0.0` does, each pinned by its own test in `test_pyproject_derivation_resolver.py`.
 - **Effort:** S
-- **Risk if fixed:** Low. A name containing ` @ ` is not a legal distribution name, so no currently
-  joining dependency changes.
+- **Risk if fixed:** Low. `@` is not legal inside a distribution name, so no currently joining
+  dependency changes.
 
 ## G3 — Strip the PEP 508 environment marker from a dependency name
 
@@ -188,8 +217,13 @@ stale (G9).
   `return (module_data.get('metadata') or {}).get('name') or module_data.get('name')` makes
   `test_npm_derivation_resolver.py` fail.
 - **Effort:** S
-- **Risk if fixed:** None expected; verify the e2e module's exact impact lists in
-  `test_native_resolver_graph_impact.py:324` are unchanged, since the fixture is shared.
+- **Risk if fixed:** None. This exact change was applied and measured during adversarial review: with
+  the one fixture line added, the shipped code stays green (`34 passed` across
+  `test_npm_derivation_resolver.py` + `test_native_resolver_graph_impact.py`, including the shared
+  e2e impact list at `test_native_resolver_graph_impact.py:324`), while the mutant turns red —
+  `2 failed` (`test_package_without_a_name_is_never_an_edge_target` and
+  `test_full_edge_set_is_exactly_the_declared_internal_dependencies`). Both files were restored from
+  byte snapshots afterwards.
 
 ## G6 — Correct the npm resolver test module's account of its own fixture
 

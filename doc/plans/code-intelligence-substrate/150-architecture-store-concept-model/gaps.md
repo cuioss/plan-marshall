@@ -619,12 +619,12 @@ at.
 
   | Location | Shipped text (abridged) | Status |
   |---|---|---|
-  | `skills/marshall-steward/references/architecture-setup.md:40` | "a top-level `_project.json` whose `modules` index is the single source of truth for \"which modules exist\" … Per-module directories present on disk but absent from `_project.json[\"modules\"]` **MUST be ignored** — the index is authoritative, not the filesystem" | **False, and normative** — the strongest instance; the section heading is literally "Discover Project Architecture (Source of Truth)" |
+  | `skills/marshall-steward/references/architecture-setup.md:40` | "a top-level `_project.json` whose `modules` index is the single source of truth for "which modules exist" … Per-module directories present on disk but absent from `_project.json["modules"]` **MUST be ignored** — the index is authoritative, not the filesystem" | **False, and normative** — the strongest instance; the section heading is literally "Discover Project Architecture (Source of Truth)" |
   | `skills/marshall-steward/references/menu-maintenance.md:144` | "a refreshed `_project.json` (whose `modules` index is the source of truth for which modules exist)" | False |
   | `skills/marshall-steward/references/menu-configuration.md:685` | "a refreshed `_project.json` (the source of truth for the module index)" | False |
-  | `skills/marshall-steward/references/wizard-flow.md:245` | "The module list comes from `_project.json[\"modules\"]` (Step 8), which is the source of truth" | False |
-  | `skills/marshall-steward/scripts/determine_mode.py:213-224` | "(the source of truth for \"which modules exist\") … The `_project.json` `modules` index is authoritative — orphan or half-written per-module directories are ignored" | Wording only — `check_structure` really is index-driven, and correctly so for an existence marker; the "source of truth for which modules exist" framing is what must go |
-  | `skills/extension-api/standards/module-discovery.md:23,26` | "`_project.json[\"modules\"]` — canonical module set (source of truth)" / "Orphan `<module>/` subdirectories not listed in `_project.json` are ignored." | False |
+  | `skills/marshall-steward/references/wizard-flow.md:245` | "The module list comes from `_project.json["modules"]` (Step 8), which is the source of truth" | False |
+  | `skills/marshall-steward/scripts/determine_mode.py:213-224` | "(the source of truth for "which modules exist") … The `_project.json` `modules` index is authoritative — orphan or half-written per-module directories are ignored" | Wording only — `check_structure` really is index-driven, and correctly so for an existence marker; the "source of truth for which modules exist" framing is what must go |
+  | `skills/extension-api/standards/module-discovery.md:23,26` | "`_project.json["modules"]` — canonical module set (source of truth)" / "Orphan `<module>/` subdirectories not listed in `_project.json` are ignored." | False |
 
 - **Evidence:** the shipped code says the opposite in three places the plan itself edited or cited —
   `_architecture_core.py:463-469` ("NOT the source of module discovery: `iter_modules` crawls the

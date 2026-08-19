@@ -322,6 +322,19 @@ Every mutated file was restored from a byte snapshot under `/tmp/verify-250-muts
 `git status --porcelain` was confirmed clean for each afterwards. No `git checkout`/`restore`/`stash` was
 used, and no file another agent had modified was touched.
 
+**All four sweeps were re-run independently during the adversarial review** and reproduced identically,
+each from its own byte snapshot verified against `git show HEAD:<path>` before the mutation and restored
+to a clean `git status --porcelain` afterwards: `analyze-logs.py:1538` → `if False:` ⇒ 1 failed /
+137 passed (`test_unresolvable_footprint_reports_unmeasurable_not_silence`, message *"the unmeasurable
+state must be reported, not skipped"*, verbatim at `test_analyze_logs_behavior.py:331`);
+`verify_failure_scope.py:104` `return None` → `return set()` ⇒ 2 failed / 11 passed, the same two test
+names; the D3 intent-filter predicate at `check-artifact-consistency.py:350` neutralised ⇒ 10 failed /
+11 passed; and the merge-base rollback of `check-artifact-consistency.py` to `5edca5a` ⇒ **19 failed /
+2 passed**, matching the audit's figure rather than the report's 18/3, with the delta again traced to
+`63943f5`, whose diff of `test_recall_read_intent_denominator.py` rewrites exactly the
+no-declaration skip assertion (`'No deliverable declares an Affected files section'` →
+`'No deliverable declares a file surface'`).
+
 **One test gap.** `test_footprint_resolver_never_diffs_the_current_directory` is named for a property
 broader than it tests: it stubs `_query_worktree_path` to *raise*, covering only the
 `WorktreeResolutionError` route. The `pending` route — the one that still diffs the wrong tree — has no
@@ -380,7 +393,7 @@ omission rather than a misstatement.
 | **R2-D2** — `plan-retrospective`'s undeclared `reads: [worktree]` | **Open** | `plan-retrospective/SKILL.md` frontmatter carries `order: 995`, `post_run_review: true`, no `reads:` key. The ordering defect remains structurally unenforceable |
 | **D5 unassessed** (archived corpus unreachable) | **Open** | `.plan/archived-plans` still absent in this clone; a local run is still required |
 | **D6(b) red-before-green** not re-checkable | **Open and permanently so** | The composer fix predates the branch point; nothing in the tree can change that |
-| **P9** — Step 11 classification has no orchestrator consumer | **Open** | `grep -rln "exclusively_out_of_scope" marketplace/` returns only `phase-5-execute/SKILL.md` and `verify_failure_scope.py` (+ its `.pyc`). `workflow/execution.md` and `workflow/verification-feedback.md` contain neither `footprint_resolved` nor `exclusively_out_of_scope` |
+| **P9** — Step 11 classification has no orchestrator consumer | **Open** | `grep -rln "exclusively_out_of_scope" marketplace/` returns exactly two files: `phase-5-execute/SKILL.md` and `verify_failure_scope.py`. `plan-marshall/workflow/execution.md` and `plan-marshall/workflow/verification-feedback.md` return `0` for both `footprint_resolved` and `exclusively_out_of_scope` |
 | **R2-D3** — no worked `details:` example in the TOON fragment block | **Open** | `artifact-consistency.md:17-44` — the fragment block still shows `checks`, `findings`, `summary` and no `details:` |
 | **Prose-count residue** ("assume this document still contains an uncorrected count") | **Not found** | Every count in the report that is re-derivable from the tree was re-derived and held; the enumeration lead-ins in `artifact-consistency.md` were recounted. The self-flagged risk did not materialise in the checkable subset |
 | N9 / V9 — two commit messages with wrong counts, accepted uncorrected | **Open by decision** | Immutable without a force-push; confined to commit messages |

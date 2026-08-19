@@ -48,9 +48,12 @@ run-report record (the build gate) is stale against the PR's own history.
     from `8a11858^`) kept **18 of 266** turns with `no_signal: false`; the shipped reducer kept **1**,
     `operator_turn_count: 1`, `gate_decision_count: 0`. The one survivor is the operator's actual
     prompt; the pre-fix survivors are `<task-notification>` blocks and stop-hook notices.
-  - Corpus sweep over **42** reachable transcripts / **8,382** parseable turns: 42 kept operator
-    turns, **zero** containing markup or a notice-like head — no harness turn is admitted anywhere in
-    the reachable corpus.
+  - Corpus sweep, **re-measured independently**: **81** reachable transcripts / **16,163** parseable
+    turns / **6,190** `user` turns → **82** kept operator turns, **zero** containing any markup token
+    and **zero** with a notice-like head. No harness turn is admitted anywhere in the reachable corpus.
+    (The corpus is machine-local and grows with every session on this box — an earlier pass over the
+    same directory read 42 / 8,382 / 42. The counts are therefore a snapshot, not a stable figure; the
+    qualitative result — zero admitted harness turns — reproduces at both sizes.)
 - **Verdict:** CONFIRMED — published, derived from real transcripts, decision recorded.
 
 ### D2 — the provenance filter matches the positive-predicate shape
@@ -70,22 +73,42 @@ run-report record (the build gate) is stale against the PR's own history.
   - Mutation probes (see Test adequacy) confirm the predicate's rules are pinned, including the
     residue-vs-raw notice check, the operator-bearing allow-list, the trailing-prose tail, and the
     non-whitespace rule.
-- **Defect found:** the close-tag branch pairs with `positions[-1]` — the *innermost* open of that
-  name (`_chat_provenance.py:125-132`). When an envelope's body contains an **unmatched same-name open
-  tag**, the sole close pairs with that inner token and the real outer open is never matched, so
-  `partition_turn` returns everything from the outer `<tag>` up to the inner one as residue. Measured
-  end-to-end on a realistic claudeMd-style reminder:
+- **Defect found:** an envelope whose body carries an **unbalanced token of its own outermost tag
+  name** escapes stripping and reads as operator. Two distinct mechanisms, both in
+  `partition_turn` (`_chat_provenance.py:123-137`), both fail-toward-*operator*:
+
+  - **(a) quoted unmatched open.** The close-tag branch pairs with `positions[-1]` — the *innermost*
+    open of that name (`:125-132`). A quoted `<tag>` in the body takes the pairing, the real outer
+    open is never matched, and everything from the outer `<tag>` up to the quoted one is returned as
+    residue. Verified: `is_operator_authored('<system-reminder>a<system-reminder>b</system-reminder>')`
+    → `True`.
+  - **(b) quoted close.** A quoted `</tag>` in the body pairs with the outer open and terminates the
+    envelope early (`:126-132`); `_drop_above(0)` clears the whole stack, so the real trailing close
+    is then an unmatched close and is kept as ordinary text. Everything after the quoted close is
+    residue. Verified: `is_operator_authored('<sr>a</sr>b</sr>')` → `True`, residue `'b</sr>'`.
+
+  Both were reproduced end-to-end. 30 identical turns, each wholly one envelope whose body carries the
+  unbalanced token, reduce to:
 
   ```
   raw 30  kept 30  operator 30  no_signal False
   ```
 
-  (30 identical turns, each wholly `<system-reminder>…</system-reminder>` whose body contains the
-  literal token `<system-reminder>`.) This is the plan's headline failure — a clean verdict over pure
-  instruction text — reachable through the mechanism the plan shipped, and it falsifies the guarantee
-  published at `chat-history-analysis.md:52` ("Residue-based classification fails toward *synthetic*
-  …, **for any injection that carries an envelope**"). The balanced cases are tested
-  (`test_chat_provenance.py:63`, `:73`); the unbalanced same-name case is not.
+  — the plan's headline failure, a clean verdict over pure instruction text, reachable through the
+  mechanism the plan shipped. It falsifies the guarantee published at `chat-history-analysis.md:52`
+  ("Residue-based classification fails toward *"synthetic"* instead, **for any injection that carries
+  an envelope**"). The balanced cases are tested (`test_chat_provenance.py:63`, `:73`); neither
+  unbalanced case is.
+
+  **Which variant is reachable is not symmetric, and this is the load-bearing detail.** Variant (a)
+  needs the quoted open to sit **outside every nested pair** in the envelope: if it sits inside one,
+  the `_drop_above` unwind at that pair's close restores the outer tag's stack entry and the envelope
+  strips cleanly. Measured on the *real* block shape — a `<task-notification>` whose agent prose lives
+  inside `<result>…</result>` — a quoted `<task-notification>` inside the `<result>` body classifies
+  **synthetic** (`no_signal: true`, operator 0 over 30 turns); the same turn with a quoted
+  `</task-notification>` classifies **operator** (`raw 30 kept 30 operator 30 no_signal False`).
+  Variant (a) fires on a flat single-level envelope such as `<system-reminder>`; variant (b) fires
+  from anywhere in the body regardless of nesting.
 - **Verdict:** PARTIAL — implemented as specified and the over-claiming comment is genuinely gone, but
   the structural guarantee has an untested, undisclosed hole in the plan's own failure direction.
 
@@ -98,7 +121,7 @@ run-report record (the build gate) is stale against the PR's own history.
   `no_signal = operator_turn_count == 0 and gate_decision_count == 0`; gate decisions recovered by two
   narrow tests and rendered under `operator-decision`; `reduced + dropped == raw` still holds.
 - **Found:** `Reduction` fields at `extract-chat-signal.py:113-117`; `has_operator_signal` at `:125-127`;
-  verdict at `:302`; payload keys at `:309-317`; the skipped branch carries both counters at `:286-288`.
+  verdict at `:302`; payload keys at `:309-317`; the skipped branch carries both counters at `:289-290`.
   Gate recovery: `_chat_gate_decisions.py:51-66` (tool-use id correlation, structural) and `:85-107`
   (refusal notices anchored at payload start, `head.startswith`), role label at `:41`.
   Real block shapes match the fixtures exactly — a live transcript's `tool_use` carries
@@ -142,23 +165,51 @@ run-report record (the build gate) is stale against the PR's own history.
 Read in full: `extract-chat-signal.py` (359 lines), `_chat_provenance.py` (207), `_chat_gate_decisions.py`
 (108), and the aspect contract. Probed the predicate with 16 adversarial-but-realistic inputs.
 
-**Defect 1 — an envelope containing an unmatched same-name open tag is classified operator-authored.**
-`_chat_provenance.py:125-132`. Failing input:
+**Defect 1 — an envelope whose body carries an unbalanced token of its own outermost tag name is
+classified operator-authored.** `_chat_provenance.py:123-137`. Failing inputs, both verified:
 
 ```text
-<system-reminder>
-As you answer the user's questions, you can use the following context:
-# claudeMd
-Tag-wrapped instruction blocks (`<system-reminder>`, `<task-notification>`) are recognised …
-</system-reminder>
+(a) <system-reminder>
+    As you answer the user's questions, you can use the following context:
+    # claudeMd
+    Tag-wrapped instruction blocks (`<system-reminder>`, `<task-notification>`) are recognised …
+    </system-reminder>
+
+(b) <task-notification>
+    <result>Verification complete. The reducer strips a
+    </task-notification> envelope generically over the tag name.
+    </result>
+    </task-notification>
 ```
 
-`is_operator_authored` → `True`; residue = `"<system-reminder>\nAs you answer the user's questions…"`.
+`is_operator_authored` → `True` in both. (a) leaves residue `"<system-reminder>\nAs you answer the
+user's questions…"`; (b) leaves residue `" envelope generically over the tag name.\n</result>\n</task-notification>"`.
 Consequence: a wholly harness-authored turn raises `operator_turn_count` and can flip `no_signal` to
-`false` alone (measured: 30 such turns → `operator 30`, `no_signal False`). The trigger is any injected
-body that quotes its own wrapper name — plausible here, where CLAUDE.md content and sub-agent result
-text routinely discuss harness block shapes. Not observed in the 42-transcript corpus, so it is latent
-rather than active.
+`false` alone — measured for each shape at 30 turns → `operator 30`, `no_signal False`.
+
+**Reachability, stated precisely** (this is a prompt-injection-adjacent surface, so the distinction
+between "reachable from real content" and "reachable from a hand-built fixture" matters):
+
+- The trigger is content-dependent, not structural: an injected body must quote its **own outermost**
+  wrapper name. Quoting a *nested* tag name is harmless — verified,
+  `<task-notification><result>…<result>…</result></task-notification>` still strips to empty.
+- Of the two shapes, **(b) is the one that fires on the block shape actually observed reaching the
+  reducer**. Across the 81-transcript corpus the only wholly-enveloped inline `user` text turns are
+  36 `<task-notification>` blocks; `<system-reminder>` reaches the reducer as an inline text block in
+  **0 of 6,190** `user` turns on this harness surface (it arrives as an `attachment` with no
+  `message`, exactly as the inventory row at `chat-history-analysis.md:64` predicts). Shape (a) — the
+  flat `<system-reminder>` demonstration — is therefore a fixture-shaped input on this surface,
+  though the contract itself notes at `:62` that other harness surfaces do persist such blocks inline.
+- **Neither shape occurs in the corpus**: 0 same-name quotes inside the 36 enveloped turns, and 0
+  operator-classified turns containing any markup token. The defect is **latent, not active**.
+- The plausible real trigger is agent-authored prose inside a `<task-notification>`'s `<result>` —
+  a sub-agent reporting on harness block shapes, which is precisely what work on this reducer
+  produces. A secondary concern follows from that: text which escapes stripping is not merely
+  miscounted, it is rendered into `reduced_transcript` under the `user:` label and fed to the Tier-1
+  LLM prompt as operator signal. Third-party text (a quoted review comment, quoted file content) that
+  reaches a sub-agent's final message could therefore both inflate the verdict and reach that prompt
+  labelled as the operator. That path is multi-step and unwitnessed; it is recorded as a reason the
+  fix direction matters, not as an observed exploit.
 
 **Defect 2 — the contract publishes a guarantee this falsifies.** `chat-history-analysis.md:52` states
 the residue rule fails toward *synthetic* "for any injection that carries an envelope", and `:69-73`
@@ -167,16 +218,32 @@ injection failing toward *operator*, so the published limit is incomplete.
 
 **Observation 3 — kept turns carry their envelopes into the Tier-1 payload.**
 `extract-chat-signal.py:251-253` renders `turn['text']`, the raw text, not the residue
-`partition_turn` already computed. Measured: an operator turn of 20 characters with an attached 11 KB
-reminder renders 11,563 bytes into `reduced_transcript`, all of it counted against
-`read_budget_bytes`. Behaviour is unchanged from pre-fix, so it is not a regression — but the epic's
-theme is token reduction and the residue is now available for free.
+`partition_turn` already computed. Reproducible measurement, using the shipped `SYSTEM_REMINDER`
+fixture so a later reader can re-take it: a `user` turn of 26 bytes of operator prose plus the 166-byte
+fixture reminder renders **199 bytes** into `reduced_transcript` where the residue is **27**; ~86 % of
+the payload is envelope the reducer had already identified. The ratio scales with the reminder, so a
+multi-kilobyte one dominates the turn entirely. Behaviour is unchanged from pre-fix, so it is not a
+regression — but the epic's theme is token reduction and the residue is now available for free.
+⚠ Scope caveat, measured: across the 81-transcript corpus the 82 kept operator turns carry **0 bytes**
+of envelope (residue == raw for every one), because the reminder class does not reach the reducer as
+inline text on this surface. The waste is real where the shape occurs, but no reachable transcript
+exhibits it today, and the "can push a real transcript over budget" argument is therefore prospective.
 
 **Observation 4 — counter-class blur.** A harness interrupt notice arriving as plain user *text*
 (`[Request interrupted by user]`) is not in `HARNESS_NOTICE_PREFIXES`, so it scores in
 `operator_turn_count` (defined at `chat-history-analysis.md:28` as *free-form operator corrections*)
 rather than in `gate_decision_count`, where the same wording is listed
-(`_chat_gate_decisions.py:33-37`). The verdict is still right; the split D3 exists to create is not.
+(`_chat_gate_decisions.py:33-37`). Re-verified: `is_operator_authored('[Request interrupted by user]')`
+→ `True`; end-to-end that single turn yields `operator 1, gate 0, no_signal False`. The verdict is
+still right — an interrupt *is* an operator action — and the misattribution is confined to which
+counter moves; the split D3 exists to create is what fails. Corpus occurrences of the shape on the
+text channel: **0 of 6,190** `user` turns, so this too is latent.
+
+**Observation 5 — the gate-decision channel has never run on real data.** `decision_tool_use_ids`
+found **0** `AskUserQuestion` `tool_use` blocks across all 81 transcripts (27 files contain the
+literal string, none as a tool call), so `gate_decision_count` is 0 corpus-wide and every test of the
+D3 channel drives a hand-built fixture. The block shapes the code keys on were confirmed against real
+data; the exchange it keys on was not. Tracked as G8.
 
 **Checked and found sound:** the linear tokenizer terminates on unmatched markup; unmatched close tags
 are ordinary text; the outermost-pair cursor skips nested pairs; `OPERATOR_BEARING_TAGS` recovery is
@@ -210,15 +277,20 @@ with a byte snapshot taken and written back by this audit (never `git checkout`)
 | refusal marker `head.startswith` → `marker in text` (the F3 defect) | KILLED |
 | outermost-pair `if block_start < cursor: continue` removed | KILLED |
 | trailing-prose `parts.append(text[cursor:])` removed | KILLED |
-| gate-decision `role == 'user'` guard → `True` | KILLED |
+| gate-decision `role == 'user'` guard → `True` | KILLED — but **not** by either module this table maps to D3; the killer is `test_extract_chat_signal_io.py::TestRoleGuards::test_a_tool_result_on_an_assistant_turn_is_not_a_gate_decision`. Run against `test_extract_chat_signal_verdict.py` alone the mutant survives (17 passed) |
 | operator-count `role == 'user'` guard → `True` | KILLED |
 | `operator_bearing.strip()` → `operator_bearing` | KILLED |
 
+The whole sweep was re-run independently for this review: byte snapshots taken to
+`$TMPDIR/adv-260-…-mutsweep/` and written back by the reviewer (never `git checkout`/`restore`/`stash`),
+`PYTHONDONTWRITEBYTECODE=1` with `__pycache__` purged per run. All ten reproduce as KILLED.
 `git status --porcelain` shows none of the three production files modified after the sweep.
 
-**Gap:** no test exercises an envelope containing an *unmatched* same-name open tag — the shape behind
-Defect 1. `test_nested_same_name_envelope_is_fully_stripped` and
-`test_three_level_same_name_nesting_is_fully_stripped` cover balanced nesting only.
+**Gap:** no test exercises an envelope whose body carries an *unbalanced* token of its own outermost
+tag name — either variant behind Defect 1. `test_nested_same_name_envelope_is_fully_stripped` and
+`test_three_level_same_name_nesting_is_fully_stripped` cover balanced nesting only, and
+`test_unmatched_close_tag_is_ordinary_text` covers a close tag with **no** open of that name, which is
+the opposite configuration.
 
 ## Report accuracy
 

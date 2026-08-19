@@ -1,15 +1,20 @@
 # Verification — 135-remove-lsp-query-facade
 
 **Audited:** `plan.md`, `report-01.md`, `rationale.md`
-**Tree state:** `61a43e5` on `claude/code-intelligence-substrate-analysis-kah884`
+**Tree state:** `61a43e5` on `claude/code-intelligence-substrate-analysis-kah884`; re-verified at
+`a90adeb`, which changes only `doc/plans/**` audit documents (`git diff --name-only 61a43e5 a90adeb`
+has zero entries outside `doc/plans/`), so every source citation below still holds.
 **Overall verdict:** CONFIRMED WITH GAPS
 
 The removal itself is complete, surgical, and correct: every facade artefact named by the plan is gone
 from the tree, the wrapped verbs are intact and green, the documented hazard was handled, and the run
-introduced no collateral. The gaps recorded below are (a) pre-existing documentation defects the run
-itself surfaced and deliberately deferred, which are still open, (b) one deferral the plan named as its
-own follow-up, still open, (c) one forward-dangling cross-reference into this plan's own directory, and
-(d) two minor false claims confined to `report-01.md`.
+introduced no collateral. The fifteen gaps recorded in `gaps.md` are (a) nine pre-existing
+documentation defects in the same query-surface files — four surfaced by the run itself and deferred
+(G3–G9), two found by this audit (G1, G11) — all still open, (b) two shipped-code follow-ups: the
+vocabulary nit the plan named for itself (G2) and a stale handler-inventory docstring (G15), (c) one
+missing plugin-doctor detector that is why the G4–G6 drift survived plans 130 and 135 both (G14),
+(d) one forward-dangling cross-reference into this plan's own directory (G10), and (e) two minor
+false claims confined to `report-01.md` (G12, G13). None is a regression caused by the removal.
 
 ## Deliverable verdicts
 
@@ -53,8 +58,8 @@ own follow-up, still open, (c) one forward-dangling cross-reference into this pl
   - `marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/architecture.py:518-544` —
     the `handlers` dict carries 25 verbs, none of them `lsp`; `architecture.py:546-561` has exactly one
     group branch (`enrich`) and no `elif args.command == 'lsp'`.
-  - `.../scripts/_cmd_client.py:72-104` — the `_cmd_client_handlers` re-export block lists 20 names,
-    no `cmd_lsp_*`.
+  - `.../scripts/_cmd_client.py:72-105` — the `_cmd_client_handlers` re-export block lists 32 names,
+    of which 20 are `cmd_*` handlers and 12 are private helpers; no `cmd_lsp_*` among them.
   - `.../scripts/_cmd_client_handlers.py` — 20 `def cmd_*` definitions, no `cmd_lsp_*`; no section
     banner or pointer comment survives.
   - `test/plan-marshall/manage-architecture/` — 34 files, `test_lsp_facade.py` not among them.
@@ -65,19 +70,32 @@ own follow-up, still open, (c) one forward-dangling cross-reference into this pl
     *Done when* is met.
   - `uv run python -m pytest test_graph_queries.py test_cmd_resolve.py test_capabilities.py
     test_search_content.py test_feasibility_underivable_guard.py test_cmd_client.py -o addopts=""` →
-    **163 passed in 21.24s**.
+    **163 passed** (re-run at `a90adeb`: 163 passed in 4.61s).
+  - **The whole `manage-architecture` test module** — `uv run python -m pytest . -o addopts=""` →
+    **573 passed in 26.50s** at `a90adeb`. This is the population the plan's Verification section
+    actually names (it lists `test_architecture_input_validation.py` and "the `find`/`which-module`/
+    `module` tests", none of which were in the six-file run above), so the six-file run alone did not
+    discharge it. The 573-test run does.
   - `uv run ruff check` over the three edited scripts → "All checks passed!" (a deletion of this shape
     can strand an unused import; none was stranded).
   - Independent coverage census for the verbs the deleted test also touched: `cmd_impact` →
     `test_cmd_client.py` + `test_graph_queries.py`; `cmd_find` → `test_cmd_client.py`,
     `test_find_confident_negative.py`, `test_search_content.py`; `cmd_path` → `test_cmd_client.py` +
     `test_graph_queries.py`; `cmd_module` → `test_cmd_client.py`, `test_overview.py`; `cmd_resolve` →
-    `test_cmd_client.py`, `test_cmd_resolve.py`, `test_on_demand_crawl.py`. The plan's claim that
+    `test_cmd_client.py`, `test_cmd_resolve.py`, `test_on_demand_crawl.py`; `cmd_which_module` (which
+    the deleted residue case also exercised, and which this census originally omitted) →
+    `test_which_module_plan_claim.py`, `test_cmd_client.py`, `test_files_inventory.py`,
+    `test_find_confident_negative.py`. The plan's claim that
     `test_residue_verbs_remain_reachable_unchanged` was redundant is true — deleting the facade test
     cost no verb its coverage.
-  - Read the deleted file's assertions from the PR patch: six test functions, five of them pure
-    facade-equality (`assert facade == direct`), one the residue-reachability case. 100 % facade, as the
-    plan stated.
+  - Read the deleted file's assertions from the PR patch: six test functions — `test_lsp_hover_…`,
+    `test_lsp_references_equals_impact`, `test_lsp_workspace_symbol_equals_find`,
+    `test_lsp_definition_equals_resolve`, `test_cli_speaks_lsp_vocabulary`,
+    `test_residue_verbs_remain_reachable_unchanged`. **Four** carry the `assert facade == direct`
+    equality assertion; the fifth (`test_cli_speaks_lsp_vocabulary`) runs the shipped CLI with
+    `'lsp', 'hover'` and asserts `status == 'success'`, which is facade-only but not an equality
+    assertion; the sixth is the residue-reachability case over `impact`/`find`/`which-module`/`path`.
+    100 % facade, as the plan stated.
 - **Verdict:** CONFIRMED.
 
 ### D2 — Remove the facade's documentation (surgical; one hazard)
@@ -88,17 +106,17 @@ own follow-up, still open, (c) one forward-dangling cross-reference into this pl
   misfiled search paragraphs **relocated** under `### search`.
 - **Found:**
   - `doc/developer/lsp-query-facade.adoc` — absent (`ls` → No such file).
-  - `marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md:554-577` —
-    Command Summary carries 18 rows, no facade row; no `## LSP-shaped query facade` heading (H2 list is
-    `Script Pattern`, `Commands`, `Resolver provenance`, `Command Summary`, `Error Handling`,
-    `Consumer View`, `Data Source`).
+  - `marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md:554-574` —
+    the Command Summary table carries **17** verb rows (558-574), no facade row; no `## LSP-shaped
+    query facade` heading (H2 list is `Script Pattern`, `Commands`, `Resolver provenance (the graph
+    family)`, `Command Summary`, `Error Handling`, `Consumer View`, `Data Source`).
   - `…/manage-architecture/SKILL.md:36-49` — Command Groups table has no `lsp` row; the H3 census
     contains no `### lsp`, and exactly one `### capabilities` (line 538).
   - `doc/concepts/code-intelligence.adoc` — no `== The query vocabulary…` section; the Related list
     (303-314) has no `lsp-query-facade.adoc` xref.
   - `doc/user/code-search.adoc` — no `== The same verbs, in LSP vocabulary`; section list runs
     `…Asking what the substrate can answer here` (189) → `Why this verb exists` (200) → `Related` (206).
-  - `doc/developer/README.adoc:12-18` — no `lsp-query-facade.adoc` bullet.
+  - `doc/developer/README.adoc:12-19` (the `== Pages` list) — no `lsp-query-facade.adoc` bullet.
   - **Hazard:** `SKILL.md:528-536` carries all five paragraphs under `### search` (509) —
     "**Anchors are per line**" (528), "**Payload boundary**" (530), "**Inventory-scope boundary**" (532),
     "**Zero-result semantics**" (534), "See client-api.md § search" (536) — with `### capabilities` now
@@ -109,7 +127,14 @@ own follow-up, still open, (c) one forward-dangling cross-reference into this pl
   `query vocabulary`, `test_lsp_facade` over all file types, excluding `doc/plans/` — zero hits;
   positive-controlled by re-running without the exclusion, which returns the historical plan-130 and
   plan-240 records. `doctor-marketplace.py quality-gate --paths …/manage-architecture` →
-  `status: pass`, `total_issues: 0`, 36 rules run.
+  `status: pass`, `total_issues: 0`, `rules_run[36]` (re-run at `a90adeb`, identical).
+- **Checked in the reverse direction too** (the *Done when* is bidirectional — "no dangling
+  `xref:`/name-anchor **anywhere**", not merely "no facade text in the edited files"):
+  - Forward: every relative `xref:` / `link:` / markdown link **out of** the five edited documents
+    resolves to an existing file — 0 missing targets.
+  - Reverse: a whole-tree sweep of every tracked `.md`/`.adoc` outside `doc/plans/` for anchored
+    links **into** those five documents, resolving each fragment against the target's live heading
+    set — **0 dangling anchors**. Nothing anywhere pointed at a heading the removal deleted.
 - **Note on mechanism:** the PR patch shows the search paragraphs were *not themselves moved* — the run
   deleted the `### capabilities` block from above them and re-added it below them, and deleted `### lsp`.
   The end state is exactly what the plan required (the paragraphs sit under `### search`), so the *Done

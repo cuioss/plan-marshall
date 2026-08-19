@@ -82,7 +82,8 @@ report's factual claims about the code hold; three of its bookkeeping counts do 
     write); backfill at 2984-3004; the apply block at 3008-3041.
   - `manage-execution-manifest.py:1940-1948` — `phase_6_candidate_snapshot = list(phase_6_candidates)`
     taken after boundary normalization (1937-1938) and **before** the first pre-filter (1975 onward).
-    Verified by reading the intervening lines: nothing subtracts between 1948 and the snapshot.
+    Verified by reading the intervening lines: everything between the snapshot at 1948 and
+    `_apply_commit_push_disabled` at 1975 is comment, so nothing subtracts from the list in between.
   - `phase-6-finalize/SKILL.md:356-372` — Step 1.5 dispatches
     `reconcile --plan-id {plan_id} --apply` and branches on `success` / `unreconcilable_step`; the
     loadability check follows at 374-399.
@@ -111,8 +112,13 @@ report's factual claims about the code hold; three of its bookkeeping counts do 
      `phase_6.steps` without the pre-filters (`_apply_commit_push_disabled`,
      `_apply_simplify_inactive`, `_apply_security_class_inactive`, `_apply_scope_gated_finalize`),
      without the ceremony gates, and without `_apply_lane_resolution` — all of which compose runs
-     (`manage-execution-manifest.py:1975-2010`, `:2232`, `:2254`). A `full`-tier step backfilled into
-     a `minimal`-posture plan will be dispatched.
+     (`manage-execution-manifest.py:1975`, `:1980`, `:1994`, `:2023`, `:2043`, `:2232`, `:2254`). A
+     `full`-tier step backfilled into a `minimal`-posture plan will be dispatched.
+  3. **Step 1.5 enumerates only two of the verb's four `status` outcomes** (gap G7) —
+     `phase-6-finalize/SKILL.md:368-370` names `success` and `unreconcilable_step`, while
+     `cmd_reconcile` can also return `file_not_found` (`manage-execution-manifest.py:2917-2922`) and
+     `invalid_manifest` (`:2926-2939`). A prose-following dispatcher improvises at a phase-entry
+     gate.
 - **On the self-exercisability trap:** the report states it correctly and names the observation point
   (`report-01.md:77-79`). I confirm the trap independently: the lane never runs `phase-6-finalize`,
   and `reconcile` has exactly one call site, which is inside it. Nothing in this tree demonstrates
@@ -133,21 +139,49 @@ report's factual claims about the code hold; three of its bookkeeping counts do 
   - `:889-903` — a `drift_status` outside `{'ok','drift'}` returns `unknown` and returns before the
     `generate` call; `'ok'` likewise returns early. Only `'drift'` reaches `:905`.
   - `:916-931` — the success verdict is taken from `executor_landed(worktree_executor_path(...))`,
-    i.e. from disk, not from `gen_rc`.
-- **Cross-check on the probe's exit convention:** `generate_executor.py`'s `main` returns `0`
-  unconditionally after printing the TOON (`:2413-2419`), and `cmd_drift` returns
+    i.e. from disk rather than from `gen_rc`. **But see gap G15 below: it is the wrong disk
+    property.**
+- **The indeterminate bound, settled against the real generator rather than the spy.** Every test in
+  the file replaces the seam, so nothing in the suite establishes that the "tree with no vendored
+  `marketplace/bundles`" case actually produces the `unknown` verdict the bound claims. Run
+  directly: `generate_executor.py drift --marketplace-root <dir-with-no-bundles>` prints
+  `status: error / error: Could not read executor mappings` and exits **RC=0**; the payload carries
+  no `drift_status`, so `parse_toon(stdout).get('drift_status')` yields `''`, the guard at `:889`
+  fires, and the verb returns `unknown` without calling `generate`. Independently, an explicit
+  `--marketplace-root` **outranks** the plugin cache (`marketplace_paths.py:775-784`: the
+  `cache-first` scope short-circuits to the explicit anchor and raises rather than falling back), so
+  the probe genuinely answers "did the *worktree's* script set change?" and cannot silently answer
+  it from the cache. **The bound holds and is reachable.**
+- **Cross-check on the probe's exit convention:** `generate_executor.py`'s `main` prints the TOON and
+  `return 0` unconditionally (`:2418-2419`), and `cmd_drift` returns
   `drift_status = 'drift' if (added or removed or changed or notation_drift) else 'ok'` (`:2153`).
   So a positive drift arrives as `rc == 0` with `drift_status: drift` — the guard **can** fire. Both
   `generate` and `drift` subparsers accept `--marketplace-root` (`:2327`, `:2359`), so the seam's
-  argv is valid for both verbs.
-- **Verdict:** PARTIAL. The mechanism is correct on every path I read, but the seam's own contract is
-  over-stated (gap G4): `_run_generate_executor`'s docstring promises *"never raises"* and
-  `_refresh_worktree_executor`'s promises *"Every failure mode is reported in the return value and
-  none is raised"*, yet the `try` at `:828-846` catches only `FileNotFoundError` and
-  `subprocess.TimeoutExpired`. A `PermissionError` (or any other `OSError`) from `subprocess.run`
-  propagates out of `cmd_worktree_rebase_to` at `:1709` — after `git rebase` has already succeeded
-  and moved HEAD — which is precisely the outcome the "non-fatal by contract" reasoning exists to
-  prevent. A third documented caller also drops the payload on the floor (gap G6).
+  argv is valid for both verbs. The same unconditional `return 0` is what makes `gen_rc` useless as a
+  *failure* signal, which is the root of G15.
+- **Verdict:** PARTIAL, and the more serious of the two defects is the success verdict itself.
+  1. **The on-disk post-assertion cannot fire in the population it guards** (gap G15).
+     `executor_landed` (`_executor_slot.py:38-59`) checks presence — `is_file()`,
+     `not is_symlink()`, `st_size > 0` — and the rebase population always has an executor in the
+     slot, because `prepare_execute` generates one at phase-5 move-in and self-heals it when missing
+     (`prepare_execute.py:253-262`, `:318-327`, `:598`). Measured: adding a pre-existing file to the
+     fixture worktree and re-running the landed-check scenario (`drift_status='drift'`,
+     `lands_executor=False`) returns `executor_regenerated: True` with
+     `executor_detail: 'script set changed by the rebase; worktree executor regenerated'`, over
+     bytes the generation never touched. The exit code is no fallback: `generate` with an
+     unresolvable `--marketplace-root` prints `status: error` and exits **RC=0**, and
+     `cmd_generate`'s own comment at `generate_executor.py:1961-1965` asserts the opposite
+     ("non-zero exit via the safe_main contract") — `safe_main` converts only raised exceptions.
+     The existing test passes only because the fixture's cloned worktree has no
+     `.plan/execute-script.py` at all (`test_worktree_rebase_executor_refresh.py:60-91`).
+  2. **The seam's own contract is over-stated** (gap G4): `_run_generate_executor`'s docstring
+     promises *"never raises"* and `_refresh_worktree_executor`'s promises *"Every failure mode is
+     reported in the return value and none is raised"*, yet the `try` at `:828-846` catches only
+     `FileNotFoundError` and `subprocess.TimeoutExpired`. A `PermissionError` (or any other
+     `OSError`) from `subprocess.run` propagates out of `cmd_worktree_rebase_to` at `:1709` — after
+     `git rebase` has already succeeded and moved HEAD — which is precisely the outcome the
+     "non-fatal by contract" reasoning exists to prevent.
+  3. A third documented caller also drops the payload on the floor (gap G6).
 
 ### D4 — finalize prompt and log residue
 
@@ -187,8 +221,18 @@ report's factual claims about the code hold; three of its bookkeeping counts do 
 - **Checks run:** all three files together —
   `UV_PYTHON=3.12 uv run python -m pytest <3 files> -o addopts="" -q` → **`37 passed in 12.31s`**.
   Three mutation checks (below) each turn exactly one test red.
-- **Verdict:** CONFIRMED. The coverage is genuine, not decorative. The report's per-file counts are
-  stale against what landed (gap G9) — a bookkeeping defect, not a coverage one.
+- **Pre-fix reds re-derived, not taken on trust.** Each landed test file was run against its own
+  pre-fix production module (`git show d2e94b4^:<path>` installed over the file, then restored from a
+  byte snapshot):
+  | Test file | Against `d2e94b4^` code | Report's claim |
+  |---|---|---|
+  | `test_reconcile.py` | collection error — `AttributeError: module '_mem_reconcile' has no attribute 'cmd_reconcile'` | matches |
+  | `test_worktree_rebase_executor_refresh.py` | `10 failed` — `AttributeError … _run_generate_executor` | matches (6 of 6 at the time; all 10 now) |
+  | `test_title_token_repeat_suppression.py` | `7 failed, 1 passed` — `KeyError: 'changed'`; the pass is `test_suppressed_set_still_returns_the_record` | matches (6 of 7 at the time), including the named pre-existing pass |
+- **Verdict:** CONFIRMED. The coverage is genuine, not decorative, and every pre-fix red the report
+  claims reproduces. The report's per-file counts are stale against what landed (gap G10) — a
+  bookkeeping defect, not a coverage one. One covering test is *unrepresentative* rather than
+  vacuous — see gap G15 under D3.
 
 ## Correctness review
 
@@ -202,7 +246,19 @@ and `cmd_generate` far enough to establish the exit-code convention the probe de
 
 Defects found:
 
-1. **`_run_generate_executor` does not honour its "never raises" contract.**
+1. **The executor-refresh success verdict is a presence check the rebase population always
+   satisfies.** `git-workflow.py:921` asks `executor_landed(worktree_executor_path(worktree_path))`,
+   and `executor_landed` (`_executor_slot.py:38-59`) only asks whether a non-empty, non-symlink file
+   is in the slot. `prepare_execute` puts one there at phase-5 move-in and self-heals it when it
+   goes missing (`prepare_execute.py:253-262`, `:318-327`, `:598`), so in a real worktree the
+   `not landed` branch (`:922-931`) is unreachable and a generation that wrote nothing reports
+   `executor_regenerated: True`. Measured by seeding the fixture worktree's slot before the rebase:
+   `True`, with `executor_detail: 'script set changed by the rebase; worktree executor regenerated'`
+   over untouched bytes. `gen_rc` is no backstop — `generate_executor.py`'s `main` returns `0`
+   unconditionally (`:2418-2419`) and a `generate` against an unresolvable `--marketplace-root`
+   prints `status: error` at **RC=0** (measured). Gap G15.
+
+2. **`_run_generate_executor` does not honour its "never raises" contract.**
    `git-workflow.py:828-846` catches `FileNotFoundError` and `subprocess.TimeoutExpired` only. Any
    other `OSError` from `subprocess.run` — `PermissionError` on a non-executable `python3`, `ENOMEM`,
    an inaccessible cwd — propagates through `_refresh_worktree_executor` (which has no handler) to
@@ -211,7 +267,7 @@ Defects found:
    happen ("converting a refresh failure into a rebase failure would make callers abort a rebase
    that worked"). Gap G4.
 
-2. **The stale partition cannot fire for an external step.**
+3. **The stale partition cannot fire for an external step.**
    `manage-execution-manifest.py:2957` calls `_check_step_loadable(step)`, which short-circuits every
    `project:` / `bundle:skill` id to `loadable: True` (`_manifest_validation.py:464-469`). So the
    `elif` at `:2960` is unreachable for external steps and they are always `retained`. A frozen
@@ -219,7 +275,7 @@ Defects found:
    later at dispatch — the confusing mid-dispatch failure Step 1.5 exists to convert into an
    actionable phase-entry error. Gap G1; the undocumented scope limit is gap G2.
 
-3. **Backfill applies no composer logic.**
+4. **Backfill applies no composer logic.**
    `manage-execution-manifest.py:2998-3004`. The only filters are "absent from `composed_set`",
    "absent from `frozen_set`", and `_check_step_loadable(...)['loadable']`. The pre-filters, the
    ceremony gates, and `_apply_lane_resolution` are all skipped. `SKILL.md:448` promises reconcile
@@ -227,7 +283,7 @@ Defects found:
    candidates; nothing says a **new** candidate is admitted without any of the composer's narrowing,
    which is what happens. Gap G3.
 
-4. **A non-string `phase_6.steps` entry is silently deleted by any successful `--apply`.**
+5. **A non-string `phase_6.steps` entry is silently deleted by any successful `--apply`.**
    `manage-execution-manifest.py:2940` builds `frozen_steps` with
    `[step for step in frozen if isinstance(step, str)]`, and `:3010` then assigns
    `phase_6['steps'] = merged` where `merged` derives only from `frozen_steps`. Non-string entries

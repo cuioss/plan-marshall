@@ -20,11 +20,17 @@ file, and synthetic probes of every excluded shape in both directions.
   guarding `marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/scripts/_dep_index.py:502-508`
 - **Evidence:** replacing the guard `if dep_type is not DependencyType.SCRIPT_NOTATION:` with
   `if False:` leaves all 96 tests in the file green, while the live corpus moves from
-  `unresolved 61 / circular 296` to `unresolved 50 / circular 297` — the 11 `extension_base` findings
-  silently resolve. The test's probe bundle is named `probe-bundle` while
-  `PYTHON_MODULE_MAPPINGS['toon_parser']` targets `plan-marshall:ref-toon-format:toon_parser`, so the
-  entry-script lookup misses on the *bundle* segment whether or not the guard exists. No other test
-  in the repository references `_entry_script_for_subcommand` or exercises this path.
+  `unresolved 61` to `unresolved 50` — the 11 `extension_base` findings silently resolve.
+  (Independently re-run: 96 passed both clean and mutated; unresolved 61 → 50; `circular` also moves
+  but is **not** a stable witness in this working tree — repeated clean runs minutes apart gave 295
+  and 296 while other sessions held unstaged edits, so the unresolved delta is the figure to assert
+  on.) The test's probe bundle is named `probe-bundle` while
+  `PYTHON_MODULE_MAPPINGS['toon_parser']` (`_dep_detection.py:217`) targets
+  `plan-marshall:ref-toon-format:toon_parser`, so `_entry_script_for_subcommand` builds its candidate
+  entry as `plan-marshall:ref-toon-format:ref-toon-format`, which is absent from a fixture index that
+  contains only `probe-bundle:*` — the lookup misses on the *bundle* segment whether or not the guard
+  exists. No other test in the repository references `_entry_script_for_subcommand` or exercises this
+  path.
 - **Why it matters:** report-01.md § round 3 lists R‑10 ("the R‑2 fix introduced a false resolution
   … silently resolving 11 genuine findings") as **Fixed — with a regression test**. There is no
   regression test: the next refactor of the retarget can re-introduce R‑10 with a green suite.
@@ -43,9 +49,12 @@ file, and synthetic probes of every excluded shape in both directions.
 - **Severity:** medium
 - **Topic:** tests
 - **Where:** `marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/scripts/_dep_index.py:562-567`
-- **Evidence:** disabling the self-edge `continue` leaves all 96 tests green while the corpus moves
-  from 296 to **297** cycles and gains 24 dependencies. Live instrumentation shows 24 retargets
-  currently suppressed by this branch. No test name in the file mentions a self-edge or self-loop.
+- **Evidence:** replacing the self-edge test `if entry.to_notation() == component_id.to_notation():`
+  with `if False:` leaves all 96 tests green while `total_dependencies` gains **25** edges
+  (5079 → 5104, re-measured in the same minute on the same tree) and `circular` rises by 2. No test
+  name in the file mentions a self-edge or self-loop. *(The audit's "+24 / 296 → 297" was measured on
+  an earlier tree state; the gained-edge count is the number of self-retargets currently suppressed
+  and moves with the corpus, so a fix should assert on the branch, not on the figure.)*
 - **Why it matters:** R‑11 was a real defect found only by re-measuring the corpus — an entry script
   documenting its own verbs manufactured a circular dependency. The fix has no lock, so the same
   regression returns silently and shows up only as a moved `circular_dependencies` count.
@@ -111,44 +120,91 @@ file, and synthetic probes of every excluded shape in both directions.
 - **Effort:** S
 - **Risk if fixed:** none — documentation only.
 
-## G5 — Fix the two `_BUCKET_B_NOTATIONS` entries that match no script
+## G5 — Make the Bucket B plan-id injection able to fire at all
 
 - **Kind:** bug
 - **Severity:** high
 - **Topic:** dispatch/finalize
 - **Where:** `marketplace/bundles/plan-marshall/skills/execute-task/scripts/inject_project_dir.py:39-50`
-- **Evidence:** the frozenset holds `plan-marshall:workflow-integration-git:git` and
-  `plan-marshall:workflow-pr-doctor:pr-doctor`. The on-disk scripts are
-  `workflow-integration-git/scripts/git-workflow.py` and `workflow-pr-doctor/scripts/pr_doctor.py`,
-  and every real invocation uses those spellings — e.g.
+  (the whitelist) and `:139-141` (the `run`-subcommand gate); the same wrong whitelist is duplicated
+  at `test/plan-marshall/execute-task/test_inject_project_dir.py:31-40`
+- **Evidence:** **two independent blockers, either of which alone is fatal.**
+
+  *Blocker 1 — two notations name no script.* The frozenset holds
+  `plan-marshall:workflow-integration-git:git` and `plan-marshall:workflow-pr-doctor:pr-doctor`. The
+  on-disk scripts are `workflow-integration-git/scripts/git-workflow.py` and
+  `workflow-pr-doctor/scripts/pr_doctor.py` (directory listing at HEAD; no `git.py`, no
+  `pr-doctor.py`). Every real invocation uses the on-disk spellings —
   `tools-script-executor/standards/cwd-policy.md:68` calls
   `plan-marshall:workflow-integration-git:git-workflow locate-plan-checkout`, and
   `workflow-pr-doctor/SKILL.md:84` calls `plan-marshall:workflow-pr-doctor:pr_doctor track-attempt`.
-  The comparison at `inject_project_dir.py:121` is exact-match on the notation, so it never fires for
-  either. Both rows are still unresolved at HEAD.
-- **Why it matters:** a Bucket B guard that cannot fire. When a plan runs in an isolated worktree,
-  `--plan-id` is never injected into git-workflow or pr-doctor invocations, so those scripts resolve
-  against the wrong checkout — silently, because the helper reports "not rewritten" rather than an
-  error. This is the highest-value item the plan filed.
-- **Action:** replace the two entries with `plan-marshall:workflow-integration-git:git-workflow` and
-  `plan-marshall:workflow-pr-doctor:pr_doctor`, after confirming both scripts implement the
-  `--plan-id`/`--project-dir` two-state contract; add a test asserting injection fires for each.
-- **Done when:** `inject_project_dir` rewrites a `git-workflow` and a `pr_doctor` command, and the
-  validator reports zero unresolved rows sourced from `inject_project_dir.py`.
+  A repository-wide search finds the two whitelisted spellings **nowhere** outside
+  `inject_project_dir.py` itself and this plan's own documents. The comparison at
+  `inject_project_dir.py:121` is exact-match on the notation string, so it never fires for either.
+  Both rows are still unresolved at HEAD.
+
+  *Blocker 2 — the `run` gate excludes half the whitelist regardless of spelling.* Lines 139-141
+  return unchanged unless the token immediately after the notation is literally `run`. Only the four
+  `build-*` notations are invoked that way (`… pyproject_build run --command-args "verify"`). The
+  other four dispatch verbs directly: `ci pr create` / `ci checks status`
+  (`tools-integration-ci/SKILL.md:313,343`), `sonar fetch_findings`
+  (`workflow-integration-sonar/SKILL.md:61`), `git-workflow locate-plan-checkout`,
+  `pr_doctor track-attempt`. A search for `…:ci run`, `…:sonar run`, `…:git-workflow run` or
+  `…:pr_doctor run` anywhere in `marketplace/` or `.claude/` returns nothing. So **4 of the 8
+  whitelist entries are inert**, not 2: `ci` and `sonar` carry correct notations but can never reach
+  the injection because of the `run` gate.
+
+  *The test locks the defect in.* `test_inject_project_dir.py:31-40` re-declares the same eight
+  notations as a literal list and `test_injects_plan_id_for_each_bucket_b_notation` (`:56-67`)
+  asserts injection fires for each — using a synthesised
+  `python3 .plan/execute-script.py {notation} run --command-args "verify"` command that no
+  production caller ever writes for the four non-build notations. The test is green and proves
+  nothing about the shipped path.
+- **Why it matters:** a Bucket B guard that cannot fire on half its declared population. The
+  downstream consequence differs per script and is **not** uniform:
+  - `ci`, `sonar`, `pr_doctor` — `extract_routing_args` (`tools-integration-ci/scripts/ci_base.py:570`)
+    returns `None` "when neither flag was supplied (callers preserve the previous *inherit cwd*
+    behaviour)". With no `--plan-id` these silently resolve against whatever cwd they inherit, which
+    is the silent-wrong-checkout bug this helper exists to prevent.
+  - `git-workflow` — **not** silent: its worktree verbs require one of the two flags
+    (`git-workflow.py:480` errors `one of --plan-id or --project-dir is required`), and
+    `branch-sync-state` / `worktree-*` / `locate-plan-checkout` declare `--plan-id` as mandatory. A
+    caller omitting it fails loudly rather than resolving wrongly, so the `:git` entry is dead
+    configuration rather than a live wrong-checkout path.
+- **Action:** three changes, all needed — correcting the spellings alone does **not** make injection
+  fire.
+  1. Replace the two dead entries with `plan-marshall:workflow-integration-git:git-workflow` and
+     `plan-marshall:workflow-pr-doctor:pr_doctor`.
+  2. Relax the gate at `:139-141` so injection applies to any subcommand token, not only `run`,
+     keeping `--plan-id` inserted immediately after the subcommand; or, if `run`-only is deliberate,
+     say so in the module docstring and **remove** the five notations that never use `run` from the
+     whitelist so it stops advertising coverage it does not have.
+  3. Replace the duplicated list in `test_inject_project_dir.py:31-40` with an import of
+     `_BUCKET_B_NOTATIONS`, and parametrize each notation with the subcommand its own SKILL.md
+     documents rather than a synthetic `run`.
+- **Done when:** `inject_project_dir` returns `injected=True` for
+  `python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow locate-plan-checkout`
+  and for
+  `python3 .plan/execute-script.py plan-marshall:workflow-pr-doctor:pr_doctor track-attempt --category build --current 0`;
+  the test file imports the whitelist instead of restating it; and the validator reports zero
+  unresolved rows sourced from `inject_project_dir.py`.
 - **Effort:** M
-- **Risk if fixed:** injection begins firing on two script families for the first time — if either
-  script does not honour `--plan-id`, previously-silent commands start failing loudly.
+- **Risk if fixed:** injection begins firing on script families that have never received it — if any
+  of them does not honour a router-level `--plan-id`, previously-silent commands start failing
+  loudly. Widening the gate beyond `run` also changes behaviour for the four `build-*` notations if
+  any is ever invoked with a non-`run` subcommand.
 
 ## G6 — Re-derive the test-count figures in the run report
 
 - **Kind:** report-defect
 - **Severity:** low
 - **Topic:** measurement/metrics
-- **Where:** `doc/plans/code-intelligence-substrate/230-validate-precision/report-01.md:265-267`
-- **Evidence:** "**30 new test functions**; the file's collected total is **95** (from 65)". The
-  test file is byte-identical between the merge commit `3d96e40` and HEAD (`git diff` empty), and
-  today it holds **96** test functions and collects 96; the merge parent holds 65, with 31 added and
-  0 removed.
+- **Where:** `doc/plans/code-intelligence-substrate/230-validate-precision/report-01.md:263-266`
+- **Evidence:** line 263 reads "**30 new test functions**; the file's collected total is **95** (from
+  65)". The test file is byte-identical between the merge commit `3d96e40` and HEAD
+  (`git diff 3d96e40 HEAD -- test/pm-plugin-development/tools-marketplace-inventory/` empty), and
+  today it holds **96** test functions and collects 96; `3d96e40^` holds 65, so 31 added and 0
+  removed.
 - **Why it matters:** the report's own closing lesson is that a number is a claim; this one was
   carried forward rather than re-derived, in the section that documents the plan's regression lock.
 - **Action:** correct to 31 new / 96 collected.
@@ -161,7 +217,7 @@ file, and synthetic probes of every excluded shape in both directions.
 - **Kind:** report-defect
 - **Severity:** low
 - **Topic:** measurement/metrics
-- **Where:** `report-01.md:266`
+- **Where:** `report-01.md:264`
 - **Evidence:** "the inventory suite is **187 passed**". The directory
   `test/pm-plugin-development/tools-marketplace-inventory/` is unchanged since the merge and yields
   `188 passed` under `uv run python -m pytest … -o addopts=""`.
@@ -193,7 +249,7 @@ file, and synthetic probes of every excluded shape in both directions.
 - **Kind:** report-defect
 - **Severity:** low
 - **Topic:** measurement/metrics
-- **Where:** `report-01.md:560` ("Twelve commits"), `:474` (F‑7: "**Fixed** — nine"), `:589`
+- **Where:** `report-01.md:560` ("Twelve commits"), `:474` (F‑7: "**Fixed** — nine"), `:588`
   ("before each of eight commits")
 - **Evidence:** the PR carries **13** commits (GitHub API, `pull_request_read get_commits` on
   cuioss/plan-marshall#1254). The report states three different values, and F‑7 records a correction
@@ -350,18 +406,35 @@ file, and synthetic probes of every excluded shape in both directions.
 ## G17 — Establish plugin-doctor's real CLI surface in its documentation
 
 - **Kind:** omission
-- **Severity:** low
+- **Severity:** medium
 - **Topic:** bundle-docs
-- **Where:** documented invocations of `pm-plugin-development:plugin-doctor:{validate,fix,analyze}`
-  (6 + 4 + 3 rows at HEAD)
-- **Evidence:** `plugin-doctor/scripts/doctor-marketplace.py` registers `list-components`, `analyze`,
-  `fix`, `report`, `quality-gate`, `test-conventions`, `contracts` — there is no `validate`, and the
-  entry script is not same-named with its skill, so `plugin-doctor:{verb}` notations are not
-  executable and are correctly reported.
-- **Why it matters:** 13 of the 35 in-namespace findings are documentation that names commands which
-  would not run.
-- **Action:** rewrite each site as `pm-plugin-development:plugin-doctor:doctor-marketplace {verb}`
-  against the registered surface, dropping the `validate` chains that map onto nothing.
+- **Where:** thirteen documented invocations, all under `marketplace/bundles/`:
+  `plan-marshall/skills/extension-api/standards/ext-point-domain-bundle.md:94`,
+  `plan-marshall/skills/extension-api/standards/extension-contract.md:812`,
+  `plan-marshall/skills/plan-marshall-plugin/references/plan-marshall-guide.md:245`,
+  `pm-plugin-development/skills/plugin-doctor/references/content-quality-guide.md:448` and `:495`,
+  `pm-plugin-development/skills/plugin-architecture/references/reference-patterns.md:81` (the six
+  `:validate` rows); `pm-plugin-development/skills/plugin-doctor/references/safe-fixes-guide.md:26`,
+  `pm-plugin-development/skills/plugin-script-architecture/standards/output-contract.md:202`, `:203`,
+  `:204` (the four `:fix` rows);
+  `pm-plugin-development/skills/plugin-doctor/references/content-quality-guide.md:85` and `:477`,
+  `pm-plugin-development/skills/plugin-architecture/references/reference-patterns.md:80` (the three
+  `:analyze` rows)
+- **Evidence:** `plugin-doctor/scripts/doctor-marketplace.py` registers exactly seven top-level
+  subcommands — `list-components` (`:1122`), `analyze` (`:1136`), `fix` (`:1163`), `report` (`:1172`),
+  `quality-gate` (`:1179`), `test-conventions` (`:1200`), `validate-contracts` (`:1218`). There is no
+  bare `validate`, and the entry script is not same-named with its skill, so `plugin-doctor:{verb}`
+  notations are not executable and are correctly reported.
+  ⚠ The verb is `validate-contracts`, **not** `contracts` — the audit's original enumeration (and the
+  matching line in `verification.md` § Declared residue) named a verb that does not exist, which
+  would have sent a fixer to write a second broken notation.
+- **Why it matters:** 13 of the 35 in-namespace findings are shipped documentation naming commands
+  that would not run — a false claim in shipped documentation, the same class as G3/G4, at thirteen
+  sites rather than one.
+- **Action:** rewrite each of the thirteen sites as
+  `pm-plugin-development:plugin-doctor:doctor-marketplace {verb}` against the seven registered verbs,
+  dropping the `:validate` chains that map onto nothing (they are not `validate-contracts` — read
+  each call site's arguments before choosing a replacement).
 - **Done when:** those 13 rows leave the unresolved set.
 - **Effort:** M
 - **Risk if fixed:** the documented workflows change shape; readers following the old chains must
@@ -370,12 +443,17 @@ file, and synthetic probes of every excluded shape in both directions.
 ## G18 — Correct `tools-integration-ci`'s Executor Mapping
 
 - **Kind:** doc-defect
-- **Severity:** low
+- **Severity:** medium
 - **Topic:** bundle-docs
-- **Where:** the two rows `plan-marshall:tools-integration-ci:{github,gitlab}` (1 each at HEAD)
-- **Evidence:** the skill's entry script is `tools-integration-ci/scripts/ci.py`
-  (`tools-integration-ci/SKILL.md:306` documents its canonical argparse surface); no `github.py` or
-  `gitlab.py` exists.
+- **Where:** `marketplace/bundles/plan-marshall/skills/tools-integration-ci/standards/github-impl.md:407`
+  and `.../standards/gitlab-impl.md:427` — the two rows
+  `plan-marshall:tools-integration-ci:{github,gitlab}` (1 each at HEAD)
+- **Evidence:** both lines read
+  `python3 .plan/execute-script.py plan-marshall:tools-integration-ci:{github|gitlab} <command> [args]`.
+  The skill's `scripts/` directory holds `ci.py`, `ci_base.py`, `ci_health.py`, `_ci_barrier.py` and
+  `_ci_log_filter.py` — no `github.py` or `gitlab.py`. `tools-integration-ci/SKILL.md:306` documents
+  `ci.py`'s canonical argparse surface, and every live invocation uses
+  `…:ci {group} {verb}` (e.g. `SKILL.md:313` `ci pr create`, `:343` `ci checks status`).
 - **Why it matters:** two documented notations that cannot execute, in the abstraction layer the
   repository mandates for all CI operations.
 - **Action:** replace with the `ci.py` notation plus whatever verb selects the provider.
@@ -388,14 +466,18 @@ file, and synthetic probes of every excluded shape in both directions.
 - **Kind:** bug
 - **Severity:** medium
 - **Topic:** detectors/auditor
-- **Where:** `marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/scripts/_dep_detection.py:315-333`
+- **Where:** `marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/scripts/_dep_detection.py:315-334`
+  (comment-line skip `:315-318`, URL-line skip `:320-322`, bundle/skill segment filters `:326-334`)
 - **Evidence:** the comment-line skip, URL-line skip and `http`/digit segment filters discard matches
-  outright rather than recording an exclusion. Measured at HEAD, the comment-line skip alone hides
-  **9 resolvable** notations (e.g.
-  `plugin-architecture/references/goal-based-organization.md:293` →
-  `pm-plugin-development:tools-marketplace-inventory:scan-marketplace-inventory`,
-  `plugin-task-plan/SKILL.md:185` → `plan-marshall:manage-architecture:architecture`) and 7
-  non-resolvable ones, none of which is genuinely broken today. `SKILL.md:198` discloses this.
+  outright rather than recording an exclusion. Re-measured by neutralising the comment-line skip
+  alone (`if stripped.startswith('#') or stripped.startswith('//')` → `if False`): the corpus gains
+  **11** edges (`total_dependencies` 5081 → 5092), of which **9 resolve** — these are the resolvable
+  notations the skip hides — and **2** surface as new unresolved rows. Both of the two are
+  non-references, not breakage: `plan-marshall:ref-toon-format:toon_parser → plan-marshall:foo:bar`
+  (a `foo:bar` illustration inside a code comment) and
+  `pm-dev-oci:ext-triage-oci → trivy:ignore:CVE-2024-12345` (a Trivy ignore literal). So
+  "no genuinely-broken reference hides behind the comment-line skip today" holds. `SKILL.md:198`
+  discloses the class.
 - **Why it matters:** these are the last fail-open drops in the detector. A broken notation written on
   a markdown heading or beside a URL is invisible to the gate, and the graph under-reports 9 real
   edges.

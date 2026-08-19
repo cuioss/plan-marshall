@@ -1,7 +1,8 @@
 # Verification — 050-post-run-band-contract-and-ordering-residue
 
 **Audited:** `plan.md`, `report-01.md` (the only two files in the plan directory)
-**Tree state:** `61a43e5` on `claude/code-intelligence-substrate-analysis-kah884`
+**Tree state:** `61a43e5` on `claude/code-intelligence-substrate-analysis-kah884`; re-verified end to end at
+`a90adeb` on the same branch during the adversarial review (see § Adversarial review)
 **Landed as:** `0e7f644` — *fix(finalize): post-run band contract + retrospective accumulator + realized-footprint capture (plan 050) (#1175)*
 **Overall verdict:** CONFIRMED WITH GAPS
 
@@ -9,7 +10,7 @@
 
 | # | Deliverable (short) | Report claim | Ground truth | Verdict |
 |---|---|---|---|---|
-| D1 | Derive producer→consumer edges; publish cardinality; state coverage floor | New `test_finalize_edge_ordering.py`; 13 edges over 13 of 24 steps (~54%); floor stated; 6 tests pass | Test present and derivation-driven; 6/6 pass; re-derived **14 edges over 14 of 25 non-gate steps (56%)** today; gate test proven non-vacuous by mutation. Published cardinality lives only as report prose and has already drifted | CONFIRMED (publication surface weak — G8) |
+| D1 | Derive producer→consumer edges; publish cardinality; state coverage floor | New `test_finalize_edge_ordering.py`; 13 edges over 13 of 24 steps (~54%); floor stated; 6 tests pass | Test present and derivation-driven; 6/6 pass; re-derived **14 edges over 14 of 25 non-gate steps (56%)** today; gate test proven non-vacuous by mutation, and the cardinality test proven to fire as a mutual-exclusion guard. Published cardinality lives only as report prose and has already drifted. **The shipped "consumer side is undeclared" coverage claim is now false**: a later plan added the `reads`/`destroys` vocabulary and the canary meant to force a re-measurement did not fire | CONFIRMED at landing (publication surface weak — G8; coverage claim now stale and its canary half-blind — G10) |
 | D2 | Settle the band contract for post-merge-evidence + source-mutating step | Split chosen; recorded in `source-edit-pushability.md` + pointer in `ext-point-finalize-step.md`; no physical split needed | Both documents present and consistent; my own cold read lands unambiguously on **"representable — by a split"** | CONFIRMED |
 | D3 | Retrospective reads a closed accumulator | New Step 2.5 in `plan-retrospective/SKILL.md` + pinning test `TestReconcileFloorKeepsPartiality` | Step 2.5 present; test present and non-vacuous (mutation → red). **No production code shipped** — `_reconcile_accumulator_into_phase` and its `cmd_generate` call predate the plan; the fix is a prose workflow instruction that no test pins | PARTIAL (mechanism correct, unenforced — G7) |
 | D4 | Capture the footprint while it is true; resolver prefers it | `capture-footprint` verb + shared `_footprint_resolver` (5 tiers) + merge-commit fallback + both consumers recover together; negative control preserved | Verb, resolver, branch-cleanup wiring and both consumers all present and correct. **But** the documented aspect-13 command still passes a `--diff-file` that no step in the tree produces, so the mis-prune consumer's recovery branch is never taken (and today hard-errors) | PARTIAL (G1) |
@@ -46,11 +47,26 @@
   - Confirmed the drift is benign: `git show 0e7f644:…/standards/emit-landing.md` → *"exists on disk,
     but not in '0e7f644'"*, i.e. `emit-landing` was added after this plan landed and the derivation
     picked it up with no edit — exactly the no-literal design working.
-- **Verdict:** CONFIRMED. Caveats: (a) the plan's first sentence asks *"which artifacts it reads and
-  which it writes"*; the shipped derivation covers only the **gate-relative** edges expressible in the
-  current vocabulary, and honestly declares the artifact-level consumer side to be below the floor
-  (`test_finalize_edge_ordering.py:201`). That satisfies the literal *Done when* and is stated, not
-  hidden. (b) The "published cardinality" has no self-refreshing surface — see G8.
+  - **Mutation proof of the mutual-exclusion guard** (the audit originally asserted this without
+    testing it). Same snapshot discipline: set `record-metrics` `mutates_source: false → true` so it
+    declares both markers; re-ran the file → `2 failed, 4 passed`, the cardinality test reporting
+    `Derived edge count (15) disagrees with the marker-carrying step count (14)`. The claim that the
+    cardinality test doubles as a mutual-exclusion guard is therefore **proven**, not assumed.
+    Restored from the snapshot; `git status --porcelain` clean for that path.
+- **Verdict:** CONFIRMED **as of landing**. Caveats: (a) the plan's first sentence asks *"which
+  artifacts it reads and which it writes"*; the shipped derivation covers only the **gate-relative**
+  edges expressible in the vocabulary that existed then, and declared the artifact-level consumer side
+  to be below the floor (`test_finalize_edge_ordering.py:201`). That satisfied the literal *Done when*
+  and was stated, not hidden. (b) The "published cardinality" has no self-refreshing surface — see G8.
+  (c) **That coverage declaration has since become false, and the mechanism D1 shipped to detect the
+  change did not fire.** `ext-point-finalize-step.md` now defines `reads` and `destroys` as consumer-side
+  data-edge fields, with the ordering obligation spelled out in `finalize-step-order-bands.md:76-99`
+  (*"a step that `reads: [worktree]` is mis-ordered if it runs after the gate"*), and two steps already
+  declare `destroys`. The canary's own docstring promises *"If a future plan adds a `reads`/`consumes`
+  marker, this test fails and the floor is re-measured"* — that plan arrived (`308528d`, #1211,
+  2026-08-13, one day after this plan landed) and the test stayed green, because
+  `_ABSENT_CONSUMER_MARKERS` watches only the four read-side spellings and not `destroys`, the half
+  actually declared. See G10.
 
 ### D2 — settle the band contract
 
@@ -202,18 +218,29 @@ and `:570-666`, `analyze-logs.py:220-300`, plus the four contract documents. Fin
    `_footprint_resolver.resolve_footprint`. Its documented invocation
    (`plan-retrospective/SKILL.md:262-263`) passes neither `--diff-file` nor `--base-ref`, so post-merge
    `base_label == 'unknown'`, `evidence_available == False`, and `_withhold_on_absent_evidence`
-   (`:581-605`) downgrades **every** diff-fed rule to `indeterminate`. That is honest — no graded zero —
-   but it is a permanently blind check that the shipped capture could feed. → **G2**
+   (`:581-605`) downgrades every diff-fed rule **that would otherwise report a clean `pass`** to
+   `indeterminate` (a `fail` and a `skip` are explicitly left untouched — `:589-590`). That is honest —
+   no graded zero — but it is a permanently blind check that the shipped capture could feed. → **G2**
 
 3. **`references.modified_files` is read by live consumers although it is no longer written.**
    `_footprint_resolver.py:156-162` declares the key a `SHIM(B)` for pre-ledger archives and states
    *"the current writer no longer emits the key"*; `_references_core.py:25-45` (`ReferencesData`) has no
    `modified_files` member. Yet
    `.claude/skills/finalize-step-lessons-housekeeping/SKILL.md:88-90` still reads it as its Step 1
-   outcome input (and `:318` names it in the fallback), and
-   `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py:1265-1266` / `:1329` reads it for
-   `modified_files_count`, which gates the whole shipping partition (`plan_ships`) and feeds
-   `tokens_per_file`. For every plan created after the ledger removal these read nothing. → **G4**, **G5**
+   outcome input (and `:98` / `:318` name it in the fallback), and
+   `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py:1266` / `:1329` / `:1571` /
+   `:1810` / `:3061` / `:4178` read it for `modified_files_count`. For every plan created after the
+   ledger removal these read nothing.
+   ⚠ **The blast radius is narrower than it first appears, and the audit's first pass overstated it.**
+   Re-derived per consumer: `:1810` (scope-estimate), `:3061` (token-economics `files`, which is what
+   `tokens_per_file` and `big_spend_tiny_footprint` are computed from) and `:4178`
+   (sequence-and-build-minimality) all read `modified_files_count or affected_files_count` — they
+   **fall back** to the *declared* set rather than reading zero. `_plan_shipped` (`:1329`) is
+   `bool(plan_pr_number(...)) or modified_files_count > 0` — two independent sufficient criteria, so a
+   plan carrying a PR record still classifies as shipping. The only consumer that genuinely reports a
+   hard zero is the execution-context-manifest `modified` column (`:1571`). The defect that remains is
+   real but is a **silent substitution of the declared footprint for the realized one** — precisely the
+   conflation this plan's R3 exists to name — plus one zeroed column. → **G4**, **G5**
 
 4. **A false claim landed in shipped documentation.**
    `marketplace/bundles/plan-marshall/skills/manage-references/SKILL.md:424` — added by this plan
@@ -243,10 +270,10 @@ both covered by behavioural tests.
 
 | Deliverable | Covering tests | Adequacy |
 |---|---|---|
-| D1 | `test/plan-marshall/phase-6-finalize/test_finalize_edge_ordering.py` (6 tests) | **Non-vacuous — proven.** Mutating `record-metrics` `order: 998 → 5` turns the GATE red with the offending edge named. The cardinality test doubles as a mutual-exclusion guard (a step declaring both markers makes edges exceed the marker-carrying count). `test_consumer_side_data_edges_are_undeclared_below_the_floor` is a canary that passes trivially today, which is its intent. |
+| D1 | `test/plan-marshall/phase-6-finalize/test_finalize_edge_ordering.py` (6 tests) | **Non-vacuous — proven twice.** Mutating `record-metrics` `order: 998 → 5` turns the GATE red with the offending edge named. Mutating it to declare **both** markers turns the cardinality test red (`15` edges vs `14` marker-carrying steps), so the mutual-exclusion guard is proven rather than assumed. **But `test_consumer_side_data_edges_are_undeclared_below_the_floor` is a canary that no longer guards what it names**: it watches `('reads', 'consumes', 'reads_artifacts', 'consumes_artifacts')` and is blind to `destroys`, which `default:branch-cleanup` and `default:archive-plan` now declare. It passes today because the vocabulary was widened on the half it does not watch — the opposite of "passes trivially, which is its intent". → G10 |
 | D2 | none | No test — correct, this is a documentation deliverable. The plan's own verification asks for a **cold read**, which the report records and which I reproduced independently. |
-| D3 | `test_manage_metrics.py:1301` `TestReconcileFloorKeepsPartiality` | **Non-vacuous about the mechanism — proven** (removing the `cmd_generate` reconcile turns it red). **Vacuous about the deliverable**: it never touches `plan-retrospective/SKILL.md`, so deleting Step 2.5 — the entire shipped change — leaves the suite green. → G7 |
-| D4 | `test_footprint_resolver.py` (14 tests: tiers 2/3/4/5, precedence, resolved-empty vs unresolvable), `test_manage_references_compute_footprint.py:348-437` (capture verb), `test_check_routing_decisions.py:175-214` (`footprint_source` ∈ {resolved, unresolved, diff_file}) | Strong at the unit level, including a real-git true-merge fixture that proves sibling exclusion. **Gap:** nothing tests the documented SKILL.md invocation end to end, which is why the phantom `--diff-file` survived (G1). |
+| D3 | `test_manage_metrics.py:1301` `TestReconcileFloorKeepsPartiality` | **Non-vacuous about the mechanism on BOTH halves — proven.** Removing the `cmd_generate` reconcile turns it red (`KeyError: 'total_tokens'`), and — the check the audit originally omitted — making `_reconcile_accumulator_into_phase` stamp an `end_time` also turns it red (`assert False is True` on `any_phase_missing_end_time`), so the "leave the partiality labelling intact" half of D3's *Done when* is genuinely guarded, not merely asserted. **Vacuous about the deliverable**: it never touches `plan-retrospective/SKILL.md`, so deleting Step 2.5 — the entire shipped change — leaves the suite green (measured: **1420 passed** across `test/plan-marshall/plan-retrospective` + `test/plan-marshall/manage-metrics` with the section removed). → G7 |
+| D4 | `test_footprint_resolver.py` (14 tests: tiers 2/3/4/5, precedence, resolved-empty vs unresolvable), `test_manage_references_compute_footprint.py:348-437` (capture verb), `test_check_routing_decisions.py:175-214` (`footprint_source` ∈ {resolved, unresolved, diff_file}) | Strong at the unit level, including a real-git true-merge fixture (`test_footprint_resolver.py:145`) that builds a sibling commit on `main` and proves it is excluded. **Negative control proven non-vacuous by mutation** (the audit had only shown the tests exist): replacing the resolver's terminal `return FOOTPRINT_UNRESOLVED` with `return set()` — the exact graded-zero defect D4 forbids — turns **4 tests red** across two files, including `assert 'pass' == 'skip'` on the mis-prune check, i.e. a fabricated empty footprint would have graded a verdict instead of skipping. **Gap:** nothing tests the documented SKILL.md invocation end to end, which is why the phantom `--diff-file` survived (G1). |
 | D5 | n/a | Discharged by the report. |
 
 ## Report accuracy
