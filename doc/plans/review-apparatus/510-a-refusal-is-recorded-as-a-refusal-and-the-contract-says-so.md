@@ -235,8 +235,13 @@ test.
   token that pairs "belong on a pair-form flag (--participated-bots / --stale-participation-bots)",
   the wrong advice, in the message the caller actually sees). Make that message name the pair-form
   set generically rather than two of the four.
-- **Fix the `deficit` synopsis.** Add `[--refusal-size-caps [<csv>]]` in the same position it
-  occupies on the `check` line. `_add_bot_observation_flags` declares it on both subcommands and
+- **Fix the `deficit` synopsis — this plan OWNS the edit.** Add `[--refusal-size-caps [<csv>]]` in
+  the same position it occupies on the `check` line.
+  ⚠ **Shared line with plan `520`.** `520-nobody-reviewed-and-reviewed-clean-are-still-one-signal`
+  § D5 carries the same gap from the other side (as `040/G9`) and names this plan as the owner of the
+  edit, keeping only its own test extension. If the line already carries the flag when this run
+  reaches it, `520` landed first: **make no edit, record it as already discharged, and do not revert
+  or reformat it.** Either way the surviving requirement is the *Done when* below. `_add_bot_observation_flags` declares it on both subcommands and
   `automatic-review/SKILL.md`'s canonical `deficit` block documents it; only the module's own usage
   line disagrees, which makes the cap-only cause recovery unreachable from documented usage.
 - Also state, at the barrier's `review_completeness check` invocation in

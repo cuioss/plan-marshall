@@ -493,7 +493,7 @@ the diffs:
 
 ## Summary
 
-**By severity:** 1 blocker, 5 major, 8 minor — 14 gaps, itemized in `gaps.md`.
+**By severity:** 1 blocker, 5 major, 7 minor — 13 gaps, itemized in `gaps.md`.
 
 The plan did real work and most of it holds. `_has_update_movement` is gone, the credit is a pure
 comparison against a recorded merge-candidate SHA, `observed_keys` survives only as prose, `declined`

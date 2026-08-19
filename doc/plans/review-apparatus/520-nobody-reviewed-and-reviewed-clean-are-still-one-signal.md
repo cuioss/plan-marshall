@@ -364,7 +364,15 @@ guards, or a documented surface with no guard at all.
   zero-match-is-a-pass rule the sibling guard uses, **with its population guard so the pass cannot go
   vacuous**. **Re-derive how many restatement sites exist by sweeping the tree** — the count is a
   lead.
-- **The second documented invocation surface (040/G9).** `review_completeness.py`'s module docstring
+- **The second documented invocation surface (040/G9).**
+  ⚠ **Shared line with plan `510`.** `510-a-refusal-is-recorded-as-a-refusal-and-the-contract-says-so`
+  § D3 carries the same defect (as `120 G5`) and **owns the docstring edit**. This plan's share is the
+  regression guard, not the edit: extend
+  `test_the_deficit_invocation_block_documents_the_cap_flag` to cover the module docstring's own
+  `deficit` line, so the flag cannot go missing there again. Make the edit here **only if the line
+  still lacks the flag** when this run reaches it — meaning `510` has not landed — and say in the run
+  report which case held. Never revert or reformat the flag if it is already present.
+  The defect: `review_completeness.py`'s module docstring
   carries `[--refusal-size-caps [<csv>]]` on the `check` `Usage:` line (around line 115) and **not**
   on the `deficit` line (around line 116), though `deficit_parser` accepts it. The skill marks that
   flag ⛔ load-bearing — *a cap arriving without its cause drives the fail-closed cause recovery, so a
@@ -588,14 +596,18 @@ task:
 every mechanism, file, symbol, and threshold this plan depends on is restated above. If either file
 is absent from the clone, proceed — and note the absence in the report.
 
-**Do not go looking for `.plan/`.** It is git-ignored, so a cloud clone has none of it: no
-`marshal.json`, no orchestrator ledger, no generated `execute-script.py`, no plan state. Three
-consequences bind this run. The configured `required_bots` / `optional_bots` / `bot_lists_provenance`
-values for *this* repository are not readable — write code and prose that reports whatever value it
-observes, never a value transcribed from a gaps file. The `review_rate_window_await` value for this
-repository is likewise not readable — D4 uses the documented default, which is git-tracked. And no
-`python3 .plan/execute-script.py …` command in this repository's skills can be executed from this
-run; those command lines are **the text being edited**, not commands to run.
+**Do not go looking for `.plan/`, with one stated exception.** It is git-ignored — no orchestrator
+ledger, no generated `execute-script.py`, no plan state — **except for two tracked paths**,
+`.plan/marshal.json` and `.plan/project-architecture/` (per `.gitignore:45-47`). Re-derive that from
+`.gitignore` rather than trusting this sentence. Three consequences bind this run. The configured
+`required_bots` / `optional_bots` / `bot_lists_provenance` values for *this* repository are
+therefore readable in `marshal.json`, but **no deliverable may depend on them**: D0 leg 3 settles
+that population from `manage-config/SKILL.md`, and every value the run reports must be one it
+observed at run time, never one transcribed from this plan or from a gaps file. The
+`review_rate_window_await` value is readable for the same reason, and D4 still uses the documented
+git-tracked default, so that the fix holds for a consumer whose knob differs from this repository's.
+And no `python3 .plan/execute-script.py …` command in this repository's skills can be executed from
+this run; those command lines are **the text being edited**, not commands to run.
 
 **No plugin-cache sync is owed.** This plan edits `marketplace/bundles/`, and in the standalone lane
 that neither triggers a sync nor records one as owed — the merged bundle source is authoritative.

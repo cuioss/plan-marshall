@@ -408,12 +408,26 @@ Beyond each deliverable's *Done when*:
 
 ## Notes
 
-- **`.plan/` is invisible to this run, and nothing here requires it.** The orchestrator ledger, the
-  plan specs and the landing records are git-ignored and absent from the clone. In particular,
-  `.plan/marshal.json` sets this repository's `required_bots` to PR-Agent only, which is why the
-  `010 G2` scope defect is inert *here* — that is an operator knob, not an invariant, and it is
-  stated so the run understands the stakes. **Do not go looking for that file**; the deliverables do
-  not depend on it.
+- **`.plan/` is all but invisible to this run, and nothing here requires it.** The orchestrator
+  ledger, the plan specs and the landing records are git-ignored and absent from the clone. **Do not
+  go looking for any of them.** `.plan/` carries exactly two tracked exceptions
+  (`.plan/marshal.json` and `.plan/project-architecture/`, per `.gitignore:45-47`), so
+  `marshal.json` *is* readable in the clone — re-derive that from `.gitignore` rather than trusting
+  this sentence. Reading it is still not required: it records this repository's `required_bots` as
+  PR-Agent only, which is why the `010 G2` scope defect is inert *here*, and that is an operator
+  knob rather than an invariant. **Report whatever value you observe; never transcribe one from this
+  plan or from a gaps file**, and let no deliverable's outcome depend on the value.
+- **Sequencing against plan `510`.** `510-a-refusal-is-recorded-as-a-refusal-and-the-contract-says-so`
+  edits the same three surfaces this plan does — `github_pr.py`'s participation path,
+  `automatic-review/SKILL.md`, and `bot-participation-contract.md` — so **the two MUST NOT run
+  concurrently.** The boundary: this plan owns the **currency** mechanics (the per-comment ledger,
+  the SHA anchor, the dedup identity, and the contract's currency-scope sentence); `510` owns
+  **refusal and decline accounting** (the refusal `cause`/`cap` producers, wording drift, the
+  registry, and the decline consumers). Where a fix here would touch `510`'s side, make the minimum
+  change, say so in the run report, and leave the rest to `510`. `510` § Notes states the same
+  boundary from its side; if the two descriptions disagree, report the disagreement rather than
+  picking one.
+
 - **Corroborating evidence lives in git**, in the two `gaps.md` files named under § Deliverables and
   the `verification.md` beside each. They carry the original reproduction notes, including an
   end-to-end reproduction of D1's defect driven through the real `cmd_fetch_findings`. They are
