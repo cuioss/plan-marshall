@@ -385,19 +385,19 @@ parametrized ids but states no count (re-observed under `--collect-only`: six
 | 4 | `cmd_check` renders `MalformedBotFlag` as `status: error` + exit 1 + no `participation_complete` | ACCURATE | `:1246`; `_emit_toon` returns before the verdict fields when `status == 'error'` |
 | 5 | Tests `TestMalformedBotFlagRejection` (both directions), `TestStaleParticipationIsPairForm` | ACCURATE | `test_review_completeness.py:1441`, `:1534`; 10 passed when run |
 | 6 | "Mutation-proof by construction (they assert behaviour that only exists post-fix; the pre-fix code returned `{}`/`absent`)" | ACCURATE | The landed diff shows the pre-fix `parse_participation` did `continue` on a colonless token; `pytest.raises(rc.MalformedBotFlag)` cannot pass against that |
-| 7 | The SHAPE check is separate from the evidence SEMANTIC filter; a well-formed pair with inadmissible evidence stays a silent drop | ACCURATE — and this is the finding | `parse_participation` filters on `bot_registry.participation_evidence`; confirmed by execution. Correct for `--participated-bots`, wrong in effect for `--stale-participation-bots` (G3) |
-| 8 | `execution-context.md` universal replaced with a per-script, per-position statement | ACCURATE as to the edit; the replacement's `ci` exemplar is FALSE for `ci pr`/`ci issue` | `execution-context.md:23` vs `ci_base.py:260-277` and `pr-operations.md:163` |
+| 7 | The SHAPE check is separate from the evidence SEMANTIC filter; a well-formed pair with inadmissible evidence stays a silent drop | ACCURATE — and this is the finding | `parse_participation` filters on `bot_registry.participation_evidence`; confirmed by execution. Correct for `--participated-bots`, wrong in effect for `--stale-participation-bots` (G5) |
+| 8 | `execution-context.md` universal replaced with a per-script, per-position statement | ACCURATE as to the edit; the replacement's `ci` exemplar is FALSE for **ten** `ci pr`/`ci issue` subcommands | `execution-context.md:23` vs `ci_base.py:260-275` + `:1172,1190,1201,1217` and `pr-operations.md:163`; parser tree walked and all ten executed |
 | 9 | `automatic-review/SKILL.md` item 4 renders `{stale_participation_bots}` as pairs | ACCURATE | `automatic-review/SKILL.md:661` |
-| 10 | "No barrier invocation change needed — it already forwarded the producer's pairs verbatim" | ACCURATE but incomplete | `branch-cleanup.md:810` retains the producer records; nothing at `:830-836` states the form (G5) |
+| 10 | "No barrier invocation change needed — it already forwarded the producer's pairs verbatim" | ACCURATE but incomplete | `branch-cleanup.md:810` retains the producer records; nothing at `:830-836` states the form (G7) |
 | 11 | Null result: `--enabled-bots` absent from the whole tree, 0 hits in `marketplace/bundles/` | ACCURATE at the landing; **no longer true in the tree** | `review_gate_delta.py:504` declares `--enabled-bots`; that script did not exist at `3c7a1cc8` (`git cat-file -e` fails) — introduced later by #1239 |
-| 12 | Null result: `enabled_bots` frontmatter key gone, only retirement/migration references survive | ACCURATE | `upgrade.py:243`, `manage-config/standards/data-model.md:289`, `bot-participation-contract.md:42` — all retirement text |
+| 12 | Null result: `enabled_bots` frontmatter key gone, only retirement/migration references survive | ACCURATE as scoped to the marshal.json CONFIG knob; the evidence list is incomplete | Retirement text at `upgrade.py:69,226-243,406`, `manage-config/standards/data-model.md:289,326`, `marshall-steward/SKILL.md:66,379,387`, `bot-participation-contract.md:42`. Live NON-config uses exist and post-date the landing: `review_gate_delta.py:264` (a parameter), `automatic-review/SKILL.md:1092` and `bot-participation-contract.md:627` (a published figure) |
 | 13 | Null result: `complete` / `unfetched_bots` absent; live names are `participation_complete` / `unproven_bots` / `bot_states` | ACCURATE | `grep -rn "unfetched_bots" marketplace/ test/` → 0 hits |
 | 14 | Convention widened in `branch-cleanup.md`, `automatic-review/SKILL.md`, `phase-6-finalize/SKILL.md` | ACCURATE | Three wide headings; 39 narrow ones elsewhere |
-| 15 | "Widening scoped to the finalize merge-and-review docs (D0's population); the ~35 other docs … are **other phases/steps**, out of scope" | OVERSTATED | 13 narrow + 3 conventionless docs invoking non-`manage-*` scripts are inside `phase-6-finalize` itself, including `workflow/create-pr.md`, `workflow/sonar-roundtrip.md` and `standards/branch-cleanup-rereview.md` |
-| 16 | `TestExitCodeConventionCoversEveryScript` "derives … the three non-`manage-*` families (derived, not hand-listed)" | ACCURATE for the families, OVERSTATED for the population | `:262` derives the skill set from the scan; `:75-77` hard-codes the doc set |
-| 17 | D0 test "Mutation-proven: reverting a heading to the `manage-*` form fails exactly that doc's case (verified)" | PLAUSIBLE (structurally certain, not re-run) | `assert _WIDE_HEADING in text` at `:271` makes the stated mutation fail by construction; I did not mutate the tree |
-| 18 | D3 "derives … asserts non-emptiness first, publishes size (6 invocations, floor ≥ 4)" | ACCURATE except "publishes" | Population independently re-derived as exactly 6; floor at `:302`; no output on a passing run (G6) |
-| 19 | D3 "Mutation-proven: a reintroduced `--enabled-bots` … made exactly the `skill-md-github-pr` case fail (verified, then reverted)" | PLAUSIBLE | The id `skill-md-github-pr` is exactly what `_invocation_id` produces for that case (observed under `-v`), and `github_pr` declares no `--enabled-bots`; I did not re-run the mutation |
+| 15 | "Widening scoped to the finalize merge-and-review docs (D0's population); the ~35 other docs … are **other phases/steps**, out of scope" | OVERSTATED | 13 narrow + 3 conventionless docs invoking non-`manage-*` scripts are inside `phase-6-finalize` itself, including `workflow/create-pr.md`, `workflow/sonar-roundtrip.md` and `standards/branch-cleanup-rereview.md`. Re-derived independently: 3 WIDE / 13 NARROW / 6 NONE |
+| 16 | `TestExitCodeConventionCoversEveryScript` "derives … the three non-`manage-*` families (derived, not hand-listed)" | ACCURATE for the families, OVERSTATED for the population | `:244-248` derives the skill set from the scan; `:75-77` hard-codes the doc set |
+| 17 | D0 test "Mutation-proven: reverting a heading to the `manage-*` form fails exactly that doc's case (verified)" | ACCURATE — mutation re-run | Reverting `branch-cleanup.md:59` to the narrow heading failed exactly `…[standards-branch-cleanup.md]` at `:272` (`1 failed, 10 passed`); the file was restored byte-identical from a snapshot |
+| 18 | D3 "derives … asserts non-emptiness first, publishes size (6 invocations, floor ≥ 4)" | ACCURATE except "publishes" | Population independently re-derived as exactly 6; floor at `:304`; no output on a passing run (G9) |
+| 19 | D3 "Mutation-proven: a reintroduced `--enabled-bots` … made exactly the `skill-md-github-pr` case fail (verified, then reverted)" | ACCURATE — mutation re-run | Appending `--enabled-bots "{enabled_bots}"` to the FIND `fetch_findings` invocation in `automatic-review/SKILL.md` failed exactly `…[skill-md-github-pr]` with `returncode 2` and `github_pr.py: error: unrecognized arguments: --enabled-bots` (`1 failed, 10 passed`); the file was restored byte-identical from a snapshot |
 | 20 | Finding 4 fixed in `6cf9ea8`: docstring corrected to "follows the discipline; reimplements a fenced-block walk" | ACCURATE | `test_review_merge_invocation_contract.py:29-33` carries exactly that wording; `test/_shared/_dispatch_roster.py` exists |
 | 21 | Finding 7: no reader of `complete`/`unfetched_bots` exists; `_cmd_merge_authorization.py` reads `unproven_bots` | ACCURATE | Zero hits for `unfetched_bots`; `manage-status/scripts/_cmd_merge_authorization.py:21` references `unproven_bots` |
 | 22 | Build gate: `./pw verify plan-marshall` SUCCESS, 15896 passed / 1 skipped | UNVERIFIABLE | Not re-run (the task forbids the full build). The two suites this plan owns pass: 11 + 10 |
@@ -405,44 +405,56 @@ parametrized ids but states no count (re-observed under `--collect-only`: six
 | 24 | Findings 8-11 (CI states, bot reviews, CLA) and the Reviewer-participation table | UNVERIFIABLE | GitHub-side state not reconstructible from the clone |
 | 25 | Contract check row "Step 3 Plan directory — `doc/plans/review-apparatus/030-…/plan.md` exists" | ACCURATE | `git diff --name-status --find-renames 3c7a1cc8^ 3c7a1cc8` shows `R100` from the flat `030-….md` into the directory, plus the added report |
 
-**One plan obligation the report never addresses.** The Claim-labels table carries an OBSERVED row —
-"`--in-progress-bots ""` is dropped by the executor so argparse sees a flag with no argument, while
-omitting the flag works … **reproduce it once before building on it**". The report mentions neither
-the reproduction nor the claim. The cause class is in fact already closed in the tree — all nine list
-flags carry `nargs='?'` with `const=''` (`review_completeness.py`, `_add_bot_observation_flags`), and
-`branch-cleanup.md:740-746` documents the executor's `script_args = [a for a in script_args if a]`
-stripping — so nothing is broken; but a required confirm/refute artefact went unreported. See G8.
+**One plan obligation the report never addresses.** The Claim-labels table has **eight** rows; one
+is an OBSERVED row the report never touches — "`--in-progress-bots ""` is dropped by the executor so
+argparse sees a flag with no argument, while omitting the flag works … **reproduce it once before
+building on it**". The report mentions neither the reproduction nor the claim. The cause class is in
+fact already closed in the tree — all nine list flags carry `nargs='?'` with `const=''`
+(`review_completeness.py:1298`, `_add_bot_observation_flags`), and the executor's stripping is real
+and locatable at
+`tools-script-executor/templates/execute-script.py.template:1419-1420` (`# Strip empty string args …`
+/ `script_args = [a for a in script_args if a]`), documented at `branch-cleanup.md:740-748` — so
+nothing is broken; but a required confirm/refute artefact went unreported.
 
 Likewise the plan's Verification asks for an "endorsement trap" hint *if* D0's work touches the
 rejection reporting. It did not (no change to `tools-script-executor`), so the condition never fired.
-The report does not say so; no gap results, only silence where a one-line "not triggered" belonged.
+The report does not say so — silence where a one-line "not triggered" belonged. Both are recorded
+together as G11.
 
 ## Correctness review
 
-1. **`execution-context.md:23` prescribes an argparse rejection for six `ci` verbs.** Detailed above;
-   CONFIRMED by reading `ci_base.py:260-277` and by executing `extract_routing_args`. Blocker (G1).
+1. **`execution-context.md:23` prescribes an argparse rejection for ten `ci` subcommands.** Detailed
+   above; CONFIRMED by walking the live parser tree and by executing the router strip plus the real
+   parse for all ten — ten exit-2 rejections, zero survivors. Blocker (G1).
 
 2. **The pair-form `--stale-participation-bots` inherits an admissibility filter that silently drops,
    and the code comment denies it.** CONFIRMED by execution. Polarity-selecting in the sense the plan
    warns about — not toward a false pass, but toward the wrong *member* and therefore the wrong
-   remedy in an operator-facing prompt. Major (G3).
+   remedy in an operator-facing prompt. Major (G5).
 
-3. **Fragility in the D3 derivation, not currently firing.** `_documented_invocations` (`:170-192`)
+3. **Fragility in the D3 derivation, not currently firing.** `_documented_invocations` (`:162-185`)
    takes `_EXEC_CALL.search(block)` — the *first* notation in a fenced block — and then passes
-   `tokens[notation_idx + 1:]` — *all* remaining tokens — as that script's arguments. A fenced block
-   holding two commands would feed the second command's tokens to the first parser as arguments.
-   Every block in the current population holds exactly one command, so nothing fails today; PLAUSIBLE
-   future breakage, recorded but not raised as a gap. The `if '[' in block: continue` skip at `:187`
-   is similarly broad — any invocation that grows a bracket silently leaves the population, guarded
-   only by the `>= 4` floor while the true population is 6.
+   `tokens[notation_idx + 1:]` (`:331`) — *all* remaining tokens — as that script's arguments. A
+   fenced block holding two commands would feed the second command's tokens to the first parser as
+   arguments. Every block in the current population holds exactly one command, so nothing fails
+   today. The `if '[' in block: continue` skip at `:182` is similarly broad — any invocation that
+   grows a bracket silently leaves the population, guarded only by the `>= 4` floor while the true
+   population is 6. Not a live defect, but it is the mechanism by which the sweep can shrink to
+   nothing while staying green, so it is folded into G9 rather than left as a note.
 
-4. **No fail-open, no non-idempotence, no vacuous test found in what landed.** `_emit_toon` returns
+4. **A fail-open in the surrounding path, not in what landed.** `create-pr.md` Step 4 marks the
+   step `done` on a `ci pr create` that failed at exit 0 — detailed under D0 above, raised as G2. It
+   is not a regression from this plan; it is a member of D0's own population that the three-doc
+   derivation did not reach, and it is the sharpest surviving instance of the class the plan exists
+   to close.
+
+5. **No fail-open, no non-idempotence, no vacuous test found in what landed.** `_emit_toon` returns
    before the verdict fields on `status: 'error'`, so a malformed flag genuinely cannot emit
    `participation_complete`. The D1 tests assert `pytest.raises(MalformedBotFlag)` against code that
    previously did `continue` — they cannot pass pre-fix. The D0 heading test asserts both the presence
    of the wide heading and the absence of the narrow one, so a half-applied edit fails.
 
-5. **Empty-value handling is intact after the change.** `parse_participation` and `_split_bots` both
+6. **Empty-value handling is intact after the change.** `parse_participation` and `_split_bots` both
    `continue` on an empty token before any shape check, so `--flag ""`, a bare flag, a trailing comma
    and a whitespace-only value all still read as the empty list rather than as a malformed token —
    verified by `test_split_bots_accepts_bare_and_empty` (`test_review_completeness.py:1474`).
@@ -454,10 +466,11 @@ The report does not say so; no gap results, only silence where a one-line "not t
 | Production code reading the changed flags | yes | `cmd_check` and `cmd_deficit` both route through `_parse_bot_observations`; no third caller (`grep -n "def cmd_"`) |
 | Test fixtures/stubs feeding bare kinds to the now-pair-form flag | yes | `grep -rn "stale_participation_bots" test/` — the only bare-kind uses are `check_completeness(...)` **library** calls (`test_pre_merge_barrier.py:671`, `test_bot_participation_contract.py:643`), where a list of bot kinds is the correct API. No stale CLI fixture |
 | Prose restating the old bare form of `--stale-participation-bots` | yes | None survives. `workflow-integration-github/SKILL.md:132-135` already documented the pair record shape |
-| Sites that must state which flags are pair-form now that a wrong form is fatal | yes | **Two misses**: `branch-cleanup.md:830-836` and `automatic-review/SKILL.md:970-990` (G5) |
-| Docs in the finalize merge-and-review path needing the widened convention | yes | **One miss with no convention at all** (`branch-cleanup-rereview.md`), 13 same-phase docs left narrow (G2, G4) |
-| Docs whose fenced invocations should be in D3's parse sweep | yes | `branch-cleanup-rereview.md`'s `fetch_findings` and `github_re_review re-review` are outside it; I ran them anyway and they parse — so the miss is coverage, not a live break (G2) |
-| Prose-bearing string literals stating the old claim | yes | `test_review_merge_invocation_contract.py:18` and `:291` still call `--enabled-bots` "a flag no script/parser declares"; `review_gate_delta.py:504` now declares it (G7) |
+| Sites that must state which flags are pair-form now that a wrong form is fatal | yes | **Two misses**: `branch-cleanup.md:830-836` and `automatic-review/SKILL.md:964-997` / `:999-1010` (G7) |
+| Docs in the finalize merge-and-review path needing the widened convention | yes | **One miss with no convention at all** (`branch-cleanup-rereview.md`, G4), 13 same-phase docs left narrow plus 5 further conventionless ones (G6) |
+| Docs whose fenced invocations should be in D3's parse sweep | yes | `branch-cleanup-rereview.md`'s `fetch_findings` and `github_re_review re-review` are outside it; I ran them anyway and they parse — so the miss is coverage, not a live break (G4) |
+| `ci` call sites whose step does not positively validate the returned shape | yes | **Two**: `branch-cleanup.md:425-430` (`checks status`, non-blocking by design) and `create-pr.md:277-289` (`pr create`, marks the step `done` — G2). Three sites do validate: `branch-cleanup.md:762-775`, `:825`, `automatic-review/SKILL.md:671` (G3) |
+| Prose-bearing string literals stating a now-false claim | yes | `test_review_merge_invocation_contract.py:18` and `:291` still call `--enabled-bots` "a flag no script/parser declares" while `review_gate_delta.py:504` declares it (G10); `review_completeness.py:128-134`, `:316-322` and the `_split_bots` error template at `:1186-1190` state a two-FORM split that is false for `--refused-causes` / `--refusal-size-caps` (G8); the `--stale-participation-bots` `help=` at `:1380-1394` omits the admissibility drop (G5) |
 | Readers of the renamed return fields (`complete` / `unfetched_bots`) | yes | Zero hits tree-wide; the plan's HYPOTHESIS is refuted, as the report says |
 
 ## Out-of-scope compliance
@@ -483,18 +496,24 @@ verification, not a carried-forward residue.
 
 ## Summary
 
-Counts by severity: **1 blocker, 3 major, 4 minor** — see `gaps.md` (G1–G8). No false report claim:
-every symbol, test class, heading and doc edit `report-01.md` names exists in the tree today and both
-owned suites pass (11 + 10). Two report statements are OVERSTATED (the "other phases/steps"
-justification for the D0 doc set, and "publishes size"); three are UNVERIFIABLE for structural
-reasons (squashed commit ids, GitHub-side state, the full build).
+Counts by severity: **1 blocker, 5 major, 5 minor** — see `gaps.md` (G1–G11). No false report claim:
+every symbol, test class, heading and doc edit `report-01.md` names exists in the tree today, both
+owned suites pass (11 + 10), and both mutation-proof claims were re-run and hold. Three report
+statements are OVERSTATED (the "other phases/steps" justification for the D0 doc set, "publishes
+size", and the `enabled_bots` null result as stated tree-wide rather than scoped to the config knob);
+three are UNVERIFIABLE for structural reasons (squashed commit ids, GitHub-side state, the full
+build).
 
 Bottom line: the plan landed substantially as documented and as designed, and the D1 work in
 particular is clean, well-tested and correctly separated from the evidence-admissibility filter. But
 the deliverable the plan itself called the *primary fix site for the position cause class* shipped a
-replacement text that prescribes an argparse rejection for six `ci` verbs — the same failure class the
-plan exists to close, now written into the envelope contract every dispatched leaf reads. Alongside
-it, D0's anti-curation mandate was met in form (the widening *obligation* is derived) but not in
-substance (the doc *set* is a literal), and the one member it most clearly should have contained —
-`branch-cleanup-rereview.md`, which the barrier loads and executes — carries no exit-code convention
-at all. Both are cheap to close and neither undoes what landed.
+replacement text that prescribes an argparse rejection for **ten** `ci` subcommands — the same
+failure class the plan exists to close, now written into the envelope contract every dispatched leaf
+reads. Alongside it, D0's anti-curation mandate was met in form (the widening *obligation* is
+derived) but not in substance (the doc *set* is a literal), and that literal cost the plan two real
+members: `branch-cleanup-rereview.md`, which the barrier loads and executes and which carries no
+exit-code convention at all; and `create-pr.md`, where a failed `ci pr create` returns exit 0 and the
+step marks itself `done` on an absent PR number — the plan's own Goal class, still live in the
+finalize path. The exit-code-only keying of the widened convention is what makes that last one
+possible, and it is exactly the narrowing D0's text forbade. All are cheap to close and none undoes
+what landed.

@@ -349,7 +349,8 @@ without re-deriving the analysis. Eleven entries: one blocker, five major, five 
   neither"*, adding at `:11` *"Adding a new finalize step without classifying it here turns the guarding
   regression red."* `grep -n "emit-landing"` over that document returns nothing, while `SKILL.md:178`
   registers `default:emit-landing` and describes it as *"(inline; composed OUT of a non-orchestrated plan
-  at compose time)"*, and `SKILL.md:772` / `:883` name it among the inline consumers. The guarding test
+  at compose time)"*; `SKILL.md:772` names it among *"the inline consumers"* and `:848` names it as the
+  owner of the run's one landing. The guarding test
   derives its registry from `_MARSHAL_JSON = PROJECT_ROOT / '.plan' / 'marshal.json'` (`:86`, read in
   `_registered_steps` at `:213-217`), which is git-ignored; the local snapshot holds 25 steps and does not
   include `emit-landing`, so the test passes (run locally: 21 passed) without covering it.

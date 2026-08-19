@@ -342,7 +342,7 @@ returns `''` on any failure. With `merge_candidate_sha == ''` and a ledger recor
 short-circuits on the falsy SHA and `:708` returns False for an unedited comment ⇒ `participated_stale`
 (probe P1). The plan's Verification demanded the SHA-advance reset "is the one a monotonicity fix most
 easily breaks"; the inverse — the reset firing when the SHA did **not** advance — is what happens here.
-The `fetch_findings` return (`github_pr.py:1245–…`) carries **no** field reporting whether the SHA
+The `fetch_findings` return (`github_pr.py:1245–1306`) carries **no** field reporting whether the SHA
 resolved — the probe printed the full key set to confirm — so the caller cannot tell "stale because
 HEAD moved" from "stale because the read failed", and `branch-cleanup.md`'s own UNKNOWN discipline
 (`:774`: "An absent input is an UNKNOWN verdict, never a `false` the operator can act on") never fires,
@@ -357,11 +357,14 @@ timestamp term. This is the plan's own D2 defect statement, verbatim, and it sur
 → G2.
 
 **C3 — a drifted refusal wording is credited as participation. CONFIRMED, by reading and by probe P3.**
-`github_pr.py:950` → `_github_pr.py:183–187`. The registry layer is a substring match over
+`github_pr.py:950` → `_github_pr.py:155–187`. The registry layer is a substring match over
 `refusal_patterns`; the structural layer requires **both** a limit-exceeded statement **and** a notice
 shape (`_github_pr.py:150–152`). A vendor notice that satisfies neither reaches `:953`, matches a
-declared publish shape (a refusal *is* published in one), and is credited. The plan flagged exactly this
-as "a false credit with no signal"; the report never adjudicated it. → G3.
+declared publish shape (a refusal *is* published in one), and is credited. pr-agent makes the registry
+layer unreachable outright — its declared `refusal_patterns` is empty, confirmed by calling
+`bot_registry.refusal_patterns('pr-agent')` — so for the one bot this repository marks required, the
+structural recogniser is the only layer there is. The plan flagged exactly this as "a false credit with
+no signal"; the report never adjudicated it. → G3.
 
 **Not defects, checked and cleared:**
 
@@ -429,7 +432,11 @@ none, a synthetic structural notice. Consequences, all CONFIRMED by reading:
 **`workflow-integration-github/SKILL.md` is a consumer of the `participated_bots` claim that D0 did not
 enumerate.** `SKILL.md:129` *defines* the credit rule for readers and agents; D0's table does not list
 it at all (`automatic-review/SKILL.md:652` is listed, but as a call site rather than as a restatement
-to check). Both are stale — see the table above.
+to check). Both are stale — see the table above, and both are filed on plan 010. What is recorded here
+is the enumeration gap itself, not a second copy of the prose fix: a table of consumers that omits the
+document *defining* what the producer credits cannot establish "every known member classified", which
+is what D0 promised. The classification half of that promise is G9; the correction to the report's
+D3(d) citation is G7.
 
 **The plan's Notes redefined the population and the report used the narrower one.** The Notes state the
 population is "every site that decides whether a comment represents NEW INFORMATION … Three members are
@@ -449,7 +456,7 @@ states in full why it exists — *"the `(bot_kind, comment_id)` dedup cannot fir
 posts a comment with a NEW id"* (`:374–377`). That is the under-firing direction of the plan's ⭐⭐
 "the dedup key is wrong in BOTH directions", surviving in production as a third identity for "have I
 seen this", and neither the report nor the previous pass placed it in the population. The contract's
-§ "Recorded exclusions" (`bot-participation-contract.md:667–676`) records a deliberate exclusion for
+§ "Recorded exclusions" (`bot-participation-contract.md:668–677`) records a deliberate exclusion for
 the await predicate's *test*, but on the taxonomy-vocabulary question, not on this plan's D0 class
 question. → G9.
 
@@ -521,7 +528,10 @@ the line given and read. Every count was re-derived by re-running the search tha
 claim about executable behaviour was executed. Probes P1–P5 (*Method*) drive the real
 `cmd_fetch_findings` through the existing `_patch_provider` / `_publish_comment` helpers and settle C1,
 C2, C3, the ledger-poisoning amplifier, and the reach of D3(c); P1, P2, P3 and P5 were re-run in the
-second pass and reproduce identically. Mutations M1, M2 and M3 (*Method*) establish the added test's
+second pass and reproduce identically. P4 was not re-run — it is re-confirmed by reading
+`github_pr.py:970–974`, which stages the ledger row from `reviewed_commit_sha` unconditionally, so a
+credit taken at an unreadable head writes an empty SHA — and it is independently reproduced on plan 010
+(`010-…/gaps.md` § G7). Mutations M1, M2 and M3 (*Method*) establish the added test's
 discrimination, its uniqueness, and the discrimination of D3(b) and D3(c). Both passes snapshotted
 `github_pr.py`'s bytes to a scratch directory and restored from that snapshot — never with a git
 operation — and re-checked `git status --porcelain` clean afterwards; the baseline selection re-runs

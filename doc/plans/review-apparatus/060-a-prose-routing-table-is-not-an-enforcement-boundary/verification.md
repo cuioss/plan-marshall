@@ -201,6 +201,13 @@ a project where `_probe_merge_train_state()` would return `MERGE_QUEUE_ELIGIBLE_
 `enqueue_corroboration` from a probe verdict instead. The 2xx-on-unconfigured case is PLAUSIBLE, not
 confirmed: nobody in this repository has measured it.
 
+**A second GitLab shortfall sits behind the other two members.** The preflight `gitlab:merge` and
+`gitlab:safe-merge` share, `_refuse_on_required_merge_train`, fails **open** when the project scope
+cannot be resolved: `_probe_merge_train_state` returns `ineligible` with no error for that case, so
+the preflight permits the immediate merge. MEASURED, and it is not a documented design the way the
+`merge-queue` delegation is — the guard's own docstring claims the opposite. Full evidence at
+§ Correctness review item 5.
+
 **The published caller enumeration is wrong.** The report states *"the marshall-steward landing cycle
 uses `safe-merge`"*. `marketplace/bundles/plan-marshall/skills/marshall-steward/references/landing-cycle.md:152-154`
 dispatches:

@@ -203,21 +203,21 @@ so nothing load-bearing rests on it.
 | F25 fixed — the barrier's own prompt, mutation-verified | **ACCURATE** | `branch-cleanup.md:1096-1137`; `test_the_barriers_own_prompt_does_not_offer_a_retriage_remedy` + `…_offers_the_structural_remedies` |
 | F26 fixed — recovery scoped to required bots | **ACCURATE** | `automatic-review/SKILL.md:370`; named in item 7a's settling claim (`phase-6-finalize/SKILL.md:1391`) |
 | F27 fixed — `--refusal-size-caps` on the shared flag block | **ACCURATE** | `review_completeness.py:1434` inside `_add_bot_observation_flags`; mutation I reproduces "exactly the cap-only case, and nothing else" (measured: 1 failure, `[cap-only-…]`) |
-| F29 deferred — "latent-only (**no registered bot declares `rate_limit_eta_patterns`**)" | **FALSE** | `coderabbit.md:57-60` declares three. The bug at `_github_pr.py:347` is still live, and still latent — but for a different reason I had to derive myself (all three declared patterns carry exactly one *mandatory* group). See G4 |
-| F29 deferred — "fixing it would widen the diff into a sibling function this plan does not own" | **OVERSTATED** | The plan wrote `refusal_size_cap` in the same file ~100 lines above (`_github_pr.py:221` vs `:326`), and edited that file by 110 lines |
+| F29 deferred — "latent-only (**no registered bot declares `rate_limit_eta_patterns`**)" | **REFUTED** | `coderabbit.md:57-60` declares three. The bug at `_github_pr.py:347` is still live, and still latent — but on a substituted proof the report never states: all three declared patterns carry exactly one *mandatory* group. See G2 |
+| F29 deferred — "fixing it would widen the diff into a sibling function this plan does not own" | **OVERSTATED** | The plan wrote `refusal_size_cap` in the same file 105 lines above (`_github_pr.py:221` vs `:326`), and edited that file by 110 lines |
 | F37 / F49 — two `./pw verify` runs exited 0 while failing | **UNVERIFIABLE** | A property of runs, not of the tree. The two fixes they name are present |
 | F43 fixed — the `deficit` canonical block documents `--refusal-size-caps` | **ACCURATE for `SKILL.md`, INCOMPLETE in the tree** | `automatic-review/SKILL.md:1007` carries it; the module's own usage synopsis (`review_completeness.py:116`) still omits it, while `:115` (`check`) carries it. See G5 |
 | F48 fixed — the prompt renders the full `{unproven_bots}` set | **ACCURATE** | `branch-cleanup.md:1115`, `:1122-1126`; pinned at `test_structural_refusal.py:870` |
 | F51–F57 fixed | **ACCURATE** | Split option points at the loop-back (`branch-cleanup.md:1139`); no `--outcome done` in the structural commands (pinned `:813`); remedies complete (pinned `:850`); mutex re-acquire named on the disable arm (`:1141`); pending-findings section carries both obligations inline (`:1147-1150`); `_add_bot_observation_flags` says "nine list flags" and nine are declared (counted) |
 | F58–F63 fixed | **ACCURATE** | The two senses of "loop-back" separated (`branch-cleanup.md:1059`); the knob description rewritten (`:50`); "never re-**PROMPTS**" (`phase-6-finalize/SKILL.md:1365`); "return control to the finalize dispatcher" + the destructive-fall-through warning (`branch-cleanup.md:1092`) |
-| F70 deferred — the default-configuration console text names nothing | **ACCURATE, and still open** | `plan-marshall/workflow/execution.md:609-612` renders a target-named prompt carrying no bot, cap, size or remedy |
+| F70 deferred — the default-configuration console text names nothing | **ACCURATE, and still open** | `plan-marshall/workflow/execution.md:609-612` renders a target-named prompt carrying no bot, cap, size or remedy. See G11 |
 | Build gate: "8 files", enumerated | **ACCURATE** | `git show --stat 9e9e9880` lists exactly those eight `*.py` paths |
 | Build gate: "ran **ten times**" against a ten-row table | **ACCURATE** | Ten rows counted |
 | Mutation table: nine rows A–I, heading "nine mutations" | **ACCURATE** as a count | Nine rows |
-| Mutation row A: "7, all in case (a) + the summary and both-commands checks" | **INACCURATE** | Re-run: **9** failures, including `TestTheCapIsRecorded::test_a_cap_arriving_without_its_cause_still_resolves_structural`, which is case (c). Discrimination is *stronger* than claimed, but the row is wrong in both count and composition — the fifth instance of the stale-count defect the report itself keeps recording |
+| Mutation row A: "7, all in case (a) + the summary and both-commands checks" | **INACCURATE** | Re-run independently (`if cause == CAUSE_SIZE` → `if False`, snapshot-and-restore, tree left clean): **9 failed, 72 passed**. The nine are `test_size_refusal_is_structural_not_a_rate_refusal`, `test_cause_dominates_an_awaitable_window_class`, `test_a_size_refusal_is_structural_for_every_registered_bot` ×3, `test_check_and_deficit_agree_on_the_member` ×2, `test_the_summary_distinguishes_structural_from_temporal`, and `TestTheCapIsRecorded::test_a_cap_arriving_without_its_cause_still_resolves_structural` — the last in case (c), which the row's composition does not mention. Discrimination is *stronger* than claimed, but the row is wrong in both count and composition |
 | Mutation rows D (3), E (1), I (1, cap-only) | **ACCURATE** | Re-run reproduces each exactly |
 | "⛔ **No test pins the real provider figure** … every cap assertion uses a synthetic notice" | **ACCURATE in substance** | The literal `150000` does appear in this landing's own test fixtures (`test_github_pr.py:2599`, and asserted at `:2671`, `:2845`), but only as a value extracted from a **synthetic** body defined in the test — a provider budget change cannot fail it. The claim's meaning holds; the literal's presence is worth knowing |
-| "One row per INSTANCE, never bundled" | **FALSE as applied** | F8–F20 (13), F30–F36 (7), F44–F47 (4) and F65–F69 (5) are each one bundled row. The report violates its own stated discipline four times in the section that states it |
+| "One row per INSTANCE, never bundled" | **FALSE as applied, and two of the four bundles miscount** | F8–F20 (13 ids), F30–F36 (7), F44–F47 (4) and F65–F69 (5) are each one bundled row — the discipline is broken four times in the section that states it. Re-counting each cell's own enumeration: F8–F20 says "Thirteen" but enumerates **fifteen** (2 advisory sites + 1 "only labels" + 5 member enumerations + 1 help text + 3 producer-side + 2 flag counts + 1 field enumeration); F30–F36 says "Seven" but enumerates **eight**. F44–F47 and F65–F69 do match. See G9 |
 | Reviewer-participation rows, the dropped `opened` dispatch, the `/review` recovery, run ids, timings | **UNVERIFIABLE from the tree** | PR-runtime facts; not checked against the provider |
 | Contract check Step 8 "Bridge: `git diff --name-only origin/main...HEAD -- doc/plans/` returns exactly this plan's `plan.md` and `report-01.md`" | **ACCURATE** | `git show --stat -M 9e9e9880 -- doc/plans` shows exactly a `plan.md` rename (0 changes) and `report-01.md` |
 
@@ -225,13 +225,14 @@ so nothing load-bearing rests on it.
 
 | Survivor | Stated (a)-proof / (b)-bound | Holds? |
 |---|---|---|
-| **F29** — `_extract_rate_limit_eta` carries the identical `group(1) is None` crash under the identical false docstring promise | (a) "latent-only (no registered bot declares `rate_limit_eta_patterns`)"; (b) "out of this plan's declared surface … a sibling function this plan does not own" | **(a) does not hold as stated** — `coderabbit.md:57-60` declares three ETA patterns. The bug is nonetheless still latent, by a fact the report never states: all three declared patterns carry exactly one *mandatory* capturing group, so `group(1)` cannot be `None` for them. I verified this by reading the three patterns. **(b) is weak** — the twin function the plan *did* fix lives in the same file 105 lines above. The survivor is real, still open at `_github_pr.py:347`, and its recorded justification is wrong |
-| **F70** — on the default configuration the operator's console text names nothing | (b) "the Display is the finalize dispatcher's, shared by every loop-back in the phase; re-shaping it is a dispatcher-wide change well outside this plan's declared surface" | **Holds.** `plan-marshall/workflow/execution.md:609-612` is the shared loop-back continuation prompt, branching only on `loop_back_target` and naming no barrier detail. Re-shaping it would indeed be dispatcher-wide. Still open |
+| **F29** — `_extract_rate_limit_eta` carries the identical `group(1) is None` crash under the identical false docstring promise | (a) "latent-only (no registered bot declares `rate_limit_eta_patterns`)"; (b) "out of this plan's declared surface … a sibling function this plan does not own" | **(a) is REFUTED as stated** — `coderabbit.md:57-60` declares three ETA patterns. **The conclusion nonetheless holds, on a substituted proof:** all three carry exactly one *mandatory* capturing group (`wait (…) before requesting another review` ×2, `(…) before … limit resets`, `coderabbit.md:58-60`), so `match.groups()` can never be a one-tuple holding `None` for them; and no other registry doc declares the field (searched: `rate_limit_eta_patterns` across `automatic-review/standards/`). **(b) is weak** — the twin function the plan *did* fix is `refusal_size_cap` at `_github_pr.py:221`, 105 lines above in the same file, and the landing edited that file by 110 lines. The survivor is real, still open at `_github_pr.py:347`, its docstring promise still false at `:337-338`, and its recorded justification wrong. See G2 |
+| **F70** — on the default configuration the operator's console text names nothing | (b) "the Display is the finalize dispatcher's, shared by every loop-back in the phase; re-shaping it is a dispatcher-wide change well outside this plan's declared surface" | **Holds, re-derived.** `plan-marshall/workflow/execution.md:609-612` is the shared loop-back continuation prompt: its ELSE arm branches on `loop_back_target` alone (`5-execute` / `6-finalize`) and names no barrier detail, no bot, no cap. Every `loop_back` emitter in the phase lands there, so re-shaping it is dispatcher-wide exactly as the bound claims. Still open. See G11 |
+| **F78** — "the durable repair is not to state a count beside a table at all … is not made here" | (b) a documentation-standards change beyond this plan's scope | **Holds as a scoping bound — and the residue it predicted materialised.** Two further stale counts survive in the report: F8–F20's "Thirteen" against an enumeration of fifteen, and F30–F36's "Seven" against an enumeration of eight. Neither was touched by any of the four earlier count fixes, because each treated the count as a one-off in the sentence it was reading. See G9 |
 
 ## Correctness review
 
 **C1 — the leaf recovery's cause discriminator is not produced (major).**
-`automatic-review/SKILL.md:360-362` promises both refusal producers carry the cause and the cap:
+`automatic-review/SKILL.md:361-364` promises both refusal producers carry the cause and the cap:
 
 > "Both carry the same discriminators, so this section treats them uniformly: `{bot_kind}`, its
 > `rate_limit_class` …, the refusal's `cause` (`size` / `quota`, from the `refused_causes[]`
@@ -241,12 +242,14 @@ so nothing load-bearing rests on it.
 Neither does:
 
 - `_github_pr._detect_rate_limited_bots` appends `{'bot_kind', 'rate_limit_class', 'eta'}`
-  (`_github_pr.py:404-408`), and its docstring says so (`:369`). The authoritative field contract
+  (`_github_pr.py:403-409`), and its docstring says so (`:369`). The authoritative field contract
   agrees: `rate_limited_bots[N]{bot_kind,rate_limit_class,eta}`
   (`tools-integration-ci/standards/api-contract.md:147`, restated
   `workflow-integration-github/SKILL.md:398`).
 - `github_re_review._refusal_record` returns `{'source', 'bot_kind', 'layer', 'eta', 'body'}`
-  (`github_re_review.py:330-336`).
+  (`github_re_review.py:331-337`). Its `body` is the one field a cause could in principle be
+  re-derived from, but it is a truncated `_body_excerpt` (`:142-147`) and no instruction anywhere
+  tells the leaf to re-derive from it — which the workflow-discipline rule forbids improvising.
 
 `refused_causes[]` and `refused_size_caps[]` exist only on the `fetch_findings` return, produced in
 § "Producer: FIND" (`automatic-review/SKILL.md:589`) — **after** § "Rate-limit refusal recovery"
@@ -257,31 +260,43 @@ three temporal members.
 
 Consequences, all confirmed by reading:
 
-1. Branch 0's guard (`cause: size`) has no input on the recovery path, so an `awaitable_window` bot
-   refusing on size still falls to Branch 2 `claim_and_await` — precisely non-option pairing #2,
-   which the report records as closed.
-2. The `refusal_structural` envelope's `cap:` and `measured_diff_size:` fields
+1. ⭐ **Non-option pairing #1 — the defect D1 exists to remove — survives here, for a bot in the tree
+   today.** Branch 0's guard has no input, so a **Sourcery** size refusal falls through to Branch 1,
+   whose guard is "`hard_quota` or `unknown` **(and `cause` is not `size`)**"
+   (`automatic-review/SKILL.md:400`) and which returns
+   `escalate_ask{reason: rate_window_not_awaitable}`. Item 7a routes that reason into the four
+   TEMPORAL reasons' shared option set, whose first option is
+   `"Wait another {review_rate_window_timeout_seconds}s"` (`automatic-review/SKILL.md:902`, rendered
+   at `phase-6-finalize/SKILL.md:1345`). Sourcery declares the size pattern (`sourcery.md:43`) AND
+   `rate_limit_class: hard_quota` (`:49`), so this needs no hypothetical registry entry — it is the
+   report's own pairing #1, reproduced one layer out from where the fix landed.
+2. Non-option pairing #2 stays unguarded: an `awaitable_window` bot refusing on size would fall to
+   Branch 2 `claim_and_await`. This half does need a bot declaring both, which none does today.
+3. The `refusal_structural` envelope's `cap:` and `measured_diff_size:` fields
    (`automatic-review/SKILL.md:918-920`) have no source at emit time, so item 7a's two audit figures
    would render unbound.
-3. Because `review_rate_window_await` defaults to `false`, none of this fires on a default install —
-   which is exactly the reasoning F25 used, and exactly why it survived six review rounds.
+4. Because `review_rate_window_await` defaults to `false`, none of this fires on a default install —
+   which is exactly the reasoning F25 used, and exactly why it survived six review rounds. That is a
+   configuration default an operator may flip, not a structural barrier.
 
-**C2 — `{cap}` is an unbound placeholder at the barrier (major).** It is interpolated at
-`branch-cleanup.md:1089` (the headless decision-log), `:1113` (the `ask` prompt body), `:1149` and
-`:1150` (the pending-findings obligations). The barrier binds `{refusal_size_caps}` — *a list of
-`{bot_kind}:{cap}` pairs* — and the scalar `{measured_diff_size}` at `:814`, and explicitly derives
-`{structural_bots}` at `:1050`; it never derives `{cap}`. Its read instruction at `:860` names only
-`participation_complete`, `unproven_bots` and `bot_states` — not `refusal_causes[]`, the field that
-actually carries the cap. The document's own standard makes this a defect rather than a nit
-(`:901-904`):
+**C2 — `{cap}` has no stated derivation at the barrier (minor).** It is interpolated five times at
+four sites: `branch-cleanup.md:1089` (the headless decision-log, twice), `:1113` (the `ask` prompt
+body), `:1149` and `:1150` (the pending-findings obligations). The barrier binds
+`{refusal_size_caps}` — *a list of `{bot_kind}:{cap}` pairs* — and the scalar `{measured_diff_size}`
+at `:814`, and explicitly derives `{structural_bots}` in a fenced block at `:1050`; the bare token
+`{cap}` is never assigned. ⚠ **This is weaker than an unbound value.** The cap IS available and the
+document names its source: `:864` instructs "name BOTH figures alongside it — the **cap** from
+`refusal_causes[]`". What is missing is the step from the pair list to the scalar token the prompt
+interpolates, plus a decision on how a scalar renders when `{structural_bots}` holds two bots. The
+naming compounds it — the payload field is `refused_size_caps[]` on the `fetch_findings` return
+(`:814`) and `refusal_causes[]` on the `review_completeness check` return (`:864`) — and the read
+instruction at `:860` names neither.
 
-> "**Nothing can describe the gap.** `{count}` and `{unproven_bots}` are structurally unbound on an
-> UNKNOWN path … so a prompt body or a `--granted-over` string built from them would report a fiction"
-
-`{cap}` is additionally per-bot while the placeholder is scalar, so with two structural bots there is
-no single correct value. `test_the_barriers_own_prompt_quantifies_the_gap`
-(`test_structural_refusal.py:759`) asserts `'{cap}' in block` — it pins the *presence of the unbound
-placeholder*, so it cannot catch this.
+The `:901-904` standard ("`{count}` and `{unproven_bots}` are structurally unbound on an UNKNOWN path
+… would report a fiction") does **not** apply: it governs the UNKNOWN path, where the producer never
+emitted the value at all. Here it did. `test_the_barriers_own_prompt_quantifies_the_gap`
+(`test_structural_refusal.py:759`) asserts `'{cap}' in block` — it pins the placeholder's presence, so
+it cannot detect that nothing binds it. See G3.
 
 **C3 — the printed grant remedy carries a HEAD that its own caveat says may be wrong (minor).**
 `branch-cleanup.md:1089` interpolates `--head {sha}` (bound at `:999`, the authorization check) into

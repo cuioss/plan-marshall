@@ -325,7 +325,7 @@ carries only what plan 110 uniquely owns.
   exists precisely because *"the `(bot_kind, comment_id)` dedup cannot fire because each turn posts a
   comment with a NEW id"* (`github_pr.py:374–377`) — the under-firing direction of the plan's ⭐⭐
   "the dedup key is wrong in BOTH directions". `bot-participation-contract.md` § "Recorded exclusions"
-  (`:667–676`) records a decision about the await predicate's *test* but answers a different question
+  (`:668–677`) records a decision about the await predicate's *test* but answers a different question
   (taxonomy vocabulary), not this plan's D0 class question.
 - **Impact:** The plan's D0 gate required each population member classified by what it reads. Two
   members of the population the plan itself defined were never classified, so whether either is

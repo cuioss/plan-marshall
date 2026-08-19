@@ -129,7 +129,7 @@ the `surface` payload unconditionally (only one emit site for `scope_statement` 
 the two are genuinely paired on every surface). Four tests pin it
 (`test_self_review.py:3855-3907`). But `pre-submission-self-review.md:270` states plainly that
 *"the `--display-detail` budget … carries neither, and the dispatched-envelope schema below has no
-field for either"*, and `:279` concludes *"it is published, not discharged"*. So the step's recorded
+field for either"*, and `:272` concludes *"it is published, not discharged"*. So the step's recorded
 verdict — the artefact a downstream reader sees — carries no limit; only the helper's TOON, read by
 the dispatched agent, does. Against the plan's *Done when* ("each gate's **verdict** carries its own
 scope limit") that is a partial discharge, and it is asymmetric with the build gate, whose limit is
@@ -294,7 +294,7 @@ All 86 tests in the four suites I ran pass on the current tree.
 | "Commit `1b3cfa6`, refined in `61dd515`" (and the six other branch SHAs) | **UNVERIFIABLE** | The PR was squash-merged and the branch deleted; `git log --oneline -1 <sha>` returns "unknown revision" for all seven. Not evidence of falsehood |
 | D0: build gate gained `AnalysisLimit`, `dimension_stem`, `structural_limits`, rendered on COMPLETE and PARTIAL, UNKNOWN for uncharacterised dimensions | **ACCURATE** | `_gate_coverage.py:187-408`; four tests at `test_gate_coverage.py:191-386` |
 | D0: "An uncharacterised dimension renders UNKNOWN rather than being omitted" | **ACCURATE** | `:326-332`; `test_unregistered_dimension_is_reported_unknown_not_omitted:245` |
-| D0: self-review gained `structural_limit` "beside the existing `scope_statement`" | **ACCURATE but incomplete** | `self_review.py:409`; the field rides the surfacer payload only, and `pre-submission-self-review.md:279` says so ("published, not discharged"). The report does not note that the step's verdict still carries neither |
+| D0: self-review gained `structural_limit` "beside the existing `scope_statement`" | **ACCURATE but incomplete** | `self_review.py:409`; the field rides the surfacer payload only, and `pre-submission-self-review.md:272` says so ("published, not discharged"). The report does not note that the step's verdict still carries neither |
 | D0: "The block now closes with a derived `not run in this gate at all: …` line" | **ACCURATE** | `_gate_coverage.py:344-357`; tests at `:326`, `:344`, `:357` |
 | D0: "Gate-set completeness is not claimed … three carry no structural limit and were not changed" | **ACCURATE** | Grep over the three docs: no structural-limit text; plugin-doctor's two hits are scope statements |
 | D1: "`review_commitments.py` (new, `phase-6-finalize/scripts/`) derives … parses … reports the intersection" | **ACCURATE** | File present, 456 lines, functions as described |

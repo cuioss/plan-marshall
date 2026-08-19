@@ -30,9 +30,13 @@ Searches run (all reported absences are backed by one of these):
   one: `plugin-doctor/scripts/_analyze_literal_count.py:179` (a `persona-security-expert`-scoped
   count contract) and two test-side tables in `test_bot_participation_contract.py:185` /
   `test_cleanup_contract.py:143`. None of the three consumes the cardinality-noun set.
-- `grep -rni "cardinality noun"` over `*.py`/`*.md` (excluding `doc/plans/`) → the four enumerating
-  restatement sites, two non-enumerating comment lines in `_self_review_patterns.py:163,169`, one
-  noun-agnostic schema row, and one test comment.
+- `grep -rni "cardinality noun"` over `*.py`/`*.md` (excluding `doc/plans/`) → eight hits: three of
+  the four enumerating restatement sites (`ext-self-review-plan-marshall/SKILL.md:256`,
+  `_self_review_detectors.py:1048`, `pre-submission-self-review.md:316` — the fourth, the
+  `_CARDINALITY_NOUNS` constant itself, carries no such phrase and is reached by the constant sweep
+  above), the `## Tests` coverage row at `SKILL.md:379`, one noun-agnostic schema row
+  (`ext-point-self-review-surfacing.md:215`), two non-enumerating comment lines in
+  `_self_review_patterns.py:163,169`, and one test comment (`test_self_review.py:1559`).
 - `grep -rl "count_prose\|count-prose"` repo-wide → 20 tracked files (21 hits including
   `.pytest_cache`); each non-test, non-plan hit opened and read.
 - `grep -rniE "operations?, *fields?, *steps?, *rules?"` repo-wide → the enumerating sites.
@@ -46,22 +50,27 @@ Searches run (all reported absences are backed by one of these):
 - `git log --oneline bb9ab493..HEAD -- <the touched ext-self-review and finalize paths>` → one later
   commit, `622f4484` (#1239), which did **not** alter the noun set (`git log -S'commands?|checks?'`
   returns only `bb9ab493`).
-- `git log --oneline -S'_collect_skill_contract_sources'` → `94bcddf2` (#1189) is the commit that
-  moved `_detect_count_prose` onto the shared resolver, confirming the file-scope widening the
-  report attributes upstream.
+- `git log --oneline -S'_collect_skill_contract_sources'` on `_self_review_detectors.py` → two
+  commits, `99a9a913` (the module decomposition) and `94bcddf2` (#1189); reading the latter's diff
+  shows it is the one that moved `_detect_count_prose` off `skill_dir / 'SKILL.md'` and onto the
+  shared resolver, confirming the file-scope widening the report attributes upstream.
 - `git log --oneline -S"eight list flags" -- automatic-review/SKILL.md` → `064560ab` (#1168) and
   `9e9e9880` (#1241); `git log -S"nine list flags"` → `9e9e9880` alone.
 
 Executed:
 
 - `uv run python -m pytest test/pm-plugin-development/ext-self-review-plan-marshall/test_self_review.py -o addopts="" -q -k count_prose`
-  → `5 passed`.
+  → `5 passed` — 5 of `TestDetectCountProse`'s 8 cases; the other three do not carry `count_prose`
+  in their names.
 - A mutation probe that monkey-patches `_self_review_detectors._COUNT_PROSE` in process (no file was
   edited) and re-runs the two new tests' fixtures through the real `_detect_count_prose`, against the
   pre-fix five-noun set, the landed six-noun set, and an any-noun over-widening.
 - A regex probe evaluating those three variants plus a `flags?`-extended set against
   `the eight list flags` / `nine list flags` / `nine flags`.
-- A first-party re-derivation of the number-follower distribution over the detector's real domain
+- A first-party re-derivation of the number-follower distribution, counted **per line** because the
+  detector matches per line — a whole-file scan lets `\s+` cross a newline and inflates every figure
+  (`checks` alone gains 8 spurious hits from TOON blocks such as `elapsed_sec: 210` followed by
+  `checks[3]{...}`) — over the detector's real domain
   (517 `SKILL.md` + `standards/*.md` files under `marketplace/bundles/*/skills/*` at HEAD; **510** at
   the landing commit, which is the figure the report states), to check the report's "derived, not
   guessed" claim.
@@ -80,8 +89,8 @@ No repository file was modified other than this file and `gaps.md`. No full buil
 |---|---|---|---|---|
 | D0 | Every accepted finding has a yes/no with a named detector per yes; the unanswered set is reported with its size | 43 observed · 30 answered · yes 3 · no 27 · unanswered 13; both plan anchors absent from the window | Counts are internally consistent (30 = 3+27, 43 = 30+13). Two spot-checks match exactly (#1170 all-answered, #1167 four-unanswered incl. the count-prose finding). One anchor's git provenance is misattributed to the wrong PR number. The plan's "re-derive the registry" obligation is unreported | verified-with-gaps |
 | D1 | Each security-shaped candidate classified activation-question or detector-gap, both drop paths named, per-run verification stated unavailable | One candidate (path traversal, #1201) → activation question; Path A `lane_dropped`, Path B `security_class_omitted`; per-run lane unavailable | Every anchor re-confirmed at HEAD: `tier: full`, `persona: persona-security-expert`, `order: 9`, `_TIER_RANK`, `_apply_security_class_inactive`, the exact drop-reason string, `_CEREMONY_FINALIZE_DEFAULT = 'auto'`. The #1201 fix exists in the tree with a `/etc/passwd` comment | verified |
-| D2 | Each yes has a new detector or a justified widening; the docstring contradiction is fixed | No new detector; `check` added to the noun set; four consumer restatements updated in lock-step | The widening and all four restatements survive at HEAD. The docstring contradiction is genuinely resolved, so the *Done when* is met. **But** the widening does not reach the corpus finding the report offers as its corroboration (an adjacency limit the report never diagnoses), the derivation's own higher-frequency candidates were never adjudicated, and a fifth restatement site was missed | verified-with-gaps |
-| D3 | Both cases exist per detector, each proven discriminating by mutation | Positive `nine checks`/`two checks`/`one check`; negative `5 deliverables`/`3 modules`/`5 checkpoints`; mutation-proven in scratch | Both tests exist and pass. I reproduced the mutation result independently: the positive fails on the five-noun set, the negative fails under any-noun. The proof harness is not in the repo | verified |
+| D2 | Each yes has a new detector or a justified widening; the docstring contradiction is fixed | No new detector; `check` added to the noun set; four consumer restatements updated in lock-step | The widening and all four restatements survive at HEAD, and the docstring contradiction is genuinely resolved. **But** the clause's first half is met by none of the three yeses (already-covered, routed out, routed out) — the report restates it at `report-01.md:81`; the widening does not reach the corpus finding offered as its corroboration (an adjacency limit the report never diagnoses); five higher-frequency derivation candidates were never adjudicated; and a fifth restatement site was missed | verified-with-gaps |
+| D3 | Both cases exist per detector, each proven discriminating by mutation | Positive `nine checks`/`two checks`/`one check`; negative `5 deliverables`/`3 modules`/`5 checkpoints`; mutation-proven in scratch | Both tests exist and pass. The mutation result reproduces independently, at the regex level and through the real detector: the positive fails on the five-noun set, the negative fails under any-noun. The proof harness is not in the repo, and the positive is not "drawn from the real accepted finding" the clause names — an unreported substitution | verified-with-gaps |
 
 ### D0 — the answered-finding corpus
 
@@ -210,7 +219,7 @@ the parser-surface figure from seven to eight. `9e9e9880` (#1241) then raised th
 different populations and are each correct:
 
 - `automatic-review/SKILL.md:684`, `:686`, `:691` say **eight**, and are scoped to the
-  `review_completeness check` invocation printed immediately above them at `:672-679`, which passes
+  `review_completeness check` invocation printed immediately above them at `:675-682`, which passes
   exactly eight list flags.
 - `:980` and `review_completeness.py:1301` say **nine**, and are scoped to the parser's whole flag
   surface. Nine is authoritative: `grep -n "nargs='?'"` on `review_completeness.py` returns nine hits
@@ -229,7 +238,7 @@ all `is_resolved: false`, `total_count: 1`, re-read through the GitHub review-co
 the widened detector cannot see the shape it reported. "Unanswered" and "unfixed" are different
 claims, and only the first holds here.
 
-**"Derived, not guessed" is overstated.** The plan required (plan.md:112-114):
+**"Derived, not guessed" is overstated.** The plan required (plan.md:111-113):
 
 > ⚠ **Widening must be DERIVED, not guessed.** … **Derive the noun set from the counts that actually
 > appear in the corpus, and state whether the resulting set is closed.**
