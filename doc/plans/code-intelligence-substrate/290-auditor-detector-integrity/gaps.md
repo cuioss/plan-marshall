@@ -1,37 +1,52 @@
 # Gaps — 290-auditor-detector-integrity
 
 All six deliverables plus the extra C4 fix are implemented at the sites the plan named, by the mechanisms it
-asked for, and every one is covered by tests proved non-vacuous under mutation. What remains is seventeen
-items: one documented-but-unimplemented precedence rule inside the new census (G1), one stale predicate
-docstring (G2), one untested guard the code itself calls load-bearing (G3), two enumeration/scope statements
-that are wrong on the tree (G4, G12), two declared-residue defects still open (G5, G7), the plan claim that
-was never located (G6), four checks whose semantics this plan changed without bumping their era stamps
-(G8-G11), and five stale or misattributed claims confined to the run report (G13-G17).
+asked for, and every one is covered by tests proved non-vacuous under mutation — each mutation re-run
+adversarially against the shipped files themselves, not only in process. What remains is seventeen items:
+one documented precedence rule inside the new census that **cannot fire on the live emitter set** (G1 —
+the only high), one stale predicate docstring (G2), one untested guard the code itself calls load-bearing
+(G3), two enumeration/scope statements that are wrong on the tree (G4, G12), two declared-residue defects
+still open (G5, G7), the plan claim that was never located (G6), four checks whose semantics this plan
+changed without bumping their era stamps (G8-G11), and five stale or misattributed claims confined to the
+run report (G13-G17).
+
+Two of these — G1 and G3 — are instances of this plan's own subject matter (a guard that cannot fire; a
+load-bearing guard nothing pins) located *inside the deliverable built to detect that archetype*. They are
+the entries a fix plan should take first.
 
 ## G1 — Make `_examined_population` read `plans_in_corpus` first, as its docstring claims
 
 - **Kind:** bug
-- **Severity:** medium
+- **Severity:** high
 - **Topic:** detectors/auditor
 - **Where:** `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py:5488-5529`
   (`_PLANS_IN_CORPUS_RE`, `_examined_population`); emitters at `:5966`/`:5970` and `:8441`/`:8442`
 - **Evidence:** the docstring states *"Precedence, strongest evidence first: 1. `plans_in_corpus` — the
   check's OWN statement of what it examined. Read first"*, but the implementation is one `re.search` over
   `^(?:plans_in_corpus|plans_in_series|plans_measured):\s*(\d+)$`, so the key appearing **first in the block
-  text** wins. Both aliasing checks emit their alias first: `token-efficiency-trend` prints
-  `plans_in_series` before `plans_in_corpus`, `lane-lever-effectiveness` prints `plans_measured` before it.
-  Demonstrated in process — for a block carrying `plans_measured: 0` then `plans_in_corpus: 7`,
-  `_examined_population(block, 12)` returns `0` and `_classify_zero` returns `starved`; with the two lines
-  swapped it returns `7` and `disciplinary`.
-- **Why it matters:** the census's whole job is refusing verdicts it cannot substantiate. Today the alias and
-  the canonical key are numerically equal so nothing misreports, but the first check whose alias means
-  something narrower or wider than `plans_in_corpus` silently flips its own zero class, and the docstring
-  guarantees the opposite. The comment at `:8419` ("Published under the key the census reads") is already
-  false for `lane-lever-effectiveness`, whose alias is what actually gets read.
+  text** wins. Demonstrated first-party against the shipped module — for a block carrying
+  `plans_measured: 0` then `plans_in_corpus: 7`, `_examined_population(block, 12)` returns `0` and
+  `_classify_zero` returns `starved`; with the two lines swapped it returns `7` and `disciplinary`.
+  **The documented precedence is never exercised.** A sweep of every emission of the three population keys
+  (`grep -n 'plans_in_series:|plans_measured:|plans_in_corpus:'`) returns twelve sites, and they partition
+  exhaustively into two cases: the only two checks that emit an alias **and** the canonical key emit the
+  **alias first** — `token-efficiency-trend` (`plans_in_series` at `:5966`, `plans_in_corpus` conditionally
+  at `:5970`) and `lane-lever-effectiveness` (`plans_measured` at `:8441`, `plans_in_corpus` at `:8442`);
+  every other check emits `plans_in_corpus` alone, where there is nothing to prefer. So on the live emitter
+  set the rule "read `plans_in_corpus` first" can never change an outcome in either direction.
+- **Why it matters:** this is not a latent risk that a future alias might diverge — it is a **rule that
+  cannot fire today**, which is precisely this plan's flagship archetype, sitting inside D6, the deliverable
+  built to detect that archetype. A reader auditing the census finds a documented precedence and a passing
+  suite, and neither is evidence the precedence operates. The values happen to coincide today, so no number
+  is currently wrong; the guarantee the docstring makes is nonetheless unimplemented for 100% of the blocks
+  where it could apply. The comment at `:8419` ("Published under the key the census reads") is already false
+  for `lane-lever-effectiveness`, whose alias is what actually gets read.
 - **Action:** iterate `_EXAMINED_POPULATION_KEYS` in order, searching a per-key pattern and returning the
   first key that matches, instead of a single alternation search. Keep the key set as-is.
 - **Done when:** a test stages one block carrying two different `plans_*` population values in **both**
-  orders and asserts `_examined_population` returns the `plans_in_corpus` value in both.
+  orders and asserts `_examined_population` returns the `plans_in_corpus` value in both — and, because a
+  test that only pins the fixed behaviour would not have caught this, the same test is confirmed to FAIL
+  against the current single-alternation implementation before the fix lands.
 - **Effort:** S
 - **Risk if fixed:** none behavioural today (the values coincide); the new test is the only new surface.
 
@@ -65,10 +80,14 @@ was never located (G6), four checks whose semantics this plan changed without bu
 - **Where:** `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py:5613-5616`;
   `test/plan-marshall/audit-archived-plan-retrospectives/test_audit_suspect_zero_census.py`
 - **Evidence:** the code carries *"`.get(check)` — NOT `.get(check, 0)`. An unread count must reach
-  `_classify_zero` as None so it is reported as such rather than classified as a measured zero."* Modelling
-  precisely that defect in process (pre-filling every `CHECK_NAMES` key with `0` before the call) leaves all
-  **33** census tests green. `_classify_zero`'s `None` contract is tested directly, and the real-sweep test
-  asserts only that no check *is* `no_count` — an assertion the mutation preserves.
+  `_classify_zero` as None so it is reported as such rather than classified as a measured zero."*
+  Re-confirmed adversarially by editing the shipped file itself — `per_check_genuine.get(check)` →
+  `per_check_genuine.get(check, 0)`, the exact defect the comment forbids — and the mutation survives
+  **all 33** census tests **and all 640 tests in
+  `test/plan-marshall/audit-archived-plan-retrospectives/`**, so nothing anywhere in the check's own suite
+  directory pins it, not merely nothing in its own module. (File restored from a byte snapshot; verified
+  identical to HEAD afterwards.) `_classify_zero`'s `None` contract is tested directly, and the real-sweep
+  test asserts only that no check *is* `no_count` — an assertion the mutation preserves.
 - **Why it matters:** this is the V3/W1 defect class (a false `disciplinary`, then a false `suspect`, both
   manufactured from a defaulted count) and the guard against its return has no regression test. A check that
   later stops publishing a readable count would be reported as a measured clean zero.
@@ -90,9 +109,10 @@ was never located (G6), four checks whose semantics this plan changed without bu
 - **Evidence:** the clause says gates rendering their own lines — naming `unresolved_ask_provider_drop`,
   `scope_gated_finalize`, `ceremony_finalize_selection` and the `*_inactive` pre-filter line — *"carry no
   `[STATUS]` tag and are matched individually by the reader's own per-mechanism patterns"*.
-  `domain_seeded_step_unresolvable` (`manage-execution-manifest.py:2186-2190`) renders its own drop line
-  **with** a `[STATUS]` tag and is matched by nothing; `canonical_verify_inactive` (`:2161-2165`) is a second
-  unnamed own-shape drop line.
+  `domain_seeded_step_unresolvable` (`manage-execution-manifest.py:2186-2191`) renders its own drop line
+  **with** a `[STATUS]` tag (at `:2188`) and is still matched by nothing — the shared pattern also requires a
+  trailing `:\s` reason separator, which that line does not carry; `canonical_verify_inactive`
+  (`:2159-2163`) is a second unnamed own-shape drop line.
 - **Why it matters:** the clause is the module's statement of its own boundary, which a future editor consults
   before adding a gate. It is a four-item enumeration of a set that is not four — the same defect shape this
   run corrected twice elsewhere (W8, Y7). Neither omission is harmful today, because both act on
@@ -164,9 +184,10 @@ was never located (G6), four checks whose semantics this plan changed without bu
 - **Kind:** bug
 - **Severity:** medium
 - **Topic:** architecture-core
-- **Where:** `marketplace/bundles/plan-marshall/skills/manage-locks/scripts/_locks_core.py:416-428`
-  (`_resolve_lock_log_path`); `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py:5017-5040`
-  (`dormate_global_logs`)
+- **Where:** `marketplace/bundles/plan-marshall/skills/manage-locks/scripts/_locks_core.py:414-427`
+  (`_resolve_lock_log_path`; the `main_local_base.parent / 'logs'` return is at `:427`);
+  `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py:5015-5040` (`dormate_global_logs`;
+  the `.plan/local/logs` scan root is at `:5034`)
 - **Evidence:** the lock timeline is written to `main_local_base.parent / 'logs'`, i.e. `.plan/logs/`, while
   every other global log lives in `.plan/local/logs/`. `dormate_global_logs` scans **only** `.plan/local/logs/`
   — `lock-2026-08-16.log` matches its `{prefix}-YYYY-MM-DD.log` grammar but is in the directory it never
@@ -194,9 +215,15 @@ was never located (G6), four checks whose semantics this plan changed without bu
   known accurate"* and rides every emitted block as `fixed_since`. Plan 290 (#1276) changed the check's scan
   roots and gave it an `unmeasured` state that withholds counts; the stamp still reads `#877`.
 - **Why it matters:** a reader diffing `contended_plans` across runs sees one unchanged era spanning a
-  scan-root change that turns structural zeroes into withheld counts. The file's own vocabulary shows #1260 —
-  a non-roadmap PR — taking a bump for a smaller semantic change to `global-log-analysis`, so the convention
-  is not roadmap-only in practice.
+  scan-root change that turns structural zeroes into withheld counts. The contract sentence at `:333-339`
+  and SKILL.md `:186-193` both phrase the stamp in *roadmap-era* terms, which on a literal reading would
+  excuse a non-roadmap plan; the file's live practice refutes that reading. Multiple entries are stamped
+  with **their own plan's** boundary and say so — `global-log-analysis` carries the inline rationale
+  *"#1260 (this plan's boundary, bumped from #849)"* naming *"the semantic change a reader most needs
+  dated"* (`:384-394`), and other entries carry a `PR-PENDING` sentinel resolved at finalize by the
+  dedicated `project:finalize-step-era-stamp-fill` step. So the convention in force is "a plan that changes
+  a check's semantics bumps that check's stamp", and plan 290 changed four checks' semantics and bumped
+  none — it did not even write the `PR-PENDING` sentinel the mechanism provides.
 - **Action:** set the entry to `#1276` with the one-line rationale the neighbouring entries carry. If the
   convention is genuinely roadmap-only, say so at `:333-339` instead, so the next reader is not left to guess.
 - **Done when:** the entry names a boundary at or after #1276, or the contract text scopes itself explicitly to
@@ -281,11 +308,15 @@ was never located (G6), four checks whose semantics this plan changed without bu
 - **Kind:** report-defect
 - **Severity:** low
 - **Topic:** documentation-surface
-- **Where:** `doc/plans/code-intelligence-substrate/290-auditor-detector-integrity/report-01.md` § D4,
-  *"**Verification** | 12 tests"*
-- **Evidence:** `test_audit_check_quality_chain_structural_pending.py` holds **17** test functions at
-  `2d5da71`; the report's own V1 disposition records "Five cases added", superseding the figure inside the
-  same document.
+- **Where:** `doc/plans/code-intelligence-substrate/290-auditor-detector-integrity/report-01.md` **line 78**
+  (§ D4, *"**Verification** | 12 tests"*)
+- ⚠ **Do not fix by string match.** The identical string *"**Verification** | 12 tests"* also appears at
+  **line 66**, in § D3, where it is **correct** — `test_audit_check_merge_window_accounting.py` really does
+  hold 12. Only the § D4 occurrence at line 78 is wrong. A grep-and-replace on "12 tests" would corrupt a
+  true figure.
+- **Evidence:** `test_audit_check_quality_chain_structural_pending.py` collects **17** (re-derived by
+  running the module: `17 passed`); the report's own V1 disposition records "Five cases added", superseding
+  the figure inside the same document. § D3's 12 re-derives as `12 passed`, confirming that occurrence.
 - **Why it matters:** the report's § Build gate sets the standard explicitly — *"a figure that predates the
   commits it reports as landed is exactly the moving-figure defect this run kept finding elsewhere"* — and
   applies it to one figure only.
@@ -299,10 +330,10 @@ was never located (G6), four checks whose semantics this plan changed without bu
 - **Kind:** report-defect
 - **Severity:** low
 - **Topic:** documentation-surface
-- **Where:** `report-01.md` § D5, *"41 tests in that module"*
+- **Where:** `report-01.md` **line 89** (§ D5, *"41 tests in that module"*)
 - **Evidence:** `test/plan-marshall/plan-retrospective/test_check_routing_decisions.py` collects **51** tests
-  (46 `def test_` functions, some parametrised) at `2d5da71`; X4 and Y4 added to it after the deliverable
-  commit.
+  (46 `def test_` functions, some parametrised) — re-derived by running the module: `51 passed`; X4 and Y4
+  added to it after the deliverable commit.
 - **Why it matters:** as G13.
 - **Action:** restate the count, or attribute it to the deliverable commit explicitly.
 - **Done when:** the stated count matches the module at the merge commit.
@@ -314,9 +345,9 @@ was never located (G6), four checks whose semantics this plan changed without bu
 - **Kind:** report-defect
 - **Severity:** low
 - **Topic:** documentation-surface
-- **Where:** `report-01.md` § D6, *"15 tests"*
-- **Evidence:** `test_audit_suspect_zero_census.py` holds **33** test functions at `2d5da71`; the census
-  absorbed additions in every verification round from V3 through R1.
+- **Where:** `report-01.md` **line 102** (§ D6, *"15 tests"*)
+- **Evidence:** `test_audit_suspect_zero_census.py` collects **33** — re-derived by running the module:
+  `33 passed`; the census absorbed additions in every verification round from V3 through R1.
 - **Why it matters:** as G13, and most misleading here — the figure understates by more than half the
   coverage of the plan's cross-cutting deliverable.
 - **Action:** restate the count, or attribute it to the deliverable commit explicitly.
@@ -329,8 +360,9 @@ was never located (G6), four checks whose semantics this plan changed without bu
 - **Kind:** report-defect
 - **Severity:** low
 - **Topic:** documentation-surface
-- **Where:** `report-01.md` § Build gate, *"(5 Python files: … plus 9 test modules)"*
+- **Where:** `report-01.md` **line 116** (§ Build gate, *"(5 Python files: … plus 9 test modules)"*)
 - **Evidence:** `git show --name-only 7951ada -- '*.py'` lists 5 production modules and **10** test modules
+  (re-derived at this review: the production and test partitions count 5 and 10 exactly)
   (`test_audit_check_cross_check_synthesis_couplings_d_f`, `…_era_model`, `…_global_log_analysis_emit`,
   `…_input_integrity_absent_execute`, `…_merge_window_accounting`, `…_quality_chain_structural_pending`,
   `…_recipe_provenance`, `…_registration_wiring`, `test_audit_suspect_zero_census`,
@@ -352,9 +384,11 @@ was never located (G6), four checks whose semantics this plan changed without bu
   pointed to"*
 - **Evidence:** the plan (`plan.md:112-114`) points at *"the same partition shape already shipped elsewhere in
   this codebase for **omitted-versus-dropped sections**"*, which is
-  `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/compile-report.py:511-616`
-  (`sections_omitted` / `sections_dropped`). `_invariants.py` is a different artifact, and its real path is
-  `marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_invariants.py`.
+  `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/compile-report.py:511-660`
+  (`sections_omitted` / `sections_dropped`, returned at `:511` and emitted at `:659-660`). `_invariants.py`
+  is a different artifact, and its real path is
+  `marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_invariants.py`, where the knowledge set it
+  supplies is named at `:1233-1241` and `_ACTIONABLE_FINDING_TYPES` (six members) at `:1246-1253`.
 - **Why it matters:** the delivered partition satisfies the deliverable either way, but the report asserts an
   identification it did not check — the failure mode this plan exists to close, in the report's own prose. It
   also leaves the pattern the plan actually cited unexamined, so nobody confirmed the two shapes agree.

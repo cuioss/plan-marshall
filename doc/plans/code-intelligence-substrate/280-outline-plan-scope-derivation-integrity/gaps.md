@@ -31,17 +31,24 @@ rest are report-level count and traceability defects.
   `e2b6665` (#1279) about 35 minutes before #1283 merged.
 - **Why it matters:** this is the F16/F20 defect class, two instances past the run that claimed to
   have closed it. Today the tests pass either way (replacing the stub with
-  `('materialized', '/nonexistent/xyz')` still gives 17 passed, because `compute_worktree_sha` is
-  separately stubbed), so the harm is latent: the moment `_cmd_pre_commit_verify_freshness` or
-  anything below it branches on `worktree_state`, these 17 tests silently exercise the
-  `disabled`/fallback path while looking like they exercise a materialized worktree.
+  `('materialized', '/nonexistent/xyz')` still gives 17 passed — re-run independently — because
+  `compute_worktree_sha` is separately stubbed), so the *runtime* harm is latent: the moment
+  `_cmd_pre_commit_verify_freshness` or anything below it branches on `worktree_state`, these 17 tests
+  silently exercise the `disabled`/fallback path while looking like they exercise a materialized
+  worktree. The severity is **medium** on the deliverable axis rather than the runtime one: these two
+  sites are the whole reason D5's population rule is undischarged, and "an incomplete deliverable" is
+  the medium band. Latency bounds the *risk*, not the *completeness*.
 - **Action:** replace the lambda with
   `lambda _plan_id: worktree_query_result(True, str(Path.cwd()))`, importing
   `worktree_query_result` from `_resolve_project_dir_fixtures` exactly as the sibling module
   `test/plan-marshall/manage-tasks/test_pre_commit_verify_freshness.py:59,268-269` already does.
-- **Done when:** `grep -rn "_query_worktree_path" test/ --include=*.py -A2 | grep -E "\((True|False),"`
-  returns no hand-written tuple outside `_resolve_project_dir_fixtures.py`, and
-  `test_freshness_notation_crosscheck.py` still passes (17 tests).
+  Verified to work: applying exactly this change to both sites leaves the module at **17 passed**.
+- **Done when:** `grep -rnE "lambda [^:]*: *\((True|False) *," test/ --include=*.py` returns nothing,
+  and `test_freshness_notation_crosscheck.py` still passes (17 tests). That regex is a verified
+  positive control — it returns exactly lines 166 and 563 today and nothing once the fix is applied.
+  ⛔ Do **not** use the looser `grep -rn "_query_worktree_path" test/ -A2 | grep -E "\((True|False),"`:
+  it also matches `worktree_query_result(True, …)` and `patch_query_worktree_path(True, …)`, so it
+  returns 20+ hits *after* a correct fix and can never go clean.
 - **Effort:** S
 - **Risk if fixed:** none expected — the derived value for `(True, <non-empty path>)` is
   `('materialized', <path>)`, which routes the consumer to the same directory the fallback currently
@@ -51,7 +58,7 @@ rest are report-level count and traceability defects.
 ## G2 — Convert the retired-boolean seam stub in the live-resolution test
 
 - **Kind:** test-gap
-- **Severity:** low
+- **Severity:** medium
 - **Topic:** tests
 - **Where:** `test/plan-marshall/manage-tasks/test_freshness_notation_crosscheck.py:563`
   (inside `test_the_real_resolution_path_refuses_and_corroborates_against_this_repository`)
@@ -64,7 +71,9 @@ rest are report-level count and traceability defects.
   whose first element the consumer discards means the root it lands on is a coincidence of the
   harness's cwd, not the value the test names.
 - **Action:** same as G1 — `worktree_query_result(True, str(PROJECT_ROOT))`.
-- **Done when:** the same grep is clean and the case still passes.
+- **Done when:** the same corrected grep (`grep -rnE "lambda [^:]*: *\((True|False) *," test/
+  --include=*.py`) returns nothing and the case still passes. Severity is **medium** for the same
+  reason as G1 — this site is half of what leaves D5's population rule undischarged.
 - **Effort:** S
 - **Risk if fixed:** none expected; same reasoning as G1.
 
@@ -100,12 +109,13 @@ rest are report-level count and traceability defects.
 - **Kind:** doc-defect
 - **Severity:** medium
 - **Topic:** documentation-surface
-- **Where:** `marketplace/bundles/plan-marshall/skills/manage-solution-outline/scripts/manage-solution-outline.py:946-950`
-  (docstring of `_stamp_read_provenance`)
+- **Where:** `marketplace/bundles/plan-marshall/skills/manage-solution-outline/scripts/manage-solution-outline.py:944`
+  (`_stamp_read_provenance`); the stale claim is at `:947-949`
 - **Evidence:** the docstring reads: *"`get-module-context` degrades to the cwd-relative checkout
   root when the plan declares `use_worktree=true` but its worktree is not materialized yet (see the
   `WorktreeResolutionError` branch in `main`)."* The branch it points at, at `:1108-1123` of the same
-  file, states the opposite: *"This degrade no longer covers the pre-materialization window, and must
+  file (`except _routing.WorktreeResolutionError` at `:1108`, comment `:1109-1123`), states the
+  opposite: *"This degrade no longer covers the pre-materialization window, and must
   not be read as though it does … the shared resolver now branches on the producer's `worktree_state`
   discriminator and returns the main checkout for it — so this verb never sees an exception for the
   ordinary phase-3-outline window."* The shipped test agrees with the branch, not the docstring:
@@ -167,16 +177,20 @@ rest are report-level count and traceability defects.
   `parseable` alone (`git show aeab5ab:.../\_cmd_qgate_mechanical.py` line 653 reads
   `ambiguous = not parseable`); plan 350 (#1295) widened the expression and the test silently stopped
   discriminating.
+  ⛔ **Independently re-run, and the result is worse than "one test stopped discriminating":** with
+  the F35 defect restored, the *entire* `test/plan-marshall/manage-tasks/` suite is green —
+  **496 passed** — so no test anywhere in the owning bundle fails when the defect returns.
 - **Why it matters:** F35 was a real defect — a detector reporting zero findings over an empty set
-  while telling the orchestrator the mechanical pass was authoritative. Its only regression guard no
-  longer fails if the defect returns. The test's own docstring still claims to pin that behaviour, so
-  the guard reads as present while being inert.
+  while telling the orchestrator the mechanical pass was authoritative. It now has **no** regression
+  guard at all in its own bundle. The test's own docstring still claims to pin that behaviour, so the
+  guard reads as present while being inert.
 - **Action:** assert the discriminating value directly rather than the combined flag — e.g. call
   `_load_deliverables` and assert it returns `parseable is False`, or add a second case whose task
   references no missing deliverable so `population_complete` stays True and `ambiguous` is carried by
   `parseable` alone.
-- **Done when:** re-running the mutation above (empty-deliverables branch returns `True`) makes the
-  file go red.
+- **Done when:** re-running the mutation above (empty-deliverables branch at
+  `_cmd_qgate_mechanical.py:166` returns `True` instead of `False`) makes
+  `test_qgate_keyword_drift_reads_prose.py` go red.
 - **Effort:** S
 - **Risk if fixed:** none — test-only.
 
@@ -232,7 +246,7 @@ rest are report-level count and traceability defects.
   headings and nothing for D2 or D3
 - **Evidence:** `grep -n "D2\|D3\b" report-01.md` returns nothing. The plan's D2 (closure, not
   existence) and D3 (a closure claim is a hint, never a licence) are never mentioned. They did go to
-  arm A — `350-outline-derived-set-closure-integrity/plan.md:101-120` carries them as its D1–D4, and
+  arm A — `350-outline-derived-set-closure-integrity/plan.md:101-118` carries them as its D1–D4, and
   350's report records D4 as delivered — but that is discoverable only from the successor spec.
 - **Why it matters:** the plan says *"⚠ If a deliverable grows a further arm, split it out rather than
   absorbing it silently."* Splitting them out was correct; not saying so is the silent half. A reader
@@ -248,7 +262,7 @@ rest are report-level count and traceability defects.
 ## G10 — Report a missing `<!-- bucket: -->` comment, not only a wrong one
 
 - **Kind:** omission
-- **Severity:** low
+- **Severity:** medium
 - **Topic:** detectors/auditor
 - **Where:** `marketplace/bundles/plan-marshall/skills/manage-solution-outline/scripts/manage-solution-outline.py:243-245`
   (`_check_declared_bucket`), against
@@ -265,6 +279,13 @@ rest are report-level count and traceability defects.
   Notes record. A missing bucket also disables the wrong-bucket check entirely, so the un-recorded case
   is strictly weaker than the mis-recorded one — the cheapest way to evade the new check is to delete
   the comment.
+  **Severity is medium, not low.** The calibration puts "a documented contract is unimplemented" in the
+  high band, and the standard's clause *"A missing … bucket comment is a Q-Gate finding"* has no
+  implementation anywhere — re-derived independently: `declared_bucket` has exactly five occurrences
+  across `marketplace/`, at `_plan_parsing.py:284` and `:516` and at
+  `manage-solution-outline.py:206`, `:243`, `:340`, and no other consumer. It stops short of high
+  because nothing *misreports* — the check simply does not exist — and because the omission is
+  pre-existing rather than introduced by this plan.
 - **Action:** emit a validation warning (not an error — an error would break existing outlines) when a
   deliverable carries no `declared_bucket`, and a warning when the declared value is outside the
   documented six-bucket vocabulary (`production_only|test_only|documentation_only|mixed_code|mixed_with_docs|unknown`).
@@ -309,10 +330,11 @@ rest are report-level count and traceability defects.
 ## G12 — Close or re-scope D4's undelivered footprint-precondition clause
 
 - **Kind:** incomplete
-- **Severity:** low
+- **Severity:** medium
 - **Topic:** architecture-core
-- **Where:** `marketplace/bundles/plan-marshall/skills/script-shared/scripts/extension/extension_base.py:565-596`
-  (`_resolve_plan_footprint`), plus the peer gates named in the same docstring
+- **Where:** `marketplace/bundles/plan-marshall/skills/script-shared/scripts/extension/extension_base.py:566`
+  (`_resolve_plan_footprint`; the state gate is at `:646-647`, the deliberate-deferral docstring at
+  `:589-595`), plus the peer gates named in the same docstring
   (`manage-references.resolve_live_worktree`, the composer's `_resolve_footprint`)
 - **Evidence:** D4's *Done when* requires "a footprint-derived precondition is evaluated at planning
   time rather than at finalize". `_resolve_plan_footprint` still returns `None` — permanently
@@ -321,8 +343,13 @@ rest are report-level count and traceability defects.
   (`doc/plans/code-intelligence-substrate/350-outline-derived-set-closure-integrity/actual-state.md:130`),
   so no plan currently owns it.
 - **Why it matters:** every footprint gate in the tree reports "no evidence" for a whole class of
-  plans whose evidence exists, which is a measurement that misreports by construction. It is a small
-  gap only because the two reasons the run gave for reverting are real and load-bearing: resolving a
+  plans whose evidence exists. ⚠ **It is not a misreport** — `unknown` / `None` is accurate about what
+  the resolver read, and every consumer fails toward inclusion on it, so nothing downstream is wrong,
+  only conservative. What it is, exactly, is **an incomplete deliverable**: D4's second *Done when* is
+  literally unmet, which is the medium band. (An earlier revision of this entry called it "a
+  measurement that misreports by construction" — that phrasing invokes the *high* band and is not
+  true of the shipped code; corrected here.) It stays medium rather than higher because the two
+  reasons the run gave for reverting are real and load-bearing: resolving a
   `disabled` plan's footprint makes `not_necessary` reachable at early compose, and
   `manage-execution-manifest.py:736-789` drops `pre-push-quality-gate` on exactly that verdict — the
   first failure this plan's own Problem statement names.
@@ -339,3 +366,56 @@ rest are report-level count and traceability defects.
   `pre-push-quality-gate`, or footprint derivation that reads unrelated uncommitted state in the main
   checkout, are both regressions the current behaviour prevents. Any change needs the three gates
   moved together and the early-compose case pinned first.
+
+## G13 — Re-sync the four surviving "worktree not yet materialised" rationales
+
+- **Kind:** doc-defect
+- **Severity:** medium
+- **Topic:** bundle-docs
+- **Where:** four sites, all carrying the retired framing this run's own F5/F37 fixed elsewhere:
+  1. `marketplace/bundles/plan-marshall/skills/manage-config/SKILL.md:511`
+  2. `marketplace/bundles/plan-marshall/skills/manage-config/scripts/_cmd_build_map.py:144`
+     (docstring of `cmd_build_decision`, the handler site 1 documents)
+  3. `marketplace/bundles/plan-marshall/skills/manage-execution-manifest/standards/decision-rules.md:237`
+  4. `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/finalize-step-security-audit.md:38`
+- **Evidence:** each explains an unresolvable footprint — and therefore the `unknown` build verdict or
+  the retained finalize step — by pre-materialization **alone**:
+  - `manage-config/SKILL.md:511`: *"`decision: unknown` … when the footprint is **unresolvable** — the
+    worktree is not yet materialised, so there is no evidence either way about what changed."*
+  - `_cmd_build_map.py:144`: *"UNRESOLVABLE — the worktree is not yet materialised, so there is no
+    evidence either way about what changed."*
+  - `decision-rules.md:237`: *"`_resolve_footprint` returns `None` — not `[]` — when the footprint
+    cannot be resolved at all (the worktree is not yet materialised)."*
+  - `finalize-step-security-audit.md:38`: *"An UNRESOLVABLE footprint (the worktree not yet
+    materialised) is no evidence about the change surface …"*
+
+  That is false for a `disabled` plan, for which no worktree will **ever** be materialised — the exact
+  wrongness F5 recorded and fixed in the reason string. The run's own corrected surfaces say so
+  explicitly: `extension_base.py:579-581` calls the retired reason *"not merely unhelpful for such a
+  plan but false, since no worktree will ever be materialised for it"*, and `manage-config/SKILL.md:1429`
+  now reads *"whether because the plan's worktree is `pending` … or `disabled` (it never will)"*.
+  ⛔ **Site 1 sits in a file this run edited.** `git show aeab5ab -- .../manage-config/SKILL.md` shows
+  exactly two changed lines — the `reason` string at `:548` and the `unknown` explanation at `:1429` —
+  so the run corrected one statement of this claim and left the other, nine hundred lines above it,
+  contradicting the correction inside the same file.
+- **Why it matters:** these are false claims in shipped documentation about a three-state contract this
+  plan exists to make consumers read correctly. A reader of `manage-config/SKILL.md` gets opposite
+  explanations of the same `unknown` verdict depending on which section they land in, and the
+  `decision-rules.md` / `finalize-step-security-audit.md` pair tells a composer author that `None` means
+  "not yet", which is the very `pending`/`disabled` conflation D4 removed from the code. This is the
+  same class as G4/G5, found by the same sweep, and it is the sharper instance because one member is
+  inside an edited file.
+- **Action:** rewrite each of the four to name **both** unresolvable causes — a `pending` worktree
+  (phase-5-execute has not created it yet) and a `disabled` one (it never will) — matching the wording
+  already at `manage-config/SKILL.md:1429`. Prefer a cross-reference from the three consumers to that
+  one canonical sentence over four independent restatements.
+- **Done when:** the sweep below returns nothing —
+  `grep -rniE "not yet materiali[sz]ed|not materiali[sz]ed yet" marketplace/ --include=*.md --include=*.py`
+  filtered to lines within three lines of `unresolvab|decision: unknown|returns ``None```, minus
+  `extension_base.py:579` (which quotes the retired string in order to reject it) and
+  `workflow-integration-git/SKILL.md:655` (a `--branch`-omitted error, an unrelated context).
+  Equivalently: no surface in `marketplace/` explains an unresolvable footprint or an `unknown` build
+  verdict by pre-materialization without also naming `disabled`.
+- **Effort:** S
+- **Risk if fixed:** none — documentation only. Coordinate with G4/G5 so all six corrected surfaces
+  use one wording.

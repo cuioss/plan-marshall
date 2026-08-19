@@ -89,10 +89,11 @@ handful of stale counts in the run report.
 - **Claimed (report):** both roots scanned; `unmeasured` withholds counts; split decided in favour of leaving
   emission to the lock skill; distinguishability asserted by two named tests.
 - **Found:** `audit.py:8115` — `_LOCK_LOG_ROOTS = ((".plan", "logs"), (".plan", "local", "logs"))`;
-  `_merge_window_log_files` (`:8118-8140`) returns `(files, substrate_present)` where `substrate_present` is a
-  `lock-*.log` probe, and `cross_merge_window_accounting` (`:8214-8217`) sets
-  `measured = substrate_present or bool(rows)` — evidence beats the filename convention.
-  `emit_merge_window_accounting_block` (`:8240-8252`) emits `status: unmeasured`, a reason, and the scanned
+  `_merge_window_log_files` (`:8118-8141`) returns `(files, substrate_present)` where `substrate_present` is a
+  `lock-*.log` probe, and `cross_merge_window_accounting` sets
+  `measured = substrate_present or bool(rows)` at `:8219` (rationale comment `:8216-8218`) — evidence beats
+  the filename convention.
+  `emit_merge_window_accounting_block` (`:8228-8252`, unmeasured branch `:8242-8252`) emits `status: unmeasured`, a reason, and the scanned
   roots, and **no counts at all**. The summary metric is gated (`audit.py:9280`) and the synthesis
   coupling renders `contended_plans=unmeasured` (`audit.py:8833`). `_locks_core.py` is absent from the plan's
   diff, so the emission half really was left alone.
@@ -112,8 +113,10 @@ handful of stale counts in the run report.
 - **Claimed (report):** `pending_actionable` / `pending_structural`, both published, plus a per-plan column;
   the actionable half alone counts as genuine.
 - **Found:** `_QC_STRUCTURAL_PENDING_TYPES` (`audit.py:3441`) = `{tip, insight, best-practice, improvement}`,
-  which is exactly the knowledge set `_invariants.py:1215-1220` names as never counted by the blocking gate —
-  the mirror claim holds, and the one-directional caveat (`audit.py:3427-3439`) is accurate.
+  which is exactly the knowledge set `_invariants.py:1233-1241` names as never counted by the blocking gate
+  (the four types are named in prose at `:1236-1237`; `_ACTIONABLE_FINDING_TYPES` follows at `:1246-1253`
+  with its six members) — the mirror claim holds, and the one-directional caveat (`audit.py:3427-3439`) is
+  accurate.
   `_qc_structural_pending` (`:3451`) takes the computed bucket as a parameter and returns `False` unless
   `resolution == "pending"`, so `corpus_structural_pending <= corpus_pending` holds by construction
   (`:3768-3780`). `_qc_finding_genuine` (`:6249-6274`) excludes structural rows on the pending leg only and
@@ -138,9 +141,15 @@ handful of stale counts in the run report.
   as the cause. Four individually-shaped mechanisms keep their own patterns (`:168-208`), including the
   deliberately-retained `posture_cutoff_legacy_aggregate` for archived logs.
 - **Checks run:** 51/51 tests green. I executed writer→reader for four live gates (all match, correct gate and
-  step captured). Three mutations, all red: substituting the retired `posture_cutoff` regex fails 9; deleting
-  the legacy pattern fails 2 (including the list-repr coupling test); re-enumerating the gate set fails 4,
-  including `test_unknown_future_gate_in_the_shared_shape_is_still_a_cause` and the `decision_matrix` case.
+  step captured). Three mutations, all red: substituting the retired `posture_cutoff` regex fails **8**
+  (re-derived adversarially against the shipped file, stable across three consecutive runs — the earlier
+  figure of 9 counted one additional failure, `TestLoadDiffFiles::test_relative_argument_resolves_against_the_plan_directory`,
+  which is unrelated to the shared shape and did not recur); deleting the legacy pattern fails 2 (including
+  the list-repr coupling test `test_the_legacy_pattern_is_the_only_route_to_the_list_repr_branch`);
+  re-enumerating the gate set is lethal and kills both
+  `test_unknown_future_gate_in_the_shared_shape_is_still_a_cause` and the `decision_matrix` case — the exact
+  total depends on which gates the enumeration retains (a three-gate enumeration kills 3), so the kill set,
+  not a count, is the durable evidence here.
 - **Verdict:** **CONFIRMED.**
 
 ### D6 — the class guard
@@ -222,7 +231,7 @@ pattern's refusal to read the `added … to` direction as a removal; and `_LOCK_
 | D2 | `test_audit_check_recipe_provenance.py` | 7 | `plan_source`-only read → 2 red, 5 controls green |
 | D3 | `test_audit_check_merge_window_accounting.py` | 12 | scan-root narrowed → 2 red; `measured` forced true → 2 red |
 | D4 | `test_audit_check_quality_chain_structural_pending.py` | 17 | bucket re-read → 3 red; genuine predicate widened → 2 red |
-| D5 | `test_check_routing_decisions.py` | 51 collected | retired regex → 9 red; legacy pattern dropped → 2 red; gate list re-enumerated → 4 red |
+| D5 | `test_check_routing_decisions.py` | 51 collected | retired regex → 8 red; legacy pattern dropped → 2 red; gate list re-enumerated → lethal (kills the unknown-gate and `decision_matrix` cases; count varies with the enumeration) |
 | D6 | `test_audit_suspect_zero_census.py` | 33 | population regex blinded → 3 red; class precedence inverted → 3 red |
 | C4 | `test_audit_check_input_integrity_absent_execute.py` | 5 | absent phase → `partial` → 2 red |
 

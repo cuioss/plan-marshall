@@ -116,8 +116,8 @@ follow.
 - **Kind:** test-gap
 - **Severity:** medium
 - **Topic:** tests
-- **Where:** `marketplace/bundles/pm-plugin-development/skills/plan-marshall-plugin/scripts/lsp_harvest.py:293,313,349-353`; test file `test/pm-plugin-development/plan-marshall-plugin/test_lsp_harvest.py`
-- **Evidence:** `grep -rn "truncat\|harvest-budget\|out-of-workspace\|unresolved-symbol\|unreadable" test/` returns no hit in either plan test file. Report finding 24 records the inner-loop truncation flag as **Fixed**, and finding 24's whole point is that truncation inside the last file previously exited the loop normally and reported a partial harvest as complete.
+- **Where:** `marketplace/bundles/pm-plugin-development/skills/plan-marshall-plugin/scripts/lsp_harvest.py:294,313,349-353`; test file `test/pm-plugin-development/plan-marshall-plugin/test_lsp_harvest.py`
+- **Evidence (mutation, not grep):** replacing `truncated = True` at `:313` with `pass` leaves **all 50 tests in both plan test files green**. That is the direct proof; the grep this entry previously cited was inaccurate — `out-of-workspace` does appear once in `test_lsp_harvest.py:198`, in a *docstring*, with no assertion behind it. `grep -rn "truncat\|harvest-budget" test/` is genuinely empty for both plan test files. Report finding 24 records the inner-loop truncation flag as **Fixed**, and finding 24's whole point is that truncation inside the last file previously exited the loop normally and reported a partial harvest as complete.
 - **Why it matters:** the fix is exactly the kind that silently regresses — deleting `truncated = True` at `:313` restores the original defect and no test notices. A partial harvest reported as complete is a confident wrong answer at edge-set scale.
 - **Action:** add a test driving `harvest_workspace` with a `timeout_s` small enough to expire mid-file (a slow stub server plus a multi-import source file) and assert a note starting `harvest-budget:`; add a second asserting `out-of-workspace:` fires when a definition resolves outside the root.
 - **Done when:** deleting `truncated = True` at `:313` makes at least one test fail.
@@ -153,7 +153,7 @@ follow.
 ## G11 — Correct the "every bundle declares its domain identity" claim
 
 - **Kind:** doc-defect
-- **Severity:** low
+- **Severity:** medium — raised from low. The calibration puts "a false claim in shipped documentation" at medium and reserves low for a cosmetic inconsistency; this is a false universal statement about the one required extension hook, on the concepts page, and it is the same class as G4/G5/G6, which are all medium.
 - **Topic:** documentation-surface
 - **Where:** `doc/concepts/extension-architecture.adoc:16`
 - **Evidence:** "The required hook is `get_skill_domains()` — every bundle declares its domain identity and organises its skills by profile". `pm-code-intelligence` returns `[]` (`extension.py:51-60`) and ships no skills organised by profile; `ext-point-domain-bundle.md:116-121` and `extension-contract.md:67` both correctly record it as the no-domain case.
@@ -162,3 +162,37 @@ follow.
 - **Done when:** the sentence admits the no-domain case, matching `ext-point-domain-bundle.md:116-121`.
 - **Effort:** S
 - **Risk if fixed:** none.
+
+## G12 — Make the failure-mode distinctness test able to fail
+
+- **Kind:** test-gap
+- **Severity:** medium
+- **Topic:** tests
+- **Where:** `test/pm-plugin-development/plan-marshall-plugin/test_lsp_harvest.py:421-448` (`test_every_failure_mode_states_a_distinct_reason`)
+- **Evidence:** the test builds `reasons = {…four fully-interpolated reason strings…}` and asserts `len(reasons) == 4`. The four strings already differ by the interpolated `{binary}` — `definitely-not-a-real-language-server-xyz`, the unlaunchable stub's path, and `sys.executable` — so two modes can share a reason *prefix* and the set still has four members. Proven by mutation: rewriting `REASON_SERVER_ABSENT` (`lsp_harvest.py:103`) to `'server-failed-to-start: {binary} could not be launched'`, so the absent and failed-to-start modes report the same stated reason, leaves this test **green**; the only red is `test_absent_server_reports_ran_false_with_a_stated_reason` (`:285`), which asserts `startswith('server-absent:')`.
+- **Why it matters:** D3's *Done when* is literally "each failure mode produces a distinct stated reason", and this is the test named for it — in the run report (finding 3's note: "it saw two distinct reasons where it required four") and in the audit. The property is in fact pinned only by the four separate per-mode `startswith` controls, which nothing ties to the count of modes: adding a fifth mode without a fifth control would leave the collapse undetected. This is the same shape as report finding 20 — a test that reads as a strong invariant and asserts a weaker one that cannot fail for the stated reason.
+- **Action:** assert on the reason *prefix* rather than the whole string — e.g. collect `reason.split(':', 1)[0]` for each mode and assert the set equals the expected prefix set (`{'server-absent', 'server-failed-to-start', 'server-timeout', 'workspace-unsupported'}`), so both a collapse and an unexpected extra prefix fail.
+- **Done when:** rewriting `REASON_SERVER_ABSENT` to carry the `server-failed-to-start:` prefix makes `test_every_failure_mode_states_a_distinct_reason` fail.
+- **Effort:** S
+- **Risk if fixed:** asserting an exact prefix set couples the test to the reason vocabulary, so G2's new fifth mode must be added to it in the same change — which is the intended coupling, not a cost.
+
+## G13 — Exclude vendor and virtualenv trees from the harvest's reference *targets*
+
+- **Kind:** bug
+- **Severity:** medium — the reachable half misreports a diagnostic count rather than an edge; the wrong-edge half is not reachable through the only shipped producer. Raise to high if the harvest is ever materialized for a project whose module set includes a root-scoped module.
+- **Topic:** lsp/resolvers
+- **Where:** `marketplace/bundles/pm-plugin-development/skills/plan-marshall-plugin/scripts/lsp_harvest.py:396-397` (`_within`), against the skip set at `:210` (`_candidate_files`); the root-scoped fallback at `:588-591` (`make_prefix_attributor`)
+- **Evidence:** `_candidate_files` excludes `.git`, `node_modules`, `target`, `.venv`, `venv`, `__pycache__`, `.plan` from the files it *queries*; `_within` applies no filter at all to what a definition resolves *to*. Measured on this repository with the project `.venv/bin` first on `PATH`, so pyright resolves third-party imports against it: **419 of 1 920 harvested references (22%) target `.venv/lib/python3.12/site-packages/**`, and all 419 land in the `unattributable-endpoint` note — 31% of its 1 372 total.** Re-run without the venv on `PATH`: 1 501 references, 953 suppressions, 0 references targeting `.venv`. Same tree, same code, two figures.
+  The latent half, demonstrated directly:
+  ```
+  module_paths = {'alpha': 'alpha', 'rootmod': '.'}
+  make_prefix_attributor(module_paths)('.venv/lib/python3.12/site-packages/pytest/__init__.py') -> 'rootmod'
+  lift_to_modules([('alpha/x.py', '.venv/.../pytest/__init__.py')], attribute, module_paths)
+    -> EDGES [('alpha', 'rootmod')]   NOTES []
+  ```
+  `paths.module == '.'` is a real discovered value, not a hypothetical: `marketplace/bundles/plan-marshall/skills/build-pyproject/scripts/_pyproject_cmd_discover.py:159` reads `is_root = relative_path == '.'`.
+- **Why it matters:** two things. (1) The `unattributable-endpoint` count is presented to an operator as "references no module owns" and is a third noise on this tree — and which third depends on which interpreter pyright picked up, so the number is not a property of the repository. (2) In a Python project with a root-scoped module *plus* a sub-module and a project-local `.venv`, every third-party import becomes a real edge into the root module, emitted **with no note**, because the root-scoped fallback claims whatever nothing else claims. That is the confidently-labelled wrong edge D2's ⛔ exists to prevent, produced silently and at volume — the plan's own stated worst outcome.
+- **Action:** apply the same exclusion to targets that `_candidate_files` applies to sources. Factor the skip set out of `_candidate_files` into a module-level constant and have `_within` (or the call site at `:322-325`) reject any target whose path relative to the root intersects it, counting those separately from `out-of-workspace` (e.g. a `vendor-tree` note) so the two causes stay distinguishable. Do **not** fix this by narrowing the root-scoped fallback alone — the inflated count is the reachable defect and is independent of it.
+- **Done when:** a test drives `harvest_workspace` over a workspace containing a `.venv/lib/pythonX/site-packages/pkg/__init__.py` that a source file imports, and asserts the resulting `references` contain no pair whose target is under `.venv/`; and a second test asserts that `lift_to_modules` with `module_paths = {'alpha': 'alpha', 'rootmod': '.'}` and a `.venv` target produces no edge.
+- **Effort:** S
+- **Risk if fixed:** the harvested reference count drops (here by 419), so any figure recorded from a previous run stops matching — expected, and the point. Excluding `target/` as a target could also drop legitimate references in a project that builds generated sources into it; if that matters, make the target-side skip set narrower than the source-side one rather than sharing it verbatim.

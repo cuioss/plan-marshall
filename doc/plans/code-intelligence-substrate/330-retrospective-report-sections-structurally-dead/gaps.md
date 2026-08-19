@@ -11,21 +11,34 @@ written-implies-non-empty invariant itself; that was the part searched hardest a
 ## G1 — Make the drop/omit split use one discriminator for non-dict fragments too
 
 - **Kind:** bug
-- **Severity:** medium
+- **Severity:** high
 - **Topic:** detectors/auditor
 - **Where:** `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/compile-report.py:550-559`
   (`build_document`, the non-emit partition) reading `_fragment_has_payload` at `:171-196`, against
   `_fragment_renders_empty` at `:427-472`
 - **Evidence:** executed at HEAD —
-  `'real prose the producer wrote'` and `42` each give `_fragment_renders_empty → False` (content)
-  but `_fragment_has_payload → False` (no payload). On the always-emit row `artifact-consistency`
-  both land in `sections_written`; on the conditional row `script-failure-analysis` both land in
-  `sections_omitted` with `dropped == []`. `_fragment_renders_empty`'s docstring claims the two
-  discriminators are "genuinely consistent rather than merely described as such", which is true only
-  for dicts.
+  `'real prose the producer wrote'`, `42` and `['a','b']` each give `_fragment_renders_empty → False`
+  (content) but `_fragment_has_payload → False` (no payload). On the always-emit row
+  `artifact-consistency` all three land in `sections_written`; on the conditional row
+  `script-failure-analysis` all three land in `sections_omitted` with `dropped == []` and the run
+  status `success`. `_fragment_renders_empty`'s docstring claims the two discriminators are
+  "genuinely consistent rather than merely described as such", which is true only for dicts.
+  **The path is a live production path, not a hypothetical:**
+  `toon_parser.parse_toon('script-failure-analysis: the producer wrote prose instead of a fragment')`
+  returns `{'script-failure-analysis': 'the producer wrote prose instead of a fragment'}` — a bare
+  non-empty string under the aspect key — and feeding that bundle to `build_document` puts
+  `Script Failure Analysis` in `sections_omitted` with `dropped == []`. That is the *same* producer
+  scenario (an aspect that writes prose instead of a fragment, registered successfully by
+  `collect-fragments`) the run's verification round 2 fixed on the written half; the conditional half
+  was left uncorrected.
 - **Why it matters:** a fragment the compiler itself calls content is reported as *nothing was lost*
   — the quiet half of the partition swallowing a real loss, which is the exact failure mode this plan
-  exists to eliminate, running in the opposite direction from D1.
+  exists to eliminate, running in the opposite direction from D1. It also contradicts
+  `references/report-structure.md:41`, which states that a fragment that IS present and DOES carry
+  payload but does not render "is a **drop**, not an omission, and must be reported as such".
+  Severity is **high** rather than medium because the outcome is a *silent* content loss on a
+  reachable path — worse in kind than G2's false alarm — even though G2 fires far more often. A fix
+  plan should still settle G2 first, since both changes touch the same predicate.
 - **Action:** in the non-emit branch, decide emptiness with the same predicate the render path uses
   (`_fragment_renders_empty`) rather than with `_fragment_has_payload` alone, so a non-empty non-dict
   trigger fragment is a DROP; keep the dict path delegating as it does today.
@@ -117,13 +130,19 @@ written-implies-non-empty invariant itself; that was the part searched hardest a
 - **Where:** `retro_sections.py:40` (the row) vs `analyze-logs.py:1692` (the data, nested inside the
   `log-analysis` fragment)
 - **Evidence:** `SECTION_SPEC` keys − aspect-table keys = `['_executive-summary',
-  'dispatch_boundaries']` (executed). No `--aspect dispatch_boundaries` command exists in `SKILL.md`
-  or any document it names, so nothing can ever populate `fragments['dispatch_boundaries']`; the
-  section is reported as a benign omission on every run while
-  `render_dispatch_boundaries_body` (`compile-report.py:336-383`) is live and correct.
-- **Why it matters:** a structurally unreachable section wearing the "nothing to say" face — the
-  plan's own thesis, still live. Real per-phase dispatch-boundary data exists and never reaches the
-  report's own section for it.
+  'dispatch_boundaries']` (executed). The key IS registerable — `retro_sections.valid_aspect_keys()`
+  returns 16 keys including `dispatch_boundaries`, so `collect-fragments add --aspect
+  dispatch_boundaries` would be accepted — but no producer and no documented step ever calls it: the
+  only writer is `analyze-logs.py:1692`, which returns the per-phase block as a key *of its own
+  fragment*, so it lands at `fragments['log-analysis']['dispatch_boundaries']` and the top-level
+  lookup never finds it. Executed at HEAD on a bundle with no top-level key: `Phase Dispatch
+  Boundaries` lands in `sections_omitted` on every run, while `render_dispatch_boundaries_body`
+  (`compile-report.py:336-383`) is live and correct.
+- **Why it matters:** an unreachable-in-practice section wearing the "nothing to say" face — the
+  plan's own thesis, still live. The per-phase dispatch-boundary data never reaches the report's own
+  section for it. Severity stays **medium** rather than high (cf. G6) because nothing is lost from
+  the compiled document: the same data still renders inside Log Analysis, in that fragment's JSON
+  block. What is missing is the dedicated per-phase table, not the facts.
 - **Action:** either register `dispatch_boundaries` as its own aspect (a producer step that writes
   the nested block to the top level) or delete the row and render the data from within Log Analysis;
   whichever is chosen, update `report-structure.md:17` in the same change.
@@ -137,22 +156,36 @@ written-implies-non-empty invariant itself; that was the part searched hardest a
 ## G6 — Resolve the producerless `_executive-summary` row
 
 - **Kind:** omission
-- **Severity:** medium
+- **Severity:** high
 - **Topic:** detectors/auditor
 - **Where:** `retro_sections.py:32` (the row), `compile-report.py:527-548` (the consumer),
-  `references/report-structure.md:13` (the requirement)
+  `references/report-structure.md:13` (the section-1 content requirement)
 - **Evidence:** a tree-wide grep finds `_executive-summary` only in those three files — no producer
-  writes one, and `collect-fragments.py:298-299` rejects `_`-prefixed keys outright. D1 removed the
-  false *written* signal, so the headline section is now honestly omitted on every run; the compiled
-  report therefore ships with no Executive Summary at all, while `report-structure.md:13` still lists
-  it as section 1 of what "the compiler must emit".
-- **Why it matters:** the document's headline synthesis — the part a reader reads first — is
-  specified, renderable, and never produced. The specification and the shipped behaviour disagree.
+  writes one, and `collect-fragments.py:298-299` rejects `_`-prefixed keys outright, so the key can
+  reach the bundle *only* by direct orchestrator injection and no documented step performs one.
+  Executed at HEAD: `Executive Summary` lands in `sections_omitted` on every bundle. The compiler's
+  own written branch for the row (`compile-report.py:547-548`) is therefore unreachable in
+  production.
+  ⚠ **Correction to an earlier reading of this gap:** `report-structure.md:13` does **not** mandate
+  the section unconditionally, and shipped behaviour does **not** contradict it. That line reads in
+  part *"Conditional on a body existing: when the `_executive-summary` fragment supplies no narrative
+  the compiler emits NO heading at all, exactly as the Conditional Rule below requires — it never
+  emits a placeholder body, and it never counts such a section as written."* The compiler conforms
+  exactly. The defect is on the producer side, not the consumer side.
+- **Why it matters:** the same line still specifies mandatory *content* for section 1 — *"a 3-5
+  sentence narrative that synthesizes all aspects. It must lead with overall severity (all-green, N
+  warnings, or errors) and the most important signals"* — for a section that nothing in the tree can
+  ever produce. The document's headline synthesis is specified and renderable on the consumer side
+  and unimplemented on the producer side, so every retrospective this system has ever compiled ships
+  without one. That is a documented contract with no implementation behind it, which is why this is
+  **high** while its sibling G5 (whose data still reaches the reader inside Log Analysis) is medium.
 - **Action:** add the documented orchestrator injection step that writes `_executive-summary` (the
   compiler already accepts a dict with `summary` or a bare string), or remove the row and the
   `report-structure.md` entry together.
 - **Done when:** either a retrospective run on a normal plan lists `Executive Summary` in
-  `sections_written`, or neither `SECTION_SPEC` nor `report-structure.md` names the section.
+  `sections_written`, or neither `SECTION_SPEC` nor `report-structure.md` names the section. Whichever
+  is chosen, `report-structure.md:13` must stop stating content requirements for a section no step
+  produces.
 - **Effort:** M
 - **Risk if fixed:** an injection step adds an LLM-authored surface to a compiler documented as a
   pure assembler; removing the row deletes the only section the compiler renders verbatim.

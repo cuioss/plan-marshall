@@ -19,46 +19,86 @@ n−1-of-n residue class the run's own stop record predicted. The declared condi
 ## G1 — Close the base-dir-override hole in the main-scoped resolution and its refusal
 
 - **Kind:** bug
-- **Severity:** medium
+- **Severity:** medium — see § Severity below; the calibration call is deliberate, not a default.
 - **Topic:** architecture-core
 - **Where:** `marketplace/bundles/plan-marshall/skills/plan-marshall/scripts/_invariants.py:409-410`
   (`_main_repo_root` override branch) and `:1856` (`_assert_main_capture_read_main` path comparison)
 - **Evidence:** executed against a real repo with a real linked worktree at
-  `<main>/.plan/local/worktrees/p`, a flat `PLAN_BASE_DIR` override, and cwd at `<worktree>/src`:
+  `<main>/.plan/local/worktrees/p` whose branch carries one extra commit, sweeping the `PLAN_BASE_DIR`
+  shape against the cwd. `main_sha` is shown as `main`/`worktree` rather than as a raw SHA:
 
-  ```
-  flat override, cwd=wt/src: _main_repo_root -> …/main/.plan/local/worktrees/p/src
-    cwd=wt/src: refusal did NOT fire -> mislabelled row persists
-    cwd=wt:     refusal FIRED (…/main/.plan/local/worktrees/p)
-  ```
+  | `PLAN_BASE_DIR` | cwd | `_main_repo_root()` | `main_sha` reads | refusal |
+  |---|---|---|---|---|
+  | unset (production) | worktree | main | **main** | — |
+  | unset (production) | worktree/src | main | **main** | — |
+  | flat bare directory | worktree | worktree | **worktree** | FIRED (fail-closed) |
+  | flat bare directory | worktree/**src** | worktree/src | **worktree** | **did not fire — row persists** |
+  | `<main>/.plan` (non-canonical) | worktree | worktree | **worktree** | FIRED (fail-closed) |
+  | `<main>/.plan` (non-canonical) | worktree/**src** | worktree/src | **worktree** | **did not fire — row persists** |
+  | `<main>/.plan/local` (canonical) | either | main | **main** | — |
+  | `<worktree>/.plan/local` (canonical) | either | worktree | **worktree** | FIRED (fail-closed) |
 
-  `_main_repo_root` delegates the override branch to `_current_repo_root()` (`:410`), which for a flat
-  override returns `Path.cwd()` (`:356`, `:359`). The refusal then compares
+  `_main_repo_root` delegates the override branch to `_current_repo_root()` (`:410`), which returns
+  `Path.cwd()` for **any** base dir that is not literally `*/.plan/local` (`:356`, `:359`) — a bare
+  directory and `<root>/.plan` alike. The refusal then compares
   `main_root.resolve() != worktree_path.resolve()` (`:1856`) — plain equality — so a resolved path
   *inside* the worktree is treated as a distinct tree. `invariant-check-summary.md:54` documents the
-  hole; nothing tests or closes it.
-- **Why it matters:** the exact defect this plan exists to end — a `main_sha` holding the worktree's
-  HEAD under a column named for main — remains reachable, and the guard written to make it impossible
-  passes it through silently. `PLAN_BASE_DIR` is a documented **user** override (`file_ops.py`,
-  `bootstrap_plugin` help text, the `manage-logging` env table), not a test-only hook, so this is a
-  live configuration. It also defeats D4's own quarantine rule, which can only say such a row is
-  "sound *unless* an override was in play" — an era check that cannot be settled from the row.
-- **Action:** two changes, both small. (a) In `_assert_main_capture_read_main`, replace the equality
-  comparison with containment — refuse when the resolved `main_root` is at or under the resolved
-  `worktree_path` (`main_root.resolve().is_relative_to(worktree_path.resolve())`). This is safe in the
-  legitimate direction: for a genuine main checkout, `main_root` is an *ancestor* of `worktree_path`,
-  never a descendant. (b) Decide, and document, whether `_main_repo_root`'s override branch should
-  delegate to a cwd-following resolver at all; at minimum it must not silently return `Path.cwd()` for
-  a flat override — return `None` (the existing "unknown → empty column" contract) instead.
-- **Done when:** a test builds a real linked worktree, sets a flat `PLAN_BASE_DIR`, chdirs to a
-  worktree **subdirectory**, and asserts that `capture_all` raises `MainCaptureReadTheWorktree` (or
-  that `main_sha` is `None`); the existing 19 tests still pass; and mutating the containment check back
-  to equality reddens that new test.
-- **Effort:** S
-- **Risk if fixed:** a containment check is strictly wider than equality, so a configuration that
-  previously wrote a row would now refuse the boundary. Confirm against the commit-less-feature-branch
-  case (`test_a_commit_less_feature_branch_is_captured_not_refused`), where `main_root` is the main
-  checkout and `worktree_path` is beneath it — that direction is unaffected.
+  hole; nothing tests or closes it. All three `main_*` columns share this resolver
+  (`_capture_main_sha`, `_capture_main_dirty`, `_capture_main_dirty_files`), so all three are
+  mislabelled together, not `main_sha` alone.
+- **Why it matters:** the exact defect this plan exists to end — a `main_*` column holding the
+  worktree's value — remains reachable, and the guard written to make it impossible passes it through
+  silently from any cwd below the worktree root. Note the sweep's shape: the mislabel is **not**
+  subdirectory-specific — at the worktree root the value is equally wrong and is merely *refused*
+  rather than persisted. The subdirectory is what turns a fail-closed refusal into a silent write. It
+  also defeats D4's own quarantine rule, which can only say such a row is "sound *unless* an override
+  was in play" — an era check that cannot be settled from the row.
+- **Severity — why medium and not high.** The high band is for a defect reachable on the shipped
+  default path. This one is not: with no override the fix is complete from every cwd inside the
+  worktree (rows 1-2 above), and nothing in production sets the variable — there is no writer of
+  `PLAN_BASE_DIR` anywhere under `marketplace/` and no caller of `file_ops.set_base_dir()` outside its
+  own definition (`file_ops.py:404`). Reaching it needs an operator to export a **non-canonical**
+  `PLAN_BASE_DIR` by hand, and the repository's own standard classifies that variable as a
+  test-isolation hook (`tools-script-executor/standards/cwd-policy.md:44`, "the legitimate
+  test-isolation hooks"), as does `bootstrap_plugin.py:33` ("for testing"); only `file_ops.py:374`
+  ("tests, user override") and the neutral `manage-logging/SKILL.md:369` env row read as a user-facing
+  knob. The limitation is also disclosed in three shipped surfaces — `_main_repo_root`'s docstring
+  (`:386-392`), both `_capture_main_*` docstrings, and `invariant-check-summary.md:54` — so no
+  documented contract is left unimplemented. What remains is an incomplete deliverable with an
+  untested branch, which is the medium band exactly. ⚠ Do not read the disclosure as a reason to drop
+  the gap: the run knowingly shipped a reachable instance of the defect it was written to end
+  (`report-01.md:223-229`) and weakened the D4 rule to accommodate it.
+- **Action:** (a) is the load-bearing change and is sufficient on its own; (b) is optional and must
+  not be attempted in the literal form the first draft of this entry gave.
+  - **(a) — required.** In `_assert_main_capture_read_main`, replace the equality comparison with
+    containment: refuse when the resolved `main_root` is at or under the resolved `worktree_path`
+    (`main_root.resolve().is_relative_to(worktree_path.resolve())`). **Measured here:** with that one
+    change applied to the shipped file, every `did not fire` row above becomes `FIRED`, the module's
+    19 tests stay green, and the whole owning directory stays green at 570/570. It is safe in the
+    legitimate direction because a genuine main checkout is an *ancestor* of `worktree_path` (or a
+    sibling), never a descendant.
+  - **(b) — optional, and NOT "return `None`".** Making `_main_repo_root`'s override branch return
+    `None` for a non-canonical base dir was measured and **breaks the suite**: the autouse
+    `_plan_base_dir_sandbox` fixture (`test/conftest.py:1183-1185`) gives *every* test a **flat**
+    `PLAN_BASE_DIR`, so the three `main_*` columns would empty out everywhere — 7 failures in
+    `test/plan-marshall/plan-marshall/` alone (`test_invariants.py` ×2, `test_invariants_behavior.py`
+    ×3, `test_invariants_main_capture_refusal.py` ×1, `test_lifecycle_handshake_e2e.py` ×1, the last
+    on its `_NON_NULL_CORE_INVARIANTS` guard). If the override branch is changed at all, it must first
+    distinguish a *test sandbox* from an operator override, or the sandbox must move to the canonical
+    `<root>/.plan/local` shape. Treat (b) as a separate decision with that migration attached; do not
+    bundle it into (a).
+- **Done when:** a test builds a real linked worktree, sets a non-canonical `PLAN_BASE_DIR` (a bare
+  directory), chdirs to a worktree **subdirectory**, and asserts that `capture_all` raises
+  `MainCaptureReadTheWorktree`; the existing 19 tests in the two modules still pass; and mutating the
+  containment check back to `!=` reddens the new test.
+- **Effort:** S for (a); M for (b) including the sandbox migration.
+- **Risk if fixed:** for (a), measured as none in this tree — 19/19 and 570/570 green with the change
+  applied, and the commit-less-feature-branch direction
+  (`test_a_commit_less_feature_branch_is_captured_not_refused`) is unaffected because there
+  `main_root` is the main checkout and `worktree_path` is beneath it. In a consumer repository the
+  containment check is strictly wider than equality, so a configuration that previously wrote a row
+  would now refuse the boundary — that is the intended fail-closed direction. For (b), the measured
+  7-test breakage above.
 
 ---
 
@@ -97,9 +137,12 @@ n−1-of-n residue class the run's own stop record predicted. The declared condi
 
 - **Kind:** omission
 - **Severity:** medium
-- **Topic:** architecture-core
-- **Where:** `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py:789` (`_resolve_repo_root`),
-  consumed at `:1603`, `:1623`, `:2720`, `:4923`, `:4990`, `:9414`
+- **Topic:** detectors/auditor — the owning surface is the archived-plan audit skill, not the
+  handshake/architecture core this plan touched; grouping it under `architecture-core` would route it
+  to the wrong fix plan.
+- **Where:** `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py:789`
+  (`_resolve_repo_root`). It is **called once**, at `:9414`; the returned `repo_root` is then consumed
+  at `:1603`, `:1623` (lessons corpus) and `:2720`, `:4923`, `:4990` (archived-plan tree)
 - **Evidence:** the function walks up from `Path.cwd()` to the nearest ancestor containing
   `.plan/local` and *"When no ancestor qualifies, the working directory itself"* — the exact shape D1
   set out to eliminate. It then derives `repo_root / ".plan/local/lessons-learned"` (`:1603`, `:1623`)
@@ -142,7 +185,9 @@ n−1-of-n residue class the run's own stop record predicted. The declared condi
   `.plan/local/plans/{plan_id}/` (`_handshake_store.py:59` → `file_ops.base_path`). Meanwhile
   `_handshake_commands.cmd_list:722-732` projects **every** `HANDSHAKE_FIELD` per row — `captured_at`,
   `main_sha` and `worktree_sha` included — which is exactly the pair the rule needs plus its
-  discriminator.
+  discriminator. The same SKILL.md contradicts itself six lines later: `:40` reads *"Do not modify any
+  .plan/ files directly — all plan state access goes through `manage-*` scripts and the scripts in
+  this skill"*, so the file both mandates and forbids the direct read.
 - **Why it matters:** the repository's standing rule is that all `.plan/` access goes through the
   generated executor's `manage-*` / script surface, never a direct file read. The rule as shipped
   directs its reader to break that, and does so unnecessarily: the sanctioned route exists, returns

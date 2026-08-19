@@ -2,39 +2,52 @@
 
 The shipped cross-check is correct and non-vacuously tested; nothing here disputes the mechanism.
 What remains falls in three clusters. **(1) A false mechanism claim about the architecture crawl's
-cost** — that it shells out to Maven/Gradle/npm discovery verbs — propagated into three new surfaces
-plus the run report, together with a measured cost range (1–5 s) that fresh measurement on this tree
-exceeds by roughly 2×. **(2) Three test gaps**, two of them on code the verification rounds
-*themselves* added — including round 3's reproduced runtime bug, whose fix I reverted with the suite
-staying green — and one where an anti-vacuity control cannot perform the detection its docstring
-claims. **(3) A new, undocumented and untested coupling** between the executor's stamp allow-list and
-the architecture's classifier map, where a mismatch now hard-blocks the gate project-wide. Plus five
-stale claims confined to `report-01.md`.
+cost** — that it shells out to Maven/Gradle/npm discovery verbs — propagated into four surfaces
+including the crawl's own docstring. ⚠ **The companion claim that the shipped 1–5 s cost range is
+too low did NOT survive adversarial re-measurement and has been withdrawn** — see G1. **(2) Three
+test gaps**, two of them on code the verification rounds *themselves* added — including round 3's
+reproduced runtime bug, whose fix was reverted with the suite staying green — and one where an
+anti-vacuity control cannot perform the detection its docstring claims, which adversarial review
+reproduced directly and re-rated **high**. **(3) A latent, undocumented and untested coupling**
+between the executor's stamp allow-list and the architecture's classifier map, where a future
+mismatch would hard-block the gate project-wide. Plus five stale claims confined to `report-01.md`.
 
 ---
 
-## G1 — Replace the crawl-cost range in `manage-tasks/SKILL.md` with a machine-qualified figure
+## G1 — Qualify the crawl-cost range in `manage-tasks/SKILL.md` as host- and load-dependent
+
+⚠ **This entry was filed at `medium` on a measurement that adversarial review could not reproduce.
+The original claim — that the shipped 1–5 s range is roughly 2× too low — is WITHDRAWN. The shipped
+figure is correct on an unloaded host. What survives is a much smaller documentation point, and the
+severity is corrected to `low` accordingly.**
 
 - **Kind:** doc-defect
-- **Severity:** medium
+- **Severity:** low
 - **Topic:** bundle-docs
 - **Where:** `marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md:411-415`
 - **Evidence:** The shipped text reads *"Measured on this repository — Python-only — the first crawl
   took roughly 1 to 5 seconds, across four independent measurements in different sessions and
-  filesystem-cache states; the spread is the honest answer and a point estimate would not be."* Four
-  fresh measurements of `crawl_all_modules(<repo root>)` on this tree, each in a new process:
-  **7.64 s, 10.62 s, 10.11 s, 8.45 s**. Every one is outside the stated range.
-- **Why it matters:** The range is presented as a property of *the repository*, so an operator or a
-  future author budgets the gate's two wiring points (phase-5 Step 12a, phase-6 `push`) against it.
-  It is in fact a property of the machine as much as the repository, and on this machine the gate
-  costs ~20 s per plan rather than ~2–10 s. A cost claim that a reader cannot reproduce is the class
-  this very plan exists to close, one level up.
-- **Action:** Restate the figure as machine-dependent — give the observed spread across *both* sets
-  of measurements (1.1–10.6 s) and say plainly that it scales with the host, or drop the numeric
-  bound and keep only the two properties that actually bound the cost (paid only after the primary
-  predicate matched; never on the `stale` path).
-- **Done when:** `manage-tasks/SKILL.md` states no numeric range that a fresh measurement on a
-  supported host can fall outside, or explicitly qualifies the range as host-dependent.
+  filesystem-cache states; the spread is the honest answer and a point estimate would not be."*
+  ⭐ **Nine fresh measurements taken during adversarial review, each in a new process, all fall
+  INSIDE that range:** five of `resolve_project_build_notations(<repo root>)` — **3.70, 3.41, 3.12,
+  3.09, 2.99 s** — and four of `crawl_all_modules(<repo root>)` — **3.23, 3.31, 3.46, 3.27 s**. The
+  memoized second call in the same process costs **0.0014 s**, confirming the once-per-process claim.
+  ⛔ **The original 7.64 / 10.62 / 10.11 / 8.45 s readings are a concurrency artifact, not a host
+  property.** This working tree is shared with other agents running full pytest suites; re-measured
+  deliberately under artificial CPU contention on the same 4-core container, the same
+  `crawl_all_modules` call returns **11.56, 7.93, 7.19 s** — reproducing the original figures almost
+  exactly. The audit measured contention and attributed it to the machine.
+- **Why it matters:** The residual point is real but small: the range is stated as a property of
+  *the repository*, and it is a property of the host and its load as much as of the repository. An
+  operator budgeting the gate's two wiring points (phase-5 Step 12a, phase-6 `push`) on a busy CI
+  runner can legitimately see 2–3× the stated figure. Nothing in the shipped text warns of that.
+- **Action:** Add a host/load qualifier to the existing sentence — the measurements are from an
+  unloaded developer host, and a contended one can multiply them severalfold. ⛔ **Do NOT widen or
+  replace the numeric range:** it is accurate for the condition it names, and the two properties that
+  actually bound the cost (paid only after the primary predicate matched; never on the `stale` path)
+  are already stated and correct.
+- **Done when:** the cost sentence in `manage-tasks/SKILL.md` § step 7 names the measurement
+  condition (unloaded host) alongside the range.
 - **Effort:** S
 - **Risk if fixed:** None — documentation only.
 
@@ -48,9 +61,17 @@ stale claims confined to `report-01.md`.
 - **Where:** `marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md:408-411`
 - **Evidence:** Shipped text: *"It shells out: `git` on every project, plus each build tool's own
   discovery verbs on a Maven/Gradle/npm one (`crawl_all_modules` documents `help:all-profiles
-  dependency:tree` per Maven module)."* I instrumented `subprocess.run`/`Popen`/`check_output` and
-  called `resolve_project_build_notations(<repo root>)`: **2 subprocess calls, both
-  `git rev-parse --git-common-dir`**. Maven module discovery is explicitly subprocess-free —
+  dependency:tree` per Maven module)."* Independently re-instrumented during adversarial review:
+  with `subprocess.run`/`Popen`/`check_output`/`check_call`/`call` all wrapped before import,
+  `resolve_project_build_notations(<repo root>)` issues **exactly ONE child process —
+  `git rev-parse --git-common-dir`**. ⚠ The audit originally reported "2 subprocess calls"; that is a
+  double-count, because `subprocess.run` is itself implemented over `Popen` and both wrappers fired
+  on the same invocation. ⭐ **The one `git` call is also not what any of these documents implies.**
+  Its captured stack is `plugin_discover.attach_lsp_references` → `lsp_harvest.resolve_binding` →
+  `lsp_client.resolve_language_server` → `run_config.get_run_config_path` →
+  `marketplace_paths.resolve_main_anchored_path` → `_main_checkout_root` — a main-checkout-root
+  resolution for LSP configuration, **not** a worktree-sha computation and not a build-tool verb.
+  Maven module discovery is explicitly subprocess-free —
   `build-maven/scripts/_maven_cmd_discover.py:220-224`: *"Discover all Maven modules with complete
   metadata — subprocess-free … No Maven subprocess is invoked."* `help:all-profiles dependency:tree`
   lives in `enrich_maven_module`, whose only caller is `_cmd_client_query._enrich_maven_module_cached`
@@ -63,10 +84,14 @@ stale claims confined to `report-01.md`.
   author will reach for when proposing to weaken or skip the check — the doc-only carve-out this plan
   deliberately refused, re-entering through a cost claim instead.
 - **Action:** Replace the build-tool clause with what the crawl actually does: parse each build file
-  with stdlib parsers, walk the filesystem, and shell out to `git` for the worktree sha. Keep the
-  `git` half, which is true.
+  with stdlib parsers, walk the filesystem, and issue a single `git rev-parse --git-common-dir` while
+  resolving the main checkout root. ⛔ **Do not describe that `git` call as a worktree-sha
+  computation** — it is not one, and writing it that way would ship a fresh invented rationale of
+  exactly the class this plan exists to close. Keep the `git` half, which is true as to *whether*
+  `git` runs.
 - **Done when:** `SKILL.md` § step 7's cost paragraph names only subprocesses the instrumented crawl
-  actually issues, and a test or a comment records how that was established.
+  actually issues, describes the `git` call by the purpose its call stack shows, and a test or a
+  comment records how that was established.
 - **Effort:** S
 - **Risk if fixed:** None — documentation only.
 
@@ -118,17 +143,26 @@ stale claims confined to `report-01.md`.
 ## G5 — Correct the root claim in `crawl_all_modules`'s own docstring
 
 - **Kind:** doc-defect
-- **Severity:** low
+- **Severity:** medium
 - **Topic:** architecture-core
 - **Where:** `marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/_architecture_core.py:492` and `:543-545`
 - **Evidence:** *"Memoization: the crawl is expensive (it shells out to the build tools — e.g. Maven
-  runs `help:all-profiles dependency:tree` per module)."* This is the claim G2–G4 all cite as their
-  authority, and it is pre-existing (not introduced by this plan). It also contradicts its own
-  sibling module: `_cmd_client_query.py:56-58` states *"The cheap architecture crawl is
-  subprocess-free: it parses each pom.xml with stdlib XML and does not run Maven."*
-- **Why it matters:** Two docstrings in the same skill say opposite things about the same function,
-  and the false one is the one downstream authors quoted. Fixing the three copies without fixing the
-  source guarantees the next author re-derives the error.
+  runs `help:all-profiles dependency:tree` per module)."* (`:543-545`; the same claim again in the
+  `_CRAWL_CACHE` comment at `:492`, which adds *"O(N²) subprocess invocations"*). This is the claim
+  G2–G4 all cite as their authority, and it is pre-existing (not introduced by this plan). It is
+  contradicted by **two** other first-party surfaces, not one: `_cmd_client_query.py:56-58` states
+  *"The cheap architecture crawl is subprocess-free: it parses each pom.xml with stdlib XML and does
+  not run Maven"*, and `build-maven/SKILL.md:38` states *"**discover**: Subprocess-free — parses each
+  `pom.xml` with stdlib XML … Resolved coordinates, inherited profiles, and the resolved dependency
+  tree are filled lazily … by `enrich_maven_module`"*. Instrumentation (G2) settles it in favour of
+  the two: one child process, and it is not a build tool.
+- **Why it matters:** ⭐ **Severity is `medium` rather than `low` because this is the source, not a
+  copy.** Three surfaces (G2, G3, G4) state the falsehood because they quoted this docstring as
+  authority; G3 is a *new* public API docstring this plan wrote by copying it. Fixing the three
+  copies while leaving the authority intact guarantees the next author re-derives the same error from
+  the same place — so this entry, not its derivatives, is the one that has to land. It also leaves
+  two docstrings in the same skill asserting opposite things about the same function, with the false
+  one carrying the more quotable phrasing.
 - **Action:** Correct `crawl_all_modules`'s docstring to say the crawl is subprocess-free apart from
   the `git` worktree-sha call, and cross-reference the lazy Maven enrichment as the separate,
   genuinely expensive path.
@@ -152,7 +186,9 @@ stale claims confined to `report-01.md`.
   `test/plan-marshall/manage-architecture/test_project_build_notations.py`: **504 passed**. The only
   existing case, `test_resolver_reports_an_unimportable_resolver_apart_from_a_failing_one`, raises
   `ImportError`, which the narrowed clause still catches. (File restored from a byte snapshot;
-  `git status --porcelain` clean.)
+  `git status --porcelain` clean.) ⭐ **Independently reproduced in adversarial review**: the same
+  substitution, the same 504 green, the same clean restore — and the 504 baseline itself re-derived
+  before mutating.
 - **Why it matters:** R3-4 is the one *behaviour* change round 3 shipped, and the report's argument
   for stopping the verification loop rests on it being "small, and its class was just swept". An
   unguarded `RuntimeError` from `_cmd_client_build`'s module-scope `resolve_bundles_root` would hand

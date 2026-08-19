@@ -9,7 +9,7 @@ The shipped code does what the plan's arm B asked for, and the two central mecha
 published `worktree_state` discriminator and write-set-derived classification — are real, correct on
 every input I exercised, and covered by tests that go red when the production code is mutated. The
 gaps are: an incompletely discharged D5 population rule (two stub sites in the swept corpus that were
-never converted and never declared as exclusions), two stale documentation surfaces the run's own
+never converted and never declared as exclusions), **six** stale documentation surfaces the run's own
 beyond-diff sweep should have caught, one regression test that has since stopped discriminating the
 defect it names, and four inaccurate counts/omissions in the run report.
 
@@ -234,6 +234,48 @@ Two things are worth naming even though neither is a live defect:
    returns `[]` when `declared` is falsy, and no other consumer of `declared_bucket` exists. Recorded
    as G10; this is pre-existing rather than introduced.
 
+## Documentation-surface sweep
+
+The run's own beyond-diff sweep (F5–F12, F26–F30, F37) set out to remove every rationale the
+discriminator change made false. Six survive it. They are listed here so each gaps entry traces to a
+row in this document rather than only to the summary paragraph.
+
+| # | Surface | Retired claim it still makes | Gap |
+|---|---|---|---|
+| 1 | `manage-solution-outline.py:947-949` (`_stamp_read_provenance` docstring) | the `get-module-context` degrade covers the pre-materialization window | **G4** |
+| 2 | `manage-solution-outline/SKILL.md:245` (+ the field table at `:242`) | the `worktree_fallback` exists *because* a `pending` plan has no worktree yet | **G5** |
+| 3 | `manage-config/SKILL.md:511` | `decision: unknown` because "the worktree is not yet materialised" | **G13** |
+| 4 | `manage-config/scripts/_cmd_build_map.py:144` | same claim, in the docstring of the handler row 3 documents | **G13** |
+| 5 | `manage-execution-manifest/standards/decision-rules.md:237` | `_resolve_footprint` returns `None` "(the worktree is not yet materialised)" | **G13** |
+| 6 | `phase-6-finalize/standards/finalize-step-security-audit.md:38` | "An UNRESOLVABLE footprint (the worktree not yet materialised)" | **G13** |
+
+Rows 1–2 contradict a comment or a test in the same change: `manage-solution-outline.py:1109-1123`
+states the opposite of row 1, and `test_get_module_context.py:517` asserts
+`data['worktree_fallback'] is False` for `worktree_state: pending`, agreeing with the comment and not
+with the docstring.
+
+Rows 3–6 are the `disabled`-plan half of the same conflation. Each explains an unresolvable footprint
+by pre-materialization alone, which is false for a plan that will never have a worktree — the exact
+wrongness F5 recorded and fixed in the reason string, and which
+`extension_base.py:579-581` names in so many words: *"a statement that is not merely unhelpful for such
+a plan but false, since no worktree will ever be materialised for it."*
+
+⛔ **Row 3 is inside a file this run edited.** `git show aeab5ab -- .../manage-config/SKILL.md` changes
+exactly two lines — the reason string at `:548` and the `unknown` explanation at `:1429`, which now
+reads *"whether because the plan's worktree is `pending` … or `disabled` (it never will)"*. The run
+corrected one statement of the claim and left the other, nine hundred lines above it, contradicting the
+correction in the same file.
+
+**Population of this sweep, published.** The set was derived mechanically over every `*.md` and `*.py`
+under `marketplace/`: lines matching `not yet materiali[sz]ed|not materiali[sz]ed yet|worktree is not
+yet`, restricted to those within three lines of `unresolvab|decision: unknown|returns ``None``|
+`unknown``. That returns six candidates. `extension_base.py:579` is excluded because it quotes the
+retired string in order to reject it, and
+`workflow-integration-git/SKILL.md:655` because it is a `--branch`-omitted `INVALID_INPUT` row in an
+unrelated context. Rows 1–2 do not use that phrasing and were found by reading the two
+`worktree_fallback` surfaces directly; a zero from the phrase sweep would therefore not have been
+evidence of a clean tree, which is why both methods were run.
+
 ## Test adequacy
 
 Coverage mapping:
@@ -245,16 +287,40 @@ Coverage mapping:
 | D4 discriminator | `test_worktree_state_discriminator.py` (state machine + payload reader), `test_plan_context_resolver.py` (per-state faces), plus per-consumer suites |
 | D5 corpus | `test/_shared/_resolve_project_dir_fixtures.py` derivation helper |
 
-**Mutation evidence — every mutation was taken from a byte snapshot in
-`$TMPDIR/verify-280-mutsweep/` and written back from that snapshot; `git status --porcelain` was
-confirmed empty for each file afterwards. No `git checkout`/`restore`/`stash` was used.**
+**Mutation evidence — every mutation was taken from a byte snapshot (`$TMPDIR/verify-280-mutsweep/`
+for the first audit, `$TMPDIR/adv-280-mutsweep/` for the adversarial re-run) and written back from that
+snapshot; `git status --porcelain` was confirmed empty for each mutated file afterwards, and for the
+whole tree at the end of each pass. No `git checkout`/`restore`/`stash` was used at any point.**
+
+M1–M4 were run by the first audit and **re-run independently** during adversarial review, from a fresh
+byte snapshot, with identical results. M5–M10 are additional mutations the first audit did not run;
+they exist to answer "can each guard this plan shipped go red at all?" rather than to re-check a
+result. Each targets a different shipped guard, so a green row would name a guard with no test behind it.
 
 | # | Mutation | Result |
 |---|---|---|
-| M1 | `_build_haystack`: delete the `if prose: parts.append(prose)` fold | **RED** — 2 failed (`test_prose_text_reaches_the_haystack`, `test_keyword_present_only_in_prose_is_not_flagged`, the latter reporting 2 drift findings, exactly the pre-fix number the report records) |
-| M2 | `_load_deliverables`: empty-deliverables branch returns `True` instead of `False` | **GREEN — 5 passed.** The F35 regression test does not discriminate its own defect any more (see below) |
+| M1 | `_build_haystack`: delete the `if prose: parts.append(prose)` fold | **RED** — 2 failed (`test_prose_text_reaches_the_haystack`, `test_keyword_present_only_in_prose_is_not_flagged`, the latter reporting `assert 2 == 0` drift findings, exactly the pre-fix number the report records) |
+| M2 | `_load_deliverables`: empty-deliverables branch (`_cmd_qgate_mechanical.py:166`) returns `True` instead of `False` | **GREEN — 5 passed**, and on re-run the *whole* `test/plan-marshall/manage-tasks/` suite is green too: **496 passed**. No test in the owning bundle discriminates the F35 defect (see below) |
 | M3 | `_check_declared_bucket`: drop `.lower()` from the comparison | **RED** — 1 failed (`test_bucket_comparison_is_case_insensitive`) |
 | M4 | `has_worktree`: `!= WORKTREE_STATE_DISABLED` instead of `== WORKTREE_STATE_MATERIALIZED` | **RED** — 2 failed (`test_each_state_resolves_its_own_face[pending]`, `test_has_worktree_is_false_while_pending`) |
+| M5 | restore the F34 guard: `if 'module_testing' in profiles and write_set:` | **RED** — 1 failed (`test_wholly_read_only_deliverable_does_not_satisfy_module_testing`) |
+| M6 | `is_truthy_metadata` → bare `return bool(value)` (the F24 defect) | **RED** — 2 failed (`test_the_flag_is_coerced_not_merely_truth_tested[str-false]`, `[str-False]`) |
+| M7 | `_parse_get_worktree_path_output`: disable the unrecognised-state raise (`if False:`) | **RED** — 2 failed (`test_absent_state_fails_closed`, `test_unrecognised_state_fails_closed`) — the fail-closed branch is reachable and pinned |
+| M8 | test-side: replace the `test_freshness_notation_crosscheck.py:166` autouse stub with `('materialized', '/nonexistent/xyz')` | **GREEN — 17 passed**, confirming the first audit's basis for treating G1/G2 as latent |
+| M9 | `_write_set_is_all_documentation`: `all(...)` → `any(...)` | **RED** — 1 failed (`test_the_same_bucket_over_a_code_write_is_not_rejected`) — the F21 narrowing is guarded |
+| M10 | `_check_declared_bucket`: delete the `declared == documentation_only` early return | **RED** — 2 failed (`test_read_only_code_reference_does_not_flip_a_docs_only_bucket`, `test_bucket_comparison_is_case_insensitive`) |
+
+Also applied and reverted: the exact fix G1/G2 propose (`worktree_query_result(True, …)` at both sites
+plus the import) — **17 passed**, so the proposed action is executable as written and its stated risk
+("none expected") holds.
+
+**Both branches of every shipped guard were checked for reachability.** `derive_worktree_state`'s four
+returns, `_parse_get_worktree_path_output`'s two raises, `_resolve_worktree_face`'s
+materialized/other split plus its self-contradictory-payload raise (reachable through the subprocess
+boundary, since the parser validates the state and the path independently — pinned by
+`test_materialized_with_empty_path_raises` at `test_plan_context_resolver.py:163`), `has_worktree`'s
+single comparison, and `_check_declared_bucket`'s four exits. Exactly one branch is unreachable in
+practice — the `ImportError` arm of `_write_set_is_all_documentation` — and it is recorded as **G11**.
 
 **M2 is a finding.** `test_heading_less_deliverables_section_is_unparseable`
 (`test_qgate_keyword_drift_reads_prose.py:147`) asserts `result['ambiguous'] is True` for a
