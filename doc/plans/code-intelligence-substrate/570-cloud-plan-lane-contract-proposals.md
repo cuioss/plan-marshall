@@ -424,8 +424,10 @@ directory named in § Gap coverage — each of which may already be gone — **a
 not a source plan**: `240-skill-lsp-server/`, whose `proposal-protocol-surface.md` D4 must quote. The
 covering gap is `135`/G10, filed against `135`, but the document to be quoted lives in `240`.
 ⛔ **Give `240` a census row in D0(b) like any other target**, with the same three states, and take
-the `collected` branch if its directory is gone: record the gap as `discharged-by-collection` with the
-directory listing as evidence and do **not** reconstruct the quote from git history. An earlier
+the `collected` branch if its directory is gone: give the covering gap the disposition
+`target collected` — the vocabulary § Verification's Gap-coverage gate enumerates — with the directory
+listing as evidence, recorded in the run report, and do **not** reconstruct the quote from git
+history. An earlier
 revision omitted `240` from this list entirely, so a run reaching a collected `240` had no
 disposition to take.
 
@@ -513,9 +515,11 @@ a reversal is added: the `350`
 test figures were true-then-invalidated rather than miscounted; the `350` sweep count was under-enumerated
 by the audit's own correction and must be re-run rather than copied; the commit-loss mechanism was
 asserted by the audit and **withdrawn** by the review — only the effect is established, and both lost
-commits were documentation-only; and the audit's premise that the plan citing `135`'s `rationale.md`
-"is queued, not yet run" was **struck as false** by the review, which is why D4 inlines the quoted
-claim rather than waiting on that plan.
+commits were documentation-only; and the audit's premise that `240-skill-lsp-server` — the plan whose
+`proposal-protocol-surface.md` cites `135`'s `rationale.md` — "is queued, not yet run" was **struck as
+false** by the review (it landed). That is why D4 **records the fix as** inlining the two-sentence
+argument at the citation site, rather than proposing that the reference wait on a plan that has
+already run.
 
 **Counts.** Every number in this plan is a lead. The instance counts in P4, the per-plan SHA counts, the
 site counts in D3 — all were true when this plan was authored and none is to be restated without
