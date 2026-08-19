@@ -61,7 +61,7 @@ resolve_qgate_findings_by_evidence = _findings_core.resolve_qgate_findings_by_ev
 # Test: QGATE_PERSIST_OK — the published persist-outcome partition
 # =============================================================================
 #
-# Every observed status below is DERIVED by driving the primitive to produce it,
+# Every observed status is DERIVED by driving the primitive to produce it,
 # never restated as a literal in the test — so the partition is checked against
 # the primitive's real outcomes and cannot drift into agreeing with a stale copy
 # of the vocabulary.

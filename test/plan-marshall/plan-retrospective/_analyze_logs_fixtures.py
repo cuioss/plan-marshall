@@ -21,7 +21,7 @@ SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospectiv
 
 
 # Direct import of analyze-logs.py (hyphenated filename → importlib). Used by
-# the regression tests below that call ``read_log`` in-process so they can
+# the regression tests that call ``read_log`` in-process so they can
 # capture stderr WARN lines reliably without shell-level quoting noise.
 _spec = importlib.util.spec_from_file_location('analyze_logs', str(SCRIPT_PATH))
 

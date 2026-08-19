@@ -27,7 +27,7 @@ composed result.
 
 **Evidence-assertion obligation.** This plan's subject is a class of records that
 pass while proving nothing about what they measured, so its own tests must not
-reproduce that shape. Every assertion below pins the concrete observed evidence —
+reproduce that shape. Every assertion pins the concrete observed evidence —
 a field's presence-vs-absence, its value, the firing count, the named predicate,
 the sampling point — and never only a terminal pass/fail or a bare "no error
 raised". A test that asserts only the outcome cannot distinguish a record that
@@ -170,7 +170,7 @@ _analyze_spec.loader.exec_module(analyze_logs)
 # script, so `conftest.get_script_path` does not resolve it — its `scripts/` dir
 # goes on sys.path directly. `import_module` (rather
 # than a second file-location load) reuses the one canonical module instance, so
-# the schema constants compared below are the same objects the reader returns.
+# the schema constants compared against are the same objects the reader returns.
 _AUDIT_SCRIPTS_DIR = PROJECT_ROOT / '.claude' / 'skills' / 'audit-archived-plan-retrospectives' / 'scripts'
 
 
@@ -185,7 +185,7 @@ audit = importlib.import_module('audit')
 # The composed scenario's pinned magnitudes
 # ---------------------------------------------------------------------------
 #
-# Named rather than inlined because several assertions below are ABOUT the
+# Named rather than inlined because several assertions are ABOUT the
 # relationship between them — the cumulative total is the sum of the two closes
 # and therefore differs from either one, which is the whole reason the row has to
 # declare which of its values are cumulative.

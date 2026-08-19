@@ -80,13 +80,13 @@ merge_lock = load_script_module('plan-marshall', 'manage-locks', 'merge_lock.py'
 
 
 # Capture the REAL _push_title_token before the autouse _TokenRecorder stub
-# replaces it, so the canonical-seam CLI-shape test below can exercise the
+# replaces it, so the canonical-seam CLI-shape test can exercise the
 # actual icon-optional push wrapper (it resolves _run_executor as a module
 # global, so a monkeypatch on merge_lock._run_executor still takes effect).
 _REAL_PUSH_TITLE_TOKEN = merge_lock._push_title_token
 
 
-# Same rationale for the set/clear wrappers: the owner-scoping tests below must
+# Same rationale for the set/clear wrappers: the owner-scoping tests must
 # exercise the REAL wrappers to observe the constructed argv, not the autouse
 # _TokenRecorder stubs that replace them for every other test.
 _REAL_SET_TITLE_TOKEN = merge_lock._set_title_token

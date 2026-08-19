@@ -7,7 +7,7 @@ per-dispatch audit trail. That trail is captured by this subcommand.
 
 A leading block pins the boundary MEASURE: the reader returns its row count
 beside its token sum, because a sum cannot state its own coverage. The lettered
-sections below pin the subcommand's own contract:
+sections pin the subcommand's own contract:
 
   (a) first invocation creates the artifact file with one row,
   (b) subsequent invocations append rows in order with monotonic timestamps,

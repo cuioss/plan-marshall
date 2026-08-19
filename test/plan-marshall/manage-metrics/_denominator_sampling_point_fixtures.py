@@ -46,7 +46,7 @@ cmd_generate = manage_metrics.cmd_generate
 
 
 # The SIBLING producer of the same count. Loaded as the real command function so
-# the agreement test below exercises `manage-solution-outline list-deliverables`
+# the agreement test exercises `manage-solution-outline list-deliverables`
 # end-to-end (`extract_deliverables` → `split_deliverable_blocks`) rather than
 # re-evaluating the metrics side's own expression.
 _OUTLINE_SCRIPT_PATH = get_script_path('plan-marshall', 'manage-solution-outline', 'manage-solution-outline.py')
@@ -95,7 +95,7 @@ def _seed_phases(plan_id: str) -> Path:
 
     ``status.json`` is seeded because ``cmd_generate``'s ``_guard_plan_exists``
     refuses a plan directory without one — and a refused generate writes
-    nothing, which would make every denominator assertion below fail for a
+    nothing, which would make every denominator assertion fail for a
     reason unrelated to denominators.
     """
     phases = {name: _recorded_row() for name in manage_metrics.PHASE_NAMES}
@@ -153,7 +153,7 @@ _RETIRED_WHOLE_FILE_RE = re.compile(r'^###\s+\d+\.\s')
 
 # Outlines chosen so that retired grammar and the authoritative section-scoped
 # extractor give DIFFERENT answers. If `_count_deliverables` ever reverts to a
-# private grammar, the agreement assertion below fails on these — which is what
+# private grammar, the agreement assertion fails on these — which is what
 # makes it non-vacuous.
 _DIVERGENT_OUTLINES = {
     'numbered-heading-under-approach': (

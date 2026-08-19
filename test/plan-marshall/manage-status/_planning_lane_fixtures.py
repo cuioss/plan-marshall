@@ -242,7 +242,7 @@ def _light_setup(plan_context, plan_id: str) -> Path:
 #
 # The pure scorer takes the five realized signals (plus the S6 override) as plain
 # arguments and performs zero file I/O. These cases lock its scoring against the
-# integrated _evaluate_signals path covered above. The all-light baseline below
+# integrated _evaluate_signals path covered elsewhere. The all-light baseline
 # biases EVERY signal light; each isolation case flips exactly one argument and
 # asserts the resulting lane + fired_signals entry.
 

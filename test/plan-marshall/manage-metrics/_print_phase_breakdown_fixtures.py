@@ -77,7 +77,7 @@ write_metrics = manage_metrics.write_metrics
 # accumulate-agent-usage, enrich). The guard returns ``error: plan_not_found``
 # unless the plan directory carries a ``status.json`` sentinel. The
 # ``plan_context`` fixture creates plan dirs without that sentinel, so every
-# positive test below would otherwise trip the guard.
+# positive test would otherwise trip the guard.
 #
 # The autouse fixture below patches ``manage_metrics.require_plan_exists`` so
 # that, during these tests, it auto-materialises the ``status.json`` sentinel for

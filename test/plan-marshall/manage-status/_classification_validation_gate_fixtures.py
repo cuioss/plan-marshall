@@ -80,7 +80,7 @@ classify_scope_pure = _lane.classify_scope_pure
 
 
 # The sensor's own whole-body reader. Feeding the gate's fixture through THIS, rather
-# than through the raw ``body`` string, makes the equivalence assertions below compare
+# than through the raw ``body`` string, makes the equivalence assertions compare
 # the two verdicts over byte-identical input — the request.md template chrome included.
 read_request_body = _lane._read_request_body
 
@@ -203,7 +203,7 @@ def _ns_route(plan_id: str):
 
 
 # One fixture per row of ``classify_scope_pure``'s band table, narrow rows included.
-# The equivalence test below asserts the gate's verdict AGAINST the sensor's band for
+# The equivalence test asserts the gate's verdict AGAINST the sensor's band for
 # each — no row's expected outcome is hard-coded, so the assertion stays honest even
 # if a row's own predicate changes.
 _SCALE_BAND_ROW_BODIES = [

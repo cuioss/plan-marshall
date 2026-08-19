@@ -131,7 +131,7 @@ def _read_queue(queue_path: Path) -> dict:
 # =============================================================================
 # D5 — self-healing stale-slot reclaim (active_since + validate_lock_queue +
 # adaptive build_queue_upper_limit). ADDITIVE over D4: these are new functions,
-# none of D4's [LOCK]-event tests above are modified.
+# none of D4's [LOCK]-event tests are modified.
 # =============================================================================
 
 

@@ -37,7 +37,7 @@ defect this work exists to close:
 The resolver seam (``resolve_expected_notations``) is stubbed in most gate-level
 cases so they neither depend on the working tree nor pay for a crawl; the
 resolver's own outcome contract is exercised directly against
-``_freshness_crosscheck``, and the live path has the dedicated case named above.
+``_freshness_crosscheck``, and the live path has its own dedicated case.
 """
 
 

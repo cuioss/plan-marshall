@@ -69,7 +69,8 @@ _resolve_lock_log_path = _mod._resolve_lock_log_path
 # build_queue suites use). The autouse `plan_context` redirect points
 # PLAN_BASE_DIR at the shared `tmp_path`, whose `.parent/logs` dir would be
 # shared across tests — so a per-test isolated base is required for the
-# exact-content assertions below to be deterministic under `-n auto`.
+# exact-content assertions in the sibling modules to be deterministic
+# under `-n auto`.
 
 
 def _lock_log_base(tmp_path, monkeypatch):

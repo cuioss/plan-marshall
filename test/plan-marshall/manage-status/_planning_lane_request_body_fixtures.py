@@ -34,7 +34,7 @@ cmd_planning_lane_route = _mod.cmd_planning_lane_route
 # preamble, and it is a citation of a governing document — never a work target.
 # The preamble is deliberately free of markdown bold and of any glob marker, so
 # the truncated reading lands on `surgical` (1 path, no glob) rather than on
-# `single_module` for some unrelated reason. That keeps each assertion below
+# `single_module` for some unrelated reason. That keeps each assertion
 # attributable to the read seam.
 _CITATION = 'persona-plan-orchestrator/standards/orchestration-model.md'
 

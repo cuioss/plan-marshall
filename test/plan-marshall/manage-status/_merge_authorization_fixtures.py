@@ -3,7 +3,7 @@
 """Tests for the merge-authorization subcommand of manage-status.
 
 The verb pair binds every merge-gate authorization to TWO things: the HEAD it was
-granted against, and the gap class it was granted over. The cases below pin the
+granted against, and the gap class it was granted over. The cases pin the
 properties the pre-merge barrier relies on:
 
 - (a) an authorization LAPSES when HEAD advances past the tree it was granted

@@ -88,7 +88,7 @@ def _pin_start_time_to_past(plan_id: str, phase: str) -> None:
 # accumulate-agent-usage, enrich). The guard returns ``error: plan_not_found``
 # unless the plan directory carries a ``status.json`` sentinel. The
 # ``plan_context`` fixture creates plan dirs without that sentinel, so every
-# positive test below would otherwise trip the guard.
+# positive test would otherwise trip the guard.
 #
 # The autouse fixture below patches ``manage_metrics.require_plan_exists`` so
 # that, during these tests, it auto-materialises the ``status.json`` sentinel for
@@ -406,7 +406,7 @@ _NON_USAGE_BOUNDARY_COLUMNS = {'timestamp', 'termination_cause'}
 
 
 # Computed by cmd_record_dispatch_boundary and returned in its TOON, but never
-# persisted — no assignment site exposes it to the source-derived sweep below,
+# persisted — no assignment site exposes it to the source-derived sweep,
 # so it is named here to keep the lattice's coverage honest.
 _RETURN_ONLY_USAGE_FIELDS = {'rows_recorded'}
 
@@ -634,7 +634,7 @@ def _parse_backticked_value_set(content: str, anchor: str) -> set[str]:
 def _assert_documented_set_matches_enum(content: str, anchor: str) -> None:
     """The guard proper: the documented enumeration equals the parser's tuple.
 
-    Extracted so the negative controls below can execute THIS assertion under
+    Extracted so the negative controls can execute THIS assertion under
     ``pytest.raises`` — proving the guard's own failure path runs on a mutated
     document, not merely that the underlying parsed sets differ.
     """

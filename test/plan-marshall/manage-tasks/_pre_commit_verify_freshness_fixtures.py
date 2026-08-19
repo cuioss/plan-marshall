@@ -9,7 +9,7 @@ one of three statuses (``fresh``, ``stale``, ``undecidable``) for the
 orchestrator to consume as a fail-closed gate. Matching on ``status`` rather
 than ``exit_code`` is load-bearing: the build wrapper exits 0 on timeout, so an
 exit-code predicate would launder a build that never finished into a false
-``fresh`` (regression covered below). See
+``fresh`` (regression covered in the sibling modules). See
 ``marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md`` §
 "Pre-Commit Verify Freshness" for the contract.
 
@@ -258,7 +258,7 @@ def _stub_verdict(monkeypatch, verdict: dict) -> None:
 # The gate's worktree root used to come from a private ``_resolve_worktree_root``
 # that hand-read ``status.metadata.worktree_path`` through a private
 # ``_read_status_metadata``. Both are gone: the root now comes from the ONE
-# resolver. The three cases below pin the routing, the sentinel carve-out, and
+# resolver. The three cases pin the routing, the sentinel carve-out, and
 # the deliberately-preserved non-fatal fallback.
 
 

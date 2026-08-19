@@ -56,7 +56,7 @@ def _valid_fragment_body(aspect: str) -> str:
 # Direct-import unit tests — exercise internal functions for coverage
 # =============================================================================
 #
-# Subprocess-based tests above validate the CLI contract end-to-end, but
+# The subprocess-based tests validate the CLI contract end-to-end, but
 # coverage.py does not instrument subprocesses here — so to meet the 80%
 # coverage target we also exercise the script's public + private helpers
 # directly via importlib. This complements (does not replace) the integration

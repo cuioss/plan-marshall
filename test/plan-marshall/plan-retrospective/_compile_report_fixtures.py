@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from conftest import MARKETPLACE_ROOT  # noqa: E402
 
 # Absolute path to the committed stripped-archive fixture. The regression
-# test below copies this tree into a tmp dir and drives the full
+# test copies this tree into a tmp dir and drives the full
 # collect-fragments + compile-report pipeline end-to-end. The fixture lives
 # under version control so regressions in fragment key naming, bundle
 # mode-propagation, or section rendering are caught deterministically.
