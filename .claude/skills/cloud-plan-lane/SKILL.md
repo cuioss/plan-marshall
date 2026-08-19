@@ -1133,15 +1133,14 @@ each path:
 |---|---|---|
 | **R1** | `*.py` | yes |
 | **R2** | `marketplace/**` — bundle sources and the multi-target adapter configuration alike | yes |
-| **R3** | prose under `doc/plans/` **whose content changed** — a `plan.md`, a not-yet-moved `{NNN}-{slug}.md`, and any other prose in a plan's own directory or an epic's `reference/` (a `rationale.md`, a `proposal-*.md`). The two paths one `git mv` prints are **not** R3. | yes |
-| **—** | the *records* under `doc/plans/` — `report-NN.md`, `verification.md`, `gaps.md`, `status-report.md`, any `README.md` | no |
+| **R3** | **any** path under `doc/plans/` — every plan, every record, every lane doc, no exceptions | yes |
 | **S** | `.claude/skills/**` — this repository's own project-level skills | no |
-| **—** | everything else: `CLAUDE.md`, `.github/**`, `pyproject.toml`, and `doc/**` prose outside `doc/plans/` | no |
+| **—** | everything else: `CLAUDE.md`, `.github/**`, `pyproject.toml`, and `doc/**` outside `doc/plans/` | no |
 
-**A path may hold more than one class**, and the reviewable one decides: `.claude/skills/foo/scripts/x.py`
-is both R1 and S, and row 1 below fires on **any** R1/R2/R3 membership. Classification is not
-most-specific-wins — a run that let S shadow R1 would build the Python at Step 5 and suppress its
-review, which is the inverse of every reason stated below.
+The five classes are exclusive except for one overlap: **`.claude/skills/**/scripts/*.py` is both R1
+and S**, and there the reviewable class decides — row 1 below fires on **any** R1/R2/R3 membership.
+Classification is not most-specific-wins; a run that let S shadow R1 would build the Python at Step 5
+and suppress its review, the inverse of every reason stated below. No other path holds two classes.
 
 Then take the **first** row that matches. Its **arm** is the token the report records:
 
@@ -1165,14 +1164,25 @@ exactly as a `*.py` change does. It is prose, but it is *behavioural* prose that
 project's runs act, which is precisely what a reviewer should see; do **not** treat it as
 documentation.
 
-**R3 — a plan is behavioural prose too.** A plan is executed by a later run that has no operator to
-ask, so a wrong path, an unobservable *done when*, a contradiction between deliverables, or an
-invented rationale is a defect that run will act on. That reason reaches every piece of prose a
-later run reads alongside its plan, which is why R3 is a *location* test and not a filename one —
-only the records are carved out. Two boundary cases the cell states and this paragraph explains: a
-**pure Step 3 rename** with no content change is not an edit — the prose it moves was reviewed when
-it landed — but a **first-instruction-block repair** (§ Step 3) writes content into `plan.md` and
-*is* an edit, so it is R3 and the PR keeps its review.
+**R3 — a plan is behavioural prose too, and the whole tree goes with it.** A plan is executed by a
+later run that has no operator to ask, so a wrong path, an unobservable *done when*, a contradiction
+between deliverables, or an invented rationale is a defect that run will act on.
+
+⛔ **R3 is a bare location test, deliberately.** Every path under `doc/plans/` is R3 — plans,
+records, epic READMEs, lane docs like `cloud-bridge.md`, the template. **Do not carve out records,
+and do not ask whether content changed.** Both refinements were tried and both failed, for reasons
+worth keeping:
+
+- **A records carve-out cannot fire.** § Report requires `report-NN.md` in the plan directory and
+  condition 4 requires it as the last pre-merge commit, so a record path is present on *every*
+  labelled PR. Carve it out and the run must strip its own label at condition 4, every time.
+- **"Whose content changed" is not decidable from the evidence this subsection names.** `git diff
+  --name-only` prints **one** path for a pure `git mv` and one for a `git mv` plus an edit — the two
+  are indistinguishable, and § Step 4 forbids answering from recollection instead of from git.
+
+What this costs is a review spent on a PR that only moved a plan file or only added a record. That
+is the whole price, it is small, and it buys a rule with no undecidable predicate and no path in two
+classes.
 
 **S — a project-level skill is not the product.** These are the operating instructions the
 meta-project runs itself by. A reviewer could act on them; the budget simply buys more elsewhere.
@@ -1193,7 +1203,9 @@ gh pr create --label skip-bot-review --fill
 after create is too late for the PR-open trigger, which has already fired. Where an operator is
 reachable, say which way the rule comes out and why *before* creating the PR; a run that applies it
 silently has made a scrutiny decision on the operator's behalf. If they ask for a review in
-response, that is row 2's predicate — re-take the table and record `operator-override`.
+response: on a diff with an **S** path that is row 2's predicate — re-take the table and record
+`operator-override`; on any other diff row 2 cannot fire, so create the PR without the label, record
+the arm the table gave, and say the label was withheld on the operator's instruction.
 
 ⛔ **On the MCP path, creation-time labelling needs the draft route.** `create_pull_request` takes no
 `labels` argument (§ Cloud session affordances maps `--label` to a *separate* call after create), so
@@ -2105,8 +2117,8 @@ Per-step verdict, and any step reported as not done. Which GitHub access path wa
 branch form was used (harness-assigned or run-created). The `skip-bot-review` decision, as five
 facts: **(1)** the state — `applied-at-creation`, `applied-late` (the PR-open trigger had already
 fired), `not-applied`, or `applied-then-removed` (with what triggered the removal); **(2)** the arm
-from § Step 7's decision table — `reviewable`, `operator-override`, `project-skill`, or
-`no-footprint`; **(3)** whether the label was read back; **(4)** whether suppression was **verified**
+token from § Step 7's decision table, in that table's spelling (⛔ do not enumerate the arms here —
+the last enumeration went stale on a rename); **(3)** whether the label was read back; **(4)** whether suppression was **verified**
 or **unverified** (§ Step 7's draft route, where the governing config could not be read); and
 **(5)** the disclosure made to the operator before creation — or that no operator was reachable. It is the one irreversible scrutiny choice the run
 makes, so it leaves a record. A cloud run **never owes** a
