@@ -1,0 +1,444 @@
+# Gaps — 210-native-coordinate-resolvers
+
+The plan's six deliverables all landed and D0's three measurements reproduce exactly at HEAD. What
+remains is reach, not construction: the joins this plan built are correct, but the *discoverers* that
+feed them cannot see a Poetry-managed Python project at all (G1), cannot see a setuptools
+`setup.cfg` / `setup.py` project either (G10), silently swallow an unreadable descriptor (G11),
+silently mangle two ordinary PEP 508 dependency spellings (G2, G3), and read only two of npm's four
+dependency kinds (G4) — in every case producing an empty graph that the seam reports as
+`status: ok, edge_count: 0`, i.e. as a measured absence rather than a missing capability. Alongside
+that, two test guards that name a rule cannot fail (G5, G7), one test docstring misdescribes its own
+fixture (G6), one live count in shipped user documentation is wrong (G8, inherited from a later plan),
+and the run report's build-gate file count is stale (G9).
+
+G1, G2, G3, G10 and G11 all live in one function —
+`_pyproject_cmd_discover.py::_parse_pyproject_metadata`, which reads exactly one table of exactly one
+file — and are listed separately because each has its own observable *Done when*, not because each
+needs its own change.
+
+## G1 — Read Poetry's own tables so a Poetry-managed Python project derives edges
+
+- **Kind:** incomplete
+- **Severity:** high
+- **Topic:** lsp/resolvers
+- **Where:** `marketplace/bundles/plan-marshall/skills/build-pyproject/scripts/_pyproject_cmd_discover.py:282`
+  (`_parse_pyproject_metadata`, `project = data.get('project', {})`)
+- **Evidence:** The parser reads the PEP 621 `[project]` table and nothing else. A project declaring
+  `[tool.poetry] name` and `[tool.poetry.dependencies]` — the only spelling Poetry offered before
+  `[project]` support arrived in Poetry 2.0, and still the spelling of every project that has not
+  migrated — therefore emits no name and no dependencies. (How large that population is has not been
+  measured here and no share is claimed.) Driven end to end over a synthetic three-module Poetry
+  monorepo in which `pkg_app` declares `mono-core`:
+
+  ```text
+  POETRY MONOREPO modules: ['default', 'pkg_app', 'pkg_core']
+     default  metadata= {} deps= []
+     pkg_app  metadata= {} deps= []
+     pkg_core metadata= {} deps= []
+    edges: ([], [])
+  ```
+
+- **Why it matters:** This is the plan's own Problem statement, unresolved for a whole class of
+  consumer: "every Python … consumer project gets its graph, path, neighbours and impact verbs
+  structurally vacuous … while every verb reports success." Worse than silence, the answer actively
+  misreports. `client-api.md:110` defines `resolver_count: N` with no edges as "**N resolvers ran and
+  found nothing.** The empty answer is a real, positive result", and the user-facing page renders that
+  same row as "This is a real answer: your modules genuinely declare no dependencies on each other"
+  (`doc/user/dependency-intelligence.adoc:120`). A live `graph` over this repository shows the row a
+  Poetry consumer would get: `{'id': 'pyproject', 'status': 'ok', 'edge_count': 0}`.
+  `doc/user/dependency-intelligence.adoc:48` tells that consumer "the graph verbs work on a fresh
+  checkout with no configuration" — the ecosystem table below it does qualify the Python identity as
+  "The PEP 621 `[project] name`" (`:62-63`), so the documentation is imprecise rather than false, and
+  the severity rests on the misreport, not on the doc.
+- **Action:** In `_parse_pyproject_metadata`, fall back to `[tool.poetry]` when `[project]` is absent
+  or carries no `name`: read `tool.poetry.name` / `version` / `description` into `metadata`, and read
+  `tool.poetry.dependencies` (skipping the `python` key) and `tool.poetry.group.dev.dependencies`
+  into the `name:scope` dependency list with the same `runtime` / `dev` scopes. A Poetry dependency
+  value may be a version string or a table (`{version = "^1.0"}`, `{path = "../core"}`) — only the
+  key is needed, so the value's shape is irrelevant to the join. Add a `poetry-monorepo` fixture
+  under `test/plan-marshall/build-pyproject/fixtures/` shaped like the existing
+  `multi-module-python` one, and extend `test_pyproject_derivation_resolver.py` to assert its exact
+  edge set.
+- **Done when:** A fixture whose modules declare their names and inter-module dependencies only under
+  `[tool.poetry]` yields a non-empty edge set through `BuildExtension.derive_edges`, and the existing
+  PEP 621 fixture's exact 5-edge assertion still passes unchanged.
+- **Effort:** M
+- **Risk if fixed:** `metadata` and `dependencies` grow for every Poetry consumer, which changes what
+  `architecture` emits for consumers of those fields beyond edge derivation — the same widening
+  concern the run cited when it declined to widen the `dev`-extra read. Mitigate by making the Poetry
+  read a strict fallback that never fires when `[project]` is present.
+
+## G2 — Strip the PEP 508 direct-reference suffix from a dependency name
+
+- **Kind:** bug
+- **Severity:** medium
+- **Topic:** lsp/resolvers
+- **Where:** `marketplace/bundles/plan-marshall/skills/build-pyproject/scripts/_pyproject_cmd_discover.py:295`
+  and `:301` (the `dep.split('[')[0].split('<')[0]…` chain), consumed at
+  `marketplace/bundles/plan-marshall/skills/script-shared/scripts/extension/_name_edge_join.py:200`
+- **Evidence:** The split chain contains no `@`, so a direct reference survives whole; the join then
+  takes `dependency.split(':', 1)[0]` and gets `m-core @ file`. End to end, where `core/` publishes
+  `m-core` and `app/` depends on it by direct reference:
+
+  ```text
+    app    -> ['m-core @ file:///./core:runtime']
+    core   -> []
+    edges: ([], [])
+  ```
+
+  Both PEP 508 spellings fail, and the whitespace-free one is the more dangerous:
+
+  ```text
+    app    -> ['m-core@file:///./core:runtime']
+    edges: ([], [])
+  ```
+
+  The apparatus is live: with the same four modules and the plain spelling `m-core>=1.0`, the join
+  returns `[('default', 'core')]`, so the spelling alone destroys the edge.
+
+- **Why it matters:** `name @ url` is a legal and common way to wire a sibling in a plain PEP 621
+  monorepo without a workspace tool. The edge is lost with no signal at all: `derive_name_edges`
+  classifies an unmatched name as an external dependency and deliberately emits no note
+  (`_name_edge_join.py:170-175`), so `notes[]` — the seam's own suppression channel — stays empty
+  and the loss is invisible to the consumer.
+- **Action:** Split the requirement on the **bare** `@` before the version-specifier chain —
+  `dep.split('@')[0]` — not on `' @ '`. ⛔ PEP 508 does **not** require whitespace around the `@` of a
+  URL reference: its grammar is `urlspec = AT wsp* URI_reference` after `name wsp* extras? wsp*`, so
+  every one of `m-core@file:///./core`, `m-core@ file:///./core` and `m-core @ file:///./core` is
+  legal, and `packaging.requirements.Requirement` (the reference implementation) parses all three to
+  `name='m-core'`. A `' @ '` split would therefore leave the whitespace-free spelling — the one pip
+  itself emits in `pip freeze` output — still broken while passing a test written only for the spaced
+  form. Splitting on the bare `@` is safe because `@` is not a legal character in a PEP 508 `name`
+  (`identifier = letterOrDigit identifier_end*`, `identifier_end = letterOrDigit | (('-'|'_'|'.')*
+  letterOrDigit)`), and an npm-style leading `@scope/` never appears in a Python requirement. Add two
+  fixture modules — one for each spelling — and assert the edge appears for both.
+- **Done when:** `[project] dependencies` entries of **both** the forms
+  `sample-core @ file:///./sample_core` and `sample-core@file:///./sample_core` yield the same edge as
+  `sample-core>=1.0.0` does, each pinned by its own test in `test_pyproject_derivation_resolver.py`.
+- **Effort:** S
+- **Risk if fixed:** Low. `@` is not legal inside a distribution name, so no currently joining
+  dependency changes.
+
+## G3 — Strip the PEP 508 environment marker from a dependency name
+
+- **Kind:** bug
+- **Severity:** medium
+- **Topic:** lsp/resolvers
+- **Where:** `marketplace/bundles/plan-marshall/skills/build-pyproject/scripts/_pyproject_cmd_discover.py:295`
+  and `:301`
+- **Evidence:** The split chain contains no `;`, so `m-core; python_version >= "3.11"` is truncated
+  at the first `>` and strips to `m-core; python_version`:
+
+  ```text
+    marked metadata.name= m-marked -> ['m-core; python_version:runtime']
+    edges: ([], [])
+  ```
+
+  With no marker the same declaration joins correctly, so the marker alone destroys the edge.
+- **Why it matters:** A conditionally-required sibling (`sample-core; python_version < "3.12"`) is a
+  real internal dependency for impact analysis regardless of the marker's truth on this interpreter
+  — changing the depended-upon module can still break the dependent. As with G2 the loss is silent,
+  and unlike G2 the mangled key even survives PEP 503 normalisation as a plausible-looking string
+  (`sample-core; python-version`), so nothing downstream can spot it either.
+- **Action:** Split the requirement on `;` first, before the version-specifier chain. Add a fixture
+  module declaring a marked dependency on a sibling and assert the edge appears. Note this is a
+  separate instance from G2 in the same function; both splits belong in the same one-line fix but
+  need separate assertions.
+- **Done when:** A `[project] dependencies` entry of the form `sample-core; python_version >= "3.11"`
+  yields the same edge as `sample-core` does, pinned by its own test.
+- **Effort:** S
+- **Risk if fixed:** Low. `;` is not legal inside a distribution name.
+
+## G4 — Read (or explicitly disclose) npm's `peerDependencies` and `optionalDependencies`
+
+- **Kind:** incomplete
+- **Severity:** medium
+- **Topic:** lsp/resolvers
+- **Where:** `marketplace/bundles/plan-marshall/skills/build-npm/scripts/_npm_cmd_discover.py:293-307`
+  (`_extract_dependencies`); documentation site `doc/user/dependency-intelligence.adoc:90-98`
+  (§ npm specifics) and `marketplace/bundles/plan-marshall/skills/build-npm/SKILL.md:81`
+- **Evidence:** `_extract_dependencies` iterates `pkg_data.get('dependencies', {})` and
+  `pkg_data.get('devDependencies', {})` and nothing else. `peerDependencies` — the idiomatic way a
+  plugin package in a workspace declares its dependency on the workspace's core package — and
+  `optionalDependencies` therefore produce no edge. The plan's *Done when* for D3 is met by the
+  fixture, so this is reach, not a failed deliverable.
+- **Why it matters:** The run disclosed the exactly analogous Python limitation — "Other extras are
+  *not* read. A sibling named only under a `test`, `docs` or `all` extra produces no edge"
+  (`dependency-intelligence.adoc:86`) — and recorded it as residue. The npm section carries no
+  equivalent sentence, so the two ecosystems are documented asymmetrically for the same class of
+  gap and an npm consumer has no way to learn why a peer-declared sibling is missing from `impact`.
+- **Action:** Either extend `_extract_dependencies` with `peer` and `optional` scopes (the join
+  ignores the scope segment, so no resolver change is needed) and add the two rows to
+  `module-discovery.md` § Dependency Format and `architecture-persistence.md` § Dependency Format;
+  **or**, if widening what discovery emits is judged out of budget, add one paragraph to
+  `dependency-intelligence.adoc` § npm specifics and to `build-npm/SKILL.md` § Axis-C naming the two
+  unread kinds and their consequence, matching the Python paragraph's shape.
+- **Done when:** Either a fixture package declaring a sibling only under `peerDependencies` yields an
+  edge, or `doc/user/dependency-intelligence.adoc` § npm specifics states in words that
+  `peerDependencies` and `optionalDependencies` produce no edge.
+- **Effort:** S (documentation route) / M (extraction route)
+- **Risk if fixed:** Taking the extraction route grows every npm module's `dependencies` list, which
+  is read by consumers beyond edge derivation; the four scope-vocabulary sites listed above must be
+  updated in lock-step or they go stale.
+
+## G5 — Make the npm no-fallback rule falsifiable by its own fixture
+
+- **Kind:** test-gap
+- **Severity:** medium
+- **Topic:** tests
+- **Where:** `test/plan-marshall/build-npm/test_npm_derivation_resolver.py:141-143`
+  (`test_package_without_a_name_is_never_an_edge_target`), fixture
+  `test/plan-marshall/build-npm/fixtures/workspace-monorepo/`
+- **Evidence:** Mutating `BuildExtension._package_name`
+  (`marketplace/bundles/plan-marshall/skills/build-npm/scripts/extension.py:186`) to fall back to
+  the module's own `name` leaves the whole suite green — `54 passed`, identical to baseline — while
+  the same mutation on the Python side (`build-pyproject/scripts/extension.py:325`) turns 3 tests
+  red. The cause is that no fixture package depends on the string `unnamed`:
+
+  ```text
+  any module declaring a dependency on the literal string 'unnamed': []
+  edges with the shipped no-fallback rule: [5 edges]
+  edges WITH a directory-name fallback : [the same 5 edges]
+  --- after adding one dependency on the literal string 'unnamed':
+  edges WITH a directory-name fallback : [..., ('@sample/monorepo', 'unnamed'), ...]
+  ```
+
+- **Why it matters:** The no-fallback rule is a load-bearing contract obligation, stated normatively
+  in three shipped places (`build-npm/SKILL.md:88`,
+  `ext-point-derivation-resolver.md:255`, `dependency-intelligence.adoc:98`) and rationalised in the
+  code as "a fabricated edge is worse than the missing one it would paper over". A future
+  simplification that removes it would ship green.
+- **Action:** Add `"unnamed": "^1.0.0"` to the `dependencies` of
+  `fixtures/workspace-monorepo/package.json` (mirroring how `multi-module-python/pyproject.toml`
+  depends on `"toolbox>=1.0.0"`). The shipped edge set does not change, so
+  `test_full_edge_set_is_exactly_the_declared_internal_dependencies` and the e2e impact assertions
+  stay as they are — only the mutant dies.
+- **Done when:** Replacing `_package_name`'s body with
+  `return (module_data.get('metadata') or {}).get('name') or module_data.get('name')` makes
+  `test_npm_derivation_resolver.py` fail.
+- **Effort:** S
+- **Risk if fixed:** None. This exact change was applied and measured during adversarial review: with
+  the one fixture line added, the shipped code stays green (`34 passed` across
+  `test_npm_derivation_resolver.py` + `test_native_resolver_graph_impact.py`, including the shared
+  e2e impact list at `test_native_resolver_graph_impact.py:324`), while the mutant turns red —
+  `2 failed` (`test_package_without_a_name_is_never_an_edge_target` and
+  `test_full_edge_set_is_exactly_the_declared_internal_dependencies`). Both files were restored from
+  byte snapshots afterwards.
+
+## G6 — Correct the npm resolver test module's account of its own fixture
+
+- **Kind:** doc-defect
+- **Severity:** low
+- **Topic:** tests
+- **Where:** `test/plan-marshall/build-npm/test_npm_derivation_resolver.py:22-24`
+- **Evidence:** The module docstring states failure mode 2 as: *"`packages/unnamed` declares no
+  `name` while another module depends on the string `@sample/core`; a resolver that fell back to the
+  directory name would invent a package identity npm never published."* The clause after the
+  semicolon does not describe the fallback failure mode — a dependency on `@sample/core` is joined by
+  the *published* name and is unaffected by any fallback. The Python sibling states the same failure
+  mode correctly (`test_pyproject_derivation_resolver.py:22-24`: "the fixture root depends on the
+  same string").
+- **Why it matters:** The docstring is the stated justification for a fixture shape that G5 proves
+  does not in fact test what it claims. A reader auditing this module for vacuity is told the guard
+  is falsifiable when it is not.
+- **Action:** Rewrite the clause to name what actually falsifies the rule — a module depending on the
+  literal string `unnamed` — as part of the same change as G5.
+- **Done when:** The docstring's failure mode 2 names the dependency on `unnamed` that G5 adds.
+- **Effort:** S
+- **Risk if fixed:** None.
+
+## G7 — Pin D1's premise against the real Gradle discoverer, not a hand-built dict
+
+- **Kind:** test-gap
+- **Severity:** medium
+- **Topic:** tests
+- **Where:** `test/plan-marshall/build-gradle/test_gradle_rides_the_maven_join.py:125-128`
+  (`test_gradle_modules_carry_the_coordinate_pair_the_maven_join_reads`), helper at `:59-76`
+- **Evidence:** The test's docstring calls itself "The premise of the whole claim: Gradle publishes
+  what Maven publishes", then asserts `metadata['group_id'] and metadata['artifact_id']` on the dict
+  that the test's own `_gradle_module()` helper hard-codes two lines above. It cannot fail regardless
+  of what `_extract_gradle_module` emits. Every other test in the module correctly drives real code —
+  `_parse_dependencies_output` for the extraction half and the real `maven` resolver for the join half
+  — so this is the one assertion in the module with no production code behind it.
+- **Why it matters:** This test was added specifically to close review finding F14 ("The Gradle claim
+  shipped in the docs with zero test coverage"), and the half it was meant to pin — that Gradle
+  discovery publishes the coordinate pair — is still uncovered. The claim is asserted in four shipped
+  documents (`ext-point-derivation-resolver.md:265`, `build-maven/SKILL.md:91`,
+  `code-intelligence.adoc:67`, `dependency-intelligence.adoc:58-60`). The premise is in fact true —
+  `_gradle_cmd_discover.py:448-453` returns `'artifact_id': name, 'group_id': group_id`, confirmed by
+  a live hermetic call to `_extract_gradle_module` — but nothing executable would notice if it
+  stopped being true.
+- **Action:** Replace the assertion with one that calls the real `_extract_gradle_module`
+  (`_gradle_cmd_discover.py:348`) and asserts the returned `metadata` carries both keys. ⛔ Do **not**
+  take the "the real function needs a Gradle daemon" escape: it does not. `_extract_gradle_module`
+  receives `gradle_data` as a **parameter** — the subprocess belongs to its caller — and runs none
+  itself, so a temp directory containing an empty `build.gradle` plus a literal
+  `gradle_data={'name': 'core', 'group_id': 'com.example', 'version': '1.0', 'dependencies': []}` is
+  a complete hermetic call. Demonstrated during adversarial review: that call returns
+  `{'artifact_id': 'core', 'group_id': 'com.example', 'packaging': 'jar', 'description': None}`. Note
+  the key is `gradle_data['group_id']` (`:410`), not `group`. Add a second case pinning the no-`group`
+  build — `_parse_gradle_properties` defaults `group_id` to `None` (`:272`) and the same call then
+  returns `'group_id': None`, so that module publishes no joinable coordinate and derives no edges,
+  which is undocumented.
+- **Done when:** Removing `'group_id': group_id` from `_extract_gradle_module`'s returned `metadata`
+  dict (`_gradle_cmd_discover.py:450`) makes `test_gradle_rides_the_maven_join.py` fail.
+- **Effort:** S
+- **Risk if fixed:** None. The replacement is hermetic by construction — no JDK, no Gradle daemon, no
+  subprocess — as the demonstration above shows.
+
+## G8 — Correct the "Three further joins" count in the user-facing dependency page
+
+- **Kind:** doc-defect
+- **Severity:** medium
+- **Topic:** documentation-surface
+- **Where:** `doc/user/dependency-intelligence.adoc:71`
+- **Evidence:** The line reads *"Three further joins run over cross-references rather than build
+  declarations: Python `import` statements, marketplace markdown references, and AsciiDoc
+  cross-document references."* The live Axis-A roster is four — `markdown`, `python`, `documentation`
+  and `lsp` — enumerated at
+  `marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-derivation-resolver.md:229-232`,
+  and a live `get_module_graph` over this repository returns seven resolver rows. **Not attributable
+  to this plan:** the `lsp` resolver landed at `c86de8b` (#1243), after this plan's `87c71d3`
+  (#1238); a later plan (#1252) then edited this same page without correcting the count. Recorded
+  here because the audit surfaced it.
+- **Why it matters:** The sentence exists so a consumer seeing more resolver rows than build systems
+  can reconcile them — it is the reconciliation the run added in response to finding N13. With the
+  wrong count it fails at exactly its purpose, and the same page's NOTE at `:75` tells the reader to
+  expect *every* discovered resolver as a row.
+- **Action:** Correct to four and add `lsp` to the enumeration, with a clause noting it is off by
+  default (per `ext-point-derivation-resolver.md:231`, it runs only for a language with an enabled
+  machine-local `language_servers` entry). Consider replacing the literal count with a reference to
+  the roster's single enumeration, which is the fix CodeRabbit's C1 finding forced on
+  `client-api.md` for the same drift reason.
+- **Done when:** `doc/user/dependency-intelligence.adoc:71` either names four joins including `lsp`,
+  or defers the count to `ext-point-derivation-resolver.md` § Current implementations.
+- **Effort:** S
+- **Risk if fixed:** None.
+
+## G9 — Correct the run report's build-gate `*.py` file count
+
+- **Kind:** report-defect
+- **Severity:** low
+- **Topic:** plan-lane-contract
+- **Where:** `doc/plans/code-intelligence-substrate/210-native-coordinate-resolvers/report-01.md`
+  § Build gate, first line
+- **Evidence:** The report states *"`git diff --name-only origin/main...HEAD -- '*.py'` → **10
+  files** at HEAD, so the gate applied"*, and the same section states that the diff verdict "MUST be
+  re-derived at HEAD". The merged squash commit's `.py` diff is **13** files:
+  `git show --name-only --format="" 87c71d3 | grep -c '\.py$'` → `13`. `87c71d3` has a single parent
+  (`git rev-list --parents -n 1 87c71d3`), so its diff is the three-dot diff the report's command
+  computes. The three uncounted files are ones added after `10` was recorded —
+  `test_scoped_module_name_persistence.py` (pass 3 / finding C4) plus the two N14 fixture fixes
+  (`test_cmd_suggest.py`, `test_extension_implementations.py` — both confirmed to carry the
+  `lit:compile` → `lit:runtime` change N14 names). That those three arrived *after* `10` was recorded
+  is inferred from the report's own pass ordering, not observed: the branch was deleted at
+  squash-merge, so no intermediate commit is resolvable in this clone. The `./pw verify` figures in
+  the same block are arithmetically consistent with the N3 correction plus pass 3's additions
+  (`19716 + 5 = 19721` passed, `740 + 1 = 741` test source files) — a consistency check, not a
+  re-measurement; the build was not re-run for this audit.
+- **Why it matters:** It is the one instance of exactly the defect the report's own Step 9 proposal
+  is about — a figure observed mid-run and restated at finalization, describing a tree that no longer
+  exists. It sits in the section a collector reads to decide whether the build claim covers the
+  shipped tree, and it undercuts the proposal's evidence base if the proposal is ever taken up.
+- **Action:** Correct `10` to `13` in § Build gate, and note in the Step 9 proposal that the
+  re-derivation rule it proposes would have caught this instance in the report that proposes it.
+- **Done when:** The report's build-gate file count matches
+  `git show --name-only --format="" 87c71d3 | grep -c '\.py$'`.
+- **Effort:** S
+- **Risk if fixed:** None — the report is a dated record and the correction does not change any
+  deliverable verdict.
+
+## G10 — Read a setuptools project's `setup.cfg` so it derives edges
+
+- **Kind:** incomplete
+- **Severity:** high
+- **Topic:** lsp/resolvers
+- **Where:** `marketplace/bundles/plan-marshall/skills/build-pyproject/scripts/_pyproject_cmd_discover.py:269`
+  (`_parse_pyproject_metadata`, `pyproject = module_path / 'pyproject.toml'`), against
+  `_find_descriptor_file` at `:308-321`, which also accepts `setup.cfg` and `setup.py`
+- **Evidence:** Discovery and metadata extraction disagree about what a Python descriptor is.
+  `_find_descriptor_file` accepts `pyproject.toml`, `setup.cfg` **and** `setup.py`, so a setuptools
+  module is admitted, stamped `build_systems: ['python']` and given its real descriptor path — which
+  puts it squarely inside the `pyproject` resolver's `scoped_modules` filter. But
+  `_parse_pyproject_metadata` opens `pyproject.toml` only and returns early when it is absent
+  (`:273-274`), so that module publishes no name and declares no dependency. Driven end to end over a
+  synthetic three-module setuptools monorepo where `lib_app` declares `st-core` under
+  `[options] install_requires`:
+
+  ```text
+  SETUPTOOLS modules: ['default', 'lib_app', 'lib_core']
+     default  | descriptor= setup.py    metadata= {} deps= []
+     lib_app  | descriptor= lib_app/setup.cfg   metadata= {} deps= []
+     lib_core | descriptor= lib_core/setup.cfg  metadata= {} deps= []
+    edges: ([], [])
+  ```
+
+- **Why it matters:** Identical misreport to G1 and, unlike G1, the discoverer *names the file it
+  never reads*: `paths.descriptor` points at `setup.cfg` while the parser never opens it, so the
+  module dict itself asserts a capability that does not exist. The module enters the join's scope and
+  contributes nothing, which is worse than being filtered out — a filtered module could at least be
+  counted. As with G1 the answer arrives as `{'id': 'pyproject', 'status': 'ok', 'edge_count': 0}`.
+- **Action:** In `_parse_pyproject_metadata` (or a sibling it delegates to), fall back to `setup.cfg`
+  when `pyproject.toml` is absent or yields no `name`: read `[metadata] name` / `version` /
+  `description` into `metadata`, and each newline-separated entry of `[options] install_requires`
+  into the `name:scope` dependency list with scope `runtime`, running it through the same
+  version-specifier strip the `[project]` path uses. `configparser` is in the standard library, so no
+  dependency is added. ⚠ `setup.py` is executable Python and is **not** statically parseable in
+  general — do not attempt it; a `setup.py`-only module keeps today's behaviour, and that should be
+  stated in `doc/user/dependency-intelligence.adoc` § Python specifics rather than left silent. Add a
+  `setuptools-monorepo` fixture under `test/plan-marshall/build-pyproject/fixtures/` shaped like the
+  existing `multi-module-python` one.
+- **Done when:** A fixture whose modules declare their names and inter-module dependencies only in
+  `setup.cfg` yields a non-empty edge set through `BuildExtension.derive_edges`, the existing PEP 621
+  fixture's exact 5-edge assertion still passes unchanged, and § Python specifics states that a
+  `setup.py`-only module publishes no name.
+- **Effort:** M
+- **Risk if fixed:** Same widening concern as G1 — `metadata` and `dependencies` grow for every
+  setuptools consumer, which changes what `architecture` emits for readers of those fields beyond
+  edge derivation. Mitigate by making the `setup.cfg` read a strict fallback that never fires when
+  `pyproject.toml` supplies a `[project] name`.
+
+## G11 — Stop swallowing an unreadable `pyproject.toml`
+
+- **Kind:** bug
+- **Severity:** medium
+- **Topic:** lsp/resolvers
+- **Where:** `marketplace/bundles/plan-marshall/skills/build-pyproject/scripts/_pyproject_cmd_discover.py:279-280`
+  (`except Exception: return {'metadata': metadata, 'dependencies': dependencies}`), and `:273-274`
+  (the `tomllib is None` arm of the same early return)
+- **Evidence:** The bare `except Exception` returns the empty metadata/dependency pair it was
+  initialised with, so a malformed descriptor is indistinguishable from a descriptor that declares
+  nothing. Driven end to end over a two-module project whose root correctly declares `b-a` and whose
+  `mod_a/pyproject.toml` has one unbalanced bracket:
+
+  ```text
+  MALFORMED TOML modules: ['default', 'mod_a']
+     default  metadata= {'name': 'b-root'} deps= ['b-a:runtime']
+     mod_a    metadata= {}                 deps= []
+    edges: ([], [])
+  ```
+
+  The root's declared edge is lost because its target published no name, and nothing anywhere records
+  that a file failed to parse. The npm side is not symmetric: `_load_package_json`
+  (`_npm_cmd_discover.py:379-392`) catches the same class but returns `None`, which drops the module
+  entirely rather than admitting an empty one — a different, more visible outcome.
+- **Why it matters:** This is the fail-open form of the same misreport. The resolver's `notes[]`
+  channel exists precisely to surface suppressed edges, but a discovery-time parse failure never
+  reaches the resolver, so `notes[]` stays empty and the row still reads `status: ok, edge_count: 0`.
+  ADR-009's fail-closed reporting discipline — cited by `client-api.md:113` as the reason the
+  zero-edge disambiguation table exists — is not applied at this layer.
+- **Action:** Keep returning the empty pair (dropping the module would be a larger behaviour change),
+  but record the failure where a consumer can see it: log a WARNING through the module's existing
+  `log_entry` seam naming the file and the exception, and narrow `except Exception` to the parse and
+  I/O errors actually expected (`tomllib.TOMLDecodeError`, `OSError`, `UnicodeDecodeError`) so an
+  unexpected exception is not silently absorbed too.
+- **Done when:** Discovering a module whose `pyproject.toml` is syntactically invalid emits a WARNING
+  log entry naming that file, and an exception outside the narrowed set propagates rather than being
+  swallowed — both pinned by tests in
+  `test/plan-marshall/build-pyproject/test_pyproject_derivation_resolver.py`, which is currently the
+  only test module in the tree that loads `_pyproject_cmd_discover` at all (a new
+  `test_pyproject_discover_modules.py` is equally acceptable).
+- **Effort:** S
+- **Risk if fixed:** Low. Narrowing the catch can turn a previously-absorbed unexpected error into a
+  discovery failure — which is the point, but it means the narrowed set must cover the real I/O and
+  decode cases, not just `TOMLDecodeError`.
