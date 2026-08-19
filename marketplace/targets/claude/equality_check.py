@@ -261,7 +261,7 @@ def run_equality_check(
     if not target_dir.exists():
         summary = (
             f"target/claude not generated at {target_dir} — "
-            "run 'python3 marketplace/targets/generate.py --target claude --output target/claude' first"
+            "run 'uv run python marketplace/targets/generate.py --target claude --output target/claude' first"
         )
         return EqualityResult(
             passed=False,
@@ -294,7 +294,7 @@ def run_equality_check(
             reasons.append(f"not valid JSON for: {', '.join(sorted(corrupt))}")
         summary = (
             f"target/claude/{{bundle}}/.claude-plugin/plugin.json {'; '.join(reasons)} — "
-            "run 'python3 marketplace/targets/generate.py --target claude --output target/claude' first"
+            "run 'uv run python marketplace/targets/generate.py --target claude --output target/claude' first"
         )
         return EqualityResult(
             passed=False,
@@ -318,7 +318,7 @@ def run_equality_check(
     elif marketplace_drift and not all_diffs:
         summary = (
             f'equality check failed: {marketplace_diagnostic}. '
-            "Re-run 'python3 marketplace/targets/generate.py --target claude --output target/claude' "
+            "Re-run 'uv run python marketplace/targets/generate.py --target claude --output target/claude' "
             "to regenerate target/claude/ from current sources."
         )
     else:
@@ -330,7 +330,7 @@ def run_equality_check(
             f'equality check failed: {len(all_diffs)} drift entries '
             f'across {len(bundles_with_drift)}/{bundle_count} bundles '
             f'({", ".join(bundles_with_drift)}).{suffix} '
-            "Re-run 'python3 marketplace/targets/generate.py --target claude --output target/claude' "
+            "Re-run 'uv run python marketplace/targets/generate.py --target claude --output target/claude' "
             "to regenerate target/claude/ from current sources. "
             "Do NOT edit the source plugin.json files — they are canonical-only."
         )

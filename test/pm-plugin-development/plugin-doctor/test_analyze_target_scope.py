@@ -93,6 +93,17 @@ def _component(bundles: Path, rel: str, frontmatter: str = '') -> Path:
         pytest.param('targets: ~', [], id='tilde-null'),
         pytest.param('targets: null', [], id='null'),
         pytest.param('targets:\nname: after', [], id='next-key-follows'),
+        # A sequence at column zero is idiomatic YAML and is what an author
+        # writes first. Treating it as the next field made this rule fail the
+        # quality gate on a valid component.
+        pytest.param('targets:\n- claude', ['claude'], id='block-at-column-zero'),
+        pytest.param('targets:\n- claude\n- opencode', ['claude', 'opencode'], id='two-at-zero'),
+        pytest.param('targets:\n\n- claude', ['claude'], id='blank-then-column-zero'),
+        # YAML resolves a duplicate key to the LAST. Reading the first meant
+        # reporting on a declaration the build does not use.
+        pytest.param('targets: [cluade]\ntargets: [claude]', ['claude'], id='duplicate-last-wins'),
+        pytest.param('targets:\ntargets: [claude]', ['claude'], id='duplicate-empty-then-list'),
+        pytest.param('targets: [claude]\ntargets:', [], id='duplicate-list-then-empty'),
     ],
 )
 def test_shapes_the_scanner_reads(value, expected):
@@ -116,6 +127,15 @@ def test_shapes_the_scanner_reads(value, expected):
         pytest.param('targets: {claude: yes}', id='mapping'),
         pytest.param('targets: &anchor [claude]', id='anchor'),
         pytest.param("targets: 'claude'", id='quoted-scalar'),
+        # These reach the opener check itself. The three rows above them do
+        # not: a continuation or the bracket test declines each one first, so
+        # dropping `>`/`|`/`&` from the opener set left the suite green.
+        pytest.param('targets: >', id='bare-folded-indicator'),
+        pytest.param('targets: &a claude', id='anchor-without-a-continuation'),
+        pytest.param('targets: *a', id='alias'),
+        # If any occurrence is unreadable the file is, because the scanner
+        # cannot then know which declaration the build will use.
+        pytest.param('targets: >-\n  claude\ntargets: [cluade]', id='unreadable-duplicate'),
     ],
 )
 def test_shapes_the_scanner_declines_to_read(value):
@@ -139,6 +159,13 @@ def test_shapes_the_scanner_declines_to_read(value):
         pytest.param('# no frontmatter\n', id='no-frontmatter'),
         pytest.param('---\nname: a\n---\n', id='no-field'),
         pytest.param('---\nname: a\ntargets": [claude]\n---\n', id='mismatched-quote'),
+        # No whitespace after the colon, so YAML reads the whole line as a
+        # plain scalar and there is no key. The build sees none either.
+        pytest.param('---\ntargets:#c\n---\n', id='hash-straight-after-the-colon'),
+        pytest.param('---\ntargets:[claude]\n---\n', id='bracket-straight-after-the-colon'),
+        pytest.param('---\ntargets:claude\n---\n', id='value-straight-after-the-colon'),
+        # An immediately-closed block is EMPTY; what follows is body.
+        pytest.param('---\n---\ntargets: [cluade]\n---\n', id='immediately-closed-block'),
     ],
 )
 def test_blocks_that_yield_no_declaration(text):
@@ -150,6 +177,18 @@ def test_blocks_that_yield_no_declaration(text):
     came out right.
     """
     assert declared_targets(text) is None
+
+
+def test_a_byte_order_mark_does_not_hide_the_declaration():
+    """A BOM must not read as "no frontmatter", which reports nothing at all.
+
+    Pinned in this suite once, dropped in the rewrite, and unpinned until
+    round 13 found the mutant surviving.
+    """
+    declaration = declared_targets('\ufeff---\nname: a\ntargets: [cluade]\n---\n')
+
+    assert declaration is not None
+    assert declaration[0] == ['cluade']
 
 
 def test_a_declaration_reports_its_file_line_number():
@@ -167,17 +206,32 @@ def test_a_declaration_reports_its_file_line_number():
 # Every shape either suite exercises, valid and invalid together. The
 # soundness test below runs each one through BOTH the rule and the build.
 _SOUNDNESS_CORPUS = (
+    # Readable, valid.
     'targets: [claude]', 'targets: [claude, opencode]', 'targets: claude',
-    'targets: claude, opencode', 'targets:\n  - claude', 'targets: [cluade]',
-    'targets: [claude, cluade]', 'targets: []', 'targets:', 'targets: ~',
-    'targets: null', 'targets: [pr-agent]', 'targets: [claude]  # why',
-    'targets:\n  # why\n  - claude', 'targets: >-\n  claude', 'targets: |2\n   claude',
-    'targets: "claude,\n  opencode"', 'targets: [claude,\n  opencode]',
-    'targets:\n  [claude]', 'targets:\n  claude', 'targets: claude,\n  opencode',
-    'targets: {claude: yes}', 'targets: 3', 'targets: true', 'targets: [1, 2]',
-    'targets: &a [claude]', "targets: 'claude'", 'targets: [claude,',
-    '"targets": [claude]', 'targets": [claude]', 'targets: [cla#ude]',
-    'name: only', 'targets: [claude]\ntargets: [opencode]',
+    'targets: claude, opencode', 'targets:\n  - claude', 'targets:\n- claude',
+    'targets:\n- claude\n- opencode', 'targets: [claude]  # why',
+    'targets:\n  # why\n  - claude', 'targets:\n\n- claude',
+    'targets: [claude, claude]', '"targets": [claude]', "'targets': [claude]",
+    # Readable, invalid.
+    'targets: [cluade]', 'targets: [claude, cluade]', 'targets: cluade',
+    'targets: []', 'targets:', 'targets: ~', 'targets: null', 'targets: NULL',
+    'targets: [pr-agent]', 'targets:\n- cluade', 'targets:\nname: after',
+    # Duplicate keys - YAML takes the LAST, and reading the first meant
+    # reporting on a declaration the build does not use.
+    'targets: [cluade]\ntargets: [claude]', 'targets: [claude]\ntargets: [cluade]',
+    'targets:\ntargets: [claude]', 'targets: cluade\ntargets: claude',
+    'targets: [claude]\ntargets:', 'targets: [claude]\ntargets: [opencode]',
+    # No space after the colon - a plain scalar to YAML, not a key at all.
+    'targets:#c', 'targets:[claude]', 'targets:claude',
+    # Shapes the scanner must decline rather than read.
+    'targets: >-\n  claude', 'targets: |2\n   claude', 'targets: "claude,\n  opencode"',
+    'targets: [claude,\n  opencode]', 'targets:\n  [claude]', 'targets:\n  claude',
+    'targets: claude,\n  opencode', 'targets: {claude: yes}', 'targets: 3',
+    'targets: true', 'targets: [1, 2]', 'targets: &a [claude]', 'targets: *a',
+    "targets: 'claude'", 'targets: !!str claude', 'targets:\n  -\n', 'targets: [claude,',
+    'targets: [cla#ude]', 'targets": [claude]', 'targets: [claude] extra',
+    # No declaration.
+    'name: only', 'metadata:\n  targets: nonsense',
 )
 
 
@@ -352,3 +406,28 @@ def test_a_skill_directory_without_a_manifest_is_not_scanned(tmp_path):
     _write(bundles / 'demo' / 'skills' / 'empty-skill' / 'notes.md', '# notes\n')
 
     assert component_files(bundles) == []
+
+
+@pytest.mark.parametrize(
+    'value',
+    [
+        pytest.param('targets: [[claude]]', id='nested-flow-sequence'),
+        pytest.param('targets: [a, [b]]', id='nested-second-item'),
+        pytest.param('targets: [{a: b}]', id='mapping-inside-a-sequence'),
+        pytest.param('targets: a: b', id='a-colon-in-a-bare-value'),
+        # The comment must sit at COLUMN ZERO. An indented one is already
+        # 'indented' to the guard, so it pins nothing — the first draft of
+        # this row indented it and the mutant survived.
+        pytest.param('targets: claude\n# why\n  opencode', id='column-zero-comment-then-continuation'),
+    ],
+)
+def test_further_shapes_the_scanner_declines_to_read(value):
+    """Three `_is_readable` guards and the continuation's comment skip.
+
+    Each was unpinned: dropping it left the whole suite green while the
+    scanner read a value it has no business reading. None of them broke
+    soundness on its own, which is exactly why nothing caught them — a guard
+    that only stops the rule being WRONG-but-still-failing is invisible to a
+    test that only checks the verdict.
+    """
+    assert declared_targets(f'---\nname: a\n{value}\n---\n') is None

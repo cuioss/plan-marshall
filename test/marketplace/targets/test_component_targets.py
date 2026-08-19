@@ -52,10 +52,12 @@ _ACCEPTED_FORMS = {
 }
 
 # Shapes a line scanner could not read, and that a YAML reader resolves
-# exactly. Every one of these was REJECTED by the hand-rolled parser across
-# twelve verification rounds, several of them under a message naming a
-# construct the author had not written. They are accepted now because they are
-# ordinary YAML naming real targets, and this file exists to keep them so.
+# exactly. Seven were REJECTED by the hand-rolled parser at the commit it was
+# replaced at, several under a message naming a construct the author had not
+# written. The last two — the indented-block rows — were rejected by EARLIER
+# versions and had been fixed by rounds 10 and 11; they are kept because they
+# are the shapes those three successive indentation rules were written for, and
+# because a YAML reader gets them right without any rule at all.
 _ONCE_REFUSED_NOW_READ = {
     'folded-block-scalar': ('targets: >-\n  claude', {'claude'}),
     'literal-block-scalar': ('targets: |-\n  claude', {'claude'}),
@@ -172,11 +174,11 @@ def test_every_authoring_spelling_yields_the_same_scope(tmp_path, frontmatter, e
 def test_shapes_a_line_scanner_refused_are_now_read(tmp_path, key, expected):
     """Twelve rounds of rejections that were never the author's fault.
 
-    Every shape here is ordinary YAML naming a registered target, and every
-    one was refused by the hand-rolled parser this module used to carry —
-    several of them under a message naming a construct the author had not
-    written, and three of them by silently reading the whole block as "no
-    declaration" and shipping the component everywhere.
+    Every shape here is ordinary YAML naming a registered target. Seven were
+    refused by the hand-rolled parser at the commit it was replaced at, several
+    under a message naming a construct the author had not written; the two
+    indented-block rows had been fixed by then, after three successive
+    indentation rules, and are kept because a YAML reader needs none of them.
 
     They are accepted because a YAML reader resolves them, which is the point
     of using one. This test is the record that the change is deliberate: any
@@ -259,9 +261,10 @@ def test_fence_handling_does_not_hide_a_declaration(tmp_path, text):
     """Finding the block is still this module's job; getting it wrong fails OPEN.
 
     A BOM, a fence carrying invisible trailing whitespace, a value containing
-    three hyphens, a ``----`` line — each of these once read as "no
-    frontmatter", which ships the component everywhere with its declaration
-    unread AND lets an invalid declaration past the build unreported.
+    three hyphens — each of these once read as "no frontmatter", which ships
+    the component everywhere with its declaration unread AND lets an invalid
+    declaration past the build unreported. (``----`` is NOT among them: it is
+    invalid YAML and now fails closed — see the sibling test.)
     """
     path = tmp_path / 'demo.md'
     path.write_text(text, encoding='utf-8')
@@ -543,3 +546,43 @@ def test_a_skill_directory_exclusion_covers_its_whole_subtree():
 def test_no_exclusions_means_nothing_is_under_any():
     """The empty-exclusion fast path agrees with the general answer."""
     assert is_under_any(Path('agents/a.md'), frozenset()) is False
+
+
+@pytest.mark.parametrize(
+    ('text', 'expected'),
+    [
+        pytest.param('---\nname: d\ntargets: [claude]\n---\t\n', {'claude'}, id='close-fence-tab'),
+        pytest.param('---\nname: d\ntargets: [claude]\n---', {'claude'}, id='close-fence-at-eof'),
+        pytest.param('---\nname: d\ntargets: [claude]\n---  ', {'claude'}, id='eof-with-spaces'),
+    ],
+)
+def test_fence_shapes_that_were_pinned_and_stopped_being(tmp_path, text, expected):
+    """Two fence properties lost their pins in the rewrite.
+
+    The close fence's tolerance of a trailing TAB, and its acceptance at
+    end-of-file with no trailing newline. Both still hold; neither was
+    pinned, and each mutant survived the whole suite until round 13.
+    """
+    path = tmp_path / 'demo.md'
+    path.write_text(text, encoding='utf-8')
+
+    assert read_target_scope(path) == expected
+
+
+@pytest.mark.parametrize(
+    ('frontmatter', 'expected'),
+    [
+        pytest.param('targets: claude,', {'claude'}, id='trailing-comma-in-a-string'),
+        pytest.param('targets: claude,,opencode', {'claude', 'opencode'}, id='doubled-comma'),
+        pytest.param("targets: ['claude', '']", {'claude'}, id='empty-item-in-a-list'),
+        pytest.param("targets: ['claude', '  ']", {'claude'}, id='blank-item-in-a-list'),
+    ],
+)
+def test_blank_tokens_are_dropped_rather_than_reported(tmp_path, frontmatter, expected):
+    """A stray comma or an empty list item is not a target named "".
+
+    Both filters were unpinned: without them the build fails naming an unknown
+    target whose name is the empty string, which tells an author nothing about
+    the character they actually typed.
+    """
+    assert read_target_scope(_component(tmp_path, frontmatter)) == expected

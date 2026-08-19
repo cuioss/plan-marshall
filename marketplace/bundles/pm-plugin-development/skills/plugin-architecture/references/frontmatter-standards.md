@@ -452,7 +452,7 @@ targets: [claude]
 | A value that is not a list of names — a mapping, a number, a boolean | Build fails, naming the shape you wrote. Coercing it into a name and then rejecting the coercion would report a target nobody wrote |
 | Frontmatter that is not well-formed YAML **and mentions `targets:`** | Build fails, quoting YAML's own complaint. Unparseable frontmatter that never mentions the field is not this check's business — target scoping is not the repository's YAML linter |
 
-**Write it however YAML lets you.** The build reads frontmatter with `yaml.safe_load`, so any spelling YAML accepts is a spelling this field accepts: inline flow (`[a, b]`) or spanning lines, a `- ` block, a bare scalar, a quoted scalar, a block scalar (`>` / `|`), a value opening on the line below the key, a comment between the key and its list. There is no list of blessed shapes to learn, and a duplicate key resolves the way YAML resolves it — the last one wins.
+**Write it however YAML lets you.** The build reads frontmatter with `yaml.safe_load`, so any spelling YAML resolves to a **list of names, or a single name**, is a spelling this field accepts — the table above is about what the resolved VALUE must be, not about syntax: inline flow (`[a, b]`) or spanning lines, a `- ` block, a bare scalar, a quoted scalar, a block scalar (`>` / `|`), a value opening on the line below the key, a comment between the key and its list. There is no list of blessed shapes to learn, and a duplicate key resolves the way YAML resolves it — the last one wins.
 
 One convenience is the build's own rather than YAML's: `targets: a, b` is a single string to YAML, and the build splits it on commas. That is why a registered target name may contain neither a comma nor whitespace.
 

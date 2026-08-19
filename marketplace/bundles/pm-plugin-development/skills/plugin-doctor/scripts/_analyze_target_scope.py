@@ -228,14 +228,23 @@ def declared_targets(text: str) -> tuple[list[str], int] | None:
     """Return ``(names, line_number)`` for a declaration this scanner can read.
 
     ``None`` covers three cases that are the same to the caller: there is no
-    frontmatter, there is no ``targets:`` key, or there is one whose value
-    this scanner will not read. Only a shape it is certain of yields a tuple,
-    and an empty ``names`` list there is a genuine empty declaration rather
-    than an unreadable one.
+    frontmatter, there is no ``targets:`` key, or there is one whose value this
+    scanner will not read. Only a shape it is certain of yields a tuple, and an
+    empty ``names`` list there is a genuine empty declaration.
 
-    Only a column-zero key counts. The generator resolves an indented
-    frontmatter block correctly and this does not, so such a block yields
-    ``None`` — silence, not a wrong answer.
+    EVERY column-zero ``targets:`` key is examined, not the first. YAML resolves
+    a duplicate key to the LAST one, so reading the first meant reporting on a
+    declaration the build does not use — a finding against a component that is
+    correct. If any occurrence is unreadable the whole file is, because the
+    scanner then cannot know which declaration wins.
+
+    A key needs whitespace (or nothing) after its colon, which is YAML's own
+    rule: ``targets:#c`` and ``targets:[claude]`` are plain scalars, not
+    mappings, and the build sees no key in either.
+
+    Only a column-zero key counts. The build resolves an indented frontmatter
+    block correctly and this does not, so such a block yields ``None`` —
+    silence, not a wrong answer.
 
     The line number is 1-based within the whole file.
     """
@@ -243,12 +252,17 @@ def declared_targets(text: str) -> tuple[list[str], int] | None:
     if block is None:
         return None
     lines = block.split('\n')
+    found: tuple[list[str], int] | None = None
     for index, line in enumerate(lines):
         stripped = line.strip()
         if not stripped or line[:1].isspace() or stripped.startswith('#'):
             continue
         key, separator, value = line.partition(':')
         if not separator or _unquote_key(key) != TARGET_SCOPE_FIELD:
+            continue
+        if value and not value[:1].isspace():
+            # `targets:#c` / `targets:[a]` - no space after the colon, so YAML
+            # reads the whole line as a plain scalar and there is no key here.
             continue
         # +2: the opening fence occupies line 1, so block line 0 is file line 2.
         line_number = index + 2
@@ -264,12 +278,17 @@ def declared_targets(text: str) -> tuple[list[str], int] | None:
                 # YAML's null. The key is PRESENT and declares nothing, which
                 # is the empty declaration the build rejects - not a target
                 # named "null".
-                return [], line_number
+                found = ([], line_number)
+                continue
             if not _is_readable(head):
                 return None
-            return _split_names(head), line_number
-        return _readable_block_items(rest, line_number)
-    return None
+            found = (_split_names(head), line_number)
+            continue
+        below = _readable_block_items(rest, line_number)
+        if below is None:
+            return None
+        found = below
+    return found
 
 
 def _readable_block_items(
@@ -281,16 +300,21 @@ def _readable_block_items(
     a key followed straight by the next field — which the build rejects. Any
     other continuation (a scalar, a flow sequence opening below the key, an
     item this scanner will not read) yields ``None``.
+
+    A sequence item may sit at COLUMN ZERO. ``targets:`` / ``- claude`` is
+    idiomatic YAML and is what an author writes first; treating a column-zero
+    line as the next field regardless made this rule fail the quality gate on a
+    valid component, which is the one thing it exists not to do.
     """
     items: list[str] = []
     for line in rest:
         stripped = line.strip()
         if not stripped or stripped.startswith('#'):
             continue
-        if not line[:1].isspace():
-            break
         if not stripped.startswith('-'):
-            return None
+            # A non-item at column zero is the next field; an indented one is
+            # a shape this scanner cannot read.
+            return (items, line_number) if not line[:1].isspace() else None
         item = _strip_comment(stripped[1:].strip()).strip()
         if not _is_readable(item):
             return None

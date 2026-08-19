@@ -250,17 +250,22 @@ def _declared_value(text: str) -> object:
 #: Used only to decide whether UNPARSEABLE frontmatter is this module's
 #: business — never to read a value, which is what a scanner like this got
 #: wrong sixteen times.
-_MENTIONS_FIELD_RE = re.compile(rf'^\s*[\'"]?{TARGET_SCOPE_FIELD}[\'"]?\s*:', re.MULTILINE)
+_MENTIONS_FIELD_RE = re.compile(rf'[\'"]?{TARGET_SCOPE_FIELD}[\'"]?\s*:')
 
 
 def _mentions_the_field(text: str) -> bool:
     """Whether unparseable frontmatter appears to declare ``targets:`` at all.
 
-    Deliberately over-inclusive: it matches at any indentation and inside a
-    quoted string, so it can only ever cause a malformed file to be REFUSED
-    rather than let one through. What it cannot do is hide a declaration,
-    because hiding one would need the block to omit the key entirely — and a
-    block that omits the key declares no scope.
+    Deliberately over-inclusive: it matches anywhere in the block — mid-line,
+    at any indentation, inside a quoted string — so every way it can be wrong
+    REFUSES a malformed file rather than letting one through.
+
+    It was anchored to the line start once, and that anchor made it fail OPEN:
+    ``{targets: [typo], name: x`` is unparseable frontmatter declaring the
+    field NOT at a line start, so the component shipped everywhere with an
+    invalid declaration unread. The docstring at the time said that could not
+    happen. It cannot now: hiding a declaration would need the block to omit
+    the key text entirely, and a block omitting it declares no scope.
     """
     block = _frontmatter_block(text)
     return block is not None and _MENTIONS_FIELD_RE.search(block) is not None
@@ -366,7 +371,10 @@ def read_target_scope(path: Path) -> frozenset[str] | None:
         return None
     try:
         value = _declared_value(text)
-    except yaml.YAMLError as error:
+    except (yaml.YAMLError, RecursionError) as error:
+        # RecursionError is not a YAMLError: a deeply nested flow collection
+        # exhausts the stack inside the parser. Letting it escape aborts the
+        # generator with a raw traceback instead of naming the file.
         if not _mentions_the_field(text):
             return None
         raise TargetScopeError(
@@ -443,6 +451,13 @@ def excluded_emission_roots(bundle_dir: Path, target_name: str) -> frozenset[Pat
     one. Validating every component of the bundle — not only the excluded
     ones — is deliberate: an invalid declaration fails the build even when
     the generating target would have included it anyway.
+
+    "Every component of the bundle" means every one this function WALKS, which
+    is everything on disk under ``agents/``, ``commands/`` and ``skills/``. The
+    Claude target calls it that way. The OpenCode emitter validates only the
+    components its bundle ``plugin.json`` declares, so a file on disk that the
+    manifest omits is unvalidated there — a file that ships to no target
+    anyway, and one the ``declared-component-vs-disk`` rule already reports.
 
     Raises:
         TargetScopeError: Some component in the bundle declares an invalid

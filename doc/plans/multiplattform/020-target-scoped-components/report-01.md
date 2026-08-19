@@ -36,10 +36,10 @@ The plan's claim table required re-derivation. All were re-checked against the t
 
 | Deliverable | What was done | Commit | Verification state |
 |---|---|---|---|
-| **D1 — filter mechanism** | New `marketplace/targets/component_targets.py` parses the `targets:` declaration and answers `emits_to(path, target_name)`. Both component-tree-emitting targets consult it: the Claude verbatim emitter (`excluded_emission_roots` + `is_under_any`, skipping a scoped-out file or a whole scoped-out skill directory) and its manifest generator (`plugin_json_gen` drops the same entries), and the OpenCode emitter (per-skill / per-agent / per-command skip). The governed set is derived from `TARGET_REGISTRY` filtered by each target's `emits_bundle_tree` capability — never enumerated. Absent field still means every target. | `fab9611` | `test_component_targets.py`, `test_target_scoped_emission.py` — **66 and 14 collected at HEAD**. Counts are stated at HEAD only, never against the implementing commit: `test_component_targets.py` has grown in most rounds and had 24 cases at `fab9611`, so attributing its current count there would name a number that commit never had. (`test_target_scoped_emission.py` has been 14 since `a9c90ef`; the HEAD-only rule is uniform, not a claim that every file moved.) |
+| **D1 — filter mechanism** | New `marketplace/targets/component_targets.py` parses the `targets:` declaration and answers `emits_to(path, target_name)`. Both component-tree-emitting targets consult it: the Claude verbatim emitter (`excluded_emission_roots` + `is_under_any`, skipping a scoped-out file or a whole scoped-out skill directory) and its manifest generator (`plugin_json_gen` drops the same entries), and the OpenCode emitter (per-skill / per-agent / per-command skip). The governed set is derived from `TARGET_REGISTRY` filtered by each target's `emits_bundle_tree` capability — never enumerated. Absent field still means every target. | `fab9611` | `test_component_targets.py`, `test_target_scoped_emission.py` — **73 and 14 collected at HEAD**. Counts are stated at HEAD only, never against the implementing commit: `test_component_targets.py` has grown in most rounds and had 24 cases at `fab9611`, so attributing its current count there would name a number that commit never had. (`test_target_scoped_emission.py` has been 14 since `a9c90ef`; the HEAD-only rule is uniform, not a claim that every file moved.) |
 | **D2 — fail-closed validation** | `_validate` rejects an unknown target name, an empty list, and a list naming only non-component-tree targets. Every message names the component path and the offending value. Validation fires wherever the emission predicate is CALLED: both component-tree targets' emit paths, and the Claude target's validate-only mode (which re-walks each bundle's components for this check alone). Reading a component is not the same as validating it — a `pr-agent`-only run opens skill manifests to harvest rule text, yet never asks whether a component is in scope, because it emits no component. The doctor rule is the authoring-time net there. | `fab9611` | `test_component_targets.py` + `test_target_scoped_emission.py::test_generation_fails_*` |
 | **D3 — first consumer** | `marketplace/bundles/plan-marshall/commands/tools-fix-intellij-diagnostics.md` declares `targets: [claude]`. | `fab9611` | Asserted by generation-output listing (below) |
-| **D4 — authoring surface** | New `targets-scope-invalid` plugin-doctor rule (`_analyze_target_scope.py`), registered in `_rule_registry.py` and wired into both the quality gate and analyze mode, with rows in `rule-provenance.md` and `rule-catalog.md` and a firing positive fixture in `_fixtures.py`. The field, its semantics, its validation table, and the three-condition admission test are documented in `plugin-architecture/references/frontmatter-standards.md` § "Target Scoping". | `fab9611` | `test_analyze_target_scope.py` — **42 collected at HEAD** (same HEAD-only rule); the doctor runs clean over the real tree with D3's declaration in place |
+| **D4 — authoring surface** | New `targets-scope-invalid` plugin-doctor rule (`_analyze_target_scope.py`), registered in `_rule_registry.py` and wired into both the quality gate and analyze mode, with rows in `rule-provenance.md` and `rule-catalog.md` and a firing positive fixture in `_fixtures.py`. The field, its semantics, its validation table, and the three-condition admission test are documented in `plugin-architecture/references/frontmatter-standards.md` § "Target Scoping". | `fab9611` | `test_analyze_target_scope.py` — **62 collected at HEAD** (same HEAD-only rule); the doctor runs clean over the real tree with D3's declaration in place |
 
 ### D3 generation-output listing (the plan's own "Done when" evidence)
 
@@ -59,10 +59,11 @@ pr-agent: produced 1 entries
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD -- '*.py'` reports **17 changed Python files**, so the gate
-applies. The count is unchanged by the `yaml.safe_load` switch because that rewrote files already in
-the set rather than adding any; what it did change is their size — the two parsers fell from 785 and
-664 lines to 475 and 431.
+`git diff --name-only origin/main...HEAD -- '*.py'` reports **18 changed Python files**, so the gate
+applies. Both figures below were wrong when first written and are re-derived here: the count is
+**18**, not 17 — `24140ec` added `test_variant_emitter.py` to the set, which is the fixture repair
+this report describes as a cost of that commit — and the parsers fell from **775 and 635** lines, not
+785 and 664, to 490 and 455. No commit on the branch ever had 785/664.
 
 `./pw verify` — **SUCCESS**, all three sub-steps clean. It was re-run after every commit that changed
 a Python file; the figures below are from the last such run, and every earlier run is superseded
@@ -71,7 +72,7 @@ rather than reported here:
 - quality-gate: `ruff … All checks passed!`, `mypy … Success: no issues found in 415 source files`,
   `SPDX-header check passed`, plugin-doctor `total_issues: 0`
 - test-compile: mypy over 775 test files, clean
-- module-tests: **21082 passed, 14 skipped** — 0 failed, 0 errors
+- module-tests: **21109 passed, 14 skipped** — 0 failed, 0 errors
 
 One `./pw verify` run in round 10 reported 3 failures in `test_component_targets.py`; they were an
 artefact of a mutation sweep editing the parser while the build was reading it, and the run is
@@ -86,7 +87,7 @@ sweeps nothing outside the named paths. No commit staged the whole worktree.
 
 ## Findings
 
-Source key: **V1**–**V12** = pre-PR verification sub-agent, rounds 1 to 12. **S** = self-found
+Source key: **V1**–**V13** = pre-PR verification sub-agent, rounds 1 to 13. **S** = self-found
 (mutation sweep or my own re-read).
 
 One row per finding. A row states its own instance count where it spans more than one site — `F14–F17`
@@ -96,7 +97,7 @@ covers four, and a row saying "both copies" or "both suites" covers two.
 instances all differ — a row may cover several sites, and a round's verifier may label its findings
 differently from how this report tabulates them. Earlier drafts conflated the three and were wrong
 every time, so exactly one unit is used here: rows, countable by looking. They are 13, 17, 12, 17, 16,
-13, 12, 13, 16, 16, 19, 17 for rounds 1 to 12.
+13, 12, 13, 16, 16, 19, 17, 24 for rounds 1 to 13.
 
 ### Round 1
 
@@ -566,8 +567,8 @@ way. Two verifiers reached the same conclusion independently.
 | | |
 |---|---|
 | **Reading** | `marketplace/targets/component_targets.py` calls `yaml.safe_load` on the fenced block. What it still owns is finding the fence — markdown frontmatter is not a YAML document stream, and the body beneath the closing fence would parse as a second document — and the SHAPE rules, which are policy rather than syntax. |
-| **Dependency** | `PyYAML>=6.0.2` declared in `[project].dependencies`, `types-PyYAML` in the dev group, `uv.lock` regenerated. The generator now runs inside the project environment, so every documented `python3 marketplace/targets/generate.py` invocation became `uv run python …` — 15 sites across the developer docs, two project-local skills, `CLAUDE.md` and two READMEs. |
-| **Doctor rule** | Narrowed from a mirror to an **approximation**, and says so. A plugin-doctor script is stdlib-only because a consumer project installs the bundles without this repository's dependencies, so it cannot follow. It now reads the shapes it is certain of and stays SILENT on the rest, reporting only `targets_unknown` and `targets_empty`. Three reason codes and ~230 lines of parser were deleted. |
+| **Dependency** | `PyYAML>=6.0.2` declared in `[project].dependencies`, `types-PyYAML` in the dev group, `uv.lock` regenerated. The generator now runs inside the project environment, so every documented `python3 marketplace/targets/generate.py` invocation became `uv run python …` — 16 sites across the developer docs, two project-local skills, `CLAUDE.md` and two READMEs. |
+| **Doctor rule** | Narrowed from a mirror to an **approximation**, and says so. A plugin-doctor script is stdlib-only because a consumer project installs the bundles without this repository's dependencies, so it cannot follow. It now reads the shapes it is certain of and stays SILENT on the rest, reporting only `targets_unknown` and `targets_empty`. Four reason codes and ~180 lines of parser were deleted. |
 | **The promise it makes** | Soundness, not completeness: anything it reports is a real build failure. That is now a TEST — a shared corpus run through both the rule and the build, failing if the rule ever flags something the build accepts — rather than a sentence. |
 
 **What the decision deletes.** Sixteen behavioural defects' worth of surface: the shape/noun
@@ -575,9 +576,11 @@ machinery (three constructs × two parsers), the indentation rules, the fold and
 heuristic, the comment-vs-value guard, the quote-matching key reader, the ambiguous-indent refusal,
 and every "is this claim about the parser true?" finding those generated. Survivor **B3** goes with
 them — a duplicate `targets:` key now resolves the way YAML resolves it, last-one-wins, so the
-eight-round-old open behavioural survivor is closed without a policy decision. Nine shapes the line
-scanner refused are now simply read; `test_shapes_a_line_scanner_refused_are_now_read` is the record
-that accepting them is deliberate, so a future edit that re-refuses one has to argue for it there.
+eight-round-old open behavioural survivor is closed without a policy decision. **Seven** shapes the line
+scanner refused are now simply read; `test_shapes_a_line_scanner_refused_are_now_read` carries nine,
+because two of them — the indented-block rows — had already been fixed by rounds 10 and 11 and are
+kept as the shapes three successive indentation rules were written for. It is the record that
+accepting them is deliberate, so a future edit that re-refuses one has to argue for it there.
 
 **What it costs, stated rather than glossed:**
 
@@ -593,17 +596,69 @@ that accepting them is deliberate, so a future edit that re-refuses one has to a
   did not give it and a failure surface it should not widen.
 - One test fixture in the OpenCode variant suite was itself invalid YAML (`description:` with an
   unquoted `: ` in it) and had to be repaired. The real agent it imitates uses a `|` block scalar.
+- **A trailing TAB anywhere in frontmatter now fails the build** for any component mentioning
+  `targets:`, where the line scanner tolerated it. A trailing tab is invalid YAML and every reader
+  rejects it; normalising it would mean pre-processing the text, which is the hand-rolling this
+  decision removed. No component in the tree carries one. Found by round 13, recorded not fixed.
+- **Both CI workflows that invoke the generator had to be repaired** (`c99a84b`). They ran a bare
+  `python3` after `actions/setup-python` with no install step, so `opencode-generate-check.yml` —
+  which triggers on `marketplace/**` — would have failed on the very commit that added the
+  dependency, and `claude-distribute.yml` would have broken the release path.
 
 **Reach check before landing.** All 160 components' frontmatter parses under `yaml.safe_load` — zero
 unparseable — and generation is unchanged: `--target all` exits 0 at 1166 / 1090 / 1 entries, 160
 components walked, exactly 1 scoped, `tools-fix-intellij-diagnostics.md` present in the Claude tree
 and absent from OpenCode's.
 
-**Size, as a proxy for what was carrying the defects.** The generator parser fell from 785 lines to
-**475**, the doctor rule from 664 to **431**, and the two suites from 122 + 86 collected tests to
-**66 + 42**. Roughly half of each suite existed to pin a hand-rolled rule against YAML, and those
+**Size, as a proxy for what was carrying the defects.** The generator parser fell from 775 lines to
+**490**, the doctor rule from 635 to **455**, and the two suites from 122 + 86 collected tests to
+**73 + 62** — the second figure after round 13 restored coverage the rewrite had dropped. Roughly half of each suite existed to pin a hand-rolled rule against YAML, and those
 tests went with the rule they pinned; what replaced them is one soundness test over a shared corpus
 and one list of shapes that used to be refused and are now read.
+
+### Round 13
+
+Dispatched against the `yaml.safe_load` commit. It found that the refactor **shipped a new instance
+of the defect class it was authorised to remove**: the rewritten doctor rule reports build-failing
+errors on valid components. That is worse in kind than what it replaced, because the old parser at
+least agreed with itself.
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| R13-01 | V13 | **The doctor's soundness promise was false.** `targets:` followed by a **column-zero** `- ` block — idiomatic YAML, and what an author writes first — was reported `targets_empty` at `error` severity, build-failing under `quality-gate`, while the build read a valid scope. | **Fixed** — a sequence item may sit at column zero; only a column-zero NON-item is the next field. |
+| R13-02 | V13 | Second soundness break: a **duplicate `targets:` key**. The doctor read the first occurrence, YAML and the build take the last, so it reported on a declaration the build does not use. Three variants. | **Fixed** — every column-zero occurrence is examined and the LAST readable one wins; if any is unreadable the whole file is, because the scanner cannot then know which declaration the build will use. |
+| R13-03 | V13 | Third: `targets:#c` was read as an empty declaration. YAML needs whitespace after the colon for a mapping key, so that line is a plain scalar and there is no key at all. | **Fixed** — a key now requires whitespace (or nothing) after its colon, which is YAML's own rule. It also aligns `targets:[claude]`, where the two readers previously disagreed. |
+| R13-04 | V13 | **The soundness test did not contain either failure mode.** Its only duplicate-key row was the ordering under which both readers stay silent; there was no column-zero block sequence at all. The test that exists to prevent R13-01/02 would not have caught them. | **Fixed** — the corpus went from 33 rows to 53, covering every shape both suites exercise, both duplicate-key orderings, the no-space-after-colon family, and every declined shape. |
+| R13-05 | V13 | **`_mentions_the_field` failed OPEN, and its docstring said it could not.** The `^\s*` anchor missed a key that is not at a line start, so `{targets: [typo], name: x` — unparseable frontmatter DECLARING the field — shipped the component everywhere with the declaration unread. | **Fixed** — the anchor is gone, which is what "deliberately over-inclusive" was supposed to mean. The docstring now names the defect instead of denying it. |
+| R13-06 | V13 | `read_target_scope` caught only `yaml.YAMLError`; a deeply nested flow collection raises `RecursionError` inside the parser, which escaped and aborted the generator with a raw traceback. | **Fixed** — caught alongside `YAMLError`, so the failure names the file. |
+| R13-07 | V13 | **"every documented invocation became `uv run python …`" was false — 17 remained**, each naming a command that now dies with `ModuleNotFoundError`. Among them `AGENTS.md` (whose `CLAUDE.md` twin WAS updated), the generator's own `--help` epilog, and seven **remediation messages the build itself prints when a gate fails**. | **Fixed** — all 17 converted, plus the emitted `.pr_agent.toml` header regenerated. |
+| R13-08 | S | **Both CI workflows that invoke the generator ran a bare `python3` with no install step.** `opencode-generate-check.yml` triggers on `marketplace/**`, so this PR would have failed its own check on the commit that added the dependency; `claude-distribute.yml` would have broken the release path. Found while preparing the PR, not by the round. | **Fixed** in `c99a84b` — both install the declared dependencies first, deriving the constraint from `pyproject.toml` so CI cannot carry a second copy that drifts. |
+| R13-09 | V13 | **Four properties lost their pins in the rewrite**, each confirmed by a surviving mutant: the close fence's trailing TAB, the close fence at EOF with no trailing newline, the doctor's BOM stripping, and the doctor's immediately-closed-block offset. The last is soundness-load-bearing. | **Fixed** — all four re-pinned. |
+| R13-10 | V13 | **Three rows of `test_shapes_the_scanner_declines_to_read` did not exercise the guard they name** — a continuation check or the bracket test declined them first, so dropping `>`, `\|` or `&` from the opener set left the suite green. `&` is independently soundness-load-bearing. | **Fixed** — rows added that reach the opener check. |
+| R13-11 | S | **And the first draft of round 13's own fix for R13-10 was vacuous**, in the same way: the comment-continuation fixture indented its comment, which is already "indented" to the guard. Caught by mutating it, not by reading it. | **Fixed** — the comment sits at column zero; the mutant now dies. Third consecutive round in which a fix for vacuous pins was itself vacuously pinned. |
+| R13-12 | V13 | Five further guards were unpinned — two blank-token filters and three `_is_readable` clauses. None broke soundness alone, which is exactly why nothing caught them: a guard that only stops the rule being *wrong-but-still-failing* is invisible to a test that checks the verdict. | **Fixed** — all five pinned. |
+| R13-13 | V13 | **Trailing-tab regression, undocumented.** One stray TAB anywhere in frontmatter now hard-fails the build for any component mentioning `targets:`; it built fine before. | **Recorded, not fixed** — see the cost list in § Operator decision. A trailing tab is invalid YAML and every reader rejects it; normalising it would mean pre-processing the text, which is the hand-rolling the decision removed. No component in the tree carries one. |
+| R13-14 | V13 | Line counts wrong: "785 and 664" — no commit on the branch ever had those. | **Fixed** — 775 and 635. |
+| R13-15 | V13 | **A stale count inside the clause asserting the count was not stale**: "17 changed Python files … unchanged by the switch because it added none". It is 18; `24140ec` added the test file whose fixture repair the same report lists as a cost. **Seventh recurrence** of this class. | **Fixed** — 18, and the "added none" clause deleted. |
+| R13-16 | V13 | Survivor B3 was recorded as OPEN in two places after the same report said it was closed. | **Fixed** — struck from both, with the observation that the "policy the plan does not specify" never needed specifying, because YAML specifies it. |
+| R13-17 | V13 | § Residue was stale: three of its five rows had been answered by the operator decision recorded 170 lines above. | **Fixed** — resolved rows struck through rather than deleted, since the evidence that put them there is the argument for the decision. A new open row is added: does the doctor rule earn its place at all? |
+| R13-18 | V13 | "15 sites" converted (16); "three reason codes deleted" (four); "nine shapes now read" — two of the nine were ACCEPTED by the parser being replaced, having been fixed by rounds 10 and 11. | **Fixed** — 16, four, and seven-of-nine with the two explained. |
+| R13-19 | V13 | `rule-catalog.md`'s recommended fix named "the two value-shape reasons", which no longer exist (and "two" was wrong when there were three). | **Fixed** |
+| R13-20 | V13 | "**Write it however YAML lets you** … any spelling YAML accepts is a spelling this field accepts" — falsified by the validation row three lines above it: `targets: {claude: yes}`, `targets: 3`, `targets: true`. | **Fixed** — scoped to what YAML must RESOLVE to, with the table named as the value rule rather than a syntax rule. |
+| R13-21 | V13 | A test docstring listed a `----` line among the shapes it pins as not hiding a declaration; no such param exists, and `----` deliberately fails closed in the sibling test. | **Fixed** |
+| R13-22 | V13 | The soundness promise was asserted as fact at **seven sites** while the code did not have it. | **Resolved by R13-01/02/03** — the prose is true now. |
+| R13-23 | V13 | `excluded_emission_roots`' "validates every component of the bundle" holds for the Claude path only; OpenCode validates what its `plugin.json` declares. | **Fixed** — the docstring scopes the claim and names what covers the gap. |
+| R13-24 | V13 | Commit `c99a84b` was recorded nowhere in the report. | **Fixed** — R13-08 above, and a cost row. |
+
+**Round 13's evidence.** A 338-case adversarial differential against PyYAML; a verdict-diff against
+`51f6abc` (20 widenings, 23 narrowings, 0 scope changes, every widening intended); a 44-mutant sweep
+finding 13 survivors; and — the measurement that mattered — **the doctor's soundness quantified
+rather than asserted**: over a 334-case corpus, 249 real build failures, 159 caught (**64%
+complete**), and **10 false positives across 4 root causes**. The documented trade was "incomplete
+but sound"; what shipped was neither.
+
+**After the fixes: 41 mutants, 41 killed, no survivors**, cache-disabled with no build concurrent.
+The soundness corpus is now 53 rows and contains every shape that broke it.
 
 ### Cold read (the plan's § Verification requirement)
 
@@ -667,7 +722,7 @@ verification and counting it would be the "silence read as a pass" defect this l
 
 **Convergence: none.** Each round was asked for the shipped-change vs report split: round 3 9/12,
 round 4 10/17, round 5 9/19, round 6 7/13, round 7 5/11, round 8 3/13, round 9 **9/16**, round 10
-**8/16**, round 11 **12/19**, round 12 **15/17** (each as its verifier reported it, in that verifier's own units). Rounds 7 and 8 read the
+**8/16**, round 11 **12/19**, round 12 **15/17**, round 13 **13/24** (each as its verifier reported it, in that verifier's own units). Rounds 7 and 8 read the
 fall through rounds 4–8 as narrowing; **round 9 refuted that** and this report's earlier statement of
 it, and round 10 confirmed the refutation. The fall was an artefact of what those rounds examined —
 the report, not the code — and round 8 was the first commit since `fab9611` to change what the module
@@ -698,7 +753,7 @@ still rests on reading — which is precisely where round 5 found most of what i
 |---|---|---|
 | **F8** (round 5's) — a plain scalar continued across lines was read as its first line only | ~~Survivor~~ **fixed in round 8, incompletely; closed in round 9** | Carried as a survivor through rounds 5–7 under a **backwards direction label** ("fail-open"). Round 8 executed it: the multi-line form silently dropped a declared target, i.e. narrowed. Once the direction was right the survivor argument collapsed — silent narrowing is what this mechanism exists to prevent — so it was fixed rather than re-characterised. The lesson worth keeping: a survivor's *bound* was checked every round and held; its *kind* was not, and that is what was wrong. |
 | **F9** (round 5's) — `targets:` plus an indented scalar reports "declares an empty list" | ~~Survivor~~ **closed in round 10** | Carried through rounds 5–9 on a sound proof — the build outcome is unchanged, only the message misnames the defect. Round 10 fixed the same misdiagnosis in two other shapes (R10-04, R10-05), which left no principled reason to keep this one: `targets:` / `  claude` is the value `claude` to YAML, and it now says so. Pinned from both sides, so a genuinely empty declaration keeps its own message. |
-| **B3** — a duplicate top-level `targets:` resolves to the FIRST declaration; YAML takes the LAST | Behavioural — **both directions**: against the YAML-authoritative last declaration it both adds a target and drops one | **(b)** The bound stated through round 8 — "cannot narrow below the first declaration" — measured the parser against its own answer, which is the vacuous-guard defect one survivor over from where round 8 found it. Stated against the right baseline: for a component with two `targets:` keys, the shipped scope is the first list rather than the last, so it may both add and remove targets relative to YAML. Reach: a component would have to declare the key twice, which no component does and which a YAML-aware editor flags. Left open because closing it means choosing a duplicate-key policy the plan does not specify. |
+| **B3** — a duplicate top-level `targets:` resolved to the FIRST declaration; YAML takes the LAST | ~~Survivor~~ **closed by the operator decision** — the build delegates to YAML, so last-one-wins. Round 13 found the doctor still reading the first, which was a soundness break in the rule rather than a live survivor here, and fixed it. | **No bound needed.** It was open for eight rounds under a bound that measured the parser against its own answer, then a corrected one. Delegating the read closed it without a policy decision — the "duplicate-key policy the plan does not specify" turned out not to need specifying, because YAML already specifies it. |
 | **B5** — OpenCode's `_prune_stale_outputs` runs only on a full regeneration, so a `--bundles` subset emit can leave a scoped-out component behind | Behavioural, pre-existing | **(b)** Bounded to scoped emits. The normal build and both drift checks run full regenerations; the constraint is documented at the function with its reason. Unchanged by this plan — reachable through a new cause, not newly created. |
 | **B6** — `check_bundle`'s orphan sweep covers `agents/` and `commands/`, not skill directories | Behavioural, pre-existing | **(b)** Bounded to validate-only mode over a stale tree. Any emit wipes each bundle's destination first, and `content_drift`'s `orphan_in_target` catches a stale `.md` because it regenerates through `ClaudeTarget`. A deleted skill was equally invisible before this plan. |
 
@@ -742,16 +797,19 @@ another verification round.
 | `rule-provenance.md` line 247's "**Five rules** … NOT in `quality-gate`" stands over an 8-row table whose last three rows are `cmd_quality_gate` (round 5) | **Pre-existing and not branch-introduced** — round 5 confirmed the section is byte-identical to `origin/main` after this plan's row was moved out of it | A provenance-table audit |
 | `CLAUDE.md`'s "157 registered components (153 skills…)" has drifted | Pre-existing, already tracked as deferred in another plan's report. The drift is real; this report deliberately states no replacement figure, because `CLAUDE.md` says *registered* — a `plugin.json` count — and the obvious substitute (156 on-disk `SKILL.md` files) measures a different population | Already owned elsewhere |
 
-**Decisions this loop cannot make, surfaced by round 10.** Ten rounds can establish whether a
-claim is true. None of them has standing to answer these, and no further round will change that:
+**Decisions this loop cannot make.** Thirteen rounds can establish whether a claim is true. None of
+them has standing to answer these. Three of the five rows here were **resolved by the operator's
+decision after round 12** and are kept struck through rather than deleted, because the evidence that
+put them on the table is the argument for why the decision was the right one.
 
-| Decision | The evidence for putting it on the table |
+| Decision | Status, and the evidence |
 |---|---|
-| **Should `marketplace/targets/` keep a hand-rolled line parser at all?** `yaml.safe_load` would delete the entire defect class. The stdlib-only constraint that justifies hand-rolling applies to the plugin-doctor mirror in a consumer install — where `marketplace/targets/` is absent anyway — not to the generator half, which already runs inside a Python build | **Every** behavioural defect across ten rounds is a divergence between this parser and YAML: round 1's empty-list misfire on `[claude]`, R4-4 (a round-3 regression rejecting two valid declarations), R6-03a (quoted key), 7-04 (quote-set strip), F8 (`-` exemption), R9-05 (block scalars), R10-04 (block-scalar headers), R10-05 (quoted multi-line), R10-06 (uniform indent), R10-07 (fence whitespace), round 11's R11-01, R11-02 and R11-03, and round 12's R12-01, R12-02 and R12-03. **Sixteen defects, one root cause** — and R12-01 is the third consecutive rule for a single line of YAML indentation semantics, each one wrong about it in a new way |
-| **Is `targets:` the right mechanism, versus a per-target ignore manifest?** A manifest puts the policy in one reviewable place instead of distributing it across 160 frontmatter blocks, and needs no parser | An architecture question the plan settled by assumption. The delivered mechanism works; that is not the same as its being the better of the two |
-| **Is the fail-open degradation direction acceptable?** The module now argues both sides and picks one (see its Degradation docstring). Someone with standing should confirm the pick | R6-03a, R10-06 and R10-07 were all treated as defects **because** they failed open. The module's own history argues against its own default |
-| **Duplicate `targets:` keys** (survivor B3) — first-declaration wins here, last wins in YAML | The plan does not specify it. It is a choice, not a bug |
-| **Is round 11 worth its cost?** Rounds 3–10 produced ~135 rows, most of them prose about code that was already correct | A budget judgement no verifier can make from inside the loop |
+| ~~**Should `marketplace/targets/` keep a hand-rolled line parser at all?**~~ | **RESOLVED — it does not.** The evidence that carried it: every behavioural defect across twelve rounds was a divergence between that parser and YAML — round 1's empty-list misfire on `[claude]`, R4-4, R6-03a, 7-04, F8, R9-05, R10-04, R10-05, R10-06, R10-07, R11-01, R11-02, R11-03, R12-01, R12-02, R12-03. Sixteen defects, one root cause, and three successive rules for a single line of YAML indentation semantics |
+| ~~**Duplicate `targets:` keys**~~ | **RESOLVED.** YAML specifies it; the build now follows. The "policy the plan does not specify" turned out not to need specifying |
+| ~~**Is the loop worth its marginal cost?**~~ | **Answered by use.** Round 13 found a build-failing false positive on a valid component in the very commit that removed the defect class, so the answer for round 13 at least was yes |
+| **Is `targets:` the right mechanism, versus a per-target ignore manifest?** | **OPEN, and untouched by thirteen rounds.** A manifest puts the policy in one reviewable place instead of distributing it across 160 frontmatter blocks. An architecture question the plan settled by assumption; the delivered mechanism works, which is not the same as its being the better of the two |
+| **Is failing OPEN the right degradation direction on a read fault?** | **OPEN.** The module argues both sides and picks one (see its Degradation docstring). R6-03a, R10-06, R10-07 and R11-01 were all treated as defects *because* they failed open, and round 13's V13-05 is a fresh instance. The module's own history argues against its own default |
+| **Does the `targets-scope-invalid` doctor rule earn its place at all?** | **OPEN, and new at round 13.** The rule is an approximation of a build that reads YAML properly. Round 13 measured it: **64% complete**, and unsound in four ways until that round fixed them. The build catches 100% of what matters. The honest alternatives are to keep it as a best-effort authoring net, narrow it to the single shape it reads with certainty, or delete it — and only a human can weigh an authoring-time convenience against the cost of a lint rule that has now been wrong about valid files twice |
 
 **Behavioural survivors** — see § Findings → "Stop record" for each one's bound.
 
