@@ -46,11 +46,16 @@ moment it is read and an invalid one aborts the build
   derives a single reviewer configuration from skill rules, so it has no
   component to filter) — such a declaration passes a registry-membership
   check while still shipping the component nowhere;
-* a value spanning more than one line — this parser reads a value from one
-  physical line, so accepting one would silently narrow the scope to
-  whatever fitted on that line.
+* a value that is not on the key's own line alone — this parser reads a
+  value from the key's own physical line, so accepting one would silently
+  narrow the scope to whatever fitted there;
+* a frontmatter block whose indentation a line scan cannot read — an
+  indented block containing a line shallower than its own keys. Guessing
+  here failed OPEN three separate times, shipping the component everywhere
+  with its declaration unread and letting an invalid declaration past the
+  build unreported, so the ambiguity is refused instead.
 
-That last rejection is ONE condition, tested at two sites that cannot both
+The value rejection is ONE condition, tested at two sites that cannot both
 apply: an INLINE value that is not a flow sequence and is followed by an
 indented line, or a key with no inline value whose indented continuation is
 neither a ``- `` item nor a flow sequence. (A ``- `` block IS followed by an
@@ -165,9 +170,10 @@ _BLOCK_SCALAR_HEADER_RE = re.compile(r'^[>|](?:[0-9][-+]?|[-+][0-9]?)?$')
 #: disagree about whether such a file has frontmatter at all, and a
 #: ``targets:`` declaration beneath a space-suffixed fence went unread.
 #:
-#: Parity is restored for trailing whitespace and for nothing else. That
-#: reader matches ``\n---`` as a PREFIX, so it also treats ``----`` as a
-#: closing fence where this one does not, and the two still disagree there.
+#: Parity is restored for trailing whitespace and for nothing else. Two
+#: disagreements remain: that reader matches ``\n---`` as a PREFIX, so it also
+#: closes on ``----`` where this one does not; and it does not strip a UTF-8
+#: BOM, so it reports no frontmatter for a BOM'd file this one reads.
 #: Adopting the prefix match would re-open the defect the whole-line match
 #: exists to prevent: a value containing three hyphens would truncate the
 #: block and hide every field after it.
@@ -191,6 +197,15 @@ _MULTILINE_NOUN = {
     _SHAPE_QUOTED_SCALAR: 'a quoted scalar continued across lines',
     _SHAPE_PLAIN_SCALAR: 'a plain scalar continued across lines',
 }
+
+
+class _AmbiguousIndent(Exception):
+    """Internal marker: the block's indentation cannot be read by a line scan.
+
+    Raised by :func:`_dedent_block` when a structural line sits shallower than
+    the block's base indent. Turned into a :class:`TargetScopeError` by
+    :func:`read_target_scope`, which knows the component path.
+    """
 
 
 class _MultilineValue(Exception):
@@ -279,7 +294,9 @@ def _frontmatter_block(text: str) -> str | None:
     # as the newline opening the closing one. What that changes is a block
     # closed immediately (`---` / `---` / more text): the block is then EMPTY,
     # and any keys below the second fence are body, not frontmatter. Searching
-    # from `start` would skip that fence and read them as fields.
+    # from `start` skips that fence, and where a LATER fence closes the block
+    # the body's lines are then read as fields. With no later fence the file
+    # reads as having no frontmatter at all.
     close_fence = _CLOSE_FENCE_RE.search(text, start - 1)
     if close_fence is None:
         return None
@@ -292,8 +309,12 @@ def _strip_comment(value: str) -> str:
     ``targets: [claude]  # note`` and ``targets: claude  # note`` both carry a
     comment the value parser would otherwise fold into a token, producing a
     diagnostic that names ``[claude] # note`` as the unknown target. A ``#``
-    is a comment only when it opens a token, which is what YAML requires and
-    what keeps a hypothetical name containing ``#`` intact.
+    is a comment only when it opens a token, which is what YAML requires.
+
+    That keeps an UNQUOTED ``#`` intact (``[cla#ude]``). It does not rescue a
+    quoted one: ``["a #b"]`` is the single name ``a #b`` to YAML and this
+    splits it, because nothing here tracks quote state. Both readings reject,
+    so the cost is the diagnostic's wording, not the emitted tree.
     """
     head, sep, _tail = value.partition('#')
     if not sep:
@@ -433,7 +454,7 @@ def _first_meaningful(lines: list[str]) -> tuple[int, str]:
 
 
 def _dedent_block(block: str) -> list[str]:
-    """Split ``block`` into lines, dedented by the common indent of its keys.
+    """Split ``block`` into lines, dedented by the indent its keys sit at.
 
     Top-level is relative to the BLOCK, not to column zero: a frontmatter
     block whose every key is indented by the same amount has all of them at
@@ -442,31 +463,34 @@ def _dedent_block(block: str) -> list[str]:
     target with its declaration unread, and an INVALID declaration passed the
     build unreported.
 
-    ``textwrap.dedent`` is not enough on its own, and that is not a detail:
-    it ignores blank lines but not comment lines, so a single ``# note`` at
-    column 0 above an indented block pinned the common prefix at zero and
-    re-opened the whole hole. The indent is therefore computed over lines
-    that carry structure — see :func:`_first_meaningful` — and comment lines
-    are dedented along with everything else.
+    The base indent is the FIRST structural line's, because that is what sets
+    a YAML block mapping's indentation. Two earlier rules were wrong here and
+    each re-opened the same hole one shape over: ``textwrap.dedent`` counts
+    comment lines, so one ``# note`` at column zero pinned the prefix at zero;
+    and a ``min()`` over structural lines counts the CONTINUATION of a
+    multi-line value, so ``description: "one`` / ``two"`` did the same.
 
-    A non-blank, non-comment line at column zero legitimately sets the indent
-    to zero: YAML has a node there, so keys beneath it are nested and must
-    stay skipped. The residue is exotic spellings that are neither a comment
-    nor a node — a ``...`` document-end marker, a ``%YAML`` directive — which
-    read as column-zero content and suppress the dedent.
+    Ambiguity is refused rather than guessed. Below an indented base, a
+    shallower structural line is either a continuation of a multi-line value
+    or malformed YAML, and a line scanner cannot tell which — so it raises
+    :class:`_AmbiguousIndent` instead of silently picking one. That is a
+    deliberate move from failing OPEN to failing CLOSED: the previous three
+    rules all answered this shape by shipping the component everywhere with
+    its declaration unread. A block whose base indent is zero — every
+    component in this marketplace — cannot reach the guard at all.
     """
     lines = block.split('\n')
-    indents = [
-        len(line) - len(line.lstrip())
-        for line in lines
-        if line.strip() and not line.strip().startswith('#')
+    structural = [
+        line for line in lines if line.strip() and not line.strip().startswith('#')
     ]
-    if not indents:
+    if not structural:
         return lines
-    common = min(indents)
-    if not common:
+    base = len(structural[0]) - len(structural[0].lstrip())
+    if not base:
         return lines
-    return [line[common:] if line[:common].isspace() else line.lstrip() for line in lines]
+    if any(len(line) - len(line.lstrip()) < base for line in structural):
+        raise _AmbiguousIndent
+    return [line[base:] if line[:base].isspace() else line.lstrip() for line in lines]
 
 
 def _has_continuation(rest: list[str]) -> bool:
@@ -492,9 +516,13 @@ def _multiline_shape(value: str) -> str:
     rejection condition, and each one then changed the verdict on some valid
     input while trying to improve a sentence.
 
-    ``value`` is the raw post-``strip`` value, not the comment-stripped one:
-    a ``#`` inside a quoted scalar is content, and stripping it first would
-    hide the quote this looks for.
+    ``value`` is the raw post-``strip`` value, not the comment-stripped one.
+    An earlier note claimed stripping would HIDE a quote; an exhaustive probe
+    over every string of length 1-5 in the relevant alphabet found no such
+    input. The 54 that differ go the other way — ``" #"`` is a closed quoted
+    scalar raw, and an open one once the comment stripper cuts it to ``"`` —
+    so the raw value is what keeps the noun off a construct the author did
+    not write.
 
     The quoted test asks only whether the opening quote recurs, so a value
     carrying an ESCAPED quote reads as terminated and falls through to
@@ -572,7 +600,10 @@ def _continued_value(rest: list[str]) -> list[str]:
     head = _strip_comment(line.strip())
     if head.startswith('['):
         return _split_inline(_join_flow_sequence(head, rest[index + 1:]))
-    raise _MultilineValue(_SHAPE_PLAIN_SCALAR)
+    # The shape is diagnosed from the line, not assumed. Hard-coding
+    # "plain scalar" here reinstated the very misdiagnosis three earlier
+    # rounds were spent removing, at a site the fix for them created.
+    raise _MultilineValue(_multiline_shape(line.strip()))
 
 
 # ---------------------------------------------------------------------------
@@ -634,13 +665,22 @@ def read_target_scope(path: Path) -> frozenset[str] | None:
         return None
     try:
         tokens = _declared_tokens(text)
+    except _AmbiguousIndent:
+        raise TargetScopeError(
+            f'{path}: the frontmatter block is indented, and a line inside it is '
+            f'indented LESS than the block\'s own keys. That is either a value '
+            f'continued across lines or malformed YAML, and this parser cannot tell '
+            f'which — so it refuses to guess which lines are fields rather than read '
+            f'`{TARGET_SCOPE_FIELD}:` wrongly or miss it entirely. Unindent the '
+            f'frontmatter block so its keys start at column 1.'
+        ) from None
     except _MultilineValue as multiline:
         raise TargetScopeError(
             f'{path}: `{TARGET_SCOPE_FIELD}:` is {_MULTILINE_NOUN[multiline.shape]}. '
-            f'That is one YAML value spanning several lines, and this parser reads a value '
-            f'from one physical line — so it would silently narrow the declared scope to '
-            f'whatever fitted on the first line rather than read what you wrote. Write the '
-            f'list explicitly — `{TARGET_SCOPE_FIELD}: [a, b]` or a `- ` block — so what '
+            f'That value is not on the key\'s own line alone, and this parser reads a value '
+            f'from the key\'s own physical line — so accepting it would silently narrow the '
+            f'declared scope to whatever fitted there rather than read what you wrote. Write '
+            f'the list explicitly — `{TARGET_SCOPE_FIELD}: [a, b]` or a `- ` block — so what '
             f'ships is what you wrote.'
         ) from None
     if tokens is None:

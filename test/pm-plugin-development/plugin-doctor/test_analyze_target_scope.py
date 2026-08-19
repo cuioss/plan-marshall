@@ -717,3 +717,119 @@ def test_the_shape_boundaries_are_where_they_are_documented(tmp_path, value, exp
 
     assert len(findings) == 1
     assert findings[0]['details']['reason'] == expected_reason
+
+
+# ---------------------------------------------------------------------------
+# Round 12: mirrored.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    'text',
+    [
+        pytest.param(
+            '---\n  description: "one\ntwo"\n  targets: [cluade]\n---\n', id='quoted-continuation'
+        ),
+        pytest.param('---\n  tools: [a,\nb]\n  targets: []\n---\n', id='flow-continuation'),
+    ],
+)
+def test_an_unreadable_indent_is_reported_rather_than_passed_over(tmp_path, text):
+    """The authoring-time net must report what the build refuses.
+
+    Reading such a block as "no declaration" is how an invalid declaration
+    reached the build unreported by BOTH parsers.
+    """
+    bundles = _marketplace(tmp_path)
+    _write(bundles / 'demo' / 'commands' / 'ambiguous.md', text)
+
+    findings = analyze_target_scope(bundles)
+
+    assert len(findings) == 1
+    assert findings[0]['details']['reason'] == 'targets_ambiguous_indent'
+
+
+def test_an_indented_continuation_inside_an_indented_block_is_not_ambiguous(tmp_path):
+    """The other side, so the guard is not an over-correction."""
+    bundles = _marketplace(tmp_path)
+    _write(
+        bundles / 'demo' / 'commands' / 'fine.md',
+        '---\n  description: "one\n  two"\n  targets: [claude]\n---\n',
+    )
+
+    assert analyze_target_scope(bundles) == []
+
+
+@pytest.mark.parametrize(
+    ('value', 'expected_reason'),
+    [
+        pytest.param('targets:\n  >-\n  claude', 'targets_block_scalar', id='block-below-key'),
+        pytest.param('targets:\n  "a,\n  b"', 'targets_quoted_scalar', id='quoted-below-key'),
+        pytest.param('targets:\n  claude', 'targets_multiline_scalar', id='plain-below-key'),
+    ],
+)
+def test_a_value_opening_below_the_key_is_diagnosed_not_assumed(tmp_path, value, expected_reason):
+    """The no-inline-value path diagnoses the shape rather than assuming one."""
+    bundles = _marketplace(tmp_path)
+    _component(bundles, 'commands/below.md', value)
+
+    findings = analyze_target_scope(bundles)
+
+    assert len(findings) == 1
+    assert findings[0]['details']['reason'] == expected_reason
+
+
+def test_a_shallow_comment_is_dedented_without_becoming_a_key():
+    """A line shorter than the base indent is left-stripped, not sliced."""
+    declaration = declared_targets('---\n#targets: [opencode]\n targets: [cluade]\n---\n')
+
+    assert declaration is not None
+    assert declaration[0] == ['cluade']
+
+
+@pytest.mark.parametrize(
+    ('value', 'expected'),
+    [
+        pytest.param('targets: claude', ['claude'], id='bare-inline-scalar'),
+        pytest.param('targets: claude, opencode', ['claude', 'opencode'], id='bare-inline-list'),
+        pytest.param('targets: [claude]\n2fa: no', ['claude'], id='closed-value-then-a-key'),
+    ],
+)
+def test_a_value_that_is_not_continued_is_read_as_written(value, expected):
+    """The continuation check was pinned in the generator suite and not here.
+
+    Every doctor fixture for it used a bracketed value, where the ``and``
+    short-circuits before the check runs — so forcing it to ``True`` left this
+    suite green while flagging every bare declaration as a continued scalar.
+    """
+    declaration = declared_targets(f'---\nname: a\n{value}\n---\n')
+
+    assert declaration is not None
+    assert declaration[0] == expected
+
+
+def test_the_fold_stops_at_the_closing_bracket():
+    """The fold's exit was pinned in the generator suite and not here.
+
+    Without it the following FIELD is folded into the value and a well-formed
+    declaration is reported as an unknown target.
+    """
+    declaration = declared_targets('---\nname: a\ntargets: [claude,\n  opencode]\n2fa: no\n---\n')
+
+    assert declaration is not None
+    assert declaration[0] == ['claude', 'opencode']
+
+
+def test_the_shape_is_read_from_the_raw_value_not_the_comment_stripped_one(tmp_path):
+    """Which text the shape test sees is observable, and was unpinned here.
+
+    ``targets: "a # b"`` closes its quote; cutting the comment first would
+    leave ``"a``, whose quote does not recur, and the finding would name a
+    construct the author did not write.
+    """
+    bundles = _marketplace(tmp_path)
+    _component(bundles, 'commands/shapesrc.md', 'targets: "a # b"\n  x')
+
+    findings = analyze_target_scope(bundles)
+
+    assert len(findings) == 1
+    assert findings[0]['details']['reason'] == 'targets_multiline_scalar'

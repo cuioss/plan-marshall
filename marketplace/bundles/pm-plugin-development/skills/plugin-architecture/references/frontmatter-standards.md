@@ -449,9 +449,10 @@ targets: [claude]
 | A name absent from `TARGET_REGISTRY` (a typo) | Build fails, naming the component and the unknown value |
 | `targets: []` | Build fails — a component shipped nowhere is an authoring error, not an intent |
 | Only targets that emit no component tree | Build fails — such a declaration also ships the component nowhere |
-| A value spanning more than one line | Build fails — the build reads a value from one physical line, so accepting one would silently narrow the scope to whatever fitted on that line |
+| A value that is not on the key's own line alone | Build fails — the build reads a value from the key's own physical line, so accepting one would silently narrow the scope to whatever fitted there |
+| An indented frontmatter block containing a line shallower than its own keys | Build fails — that is either a multi-line value's continuation or malformed YAML, and the build cannot tell which. Unindent the block so its keys start at column 1 |
 
-That last row is **one** rule, and the build reports it under whichever of three YAML constructs you wrote: a plain scalar continued across lines, a quoted scalar continued across lines, or a block scalar (`>` / `|`, whose value is the indented lines beneath it). A YAML reader parses all three perfectly well — the build declines them because it does not read them, so being told you wrote the wrong one sends you looking for a defect that is not in your file. Write the list inline or as a `- ` block and none of them arises.
+The value row is **one** rule, and the build reports it under whichever of three YAML constructs you wrote: a plain scalar continued across lines, a quoted scalar continued across lines, or a block scalar (`>` / `|`, whose value is the indented lines beneath it). A YAML reader parses all three perfectly well — the build declines them because it does not read them, so being told you wrote the wrong one sends you looking for a defect that is not in your file. Write the list inline or as a `- ` block and none of them arises.
 
 A flow sequence is the exception: it is one value however many lines it spans, whether it opens on the key line (`targets: [claude,` continued below) or on the line beneath it (`targets:` then an indented `[claude, opencode]`). A `- ` block spans lines too, and so does a `targets: # note` whose list follows underneath.
 

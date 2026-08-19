@@ -89,6 +89,11 @@ _SHAPE_BLOCK_SCALAR = 'block-scalar'
 _SHAPE_QUOTED_SCALAR = 'quoted-scalar'
 _SHAPE_PLAIN_SCALAR = 'plain-scalar'
 
+#: Sentinel for a block whose indentation a line scan cannot read — see
+#: ``_dedent_block``. Reported so the author sees at authoring time what the
+#: build will refuse, rather than only at build time.
+_AMBIGUOUS_INDENT = ['\x00ambiguous-indent']
+
 #: One sentinel token list per shape. A sentinel is compared by IDENTITY, so
 #: its string content is decoration: a component that literally declares
 #: ``targets: ["\x00block-scalar"]`` is an unknown target name, not a block
@@ -111,7 +116,8 @@ _BLOCK_SCALAR_HEADER_RE = re.compile(r'^[>|](?:[0-9][-+]?|[-+][0-9]?)?$')
 #: a space-suffixed fence, so refusing it here made two parsers in one tree
 #: disagree about whether a file has frontmatter at all. Parity is restored for
 #: trailing whitespace only: that reader matches ``\n---`` as a PREFIX and so
-#: also closes on ``----``, where this one does not.
+#: also closes on ``----``, where this one does not; and it does not strip a
+#: UTF-8 BOM, so it reports no frontmatter for a BOM'd file this one reads.
 _OPEN_FENCE_RE = re.compile(r'^---[ \t]*\n')
 _CLOSE_FENCE_RE = re.compile(r'\n---[ \t]*(?:\n|$)')
 
@@ -164,6 +170,13 @@ _DESCRIPTION_QUOTED_SCALAR = (
     'Write the list explicitly — `targets: [a, b]` or a `- ` block.'
 )
 
+_DESCRIPTION_AMBIGUOUS_INDENT = (
+    'component frontmatter is indented, and a line inside it is indented less than the '
+    'block\'s own keys. That is either a value continued across lines or malformed YAML, and '
+    'the build cannot tell which, so it refuses the component rather than read `targets:` '
+    'wrongly or miss it entirely. Unindent the frontmatter block so its keys start at column 1.'
+)
+
 _DESCRIPTION_EMPTY = (
     'component `targets:` frontmatter declares an empty list — a component that ships '
     'to no target is an authoring error. Omit the field to ship to every target.'
@@ -191,8 +204,10 @@ def _frontmatter_block(text: str) -> str | None:
     if open_fence is None:
         return None
     start = open_fence.end()
-    # From start - 1, so the newline ending the opening fence can serve as
-    # the newline opening the closing one \u2014 i.e. an empty frontmatter block.
+    # From start - 1, so the newline ending the opening fence can also serve
+    # as the newline opening the closing one. What that changes is a block
+    # closed immediately (`---` / `---` / more text): the block is EMPTY, and
+    # where a LATER fence closes it the body would otherwise be read as fields.
     close_fence = _CLOSE_FENCE_RE.search(text, start - 1)
     if close_fence is None:
         return None
@@ -204,7 +219,8 @@ def _strip_comment(value: str) -> str:
 
     Mirrors the generator's own parser (``component_targets._strip_comment``)
     so the two agree on what a declaration says: a ``#`` opens a comment only
-    when it opens a token.
+    when it opens a token. That keeps an UNQUOTED ``#`` intact but not a
+    quoted one — see ``component_targets`` for what that costs.
     """
     head, sep, _tail = value.partition('#')
     if not sep:
@@ -295,6 +311,14 @@ def _unquote_key(key: str) -> str:
     return key
 
 
+class _AmbiguousIndent(Exception):
+    """Internal marker: the block's indentation cannot be read by a line scan.
+
+    Mirrors ``component_targets._AmbiguousIndent``. Turned into the
+    ``_AMBIGUOUS_INDENT`` sentinel by :func:`declared_targets`.
+    """
+
+
 def _first_meaningful(lines: list[str]) -> tuple[int, str]:
     """Return ``(index, line)`` of the first line that carries structure.
 
@@ -309,26 +333,46 @@ def _first_meaningful(lines: list[str]) -> tuple[int, str]:
 
 
 def _dedent_block(block: str) -> list[str]:
-    """Split ``block`` into lines, dedented by the common indent of its keys.
+    """Split ``block`` into lines, dedented by the indent its keys sit at.
 
-    Mirrors ``component_targets._dedent_block``. The indent is computed over
-    lines that carry structure, not over every line: ``textwrap.dedent``
-    ignores blank lines but not comment lines, so one ``# note`` at column 0
-    above an indented block pinned the common prefix at zero and left the
-    whole block unscanned.
+    Mirrors ``component_targets._dedent_block``, including its refusal to
+    guess at an ambiguous indent.
+
+    Top-level is relative to the BLOCK, not to column zero: a frontmatter
+    block whose every key is indented by the same amount has all of them at
+    top level, and YAML reads it that way. Scanning for column-zero keys
+    instead reported "no declaration" — the component then shipped to every
+    target with its declaration unread, and an INVALID declaration passed the
+    build unreported.
+
+    The base indent is the FIRST structural line's, because that is what sets
+    a YAML block mapping's indentation. Two earlier rules were wrong here and
+    each re-opened the same hole one shape over: ``textwrap.dedent`` counts
+    comment lines, so one ``# note`` at column zero pinned the prefix at zero;
+    and a ``min()`` over structural lines counts the CONTINUATION of a
+    multi-line value, so ``description: "one`` / ``two"`` did the same.
+
+    Ambiguity is refused rather than guessed. Below an indented base, a
+    shallower structural line is either a continuation of a multi-line value
+    or malformed YAML, and a line scanner cannot tell which — so it raises
+    :class:`_AmbiguousIndent` instead of silently picking one. That is a
+    deliberate move from failing OPEN to failing CLOSED: the previous three
+    rules all answered this shape by shipping the component everywhere with
+    its declaration unread. A block whose base indent is zero — every
+    component in this marketplace — cannot reach the guard at all.
     """
     lines = block.split('\n')
-    indents = [
-        len(line) - len(line.lstrip())
-        for line in lines
-        if line.strip() and not line.strip().startswith('#')
+    structural = [
+        line for line in lines if line.strip() and not line.strip().startswith('#')
     ]
-    if not indents:
+    if not structural:
         return lines
-    common = min(indents)
-    if not common:
+    base = len(structural[0]) - len(structural[0].lstrip())
+    if not base:
         return lines
-    return [line[common:] if line[:common].isspace() else line.lstrip() for line in lines]
+    if any(len(line) - len(line.lstrip()) < base for line in structural):
+        raise _AmbiguousIndent
+    return [line[base:] if line[:base].isspace() else line.lstrip() for line in lines]
 
 
 def _has_continuation(rest: list[str]) -> bool:
@@ -377,7 +421,12 @@ def declared_targets(text: str) -> tuple[list[str], int] | None:
     block = _frontmatter_block(text)
     if block is None:
         return None
-    lines = _dedent_block(block)
+    try:
+        lines = _dedent_block(block)
+    except _AmbiguousIndent:
+        # Line 2 is the block's first line; the whole block is the problem,
+        # so the finding anchors there rather than on a key it cannot find.
+        return _AMBIGUOUS_INDENT, 2
     for index, line in enumerate(lines):
         if line[:1].isspace():
             continue
@@ -414,7 +463,8 @@ def _continued_value(rest: list[str]) -> list[str]:
     head = _strip_comment(line.strip())
     if head.startswith('['):
         return _split_inline(_join_flow_sequence(head, rest[index + 1:]))
-    return _MULTILINE_SENTINELS[_SHAPE_PLAIN_SCALAR]
+    # Diagnosed from the line, never assumed - see ``component_targets``.
+    return _MULTILINE_SENTINELS[_multiline_shape(line.strip())]
 
 
 def registered_target_names(marketplace_root: Path) -> frozenset[str] | None:
@@ -484,6 +534,21 @@ def _scan_component(path: Path, registered: frozenset[str] | None) -> list[dict]
     if declaration is None:
         return []
     tokens, line_number = declaration
+
+    if tokens is _AMBIGUOUS_INDENT:
+        return [
+            Finding(
+                type=RULE_ID,
+                file=str(path),
+                line=line_number,
+                severity='error',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=_DESCRIPTION_AMBIGUOUS_INDENT,
+                details={'reason': 'targets_ambiguous_indent'},
+                extra={'rule': RULE_NAME},
+            ).to_dict()
+        ]
 
     for shape, sentinel in _MULTILINE_SENTINELS.items():
         # IDENTITY, not equality: a component whose declaration literally

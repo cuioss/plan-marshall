@@ -956,3 +956,127 @@ def test_the_shape_boundaries_are_where_they_are_documented(tmp_path, frontmatte
     """
     with pytest.raises(TargetScopeError, match=expected_noun):
         read_target_scope(_component(tmp_path, frontmatter))
+
+
+# ---------------------------------------------------------------------------
+# Round 12: the indent rule's third attempt, and guards nothing reached.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    'text',
+    [
+        pytest.param(
+            '---\n  description: "one\ntwo"\n  targets: [cluade]\n---\n',
+            id='quoted-continuation-at-column-zero',
+        ),
+        pytest.param(
+            '---\n  description: "one\ntwo"\n  targets: []\n---\n',
+            id='and-the-declaration-is-invalid',
+        ),
+        pytest.param(
+            '---\n  tools: [a,\nb]\n  targets: [cluade]\n---\n',
+            id='flow-continuation-at-column-zero',
+        ),
+    ],
+)
+def test_an_unreadable_indent_fails_closed_rather_than_open(tmp_path, text):
+    """A structural line shallower than the block's keys is refused, not guessed.
+
+    It is either a multi-line value's continuation or malformed YAML, and a
+    line scanner cannot tell which. Two earlier indent rules answered it by
+    shipping the component everywhere with its declaration UNREAD — which
+    also let an invalid declaration past the build with nothing reported.
+    Refusing is the module's own stated direction; guessing is not.
+    """
+    path = tmp_path / 'demo.md'
+    path.write_text(text, encoding='utf-8')
+
+    with pytest.raises(TargetScopeError, match='indented LESS'):
+        read_target_scope(path)
+
+
+def test_an_indented_continuation_inside_an_indented_block_is_not_ambiguous(tmp_path):
+    """The other side: a continuation that keeps the block's indent reads fine.
+
+    Without this the fail-closed guard would be an over-correction, refusing
+    every indented block that happens to carry a multi-line value.
+    """
+    path = tmp_path / 'demo.md'
+    path.write_text(
+        '---\n  description: "one\n  two"\n  targets: [claude]\n---\n', encoding='utf-8'
+    )
+
+    assert read_target_scope(path) == {'claude'}
+
+
+@pytest.mark.parametrize(
+    ('frontmatter', 'expected_noun'),
+    [
+        pytest.param('targets:\n  >-\n  claude', 'block scalar', id='block-scalar-below-the-key'),
+        pytest.param('targets:\n  |2\n   claude', 'block scalar', id='block-header-with-indicator'),
+        pytest.param(
+            'targets:\n  "claude,\n  opencode"', 'quoted scalar', id='quoted-below-the-key'
+        ),
+        pytest.param('targets:\n  claude', 'plain scalar', id='plain-below-the-key'),
+    ],
+)
+def test_a_value_opening_below_the_key_is_diagnosed_not_assumed(
+    tmp_path, frontmatter, expected_noun
+):
+    """The no-inline-value path must diagnose the shape, like the inline path.
+
+    It hard-coded "plain scalar" instead, so a block scalar and a quoted
+    scalar opening below the key were both misnamed — reinstating, at a site
+    created to fix a different defect, the exact misdiagnosis three earlier
+    rounds were spent removing.
+    """
+    with pytest.raises(TargetScopeError, match=expected_noun):
+        read_target_scope(_component(tmp_path, frontmatter))
+
+
+def test_a_shallow_comment_is_dedented_without_becoming_a_key(tmp_path):
+    """The dedent's short-line branch: a line shorter than the base indent.
+
+    Such a line is left-stripped rather than sliced, and nothing pinned that
+    — slicing a comment line by the base indent instead turns
+    ``#targets: [opencode]`` into a ``targets:`` key at column zero, and the
+    component ships to a scope no author wrote.
+    """
+    path = tmp_path / 'demo.md'
+    path.write_text('---\n#targets: [opencode]\n targets: [claude]\n---\n', encoding='utf-8')
+
+    assert read_target_scope(path) == {'claude'}
+
+
+@pytest.mark.parametrize(
+    ('frontmatter', 'expected'),
+    [
+        pytest.param(
+            'targets: [claude,\n  opencode]\n2fa: no', {'claude', 'opencode'}, id='fold-stops-at-]'
+        ),
+        pytest.param('targets: claude\n2fa: no', {'claude'}, id='bare-value-is-never-folded'),
+        pytest.param('targets: [claude]\n2fa: no', {'claude'}, id='closed-value-is-never-folded'),
+    ],
+)
+def test_the_fold_only_runs_where_it_is_meant_to(tmp_path, frontmatter, expected):
+    """The fold's entry guard and its closing-bracket exit were both unpinned.
+
+    Deleting either left the suite green while folding the FOLLOWING FIELD
+    into the value — ``claude 2fa: no`` — and rejecting a declaration that is
+    perfectly well formed. A guard that only the docstring describes is a
+    guard that can be deleted by accident.
+    """
+    assert read_target_scope(_component(tmp_path, frontmatter)) == expected
+
+
+def test_the_shape_is_read_from_the_raw_value_not_the_comment_stripped_one(tmp_path):
+    """Which text the shape test sees is observable, and was unpinned.
+
+    ``targets: "a # b"`` closes its quote, so the raw value is not a continued
+    quoted scalar. Stripping the comment first would cut it to ``"a``, whose
+    quote does not recur, and the failure would name a construct the author
+    did not write. Both readings reject; only the noun differs.
+    """
+    with pytest.raises(TargetScopeError, match='plain scalar'):
+        read_target_scope(_component(tmp_path, 'targets: "a # b"\n  x'))
