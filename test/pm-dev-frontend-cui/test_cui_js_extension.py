@@ -9,13 +9,12 @@ Verifies the Extension class API contract:
 - additive_to: 'javascript'
 """
 
-import importlib.util
 import json
 import tempfile
 from pathlib import Path
 
 # Import shared infrastructure (conftest.py sets up PYTHONPATH)
-from conftest import MARKETPLACE_ROOT
+from conftest import load_skill_module
 
 # =============================================================================
 # Extension Loader
@@ -24,13 +23,10 @@ from conftest import MARKETPLACE_ROOT
 
 def load_frontend_cui_extension():
     """Load pm-dev-frontend-cui extension.py and return an Extension instance."""
-    extension_path = MARKETPLACE_ROOT / 'pm-dev-frontend-cui' / 'skills' / 'plan-marshall-plugin' / 'extension.py'
-    assert extension_path.exists(), f'Extension not found: {extension_path}'
-
-    spec = importlib.util.spec_from_file_location('extension_pm_dev_frontend_cui', extension_path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = load_skill_module(
+        'pm-dev-frontend-cui', 'plan-marshall-plugin', 'extension.py',
+        'extension_pm_dev_frontend_cui',
+    )
 
     assert hasattr(module, 'Extension'), 'Extension class not found in extension.py'
     return module.Extension()

@@ -13,10 +13,28 @@ from argparse import Namespace
 from pathlib import Path
 
 # Import shared infrastructure
-from conftest import PROJECT_ROOT, get_script_path, load_script_module, run_script
+from conftest import PROJECT_ROOT, get_script_path, load_script_module, parse_ns, run_script
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', '_validate.py')
+
+# Argument namespaces come from the script's OWN parser, so each carries every
+# default the real CLI applies — a hand-built Namespace carries only the keys its
+# author remembered. Parsed once at module scope: parse_ns re-executes the script
+# module on every call.
+_REFERENCES_NS = parse_ns(
+    'pm-plugin-development', 'plugin-doctor', '_validate.py',
+    'references', '--file', 'placeholder.md', register=False,
+)
+_INVENTORY_NS = parse_ns(
+    'pm-plugin-development', 'plugin-doctor', '_validate.py',
+    'inventory', '--skill-path', '.', register=False,
+)
+
+
+def _ns(template: Namespace, **overrides) -> Namespace:
+    """A parser-produced namespace with this test's values overlaid."""
+    return Namespace(**{**vars(template), **overrides})
 
 
 def _load_module(name, filename):
@@ -61,7 +79,7 @@ def test_references_missing_file():
 
 def test_references_nonexistent_file():
     """Test references handles nonexistent file."""
-    args = Namespace(file='/nonexistent/file.md')
+    args = _ns(_REFERENCES_NS, file='/nonexistent/file.md')
     result = cmd_references(args)
     assert result is not None, 'Should return a result dict'
 
@@ -72,7 +90,7 @@ def test_references_valid_file():
         f.write('---\nname: test\ndescription: Test\n---\n\n# Test\n\nSee [link](./other.md)\n')
         f.flush()
 
-        args = Namespace(file=f.name)
+        args = _ns(_REFERENCES_NS, file=f.name)
         data = cmd_references(args)
         assert data is not None, 'Should return valid dict'
 
@@ -86,7 +104,7 @@ def test_references_valid_file():
 
 def test_inventory_nonexistent_path():
     """Test inventory handles nonexistent path."""
-    args = Namespace(skill_path='/nonexistent/skill', include_hidden=False)
+    args = _ns(_INVENTORY_NS, skill_path='/nonexistent/skill', include_hidden=False)
     data = cmd_inventory(args)
     assert data is not None, 'Should return a result dict'
     assert 'error' in str(data).lower() or data.get('status') == 'error', 'Should error for nonexistent path'
@@ -97,7 +115,7 @@ def test_inventory_real_skill():
     skill_dir = PROJECT_ROOT / 'marketplace' / 'bundles' / 'pm-plugin-development' / 'skills' / 'plugin-doctor'
     assert skill_dir.exists(), f'tracked fixture missing: {skill_dir}'
 
-    args = Namespace(skill_path=str(skill_dir), include_hidden=False)
+    args = _ns(_INVENTORY_NS, skill_path=str(skill_dir), include_hidden=False)
     data = cmd_inventory(args)
     assert data is not None, 'Should return valid dict'
     assert 'files' in data or 'inventory' in data or 'skill_path' in data, 'Should have inventory data'

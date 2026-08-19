@@ -13,18 +13,17 @@ also puts it back inside mypy's scope (``test/*/plan-marshall-plugin/`` is
 excluded because a hyphenated directory is not a valid package name).
 
 Tier 2 (direct import): each bundle's ``extension.py`` is loaded by explicit
-file path via ``importlib.util.spec_from_file_location``, because every bundle
-ships that same module basename.
+identity via ``conftest.load_skill_module``, because every bundle ships that
+same module basename.
 """
 
 from __future__ import annotations
 
-import importlib.util
 from typing import Any
 
 import pytest
 
-from conftest import MARKETPLACE_ROOT
+from conftest import load_skill_module
 
 # (bundle, domain_key, profile, expected_skill). ``expected_skill`` is None for
 # a profile that is declared as a resolution alias and carries no defaults of
@@ -58,12 +57,14 @@ DOCUMENTATION_OPTIONAL_SKILLS = {
 
 def _load_extension(bundle: str) -> Any:
     """Load ``<bundle>``'s plan-marshall-plugin extension and return an instance."""
-    extension_path = MARKETPLACE_ROOT / bundle / 'skills' / 'plan-marshall-plugin' / 'extension.py'
-    module_name = f'extension_{bundle.replace("-", "_")}'
-    spec = importlib.util.spec_from_file_location(module_name, extension_path)
-    assert spec is not None and spec.loader is not None, f'no import spec for {extension_path}'
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    # ``register=False`` rather than a distinct ``module_name``: the name here is
+    # computed from ``bundle``, so the loader-collision guard cannot resolve it
+    # statically and would count this as a blind spot. Opting out of registration
+    # keeps the guard's view complete and matches the previous behaviour exactly —
+    # the preamble this replaces never touched ``sys.modules``.
+    module = load_skill_module(
+        bundle, 'plan-marshall-plugin', 'extension.py', register=False
+    )
     return module.Extension()
 
 

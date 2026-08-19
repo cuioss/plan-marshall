@@ -10,10 +10,24 @@ from argparse import Namespace
 from pathlib import Path
 
 # Import shared infrastructure
-from conftest import get_script_path, load_script_module, run_script
+from conftest import get_script_path, load_script_module, parse_ns, run_script
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-doctor', '_validate.py')
+
+# Argument namespaces come from the script's OWN parser, so each carries every
+# default the real CLI applies — a hand-built Namespace carries only the keys its
+# author remembered. Parsed once at module scope: parse_ns re-executes the script
+# module on every call.
+_EXTENSION_NS = parse_ns(
+    'pm-plugin-development', 'plugin-doctor', '_validate.py',
+    'extension', register=False,
+)
+
+
+def _ns(template: Namespace, **overrides) -> Namespace:
+    """A parser-produced namespace with this test's values overlaid."""
+    return Namespace(**{**vars(template), **overrides})
 
 
 def _load_module(name, filename):
@@ -115,7 +129,7 @@ def test_validate_valid_extension():
         ext_path = temp_dir / 'extension.py'
         create_valid_extension(ext_path)
 
-        args = Namespace(extension_path=str(ext_path), bundle_path=None, marketplace_path=None)
+        args = _ns(_EXTENSION_NS, extension_path=str(ext_path), bundle_path=None, marketplace_path=None)
         data = cmd_extension(args)
 
         assert data.get('valid') is True, f'Should be valid: {data}'
@@ -131,7 +145,7 @@ def test_validate_extension_missing_functions():
         ext_path = temp_dir / 'extension.py'
         create_invalid_extension_missing_func(ext_path)
 
-        args = Namespace(extension_path=str(ext_path), bundle_path=None, marketplace_path=None)
+        args = _ns(_EXTENSION_NS, extension_path=str(ext_path), bundle_path=None, marketplace_path=None)
         data = cmd_extension(args)
 
         assert data.get('valid') is False
@@ -147,7 +161,7 @@ def test_validate_extension_syntax_error():
         ext_path = temp_dir / 'extension.py'
         create_invalid_extension_syntax_error(ext_path)
 
-        args = Namespace(extension_path=str(ext_path), bundle_path=None, marketplace_path=None)
+        args = _ns(_EXTENSION_NS, extension_path=str(ext_path), bundle_path=None, marketplace_path=None)
         data = cmd_extension(args)
 
         assert data.get('valid') is False
@@ -161,7 +175,7 @@ def test_validate_extension_not_found():
         temp_dir = Path(td)
         ext_path = temp_dir / 'nonexistent.py'
 
-        args = Namespace(extension_path=str(ext_path), bundle_path=None, marketplace_path=None)
+        args = _ns(_EXTENSION_NS, extension_path=str(ext_path), bundle_path=None, marketplace_path=None)
         data = cmd_extension(args)
 
         assert data.get('valid') is False
@@ -182,7 +196,7 @@ def test_validate_bundle_with_extension():
         ext_path = bundle_path / 'skills' / 'plan-marshall-plugin' / 'extension.py'
         create_valid_extension(ext_path)
 
-        args = Namespace(extension_path=None, bundle_path=str(bundle_path), marketplace_path=None)
+        args = _ns(_EXTENSION_NS, extension_path=None, bundle_path=str(bundle_path), marketplace_path=None)
         data = cmd_extension(args)
 
         assert 'extension' in data
@@ -197,7 +211,7 @@ def test_validate_bundle_without_extension():
         bundle_path = temp_dir / 'test-bundle'
         bundle_path.mkdir(parents=True)
 
-        args = Namespace(extension_path=None, bundle_path=str(bundle_path), marketplace_path=None)
+        args = _ns(_EXTENSION_NS, extension_path=None, bundle_path=str(bundle_path), marketplace_path=None)
         data = cmd_extension(args)
 
         assert data.get('has_extension') is False
@@ -226,7 +240,7 @@ def test_scan_marketplace():
         ext3_path = bundles / 'bundle3' / 'skills' / 'plan-marshall-plugin' / 'extension.py'
         create_invalid_extension_missing_func(ext3_path)
 
-        args = Namespace(extension_path=None, bundle_path=None, marketplace_path=str(marketplace))
+        args = _ns(_EXTENSION_NS, extension_path=None, bundle_path=None, marketplace_path=str(marketplace))
         data = cmd_extension(args)
 
         assert 'summary' in data

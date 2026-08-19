@@ -14,31 +14,18 @@
 """
 
 import builtins
-import importlib.util
 
 from extension_base import DerivationResolverBase, ExtensionBase, PathAttributionBase
 
-from conftest import PROJECT_ROOT
-
-EXTENSION_FILE = (
-    PROJECT_ROOT
-    / 'marketplace'
-    / 'bundles'
-    / 'pm-documents'
-    / 'skills'
-    / 'plan-marshall-plugin'
-    / 'extension.py'
-)
+from conftest import load_skill_module
 
 
 def _load_documentation_extension():
-    """Load the pm-documents Extension by explicit path (every bundle shares the
-    ``extension`` basename, so a bare import would collide)."""
-    spec = importlib.util.spec_from_file_location('pm_documents_extension', EXTENSION_FILE)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    """Load the pm-documents Extension by ``(bundle, skill, file)`` identity (every
+    bundle shares the ``extension`` basename, so a bare import would collide)."""
+    return load_skill_module(
+        'pm-documents', 'plan-marshall-plugin', 'extension.py', 'pm_documents_extension'
+    )
 
 
 _extension_module = _load_documentation_extension()

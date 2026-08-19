@@ -21,32 +21,26 @@ Covered:
 """
 
 import builtins
-import importlib.util
 import subprocess
 from pathlib import Path
 
 from _dep_detection import DependencyType
 from extension_base import NOTE_SAMPLE_LIMIT, DerivationResolverBase, ExtensionBase
 
-from conftest import MARKETPLACE_ROOT
+from conftest import load_skill_module
 
 # A domain bundle's ``extension.py`` sits at the SKILL ROOT, not under
-# ``scripts/``, so ``conftest.load_script_module`` — which resolves
-# ``{bundle}/skills/{skill}/scripts/{file}`` — cannot reach it. The path is
-# anchored on ``MARKETPLACE_ROOT`` rather than on ``Path(__file__).parent``
-# arithmetic, and the explicit spec load stays because every domain bundle ships
-# an ``extension.py`` sharing the module basename ``extension``: the distinct
-# module name is what avoids the cross-bundle ``import extension`` collision.
-EXTENSION_FILE = MARKETPLACE_ROOT / 'pm-plugin-development' / 'skills' / 'plan-marshall-plugin' / 'extension.py'
+# ``scripts/``, which is what ``conftest.load_skill_module`` addresses — its
+# scripts/-relative companion ``load_script_module`` cannot reach it. Every domain
+# bundle ships an ``extension.py`` sharing the module basename ``extension``, so a
+# distinct module name is passed to avoid the cross-bundle collision.
 
 
 def _load_plugin_extension():
     """Load the pm-plugin-development Extension under a distinct module name."""
-    spec = importlib.util.spec_from_file_location('plugin_dev_extension', EXTENSION_FILE)
-    assert spec is not None and spec.loader is not None, f'no import spec for {EXTENSION_FILE}'
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    return load_skill_module(
+        'pm-plugin-development', 'plan-marshall-plugin', 'extension.py', 'plugin_dev_extension'
+    )
 
 
 _extension_module = _load_plugin_extension()
