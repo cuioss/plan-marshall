@@ -1076,7 +1076,8 @@ code defects** in the same diff, one of them a `Path.cwd()` fallback the run had
 left. What either exit licenses is stopping *this loop*; it licenses no claim about the code's
 correctness. Where a reviewer is still owed a look (§ Step 7), give it to them: this loop is not a
 substitute for review coverage, and a rate-limited reviewer whose window reopens is worth
-re-requesting precisely because its method differs from the loop that just ended.
+another attempt precisely because its method differs from the loop that just ended — by whichever
+route that reviewer honours (§ Step 7), which for an auto-review reviewer is a push and not a comment.
 
 ## GitHub access
 
@@ -1271,18 +1272,25 @@ below is exhausted; until then the run owes another attempt.
 - **Wait the window the notice states, then add jitter** — a random 5–20 minutes on top. ⛔ **The
   jitter is not politeness, it is correctness.** Several plans run in parallel against **one
   per-developer allowance**, and every one of them reads the same "available in N minutes" from its
-  own notice. Without jitter they all wake at the same instant and race for a single slot: one wins,
-  the rest are refused and re-synchronise on the *next* slot, and the convoy never breaks up. Jitter
-  is what decorrelates them.
-- **One attempt per wake. Never two.** Each attempt consumes the allowance, so a retry loop inside a
-  single turn spends the very slot the next attempt needs.
+  own notice. Without jitter they all wake at the same instant and contend for a single slot: at most
+  one is served, the rest are refused and re-synchronise on the *next* slot, and the convoy never
+  breaks up. Jitter is what decorrelates them.
+- **Know what an "attempt" IS before making one — it differs per reviewer.** For a reviewer that
+  runs automatically (CodeRabbit here) an attempt is a **push**; its trigger comment is inapplicable
+  and achieves nothing (§ "Obtaining a CodeRabbit review"). For a reviewer triggered by a comment, an
+  attempt is that comment. Read the route before spending a wake on the wrong one.
+- **One attempt per wake. Never two.** A second attempt in the same turn cannot succeed where the
+  first failed — the window has not moved — so it buys nothing and obscures the record.
 - **Never poll in Bash, and never `sleep` on a reviewer.** Arm a timer (§ Cloud session affordances)
-  and let the wake do it.
+  and let the wake do it. Where no timer is available, § Step 8 condition 6's cannot-re-enter arm
+  applies — do not wait without one.
+- **A finished commit is never held back to time an attempt.** § Step 4's push cadence outranks this
+  schedule: push it when it is ready, and treat the review the push triggers as that wake's attempt.
+  Waiting out a window with completed work uncommitted is the failure durability exists to prevent.
 - **Budget: six attempts.** Six covers roughly a working day of hourly windows. When it is spent,
   stop attempting, record `rate-limited` with its `Reopens?` value and the attempt count, and treat
-  it as a shortfall from that point on. **An attempt that was accepted and yielded nothing counts**
-  — the slot was consumed, which is what the budget measures. So does the attempt fired by opening
-  the PR.
+  it as a shortfall from that point on. Count every attempt the run makes, whatever it returned —
+  the budget bounds the run's *effort*, not the provider's accounting, which the run cannot observe.
 
 Record every attempt — its time and the notice it drew — in the report. An attempt that was made and
 refused is different evidence from one that was never made, and only the record distinguishes them.
@@ -1292,35 +1300,51 @@ refused is different evidence from one that was never made, and only the record 
 Written out because three separate mechanisms interact here, and a run that knows only one of them
 draws the wrong conclusion from a refusal.
 
-**1. The trigger.** Post the registry's declared `trigger_comment` (`@coderabbitai review`, read from
-`marketplace/bundles/plan-marshall/skills/automatic-review/standards/coderabbit.md` — never
-transcribed from here) as an ordinary PR comment. Opening a PR triggers it too.
+**1. The trigger depends on whether AUTOMATIC review is enabled — and usually it is, which makes the
+comment a no-op.** Read the governing `.coderabbit.yaml` (a repository-level file, else the
+organization's central one) at `reviews.auto_review`. Where auto-review is on — this organization
+enables it for every PR not carrying `skip-bot-review` — CodeRabbit reviews on the PR-open and on
+each **push**, and its own reply to a manual request says the command *"is applicable only when
+automatic reviews are paused"*. ⛔ **So on an auto-review repository, posting `@coderabbitai review`
+does nothing**, however many times a run posts it, and however open the allowance is. **The lever
+that works is a push**, which is what the refusal notice itself offers alongside the comment ("or
+push new commits to the PR"). Post the comment only where auto-review is genuinely paused.
 
-**2. The allowance is per DEVELOPER, and every attempt draws it down** — including the attempt fired
-by **opening a PR**. It is not per PR, not per commit, and not per branch. Two consequences a run
-must not get wrong:
+**2. The allowance is per DEVELOPER, and it is set by HISTORY, not by this PR.** CodeRabbit's notice
+states it: the hourly allowance is derived from "a developer's included PR review attempts over the
+past 7 days", and "higher sustained activity can lower the allowance until earlier attempts leave the
+7-day window". Two consequences a run must not get wrong:
 
-- **Closing and re-opening a PR buys nothing against the limit**, and costs an attempt to learn that.
-- **A sibling plan's PR consumes the same allowance.** A refusal here may be caused entirely by work
-  elsewhere, which is why the retry schedule above carries jitter rather than a fixed wait.
+- **A refusal consumes nothing.** The notice says "we couldn't start this review" — nothing ran. Do
+  not model refusals as spending a budget; the countdown is the allowance returning, not a balance
+  the run drew down.
+- **A refusal is often not about this PR at all.** Sibling plans, and this project's own sustained
+  volume over the preceding week, set the allowance. ⛔ **So a run that keeps waiting may be waiting
+  on something no amount of waiting fixes.** Establish that concretely rather than by feel: after
+  **three** of the run's own windows have passed with no review, read `get_reviews` on the two or
+  three most recently updated pull requests in the repository (`list_pull_requests`, sorted by
+  update). **No CodeRabbit review body on any of them** means the limit is exhausted at the account
+  level, not on this PR. Say so to the operator rather than spending the rest of the budget on it;
+  the remedy is theirs — an admin raising the limit in Billing, or less concurrent review volume.
 
-**3. The incremental-review trap — the one that wastes a whole slot.** CodeRabbit "does not re-review
-already reviewed commits". So an attempt accepted against a head it has already seen returns
-*"Reviews are available now"* and then produces **nothing**: no review body, no inline threads, no
-status change. The slot is spent and the run has no review.
+**3. The incremental-review property.** CodeRabbit "does not re-review already reviewed commits", so
+a request against a head it has already processed yields **nothing**: no review body, no inline
+threads, no status change. Combined with (1), this is why a run can post request after request and
+observe no review at all — an inapplicable command against an unchanged head cannot produce one.
 
-⛔ **Do not read "Reviews are available now" as a review.** It reports the allowance, not the outcome.
-Confirm the review by reading the surfaces (§ Step 7), never by reading that reply.
+⛔ **Do not read *"Reviews are available now"* as a review.** It reports the allowance, not the
+outcome. Confirm the review from the surfaces (§ Step 7), never from that reply.
 
-**So, when a retry is accepted but yields nothing, the remedy is a NEW HEAD SHA, not a new PR.** Merge
-`origin/main` in — usually owed anyway under § Step 8 condition 2 — or land the next real commit.
-**When neither is available** — the base has not moved and the plan has no further commit to make —
-there is no unreviewed head to offer, and further attempts cannot become productive. Record that,
-treat the budget as spent for this reviewer, and proceed under § Step 8 condition 5. Spending the
-remaining attempts on a head already known to be seen is the non-option this contract exists to
-eliminate.
-That gives the reviewer material it has genuinely not seen. A new PR on the *same* head hits the same
-trap while also spending an attempt on the open event.
+**Both problems have the same remedy: a NEW HEAD SHA.** A push re-triggers the automatic review *and*
+offers material the reviewer has not seen. Merge `origin/main` in — usually owed anyway under § Step 8
+condition 2 — or land the next real commit. **A new PR is not a remedy**: it neither changes the head
+nor resets a per-developer allowance.
+
+**When no new head is available** — the base has not moved and the plan has no further commit to make
+— there is nothing left that could produce a review. Record it as **unobtainable** — condition 6's
+own word for this state, not "budget spent", which means something else — and proceed under § Step 8
+condition 5. ⛔ **Never manufacture a head** with an empty or
+cosmetic commit to summon a reviewer: § Step 7 forbids that for CI, and the reason is the same here.
 
 **4. Verify by the bodies.** A review has happened when `get_reviews` carries a summary body from
 `coderabbitai`, or `get_review_comments` carries its inline threads. A green check, an absence of
@@ -1329,15 +1353,19 @@ complaint, and the acceptance reply are none of them evidence.
 #### A `silent` verdict is not terminal until the recovery check says so
 
 Silence has several causes that look identical from the comment surfaces — the bodies are empty, which
-is what `silent` means — and **one of them is recoverable in a single comment**. So `silent` is a
-provisional verdict: before disclosing it, establish *why*, and act on the answer.
+is what `silent` means — and **one of them is recoverable**. So `silent` is a provisional verdict:
+before disclosing it, establish *why*, and act on the answer.
 
 Check whether the reviewer's workflow ran at all, and split on it:
 
 - **No run at all** → the reviewer never got the event. It is not rate-limited; it was not invited.
-  Post the registry's declared `trigger_comment` (`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md`)
-  as a PR comment, re-read the surfaces, and record the *result* — a review that arrives this way is
-  `reviewed` like any other.
+  Invite it by whichever route that reviewer actually honours: post the registry's declared
+  `trigger_comment` (`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md`)
+  as a PR comment where a comment is what triggers it, and **a push where the reviewer runs
+  automatically** — for CodeRabbit on an auto-review repository the comment is inapplicable and only a
+  push works (§ "Obtaining a CodeRabbit review"). Then re-read the surfaces and record the *result* —
+  a review that arrives this way is `reviewed` like any other. Where neither route is available (no
+  new head to push, comment inapplicable), the check is discharged by establishing that.
 - **A run that concluded `skipped`, or failed** → a guard or a failure suppressed it, and no comment
   will change that. Record the run's conclusion as the reason and disclose.
 
@@ -1524,13 +1552,19 @@ hold:**
    spent without obtaining it; `sourcery-ai` rate-limited on a size ceiling, does not reopen."
    **A run that merges on 1-of-3 must _say_ 1-of-3.**
 
-   ⛔ **The example says "six attempts spent" for a reason.** A CodeRabbit line here reports one of
-   four states, and no other: a budget that ran out; a refusal that cannot reopen; a `skip-bot-review`
-   PR; or **a run that could not re-enter to spend the budget, naming the missing affordance**. A
-   live countdown that the run *could* still wait out is not among them — condition 6 forbids arming
-   there. The fourth state is what a headless run discloses, and its sentence says so plainly: for
-   example "`coderabbitai` rate-limited on a countdown, one attempt made; no self-wake available in
-   this session, so the budget could not be spent." 
+   ⛔ **The example says "six attempts spent" for a reason.** A CodeRabbit line here reports a state
+   in which condition 6 is *satisfied* — never a bare countdown the run could still act on. Those
+   states are the ones condition 6 names, and the disclosure borrows its word for each: **obtained**,
+   **budget spent**, **unobtainable**, a run that **could not re-enter** to spend the budget, or a
+   `skip-bot-review` PR. Read condition 6 for the list rather than counting it here.
+
+   What is forbidden is narrower than "a live countdown": it is disclosing a countdown the run could
+   still have acted on and did not. A countdown may well still be ticking when the run arms —
+   `unobtainable` and `could not re-enter` both look like that from outside — and each says *why*
+   acting further was impossible. For example: "`coderabbitai` rate-limited on a countdown, three
+   attempts made, no review on any recent PR in the repository — the limit is exhausted at the
+   account level, not on this PR"; or "`coderabbitai` rate-limited on a countdown, one attempt made;
+   no self-wake available in this session, so the budget could not be spent." 
 
    A `silent` verdict reaches this disclosure only after its recovery check (§ Step 7) — so what is
    disclosed here is a shortfall that survived an attempt to fix it, not merely one that was noticed.
@@ -1556,20 +1590,23 @@ hold:**
    the applicable rule is satisfied and the shortfall stated, arm auto-merge — conditions 1–4 and 6
    are the gates on the merge itself.
 
-6. **CodeRabbit has reviewed, or its retry budget is spent — on a PR with no `skip-bot-review`
-   label.** A plan, a skill and a bundle change are behavioural prose a later run executes with no
+6. **CodeRabbit has reviewed, or the run has established it cannot — on a PR with no
+   `skip-bot-review` label.** A plan, a skill and a bundle change are behavioural prose a later run executes with no
    operator (§ Step 7), and CodeRabbit is the reviewer that reads them as such. So on any PR the
    label rule leaves reviewable, **do not arm auto-merge on a first CodeRabbit refusal.**
 
-   Satisfy it one of two ways, and say which:
+   Satisfy it one of three ways, and say which:
 
    - **Obtained** — `get_reviews` carries a `coderabbitai` summary body, or `get_review_comments`
      carries its inline threads, and every finding in them is handled per § Step 7. This is the
      intended outcome.
-   - **Budget spent** — § Step 7's budget of six attempts is exhausted, counted as that section
-     counts it: every attempt draws it down, including the one fired by opening the PR and any that
-     was accepted but yielded nothing. Each *retry* was made after its stated window plus jitter.
-     Record every attempt with its time and notice, then proceed under condition 5's disclosure.
+   - **Budget spent** — § Step 7's budget of six attempts is exhausted, counting every attempt the
+     run made whatever it returned, and each retry made after its stated window plus jitter. Record
+     every attempt with its time and notice, then proceed under condition 5's disclosure.
+   - **Unobtainable** — the run established that no attempt can succeed: auto-review is enabled so the
+     trigger comment is inapplicable and no new head is available, or several windows passed with no
+     review anywhere in the repository. Record which, and proceed. Waiting out a budget against a
+     mechanism that cannot deliver is the non-option this contract exists to eliminate.
 
    ⛔ **A `Reopens? yes` refusal does NOT satisfy this condition** — it is the state the retry
    schedule exists to work through. ⛔ **Nor does an accepted attempt that produced no review**: read
@@ -1587,9 +1624,11 @@ hold:**
    **A `silent` or `Reopens? unknown` CodeRabbit satisfies it once the § Step 7 recovery check has
    been RUN.** Neither posts a countdown, so § Step 7's retry schedule — which waits "the window the
    notice states" — has nothing to key on and does not apply. Run that check **as it is written,
-   including its split**: post the `trigger_comment` only where no workflow run exists; where a run
-   concluded `skipped` or failed, or where the reviewer posted a bare refusal naming no clearing
-   condition, the check is discharged by *establishing that*, with no comment posted. Either way the
+   including its split** — and including its route rule: the check invites a reviewer only by the
+   route that reviewer honours, which for CodeRabbit on an auto-review repository is a push and never
+   the trigger comment. Where a run concluded `skipped` or failed, where the reviewer posted a bare
+   refusal naming no clearing condition, or where the reviewer is a hosted app with no workflow run to
+   query at all, the check is discharged by *establishing that*, with nothing posted. Either way the
    condition is satisfied once the check has been run and yielded no review, and the run proceeds
    under condition 5. Do not invent a wait for a clock that was never stated.
 
@@ -1909,8 +1948,10 @@ each carrying the time, the notice the attempt drew, and the wait-plus-jitter th
 
 An attempt that was made and refused is different evidence from one that was never made, and only
 this log distinguishes them. State the budget that applied (six, per § Step 7), how many attempts
-were spent, and — for CodeRabbit on a PR without `skip-bot-review` — whether § Step 8 condition 6 was
-satisfied by **obtaining** the review or by **spending the budget**.
+were spent, and — for CodeRabbit on a PR without `skip-bot-review` — **which arm of § Step 8
+condition 6 satisfied it**, in that condition's own words: `obtained`, `budget spent`, `unobtainable`,
+`could not re-enter`, or `skip-bot-review` (out of scope). A record that cannot name the arm cannot be
+checked against the gate.
 Where a `silent` verdict triggered the recovery check (§ Step 7), record what the check found and
 whether the reviewer was recovered. Where a verdict is `unreadable`, state plainly that merge-gate
 condition 3 was **not established** and say whether the merge proceeded anyway on an operator
