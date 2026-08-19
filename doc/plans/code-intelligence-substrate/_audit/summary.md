@@ -2,21 +2,27 @@
 
 A ground-truth audit of every landed plan in this epic, and the fix plans derived from it.
 
-⚠ **This directory holds records, not a plan** — no `plan.md`, no `report-NN.md`. Read it as the
-account of how the `5xx` fix plans came to exist.
+⚠ **This directory holds records, not a plan** — there is no `plan.md`. It does hold a
+`report-NN.md`, which matters below. Read it as the account of how the `5xx` fix plans came to exist.
 
-⛔ **The collect step does not yet know that.** `doc/plans/cloud-bridge.md` § Path 3 step 1 states
-without qualification that *every* directory under an epic is a plan a run has worked, and the
-`_`-prefix convention it would need is documented only for the **epic** level
-(`doc/plans/README.md`, on `_template/`), never for a directory inside one. `_audit/` is the first
-such directory in this repository.
+⛔ **The collect step does not know that, and the safety argument expires when this PR merges.**
+`doc/plans/cloud-bridge.md` § Path 3 step 1 states without qualification that *every* directory under
+an epic is a plan a run has worked, and the `_`-prefix convention it would need is documented only
+for the **epic** level (`doc/plans/README.md`, on `_template/`), never for a directory inside one.
+`_audit/` is the first such directory in this repository.
 
-The bound, stated because the run owes it rather than left for a reader to derive: § Path 3 step 2
-records nothing without a merged PR **and** a `report-NN.md`, and step 6 deletes only what steps 2–5
-corroborated. `_audit/` has neither, so a collector following the steps reaches an unhandled case and
-**stops** — it cannot record a false landing and cannot delete anything. Extending the contract to
-exclude `_`-prefixed directories explicitly is a change to the governing contract, which this run may
-not self-approve, so it is raised as a proposal in `570-cloud-plan-lane-contract-proposals.md`.
+§ Path 3 step 2 records nothing without a merged PR **and** a `report-NN.md`, and step 6 deletes only
+what steps 2–5 corroborated. **Both halves are met for `_audit/` once PR #1304 lands**:
+`report-01.md` is right here and names that PR. So the protection is only that #1304 is open — a
+bound with an expiry, not a standing guarantee. Nothing in Path 3 then distinguishes this directory
+from a landed plan, and step 6 would delete it.
+
+An earlier revision of this paragraph claimed `_audit/` satisfied *neither* half and that a collector
+would therefore stop. That was false the moment the run report was written into this directory, and
+it is corrected here rather than left standing. Closing the gap needs a guard in `cloud-bridge.md` —
+a change to the governing contract this run may not self-approve — so it is raised as proposal **P8**
+in `570-cloud-plan-lane-contract-proposals.md`. ⚠ **Until P8 is decided, collect over this epic needs
+a manual check of `_audit/`.**
 
 ## What was audited
 

@@ -18,14 +18,19 @@ corrects descriptions of behaviour the other seven change.
 
 [`_audit/summary.md`](_audit/summary.md) is the account of how they came to exist: what was checked,
 what the audit found, and what the adversarial pass over the audit changed. That directory holds
-records rather than a plan — it carries no `plan.md` and no `report-NN.md`.
+records rather than a plan — it carries **no `plan.md`**, though it does carry a `report-NN.md`.
 
-⚠ **`_audit/` is the first `_`-prefixed directory inside an epic, and the collect step does not yet
-know about it.** [`../cloud-bridge.md`](../cloud-bridge.md) § Path 3 step 1 says *every* directory
-under an epic is a plan a run has worked. The bound, which is why this is safe rather than merely
-undeclared: step 2 records nothing without a merged PR **and** a `report-NN.md`, and step 6 deletes
-only what steps 2–5 corroborated — `_audit/` has neither, so a collector reaches an unhandled case
-and stops rather than recording a false landing or deleting anything. Making that exclusion explicit
-is a contract change, so it is raised as a proposal in
-[`570-cloud-plan-lane-contract-proposals.md`](570-cloud-plan-lane-contract-proposals.md) rather than
-asserted here.
+⛔ **`_audit/` is the first `_`-prefixed directory inside an epic, the collect step does not yet know
+about it, and after this PR merges the safety argument no longer holds.**
+[`../cloud-bridge.md`](../cloud-bridge.md) § Path 3 step 1 says *every* directory under an epic is a
+plan a run has worked. Step 2 needs a merged PR **and** a `report-NN.md` before anything is recorded,
+and step 6 deletes only what steps 2–5 corroborated — but `_audit/report-01.md` **exists and names
+PR #1304**, so once that PR merges, both halves are satisfied and nothing in Path 3 stops a collector
+from treating this directory as a landed plan and deleting it.
+
+While #1304 is open the merged-PR half is unmet, so nothing can be recorded or deleted today. That is
+a bound with an expiry, not a standing guarantee, and it is stated here rather than left for a reader
+to derive. Closing it needs a guard in `cloud-bridge.md`, which is a change to the governing contract
+this run may not self-approve, so it is raised as proposal **P8** in
+[`570-cloud-plan-lane-contract-proposals.md`](570-cloud-plan-lane-contract-proposals.md).
+⚠ **Until P8 is decided, do not run collect over this epic without checking `_audit/` by hand.**

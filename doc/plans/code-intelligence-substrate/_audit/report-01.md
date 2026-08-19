@@ -173,13 +173,18 @@ This report records the proposal; the operator decides.
 
 - **CodeRabbit's verdict** is outstanding at the time of writing; it was re-requested after the
   condition-2 merge superseded its first attempt.
-- **`_audit/` is the first `_`-prefixed directory inside an epic**, and `cloud-bridge.md` § Path 3
-  says every directory under an epic is a plan a run has worked. The bound: § Path 3 records nothing
-  without a merged PR *and* a `report-NN.md`, and deletes only what steps 2–5 corroborated — so a
-  collector reaches an unhandled case and stops rather than misrecording or deleting. **This report's
-  own presence in `_audit/` narrows that bound**, since the directory now has a `report-NN.md`; the
-  merged-PR half still does not hold for it, as `_audit/` is not a plan and no PR lands it as one.
-  Making the exclusion explicit is a contract change, raised as proposal **P8** in `570`.
+- ⛔ **`_audit/` becomes collectable when this PR merges, and that is an open risk, not a bounded
+  one.** `cloud-bridge.md` § Path 3 says every directory under an epic is a plan a run has worked;
+  step 2 needs a merged PR *and* a `report-NN.md`, and step 6 deletes what steps 2–5 corroborated.
+  **This report is that `report-NN.md`, and it names PR #1304** — so on merge both halves are
+  satisfied and a collector following Path 3 would treat this directory as a landed plan and delete
+  it. Only #1304 being open prevents that today.
+  An earlier revision of this row said the merged-PR half "still does not hold … as `_audit/` is not
+  a plan and no PR lands it as one". That reasoning is wrong: Path 3 keys on the *presence* of a
+  merged PR named by the report, not on whether the directory is a plan. Corrected here, and in
+  `README.md` and `summary.md`, after the PR reviewer caught it. Making the exclusion explicit is a
+  contract change, raised as proposal **P8** in `570`. ⚠ **Until P8 is decided, collect over this
+  epic needs a manual check of `_audit/`.**
 - **Round 6's own fixes** were not put through a seventh round — see § Findings → Residue to assume
   remains.
 - **The eight fix plans are authored, not executed.** Their sequencing constraints are in their own
