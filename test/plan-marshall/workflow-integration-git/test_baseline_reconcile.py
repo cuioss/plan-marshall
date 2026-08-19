@@ -6,10 +6,11 @@ The subcommand is the mechanical predicate for phase-2-refine Step 3d:
 fetches origin/{base_branch}, lists upstream commits since the
 **merge-base of HEAD and origin/{base_branch}** (recomputed per call, never
 read from a stored SHA), and runs ``git merge-tree`` to detect potential
-conflicts. It is a **non-mutating classifier on every path** — it never
-moves the branch ref. Each conflicted file becomes a Q-Gate finding (under
---source qgate) so the existing phase-2-refine iterate-to-confidence loop
-addresses the drift.
+conflicts. It **moves no refs and touches no working-tree file** on any path
+— though it is not side-effect-free: on the stale-base path it rewrites
+``base_branch`` in ``references.json`` and emits a decision-log entry. Each
+conflicted file becomes a Q-Gate finding (under --source qgate) so the
+existing phase-2-refine iterate-to-confidence loop addresses the drift.
 """
 
 from __future__ import annotations

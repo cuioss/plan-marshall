@@ -181,7 +181,7 @@ pushed: true
 | `worktree-remove` | `--plan-id [--force]` | Remove the worktree first, then delete the branch ref |
 | `worktree-list` | _(none)_ | List plans whose `status.metadata.use_worktree == true` |
 | `locate-plan-checkout` | `--plan-id` | Report where a plan's directory currently lives (`current` \| `worktree` \| `not_found`). The `worktree` probe resolves by two paths: the canonical `_resolve_worktree_path_for_plan` (manage-status) channel for not-yet-moved plans, then a structural `get_worktree_root() / {plan_id}` filesystem probe for the moved-in-from-main case (phase-5+, ADR-002). Reuses the uniform cwd walk-up for the current-checkout probe — no inline `git worktree list --porcelain` re-parsing. Used by the cross-session re-entry preflight at the `/plan-marshall` entry sites. |
-| `baseline-reconcile` | `--plan-id [--base-branch] [--skip-fetch] [--no-emit]` | Mechanical baseline reconciliation for phase-2-refine Step 3d. Resolves the worktree path (from `status.metadata.worktree_path`), fetches `origin/{base_branch}`, lists upstream commits since the captured `worktree_sha`, and runs `git merge-tree` to detect potential conflicts — no working-tree mutation. Each conflicted file becomes a Q-Gate finding under `--source qgate` so the phase-2-refine iterate-to-confidence loop addresses the drift. The LLM-judgement classification step (which upstream commit warrants scope adjustment) stays bundled in the existing phase-2-refine dispatch. `--skip-fetch` bypasses the network round-trip for tests / replay scenarios. |
+| `baseline-reconcile` | `--plan-id [--base-branch] [--skip-fetch] [--no-emit]` | Mechanical baseline reconciliation for phase-2-refine Step 3d. Resolves the worktree path (from `status.metadata.worktree_path`), fetches `origin/{base_branch}`, lists upstream commits since `merge-base(HEAD, origin/{base_branch})` (recomputed per call, never read from a stored SHA), and runs `git merge-tree` to detect potential conflicts — no working-tree mutation. Each conflicted file becomes a Q-Gate finding under `--source qgate` so the phase-2-refine iterate-to-confidence loop addresses the drift. The LLM-judgement classification step (which upstream commit warrants scope adjustment) stays bundled in the existing phase-2-refine dispatch. `--skip-fetch` bypasses the network round-trip for tests / replay scenarios. |
 
 **Script**: `plan-marshall:workflow-integration-git:prepare_execute`
 
@@ -880,8 +880,8 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 ```
 
 Mechanical baseline reconciliation: resolves the worktree, fetches `origin/{base_branch}`, lists the
-upstream commits since the captured `worktree_sha`, and runs `git merge-tree` to detect potential
-conflicts.
+upstream commits since `merge-base(HEAD, origin/{base_branch})` — recomputed per call, never read
+from a stored SHA — and runs `git merge-tree` to detect potential conflicts.
 
 **Return**. Every consumer MUST branch on `status` **before** reading `classification`: the wrapper
 prints the payload through a helper that always exits 0, so an "if the script exits non-zero" test
@@ -921,7 +921,7 @@ never evidence that a rebase is safe, so a consumer forces its own conservative 
 
 | `error` | Cause |
 |---------|-------|
-| `probe_mutated_head` | HEAD changed during the probe. The classifier performs no writes, so a moved ref means it cannot be trusted to have classified the state it reported; it refuses to return a verdict derived from a mutated tree. This takes precedence over every other outcome, including a persist failure |
+| `probe_mutated_head` | HEAD changed during the probe. The classifier moves no refs, so a moved ref means it cannot be trusted to have classified the state it reported; it refuses to return a verdict derived from a mutated tree. This takes precedence over every other outcome, including a persist failure |
 | `finding_persist_failed` | A conflict finding could not be written to the store. The finding is that path's primary output, so the caller sees an error carrying the rejected content (`qgate_persist_failures`) rather than a clean result with `findings_emitted: 0` |
 
 **Side effects.** The probe never moves the branch ref and never touches the working tree. Its one

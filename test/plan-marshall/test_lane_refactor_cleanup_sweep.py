@@ -29,8 +29,9 @@ Plus a transitionary-prose assertion over the D14 classification-gate bodies
 ``previously`` / ``replaced by`` / ``migrated from`` markers.
 
 Exclusions: ``.plan/`` (archived plans + this plan's own fixtures) is never on
-the walk root, and this sweep file is excluded by name (it carries every retired
-token as a string literal).
+the walk root, this sweep file is excluded by name (it carries every retired
+token as a string literal), and ``doc/plans/`` is excluded as the git-tracked
+equivalent of the ``.plan/`` carve-out — see :data:`_EXCLUDED_SUBTREES`.
 """
 
 from __future__ import annotations
@@ -68,6 +69,33 @@ _SELF_NAME = Path(__file__).name
 # Cache directories never carry source.
 _SKIP_DIR_PARTS = {'__pycache__', '.git', '.plan', 'node_modules', 'target'}
 
+# Subtrees excluded by absolute prefix rather than by directory NAME.
+#
+# ``doc/plans/`` holds plan documents and dated run reports: records of work that
+# HAS happened, which must be able to name the machinery a run retired, the guard
+# a run tripped, and the token that guard forbids. This is the same carve-out
+# ``.plan`` already takes in ``_SKIP_DIR_PARTS`` ("archived plans … must not be
+# scanned") — ``doc/plans/`` is simply the git-tracked half of it, and the split
+# is an artifact of where the two live, not a difference in kind.
+#
+# Without this, the sweep forbids a run report from stating why it failed: a
+# report documenting a ``ceremony_policy`` hit must quote the token to do so, and
+# is then itself the hit. That is not the orphaned-reference class this sweep
+# exists to catch — an orphan is a LIVE reference in source or current
+# documentation, not a historical record of one.
+#
+# Excluded by absolute prefix, deliberately, rather than by adding ``plans`` to
+# ``_SKIP_DIR_PARTS``: a name-based skip would also silence any directory called
+# ``plans`` under ``marketplace/`` or ``test/``, where a retired token IS an
+# orphan. ``test_the_plans_exclusion_does_not_reach_the_rest_of_doc`` pins that
+# the carve-out stays this narrow.
+_EXCLUDED_SUBTREES = (PROJECT_ROOT / 'doc' / 'plans',)
+
+
+def _in_excluded_subtree(path: Path) -> bool:
+    """True when ``path`` lies under one of :data:`_EXCLUDED_SUBTREES`."""
+    return any(path.is_relative_to(subtree) for subtree in _EXCLUDED_SUBTREES)
+
 
 def _iter_text_files(roots):
     """Yield every text-bearing source file under ``roots`` (excluding self).
@@ -87,6 +115,8 @@ def _iter_text_files(roots):
             if path.suffix not in _TEXT_SUFFIXES:
                 continue
             if path.name == _SELF_NAME:
+                continue
+            if _in_excluded_subtree(path):
                 continue
             if any(part in _SKIP_DIR_PARTS for part in path.relative_to(root).parts):
                 continue
@@ -115,6 +145,62 @@ def _assert_zero(pattern: re.Pattern[str], token_label: str, roots=_SWEEP_ROOTS)
         f'Orphaned reference to retired token {token_label!r} '
         f'({len(hits)} hit(s)):\n  ' + '\n  '.join(hits)
     )
+
+
+# =============================================================================
+# (0) The doc/plans/ carve-out, and its bounds
+# =============================================================================
+
+
+def test_the_plans_exclusion_is_honoured_by_the_walk():
+    """No file under ``doc/plans/`` reaches the sweep.
+
+    Asserted over the real walk rather than over the predicate alone, so a
+    predicate that is correct but never consulted still fails here.
+    """
+    walked = list(_iter_text_files((PROJECT_ROOT / 'doc',)))
+    leaked = [str(p.relative_to(PROJECT_ROOT)) for p in walked if _in_excluded_subtree(p)]
+    assert not leaked, (
+        f'{len(leaked)} file(s) under doc/plans/ reached the sweep despite the '
+        f'exclusion:\n  ' + '\n  '.join(leaked[:10])
+    )
+
+
+def test_the_plans_exclusion_does_not_reach_the_rest_of_doc():
+    """The carve-out is ``doc/plans/`` ONLY — the rest of ``doc/`` is still swept.
+
+    This is the control on the exclusion above. Widening it to ``doc/`` (or
+    skipping by the bare directory name ``plans``, which would also silence a
+    ``plans`` directory under ``marketplace/`` or ``test/``) would make every
+    assertion in this module vacuous over the documentation surface they exist to
+    police, while every one of them still reported green.
+    """
+    walked = list(_iter_text_files((PROJECT_ROOT / 'doc',)))
+    survivors = [p for p in walked if not _in_excluded_subtree(p)]
+    assert survivors, (
+        'the doc/ walk yielded nothing outside doc/plans/, so every doc-scoped '
+        'assertion in this module is vacuous'
+    )
+    # Named surfaces the config-doc contract lives on: their absence would mean
+    # the walk had been narrowed past the point where these assertions bind.
+    swept = {p.relative_to(PROJECT_ROOT).parts[1] for p in survivors}
+    assert 'user' in swept and 'developer' in swept, (
+        f'doc/user and doc/developer must both remain on the walk; swept top-level '
+        f'doc subdirectories were {sorted(swept)}'
+    )
+
+
+def test_the_exclusion_is_prefix_based_not_name_based():
+    """A ``plans`` directory outside ``doc/`` is NOT excluded.
+
+    Pins the choice of an absolute-prefix test over adding ``plans`` to
+    ``_SKIP_DIR_PARTS``: a retired token under ``marketplace/**/plans/`` or
+    ``test/**/plans/`` is a live orphan and must still be caught.
+    """
+    assert not _in_excluded_subtree(PROJECT_ROOT / 'marketplace' / 'plans' / 'x.md')
+    assert not _in_excluded_subtree(PROJECT_ROOT / 'test' / 'plans' / 'x.py')
+    assert not _in_excluded_subtree(PROJECT_ROOT / 'doc' / 'user' / 'configuration.adoc')
+    assert _in_excluded_subtree(PROJECT_ROOT / 'doc' / 'plans' / 'epic' / 'report-01.md')
 
 
 # =============================================================================

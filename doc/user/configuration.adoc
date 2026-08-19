@@ -192,6 +192,17 @@ The `--plan-id` form exists so an answer you give about one plan does not silent
 
 The owning steps are `default:pre-push-quality-gate` (`qgate`), `default:pre-submission-self-review` (`self_review`), `default:finalize-step-simplify` (`simplify`) and `default:finalize-step-security-audit` (`security_audit`) — the `default:` prefix is part of the key as seeded, and `step set` rejects the bare name with `Step '<name>' not found in phase-6-finalize`. The per-element override row is documented in <<execution-profile-lane-selection>>.
 
+Switching the finalize self-review off, in full:
+
+[source,bash]
+----
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-6-finalize step set \
+  --step-id default:pre-submission-self-review --param lane --value off
+----
+
+`step set` is named here rather than `set-lane` because it is the only one of the two that reaches `minimal`, the value that forces a gate *in*. For the three values both verbs accept — `off`, `standard`, `full` — they are interchangeable: both write the same `plan.phase-6-finalize.steps.<step-id>.lane` key, so `finalize-steps set-lane --step-id default:pre-submission-self-review --lane off` produces the identical result. They differ only when the step is absent from the phase step map, which `set-lane` materialises and `step set` refuses; all four owning steps above are seeded, so that difference does not arise for a ceremony gate.
+
 Read or set the run-at-all gates with the standard phase `get`/`set` verb against the owning phase block; read a ceremony gate through its owning step instead:
 
 [source,bash]

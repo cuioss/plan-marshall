@@ -562,7 +562,7 @@ def cmd_baseline_reconcile(args) -> dict:
             'head_before': head_before,
             'head_after': head_after,
             'message': (
-                'baseline-reconcile is a non-mutating classifier but HEAD '
+                'baseline-reconcile moves no refs but HEAD '
                 f'changed during the probe (before={head_before}, '
                 f'after={head_after}); refusing to return a classification '
                 'derived from a mutated tree.'

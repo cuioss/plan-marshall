@@ -161,7 +161,7 @@ not the execution-context workflow roster — is independently correct and is le
 | D7 — declare the advertised finalize-step facts | `974fecd` | done |
 | D8 — thirteen statements made true against their substrate | this run's final deliverable commit | done — per-gap checks below |
 
-### The red-first ledger (D2, and D3's declaration guard)
+### The red-first ledger (D2, D3's declaration guard, and A9's carve-out)
 
 One row per mutation. Every mutation was applied through a harness that snapshots the target's BYTES
 to an agent-private scratch path and restores them in a `finally` — never `git checkout`/`restore`,
@@ -181,6 +181,9 @@ re-checked after each sweep; every target came back clean.
 | D3 declaration guard (b) | `phase-6-finalize/workflow/create-pr.md` | added `requires_prompt_fields: [synthetic_field]` to a step with NO own `prompt:` block | ONLY `test_input_table_required_keys_equal_the_declaration` — the ∃-direction and the block-presence guard both PASSED | `default:create-pr: declared=['synthetic_field'] table=[]` | clean |
 | D7 read-before-destroy gate | `phase-6-finalize/standards/pre-push-quality-gate.md` | `order: 5` → `75`, past `branch-cleanup`'s `destroys: [worktree]` (70) | `test_finalize_edge_ordering.py::test_every_reader_runs_before_the_step_that_destroys_what_it_reads` | `default:pre-push-quality-gate (order 75) reads 'worktree', which default:branch-cleanup (order 70) destroys` | clean |
 | D8 / 160-G2 substrate guard | `script-shared/scripts/build/_gate_coverage.py` | dropped `targets, build.py` from the `spdx-paths` parity note | `test_gate_coverage_parity_substrate.py::test_spdx_paths_note_matches_the_gate_it_describes` | missing `'build.py'`, `'targets'` | clean |
+| A9 carve-out (a) | `test/plan-marshall/test_lane_refactor_cleanup_sweep.py` | widened `_EXCLUDED_SUBTREES` from `doc/plans` to all of `doc` | `test_the_plans_exclusion_does_not_reach_the_rest_of_doc` (and, correctly, the prefix-vs-name control alongside it) | `doc/user and doc/developer must both remain on the walk` | bytes identical |
+| A9 carve-out (b) | same | removed the `_in_excluded_subtree(path)` call from `_iter_text_files`, leaving the predicate defined but unconsulted | `test_the_plans_exclusion_is_honoured_by_the_walk` — **and** `test_no_ceremony_policy_json_key_or_dotted_paths`, which is the original failure returning | `file(s) under doc/plans/ reached the sweep despite the exclusion` | bytes identical |
+| A9 carve-out (c) | same | made the exclusion name-based (`'plans' in path.parts`) instead of absolute-prefix | `test_the_exclusion_is_prefix_based_not_name_based` | asserts a `plans` directory under `marketplace/` or `test/` is still swept | bytes identical |
 
 **D3's second Done-when check, and where it disagrees with the plan.** The plan's stated check is that
 adding `requires_prompt_fields` to a generic-template-dispatched step with no own `prompt:` block
@@ -218,14 +221,52 @@ deviation and its reason are recorded here rather than silently resolved either 
 
 ## Build gate
 
-**Python-change verdict.** `git diff --name-only origin/main...HEAD -- '*.py'` returns **19 files** (6
-production scripts, 13 test modules) out of 48 changed. The gate therefore fires.
+**Python-change verdict**, re-derived over the tree being shipped rather than an earlier commit.
+`git diff --name-only origin/main -- '*.py' | wc -l` returns **23 files** (7 production scripts, 16
+test modules) out of **56** changed. The gate therefore fires.
 
 **Result.** `UV_PYTHON=3.12 UV_HTTP_TIMEOUT=600 ./pw verify` — the full three-sub-step form, not the
-narrower calls, so `test-compile` (mypy over the whole `test/` tree) is included:
+narrower calls, so `test-compile` (mypy over the whole `test/` tree) is included. **The first run over
+this tree came back RED**, and the wrapper exited 0 while doing so:
 
 ```text
-21101 passed, 14 skipped in 350.69s
+1 failed, 21103 passed, 14 skipped in 343.87s (0:05:43)
+verify: module-tests failed
+FAILED test/plan-marshall/test_lane_refactor_cleanup_sweep.py::test_no_ceremony_policy_json_key_or_dotted_paths
+```
+
+The failure was **this report's own text**, and it had been red since the round-1 report commit
+without being caught, because that commit's gate was scoped to the modules its `*.py` edits touched
+and this guard is tripped by a `.md` line. `test_lane_refactor_cleanup_sweep` asserts the retired
+`ceremony_policy` token appears nowhere under `marketplace/` or `doc/`; § Collateral check cited a
+still-present test module whose *filename* contains that token, so naming the file reproduced it.
+
+**The first fix was wrong, and the second whole-tree run proved it.** Judging the guard correct, this
+run rewrote the citation to locate the module without spelling it, re-ran the guard alone, saw
+`6 passed`, and re-ran `verify` — which came back **`1 failed, 21103 passed`** *again*, now with
+**four** hits instead of one. Writing the finding up had reintroduced the token in § Build gate, in
+§ Residue and in the A9 row itself. That is the decisive fact: **the guard forbids a run report from
+naming the guard it tripped**, so no amount of rewording resolves it. A green single-test run is not a
+green tree, and this run recorded the first as though it were the second — the same error class the
+plan exists to close, committed while documenting an instance of it.
+
+The guard was therefore **narrowed**: `doc/plans/` is excluded from the walk by absolute prefix. The
+rationale is the guard's own — `_SKIP_DIR_PARTS` already carves out `.plan` because "archived plans …
+must not be scanned", and `doc/plans/` is the git-tracked half of that same carve-out. What the sweep
+polices is unchanged: an orphan is a live reference in source or current documentation, not a
+historical record of one. Three new guards hold the carve-out to that shape, each seen RED against the
+defect it names — see § The red-first ledger.
+
+This is the second instance in this run of the failure mode the lane contract names — **the wrapper
+exits 0 on a failing gate, so the verdict is only in the output.** The first was a ruff `F401` after
+D4.3 removed `choices=` from `--lane`, also at exit 0, also caught by reading; its fix removed the
+restatement rather than the import, so the help string now interpolates the constant. Per-commit gates
+ran ahead of every `*.py`-touching commit; both defects show that a per-commit gate scoped to the
+changed modules does not substitute for the whole-tree run.
+
+The passing dimensions, from the same streamed output:
+
+```text
 coverage: COMPLETE over the dimensions below — checked over full scope:
   mypy(production) [415 files, cache disabled], ruff [marketplace/bundles, test, .claude],
   SPDX headers [marketplace/bundles, test, .claude, marketplace/targets, build.py],
@@ -233,15 +274,8 @@ coverage: COMPLETE over the dimensions below — checked over full scope:
   module-tests [whole-tree pytest]
 ```
 
-Read from the streamed output rather than the exit code, per the lane contract: the coverage line
-names all six dimensions as checked, and reaching `module-tests` at all proves `quality-gate` and
-`test-compile` both passed — `verify` exits early on either, as this run observed directly when a ruff
-`F401` stopped an earlier gate at the ruff step with exit code still 0.
-
-Per-commit gates ran ahead of every `*.py`-touching commit. One found a real defect: after D4.3
-removed `choices=` from `--lane`, ruff reported `F401 _RESOLVED_ASK_LANE_VALUES imported but unused`
-**while the wrapper still exited 0** — the "read the output, not the exit code" case, caught by reading.
-The fix removed the restatement rather than the import: the help string now interpolates the constant.
+Reaching `module-tests` at all proves `quality-gate` and `test-compile` passed — `verify` exits early
+on either. The green whole-tree re-run over the corrected tree is recorded at the merge gate below.
 
 **Stale-base re-verification (§ Step 8 condition 2)** — recorded at the merge gate below.
 
@@ -273,8 +307,75 @@ vacuity. It reported the new guards non-vacuous. Ten findings:
 | F10a | round 1 | `test_verdict_currency.py` ended the refusal-heading guard with `assert level, …` — a tautology (the regex guarantees 1–6 `#`) whose message reads as success text in a failure slot | **fixed** — replaced with a real level-set check |
 | F10b | round 1 | A paraphrase of `ext-point-execution-context-workflow.md` was presented inside quote marks, in two places | **fixed** — de-quoted; the claim is unchanged and remains true |
 | F10c | round 1 | `test_the_three_scopes_publish_their_populations` claims to publish counts and prints nothing | **fixed** — renamed to what it asserts (own-block population is a proper, non-empty subset), and the module docstring's item (6) updated to match |
-| F8 | round 1 | Collateral check and report sections unfinished | **fixed** — § Collateral check below; the report's remaining sections completed |
+| F8 | round 1 | Collateral check and report sections unfinished | **partly fixed** — § Collateral check is complete below, as are §§ Populations, Deliverables, Build gate and Reviewer participation's derived population. The sections that record Steps 7–9 (per-reviewer verdicts, Cost, Contract check, What have we learned, Residue) stay `_pending_` because those steps have not run; they are filled at the point the run reaches them, not before |
 | F9 | round 1 | D5's Done-when clause "every `effort resolve-target` in the former dispatch-site files carries `--workflow`" is not literally met | **rejected, with reason** — see § Collateral check |
+
+### Round 2 — the pre-PR verification sub-agent, re-dispatched over the round-1 fixes
+
+The verifier re-read every round-1 fix against the tree it landed on and raised **eight** findings
+(A1–A8), **all condition A** (a statement in the shipped tree that is false); three of them are text
+*this run wrote* — round-1 fixes whose own new prose, or whose neighbours, the fix falsified. Two more
+rows below came from elsewhere in the same round and are labelled by their source rather than folded
+in: **A9** from the whole-tree build gate and **A10** from a cold read. Ten rows in total. Each was
+re-verified against the tree here before being fixed.
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| A1 | round 2 | `ext-point-finalize-step.md` § "Declaration is step-level" — "`branch-cleanup.md` has four `--outcome done` branches plus a `loop_back` call". D7.3 wired `merge_state` at **six** done branches in that same file, so this run's own edit turned a stale count into an in-document contradiction. Re-counted in the tree: **six** terminal `mark-step-done --outcome done` call sites (lines 1732, 1764, 1774, 1784, 1798, 1813 — the doc's own Branches A through F) and **three** `--outcome loop_back` call sites (945, 1092, 1176). The eleven lines a bare `grep -c -- '--outcome done'` returns include five prose references and one partial-flag snippet, none of them call sites | **fixed** — both counts corrected, the branches named by their letters; consistent with the same file's § "Structured step facts", which already said six |
+| A2 | round 2 | F7's fix narrowed the "performs no writes" claim in `_cmd_baseline_reconcile.py`, but the claim survived at **five further sites**, one of them prose D6 itself wrote: `workflow-integration-git/SKILL.md:924`, `refine-workflow-detail.md:288` and `:254`, the operator-facing `probe_mutated_head` message in `_cmd_baseline_reconcile.py:565`, and `test_baseline_reconcile.py`'s module docstring | **fixed at all five** — each narrowed to what the probe guarantees (moves no refs, touches no working-tree file), with the persisted `references.json` write named where the site had room for it |
+| A3 | round 2 | `workflow-integration-git/SKILL.md:883` and `:184` both say the probe lists upstream commits "since the captured `worktree_sha`". The implementation reads no stored SHA — `grep -c worktree_sha _cmd_baseline_reconcile.py` → **0**; it recomputes `merge-base(HEAD, origin/{base_branch})` per call, which is what makes it idempotent | **fixed at both** — the real anchor stated, with "recomputed per call, never read from a stored SHA" |
+| A4 | round 2 | `manage-config/standards/data-model.md:730` names the qgate owning step as `pre-push-quality-gate` — the same unprefixed id F4 corrected at three other sites, and the same id `step set` refuses | **fixed** — `default:` prefix added; it was the fourth site, missed because F4's sweep was scoped to the three files that round named |
+| A5 | round 2 | F5a's fix corrected two order annotations in `test_manage_execution_manifest_validate.py` and re-sorted the ascending list — which left a **neighbouring** reverse-sorted seed no longer descending, a comment falsified by the fix beside it | **fixed** — the seed re-ordered to be genuinely descending (1100, 999, 998, 992, 70, 22, 11, 10, 3), each entry annotated with the order it carries |
+| A6 | round 2 | F10c renamed the test whose name over-claimed, but `ext-point-finalize-step.md:142` still echoed the old claim — the guard "**publishes each scope's population**", which it does not | **fixed** — "asserts how far each scope reaches", matching what the renamed guard does |
+| A7 | round 2 | § Build gate's "19 files … out of 48 changed" and `21101 passed` are exact for commit `1e61000`; the round-1 fixes moved the diff to **22 / 54**, and no `./pw verify` was recorded over that tree while the section reads as the gate verdict for the diff being shipped | **fixed** — figures re-derived and `./pw verify` re-run over the round-2 tree; see § Build gate |
+| A9 | build gate | **Raised by the whole-tree gate, not by a verifier.** § Collateral check cited a still-present test module whose filename contains the retired `ceremony_policy` token, tripping `test_lane_refactor_cleanup_sweep::test_no_ceremony_policy_json_key_or_dotted_paths`. Red since the round-1 report commit; the per-commit gate missed it because that commit's `*.py` edits were elsewhere and this guard is tripped by a `.md` line | **fixed by narrowing the guard**, after a first attempt to work around it failed — see below |
+| A10 | cold read | D4's `[#run-at-all-gates]` section gave `step set … --param lane` only as a bare fragment, never as a runnable command, and never said how it relates to the fully-worked `set-lane` example above it. A fresh reader answered `set-lane` first and warned that "an operator who stops reading at the NOTE will run the other command" | **fixed** — the complete command added, plus the executed relationship between the two verbs. Details and the measurements behind them in § Cold reads |
+| A8 | round 2 | F8's row claimed "the report's remaining sections completed"; §§ Reviewer participation (verdicts), Cost, Contract check, What have we learned and Residue were still `_pending_` | **fixed** — F8's disposition restated as **partly fixed**, naming which sections are complete and why the Step 7–9 sections are not yet filled |
+
+### Cold reads (Verification §2)
+
+Four fresh readers, one per deliverable, each given an **interpretation** brief and barred from this
+plan, from `doc/plans/` entirely, from every Python source and test file, and from searching the
+repository — so the answer measures what the changed text conveys on its own. Each was asked to report
+**which reading it took**, including any wrong path taken first. Answers are recorded as given.
+
+| Deliverable | Question | Reading taken | Verdict |
+|---|---|---|---|
+| **D4** | "An operator wants to switch off the finalize self-review. What exact command do they run?" | `plan phase-6-finalize step set --step-id default:pre-submission-self-review --param lane --value off` | **pass** — names the `step set … --param lane` route against the prefixed id, and did **not** produce the `plan phase-6-finalize set --field self_review` form the plan names as the failure signal. Reported one wrong path first (see below) |
+| **D3** | "I need one extra prompt-body field. Where do I declare it, where do I carry it, does the generic template suffice?" | Declare in `requires_prompt_fields` **and** the step's input table (`Required`); carry in the step's own `prompt:` block **or** the generic template's declared-field slot; **yes**, the generic template suffices | **pass** — all three parts match the contract |
+| **D6** | "The command exited 0 and printed `status: skipped, reason: merge_base_unresolved`. What next?" | Branch on `status` first; force the consumer's own conservative decision; log the `reason` token; **do not read `classification`** (no such field on a skip) | **pass** — and the reader named the exit-code trap unprompted: "exit code 0 carries no signal here" |
+| **D8 / 440-G2** | "A head-dependent step has a `done` record and HEAD has moved. Re-fire or skip?" | "Neither unconditionally — consult the verdict-currency classifier"; separately identified the absent-`head_at_completion` sub-case as the one unconditional re-fire | **pass** — the reader reported the redundant "NOT an unconditional re-fire" caveat "worked", steering it off a bare re-fire |
+
+Four passes. Three readers additionally reported wording weaknesses that the pass/fail criterion does
+not capture; each was checked against the substrate before deciding what to do:
+
+- **D4 — two routes, one shown.** The reader first answered `finalize-steps set-lane --lane off` and
+  only switched after reaching the ceremony-gate paragraph, warning that "an operator who stops
+  reading at the NOTE will run the other command". Checked by execution rather than by reading: on a
+  seeded config `set-lane --step-id default:pre-submission-self-review --lane off` **succeeds** and
+  writes `{"lane": "off"}` — byte-identical to what `step set --param lane --value off` writes, since
+  both target `plan.phase-6-finalize.steps.<id>.lane`. So the reader's first answer was not wrong,
+  merely undocumented as equivalent. Two further facts were measured the same way: `step set`
+  **errors** (`Step '<id>' not found in phase-6-finalize`) when the step is absent from the map, where
+  `set-lane` materialises it; and `_seed_finalize_steps()` seeds **19** steps including all four
+  ceremony-gate owners, so that difference never arises for a ceremony gate. **Fixed** — the section
+  now carries the complete runnable `step set` command (the reader had to splice it from three
+  places), states that the two verbs are interchangeable for `off` / `standard` / `full`, and says why
+  `step set` is the one named: it is the only route to `minimal`, the value that forces a gate in.
+- **D3 — an unanchored "here", and a trigger phrased in terms of a dispatch body.** The reader reached
+  the right answer but had to leave the section to resolve "declares each extra field **here**", and
+  flagged that the mandatory-trigger sentence ("a step whose **dispatch body** carries any field
+  beyond the generic contract") does not squarely cover a template-dispatched step with one extra
+  field — inviting the reading that you declare only if you wrote your own block. **Left as-is with
+  reason:** the sentence is accurate, the Input-table-agreement scope resolves it unambiguously, and
+  the reader did resolve it. Recorded so the next editor of that paragraph sees the trap.
+- **D6 — "fail closed" without a control-flow prescription.** The reader noted that
+  `merge_base_unresolved` says "Fail closed: skip without a classification" but, unlike `fetch_failed`
+  ("Log warning, skip — do not block refine"), never says whether the consumer halts, warns, or
+  escalates. **Left as-is with reason:** prescribing the consumer's control flow is a behaviour
+  decision about phase-2-refine, not a truthfulness defect in the return contract D6 was scoped to
+  state, and inventing one here would be the restatement-without-substrate pattern this plan exists to
+  remove. Recorded in § Residue as a genuine documentation gap for a later plan.
 
 ### Collateral check (Verification §6)
 
@@ -286,12 +387,14 @@ Changed files outside § Expected surface, each explained:
 | `marketplace/.../manage-execution-manifest/standards/manifest-schema.md` | F4 — the third site carrying the unprefixed `pre-push-quality-gate` owning-step id |
 | `marketplace/.../manage-execution-manifest/standards/decision-rules.md` | F5c — the third `order 61` restatement, in the bundle 300/G9 edits |
 | `marketplace/.../plugin-doctor/references/rule-provenance.md` | F6b — its present-tense `choices=` claim is falsified by D4.3 |
-| `test/plan-marshall/manage-config/test_cmd_ceremony_policy.py`, `.../test_manage_config_cli.py` | D4.3 consequence: both pinned the argparse exit-2 rejection D4.3 replaces. Re-pinned to `status: error` + the routed message |
+| Two `test/plan-marshall/manage-config/` modules — `test_manage_config_cli.py` and the dissolved-block CLI regression module beside it | D4.3 consequence: both pinned the argparse exit-2 rejection D4.3 replaces. Re-pinned to `status: error` + the routed message. The second is named indirectly on purpose — see § Residue |
 | `test/plan-marshall/manage-config/test_finalize_steps_lane_rejection.py` (new) | D4.3's own contract test, plus the F6a replacement binding |
 | `test/plan-marshall/phase-6-finalize/test_loop_back_outcome.py` | D8 / 440-G2 consequence: it pinned the superseded "Re-fire (HEAD has advanced)" wording. Re-pinned to the deferral |
 | `test/plan-marshall/manage-execution-manifest/test_manage_execution_manifest_validate.py`, `.../test_validate_loadable.py` | F5a/F5b — stale order annotations in the bundle 300/G8 edits |
 | `test/plan-marshall/build-pyproject/test_gate_coverage_parity_substrate.py` (new) | D8 / 160-G2's substrate test. § Expected surface anticipates it as "a parity-cell substrate test for D8 / 160/G2" |
 | `.claude/skills/finalize-step-plugin-doctor/SKILL.md` | § Expected surface lists it only as "D2.3 mutation target, restored". It additionally carries a real **D7.1** edit — `reads: [worktree]` — which the surface list did not anticipate |
+| `marketplace/.../manage-config/standards/data-model.md` | A4 — the fourth site carrying the unprefixed `pre-push-quality-gate` owning-step id F4 corrected elsewhere. Entered the diff in round 2 |
+| `test/plan-marshall/workflow-integration-git/test_baseline_reconcile.py` | A2 — its module docstring was one of the five surviving "non-mutating classifier" restatements. Entered the diff in round 2; docstring only, no assertion changed |
 
 **F9 — why D5's clause is not literally met, and why that is correct.** The clause reads "every `effort
 resolve-target` in the former dispatch-site files carries `--workflow`".
@@ -341,4 +444,24 @@ _pending_
 
 ## Residue
 
-_pending_
+Things this run found, did not fix, and is naming rather than leaving for someone to rediscover.
+
+- **A residual test module still carries the retired token in its filename.** The `doc/plans/`
+  carve-out (A9) stops that name from breaking plan records, but the underlying oddity stands: a
+  module under `test/plan-marshall/manage-config/` is named after machinery that was dissolved, so any
+  *live* document — `doc/user/`, `doc/developer/`, a skill doc — that needs to cite it by path still
+  cannot. Renaming it is the remaining half of the cleanup and is out of this plan's scope. Noted here
+  because the carve-out makes the problem quieter, not gone.
+- **`baseline-reconcile`'s fail-closed skips prescribe no consumer control flow.** Surfaced by D6's
+  cold read. `head_unresolved` and `merge_base_unresolved` say "Fail closed: skip without a
+  classification", while `fetch_failed` says "Log warning, skip — do not block refine on transient
+  infrastructure issues". The first two therefore leave a consumer author unable to tell whether
+  fail-closed means halt refine, warn and continue, or escalate. Deciding it is a phase-2-refine
+  behaviour question, not a restatement this plan could make true from existing substrate.
+- **The `reason` token set is enumerated in one place only.** The same reader observed that
+  `workflow-integration-git/SKILL.md`'s skip table lists a reason (`worktree_unresolved`) that the
+  phase-2-refine table does not, and concluded — correctly — that SKILL.md is the complete token set.
+  That is true today and is stated nowhere; a consumer switching on `reason` has to infer which of the
+  two tables is authoritative.
+- **F9 stands as rejected**, with its reasoning in § Collateral check: D5's Done-when clause
+  overreaches its own plan's § Out of scope, which excludes the zero-emission dispatch site by name.
