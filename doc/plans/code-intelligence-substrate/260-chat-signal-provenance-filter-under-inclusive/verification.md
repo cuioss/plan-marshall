@@ -13,8 +13,9 @@ without balancing it escapes stripping, is classified operator-authored, and car
 on its own — and the aspect contract publishes a guarantee that this counterexample falsifies. The hole
 has **two** variants (a quoted unmatched open, and a quoted close that terminates the envelope early);
 only the second fires on the one envelope class observed reaching the reducer as inline text. Neither
-is present in the reachable transcript corpus, so the hole is latent rather than active. One
-run-report record (the build gate) is stale against the PR's own history.
+is present in the reachable transcript corpus, so the hole is latent rather than active. Two
+run-report records are stale against the PR's own history — the build gate (G4) and the stated PR
+head SHA (G5).
 
 ## Deliverable verdicts
 
@@ -260,7 +261,7 @@ holds; and `DECISION_MARKERS`-bearing assistant turns move no operator counter.
 | Deliverable | Covering tests |
 |---|---|
 | D2 predicate | `test_chat_provenance.py` (34), `test_chat_provenance_recognisers.py` (14) |
-| D3 counters + gate channel | `test_extract_chat_signal_verdict.py` (17), `test_chat_gate_decisions.py` (22) |
+| D3 counters + gate channel | `test_extract_chat_signal_verdict.py` (17), `test_chat_gate_decisions.py` (22), plus **cross-module support coverage** in `test_extract_chat_signal_io.py::TestRoleGuards::test_a_tool_result_on_an_assistant_turn_is_not_a_gate_decision` — the only test that kills the gate-decision `role == 'user'` mutant (see the mutation table below) |
 | D4(a) / discriminating regression | `test_extract_chat_signal_verdict.py:217`, `:241` |
 | D4(b) mirror guard | `:258`, `:283`, `:308` |
 | D4(c) counters | `:136`, `:146`, `:155` |

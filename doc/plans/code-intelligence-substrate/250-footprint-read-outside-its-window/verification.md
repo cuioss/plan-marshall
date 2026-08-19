@@ -62,9 +62,15 @@ describes the removed behaviour as current.
   already correct, so the remaining work was two sites. That rationale was re-derived here and holds:
   the population document's own "State when this run began" column names exactly two ❌ rows
   (`analyze-logs` ARTIFACT floor, `verify_failure_scope`), and both are the sites the commit changes.
-  The guard's operative test is the work the population implies, not its cardinality, so the unsplit
-  decision is a disclosed, evidence-backed deviation rather than an unmet obligation. Not charged as a
-  gap.
+  ⚠ **This is a deviation, recorded as one, not a satisfied guard.** The plan states the trigger in
+  terms of the population — *"if D1 finds the population is **materially larger** than the named
+  sites, SPLIT and re-stage"* (`plan.md:119-120`) — and nowhere defines "materially larger" in terms
+  of unresolved work; nothing in the plan makes remaining work the operative measure. The run
+  substituted that reading for the plan's own, and by the plan's literal wording 11 sites against 3
+  named ones is the condition the ⚠ describes. The substitution is defensible on its merits (the two
+  ❌ rows are the whole delta, and a split would have re-staged nine already-correct sites) and it is
+  disclosed in the report, so it is recorded here as a **disclosed deviation from the split guard**
+  rather than charged as a gap — but it must not be read as the guard having been met.
 
 ### D2 — a third state at the read seam
 

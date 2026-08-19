@@ -221,7 +221,7 @@ with two immaterial staleness notes and one unverifiable item.
 | Branch `claude/envelope-length-isolation-currency-kmo78n`, harness-assigned, kept | **True.** PR `head.ref` is exactly that. |
 | Diff scope "4 files, all `doc/**`, incl. a pure `R100` rename" | **True.** `git show -M --name-status 6f1cb7b`: `M` adoc, `R100` `090-….md` → `090-…/plan.md`, `A` report, `M` svg. PR reports `changed_files: 4`, `additions: 183`, `deletions: 18`. |
 | `git diff --name-only origin/main...HEAD -- '*.py'` empty → build skipped | **True.** No `.py` path in the merged diff. |
-| Figures `10-15 K`, `30-50 K`, `~6 K`, `~200-500 tokens` removed in prose and diagram | **True.** Verified in the merge diff and by digit sweep of the current file and SVG. |
+| Figures `10-15 K`, `30-50 K`, `~6 K`, `~200-500 tokens` removed in prose and diagram | **True for the surface the plan scoped — § 6 and the SVG.** Verified in the merge diff and by digit sweep of § 6 and the diagram. **Not true of the whole document:** `~10-15 K tokens of variant context` survives outside § 6, at `doc/concepts/token-management.adoc:75` (§ "Where Plan Marshall deliberately spends more"), which the residue row below records as still open. → G2 |
 | Diagram caption `~5 K + 3 × ~300 ≈ 6 K` recast to bounded-residency framing | **True.** Replaced by "bounded resident turns"; the whole right-column caption block was rewritten. |
 | Isolation recommendation unchanged | **True.** "The biggest single token-management lever" survives at `:51`. |
 | Commits carry the `Co-Authored-By: Claude` trailer | **True** for all four PR commits, including the final `5abb757` (verified via `get_commit` — the trailer is present; a truncated `get_commits` listing initially suggested otherwise). |

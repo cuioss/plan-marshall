@@ -52,8 +52,20 @@ audited `62e3807` across `marketplace/`, `test/`, `.gitignore` and `doc/{user,co
   not_derivable` must never co-occur with `derived_count > 0`.
 - **Done when:** a test seeds a project with a declared `internal_dependencies` edge, disables every
   discovered resolver through the `derivation_resolvers` binding, and asserts that `cmd_capabilities`'
-  `module_edges` record does not claim `not_derivable` while `derived_count > 0`; and the handler
-  docstring's state enumeration matches the states the code can emit.
+  `module_edges` record does not claim `not_derivable` while `derived_count > 0`; the handler
+  docstring's state enumeration matches the states the code can emit; the change states in one
+  sentence what `producer_count` counts after the fix (it MUST keep its resolver-scoped meaning — the
+  number of resolvers that were dispatched — so `capabilities` and the four handler docstrings stay
+  in step, and any widening happens in a separate field or status value); and the **downstream
+  capability consumers** are carried through the same fixture end to end, not left keying on the
+  resolver population alone. Concretely: a test drives that same all-disabled-with-declared-edges
+  project through the feasibility / anti-vacuity guard modelled at
+  `test/plan-marshall/manage-architecture/test_feasibility_underivable_guard.py:85-93`
+  (`_dependency_direction_derivable`, which derives "underivable" from `resolver_count > 0`) and
+  asserts the guard does **not** report the graph underivable while a declared edge is returned —
+  so the guard's predicate is widened with the capability record rather than silently left behind.
+  Without this the fix can be applied in full while `graph` still reports declared edges that the
+  guard keeps rejecting.
 - **Effort:** M
 - **Risk if fixed:** ⛔ **An existing test pins the defective reading and must be revisited in the same
   change.** `test/plan-marshall/manage-architecture/test_derivation_resolver_configuration.py:249-269`

@@ -115,8 +115,13 @@ Re-derive each at the moment you state it, and record the command and the ref yo
    when it was authored and the files have been renumbered before — one open proposal is unapplicable
    *because* of a renumbering — so a proposal written against stale anchors is worthless.
    ⛔ **If either file cannot be read, HALT** for the proposals that target it: report the run blocked,
-   naming the file, and write only the proposals whose anchors you did derive. Do not write a proposal
-   against a document you could not open, and do not reconstruct its numbering from this plan.
+   naming the file and the error. Do not write a proposal against a document you could not open, and do
+   not reconstruct its numbering from this plan. The blocked proposals are **not omitted** from
+   `proposals.md` — omitting them would leave D1's register silently short and indistinguishable from a
+   proposal that was never written. They are carried there under the `blocked` disposition D1 defines,
+   which is the *absence* of a proposed edit rather than a proposal made without one. Record in the
+   anchor table, per unreadable file, the proposals thereby blocked. Only if **both** governed files are
+   unreadable is no register produced at all — say so, and stop.
    ⛔ **Do not assume every proposal edits the skill, and do not trust a partition stated here.**
    **P8** edits `cloud-bridge.md` only; **P2** touches three sections across both files — § Report and
    § Step 8 in the skill, and `cloud-bridge.md` § Path 2 — Sync — because it reconciles two existing
@@ -151,6 +156,19 @@ Re-derive each at the moment you state it, and record the command and the ref yo
    the anchors D0 re-derived, **the risk the wording must handle**, and **the decision being asked**
    with its options. The file opens with a ⛔ stating that it proposes and does not apply, and that an
    accepted proposal ships as a separate `chore/` PR touching only the skill.
+
+   ⛔ **The `blocked` disposition.** D0's halt clause and the requirement above are otherwise
+   unsatisfiable together: if `.claude/skills/cloud-plan-lane/SKILL.md` or `doc/plans/cloud-bridge.md`
+   cannot be read, no anchor exists to quote against, yet the register must still account for every
+   proposal. A proposal whose target file D0 could not read is therefore written as a **`blocked`**
+   entry, and a `blocked` entry carries only three things: **what happened**, the **file that could not
+   be read together with the error**, and the statement that **no edit is proposed and no decision is
+   asked**. It carries no quoted edit, no anchor, and no options — inventing any of the three is the
+   defect this disposition exists to prevent. Every completion requirement in this deliverable is
+   evaluated **over the non-`blocked` entries only**: a `blocked` entry is exempt from the
+   quoted-against-a-derived-anchor requirement and from carrying a decision, and it is neither an APPLY
+   signal nor a DECIDE one in the cold read. It is not a failure; like D0(b)'s `collected`, it is a
+   recorded disposition, and the operator can tell it from a proposal nobody looked at.
    - **P1 — an SVG-diagram row in the § Step 1 conditional table.** A run edited
      `doc/resources/diagrams/context-isolation.svg`, followed the table, and never saw
      `pm-documents:ref-svg-diagrams` and its mandatory rasterise-and-read-back gate. Proposed row:
@@ -238,22 +256,30 @@ Re-derive each at the moment you state it, and record the command and the ref yo
    - **P8 — is every directory under an epic a plan?** `doc/plans/cloud-bridge.md` § Path 3 step 1
      says so without qualification: "List `doc/plans/{epic}/` — **every directory** is a plan a run
      has worked, and the `report-NN.md` inside names its PR." The epic now contains
-     `code-intelligence-substrate/_audit/`, which holds the audit's own account and carries **no**
-     `plan.md` and **no** `report-NN.md`. It is the first `_`-prefixed directory *inside* an epic in
-     this repository; the convention exists only at the **epic** level (`doc/plans/README.md`, on
-     `_template/`), and § Path 3 and § Status vocabulary carry no `_`-prefix exclusion.
-     ⚠ **Bound, so the operator can weigh urgency rather than take the proposal's word for it:** step
-     2 records nothing without a merged PR *and* a `report-NN.md`, and step 6 deletes only what steps
-     2–5 corroborated. `_audit/` satisfies neither, so a collector following the steps reaches an
-     unhandled case and **stops** — it cannot record a false landing and cannot delete anything. The
-     defect is an undeclared stop, not a data loss. Proposed: add to § Path 3 step 1 and § Status
+     `code-intelligence-substrate/_audit/`, which holds the audit's own account. It carries **no**
+     `plan.md` — but it **does** carry a `report-NN.md`, and that report names the PR that lands it.
+     It is the first `_`-prefixed directory *inside* an epic in this repository; the convention exists
+     only at the **epic** level (`doc/plans/README.md`, on `_template/`), and § Path 3 and § Status
+     vocabulary carry no `_`-prefix exclusion.
+     ⛔ **This is a data-loss risk, not merely an undeclared stop — weigh it accordingly.** Step 2
+     records nothing without a merged PR *and* a `report-NN.md`; step 6 deletes what steps 2–5
+     corroborated. **`_audit/` satisfies both halves once its PR merges**, so Path 3 as written would
+     treat it as a landed plan and delete it, taking the audit's own account with it. The only thing
+     preventing that today is that the PR is still open — a bound with an expiry.
+     An earlier revision of this proposal claimed `_audit/` satisfied *neither* half and that a
+     collector would stop; that was false once the run report was written into the directory, and the
+     mis-statement is recorded here because it is exactly the class of defect this epic audits.
+     Proposed: add to § Path 3 step 1 and § Status
      vocabulary that a directory whose name begins with `_` is a record, not a plan, and is skipped
      by collect. Decision: adopt / adopt with a different marker (a marker file rather than a name
      convention) / decline and require records to live outside `doc/plans/{epic}/`.
    *Done when:* `proposals.md` exists with **every proposal enumerated in this deliverable** — counted
-   from the list as you write the file, not against a number quoted anywhere in this plan — each
-   carrying what happened, the exact edit against a D0-re-derived anchor, and an explicit decision with
-   options; and the cold read in § Verification returns **DECIDE**, not APPLY.
+   from the list as you write the file, not against a number quoted anywhere in this plan — each either
+   (i) carrying what happened, the exact edit against a D0-re-derived anchor, and an explicit decision
+   with options, or (ii) marked `blocked` and carrying what happened, the unreadable file and its error,
+   and the statement that no edit is proposed; and the cold read in § Verification, taken **over the
+   non-`blocked` entries**, returns **DECIDE**, not APPLY. If every entry is `blocked`, no register is
+   produced: report the run blocked and name both files.
 
 3. **D2 — `record-corrections.md`, part one: citations that no longer resolve** — a new file
    `doc/plans/{epic}/{this-plan}/record-corrections.md`, opening with a ⛔ stating that it **records**
@@ -364,10 +390,26 @@ Re-derive each at the moment you state it, and record the command and the ref yo
      the link is a scheduled breakage. ⚠ The audit's framing that the citing plan "is queued, not yet
      run" is **false and withdrawn** — it landed. Record the fix as **inlining the two-sentence argument
      at the citation site**, so it depends on nothing else; promoting that argument to an ADR is another
-     plan's work and this correction must not wait on it.
+     plan's work and this correction must not wait on it. ⛔ This entry exists **only if D0(b) censused
+     `240-skill-lsp-server/` as `present`** — see the `collected` rule immediately below.
+
+   ⛔ **A `collected` target produces no correction entry.** Every entry above quotes an original claim,
+   and a quote requires the document. If D0(b) censused a target as `collected` — its directory is gone,
+   which for a ledger-backed epic is the normal end state of a landed plan — there is nothing to quote,
+   and the quote must **not** be reconstructed from git history (§ Expected surface states this for
+   `240-skill-lsp-server/`, and it holds for every target). Such a target instead produces, in place of an
+   entry, the disposition **`target collected`** — one of the four terms § Verification's Gap-coverage
+   gate enumerates — against each gap id it covers, with the **directory listing as evidence**, recorded
+   in the run report. That is a discharge, not a shortfall. A `collected` target that also appears as a
+   bullet above is satisfied by the disposition alone; do not write a stub entry to make the bullet list
+   look complete.
    *Done when:* every entry in part three names its document and location, quotes the original claim,
    states the corrected claim with the check that established it, and — for the two `350` entries that
    depend on the source branch — states either the recovered text or an explicit unrecoverable outcome.
+   ⛔ This criterion ranges over the entries actually written: a bullet above whose target D0(b) censused
+   as `collected` yields **no** entry, and is done when its gap ids carry `target collected` with the
+   directory listing, in the run report. A missing entry is a defect only when its target was censused
+   `present` or `already corrected`.
 
 ## Out of scope
 
@@ -475,7 +517,10 @@ Beyond each deliverable's *done when*:
   accepted, who applies it, and in what change?* Required answers: **DECIDE**, and **the operator, via a
   separate `chore/` PR touching only the skill**. Any APPLY reading is a wording failure however complete
   the document looks — fix the wording and re-run the cold read. Record the reading the sub-agent
-  actually returned, not a paraphrase.
+  actually returned, not a paraphrase. ⛔ Ask question (1) **of the non-`blocked` entries only**, and tell
+  the sub-agent so: a `blocked` entry asks for neither reading, and a sub-agent forced to pick one for it
+  returns a verdict about wording that does not exist. Ask instead whether each `blocked` entry makes
+  clear that nothing is being proposed and why — a "no" there is the same wording failure.
 - **Cold read B — does the correction set read as an instruction to edit?** Give a fresh sub-agent
   `record-corrections.md` alone and ask: *does this document instruct me to edit the reports it names?*
   Required answer: **no** — it records corrections; applying them is a separate, operator-approved change.
@@ -491,7 +536,8 @@ Beyond each deliverable's *done when*:
   reason. A gap with no disposition is reported as **not done**; a silently dropped gap is the failure
   this section exists to prevent.
 - **Report and hand-off.** The run report names the two deliverable documents and reproduces **every**
-  proposal title with its one-line ask — enumerate them from `proposals.md` as written, not from any
+  proposal title with its one-line ask — or, for a `blocked` entry, its one-line reason in place of an
+  ask — enumerate them from `proposals.md` as written, not from any
   count stated in this plan — so the orchestrator's collect step — which reads the
   report's findings and writes the landing record before deleting the directory — carries the register
   forward. ⚠ Distinguish the two kinds of proposal in the report: § Step 9's "what have we learned" asks

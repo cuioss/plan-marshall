@@ -285,9 +285,9 @@ documentation is wrong for those six.
 - **Effort:** S
 - **Risk if fixed:** none.
 
-## G10 — Pin `CANONICAL_COMMAND_PREFIXES` to the authority it claims to mirror
+## G10 — Derive `CANONICAL_COMMAND_PREFIXES` from the authority it claims to mirror
 
-- **Kind:** test-gap
+- **Kind:** bug
 - **Severity:** low
 - **Topic:** tests
 - **Where:** `marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/scripts/_dep_detection.py:164-169`
@@ -297,13 +297,31 @@ documentation is wrong for those six.
   identical, but no test or import ties them: `grep` for `CANONICAL_COMMAND_PREFIXES` outside the
   defining module returns nothing.
 - **Why it matters:** R‑5 was exactly this drift (the mirror carried one of two prefixes). The fix
-  restored the value without adding anything that would notice the next drift.
-- **Action:** add a test that loads both modules and asserts
-  `CANONICAL_COMMAND_PREFIXES == _CANONICAL_VERIFY_PREFIXES`.
-- **Done when:** removing one prefix from either module turns a test red.
+  restored the value without adding anything that would notice the next drift. A hardcoded copy of a
+  set defined elsewhere is a defect in this repository unless it is derived at build or run time; a
+  test asserting the two tuples are equal only detects the drift *after* one copy has already
+  changed, and only if the test is run before the stale copy ships.
+- **Action:** remove the second definition. Make `_dep_detection.py` obtain the prefix tuple from
+  `_cmd_quality_phases.py`'s `_CANONICAL_VERIFY_PREFIXES` — the module it already names as the
+  authority — resolving that module through the same path-based loader the inventory scripts use for
+  cross-bundle reads (the two constants live in different bundles, so a package import is not
+  available), or generate the constant into `_dep_detection.py` at build time from the authoritative
+  definition. Keep `CANONICAL_COMMAND_PREFIXES` as the local name so `_is_canonical_command` and its
+  callers are unchanged. Only if the load genuinely cannot be made at either time — record which
+  boundary blocks it — fall back to keeping the literal and adding the equality test
+  (`CANONICAL_COMMAND_PREFIXES == _CANONICAL_VERIFY_PREFIXES`, both modules loaded by path) as the
+  drift detector, and correct `SKILL.md:189` to say the value is pinned by a test rather than
+  derived.
+- **Done when:** `grep` for the literal `'default:verify:'` under
+  `pm-plugin-development/skills/tools-marketplace-inventory/` returns no second definition of the
+  prefix set (or, on the recorded fallback, removing one prefix from `_cmd_quality_phases.py` alone
+  turns a test red); and adding a third prefix to `_CANONICAL_VERIFY_PREFIXES` is honoured by
+  `_is_canonical_command` without editing `_dep_detection.py`.
 - **Effort:** S
-- **Risk if fixed:** the test couples two bundles at test time; use the existing path-loading helper
-  so no import package is implied.
+- **Risk if fixed:** the derivation couples two bundles at run time; use the existing path-loading
+  helper so no import package is implied, and keep the detector working (with the last-known tuple
+  and a stated fallback) if the authority module cannot be loaded, so an inventory sweep does not
+  fail closed on a packaging change.
 
 ## G11 — Restate round-2 finding 2's disposition: a parenthesised broken reference still escapes
 
@@ -479,8 +497,26 @@ documentation is wrong for those six.
   `…:ci {group} {verb}` (e.g. `SKILL.md:313` `ci pr create`, `:343` `ci checks status`).
 - **Why it matters:** two documented notations that cannot execute, in the abstraction layer the
   repository mandates for all CI operations.
-- **Action:** replace with the `ci.py` notation plus whatever verb selects the provider.
-- **Done when:** both rows leave the unresolved set.
+- **Action:** replace both rows with the one executable notation, which is the same line in each
+  file:
+
+  ```bash
+  python3 .plan/execute-script.py plan-marshall:tools-integration-ci:ci <group> <verb> [args]
+  ```
+
+  where `<group>` is one of `pr`, `checks`, `issue`, `branch`, `repo` and `<verb>` is the group's
+  subcommand (`pr create`, `checks status`, `issue view`, …), matching the dispatch map at
+  `workflow-integration-github/scripts/github_ops.py:1860-1900`. ⚠ **No argument selects the
+  provider**, so the sentence "plus whatever verb selects the provider" must not be written: `ci.py`
+  resolves it itself (`ci.py:81-108`, `get_provider()` scans `providers[]` in `marshal.json` for
+  `category=ci` and derives the key from `skill_name`), then imports `{provider}_ops`
+  (`ci.py:136-142`). Each impl document therefore states that it documents the provider
+  implementation reached when that resolution yields `github` / `gitlab` — not a spelling the caller
+  chooses. While rewriting the line, re-spell the Commands table beneath it in the same surface:
+  `ci status` is `checks status` in the `ci.py` grouping.
+- **Done when:** both rows leave the unresolved set; each impl document's Executor Mapping names
+  `…:ci` with a `{group} {verb}` pair that appears in the provider's dispatch map; and neither
+  document implies the notation carries a provider selector.
 - **Effort:** S
 - **Risk if fixed:** none beyond the doc.
 
@@ -501,7 +537,11 @@ documentation is wrong for those six.
   `pm-dev-oci:ext-triage-oci → trivy:ignore:CVE-2024-12345` (a Trivy ignore literal). So
   "no genuinely-broken reference hides behind the comment-line skip today" holds. `SKILL.md:198`
   discloses the class.
-- **Why it matters:** these are the last fail-open drops in the detector. A broken notation written on
+- **Why it matters:** these are the remaining *unconditional* drops in the detector — the shapes it
+  discards without consulting the index at all. They are not the last fail-open behaviours this audit
+  records: a broken reference written in an excluded shape is still dropped after the conditional
+  mechanism lands (G3, restated in G11/G12), and an unregistered verb still resolves falsely (G20).
+  A broken notation written on
   a markdown heading or beside a URL is invisible to the gate, and the graph under-reports 9 real
   edges.
 - **Action:** route these three skips through the same `Exclusion` mechanism so the index decides on

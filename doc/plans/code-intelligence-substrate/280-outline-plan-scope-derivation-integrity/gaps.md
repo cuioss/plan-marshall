@@ -98,9 +98,16 @@ rest are report-level count and traceability defects.
 - **Action:** amend the section to name both sites, state whether each is converted (after G1/G2) or
   excluded with a reason, and replace the absolute coverage claim with one bounded by what was
   actually verified — e.g. the grep command re-run and its output pasted.
-- **Done when:** the report's corpus section accounts for every file returned by
-  `grep -rln "_query_worktree_path\|_parse_get_worktree_path_output" test/ --include=*.py`
-  (25 files at this HEAD), each either converted or excluded with a stated reason.
+- **Done when:** the report's corpus section accounts for every **site** — not every file — returned
+  by `grep -rn "_query_worktree_path\|_parse_get_worktree_path_output" test/ --include=*.py`
+  (114 matching lines across 25 files at this HEAD), each either converted or excluded with a stated
+  reason. ⛔ The file-name form (`grep -rln`, 25 files) is the wrong check and would re-commit the
+  defect this entry is about: a file holding one converted site and one stale one passes it, which is
+  exactly how `test_freshness_notation_crosscheck.py` passed while carrying G1 and G2. If the
+  line-level output is too coarse to attribute (a match inside a helper definition rather than a
+  stub), replace the grep with an AST pass over the same 25 files that enumerates every
+  `monkeypatch.setattr` / patch target naming either symbol and reports its line — but the accounting
+  unit must remain the site.
 - **Effort:** S
 - **Risk if fixed:** none — documentation only.
 

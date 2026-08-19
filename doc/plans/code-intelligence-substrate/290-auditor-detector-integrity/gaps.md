@@ -1,7 +1,9 @@
 # Gaps — 290-auditor-detector-integrity
 
 All six deliverables plus the extra C4 fix are implemented at the sites the plan named, by the mechanisms it
-asked for, and every one is covered by tests proved non-vacuous under mutation — each mutation re-run
+asked for, and every one is covered by tests — proved non-vacuous under mutation on every line probed
+**except** `suspect_zero_census`'s unread-count guard, which no test in its whole suite directory pins
+(G3: the mutation the code's own comment forbids survives all 640 tests). Each mutation was re-run
 adversarially against the shipped files themselves, not only in process. What remains is seventeen items:
 one documented precedence rule inside the new census that **cannot fire on the live emitter set** (G1 —
 the only high), one stale predicate docstring (G2), one untested guard the code itself calls load-bearing

@@ -68,10 +68,25 @@ audit and this review (`git diff` over the audited surface is empty), so the del
   external reusable workflow (`.github/workflows/python-verify.yml:43`) whose collection behaviour is not
   inspectable from this repository. So the property must be paired with a run that actually requests the
   XML, and the fixing run must demonstrate that pairing rather than assume it.
+  ⛔ **Pin the JUnit family, or `record_property` breaks the suite.** `pyproject.toml` sets no
+  `junit_family`, so pytest's default `xunit2` applies, and `record_property` is incompatible with it —
+  pytest raises `PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy'
+  or 'xunit1')`. `pyproject.toml:121` sets `filterwarnings = ["error"]`, so that warning is an **error**
+  and the test errors out. Measured, not inferred: the same two-line probe errors with the default family
+  and passes with `-o junit_family=legacy`, emitting
+  `<property name="claude_tree_population" value="42" />`. Two workable shapes — pick one and say which:
+  1. keep `record_property` and run the XML pairing with `-o junit_family=legacy` (or set
+     `junit_family = "legacy"` in `pyproject.toml`, which changes the family for the whole suite and
+     therefore needs its own justification); or
+  2. use `record_testsuite_property` instead, which is xunit2-compatible, and assert the value at the
+     **suite** level of the XML (`<testsuite><properties><property …>`) rather than under the test case.
 - **Done when:** `capsys` appears nowhere in
   `test_every_path_under_the_real_claude_tree_resolves_to_pm_plugin_development`; the file's tests still
-  pass; and running it with `--junitxml` produces an XML in which a `<property name="claude_tree_population" …>`
-  element carries the walked count — demonstrated by pasting that element into the fixing run's report.
+  pass **under the repository's own `filterwarnings = ["error"]` setting** (i.e. the chosen mechanism
+  raises no warning); and running it with `--junitxml` under the pinned family produces an XML in which
+  a `<property name="claude_tree_population" …>` element carries the walked count — at the test-case
+  level for option 1, at the suite level for option 2 — demonstrated by pasting that element, and the
+  exact command that produced it, into the fixing run's report.
 - **Effort:** S
 - **Risk if fixed:** none to production behaviour; the test's fixture signature changes, so any sibling
   test copying this pattern should be checked for the same defect.

@@ -338,12 +338,23 @@ medium, five low.
   mentioned anywhere in the Step-3 region reads as covered, which is the weaker predicate CodeRabbit
   finding 2 had already rejected once. Silent reversion to that predicate would leave a green test
   guarding nothing — the vacuous-guard shape this plan is about.
-- **Action:** Add an assertion over the real document that the extracted block's numbered openers are
-  exactly the contiguous run `1..N` with `N == len(_counted_lists())`-independent but non-zero, and that
-  the block's last non-blank line belongs to the final numbered check (e.g. no `####` heading occurs
-  inside the block).
-- **Done when:** A test fails if a `####` heading appears inside the extracted numbered-check block, or
-  if the block's ordinals are not a contiguous run starting at 1.
+- **Action:** Add a structural assertion over the **real** workflow document, expressed as three
+  concrete predicates over the block `_numbered_check_block` returns:
+  1. the block contains at least one `_NUMBERED_CHECK_OPENER` match (so the assertion cannot pass
+     vacuously on an empty block);
+  2. the opener ordinals, read in document order, are exactly `1, 2, …, N` for the `N` openers found;
+  3. no `####` heading occurs anywhere inside the block (the four `####` subsections all belong to
+     the region's preamble, so one appearing inside the block means the block has widened).
+
+  `N` is whatever the document yields — it must **not** be tied to `len(_counted_lists())`. Both are
+  17 today, and that is a coincidence: a numbered check may be added without a counted list, or a
+  counted list without its own check, and pinning either to the other would make this structural
+  assertion fail for a reason that has nothing to do with the block's boundary.
+- **Done when:** A test over the real workflow document goes red if any one of the three predicates
+  above is violated — specifically: it fails when the extracted block carries zero numbered openers;
+  when the ordinals are not the contiguous run `1..N` over the openers found; and when a `####`
+  heading is inserted inside the block. Each of the three is demonstrated red by a mutation of the
+  document (or of the extractor), not asserted only in prose.
 - **Effort:** S
 - **Risk if fixed:** A structural assertion over prose can become brittle if the check list legitimately
   gains a sub-heading; scope the assertion to `####`-level headings only, which the numbered checks do

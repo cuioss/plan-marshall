@@ -112,7 +112,7 @@ No fail-open branch, off-by-one, unguarded `None`, or stale-surface read was fou
 | D6 | `test_dispatch_roster_closure.py` checks (a)–(f) plus 3 mutation guards | Derived, and check (f) proved red against the real roster divergence — but **its realized comparison population is 1 of 25** (only `architecture-refresh.md` self-classifies), so 24 registered steps are unguarded. The self-classification regex has explicit negative controls for narrative prose, which is what keeps the population at one. Recorded as G11. |
 | D4, D5 | none (refutations) | Appropriate — no behaviour changed. |
 
-Full run at HEAD: `test_dispatch_roster_closure.py` (21), `test_dispatch_seam_emission.py` (9), `test_mark_step_completion_emission.py` and `test_step_completion_emission.py` (21 together) → **42 passed**. Per-file counts re-collected in the adversarial round; the earlier "the full file (30 tests)" under D6 was the two-file total, corrected there.
+Full run at HEAD: `test_dispatch_roster_closure.py` (21), `test_dispatch_seam_emission.py` (9), `test_mark_step_completion_emission.py` (5) and `test_step_completion_emission.py` (7) — 12 for the two completion-emission files together — → **42 passed** (21 + 9 + 5 + 7). Re-measured per file; the earlier "21 together" for the two completion-emission files was wrong and did not reconcile with the 42 total. Per-file counts re-collected in the adversarial round; the earlier "the full file (30 tests)" under D6 was the two-file total, corrected there.
 
 ## Report accuracy
 

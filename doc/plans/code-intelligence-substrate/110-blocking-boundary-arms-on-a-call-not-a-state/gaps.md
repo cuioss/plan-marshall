@@ -46,10 +46,16 @@ loop-back rebase can orphan. The remainder are low-severity doc and report resid
   archive."* branch. `grep -rn "blocking_findings_present" test/ --include=*.py` returns 14 hits, all
   in-process handler assertions (`result['error'] == ...`) — no test asserts anything about the CLI
   surface.
-- **Why it matters:** on a real refusal the plan directory is not moved, the step is recorded `done`,
-  the log says the plan was archived, and `phase-6-finalize/SKILL.md:1612` then renders the final
-  output template regardless (*"This step ALWAYS runs"*). The gate fires and nothing downstream can
-  tell. This is the exact failure mode the plan exists to remove, relocated from the arming side to
+- **Why it matters:** on a real refusal the plan directory is not moved — that half is measured, as
+  above. The rest of the consequence is **document-derived, not executed**: `archive-plan.md:53-63`
+  records `mark-step-done --outcome done` before the archive call and `:72-75` logs *"Plan archived"*
+  unconditionally, and `phase-6-finalize/SKILL.md:1612` then renders the final output template
+  regardless (*"This step ALWAYS runs"*). Those three steps are LLM-executed workflow prose with no
+  automated test, so the claim that they proceed on a refusal is a reading of what the documents
+  instruct, not an observation of a run. It is a reading with no branch anywhere in the text that
+  could avert it — § Archive describes no use of the returned `status` — but a run that wants it
+  measured must add an executable workflow test rather than infer it. The gate fires and nothing
+  downstream is instructed to tell. This is the exact failure mode the plan exists to remove, relocated from the arming side to
   the consumption side — and it falsifies the shipped claim at
   `plan-marshall/references/phase-handshake.md:253` that *"a missing call is no longer a silent
   pass"*, which holds only if the completion refusal is observable.
@@ -182,9 +188,19 @@ loop-back rebase can orphan. The remainder are low-severity doc and report resid
   `query_failed` envelope `cmd_findings_check` returns (`_handshake_commands.py:699-713`), or
   (b) keep the fail-open but justify it against a holder that actually runs at that point in the
   pipeline. Whichever is chosen, add the missing test.
-- **Done when:** a test stubs `_query_pending_count_for_type` to `None` and asserts the chosen
-  disposition for both `cmd_transition --completed 6-finalize` and a normal `cmd_archive`, including
-  the WARNING/refusal envelope.
+- **Done when:** the chosen option is recorded in the change, and a test stubs
+  `_query_pending_count_for_type` to `None` and asserts **that option's** outcome for both
+  `cmd_transition --completed 6-finalize` and a normal `cmd_archive`. The two options have different
+  acceptance criteria and only one applies:
+  - **(a) fail closed** — the call returns the `query_failed` envelope (`status: error`,
+    `error: query_failed`, matching `cmd_findings_check`'s shape at `_handshake_commands.py:699-713`),
+    the transition does **not** complete and the plan directory is **not** moved. A WARNING log is
+    optional here; the refusal envelope and the unchanged side effect are what the test asserts.
+  - **(b) keep the fail-open** — the call returns its normal success envelope, the transition
+    completes and the archive proceeds, **and** a WARNING is logged naming the unevaluable query. The
+    test asserts the success status, the completed side effect, and the captured WARNING; the entry
+    must also name the holder that runs at that point in the pipeline, since the current comment's
+    delegation to the pre-merge gate does not hold (see § Evidence).
 - **Effort:** S
 - **Risk if fixed:** failing closed could strand a plan in a degenerate environment where the findings
   subsystem is genuinely unreachable — the exact scenario the current comment cites. Pair any switch

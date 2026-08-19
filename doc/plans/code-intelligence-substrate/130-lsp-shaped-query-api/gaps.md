@@ -154,12 +154,17 @@ every one of which was re-taken independently by an adversarial pass at `a90adeb
   it is zero exactly when the distinct-file count is zero — so no gate flips. What is wrong is the
   population size quoted to a reader, not the trust decision computed from it.
 - **Action:** either count distinct paths (`len(scanned_paths)`) or keep the counter and rename/
-  redocument it explicitly as scans (adding a distinct `files_scanned_distinct`), then align
-  `client-api.md:988`, `doc/user/code-search.adoc:147-148` and
-  `doc/concepts/code-intelligence.adoc:254`.
+  redocument it explicitly as scans (adding a distinct `files_scanned_distinct`). Then state the
+  chosen semantics **once**, in `client-api.md` § search → "Complete-coverage rule" (`:988`,
+  `:992-1006`) — that section is the canonical coverage contract, and `CLAUDE.md` already points
+  readers at it as the field list of record. `doc/user/code-search.adoc:147-148` and
+  `doc/concepts/code-intelligence.adoc:254` must **cross-reference** it rather than restate the
+  definition, per the repository's no-duplication documentation standard; where they need a sentence
+  of their own, it names the field and defers, it does not redefine.
 - **Done when:** a test using the doubly-attributed fixture asserts the documented meaning of
-  `files_scanned` holds (distinct-file semantics, or the explicitly-scans semantics), and the docs
-  state the same population the code computes.
+  `files_scanned` holds (distinct-file semantics, or the explicitly-scans semantics); `client-api.md`
+  carries exactly one definition of that meaning; and neither `code-search.adoc` nor
+  `code-intelligence.adoc` carries a second definition that could drift from it.
 - **Effort:** S
 - **Risk if fixed:** any consumer comparing `files_scanned` against a previously recorded number
   sees a step change on duplicate-inventory trees; the double `read_text` per duplicate row is also
@@ -180,11 +185,22 @@ every one of which was re-taken independently by an adversarial pass at `a90adeb
   path twice with no indication why.
 - **Action:** de-duplicate by `(path, reason)` before returning, or attribute the entry to its
   modules explicitly (`{path, reason, modules[]}`) so a repeat is legible rather than accidental.
+  ⚠ The second option is a **schema change**, not an output tweak: `unreadable[]` is part of the
+  complete-coverage contract that `client-api.md` § search → "Complete-coverage rule" defines
+  canonically (alongside `truncated` and `elided`). If `{path, reason, modules[]}` is chosen, the
+  canonical entry shape in `client-api.md` and every consumer and test that reads an `unreadable`
+  entry must be updated in the same change; `doc/user/code-search.adoc` and
+  `doc/concepts/code-intelligence.adoc` cross-reference the canonical definition rather than carrying
+  a second copy of it (see G5).
 - **Done when:** the duplicate-attribution fixture with an unreadable file produces exactly one
-  `unreadable` entry for that path (or one entry naming both modules), asserted by a test.
+  `unreadable` entry for that path (or one entry naming both modules), asserted by a test; and — if
+  the entry shape changed — `client-api.md`'s canonical schema names the new shape and no consumer
+  or test still assumes the old one.
 - **Effort:** S
 - **Risk if fixed:** ADR-014 requires the skip be reported, never suppressed — de-duplication must
-  keep the path present, only collapsing repeats.
+  keep the path present, only collapsing repeats. Changing the entry shape additionally breaks any
+  consumer keying on `{path, reason}` exactly, which is why the canonical schema and its consumers
+  move together.
 
 ## G7 — Verify `capabilities` inside a real dispatched leaf, or record the constraint as unmeetable
 

@@ -11,8 +11,10 @@ The shipped mechanism is real, correct on every path I could drive, and non-vacu
 both directions — I proved the refusal direction and the comparison target by mutating production
 code and watching the suite go red. What is wrong is a cluster of **mechanism claims in shipped
 documentation** (what the crawl shells out to), **three test gaps on code the verification rounds
-themselves added**, and **five stale claims inside `report-01.md`** — three of them the very "two
-rounds vs three rounds" drift the report predicted it would contain.
+themselves added**, **one latent coupling** between the executor's stamp allow-list and the
+architecture's build classifier that nothing pins (G9 — not a live bug: the two sets agree today),
+and **five stale claims inside `report-01.md`** — three of them the very "two rounds vs three rounds"
+drift the report predicted it would contain.
 
 ⚠ **Corrected by adversarial review** (see § Adversarial review): this document originally also
 charged the shipped crawl-cost *measurement* as wrong, and said "four" stale report claims while

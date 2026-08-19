@@ -175,13 +175,27 @@ Fourteen entries, one per instance.
   total is legible as a floor rather than a measurement. One exclusion class — a call the grammar
   could not parse — is silent. The cross-plan tier does not have this hole: an untimed
   notation-headed line still lands in `untimed_call_keys` (`audit.py:2950`).
-- **Action:** add an `unparsed_duration_calls` counter (or extend `unattributable_calls` with a
-  second, separately named field) incremented when a notation-headed line carries a parenthesised
-  `…s)` body the strict pattern refuses; publish it beside `unattributable_calls` and document it in
-  `references/log-analysis.md`.
+- **Action:** add an `unparsed_duration_calls` counter (a **separately named** field — do not fold it
+  into `unattributable_calls`, whose population is disjoint from it: `unattributable_calls` counts
+  lines that *did* parse a duration and carried **no** notation, `analyze-logs.py:1477`) incremented
+  when a line carries a parenthesised `…s)` body the strict pattern refuses; publish it beside
+  `unattributable_calls` and document it in `references/log-analysis.md`. Publish alongside it the
+  classification the reconciliation needs, because the two existing counters do not partition
+  anything on their own: state, in `references/log-analysis.md`, that every line matched by
+  `_GLOBAL_LOG_LINE_RE` — i.e. counted in `total_lines` — falls into exactly one of four classes:
+  1. **measured and attributed** — duration parsed *and* a notation found (`folded_durations`);
+  2. **unattributable** — duration parsed, no notation (`unattributable_calls`);
+  3. **refused** — a parenthesised `…s)` body the strict pattern would not parse
+     (`unparsed_duration_calls`, new);
+  4. **no duration claimed** — the line carries no duration body at all (a residual; publish it as
+     `untimed_lines` if the reconciliation is to be checkable at all).
 - **Done when:** `analyze_folded_global_logs` over a log containing one well-formed call and one
-  refused-duration call publishes a nonzero counter naming the second, and
-  `measured + refused + unattributable` reconciles against the notation-headed line count.
+  refused-duration call publishes a nonzero `unparsed_duration_calls`; and a test asserts the
+  partition holds over a fixture carrying at least one line of each class —
+  `len(folded_durations) + unattributable_calls + unparsed_duration_calls + untimed_lines ==
+  total_lines`, with `total_lines` (the matched-log-entry population) as the denominator. ⚠ Do **not**
+  write the check as `measured + refused + unattributable` against a notation-headed line count: the
+  unattributable class is by construction *not* notation-headed, so that equation cannot balance.
 - **Effort:** M
 - **Risk if fixed:** a new fragment key; `references/log-analysis.md` and any consumer asserting the
   fragment's key set must be updated in lock-step.

@@ -46,7 +46,7 @@ mutation); and the run left two plan-mandated cross-notes unwritten plus two sta
   Reproduced against a fixture with 6 phase-5 `[DISPATCH]` lines, 3 finalize completions, 3
   token-proven dispatched finalize steps and **zero** finalize `[DISPATCH]` lines:
 
-  ```
+  ```text
   dispatch_coverage:   dispatched: 3   missing_dispatch_emission: 3
   channel_completeness: dispatch_line_count: 6  completion_count: 3
                         dispatched_step_count: 3  ratio: 2.0  confidence: nominal
@@ -127,19 +127,36 @@ mutation); and the run left two plan-mandated cross-notes unwritten plus two sta
   a member of `ZERO_ATTRIBUTION_FIELDS` (`retro_sections.py:148-154`), so a non-empty `counts` dict
   *by itself* satisfies the probe. The log-less fragment therefore passes the "this fragment names
   what it checked" test on the strength of the very block that names nothing.
-- **Action:** either omit `shape_violation` from `counts.by_category` when
-  `shape['status'] == 'not_evaluated'`, or emit it as a structured value carrying its population
-  (e.g. `shape_violation: {count: 0, evaluated_population: 0, status: not_evaluated}`). Mirror the
-  choice in `standards/execution-context-dispatch-audit.md:105-111`.
-- **Done when:** no consumer can read `counts.by_category` alone and mistake a `not_evaluated`
-  shape check for an evaluated-clean one; a test asserts the distinguishing field; and
-  `test_check_dispatch_audit.py:124`'s assertion of the bare `0` is replaced by an assertion of the
-  new shape.
+- **Action:** two halves, both required — an output-only change does not close the defect.
+  1. **Producer.** Either omit `shape_violation` from `counts.by_category` when
+     `shape['status'] == 'not_evaluated'`, or emit it as a structured value carrying its population
+     (e.g. `shape_violation: {count: 0, evaluated_population: 0, status: not_evaluated}`). Mirror the
+     choice in `standards/execution-context-dispatch-audit.md:105-111`.
+  2. **Consumer.** Tighten `compile-report.py::_names_checked_set` (`:213-250`) in the same change.
+     `counts` is a member of `ZERO_ATTRIBUTION_FIELDS` (`retro_sections.py:148-154`) and
+     `_has_attribution_field` (`compile-report.py:253-267`) credits **any** non-empty value under
+     it, so a `counts` block of bare category zeros satisfies the attribution probe on its own —
+     whichever producer option above is taken. Require the probe to credit `counts` only when the
+     counts attribute a population (e.g. a nested `evaluated_population` / `total` the block
+     actually measured), so the block that names nothing stops standing in for one that does.
+- **Done when:** all three hold —
+  - no consumer can read `counts.by_category` alone and mistake a `not_evaluated` shape check for an
+    evaluated-clean one, with a test asserting the distinguishing field, and
+    `test_check_dispatch_audit.py:124`'s assertion of the bare `0` replaced by an assertion of the
+    new shape;
+  - a fragment whose **only** attribution candidate is a `counts` block of bare zeros is reported in
+    `sections_unattributed_zero` — i.e. it is **not** credited as naming what it checked — pinned by
+    a `compile-report` test;
+  - a fragment that publishes a real population (`evaluated_population`, `population`) is still
+    credited, so the tightening does not turn the honest producers into false positives.
 - **Effort:** S
-- **Risk if fixed:** `compile-report`'s `_names_checked_set` (`compile-report.py:213-250`) reads
-  `counts` as an attribution field; a shape change there must keep that probe working — and the
-  probe should be tightened in the same change, since today it is satisfied by any non-empty
-  `counts` dict regardless of what the counts attribute to.
+- **Risk if fixed:** `compile-report`'s `_names_checked_set` is shared by every aspect fragment, not
+  just this one; tightening `counts` could newly flag an unrelated producer that relies on it as its
+  sole attribution. Re-run the compile-report tests over the full aspect set and check
+  `sections_unattributed_zero` on a real archived plan before landing. Note also that a log-less
+  dispatch-audit fragment stays credited through the nested `shape_violation.evaluated_population: 0`
+  — correctly, since that *is* an honest published population; the criterion above is about the
+  `counts` block standing in for one, not about the fragment as a whole.
 
 ## G4 — Publish an evaluated population for `envelope_violation` and `generic_subagent_violation`
 

@@ -162,15 +162,30 @@ withheld still names an unexecuted gate and a 380/97 % measurement that is now 6
 - **Why it matters:** the Form 2 (Neovim / VS Code / Emacs) config an operator is told to write is
   the one most likely to omit the flag, and the failure is silent and looks exactly like opt-out.
   LSP already carries the answer in the handshake.
-- **Action:** in the `initialize` handler, when the CLI project path resolved to nothing, resolve the
-  project from `params['rootUri']` (falling back to `rootPath`, then `workspaceFolders[0].uri`) and
-  rebuild the config/corpus resolution before returning capabilities.
-- **Done when:** a subprocess test spawns `serve` with cwd outside the project and **no**
-  `--project-path`, sends `initialize` with `rootUri` pointing at an enabled project, and receives
-  the three providers.
+- **Action:** in the `initialize` handler, resolve the project from `params['rootUri']` (falling back
+  to `rootPath`, then `workspaceFolders[0].uri`) and rebuild the config/corpus resolution before
+  returning capabilities, **whenever the operator did not name a project explicitly**. Two triggers,
+  both required:
+  1. `find_project_root(Path(args.project_path))` returned `None` — reachable today, because the
+     `--project-path` default `'.'` is not tested for emptiness but walked up for
+     `.plan/marshal.json` (`corpus_lsp.py:158-164`), and the walk finds nothing when the cwd is
+     outside any project.
+  2. the flag was **not supplied** and the walk from the cwd happened to land in an *unrelated*
+     project. Trigger 1 alone does not cover this: an editor launched from a sibling checkout
+     resolves a non-`None` root, so `rootUri` would be ignored and Form 2 fails exactly as silently
+     as before. Make this observable by changing the flag's default to `None` (and applying the
+     `'.'` fallback inside `_context`, `corpus_lsp.py:396-398`) — or by recording a separate
+     "explicitly supplied" flag — so the handler can tell an omitted flag from `--project-path .`.
+- **Done when:** two subprocess tests spawn `serve` with **no** `--project-path` and send
+  `initialize` with `rootUri` pointing at an enabled project, receiving the three providers — one
+  with the cwd outside any project (trigger 1), one with the cwd inside a *different*, non-enabled
+  project (trigger 2); and a third test passing `--project-path` explicitly still wins over a
+  conflicting `rootUri`.
 - **Effort:** M
 - **Risk if fixed:** capabilities must then be computed after params are read — keep the explicit
-  `--project-path` winning over `rootUri` so the documented block's behaviour is unchanged.
+  `--project-path` winning over `rootUri` so the documented block's behaviour is unchanged. Changing
+  the flag's default from `'.'` to `None` touches every verb `_add_project_path` serves, so the
+  cwd fallback must move into `_context` in the same change.
 
 ## G5 — Make the candidate-walk cache tests non-vacuous
 

@@ -1,6 +1,7 @@
 # Verification — 210-native-coordinate-resolvers
 
-**Audited:** `plan.md`, `report-01.md` (the only two files in the plan directory)
+**Audited:** `plan.md`, `report-01.md` (the pre-existing files in the plan directory; this document
+and its sibling `gaps.md` were added by the audit itself)
 **Tree state:** `2a9aba4` on `claude/code-intelligence-substrate-analysis-kah884`
 **Overall verdict:** CONFIRMED WITH GAPS
 
@@ -196,8 +197,10 @@ discoverers hand it.
 **C1 — a Poetry-managed Python project derives zero edges, reported as a positive empty answer.**
 `marketplace/bundles/plan-marshall/skills/build-pyproject/scripts/_pyproject_cmd_discover.py:282`
 reads `project = data.get('project', {})` and nothing else. A project using Poetry's own table
-(`[tool.poetry] name`, `[tool.poetry.dependencies]` — still the majority of the Poetry installed
-base) therefore yields `metadata == {}` and `dependencies == []` for every module. Driven end to
+(`[tool.poetry] name`, `[tool.poetry.dependencies]` — the only spelling Poetry offered before
+`[project]` support arrived in Poetry 2.0, and still the spelling of every project that has not
+migrated; how large that population is has not been measured here and no share is claimed)
+therefore yields `metadata == {}` and `dependencies == []` for every module. Driven end to
 end over a synthetic three-module Poetry monorepo where `pkg_app` declares `mono-core`:
 
 ```text

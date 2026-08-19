@@ -37,7 +37,7 @@ one-off or self-contradictory.
   shipped detector over that same corpus, captured the `Dependency.exclusion` arm for every detected
   edge, and joined the arms onto the 380 baseline rows:
 
-  ```
+  ```text
   145  script/decision-log      75  script/canonical-command   64  script/none
    46  script/placeholder       28  script/embedded-token      11  import/none
     9  skill/placeholder         1  skill/none                  1  path/none      sum 380
@@ -168,7 +168,7 @@ real component is always kept as an ordinary edge; self-edges are suppressed (`:
 guard (`:502-508`) keeps `PYTHON_IMPORT` targets out of the retarget. Independent regression evidence
 at HEAD, running the pre-change detector and the shipped detector over the same corpus:
 
-```
+```text
 old resolved 4983 / unresolved 377      new resolved 5020 / unresolved 61
 LOST (resolved before, absent now): 0   GAINED: 37
 old cycles 296, new cycles 296, cycles only in new: 0

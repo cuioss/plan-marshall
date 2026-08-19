@@ -34,7 +34,7 @@ review item 6.
 - **Required (plan):** "a batch harvest has been driven end-to-end and its timing recorded, **or** the premise is refuted."
 - **Claimed (report):** `pyright-langserver` 1.1.408 present; 10 files / 402 requests / 2.29 s and 200 files / 3 864 requests / 14.12 s; boot 0.34–0.46 s; ≈ 90 s extrapolated over 1 248 tracked `*.py`.
 - **Found:** `pyright-langserver` at `/root/.local/bin/pyright-langserver`. Re-derived with the *shipped* engine (`harvest_workspace`, `file_budget=200`) against the repository root:
-  ```
+  ```text
   candidate *.py under root (after skip list): 1387   (== `git ls-files '*.py' | wc -l`)
   elapsed=17.08s ran=True files_scanned=200 intra-repo refs=249   (first pass)
   elapsed=15.01s ran=True files_scanned=200 intra-repo refs=249   (independent re-run)
@@ -55,7 +55,7 @@ review item 6.
   - Transport reuse: `lsp_harvest.py:272,290,307,315` drive `client.StdioTransport` / `client.LspSession` from `plan-marshall:lsp-client`; the module's only LSP-specific code is `import_positions` (`:155-191`).
   - Status propagation: `plugin_discover.attach_lsp_references` (`:585-616`) stamps every module; the field survives `discover_project_modules` — verified live, `lsp_harvest=True` on all 11 bundle modules.
   - **Edges in the store — refuted in practice.** Driving the shipped `build_lsp_component_refs` over the repository root with a real enabled binding and the real discovered module set:
-    ```
+    ```text
     elapsed=56.0s ran=True files=1387 refcount=1920
     modules with lsp refs: 0
     notes:
@@ -65,7 +65,7 @@ review item 6.
       - self-edge: 548 suppressed [plan-marshall -> plan-marshall; ...]
     ```
     **Every figure above was independently re-derived and every one holds — but only in one interpreter environment, and this document must say which.** Re-run with the project's own `.venv/bin` first on `PATH` (so pyright resolves against `.venv`), the six figures reproduce exactly. Re-run without it, twice, deterministically:
-    ```
+    ```text
     ran=True files_scanned=1387 refcount=1501   modules with lsp refs: 0
       - out-of-workspace: 12764   - unresolved-symbol: 5731
       - unattributable-endpoint: 953   - self-edge: 548
@@ -73,7 +73,7 @@ review item 6.
     The whole difference is **419 references whose target is a file under `.venv/lib/python3.12/site-packages/`** (1920 − 419 = 1501; 1372 − 419 = 953, exactly). Those are third-party library files that happen to sit inside the project root, so `_within` admits them (`:396-397`) even though `.venv` is skipped as a *source* (`:210`). See Correctness review item 6.
     **Invariant across both environments:** `files_scanned` = 1387, `self-edge` = 548, **module edges = 0**. The zero-edge headline does not depend on the environment; the diagnostic counts do.
     Root cause confirmed by direct probe (reproduced verbatim): the marketplace's cross-bundle imports are *bare* imports resolved by the generated executor's `sys.path`, which pyright at the workspace root cannot follow. Asking the shipped positions of `marketplace/bundles/pm-dev-python/skills/plan-marshall-plugin/extension.py:19`:
-    ```
+    ```text
     'from extension_base import DerivationResolverBase, ExtensionBase' @col 27 -> UNRESOLVED
     'from extension_base import DerivationResolverBase, ExtensionBase' @col 51 -> UNRESOLVED
     'from extension_base import DerivationResolverBase, ExtensionBase' @col  5 -> UNRESOLVED
@@ -93,7 +93,7 @@ review item 6.
   - Drop rule: `lsp_harvest.py:445-460`. Tests `test_unattributable_endpoint_produces_note_and_no_edge` (`test_lsp_harvest.py:64`) and its source twin (`:84`).
   - **The seam is not used.** `build_lsp_component_refs` builds its own attributor: `lsp_harvest.py:552` — `attribute = make_prefix_attributor(module_paths)` (`:566-594`). `lsp_harvest.py` imports nothing from `_path_attribution_merge`; `merge_path_claims` / `lookup_claim` appear nowhere in the bundle.
   - The substitution is not merely stylistic — it is load-bearing. The Axis-D seam claims nothing under `marketplace/bundles/**`. Live:
-    ```
+    ```text
     {'prefix': '.claude', 'module': 'pm-plugin-development', ...}
     {'prefix': '.plan',   'module': 'plan-marshall', ...}
     marketplace/bundles/pm-dev-java/skills/x/scripts/y.py -> None
@@ -101,7 +101,7 @@ review item 6.
     Had the lift gone through the seam as specified, *every* endpoint would be unattributable. The deviation is what makes the lift able to attribute anything at all — and it is undisclosed in the report.
   - Three shipped documents assert the seam is used: `doc/concepts/code-intelligence.adoc:113`, `marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-derivation-resolver.md:231`, and the code's own docstrings (`lsp_harvest.py:416-418` — the first pass cited `:420-422`, which is the adjacent and *accurate* drop-and-note sentence — and `extension.py:113-115`). All four quotations re-checked verbatim against the files.
 - **Checks run (mutation, re-run independently):** replaced the drop branch with a leading-directory guess plus `known.add(...)`, then ran the **whole** file:
-  ```
+  ```text
   FAILED test_unattributable_endpoint_produces_note_and_no_edge
   FAILED test_unattributable_source_endpoint_produces_note_and_no_edge
   FAILED test_suppression_notes_are_aggregated_with_a_count
@@ -116,7 +116,7 @@ review item 6.
 - **Claimed (report):** four modes, four controls, plus `test_every_failure_mode_states_a_distinct_reason` and `test_no_failure_mode_reports_a_zero_edge_success`.
 - **Found:** reason constants at `lsp_harvest.py:99-106`; controls at `test_lsp_harvest.py:285` (absent), `:312` (bad-shebang spawn failure → real `OSError`), `:352` (unresponsive), `:371` (no sources). Distinctness assertion at `:421-448`, anti-zero-success at `:451-471`. All pass.
   - **Defect:** the `except client.LspError` arm (`lsp_harvest.py:327-338`) formats `REASON_SERVER_TIMEOUT` for *every* protocol failure, including a server that answered promptly with a JSON-RPC error. Probe against a stub server that replies to `initialize` with `{'code': -32603, 'message': 'workspace not supported by this server'}`:
-    ```
+    ```text
     SERVER-ERROR-RESPONSE  elapsed=5.03s ran=False
       reason="server-timeout: …python3 did not respond within 10s
               (initialize failed: {'code': -32603, 'message': 'workspace not supported by this server'})"
@@ -124,7 +124,7 @@ review item 6.
     The server *did* respond. This is D3's fourth mode — a genuine server-side workspace rejection — arriving under the *third* mode's reason string. `REASON_WORKSPACE_UNSUPPORTED` (`:106`) can only ever fire from the pre-launch no-sources check at `:267-269`.
   - Same arm, second case: a server that starts and dies is reported after the full handshake budget (`SERVER-CRASHES-ON-BOOT elapsed=10.00s … 'server-timeout: … did not respond within 10s (timed out waiting for response to initialize)'`). Here the wording is literally true; the test at `:328` documents the collapse in its own docstring.
 - **Checks run (mutation, re-run independently):** reverted `_candidate_files`' relative-path fix (`:213` → `path.parts`), whole file:
-  ```
+  ```text
   FAILED test_workspace_under_a_skip_named_directory_is_still_harvested
   1 failed, 33 passed
   ```
@@ -167,7 +167,7 @@ Read in full: `lsp_harvest.py` (595 lines), `pm-code-intelligence/.../extension.
 5. **`plugin_discover.py:616` shares one `status` dict object across every module.** Benign today (the map is serialized, never mutated per module), but an in-place edit on one module's record would silently rewrite all of them.
 6. **`lsp_harvest.py:396-397` — vendor and virtualenv trees are skipped as reference *sources* but admitted as reference *targets*.** `_candidate_files` (`:210`) excludes `.git`, `node_modules`, `target`, `.venv`, `venv`, `__pycache__`, `.plan` from the files it queries; `_within` applies no such filter to what a definition resolves *to*. Measured consequence on this tree: with the project `.venv` on `PATH`, **419 of the 1 920 harvested references (22%) and 419 of the 1 372 `unattributable-endpoint` suppressions (31%) are files under `.venv/lib/python3.12/site-packages/`** — third-party libraries, not repository code. The reported suppression volume therefore depends on which interpreter pyright happened to pick up, which is why this document had to state its environment in D0/D1.
    **The latent half is worse than the reported half.** `make_prefix_attributor`'s fallback (`:588-591`) gives a root-scoped module (`paths.module` of `.` or `''`) whatever nothing else claims. `_pyproject_cmd_discover.py:159` emits exactly that value (`is_root = relative_path == '.'`), so in a Python project with a root module *plus* at least one sub-module, every third-party import under a project-local `.venv` becomes a real edge into the root module — **with no note at all**. Demonstrated:
-   ```
+   ```text
    module_paths = {'alpha': 'alpha', 'rootmod': '.'}
    attribute('.venv/lib/python3.12/site-packages/pytest/__init__.py') -> 'rootmod'
    lift_to_modules([('alpha/x.py', '.venv/.../pytest/__init__.py'), ...]) -> EDGES [('alpha','rootmod')]  NOTES []

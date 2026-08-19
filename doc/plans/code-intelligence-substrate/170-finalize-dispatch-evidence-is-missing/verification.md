@@ -152,7 +152,7 @@ unwritten.
   `execution_log` rows with `total_tokens: 5000`**, and **zero finalize `[DISPATCH]` lines**. Live
   run output:
 
-  ```
+  ```text
   dispatch_coverage:
     dispatched: 3
     missing_dispatch_emission: 3

@@ -166,15 +166,21 @@ self-contradictory. **G6 is G1's regression test** and lands with them.
   one token spelt `plan_footprint_unresolvable` cannot separate "no capture was written" from "the diff
   failed" either, at any site — the value of the fix is a uniform machine-readable unresolved contract
   across the reader set, not finer-grained causes.)
-- **Action:** Add a shared constant (e.g. `FOOTPRINT_UNRESOLVABLE_REASON = 'plan_footprint_unresolvable'`,
-  ideally exported from `_footprint_resolver` so every site shares one spelling) and publish it in
-  `details` on both `inconclusive` branches; surface `footprint_resolved` in the
-  `affected_files_exact_match` block too, and give the both-empty `inconclusive` its own distinct token
-  so the two causes separate.
-- **Done when:** both `inconclusive` returns publish a reason token drawn from one shared constant; the
-  `affected_files_exact_match` block carries `footprint_resolved` and a token that differs between the
-  unresolvable and both-empty causes; and `references/artifact-consistency.md` documents the key
-  alongside `read_intent_excluded` and `declared_unfiltered`.
+- **Action:** Add **two** shared constants, one per cause, so the causes cannot collapse into one
+  spelling: `FOOTPRINT_UNRESOLVABLE_REASON = 'plan_footprint_unresolvable'` for the never-measured
+  branch (`:593-600`) and a distinct `FOOTPRINT_EMPTY_REASON = 'plan_footprint_empty'` for the
+  measured-and-both-empty branch (`:580-586`). Export both from `_footprint_resolver` so every reader
+  site shares one spelling per cause, publish the matching one in `details` on each `inconclusive`
+  branch, and surface `footprint_resolved` in the `affected_files_exact_match` block too (it is
+  `False` for the first cause and `True` for the second — which is precisely the distinction the
+  prose currently carries).
+- **Done when:** each `inconclusive` return publishes a reason token drawn from the constant named
+  for its cause — `FOOTPRINT_UNRESOLVABLE_REASON` for the unresolvable branch,
+  `FOOTPRINT_EMPTY_REASON` for the both-empty branch, and the two values are not equal; the
+  `affected_files_exact_match` block carries `footprint_resolved`; a test asserts a consumer can tell
+  the two causes apart without reading the prose message; and
+  `references/artifact-consistency.md` documents both keys alongside `read_intent_excluded` and
+  `declared_unfiltered`.
 - **Effort:** S
 - **Risk if fixed:** A `details` key addition; the production-shape fixture
   (`fixtures/archived-plan/work/fragment-artifact-consistency.toon`) and any test asserting an exact

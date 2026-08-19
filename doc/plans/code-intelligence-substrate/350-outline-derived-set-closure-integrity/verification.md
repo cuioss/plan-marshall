@@ -213,8 +213,10 @@ treats the merged text of those files as the claim under test.
     comment in one test module (`test_manage_tasks_qgate_mechanical.py:28-34`) and as prose in
     `report-01.md`, which is a record, not a control — the exact "prose warnings are NOT a control"
     failure the plan's own § "sub-classes" names.
-- **Checks run:** the counts above; the seven mutations in § Test adequacy; full run of the three new
-  suites (53 passed).
+- **Checks run:** the counts above; the **nine** mutations in § Test adequacy — M1–M8 applied by this
+  audit's own sweep plus M9 devised by the adversarial review, every one DETECTED, none surviving — and
+  a full run of the three new suites (53 passed). The count is of mutants *applied*, not of mutants
+  detected; here the two are equal, so no exclusion rule is needed.
 - **Verdict:** PARTIAL. The test half is discharged and verified non-vacuous. The
   characterization-corpus half was *applied* to this one corpus but not *codified*, so nothing carries
   it to the next corpus — and the deliverable's own accompanying count is stale.

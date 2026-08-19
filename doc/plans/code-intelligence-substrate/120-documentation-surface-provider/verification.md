@@ -173,7 +173,7 @@ behind it is mandated by the `component_refs` schema and pinned by a shipped tes
 - **Checks run — the suppression note misreports its population, at the shared layer.** Live output,
   verbatim:
 
-  ```
+  ```text
   unresolved-target: 1 reference(s) suppressed - sample: documentation -> documentation [path]
   self-edge: 1 reference(s) suppressed - sample: documentation -> documentation [path]
   ```
@@ -334,7 +334,7 @@ Checked and found **clean**:
 
 (lines 1090 and 1245) replaced with `pass  # MUTATED`. Command:
 
-```
+```shell
 uv run python -m pytest test/plan-marshall/manage-architecture/test_doc_corpus_dedup.py \
   test/plan-marshall/manage-architecture/test_search_content.py \
   test/plan-marshall/manage-architecture/test_cmd_client.py \

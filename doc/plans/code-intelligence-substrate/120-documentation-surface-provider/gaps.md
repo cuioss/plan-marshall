@@ -54,10 +54,20 @@ disambiguate it; and `find` and `which-module` now name different owners for `RE
 - **Action:** in `_heading_anchor_forms`, add a second GitHub form computed without run-collapsing —
   strip non-`[\w\s-]` characters, then `.replace(' ', '-')` — and keep the existing collapsed form
   alongside it (both are additive; the set can only grow).
-- **Done when:** a sweep of `build_doc_component_refs('.', 'doc')`-equivalent resolution over
-  `doc/**` reports 8 or fewer unresolved references, none of them an anchor reference; and
-  `test_doc_references.py` carries a case pinning a heading whose title contains an em dash between
-  spaces, asserting the doubled-hyphen slug is in `extract_anchors`.
+- **Done when:** both of these hold, neither of which depends on the size of the `doc/**` corpus at
+  the time of the fix:
+  1. `test_doc_references.py` carries a case pinning a heading whose title contains an em dash
+     between spaces, asserting the doubled-hyphen slug is in `extract_anchors`;
+  2. a sweep of `build_doc_component_refs('.', 'doc')`-equivalent resolution over `doc/**` reports
+     **zero unresolved anchor references** — the anchor class is the one the fix owns, and zero is a
+     corpus-independent target because a surviving anchor failure means the slug form is still wrong.
+
+  The **file**-reference count is reported alongside, not asserted against a threshold: at the time
+  of measurement the same sweep left 8 unresolved file references, every one a genuine broken path
+  (a target `X.md` where only the directory `X/` exists). That figure is a property of the corpus and
+  will move as `doc/**` changes, so a later run records what it measures and confirms each survivor
+  is a real broken path rather than checking it against `8`. The pre-fix figures — 479 files, 842
+  references, 18 unresolved (10 anchor + 8 file) — are likewise a dated measurement, not a criterion.
 - **Effort:** S
 - **Risk if fixed:** the anchor set grows, so a genuinely dangling anchor whose slug collides with the
   new form is missed. That is the same one-directional under-reporting bias the function already

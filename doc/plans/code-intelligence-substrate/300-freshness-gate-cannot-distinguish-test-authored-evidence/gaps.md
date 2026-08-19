@@ -164,10 +164,15 @@ severity is corrected to `low` accordingly.**
   two docstrings in the same skill asserting opposite things about the same function, with the false
   one carrying the more quotable phrasing.
 - **Action:** Correct `crawl_all_modules`'s docstring to say the crawl is subprocess-free apart from
-  the `git` worktree-sha call, and cross-reference the lazy Maven enrichment as the separate,
-  genuinely expensive path.
+  a single `git rev-parse --git-common-dir` issued while resolving the main checkout root, and
+  cross-reference the lazy Maven enrichment as the separate, genuinely expensive path. ⛔ **Use that
+  same description here as in G2** — do not write "the `git` worktree-sha call": the call is not a
+  worktree-SHA computation (its stack is the main-checkout-root resolution recorded in G2), and
+  applying this entry with that wording would re-ship the invented rationale G2 exists to remove.
 - **Done when:** `_architecture_core.py` and `_cmd_client_query.py` agree about whether the crawl
-  runs Maven.
+  runs Maven; and no surface corrected under G2–G5 describes the `git` call as a worktree-sha
+  computation — all four name it as `git rev-parse --git-common-dir` while resolving the main
+  checkout root.
 - **Effort:** S
 - **Risk if fixed:** Low — a reader who relied on the "expensive" framing to justify the memo may
   need the memo's justification restated (the filesystem walk is still worth memoizing).

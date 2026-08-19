@@ -123,9 +123,14 @@ n−1-of-n residue class the run's own stop record predicted. The declared condi
   warnings are documented as non-actionable; without the cutoff they remain undecidable.
 - **Action:** state the anchor and how to derive it. In the meta-repository name the landing commit
   (`7612c3a`, PR #1286) directly. For a consumer repository, give the derivation as a one-line
-  instruction — e.g. *"the first commit in your checkout whose `_invariants.py` defines
-  `_main_repo_root`; `git log --diff-filter=A -S_main_repo_root -- <path>` names it"* — so the rule is
-  self-contained wherever it is read.
+  instruction — *"the first commit in your checkout that introduced `_main_repo_root` into
+  `_invariants.py`; `git log -S'_main_repo_root' --reverse --format=%H -- <path> | head -1` names
+  it"* — so the rule is self-contained wherever it is read. ⛔ **Do not write the
+  `--diff-filter=A` form** (`git log --diff-filter=A -S_main_repo_root -- <path>`): it restricts the
+  search to commits that *added the file*, and `_main_repo_root` was added to an already-existing
+  `_invariants.py`, so the reader gets an empty result and no cutoff. Verified in this repository —
+  the `--diff-filter=A` form prints nothing, while the `--reverse` form prints `7612c3a`, the anchor
+  named above.
 - **Done when:** the Step 2 bullet names a concrete cutoff for this repository **and** a mechanical way
   to obtain it elsewhere, such that a reader with only the plan directory and a git checkout can reach
   a verdict without asking anyone.

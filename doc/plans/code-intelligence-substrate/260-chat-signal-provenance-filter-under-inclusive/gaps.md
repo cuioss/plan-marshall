@@ -60,9 +60,11 @@ hole is **latent**: it does not occur anywhere in the reachable 81-transcript co
 - **Done when:** all three of `is_operator_authored('<system-reminder>a<system-reminder>b</system-reminder>')`,
   `is_operator_authored('<sr>a</sr>b</sr>')` and the `<task-notification>`-with-quoted-`</task-notification>`
   shape are `False`; a 30-turn transcript of each shape reports `no_signal: true` with
-  `operator_turn_count: 0`; and `test_unmatched_open_tag_does_not_swallow_operator_prose`,
-  `test_unmatched_close_tag_is_ordinary_text`, `test_prose_after_a_trailing_envelope_survives` and the
-  two same-name nesting tests still pass unchanged.
+  `operator_turn_count: 0`; and the **four prose-preserving tests** —
+  `test_unmatched_open_tag_does_not_swallow_operator_prose`,
+  `test_unmatched_close_tag_is_ordinary_text`, `test_prose_after_a_trailing_envelope_survives` and
+  `test_a_command_with_arguments_routes_normally` (the `OPERATOR_BEARING_TAGS` recovery named in the
+  Action) — plus the two same-name nesting tests still pass unchanged.
 - **Effort:** M
 - **Risk if fixed:** a fallback that is too eager could swallow genuine operator prose that merely
   opens with markup, or prose that both begins and ends with the same tag — the mirror false-positive

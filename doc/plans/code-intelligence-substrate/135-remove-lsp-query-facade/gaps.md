@@ -415,8 +415,16 @@ None of them is a regression caused by the removal.
   the cheapest surface to read — undercounts it, and a later removal plan re-deriving its surface
   from the docstring (as plan 135 re-derived its surface from `plan.md`) inherits the omission.
 - **Action:** add `capabilities` to the parenthesised list at `_cmd_client_handlers.py:6-11`, in the
-  position matching the file's definition order.
-- **Done when:** the docstring's parenthesised handler list names all 20 `def cmd_*` functions the
-  file defines, verified by comparing the list against `grep -c "^def cmd_" _cmd_client_handlers.py`.
+  position matching the file's definition order. Better still, stop hand-maintaining the list —
+  either drop the enumeration for a sentence naming the file's role, or generate it — since the list
+  is exactly the mirror class G14 exists to detect. If it stays hand-maintained, G14's analyzer scope
+  should be widened to compare this docstring's handler names against the file's `cmd_*` definitions,
+  so the next omission is caught by rule rather than by audit.
+- **Done when:** the docstring's parenthesised handler list is **set-equal** to the `cmd_*` functions
+  the file defines — every defined handler named exactly once, and no name in the list without a
+  definition — or the enumeration is gone. ⚠ A cardinality check (`grep -c "^def cmd_"` against the
+  number of names) does **not** satisfy this: it passes when the list duplicates one handler and
+  omits another. Compare the two **sets**, e.g. by deriving the definition set with
+  `grep -o "^def cmd_[a-z_]*"` and diffing it against the parsed list.
 - **Effort:** S
 - **Risk if fixed:** none — a docstring edit; `ruff check` over the file stays clean.

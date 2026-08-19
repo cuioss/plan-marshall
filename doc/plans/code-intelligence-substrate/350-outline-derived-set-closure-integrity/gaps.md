@@ -485,13 +485,37 @@ characterization-corpus **rule** was applied without being codified anywhere a l
   control.**" A rule that lives in a dated run report binds nobody. The next characterization corpus
   gets selected rather than enumerated, and an under-enumerated corpus silently pins the defect as
   expected behaviour — which is what this corpus was doing before the run fixed it.
-- **Action:** Add the rule to `pm-dev-python:pytest-testing` (or to `plan-marshall:ref-code-quality`,
-  whichever owns fixture discipline): a fixture corpus is enumerated from the live corpus directory,
-  every excluded fixture carries a stated reason, and the asserted name set is cross-checked against the
-  produced set rather than hard-coded. Cite this plan's corpus as the worked example.
-- **Done when:** the rule appears in a skill or standard under `marketplace/bundles/`, and
-  `plugin-doctor`'s rule catalogue or a test references it, so it is discoverable without reading
-  `report-01.md`.
+- **Action:** Give the rule **one** normative owner:
+  `marketplace/bundles/plan-marshall/skills/persona-module-tester/standards/testing-methodology.md`,
+  as a new `### Population-derived fixture corpora` subsection of § **Test Data Principles** (`:206`),
+  placed after § "The discriminator" (`:212-231`) and before § "Forbidden Patterns" (`:233`). That file
+  is the owner because the rule is language-agnostic and this document is where the *class* of test data
+  is decided; `pm-dev-python:pytest-testing` is its declared framework-specific companion (see
+  `testing-methodology.md:125-127`, "This section defines the language-agnostic rule"), not a second
+  home, and `plan-marshall:ref-code-quality` ships only `code-organization.md`,
+  `documentation-principles.md` and `error-handling.md` — no test surface at all. State three things:
+  a fixture corpus is enumerated from the live corpus directory rather than selected; every exclusion
+  carries a stated reason (⛔ opt-out with a reason, never opt-in by selection); and the asserted name
+  set is cross-checked against the produced set rather than hard-coded.
+
+  Make it discoverable through **the test guard, not a doctor rule**. The exact reference: cite
+  `test/plan-marshall/manage-tasks/test_manage_tasks_qgate_mechanical.py:196` —
+  `assert set(result['checks']) == set(_ALL_CHECKS), 'the asserted name set must be the live one'`,
+  against the `_ALL_CHECKS` constant at `:42-51` — in the new subsection as the worked example of the
+  cross-check, and replace the free-standing rationale comment at `:28-34` with a one-line citation of
+  the standard's anchor, so the reference runs both ways. ⛔ Do **not** add a `plugin-doctor` rule for
+  this: every rule in
+  `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/standards/doctor-test-conventions.md`
+  is a mechanical detector over the test tree, and no detector can know which directory is a given
+  corpus's population — that pairing is exactly what the per-corpus cross-check assertion supplies.
+- **Done when:** `testing-methodology.md` § Test Data Principles carries the
+  `### Population-derived fixture corpora` subsection stating all three clauses;
+  `test_manage_tasks_qgate_mechanical.py:28-34` cites it instead of restating it; and
+  `grep -rn "Population-derived fixture corpora" marketplace/bundles test` returns exactly two lines —
+  the new heading and that citation — where it returns none today, so the rule is reachable from either
+  end without opening `report-01.md`. ⛔ Do not weaken this to a grep for `population-derived`: that
+  phrase already appears in 20 unrelated files under `marketplace/bundles/` and would pass without the
+  rule existing.
 - **Effort:** M
 - **Risk if fixed:** None.
 

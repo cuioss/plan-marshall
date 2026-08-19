@@ -132,8 +132,8 @@ follow.
 - **Where:** `marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/scripts/_dep_detection.py:25-32` (`DependencyType`) and the sibling resolvers' "everything else is ignored" tests
 - **Evidence:** `DependencyType` still enumerates exactly five members (`SCRIPT_NOTATION`, `SKILL_REFERENCE`, `PYTHON_IMPORT`, `RELATIVE_PATH`, `IMPLEMENTS`); no `lsp`. The sibling resolvers derive their ignore-populations from that enum, so none of them is asserted to ignore an `lsp` reference.
 - **Why it matters:** this is the run's own declared residue and it is the "test fixture that still passes" shape — the behaviour is correct today but unasserted, so a future resolver that widened its kind set would silently claim `lsp` edges and forfeit provenance.
-- **Action:** either add an `lsp` member to `DependencyType` (it is a real `dep_type` in `component_refs`, so the enum is incomplete) or hard-code `'lsp'` into each sibling resolver's ignore-population test.
-- **Done when:** at least one test per sibling resolver asserts that a `dep_type: 'lsp'` reference yields no edge and no note from that resolver.
+- **Action:** update the **authoritative** definition first, then let the tests derive from it. Add an `lsp` member to `DependencyType` — it is a real `dep_type` in the `component_refs` contract, so the enum is incomplete — and leave each sibling resolver's ignore-population derived from that enum, as `test/pm-plugin-development/plan-marshall-plugin/test_markdown_derivation_resolver.py:55` already does (`ALL_DEP_TYPES = frozenset(member.value for member in DependencyType)`). Do **not** hard-code `'lsp'` into each sibling test: that creates a second list mirroring a set defined elsewhere, the drift-prone shape this repository treats as a defect in its own right, and it is what let the two populations diverge here. Where a sibling test still restates the kind set literally, convert it to the derived form in the same change.
+- **Done when:** `DependencyType` declares `lsp`; every sibling resolver's ignore-population is derived from `DependencyType` rather than restated, so a future member reaches all of them without further edits; and at least one test per sibling resolver asserts that a `dep_type: 'lsp'` reference yields no edge and no note from that resolver. An independently hard-coded `'lsp'` in a test does **not** satisfy this criterion.
 - **Effort:** S
 - **Risk if fixed:** adding an enum member may widen the detection engine's own behaviour if any code iterates `DependencyType` to decide what to scan — check call sites before adding.
 
@@ -184,7 +184,7 @@ follow.
 - **Where:** `marketplace/bundles/pm-plugin-development/skills/plan-marshall-plugin/scripts/lsp_harvest.py:396-397` (`_within`), against the skip set at `:210` (`_candidate_files`); the root-scoped fallback at `:588-591` (`make_prefix_attributor`)
 - **Evidence:** `_candidate_files` excludes `.git`, `node_modules`, `target`, `.venv`, `venv`, `__pycache__`, `.plan` from the files it *queries*; `_within` applies no filter at all to what a definition resolves *to*. Measured on this repository with the project `.venv/bin` first on `PATH`, so pyright resolves third-party imports against it: **419 of 1 920 harvested references (22%) target `.venv/lib/python3.12/site-packages/**`, and all 419 land in the `unattributable-endpoint` note — 31% of its 1 372 total.** Re-run without the venv on `PATH`: 1 501 references, 953 suppressions, 0 references targeting `.venv`. Same tree, same code, two figures.
   The latent half, demonstrated directly:
-  ```
+  ```text
   module_paths = {'alpha': 'alpha', 'rootmod': '.'}
   make_prefix_attributor(module_paths)('.venv/lib/python3.12/site-packages/pytest/__init__.py') -> 'rootmod'
   lift_to_modules([('alpha/x.py', '.venv/.../pytest/__init__.py')], attribute, module_paths)
