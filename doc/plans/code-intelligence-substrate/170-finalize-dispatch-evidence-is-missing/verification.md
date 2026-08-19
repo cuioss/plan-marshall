@@ -435,13 +435,10 @@ that non-zero implies dispatched. If any inline finalize step can ever record a 
 costing inline steps), then `dispatched` over-counts and `missing_dispatch_emission` becomes a false
 positive against the dispatcher — the mirror of the defect the plan was written to kill. Settling it
 needs the producer-side call sites for inline steps enumerated and checked, which is a wider sweep
-than this review's scope. A second, smaller residue: `evaluate_shape_violation` compares
-per-role *counts*, not pairs, so a hand-written `[DISPATCH]` line can cancel a genuinely unmatched
-resolve of the same role — and hand-written lines still exist at HEAD
-(`plan-marshall/workflow/planning-outline.md:112`, `:146`, `:431`, `:484`, `planning.md:286`, `:326`,
-`workflow-pr-doctor/SKILL.md:38`, all resolving without `--workflow` and then logging by hand). That
-is the D1-side analogue of G8 and was left unfiled because at HEAD the roles involved do not overlap
-with any seam-emitting role; a later change to those workflows would make it live.
+than this review's scope. (The D1-side analogue of G8 — `evaluate_shape_violation` comparing per-role
+*counts* rather than pairs, so a hand-written `[DISPATCH]` line cancels a genuine shortfall — started
+as residual doubt and was confirmed live during the review: `role=verification-feedback` has both a
+seam-emitting and a hand-writing producer at HEAD. It is now filed as **G15**, not left as doubt.)
 
 **Verdict on the audit:** SOUND AFTER CORRECTION — every gap it filed is real and reproducible and
 its method was honest, but it accepted a truncated quote as proof of D2's central premise, and that

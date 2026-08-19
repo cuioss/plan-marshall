@@ -21,9 +21,11 @@ prevent (G1); and the same block has no "did not evaluate" state, so a plan with
 also graded `nominal`, contradicting the module's own docstring (G2). Beyond those: the aggregate
 `counts` block publishes four bare zeros and so re-introduces the exact ambiguity D1 exists to kill —
 including in the *same output* where the nested block correctly says `not_evaluated` (G3); D4's
-`N == 0` case is silent because the floor it defers to provably cannot fire (G7); one production
-branch has no test at all (G6, proved by mutation); and the run left two plan-mandated cross-notes
-unwritten plus two stale doc claims (G11, G12, G14).
+`N == 0` case is silent because the floor it defers to provably cannot fire (G7); `shape_violation`
+pairs by per-role count rather than by pair, so a hand-written `[DISPATCH]` line from an unrelated
+caller cancels a genuine shortfall (G15); one production branch has no test at all (G6, proved by
+mutation); and the run left two plan-mandated cross-notes unwritten plus two stale doc claims
+(G11, G12, G14).
 
 ## G1 — Scope `channel_completeness`'s dispatch-line count to the finalize caller
 
