@@ -12,22 +12,19 @@ legitimately found nothing — the confident empty answer this substrate exists 
 eliminate.
 """
 
-import importlib.util
 
 from extension_base import ExtensionBase
 
-from conftest import MARKETPLACE_ROOT
+from conftest import load_skill_module
 
 HARVEST_RAN = {'ran': True, 'reason': '', 'notes': []}
 
 
 def _load_extension():
     """Load the pm-code-intelligence bundle extension.py and return an Extension."""
-    extension_path = MARKETPLACE_ROOT / 'pm-code-intelligence' / 'skills' / 'plan-marshall-plugin' / 'extension.py'
-    spec = importlib.util.spec_from_file_location('extension_pm_code_intelligence', extension_path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = load_skill_module(
+        'pm-code-intelligence', 'plan-marshall-plugin', 'extension.py', 'extension_pm_code_intelligence'
+    )
     return module.Extension()
 
 

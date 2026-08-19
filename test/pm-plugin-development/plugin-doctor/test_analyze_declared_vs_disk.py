@@ -26,6 +26,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -87,9 +89,7 @@ class TestDeclaredComponentResolves:
         _make_skill(bundle, 'my-skill')
         _write_plugin_json(bundle, {'skills': ['./skills/my-skill']})
 
-        findings = analyze_declared_vs_disk(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_declared_vs_disk, tmp_path, [])
 
     def test_declared_agent_and_command_present(self, tmp_path: Path) -> None:
         bundle = tmp_path / 'my-bundle'
@@ -103,9 +103,7 @@ class TestDeclaredComponentResolves:
             },
         )
 
-        findings = analyze_declared_vs_disk(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_declared_vs_disk, tmp_path, [])
 
     def test_entry_without_leading_dot_slash_resolves(self, tmp_path: Path) -> None:
         """The leading ``./`` is optional — a bare relative path resolves too."""
@@ -113,15 +111,11 @@ class TestDeclaredComponentResolves:
         _make_skill(bundle, 'my-skill')
         _write_plugin_json(bundle, {'skills': ['skills/my-skill']})
 
-        findings = analyze_declared_vs_disk(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_declared_vs_disk, tmp_path, [])
 
     def test_empty_root_returns_no_findings(self, tmp_path: Path) -> None:
         """An empty bundles root (no plugin.json files) yields no findings."""
-        findings = analyze_declared_vs_disk(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_declared_vs_disk, tmp_path, [])
 
 
 # ===========================================================================
@@ -137,11 +131,8 @@ class TestDeclaredComponentMissing:
         # No skill dir / SKILL.md created — only the manifest declares it.
         plugin_json = _write_plugin_json(bundle, {'skills': ['./skills/ghost-skill']})
 
-        findings = analyze_declared_vs_disk(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_declared_vs_disk, tmp_path, [RULE_ID])
         finding = findings[0]
-        assert finding['rule_id'] == RULE_ID
         assert finding['type'] == RULE_ID
         assert finding['severity'] == 'error'
         assert finding['fixable'] is False
@@ -158,9 +149,7 @@ class TestDeclaredComponentMissing:
         bundle = tmp_path / 'my-bundle'
         plugin_json = _write_plugin_json(bundle, {'agents': ['./agents/ghost-agent.md']})
 
-        findings = analyze_declared_vs_disk(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_declared_vs_disk, tmp_path, [RULE_ID])
         finding = findings[0]
         assert finding['details']['component_kind'] == 'agent'
         assert finding['file'] == str(plugin_json)
@@ -170,9 +159,7 @@ class TestDeclaredComponentMissing:
         bundle = tmp_path / 'my-bundle'
         _write_plugin_json(bundle, {'commands': ['./commands/ghost-command.md']})
 
-        findings = analyze_declared_vs_disk(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_declared_vs_disk, tmp_path, [RULE_ID])
         assert findings[0]['details']['component_kind'] == 'command'
 
     def test_skill_dir_present_but_skill_md_missing_is_flagged(self, tmp_path: Path) -> None:
@@ -185,9 +172,7 @@ class TestDeclaredComponentMissing:
         (bundle / 'skills' / 'hollow-skill').mkdir(parents=True)
         _write_plugin_json(bundle, {'skills': ['./skills/hollow-skill']})
 
-        findings = analyze_declared_vs_disk(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_declared_vs_disk, tmp_path, [RULE_ID])
         assert findings[0]['details']['component_kind'] == 'skill'
 
     def test_mixed_present_and_missing_flags_only_missing(self, tmp_path: Path) -> None:
@@ -202,9 +187,7 @@ class TestDeclaredComponentMissing:
             },
         )
 
-        findings = analyze_declared_vs_disk(tmp_path)
-
-        assert len(findings) == 2
+        findings = assert_analyzer_findings(analyze_declared_vs_disk, tmp_path, [RULE_ID] * 2)
         missing = {f['details']['declared_entry'] for f in findings}
         assert missing == {'./skills/missing-skill', './agents/missing-agent.md'}
 
@@ -224,9 +207,7 @@ class TestBoundaryConditions:
         plugin_dir.mkdir(parents=True)
         (plugin_dir / 'plugin.json').write_text('{ this is not valid json', encoding='utf-8')
 
-        findings = analyze_declared_vs_disk(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_declared_vs_disk, tmp_path, [])
 
     def test_non_string_and_blank_entries_ignored(self, tmp_path: Path) -> None:
         bundle = tmp_path / 'my-bundle'
@@ -235,17 +216,13 @@ class TestBoundaryConditions:
             {'skills': [123, '', '   ', None]},
         )
 
-        findings = analyze_declared_vs_disk(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_declared_vs_disk, tmp_path, [])
 
     def test_non_list_component_value_ignored(self, tmp_path: Path) -> None:
         bundle = tmp_path / 'my-bundle'
         _write_plugin_json(bundle, {'skills': 'not-a-list'})
 
-        findings = analyze_declared_vs_disk(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_declared_vs_disk, tmp_path, [])
 
     def test_findings_span_multiple_bundles(self, tmp_path: Path) -> None:
         bundle_a = tmp_path / 'bundle-a'
@@ -253,8 +230,6 @@ class TestBoundaryConditions:
         _write_plugin_json(bundle_a, {'skills': ['./skills/ghost-a']})
         _write_plugin_json(bundle_b, {'agents': ['./agents/ghost-b.md']})
 
-        findings = analyze_declared_vs_disk(tmp_path)
-
-        assert len(findings) == 2
+        findings = assert_analyzer_findings(analyze_declared_vs_disk, tmp_path, [RULE_ID] * 2)
         bundles = {f['details']['bundle'] for f in findings}
         assert bundles == {'bundle-a', 'bundle-b'}

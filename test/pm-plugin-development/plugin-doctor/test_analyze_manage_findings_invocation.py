@@ -24,6 +24,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -313,9 +315,7 @@ class TestSkillScanner:
         skill_dir = tmp_path / 'my-skill'
         skill_dir.mkdir()
         (skill_dir / 'SKILL.md').write_text('# clean\nno invocations here\n', encoding='utf-8')
-        findings = scan_skill_for_manage_findings_invocation(skill_dir)
-        assert findings == []
+        assert_analyzer_findings(scan_skill_for_manage_findings_invocation, skill_dir, [])
 
     def test_scanner_handles_missing_directory(self, tmp_path: Path) -> None:
-        findings = scan_skill_for_manage_findings_invocation(tmp_path / 'nonexistent')
-        assert findings == []
+        assert_analyzer_findings(scan_skill_for_manage_findings_invocation, tmp_path / 'nonexistent', [])

@@ -19,6 +19,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -70,8 +72,7 @@ class TestCompliantCmdFunction:
     def test_compliant_dispatcher_no_finding(self, tmp_path: Path) -> None:
         """A cmd_* with both prelude and flag produces no finding."""
         script = _write_script(tmp_path, _compliant_dispatcher())
-        findings = analyze_cmd_root_anchoring(script)
-        assert findings == []
+        assert_analyzer_findings(analyze_cmd_root_anchoring, script, [])
 
     def test_prelude_tolerance_for_intermediate_stmts(self, tmp_path: Path) -> None:
         """Intermediate assignments between function start and prelude are tolerated."""
@@ -93,8 +94,7 @@ class TestCompliantCmdFunction:
             '    p_run.set_defaults(func=cmd_run)\n'
         )
         script = _write_script(tmp_path, src)
-        findings = analyze_cmd_root_anchoring(script)
-        assert findings == []
+        assert_analyzer_findings(analyze_cmd_root_anchoring, script, [])
 
 
 # ===========================================================================
@@ -120,10 +120,8 @@ class TestMissingPrelude:
             '    p_an.set_defaults(func=cmd_analyze)\n'
         )
         script = _write_script(tmp_path, src)
-        findings = analyze_cmd_root_anchoring(script)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_cmd_root_anchoring, script, [RULE_ID])
         f = findings[0]
-        assert f['rule_id'] == RULE_ID
         assert f['missing'] == 'prelude'
         assert f['function_name'] == 'cmd_analyze'
 
@@ -152,8 +150,7 @@ class TestMissingFlag:
             '    p_fix.set_defaults(func=cmd_fix)\n'
         )
         script = _write_script(tmp_path, src)
-        findings = analyze_cmd_root_anchoring(script)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_cmd_root_anchoring, script, [RULE_ID])
         f = findings[0]
         assert f['missing'] == 'flag'
         assert f['function_name'] == 'cmd_fix'
@@ -181,8 +178,7 @@ class TestMissingBoth:
             '    p_rep.set_defaults(func=cmd_report)\n'
         )
         script = _write_script(tmp_path, src)
-        findings = analyze_cmd_root_anchoring(script)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_cmd_root_anchoring, script, [RULE_ID])
         f = findings[0]
         assert f['missing'] == 'both'
         assert f['function_name'] == 'cmd_report'
@@ -226,15 +222,13 @@ class TestNonDispatcherScript:
             'parser = argparse.ArgumentParser(allow_abbrev=False)\n'
         )
         script = _write_script(tmp_path, src)
-        findings = analyze_cmd_root_anchoring(script)
-        assert findings == []
+        assert_analyzer_findings(analyze_cmd_root_anchoring, script, [])
 
     def test_utility_script_no_finding(self, tmp_path: Path) -> None:
         """A plain utility script with no cmd_* or set_defaults produces no finding."""
         src = 'def helper():\n    return 42\n'
         script = _write_script(tmp_path, src)
-        findings = analyze_cmd_root_anchoring(script)
-        assert findings == []
+        assert_analyzer_findings(analyze_cmd_root_anchoring, script, [])
 
 
 # ===========================================================================
@@ -245,14 +239,12 @@ class TestNonDispatcherScript:
 class TestRobustness:
     def test_nonexistent_file(self, tmp_path: Path) -> None:
         path = tmp_path / 'nonexistent.py'
-        findings = analyze_cmd_root_anchoring(path)
-        assert findings == []
+        assert_analyzer_findings(analyze_cmd_root_anchoring, path, [])
 
     def test_syntax_error_file(self, tmp_path: Path) -> None:
         path = tmp_path / 'broken.py'
         path.write_text('def x(\n', encoding='utf-8')
-        findings = analyze_cmd_root_anchoring(path)
-        assert findings == []
+        assert_analyzer_findings(analyze_cmd_root_anchoring, path, [])
 
     def test_multiple_compliant_functions(self, tmp_path: Path) -> None:
         """Multiple compliant cmd_* functions in the same file → no findings."""
@@ -279,5 +271,4 @@ class TestRobustness:
             '    p_b.set_defaults(func=cmd_b)\n'
         )
         script = _write_script(tmp_path, src)
-        findings = analyze_cmd_root_anchoring(script)
-        assert findings == []
+        assert_analyzer_findings(analyze_cmd_root_anchoring, script, [])

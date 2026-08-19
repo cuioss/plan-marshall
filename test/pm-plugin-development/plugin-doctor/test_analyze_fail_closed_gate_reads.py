@@ -30,6 +30,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -202,8 +204,7 @@ class TestFormANegatives:
             'def cmd_run(args):\n'
             '    return Path(args.path).read_text()\n',
         )
-        findings = analyze_fail_closed_gate_reads(mp)
-        assert findings == []
+        assert_analyzer_findings(analyze_fail_closed_gate_reads, mp, [])
 
     def test_analyzer_self_reference_whitelisted(self, tmp_path: Path) -> None:
         mp = _make_marketplace(tmp_path)
@@ -218,8 +219,7 @@ class TestFormANegatives:
             'def cmd_run(args):\n'
             '    return Path(args.path).read_text()\n',
         )
-        findings = analyze_fail_closed_gate_reads(mp)
-        assert findings == []
+        assert_analyzer_findings(analyze_fail_closed_gate_reads, mp, [])
 
 
 class TestFormAScopeLocality:
@@ -377,4 +377,4 @@ class TestWhitelistAndEmpty:
 
     def test_empty_tree_returns_empty(self, tmp_path: Path) -> None:
         mp = _make_marketplace(tmp_path)
-        assert analyze_fail_closed_gate_reads(mp) == []
+        assert_analyzer_findings(analyze_fail_closed_gate_reads, mp, [])

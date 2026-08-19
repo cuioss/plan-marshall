@@ -29,6 +29,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -154,14 +156,10 @@ class TestCleanMirror:
             _skill_md_table(['`provides_triage()`', '`provides_recipes()`']),
         )
 
-        findings = analyze_provides_method_table(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_provides_method_table, tmp_path, [])
 
     def test_empty_root_returns_no_findings(self, tmp_path: Path) -> None:
-        findings = analyze_provides_method_table(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_provides_method_table, tmp_path, [])
 
 
 # ===========================================================================
@@ -186,11 +184,8 @@ class TestOverrideMissingFromTable:
         # Table lists only provides_triage; provides_recipes override is missing.
         skill_md = _write_skill_md(bundle, _skill_md_table(['`provides_triage()`']))
 
-        findings = analyze_provides_method_table(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_provides_method_table, tmp_path, [RULE_ID])
         finding = findings[0]
-        assert finding['rule_id'] == RULE_ID
         assert finding['type'] == RULE_ID
         assert finding['severity'] == 'warning'
         assert finding['fixable'] is False
@@ -215,11 +210,8 @@ class TestPhantomTableRow:
         ext_path = _write_extension(bundle, _extension_source({}))  # no overrides
         skill_md = _write_skill_md(bundle, _skill_md_table(['`provides_triage()`']))
 
-        findings = analyze_provides_method_table(tmp_path)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_provides_method_table, tmp_path, [RULE_ID])
         finding = findings[0]
-        assert finding['rule_id'] == RULE_ID
         assert finding['severity'] == 'warning'
         assert finding['fixable'] is False
         assert finding['file'] == str(skill_md)
@@ -248,9 +240,7 @@ class TestPhantomTableRow:
             _skill_md_table(['`provides_triage()`', '`provides_recipes()`']),
         )
 
-        findings = analyze_provides_method_table(tmp_path)
-
-        assert len(findings) == 2
+        findings = assert_analyzer_findings(analyze_provides_method_table, tmp_path, [RULE_ID] * 2)
         reasons = {f['details']['reason'] for f in findings}
         assert reasons == {'phantom_table_row'}
         methods = {f['details']['method'] for f in findings}
@@ -281,18 +271,14 @@ class TestBoundaryConditions:
             ),
         )
 
-        findings = analyze_provides_method_table(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_provides_method_table, tmp_path, [])
 
     def test_no_sibling_extension_is_skipped(self, tmp_path: Path) -> None:
         bundle = tmp_path / 'my-bundle'
         # SKILL.md with a table but no extension.py beside it.
         _write_skill_md(bundle, _skill_md_table(['`provides_triage()`']))
 
-        findings = analyze_provides_method_table(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_provides_method_table, tmp_path, [])
 
     def test_no_extension_api_section_is_skipped(self, tmp_path: Path) -> None:
         bundle = tmp_path / 'my-bundle'
@@ -302,9 +288,7 @@ class TestBoundaryConditions:
             '# plan-marshall-plugin\n\nIntro prose, no Extension API section.\n',
         )
 
-        findings = analyze_provides_method_table(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_provides_method_table, tmp_path, [])
 
     def test_both_directions_co_occur(self, tmp_path: Path) -> None:
         """A missing real override and a phantom row are flagged independently."""
@@ -314,9 +298,7 @@ class TestBoundaryConditions:
         _write_extension(bundle, _extension_source({'provides_recipes': '["r"]'}))
         _write_skill_md(bundle, _skill_md_table(['`provides_triage()`']))
 
-        findings = analyze_provides_method_table(tmp_path)
-
-        assert len(findings) == 2
+        findings = assert_analyzer_findings(analyze_provides_method_table, tmp_path, [RULE_ID] * 2)
         by_reason = {f['details']['reason']: f for f in findings}
         assert set(by_reason) == {'override_missing_from_table', 'phantom_table_row'}
         assert by_reason['override_missing_from_table']['details']['method'] == 'provides_recipes'
@@ -336,8 +318,6 @@ class TestBoundaryConditions:
         # Table lists provides_triage but omits the provides_recipes override.
         _write_skill_md(bundle_b, _skill_md_table(['`provides_triage()`']))
 
-        findings = analyze_provides_method_table(tmp_path)
-
-        assert len(findings) == 2
+        findings = assert_analyzer_findings(analyze_provides_method_table, tmp_path, [RULE_ID] * 2)
         bundles = {f['details']['bundle'] for f in findings}
         assert bundles == {'bundle-a', 'bundle-b'}

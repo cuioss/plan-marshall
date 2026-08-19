@@ -22,9 +22,8 @@ Additional cases:
 import sys
 from pathlib import Path
 
-from conftest import get_scripts_dir, load_script_module
+from conftest import PROJECT_ROOT, get_scripts_dir, load_script_module
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 # Retained: this module inserts the scripts dir on sys.path (used outside the
 # module loader) so ``from <module> import ...`` resolves for the modules under
 # test. The loader body itself routes through ``load_script_module``.

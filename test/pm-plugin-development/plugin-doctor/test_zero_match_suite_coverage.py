@@ -7,7 +7,7 @@ The deleted ``_analyze_zero_match_rule.py`` proved "a rule is alive" from a
 parallel ``FIXTURE_CORPUS`` that DUPLICATED positive test cases the analyzer
 suite already carried. This meta-test reframes the invariant as a TEST-LAYER
 suite-coverage property and derives "fired" from running each registered
-analyzer over a positive fixture in ``_fixtures.py`` (NOT a live xdist
+analyzer over a positive fixture in ``_plugin_doctor_fixtures.py`` (NOT a live xdist
 session-tap):
 
     registered_rule_ids(MARKETPLACE_ROOT) - fired_rule_ids() - EXEMPT_RULE_IDS == ∅
@@ -17,7 +17,7 @@ Where:
 - ``registered_rule_ids(root)`` — every audit-tracked rule ID the analyzers
   emit (the same population the provenance audit pins).
 - ``fired_rule_ids()`` — the union of rule IDs every fixture in
-  ``_fixtures.build_fixture_corpus`` emits when run over its own scratch tree,
+  ``_plugin_doctor_fixtures.build_fixture_corpus`` emits when run over its own scratch tree,
   plus the cross-file rules derived from ``crossfile_verified_findings``.
   "Fired" means "fired against its positive fixture".
 - ``EXEMPT_RULE_IDS`` — the shrunken, per-entry-justified set of rules that
@@ -25,12 +25,12 @@ Where:
 
 A registered rule that is neither fired nor exempt is a real coverage gap: the
 assertion message names it so the fix is unambiguous (author a firing fixture
-in ``_fixtures.py``, or add a justified exemption here).
+in ``_plugin_doctor_fixtures.py``, or add a justified exemption here).
 """
 
 from conftest import MARKETPLACE_ROOT
 
-from _fixtures import fired_rule_ids, registered_rule_ids
+from _plugin_doctor_fixtures import fired_rule_ids, registered_rule_ids
 
 # ---------------------------------------------------------------------------
 # Exempt set — genuinely un-fixturable rules, each with a one-line justification.
@@ -71,7 +71,7 @@ def test_zero_match_suite_coverage():
 
     The build-failing invariant: ``registered - fired - EXEMPT == ∅``. A
     non-empty gap means a registered rule has no firing positive fixture in
-    ``_fixtures.py`` and is not justified-exempt — write the fixture (preferred)
+    ``_plugin_doctor_fixtures.py`` and is not justified-exempt — write the fixture (preferred)
     or add a justified ``EXEMPT_RULE_IDS`` entry.
     """
     registered = registered_rule_ids(MARKETPLACE_ROOT)
@@ -83,7 +83,7 @@ def test_zero_match_suite_coverage():
         'Registered plugin-doctor rules with no firing positive fixture and no '
         f'justified exemption: {uncovered}\n'
         'For each: author a firing fixture in '
-        'test/pm-plugin-development/plugin-doctor/_fixtures.py '
+        'test/pm-plugin-development/plugin-doctor/_plugin_doctor_fixtures.py '
         '(build_fixture_corpus), or — only if the rule structurally cannot fire '
         'on a static positive fixture — add a per-entry-justified EXEMPT_RULE_IDS '
         'entry here.'

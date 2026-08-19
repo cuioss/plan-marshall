@@ -13,10 +13,9 @@ import tempfile
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import get_script_path, load_script_module, run_script
+from conftest import PROJECT_ROOT, get_script_path, load_script_module, run_script
 
 # Script under test
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'plugin-maintain', 'maintain.py')
 
 

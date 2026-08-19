@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Regression pinning the two PR #1067 defects the self-review missed (D4).
+"""Regression pinning two mechanically-detectable defects against real code.
 
-``pre-submission-self-review`` ran twice at the #1067 HEAD, examined 117
-candidates, and reported ``self-review clean: no check matched`` — yet PR #1067
-shipped two Major defects (findings ``8da924`` and ``3e04a8``, both resolution
-``fixed``) that are mechanically detectable. This module pins BOTH against the
-REAL pre-fix code, so a detector that ever stops firing on the real defect fails
-here.
+``pre-submission-self-review`` can examine a full candidate set and report
+``self-review clean: no check matched`` while the diff carries Major defects its
+detectors are supposed to catch. This module pins both shapes against the REAL
+code they were found in rather than against a synthetic reduction, so a detector
+that stops firing on the genuine article fails here — which a hand-written
+fixture tuned to the detector would not.
 
 * **Case (a)** — the ``discover_derivation_resolvers()`` shape at its pre-fix
   revision is flagged by ``_detect_duplicate_claimable_keys`` (D1): a resolver id
@@ -19,14 +19,12 @@ here.
   drop candidates without appending to the ``notes`` report channel — a vacuous
   ``status: ok`` / zero-edge / empty-notes report.
 
-The pre-fix and post-fix bodies below are the REAL code, transcribed from the
-#1067 feature branch (``git fetch origin refs/pull/1067/head``): the introducing
-commit is ``2896e18``, the fix is ``c4ff227``, and ``14d4e3d`` (= ``c4ff227^``)
-is the last commit carrying the defect. They are checked-in LITERALS, never
-resolved from a git object at test time — the #1067 branch was squash-merged into
-``c6b501e`` and its intermediate commits are garbage-collection candidates, so a
-git-resolving fixture would pass today and silently stop testing anything once the
-object is pruned. This mirrors the rule-19 worked-example fixture discipline
+The pre-fix and post-fix bodies below are the REAL code as it shipped, not a
+synthetic reduction of it: a fixture written to the detector proves only that the
+detector matches its own fixture. They are checked-in LITERALS, never
+resolved from a git object at test time — a squash-merged branch's intermediate
+commits are garbage-collection candidates, so a git-resolving fixture would pass
+today and silently stop testing anything once the object is pruned. This mirrors the rule-19 worked-example fixture discipline
 (``SKILL.md`` § Tests).
 
 Every executable line of each fixture is verbatim from that revision; only the
@@ -43,10 +41,10 @@ from self_review import (  # noqa: I001
 )
 
 # =============================================================================
-# Real #1067 code — verbatim executable lines, docstrings elided
+# Real code under test — verbatim executable lines, docstrings elided
 # =============================================================================
 
-#: discover_derivation_resolvers() at 14d4e3d — the PRE-FIX defect (finding 8da924).
+#: discover_derivation_resolvers() — the PRE-FIX defect form.
 #: ``resolvers.append({... 'id': resolver_id ...})`` behind a bare ``if not
 #: resolver_id`` check, with NO membership test → duplicate ids collapse.
 DISCOVER_RESOLVERS_PREFIX = '''\
@@ -92,7 +90,7 @@ def discover_derivation_resolvers() -> list[dict[str, Any]]:
     return resolvers
 '''
 
-#: discover_derivation_resolvers() at c6b501e (merged #1067) — the POST-FIX form.
+#: discover_derivation_resolvers() — the POST-FIX form.
 #: ``origin_by_id.get(resolver_id)`` + ``origin_by_id[resolver_id] = origin`` is
 #: the membership/dedup guard that must suppress D1.
 DISCOVER_RESOLVERS_POSTFIX = '''\
@@ -217,7 +215,7 @@ def merge_resolver_edges(
     return edges, reports
 '''
 
-#: merge_resolver_edges() at c6b501e (merged #1067) — the POST-FIX form. Each
+#: merge_resolver_edges() — the POST-FIX form. Each
 #: drop appends a ``merge:``-prefixed note to ``notes`` before ``continue``.
 MERGE_EDGES_POSTFIX = '''\
 def merge_resolver_edges(

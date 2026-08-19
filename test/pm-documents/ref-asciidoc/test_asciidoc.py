@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import get_script_path, load_script_module, run_script
+from conftest import get_script_path, load_script_module, parse_ns, run_script
 
 TEST_DIR = Path(__file__).parent
 SCRIPT_PATH = get_script_path('pm-documents', 'ref-asciidoc', 'asciidoc.py')
@@ -35,6 +35,37 @@ cmd_stats = _stats_mod.cmd_stats
 analyze_file_stats = _stats_mod.analyze_file_stats
 cmd_validate = _validate_mod.cmd_validate
 cmd_format = _format_mod.cmd_format
+
+# Argument namespaces come from the script's OWN parser, so each carries every
+# default the real CLI applies — several sites below omitted flags the parser
+# defaults (``format``, ``details``, ``ignore_patterns``), which a hand-built
+# namespace simply lacks. Parsed once at module scope: parse_ns re-executes the
+# script module on every call.
+_STATS_NS = parse_ns(
+    'pm-documents', 'ref-asciidoc', 'asciidoc.py',
+    'stats', '--directory', '.', register=False,
+)
+_VALIDATE_NS = parse_ns(
+    'pm-documents', 'ref-asciidoc', 'asciidoc.py',
+    'validate', '--path', '.', register=False,
+)
+_FORMAT_NS = parse_ns(
+    'pm-documents', 'ref-asciidoc', 'asciidoc.py',
+    'format', '--path', '.', register=False,
+)
+_VERIFY_LINKS_NS = parse_ns(
+    'pm-documents', 'ref-asciidoc', 'asciidoc.py',
+    'verify-links', '--file', 'placeholder.adoc', register=False,
+)
+_CLASSIFY_NS = parse_ns(
+    'pm-documents', 'ref-asciidoc', 'asciidoc.py',
+    'classify-links', register=False,
+)
+
+
+def _ns(template: Namespace, **overrides) -> Namespace:
+    """A parser-produced namespace with this test's values overlaid."""
+    return Namespace(**{**vars(template), **overrides})
 cmd_verify_links = _verify_links_mod.cmd_verify_links
 verify_links = _verify_links_mod.verify_links
 extract_anchors_from_file = _verify_links_mod.extract_anchors_from_file
@@ -74,21 +105,21 @@ def test_stats_help_shows_usage():
 
 
 def test_stats_console_format_returns_summary():
-    result = cmd_stats(Namespace(command='stats', directory=str(FIXTURES_DIR), format='console', details=False))
+    result = cmd_stats(_ns(_STATS_NS, directory=str(FIXTURES_DIR), format='console', details=False))
 
     assert result['status'] == 'success', f'Expected success status, got: {result.get("status")}'
     assert 'summary' in result, 'Stats output should contain summary'
 
 
 def test_stats_json_format_includes_metadata_and_summary():
-    result = cmd_stats(Namespace(command='stats', directory=str(FIXTURES_DIR), format='json', details=False))
+    result = cmd_stats(_ns(_STATS_NS, directory=str(FIXTURES_DIR), format='json', details=False))
 
     assert 'metadata' in result, 'Result missing metadata'
     assert 'summary' in result, 'Result missing summary'
 
 
 def test_stats_details_flag_includes_files():
-    result = cmd_stats(Namespace(command='stats', directory=str(FIXTURES_DIR), format='json', details=True))
+    result = cmd_stats(_ns(_STATS_NS, directory=str(FIXTURES_DIR), format='json', details=True))
 
     assert 'files' in result, 'Result with details flag should include files key'
 
@@ -143,13 +174,13 @@ def test_stats_lists_regex_raises_no_future_warning():
 
 def test_stats_handles_empty_directory():
     with tempfile.TemporaryDirectory() as temp_dir:
-        result = cmd_stats(Namespace(command='stats', directory=temp_dir, format='console', details=False))
+        result = cmd_stats(_ns(_STATS_NS, directory=temp_dir, format='console', details=False))
 
         assert result['status'] == 'success'
 
 
 def test_stats_nonexistent_directory_reports_error():
-    result = cmd_stats(Namespace(command='stats', directory='/nonexistent/path', format='console', details=False))
+    result = cmd_stats(_ns(_STATS_NS, directory='/nonexistent/path', format='console', details=False))
 
     assert result['status'] == 'error', 'Nonexistent path should produce error status'
 
@@ -158,13 +189,13 @@ def test_stats_nonexistent_directory_reports_error():
 
 
 def test_validate_console_format_returns_status():
-    result = cmd_validate(Namespace(command='validate', path=str(FIXTURES_DIR), format='console', ignore_patterns=None))
+    result = cmd_validate(_ns(_VALIDATE_NS, path=str(FIXTURES_DIR), format='console', ignore_patterns=None))
 
     assert result['status'] in ('success', 'non_compliant'), f'Unexpected status: {result["status"]}'
 
 
 def test_validate_json_format_includes_directory():
-    result = cmd_validate(Namespace(command='validate', path=str(FIXTURES_DIR), format='json', ignore_patterns=None))
+    result = cmd_validate(_ns(_VALIDATE_NS, path=str(FIXTURES_DIR), format='json', ignore_patterns=None))
 
     assert 'directory' in result, "JSON format didn't produce expected output"
 
@@ -187,7 +218,7 @@ Some text directly before list:
         temp_file = f.name
 
     try:
-        result = cmd_validate(Namespace(command='validate', path=temp_file, format='console', ignore_patterns=None))
+        result = cmd_validate(_ns(_VALIDATE_NS, path=temp_file, format='console', ignore_patterns=None))
 
         assert result['status'] == 'non_compliant' or 'blank' in str(result).lower(), (
             'Missing blank line should be detected'
@@ -198,7 +229,7 @@ Some text directly before list:
 
 def test_validate_accepts_ignore_pattern():
     result = cmd_validate(
-        Namespace(command='validate', path=str(FIXTURES_DIR), format='console', ignore_patterns=['missing-*.adoc'])
+        _ns(_VALIDATE_NS, path=str(FIXTURES_DIR), format='console', ignore_patterns=['missing-*.adoc'])
     )
 
     assert result['status'] in ('success', 'non_compliant', 'error')
@@ -212,7 +243,7 @@ def test_validate_rejects_invalid_format():
 
 def test_validate_nonexistent_path_reports_error():
     result = cmd_validate(
-        Namespace(command='validate', path='/nonexistent/path', format='console', ignore_patterns=None)
+        _ns(_VALIDATE_NS, path='/nonexistent/path', format='console', ignore_patterns=None)
     )
 
     assert result['status'] == 'error', 'Nonexistent path should produce error status'
@@ -222,14 +253,14 @@ def test_validate_nonexistent_path_reports_error():
 
 
 def test_format_no_backup_flag_succeeds():
-    result = cmd_format(Namespace(command='format', path=str(FIXTURES_DIR), fix_types=['lists'], no_backup=True))
+    result = cmd_format(_ns(_FORMAT_NS, path=str(FIXTURES_DIR), fix_types=['lists'], no_backup=True))
 
     assert result['status'] == 'success'
 
 
 @pytest.mark.parametrize('fix_type', FORMAT_FIX_TYPES)
 def test_format_accepts_fix_type(fix_type):
-    result = cmd_format(Namespace(command='format', path=str(FIXTURES_DIR), fix_types=[fix_type], no_backup=True))
+    result = cmd_format(_ns(_FORMAT_NS, path=str(FIXTURES_DIR), fix_types=[fix_type], no_backup=True))
 
     assert result['status'] == 'success'
 
@@ -241,7 +272,7 @@ def test_format_rejects_invalid_fix_type():
 
 
 def test_format_nonexistent_path_reports_error():
-    result = cmd_format(Namespace(command='format', path='/nonexistent/path', fix_types=None, no_backup=False))
+    result = cmd_format(_ns(_FORMAT_NS, path='/nonexistent/path', fix_types=None, no_backup=False))
 
     assert result['status'] == 'error', 'Nonexistent path should produce error status'
 
@@ -253,7 +284,7 @@ def test_verify_links_processes_single_file():
     empty_file = LINK_VERIFY_FIXTURES / 'empty.adoc'
 
     result = cmd_verify_links(
-        Namespace(command='verify-links', file=str(empty_file), directory=None, recursive=False, report=None)
+        _ns(_VERIFY_LINKS_NS, file=str(empty_file), directory=None, recursive=False, report=None)
     )
 
     assert str(result.get('data', {}).get('files_processed', '')) == '1', 'Single file mode processes one file'
@@ -263,7 +294,7 @@ def test_verify_links_handles_empty_file():
     empty_file = LINK_VERIFY_FIXTURES / 'empty.adoc'
 
     result = cmd_verify_links(
-        Namespace(command='verify-links', file=str(empty_file), directory=None, recursive=False, report=None)
+        _ns(_VERIFY_LINKS_NS, file=str(empty_file), directory=None, recursive=False, report=None)
     )
 
     assert result['status'] in ('success', 'failure', 'error')
@@ -271,7 +302,7 @@ def test_verify_links_handles_empty_file():
 
 def test_verify_links_missing_file_reports_error():
     result = cmd_verify_links(
-        Namespace(command='verify-links', file='/nonexistent/file.adoc', directory=None, recursive=False, report=None)
+        _ns(_VERIFY_LINKS_NS, file='/nonexistent/file.adoc', directory=None, recursive=False, report=None)
     )
 
     assert result['status'] == 'error', 'Error when file does not exist'
@@ -281,8 +312,8 @@ def test_verify_links_rejects_both_file_and_directory():
     empty_file = LINK_VERIFY_FIXTURES / 'empty.adoc'
 
     result = cmd_verify_links(
-        Namespace(
-            command='verify-links',
+        _ns(
+            _VERIFY_LINKS_NS,
             file=str(empty_file),
             directory=str(LINK_VERIFY_FIXTURES),
             recursive=False,
@@ -313,7 +344,7 @@ def test_classify_links_writes_categorized_output():
 
     try:
         result = cmd_classify_links(
-            Namespace(command='classify-links', input=str(input_file), output=str(output_file), pretty=True)
+            _ns(_CLASSIFY_NS, input=str(input_file), output=str(output_file), pretty=True)
         )
 
         assert result['status'] == 'success'
@@ -444,7 +475,7 @@ def test_cmd_verify_links_directory_mode_processes_every_adoc():
         _write_adoc(d, 'two.adoc', '= Two\n\nbody\n')
 
         result = cmd_verify_links(
-            Namespace(command='verify-links', file=None, directory=str(d), recursive=False, report=None)
+            _ns(_VERIFY_LINKS_NS, file=None, directory=str(d), recursive=False, report=None)
         )
 
         assert result['data']['files_processed'] == 2
@@ -454,7 +485,7 @@ def test_cmd_verify_links_empty_directory_reports_no_files():
     """A directory with no .adoc files yields a structured no_files error."""
     with tempfile.TemporaryDirectory() as tmp:
         result = cmd_verify_links(
-            Namespace(command='verify-links', file=None, directory=tmp, recursive=False, report=None)
+            _ns(_VERIFY_LINKS_NS, file=None, directory=tmp, recursive=False, report=None)
         )
 
         assert result['status'] == 'error'
@@ -469,7 +500,7 @@ def test_cmd_verify_links_writes_report_file_when_requested():
         report = d / 'report.json'
 
         result = cmd_verify_links(
-            Namespace(command='verify-links', file=str(d / 'a.adoc'), directory=None, recursive=False, report=str(report))
+            _ns(_VERIFY_LINKS_NS, file=str(d / 'a.adoc'), directory=None, recursive=False, report=str(report))
         )
 
         assert report.exists()

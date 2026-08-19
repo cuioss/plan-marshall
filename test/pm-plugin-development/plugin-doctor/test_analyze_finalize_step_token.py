@@ -37,14 +37,16 @@ Test layers:
   * (e) Project-local — ``.claude/skills/finalize-step-*/SKILL.md`` is scanned
         with the ``project:{name}`` expected step_id (violating + clean).
   * (f) Finding shape — the finding carries the documented contract fields.
-  * (g) Real-marketplace-zero — the real bundles tree produces zero findings
-        (the PR #629 regression anchor).
+  * (g) Real-marketplace-zero — the real bundles tree produces zero findings,
+        which is what makes a non-empty result a real drift rather than noise.
 """
 
 from pathlib import Path
 
 import pytest
 from conftest import MARKETPLACE_ROOT, load_script_module
+
+from _plugin_doctor_fixtures import assert_analyzer_findings
 
 
 def _load_module(name: str, filename: str):
@@ -151,7 +153,7 @@ class TestBundleViolating:
     def test_drifted_token_triggers_finding(self, tmp_path: Path, monkeypatch) -> None:
         bundles_root = _bundle_marketplace(tmp_path, monkeypatch)
         # Documented token uses a bare-skill name instead of the canonical
-        # ``{bundle}:{skill}`` reference — the classic PR #629 drift.
+        # ``{bundle}:{skill}`` reference — the drift this rule exists to catch.
         content = (
             '# Plan Retrospective\n\n'
             'Finalize tail:\n\n'
@@ -159,11 +161,8 @@ class TestBundleViolating:
         )
         md = _write_bundle_skill(bundles_root, content)
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(scan_finalize_step_token, bundles_root, [RULE_ID])
         f = findings[0]
-        assert f['rule_id'] == RULE_ID
         assert f['file'] == str(md)
         assert f['details']['documented_token'] == _SKILL
         assert f['details']['expected_step_id'] == _BUNDLE_REF
@@ -176,9 +175,7 @@ class TestBundleViolating:
         content = '# Skill\n\n' + _mark_step_done_block(f'project:{_SKILL}')
         _write_bundle_skill(bundles_root, content)
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(scan_finalize_step_token, bundles_root, [RULE_ID])
         assert findings[0]['details']['expected_step_id'] == _BUNDLE_REF
 
 
@@ -195,9 +192,7 @@ class TestBundleClean:
         content = '# Skill\n\n' + _mark_step_done_block(_BUNDLE_REF)
         _write_bundle_skill(bundles_root, content)
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert findings == []
+        assert_analyzer_findings(scan_finalize_step_token, bundles_root, [])
 
     def test_out_of_registry_bundle_skill_is_not_scanned(
         self, tmp_path: Path, monkeypatch
@@ -210,9 +205,7 @@ class TestBundleClean:
             bundles_root, content, bundle='pm-dev-java', skill='some-step'
         )
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert findings == []
+        assert_analyzer_findings(scan_finalize_step_token, bundles_root, [])
 
 
 # ===========================================================================
@@ -230,9 +223,7 @@ class TestSkipContext:
         )
         _write_bundle_skill(bundles_root, content)
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert findings == []
+        assert_analyzer_findings(scan_finalize_step_token, bundles_root, [])
 
     def test_mark_step_done_wrong_phase_is_skipped(
         self, tmp_path: Path, monkeypatch
@@ -245,9 +236,7 @@ class TestSkipContext:
         )
         _write_bundle_skill(bundles_root, content)
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert findings == []
+        assert_analyzer_findings(scan_finalize_step_token, bundles_root, [])
 
 
 # ===========================================================================
@@ -272,9 +261,7 @@ class TestEqualsForm:
         )
         _write_bundle_skill(bundles_root, content)
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(scan_finalize_step_token, bundles_root, [RULE_ID])
         assert findings[0]['details']['documented_token'] == _SKILL
 
     def test_equals_form_matching_token_is_clean(self, tmp_path: Path, monkeypatch) -> None:
@@ -289,9 +276,7 @@ class TestEqualsForm:
         )
         _write_bundle_skill(bundles_root, content)
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert findings == []
+        assert_analyzer_findings(scan_finalize_step_token, bundles_root, [])
 
 
 # ===========================================================================
@@ -311,9 +296,7 @@ class TestProjectLocal:
         content = '# Deploy Target\n\n' + _mark_step_done_block(name)
         bundles_root, md = _write_project_skill(tmp_path, content, name=name)
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(scan_finalize_step_token, bundles_root, [RULE_ID])
         f = findings[0]
         assert f['file'] == str(md)
         assert f['details']['documented_token'] == name
@@ -328,9 +311,7 @@ class TestProjectLocal:
         )
         bundles_root, _ = _write_project_skill(tmp_path, content, name=name)
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert findings == []
+        assert_analyzer_findings(scan_finalize_step_token, bundles_root, [])
 
     def test_project_local_without_handshake_is_skipped(
         self, tmp_path: Path, monkeypatch
@@ -339,9 +320,7 @@ class TestProjectLocal:
         content = '# Deploy Target\n\nNo finalize handshake here.\n'
         bundles_root, _ = _write_project_skill(tmp_path, content, name=name)
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert findings == []
+        assert_analyzer_findings(scan_finalize_step_token, bundles_root, [])
 
     def test_bundle_and_project_findings_combine(self, tmp_path: Path, monkeypatch) -> None:
         """Findings from the bundle tree and ``.claude/skills`` combine."""
@@ -359,9 +338,7 @@ class TestProjectLocal:
             encoding='utf-8',
         )
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert len(findings) == 2
+        findings = assert_analyzer_findings(scan_finalize_step_token, bundles_root, [RULE_ID] * 2)
         files = {f['file'] for f in findings}
         assert any(f.endswith(f'{_SKILL}/SKILL.md') for f in files)
         assert any(f.endswith(f'{proj_name}/SKILL.md') for f in files)
@@ -380,11 +357,8 @@ class TestFindingShape:
         content = '# Skill\n\n' + _mark_step_done_block(_SKILL)
         md = _write_bundle_skill(bundles_root, content)
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(scan_finalize_step_token, bundles_root, [RULE_ID])
         f = findings[0]
-        assert f['rule_id'] == RULE_ID
         assert f['type'] == FINDING_TYPE
         assert f['rule'] == RULE_NAME
         assert f['file'] == str(md)
@@ -411,14 +385,12 @@ class TestFindingShape:
         )
         _write_bundle_skill(bundles_root, content)
 
-        findings = scan_finalize_step_token(bundles_root)
-
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(scan_finalize_step_token, bundles_root, [RULE_ID])
         assert findings[0]['line'] == 6
 
 
 # ===========================================================================
-# (g) Real-marketplace-zero — the PR #629 regression anchor
+# (g) Real-marketplace-zero — the anchor that makes a finding meaningful
 # ===========================================================================
 
 
@@ -429,9 +401,9 @@ def _marketplace_available() -> bool:
 def test_real_marketplace_tree_produces_zero_findings() -> None:
     """The real bundles tree has zero finalize-step token drifts.
 
-    This is the PR #629 regression anchor: the documented
-    ``mark-step-done --step`` token in every in-scope finalize-step skill must
-    equal its canonical manifest step_id. A non-empty result means a real
+    The documented ``mark-step-done --step`` token in every in-scope
+    finalize-step skill must equal its canonical manifest step_id, so a green
+    here is what licenses reading any finding as real. A non-empty result means a real
     skill drifted and the ``phase_steps_complete`` handshake would loop
     forever.
     """

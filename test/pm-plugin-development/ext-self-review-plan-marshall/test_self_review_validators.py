@@ -3,13 +3,13 @@
 """6-axis canonical-identifier rejection tests for ``self_review.py``.
 
 Covers the ``--plan-id`` flag declared by the ``surface`` subcommand
-(via ``add_plan_id_arg``). The TASK-3 production-code fix wired
+(via ``add_plan_id_arg``). The production code wires
 ``parse_args_with_toon_errors`` into ``self_review.py``'s ``main()`` so
 malformed input now produces ``status: error / error: invalid_plan_id``
 on stdout TOON (exit 0) instead of argparse's default exit-2 stderr error.
 
 Re-uses ``test/_shared/_input_validation_fixtures.py`` for the
-canonical 6-axis matrix (TASK-2 foundation).
+canonical 6-axis matrix.
 """
 
 from __future__ import annotations

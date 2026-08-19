@@ -23,9 +23,9 @@ contract (separate from the table-level invariants exercised by
 """
 
 import re
-from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+from conftest import PROJECT_ROOT
+
 PROVENANCE_PATH = (
     PROJECT_ROOT
     / 'marketplace'

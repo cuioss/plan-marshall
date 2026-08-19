@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from conftest import PROJECT_ROOT
 from marketplace.targets.opencode.emitter import (
     EXCLUDED_DIR_NAMES,
     VERBATIM_SKILL_SUBDIRS,
@@ -34,7 +35,7 @@ def _write(path: Path, content: str | bytes) -> None:
 @pytest.fixture()
 def opencode_config_dir() -> Path:
     """Return the canonical OpenCode mapping/rules config directory."""
-    return Path(__file__).resolve().parents[3].parent / 'marketplace' / 'targets' / 'opencode'
+    return Path(PROJECT_ROOT) / 'marketplace' / 'targets' / 'opencode'
 
 
 @pytest.fixture()

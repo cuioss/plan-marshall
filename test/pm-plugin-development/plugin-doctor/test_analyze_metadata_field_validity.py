@@ -23,6 +23,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -251,5 +253,4 @@ class TestAnalyzeMetadataFieldValidity:
     def test_nonexistent_marketplace_no_crash(self, tmp_path: Path) -> None:
         """Non-existent marketplace root returns empty list."""
         mp = tmp_path / 'does-not-exist'
-        findings = analyze_metadata_field_validity(mp)
-        assert findings == []
+        assert_analyzer_findings(analyze_metadata_field_validity, mp, [])

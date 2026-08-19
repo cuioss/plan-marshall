@@ -19,6 +19,8 @@ from pathlib import Path
 
 from conftest import get_scripts_dir, load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 _alb = load_script_module(
     'pm-plugin-development', 'plugin-doctor', '_analyze_agentfile_line_budget.py', '_analyze_agentfile_line_budget'
 )
@@ -132,18 +134,14 @@ class TestWithinBudgetNotFlagged:
         repo, bundles = _make_repo(tmp_path)
         _write_agentfile(repo, 'CLAUDE.md', 10)
 
-        findings = analyze_agentfile_line_budget(bundles)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_agentfile_line_budget, bundles, [])
 
     def test_exactly_at_budget_not_flagged(self, tmp_path: Path) -> None:
         """The budget is inclusive — exactly ``budget`` lines is compliant."""
         repo, bundles = _make_repo(tmp_path)
         _write_agentfile(repo, 'CLAUDE.md', DEFAULT_LINE_BUDGET)
 
-        findings = analyze_agentfile_line_budget(bundles)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_agentfile_line_budget, bundles, [])
 
     def test_one_over_budget_flagged(self, tmp_path: Path) -> None:
         """One line over the budget is the boundary that flags."""
@@ -157,9 +155,7 @@ class TestWithinBudgetNotFlagged:
     def test_no_agentfiles_no_findings(self, tmp_path: Path) -> None:
         _repo, bundles = _make_repo(tmp_path)
 
-        findings = analyze_agentfile_line_budget(bundles)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_agentfile_line_budget, bundles, [])
 
 
 # ===========================================================================
@@ -174,9 +170,7 @@ class TestExcludedDirectories:
         repo, bundles = _make_repo(tmp_path)
         _write_agentfile(repo, 'target/CLAUDE.md', DEFAULT_LINE_BUDGET + 100)
 
-        findings = analyze_agentfile_line_budget(bundles)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_agentfile_line_budget, bundles, [])
 
     def test_plan_and_git_and_node_modules_pruned(self, tmp_path: Path) -> None:
         repo, bundles = _make_repo(tmp_path)
@@ -184,9 +178,7 @@ class TestExcludedDirectories:
         _write_agentfile(repo, '.git/CLAUDE.md', DEFAULT_LINE_BUDGET + 100)
         _write_agentfile(repo, 'node_modules/pkg/AGENTS.md', DEFAULT_LINE_BUDGET + 100)
 
-        findings = analyze_agentfile_line_budget(bundles)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_agentfile_line_budget, bundles, [])
 
 
 # ===========================================================================

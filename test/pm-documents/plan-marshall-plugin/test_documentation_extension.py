@@ -15,11 +15,11 @@
 
 import builtins
 import importlib.util
-from pathlib import Path
 
 from extension_base import DerivationResolverBase, ExtensionBase, PathAttributionBase
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+from conftest import PROJECT_ROOT
+
 EXTENSION_FILE = (
     PROJECT_ROOT
     / 'marketplace'

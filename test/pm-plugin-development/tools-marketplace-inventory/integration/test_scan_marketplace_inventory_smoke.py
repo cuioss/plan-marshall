@@ -26,9 +26,8 @@ from pathlib import Path
 
 from toon_parser import parse_toon
 
-from conftest import get_script_path, run_script
+from conftest import PROJECT_ROOT, get_script_path, run_script
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent
 SCRIPT_PATH = get_script_path('pm-plugin-development', 'tools-marketplace-inventory', 'scan-marketplace-inventory.py')
 
 METADATA_KEYS = {

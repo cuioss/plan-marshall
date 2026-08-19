@@ -22,6 +22,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -77,10 +79,8 @@ class TestBothMarkersPresent:
             'def analyze_offender(root):\n'
             '    return []\n',
         )
-        findings = analyze_bash_fence_inline_code_exemption(mp)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_bash_fence_inline_code_exemption, mp, [RULE_ID])
         f = findings[0]
-        assert f['rule_id'] == RULE_ID
         assert f['type'] == 'bash_fence_inline_code_exemption'
         assert f['severity'] == 'error'
         assert f['fixable'] is False
@@ -131,8 +131,7 @@ class TestOnlyBashFenceMarker:
             'def analyze_bash_only(root):\n'
             '    return []\n',
         )
-        findings = analyze_bash_fence_inline_code_exemption(mp)
-        assert findings == []
+        assert_analyzer_findings(analyze_bash_fence_inline_code_exemption, mp, [])
 
 
 # ===========================================================================
@@ -152,8 +151,7 @@ class TestOnlyInlineCodeHelper:
             'def analyze_prose(root):\n'
             '    return []\n',
         )
-        findings = analyze_bash_fence_inline_code_exemption(mp)
-        assert findings == []
+        assert_analyzer_findings(analyze_bash_fence_inline_code_exemption, mp, [])
 
     def test_only_inline_code_spans_no_finding(self, tmp_path: Path) -> None:
         mp = _make_marketplace(tmp_path)
@@ -163,8 +161,7 @@ class TestOnlyInlineCodeHelper:
             'def _inline_code_spans(line):\n'
             '    return []\n',
         )
-        findings = analyze_bash_fence_inline_code_exemption(mp)
-        assert findings == []
+        assert_analyzer_findings(analyze_bash_fence_inline_code_exemption, mp, [])
 
 
 # ===========================================================================
@@ -184,9 +181,7 @@ class TestInlineCodeSpansVariant:
             'def _inline_code_spans(line):\n'
             '    return []\n',
         )
-        findings = analyze_bash_fence_inline_code_exemption(mp)
-        assert len(findings) == 1
-        assert findings[0]['rule_id'] == RULE_ID
+        findings = assert_analyzer_findings(analyze_bash_fence_inline_code_exemption, mp, [RULE_ID])
         assert '_inline_code_spans' in findings[0]['snippet']
 
 
@@ -220,8 +215,7 @@ class TestSelfReferenceExclusion:
             '_BASH_FENCE_INFO_STRINGS = ("bash",)\n'
             "_INLINE_CODE_RE = r'`[^`]+`'\n",
         )
-        findings = analyze_bash_fence_inline_code_exemption(mp)
-        assert findings == []
+        assert_analyzer_findings(analyze_bash_fence_inline_code_exemption, mp, [])
 
     def test_dispatch_host_whitelisted(self, tmp_path: Path) -> None:
         path = (
@@ -245,8 +239,7 @@ class TestSelfReferenceExclusion:
             '# Rule docs: an analyzer defining _BASH_FENCE_INFO_STRINGS that\n'
             '# also carries _INLINE_CODE_RE / _inline_code_spans is flagged.\n',
         )
-        findings = analyze_bash_fence_inline_code_exemption(mp)
-        assert findings == []
+        assert_analyzer_findings(analyze_bash_fence_inline_code_exemption, mp, [])
 
 
 # ===========================================================================
@@ -259,8 +252,8 @@ class TestEmptyTree:
 
     def test_empty_bundles(self, tmp_path: Path) -> None:
         mp = _make_marketplace(tmp_path)
-        assert analyze_bash_fence_inline_code_exemption(mp) == []
+        assert_analyzer_findings(analyze_bash_fence_inline_code_exemption, mp, [])
 
     def test_nonexistent_marketplace(self, tmp_path: Path) -> None:
         mp = tmp_path / 'does-not-exist'
-        assert analyze_bash_fence_inline_code_exemption(mp) == []
+        assert_analyzer_findings(analyze_bash_fence_inline_code_exemption, mp, [])

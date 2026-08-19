@@ -29,6 +29,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -227,7 +229,7 @@ class TestBrokenRelativeLink:
         assert len(no_boundary) == 1
         assert no_boundary[0]['target'] == '../skill-b/gone.md'
 
-    # -- Repo-root boundary widening (deliverable D3) ------------------------
+    # -- Repo-root boundary widening ----------------------------------------
 
     @staticmethod
     def _make_repo_layout(tmp_path: Path) -> tuple[Path, Path]:
@@ -410,11 +412,7 @@ class TestAggregatorWiring:
             '# F\n\nSee [x](standards/x.md).\n\n```python\nok = 1\n```\n',
         )
 
-        findings = analyze_markdown_mirror_rules(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_markdown_mirror_rules, tmp_path, [])
 
     def test_empty_root_returns_no_findings(self, tmp_path: Path) -> None:
-        findings = analyze_markdown_mirror_rules(tmp_path)
-
-        assert findings == []
+        assert_analyzer_findings(analyze_markdown_mirror_rules, tmp_path, [])
