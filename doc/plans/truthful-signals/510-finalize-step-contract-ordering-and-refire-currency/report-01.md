@@ -2,7 +2,15 @@
 
 **Date (UTC):** 2026-08-18    **Branch:** `claude/step-contract-ordering-refire-cjlzup`    **PR:** _pending_    **Outcome:** _in progress_
 
-> **Verification loop exit:** _pending_
+> **Verification loop exit:** `budget-exhausted` — five rounds run, the full budget. Round 5 returned
+> five findings plus three minor, all condition A and all counting prose; every one is fixed above
+> except **T8**, characterised in § Residue, and commit `c92dd11`'s message (**S8**), characterised
+> there too. Not `verifier-clear`: five consecutive rounds each found real defects, four of them in the
+> text written to fix the round before, so the honest reading is that a sixth round would find more —
+> not that the tree is clean. What the rounds did establish, by re-derivation and replay rather than
+> assertion, is that **the substrate work holds**: every population, every guard, every replayed
+> mutation and the whole-tree gate reproduce exactly. The residual defect class is the report's own
+> counting prose, which is now the only place findings have come from for two rounds.
 
 ## Skills loaded
 
@@ -257,7 +265,7 @@ close, so the harness now prints the emitted `AssertionError` and the cells are 
 | D8 / 160-G2 substrate guard | `script-shared/scripts/build/_gate_coverage.py` | dropped `targets, build.py` from the `spdx-paths` parity note | `test_gate_coverage_parity_substrate.py::test_spdx_paths_note_matches_the_gate_it_describes` | missing `'build.py'`, `'targets'` | clean |
 | A9 carve-out (a) | `test/plan-marshall/test_lane_refactor_cleanup_sweep.py` | widened the carve-out from run-report files to the whole `doc/plans/` tree | `test_the_rest_of_doc_plans_is_still_swept` (and the anchor control alongside it) | `live documentation under doc/plans/ is no longer swept, so a retired token in it would go uncaught: ['doc/plans/README.md', 'doc/plans/_template/plan.md']` | bytes identical |
 | A9 carve-out (b) | same | dropped the `doc/plans` ancestor test, matching `report-NN.md` anywhere in the tree | `test_the_exclusion_is_anchored_to_doc_plans_and_to_the_report_name` | `assert not True` — on `_is_lane_run_report(doc/user/report-01.md)` | bytes identical |
-| A9 carve-out (d) | same | carve-out swallows all of `doc/` (`return path.is_relative_to(PROJECT_ROOT / 'doc')`) | `test_the_rest_of_doc_is_still_swept` — **the row round 4 found missing**; the three mutations below leave this guard green, so its red was unrecorded and "each seen RED" was false for it | `doc/user and doc/developer must both remain on the walk; swept top-level doc subdirectories were []` | sha256 identical |
+| A9 carve-out (d) | same | carve-out swallows all of `doc/` (`return path.is_relative_to(PROJECT_ROOT / 'doc')`) | `test_the_rest_of_doc_is_still_swept` — **the row round 4 found missing**; the other three A9 mutations in this table leave this guard green, so its red was unrecorded and "each seen RED" was false for it. Also fails `test_the_rest_of_doc_plans_is_still_swept` and `test_the_exclusion_is_anchored_…` | `doc/user and doc/developer must both remain on the walk; swept top-level doc subdirectories were []` | sha256 identical |
 | A9 carve-out (c) | same | defined `_is_lane_run_report` but removed its call from `_iter_text_files`, leaving it unconsulted | `test_the_run_report_exclusion_is_honoured_by_the_walk` — **and** `test_no_ceremony_policy_json_key_or_dotted_paths`, the original failure returning | `109 lane run report(s) reached the sweep despite the exclusion` / `Orphaned reference to retired token 'ceremony_policy' (4 hit(s))` | bytes identical |
 
 **D3's second Done-when check, and where it disagrees with the plan.** The plan's stated check is that
@@ -297,19 +305,25 @@ deviation and its reason are recorded here rather than silently resolved either 
 ## Build gate
 
 **Python-change verdict.** The gate fires: this branch changes Python, which is the only thing the
-verdict turns on, and that is true at every commit on it.
+verdict turns on. It is true of the branch as a whole and of every commit from `b935f14` onward; the
+first two commits (`a1b11b4` the plan directory, `28669af` D1's populations) touch no `*.py` at all,
+which is why the per-commit gates below ran ahead of every *Python-touching* commit rather than every
+commit.
 
-The figures below are **exact for commit `df64757`** — the last commit that changes implementation
+The figures below are **exact for commit `db2f61d`** — the last commit that changes implementation
 files — and stale for any other, so they name that commit rather than standing bare:
 
 ```bash
-git diff --name-only df64757 origin/main -- '*.py' | wc -l   # 27  (9 production, 18 test)
-git diff --name-only df64757 origin/main | wc -l             # 60
+git diff --name-only db2f61d origin/main -- '*.py' | wc -l   # 28  (9 production, 19 test)
+git diff --name-only db2f61d origin/main | wc -l             # 61
 ```
 
-Anchoring them to `df64757` rather than to `HEAD` is deliberate, and it is what makes them stay true:
+Anchoring them to `db2f61d` rather than to `HEAD` is deliberate, and it is what makes them stay true:
 the only commit after it is the one recording this report, which touches no file outside
-`doc/plans/`, so neither count moves.
+`doc/plans/`, so neither count moves. Round 5 flagged that this rationale holds only until the next
+implementation commit — and the very next one, `db2f61d` itself, falsified the previous anchor and
+moved 27/60 to 28/61. That is the fourth time these figures have moved. The anchoring does not stop
+them moving; it makes each set checkable against a commit that exists, which the bare form never was.
 
 This is the third figure set recorded here, and the churn is the point rather than an embarrassment:
 A7 caught the first set (19/48) stale, the re-derived set (23/56) went stale again the moment the
@@ -544,12 +558,48 @@ re-derived all four populations; those held.
 | S2 | round 4 | § Build gate's green block is labelled "third run … and its **three** guards" over a `21108` figure; that tree carries **four** guards, and the section itself says so 14 lines later. 21107 was the three-guard total | **fixed** — "fourth run of this gate … its four guards" |
 | S3 | round 4 | **Condition B.** "Four guards … each seen RED" is false for one: `test_the_rest_of_doc_is_still_swept` goes red under **none** of the three recorded mutations, and has no ledger row | **fixed** — mutated (carve-out swallows all of `doc/`), seen RED with its own distinct message, ledger row (d) added with an sha256-verified restore |
 | S4 | round 4 | `SKILL.md:1766` cited for the absent-`head_at_completion` row; that row is at **1768**, and 1766 is the `matches live HEAD` row. The citation never matched — it was written after that file's last edit | **fixed** — 1768 |
-| S5 | round 4 | § Collateral check omits `test_lane_refactor_cleanup_sweep.py`, the run's largest test change (+127 lines), and three other files. Verification §6 asks for the file list, not only the narrative | **fixed** — five rows added |
-| S6 | round 4 | **F4/A4/R8 recurring, sites six through eight.** `_config_defaults.py:412` and `:1081` and `test_ceremony_policy.py:73` still name the bare `pre-push-quality-gate` key | **fixed, and the class swept to exhaustion** — the tree-wide grep for every bracketed/dotted/`--step-id` form now returns nothing outside this report |
+| S5 | round 4 | § Collateral check omits `test_lane_refactor_cleanup_sweep.py` (+125/-2) and three other files. Verification §6 asks for the file list, not only the narrative | **fixed** — five rows added |
+| S6 | round 4 | **F4/A4/R8 recurring, sites six through eight.** `_config_defaults.py:412` and `:1081` and `test_ceremony_policy.py:73` still name the bare `pre-push-quality-gate` key | **fixed** — and the exhaustion claim first made here was itself false, see **T2** |
 | S7 | round 4 | `.claude/skills/finalize-step-plugin-doctor/SKILL.md:27` names `default:finalize-step-pre-push-quality-gate` — an id that resolves to **nothing**; the file is one this branch edits | **fixed** — `default:pre-push-quality-gate` |
 | S8 | round 4 | Commit `c92dd11`'s message asserts "all six sub-steps observed", the statement R5 corrected in the report. A commit message is part of the shipped tree | **recorded, not fixable** — see § Residue; rewriting pushed history to correct prose would cost more than the false line does |
 | S9 | round 4 | `_orchestrator_inbox.py:808` says `LANDING_REQUIRED_KEYS` "is NOT re-listed in prose elsewhere". Two documents re-list it, and **D8's own two new tests exist to bind them** | **fixed** — the comment now names both surfaces and the tests that bind them |
 | S10 | round 4 | § Findings' round-1 preamble says "Ten findings:" over a 17-row table, while commit `65669cb` says "fourteen findings … plus three nits" | **fixed** — the preamble states the row count and reconciles it against the F-numbering |
+
+### Round 5 — the final round, and the exhaustion claim that was not
+
+Five findings plus three minor ones, and a verdict of **`budget-exhausted`**, not `verifier-clear`. The
+verifier replayed ledger row (d)'s mutation (the quoted message reproduced exactly), counted the
+eight-cell delta table against frontmatter, ran both figure commands verbatim, re-derived all four
+populations, checked every D1–D8 Done-when clause that is executable, read all fifteen commit messages
+as shipped text, and reproduced the gate character-for-character. **All of that held.** What did not
+hold was, once again, counting prose.
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| T1 | round 5 | The sweep module's own comment says "The three tests below pin each half of this" over **four** guards — omitting exactly the one round 4 found missing from the ledger. S3 fixed the report and left the source comment carrying the same undercount | **fixed** — the comment names four and lists them |
+| T2 | round 5 | **The strongest claim this report made, and it was false.** S6's disposition and commit `df64757`'s message both said the unprefixed-step-id class was "swept to exhaustion — the tree-wide grep … returns nothing outside this report". Three sites remained (`test_config_defaults.py` ×2, `test_cmd_ceremony_policy.py` ×1), in the **unquoted-bracket** form `steps[pre-push-quality-gate]`. The sweep behind the claim had matched the quoted and dotted forms only — so the claim rested on a grep that did not cover the class it claimed to exhaust | **fixed** — three sites corrected (nine through eleven), and the claim replaced by a stated scope, below |
+| T3 | round 5 | "the run's largest test change (+127 lines)", twice. It is **125/2** and ranks **seventh**; `test_step_prompt_fields_contract.py` (360/51) is nearly three times larger, and a collateral sibling (`test_finalize_steps_lane_rejection.py`, 268/0) is more than twice it. "+127" was the `--stat` total, not insertions | **fixed** — the superlative dropped, the figure stated as `+125/-2` |
+| T4 | round 5 | "this branch changes Python … **true at every commit on it**" — false at the first two commits (`a1b11b4`, `28669af`), which touch no `*.py`. The same section says four paragraphs later that per-commit gates ran "ahead of every `*.py`-touching commit", presupposing commits that touch none | **fixed** — scoped to `b935f14` onward, with the two exceptions named |
+| T5 | round 5 | § Collateral check still omits `_cmd_baseline_reconcile.py` (32 lines, in no § Expected surface entry) after S5 claimed to complete the list | **fixed** — row added; the change was already explained narratively under F7/A2, so this was a list-completeness gap |
+| T6–T8 | round 5 | Three minor: ledger row (d) said "the three mutations **below**" when two are above it; row (d) named one failing test where the mutation fails three; row 160/G2's message cell paraphrases (`missing 'build.py', 'targets'`) rather than quoting the emission | **T6/T7 fixed**; **T8 recorded** — see § Residue |
+
+**T2 — what the class actually is, stated instead of an exhaustion claim.** The sweep behind "exhaustion"
+was too narrow, and the claim was also the wrong *shape*: a bare `pre-push-quality-gate` is not by
+itself a defect. **210** bare mentions remain and are correct, because two namespaces are in play:
+
+- **The config-key namespace** (`plan.phase-6-finalize.steps`), where the seeded key carries `default:`
+  and a bare id resolves to nothing — `step set --step-id pre-push-quality-gate` errors. Every
+  reference of the form `steps[…]`, `steps.…` or `--step-id …` belongs here, and **eleven** such sites
+  were corrected across F4, A4, R8, S6 and T2.
+- **The manifest namespace**, which is canonically bare *by design*: `canonicalize_step_key` strips
+  `default:` before comparison, so `_BUILD_EVIDENCE_PHASE_6_STEPS = frozenset({'pre-push-quality-gate'})`
+  is correct and prefixing it would break the lookup. Prose naming the step also belongs here.
+
+So the honest statement is scoped, not absolute: **every config-key-path and `--step-id` reference to
+this step now carries its prefix**, verified by a grep covering the bracketed (quoted and unquoted),
+dotted and `--step-id` forms. The bare mentions that remain are the manifest namespace and prose, where
+bare is right. An "exhaustion" claim over a class whose boundary had never been stated is what let the
+same defect recur five times; the boundary is now stated.
 
 ### Collateral check (Verification §6)
 
@@ -566,10 +616,12 @@ Changed files outside § Expected surface, each explained:
 | `test/plan-marshall/phase-6-finalize/test_loop_back_outcome.py` | D8 / 440-G2 consequence: it pinned the superseded "Re-fire (HEAD has advanced)" wording. Re-pinned to the deferral |
 | `test/plan-marshall/manage-execution-manifest/test_manage_execution_manifest_validate.py`, `.../test_validate_loadable.py` | F5a/F5b — stale order annotations in the bundle 300/G8 edits |
 | `test/plan-marshall/build-pyproject/test_gate_coverage_parity_substrate.py` (new) | D8 / 160-G2's substrate test. § Expected surface anticipates it as "a parity-cell substrate test for D8 / 160/G2" |
-| `test/plan-marshall/test_lane_refactor_cleanup_sweep.py` | **The run's largest test change (+127 lines) and in no § Expected surface entry.** Not a deliverable: the A9/R11 carve-out and its four guards, forced when the whole-tree gate showed this report could not name the guard it tripped. Narrated in § Build gate and **R11**; listed here because Verification §6 asks for the file list, not only the explanation |
+| `test/plan-marshall/test_lane_refactor_cleanup_sweep.py` | **+125/-2, and in no § Expected surface entry.** Not a deliverable: the A9/R11 carve-out and its four guards, forced when the whole-tree gate showed this report could not name the guard it tripped. Narrated in § Build gate and **R11**; listed here because Verification §6 asks for the file list, not only the explanation |
 | `test/plan-marshall/build-pyproject/test_gate_coverage.py` | D8 / 160-G2 consequence. § Expected surface names the *directory* but not this module; the collateral row above named only the new substrate file beside it |
 | `marketplace/.../plan-orchestrator/scripts/_orchestrator_inbox.py` | Round 4 finding 9: its `LANDING_REQUIRED_KEYS` comment claimed the set "is NOT re-listed in prose elsewhere", which D8's two new binding tests disprove by construction |
 | `marketplace/.../manage-config/scripts/_config_defaults.py`, `test/plan-marshall/manage-config/test_ceremony_policy.py` | Round 4 finding 6 — the sixth to eighth sites of the unprefixed `pre-push-quality-gate` id, found by sweeping the class rather than re-checking the named sites |
+| `test/plan-marshall/manage-config/test_config_defaults.py`, `test/plan-marshall/manage-config/test_cmd_ceremony_policy.py` | **T2** — sites nine through eleven of the same id, in the unquoted-bracket form the earlier sweeps' greps did not match |
+| `marketplace/.../workflow-integration-git/scripts/_cmd_baseline_reconcile.py` | **T5** — D6's owning script, in no § Expected surface entry (which lists six production scripts, not this one). Its change is F7 + A2: five prose sites claiming the probe "performs no writes", narrowed to what it guarantees |
 | `.claude/skills/finalize-step-plugin-doctor/SKILL.md` | § Expected surface lists it only as "D2.3 mutation target, restored". It additionally carries a real **D7.1** edit — `reads: [worktree]` — which the surface list did not anticipate |
 | `marketplace/.../manage-config/standards/data-model.md` | A4 — the fourth site carrying the unprefixed `pre-push-quality-gate` owning-step id F4 corrected elsewhere. Entered the diff in round 2 |
 | `test/plan-marshall/workflow-integration-git/test_baseline_reconcile.py` | A2 — its module docstring was one of the five surviving "non-mutating classifier" restatements. Entered the diff in round 2; docstring only, no assertion changed |
@@ -623,6 +675,15 @@ _pending_
 ## Residue
 
 Things this run found, did not fix, and is naming rather than leaving for someone to rediscover.
+
+- **Ledger row 160/G2's failure-message cell paraphrases rather than quotes (T8).** It reads ``missing
+  `'build.py'`, `'targets'` ``; the emission is the assertion's own prose plus pytest's *"Extra items in
+  the right set: 'targets' / 'build.py'"*. The ledger preamble asserts every cell "is the assertion text
+  the mutated run actually emitted", so this one cell contradicts its own preamble. **Left as-is**: the
+  mutation, the named test and the substance are all correct and were re-verified in round 5; only the
+  transcription is loose. Fixing it means re-running that mutation solely to re-transcribe a cell whose
+  meaning is not in doubt. Named here rather than silently tolerated, because it is the same class as
+  **R3** — the defect that made this ledger quote emissions in the first place.
 
 - **Commit `c92dd11`'s message carries a false statement this report has since corrected.** It reads
   "all six sub-steps observed in the stream"; `cmd_verify` runs **three**, and six is the coverage-
