@@ -1185,19 +1185,21 @@ worth keeping:
 
 **State the price plainly, because it is larger than it looks.** § Report puts `report-NN.md` in the
 plan directory and condition 4 requires it as the last pre-merge commit, so **a plan run's own PR
-always carries an R3 path and can never be labelled** — arms 3 and 4 are for skill-only and
-footprint-free PRs, not for plan runs. A plan run that labelled its PR at creation (S-only
-deliverables, report not yet committed) strips the label when the report lands, per the
-re-evaluation rule below. That is the intended behaviour, not churn to be designed away: a plan's
-prose is exactly what a reviewer should see.
+carries an R3 path by the merge gate and cannot be labelled when it lands.** Say it about the gate,
+not about creation: a plan whose deliverables are S-only, and whose plan file was already in
+directory shape so Step 3 moved nothing, has **no** R3 path at creation and takes row 3 —
+`project-skill`, labelled — correctly. The report commit then adds the R3 path, and the
+re-evaluation rule below strips the label. That is the intended behaviour, not churn to be designed
+away: a plan's prose is exactly what a reviewer should see, and the label is removed the moment the
+diff acquires some.
 
 **S — a project-level skill is not the product.** These are the operating instructions the
 meta-project runs itself by. A reviewer could act on them; the budget simply buys more elsewhere.
 This suppresses waste, not scrutiny — but say what the remaining scrutiny actually is, per PR, rather
-than assuming an operator read it. A headless run has no operator at all (§ Cloud session affordances),
+than assuming an operator read it. A headless run has no operator at all (§ Rules that outrank convenience),
 and the pre-PR verification sub-agent (§ Step 6) is the check that always runs. Note a plan
-delivering `.claude/skills/**` changes does **not** reach this arm — its PR carries its own report,
-which is R3 — so this arm is for a standalone skill PR, such as the contract change § Step 9
+delivering `.claude/skills/**` changes reaches this arm only until its report lands (see R3's price
+paragraph); the arm's durable case is a **standalone** skill PR, such as the contract change § Step 9
 produces.
 
 Note this is a different question from Step 5's build skip: an R2- or R3-only change **skips the
@@ -1212,8 +1214,8 @@ gh pr create --label skip-bot-review --fill
 after create is too late for the PR-open trigger, which has already fired. Where an operator is
 reachable, say which way the rule comes out and why *before* creating the PR; a run that applies it
 silently has made a scrutiny decision on the operator's behalf. If they ask for a review in
-response: on a diff with an **S** path that is row 2's predicate — re-take the table and record
-`operator-override`. On any other diff row 2 cannot fire. If the table already gave row 1 there is
+response: **re-take the table.** On an S-path diff that row 1 did not already claim, row 2 now
+fires — record `operator-override`. On any other diff row 2 cannot fire. If the table already gave row 1 there is
 nothing to do — the review was never suppressed. If it gave row 4, create the PR without the label
 anyway, record arm `no-reviewable-footprint`, and say the label was withheld on the operator's
 instruction against the table.
@@ -1252,8 +1254,9 @@ condition 2's base merge supplies another. That push is the attempt. Record cond
 `unobtainable` only when none of those three — a later deliverable commit, condition 2's base merge,
 condition 4's report push — can carry it. Manufacturing a head stays forbidden.
 
-**"PR-open review missed" is owed whenever the label was in place when the reviewers were triggered
-and the diff was one the rule leaves reviewable** — i.e. applied late, or applied and later removed.
+**"PR-open review missed" is owed whenever the reviewers were triggered on a diff the run then
+labelled, or on a diff whose label it later removed** — i.e. `applied-late`, or applied and later
+removed. In both the first-pass review of the whole diff was lost.
 It is owed whether or not a later push recovered the review, because what was missed is the
 first-pass review of the whole diff. It is stated **alongside** whichever condition-6 arm ended up
 satisfying the gate, never instead of it.
@@ -1689,8 +1692,8 @@ hold:**
    ⛔ **The example says "six attempts spent" for a reason.** A CodeRabbit line here reports a state
    in which condition 6 is *satisfied* — never a bare countdown the run could still act on. Those
    states are the ones condition 6 names, and the disclosure borrows its token for each. **Read
-   condition 6 for the list of arms rather than counting it here** — it names seven, and any count
-   given at this distance goes stale. One state is not condition 6's and is disclosed in addition: a
+   condition 6 for the list of arms rather than naming or counting them here** — any list given at
+   this distance goes stale, and one already did. One state is not condition 6's and is disclosed in addition: a
    **PR-open review missed**, stated in those words alongside whichever arm satisfied the
    condition.
 
@@ -1912,7 +1915,7 @@ that its artifact exists on disk:
 | 4 Pushed | No unpushed commit remains (`git status -sb` reports no `ahead`) |
 | 5 Build gate | Report states the git-derived Python-change verdict and the build outcome |
 | 6 Verification sub-agent | Findings and dispositions in the report; **which of the two exits ended the loop** — named with the same `verifier-clear` / `budget-exhausted` token the report header carries, plus the `non-converging` qualifier where it applies (§ Report) — the **budget that applied** (five, or the plan's) with **every extension and who granted it**, and the round that stopped it. Where the budget ran out with an operator reachable, that the boundary question was **put to them** and what they answered; where it ran out headless, that fact and the fallback taken. On the verifier exit: **the verifier's own last answer** — never the author's verdict — and the **evidence stronger than a read** it rests on, named. On the budget exit: that fact, with everything A forbids **fixed** regardless and what closing each remaining B survivor would take. Either way: each survivor — and each behavioural finding left `deferred` — listed individually with its (a) proof or (b) bound and confirmation it was **re-put to the verifier** in the stopping round; whether the late rounds' findings were **narrower and not merely fewer**; the **residue to assume remains**; and `Outcome` still reporting the deliverables, not the loop (§ Step 6, "When the loop stops") |
-| 7 PR cycle | PR exists; every comment dispositioned in the report; the participation table carries a verdict per reviewer and a `Reopens?` value wherever § Report requires one, and every `silent` verdict records what its recovery check found, or that the PR carried `skip-bot-review` when the reviewers were triggered and no recovery was owed. Where the label was applied late or removed mid-cycle, the row also records the **PR-open review missed**. An `unreadable` verdict means condition 3 is NOT established — the row is reported as **not done**, whatever the merge outcome |
+| 7 PR cycle | PR exists; every comment dispositioned in the report; the participation table carries a verdict per reviewer and a `Reopens?` value wherever § Report requires one, and every `silent` verdict records one of three: what its recovery check found; that the PR carried `skip-bot-review` when the reviewers were triggered, so no recovery was owed; or that the label was applied immediately after creation (`applied-late`), so the reviewers fired but no recovery was owed once it was on. Where the label was applied late or removed mid-cycle, the row also records the **PR-open review missed**. An `unreadable` verdict means condition 3 is NOT established — the row is reported as **not done**, whatever the merge outcome |
 | 8 Merge gate | Conditions 1–4 and 6 met and auto-merge armed; where the base had advanced, the report names the shape used, the merge commit tested, and the gate's result on it (condition 2) — and a condition 2 that failed closed is reported as **not established**, with nothing armed. Either `state: MERGED` was confirmed after arming, **or** the session could not self-wake to watch the queue (§ Cloud session affordances) and delegated the landing to the orchestrator's collect — both are completed, neither is partial (§ Step 8). The merge commit is recorded to the operator, not in the pre-merge report |
 | 8 Bridge | No **status or bookkeeping** write landed under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan's directory was touched; a **declared-deliverable** edit to a shared lane doc (e.g. `cloud-bridge.md`, `README.md`, the plan template) is permitted — and the report carries the PR number and per-deliverable outcome the orchestrator will collect from |
 | 9 This check | Its result appended to the report |
@@ -1965,11 +1968,9 @@ If there is something worth changing:
    On the MCP path that command is the draft route — create as draft, label, undraft (§ Step 7) —
    because the label must be on before the PR is visible to the reviewers.
 
-   **Run § Step 7's decision table for the label** — do not assume the answer. The PR above touches
-   the skill, and possibly `CLAUDE.md` or `doc/plans/README.md`. **Take the table** — the arm turns
-   on which of those the change actually reaches, and `doc/plans/README.md` is R3, so a change that
-   touches it keeps its review. Whatever the table gives, the remaining scrutiny here is step 1
-   above: this is the one PR the operator approved before it was written.
+   **Run § Step 7's decision table for the label** — do not assume the answer, and do not reason
+   about which class these paths fall in from here; the table says. Whatever it gives, the remaining
+   scrutiny here is step 1 above: this is the one PR the operator approved before it was written.
 
 Keep it out of the plan's own PR. Two changes with different review audiences in one diff means
 neither gets read properly, and it couples a contract amendment to whether the plan lands.
@@ -2102,9 +2103,8 @@ were spent.
 **On every PR, labelled or not, name which arm of § Step 8 condition 6 was satisfied** — the arm
 **token**, in that condition's spelling. ⛔ **Do not enumerate the arms here**: a list at this
 distance goes stale, and the last one did. Read them from condition 6. A record that cannot name the
-arm cannot be checked against the gate, and the two commonest arms — `skip-bot-review` and
-`unobtainable` — are reached without any
-retry log at all.
+arm cannot be checked against the gate. Some arms are reached with no retry log at all; the log's
+presence is not what names the arm.
 Where a `silent` verdict triggered the recovery check (§ Step 7), record what the check found and
 whether the reviewer was recovered; where the PR carried `skip-bot-review` when the reviewers were
 triggered, record that instead — no check was owed. Where the label was applied late or removed
@@ -2130,8 +2130,9 @@ branch form was used (harness-assigned or run-created). The `skip-bot-review` de
 facts: **(1)** the state — `applied-at-creation`, `applied-late` (the PR-open trigger had already
 fired), `not-applied`, or `applied-then-removed` (with what triggered the removal); **(2)** the arm
 token from § Step 7's decision table, in that table's spelling (⛔ do not enumerate the arms here —
-the last enumeration went stale on a rename); **(3)** whether the label was read back; **(4)** whether suppression was **verified**
-or **unverified** (§ Step 7's draft route, where the governing config could not be read); and
+the last enumeration went stale on a rename); **(3)** whether the label was read back; **(4)** where a label was applied, whether suppression was **verified**
+or **unverified** (§ Step 7's draft route, where the governing config could not be read) — `n/a`
+where no label was applied; and
 **(5)** the disclosure made to the operator before creation — or that no operator was reachable. It is the one irreversible scrutiny choice the run
 makes, so it leaves a record. A cloud run **never owes** a
 `/sync-plugin-cache` — it is a machine-local build step, not a debt a cloud run records (§ Scope and
