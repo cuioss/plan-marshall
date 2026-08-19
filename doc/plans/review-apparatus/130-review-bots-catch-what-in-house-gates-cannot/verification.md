@@ -166,20 +166,21 @@ this is UNVERIFIABLE. The wording itself reads as intended on inspection.
 
 Implemented as described and, as far as I can establish, correct.
 
-- `review_commitments.py:96-104` — `COMMITTED_RESOLUTIONS` / `RELEASED_RESOLUTIONS`, disjoint and
+- `review_commitments.py:95-101` — `COMMITTED_RESOLUTIONS` / `RELEASED_RESOLUTIONS`, disjoint and
   pinned by `test_the_two_resolution_sets_are_disjoint`.
-- `derive_commitments` (`:145-176`) — `pending` and any unrecognised resolution fall to
-  `BASIS_UNDECIDED` and still bind; a finding with no `file_path` binds nothing and is counted by
-  `count_unanchored` (`:179-190`).
-- `_binds` (`:297-311`) — an anchor-less commitment binds its whole file; an anchored one binds only
-  a deletion range containing it. Both directions tested (`test_review_commitments.py:288`, `:320`).
-- `parse_deletions` (`:203-287`) — old-side numbering, contiguous runs collapsed, `\ No newline`
+- `derive_commitments` (`:145-181`) — `pending` and any unrecognised resolution fall to
+  `BASIS_UNDECIDED` and still bind (`:170`); a finding with no `file_path` binds nothing and is
+  counted by `count_unanchored` (`:183-195`).
+- `_binds` (`:298-312`) — an anchor-less commitment binds its whole file (`:309-310`); an anchored one
+  binds only a deletion range containing it (`:311`). Both directions tested
+  (`test_review_commitments.py:288`, `:320`).
+- `parse_deletions` (`:211-288`) — old-side numbering, contiguous runs collapsed, `\ No newline`
   neither advances the counter nor flushes a run, `--- ` disambiguated by `in_hunk` position,
   `+++ /dev/null` attributed to the pre-image path. Each of those is separately tested (`:191`,
   `:199`, `:224`, `:248`).
-- `reconcile` (`:311-355`) — `proves: removal_conflict_only`, `gates_merge: false`, populations
-  published, every conflicting pair reported.
-- `cmd_reconcile` (`:388-410`) — an unreadable diff or an unreadable store emits an error TOON with
+- `reconcile` (`:314-365`) — `proves: removal_conflict_only` and `gates_merge: false` on the returned
+  payload (`:359-360`), populations published, every conflicting pair reported.
+- `cmd_reconcile` (`:388-414`) — an unreadable diff or an unreadable store emits an error TOON with
   **no** `verdict` field, so a crash cannot read as clear.
 - The workflow side exists: `finalize-step-simplify.md:180-213` (Step 3b, the `.plan/temp/` diff
   path with the `.git/`-is-a-pointer-file warning, the three-way verdict branch, the revert
@@ -214,23 +215,31 @@ Three defects, all confirmed by execution:
 
 **1. The no-inversion guarantee is not structural.** `_share_withheld_reason:417` withholds when
 `len(covered) < len(roster)` — a comparison against a **caller-supplied** roster. Shrink the roster
-and full coverage is restored:
+and full coverage is restored. Two probe arms, identical in every respect except the roster:
 
 ```
-roster=['coderabbit'] reviewed=['coderabbit'] gates green, SHAs equal,
-2 escapes both gate_structural
-  -> verdict=measured  structural_share=100.0  reviewer_coverage=1/1  share_withheld=None
+roster=['coderabbit','sourcery','pr-agent'] reviewed=['coderabbit']
+  -> verdict=measured  structural_share=None   reviewer_coverage=1/3  share_withheld=partial_reviewer_coverage
+roster=['coderabbit']                       reviewed=['coderabbit']
+  -> verdict=measured  structural_share=100.0 reviewer_coverage=1/1  share_withheld=None
 ```
 
-That is verbatim the number the contract calls the failure mode
-(`bot-participation-contract.md:606-611`: *"a naive share reports 100% — 'the gates are perfectly
-configured' — when the only thing that changed is who spoke"*), reached without the guard firing.
-The route is live, not hypothetical: `bot-participation-contract.md:62` gives `refused_structural`'s
-remedy set as *"split, accept the gap, or **disable this reviewer for this PR**"*. Disabling the
-size-capped reviewer removes it from `required_bots ∪ optional_bots` and the metric resumes reporting
-— better. The plan's inversion test
+(gates green, SHAs equal, two escapes both `gate_structural`.) `100.0` is verbatim the number the
+contract calls the failure mode (`bot-participation-contract.md:604-609`: *"a naive share reports
+100% — 'the gates are perfectly configured' — when the only thing that changed is who spoke"*),
+reached without the guard firing and with the same single reviewer actually speaking on both arms.
+
+The route has a **precondition**, and stating it is part of the finding: an operator must enact the
+`refused_structural` remedy *"disable this reviewer for this PR"*
+(`bot-participation-contract.md:62`) by narrowing `required_bots` / `optional_bots`, which is the
+roster the caller passes (`automatic-review/SKILL.md:1085`, `bot-participation-contract.md:663`).
+The other two remedies in that set do not reach it: *split* changes the diff, and *accept the gap*
+leaves the reviewer enabled so coverage stays partial. The remedy is nonetheless first-class —
+`9e9e9880` (PR #1241) introduced it. The plan's inversion test
 (`test_review_gate_delta.py:142 test_collapsing_coverage_withholds_the_share_it_never_improves_it`)
-holds `enabled_bots=_ROSTER` fixed on both arms, so this axis is untested.
+holds `enabled_bots=_ROSTER` fixed on both arms, so this axis is untested. The absolute guarantee is
+restated at four sites — `review_gate_delta.py:52-59`, `bot-participation-contract.md:604-609`,
+`automatic-review/SKILL.md:1095-1100`, and the squash commit message — and is false at all four.
 
 **2. Findings the run rejected as wrong are counted as gate escapes.** `grep -n "resolution"
 review_gate_delta.py` returns nothing. Probe:
@@ -246,18 +255,29 @@ the module follows the rule; but the delta's own definition of an escape ("somet
 over and did not report") does not survive it, and the partition taxonomy has no member for "not a
 defect", so such a finding must be mislabelled or withhold the whole share.
 
-**3. The published selection effect mis-states which PRs are measurable.** `_PROVENANCE:160-172` and
-the contract's `⛔` paragraph (`bot-participation-contract.md:640-646`) both assert that *"the ONLY
-measurable PRs are those where **neither** step committed anything"*. But `pre-push-quality-gate.md:315`
-states the gate *"declares **no** `verdict_inputs` … so the dispatcher's verdict-currency classifier
-never narrows its re-fire: **every HEAD advance re-runs it**"*, and `verdict_currency.py:434-438`
-confirms it (`REASON_UNDECLARED` → `VERDICT_INVALIDATED` → RE-FIRE per
-`phase-6-finalize/SKILL.md:686`). So on any loop-back re-entry the gate re-fires and re-stamps
-`head_at_completion` at the then-current HEAD; if simplify and security-audit commit nothing on that
-final pass, the two SHAs agree and the PR is measurable. The measurable set is *"PRs whose final pass
-had no post-gate commit"*, which is biased **toward** PRs that looped back — that is, toward PRs
-where review found something. The published provenance names neither the mechanism nor that bias
-direction.
+**3. The published selection effect mis-states which PRs are measurable.** `_PROVENANCE:162-176`, the
+module docstring (`:19-27`), the contract's `⛔` paragraph (`bot-participation-contract.md:633-639`)
+and the bundle canonical block (`automatic-review/SKILL.md:1080-1084`) all assert that a forward pass
+never re-gates and therefore that *"the ONLY measurable PRs are those where **neither** step
+committed anything"*. But `pre-push-quality-gate.md:315` states the gate *"declares **no**
+`verdict_inputs` … so the dispatcher's verdict-currency classifier never narrows its re-fire: **every
+HEAD advance re-runs it**"*, its frontmatter declares `order: 5` / `head_dependent: true`, and
+`verdict_currency.py:435-438` confirms it (`REASON_UNDECLARED` → `VERDICT_INVALIDATED` → RE-FIRE per
+`phase-6-finalize/SKILL.md:690`). So on a loop-back re-entry the gate re-fires and re-stamps
+`head_at_completion`; the measurable condition is a property of the **final** pass, not of the run.
+
+⚠ **The correction does not license the inference that follows from it.** A re-gate does not widen
+the measurable set for the loop-backs that matter. `github_pr` pre-filter 5 dedups on
+`(bot_kind, comment_id)` and never re-stamps an existing finding's `reviewed_commit_sha`
+(`github_pr.py:1093-1103`), so after a review-driven loop-back the store holds findings from two
+iterations carrying two SHAs, and Step 3b's own rule — *"pass the value only when every finding
+agrees on it; when they disagree, pass nothing"*
+(`finalize-step-review-retrospective/SKILL.md:347-348`) — excludes the PR as
+`gate_tree_unsubstantiated`; if the re-review filed nothing new, every finding carries the
+pre-loop-back SHA against a re-stamped gate SHA and the PR excludes as
+`gates_did_not_cover_reviewed_tree`. The measurable set is therefore *"PRs whose final pass had no
+post-gate commit AND whose findings all carry one SHA equal to the gate's final stamp"*, and no bias
+toward review-finding PRs is established. The published provenance names none of this.
 
 **Metric-precision boundary analysis** (the plan's Verification asks for it):
 
@@ -277,8 +297,20 @@ direction.
   `66.7` (pinned at `test_review_gate_delta.py:151`). The rounding never crosses a decision boundary,
   because nothing consumes the share as a threshold.
 - **Empty population** — an empty roster is `EXCLUSION_NO_ROSTER` rather than vacuous completeness
-  (`:407-410`, tested at `:212`); an empty reviewed set is `EXCLUSION_NO_REVIEWER` (`:411-412`,
+  (`:399-402`, tested at `:212`); an empty reviewed set is `EXCLUSION_NO_REVIEWER` (`:403-404`,
   tested at `:121`).
+- **Rounding at a tie** — `round()` is banker's, so 1 structural of 16 renders `6.2`, not `6.3`
+  (executed). Harmless here: nothing consumes the share as a threshold, and `by_partition` ships the
+  raw counts beside it. Recorded so a future consumer that *does* threshold it knows.
+- **Population mismatch between numerator and denominator** — the escape numerator filters on
+  `_is_actionable` only, never on the roster, while `reviewer_coverage` is roster-only. A human PR
+  comment is stored as an ordinary `pr-comment` finding (`github_pr.py:1025` resolves `bot_kind` to
+  `None`, `_findings_core.py:291-292` then omits the key, and the noise pre-filter keeps human
+  comments — `github_pr.py:318-338`), so it enters the escape set, receives no `--partitions` label
+  from a Step 3 pass whose row domain is the enabled reviewer roster, and withholds the share.
+  Executed at full 3/3 coverage: one labelled bot escape → `100.0`; the same plus one unlabelled human
+  inline comment → `structural_share=None`, `share_withheld=unpartitioned_escapes`, `escapes_total=2`.
+  Fail-closed rather than inverting, but undisclosed and untested — see gaps.
 
 The stop condition: the plan permits either a metric or a reported stop. The run reports the
 empirical half blocked and assembled no corpus. That is an admissible reading of a deliverable whose
@@ -286,9 +318,11 @@ empirical half blocked and assembled no corpus. That is an admissible reading of
 
 ### D3 — tests, each verified to FAIL pre-fix
 
-`git show 622f4484 -- 'test/**' | grep -c "^+.*def test_"` → **91**; per file: 4 / 3 / 4 / 32 / 11 /
-4 / 29 / 4 across **eight** files. `grep -c "^+.*parametrize"` → **0**, so no parametrisation
-inflates the count toward 100.
+`git show 622f4484 -- 'test/**' | grep -c "^+.*def test_"` → **91**; re-derived per file: 4 / 3 / 4 /
+32 / 11 / 4 / 29 / 4 across **eight** files (`test_bot_registry`, `test_counting_rule_parity`,
+`test_review_completeness`, `test_review_gate_delta`, `test_gate_coverage`,
+`test_review_retrospective`, `test_review_commitments`, `test_self_review`).
+`grep -c "^+.*parametrize"` → **0**, so no parametrisation inflates the count toward 100.
 
 `TestAbsentVersusInProgressDistinction` exists at `test_review_completeness.py:2228` with the four
 methods the report implies, is explicitly labelled as retirement evidence for a shipped mechanism,
@@ -306,10 +340,10 @@ All 86 tests in the four suites I ran pass on the current tree.
 | Claim | Verdict | Evidence |
 |---|---|---|
 | "Commit `1b3cfa6`, refined in `61dd515`" (and the six other branch SHAs) | **UNVERIFIABLE** | The PR was squash-merged and the branch deleted; `git log --oneline -1 <sha>` returns "unknown revision" for all seven. Not evidence of falsehood |
-| D0: build gate gained `AnalysisLimit`, `dimension_stem`, `structural_limits`, rendered on COMPLETE and PARTIAL, UNKNOWN for uncharacterised dimensions | **ACCURATE** | `_gate_coverage.py:187-408`; four tests at `test_gate_coverage.py:191-386` |
+| D0: build gate gained `AnalysisLimit`, `dimension_stem`, `structural_limits`, rendered on COMPLETE and PARTIAL, UNKNOWN for uncharacterised dimensions | **ACCURATE for the shapes it names** | `_gate_coverage.py:192-408`; the eleven added tests at `test_gate_coverage.py:191-386`. "Rendered on both" holds only when at least one dimension was *checked* — see the two bare render paths above |
 | D0: "An uncharacterised dimension renders UNKNOWN rather than being omitted" | **ACCURATE** | `:326-332`; `test_unregistered_dimension_is_reported_unknown_not_omitted:245` |
 | D0: self-review gained `structural_limit` "beside the existing `scope_statement`" | **ACCURATE but incomplete** | `self_review.py:409`; the field rides the surfacer payload only, and `pre-submission-self-review.md:272` says so ("published, not discharged"). The report does not note that the step's verdict still carries neither |
-| D0: "The block now closes with a derived `not run in this gate at all: …` line" | **ACCURATE** | `_gate_coverage.py:344-357`; tests at `:326`, `:344`, `:357` |
+| D0: "The block now closes with a derived `not run in this gate at all: …` line" | **ACCURATE that the line exists; its wording is not** | `_gate_coverage.py:343-358`; tests at `test_gate_coverage.py:325`, `:345`, `:360`. The line asserts "this gate never performs them" for two states where it does — see D0 above |
 | D0: "Gate-set completeness is not claimed … three carry no structural limit and were not changed" | **ACCURATE** | Grep over the three docs: no structural-limit text; plugin-doctor's two hits are scope statements |
 | D1: "`review_commitments.py` (new, `phase-6-finalize/scripts/`) derives … parses … reports the intersection" | **ACCURATE** | File present, 456 lines, functions as described |
 | D1: "Two undetermined states fail closed to a conflict" | **ACCURATE** | `derive_commitments:167` (`BASIS_UNDECIDED`), `_binds:307-309` (file-wide); tested at `test_review_commitments.py:82`, `:96`, `:122`, `:320`, `:331` |
@@ -319,10 +353,10 @@ All 86 tests in the four suites I ran pass on the current tree.
 | D2: "on the current step ordering the only measurable PRs are those where **neither** post-gate mutating step committed anything" | **OVERSTATED** | The gate declares no `verdict_inputs` (`pre-push-quality-gate.md:315`), so every HEAD advance re-fires it (`verdict_currency.py:434-438`; dispatcher `SKILL.md:686`). After a loop-back the SHAs can agree |
 | D2: "**Population and provenance**, published on every verdict" | **ACCURATE** | `review_gate_delta.py:342-368`; tested at `test_review_gate_delta.py:97` |
 | D2: "every escape is `gate_addressable`, `gate_structural`, or `unpartitioned`. An unpartitioned escape **withholds** the share" | **ACCURATE** | `:317-322`, `:419`; tested at `:237`, `:247`, `:260` |
-| Finding #10/#18: the carve-out now "matches the promoted top-level `body`" and is begins-with | **ACCURATE** | `_BODY_FIELDS = ('body', 'message')` (`:136`), `opening.startswith` (`:241-246`); the promotion is real (`_findings_ingest.ingest_findings:80-133`, schema field `body` at `validate_struct.py:96`), and over-long bodies are **clamped**, not rejected (`validate_struct.py:15-16`), so the prefix survives |
+| Finding #10/#18: the carve-out now "matches the promoted top-level `body`" and is begins-with | **ACCURATE** | `_BODY_FIELDS = ('body', 'message')` (`:142`), read at `:235`, `opening.startswith` (`:239-246`); the promotion is real (`_findings_ingest.ingest_findings:80-133`, schema field `body` at `validate_struct.py:96`), and over-long bodies are **clamped**, not rejected (`validate_struct.py:15-16`), so the prefix survives |
 | Finding #12: "`_SUMMARY_AUTHOR = 'coderabbitai'` hard-coded … fixed — new registry field `review_body_summary_patterns`" | **ACCURATE** | `bot_registry.py:406-441`, `:600-602`; `coderabbit.md:52`; no `_SUMMARY_AUTHOR` remains (grep over the retro skill returns nothing) |
-| Finding #13: "'must land in both' was an obligation with no mechanism — fixed — `test_counting_rule_parity.py`" | **ACCURATE as to the file; the obligation it enforces is now stale** | The file exists (201 lines, 3 tests, all passing). But `review_retrospective._is_status_summary:160-174` now **delegates** to `review_gate_delta.is_status_summary`, so on that axis the two are one implementation and the parity assertion is vacuous. `bot-participation-contract.md:663` still says "the two implement the same rule **independently**" |
-| Finding #19: "`review_retrospective` … keyed on `author` while the sibling keyed on `bot_kind` → divergence on **every GitLab finding** — fixed — `resolve_bot_kind` reads either key" | **FALSE as to the GitLab rationale** | `gitlab_pr.py:274-280` calls `add_finding` with `plan_id, finding_type, title, detail, file_path, line, raw_input` — and **no** `author=`, `kind=` or `bot_kind=`. So neither selector is present on a GitLab record and `resolve_bot_kind` returns `''` there. Probe with a record carrying only `author` shows the fallback works — but that record shape is one the GitLab producer never emits. The rationale in `review_gate_delta.py:181-184` and the corpus case at `test_counting_rule_parity.py:150-153` both encode it |
+| Finding #13: "'must land in both' was an obligation with no mechanism — fixed — `test_counting_rule_parity.py`" | **ACCURATE as to the file; the obligation it enforces is now stale** | The file exists (201 lines, 3 tests, all passing). But `review_retrospective._is_status_summary:156-174` now **delegates** to `review_gate_delta.is_status_summary` (`:172`), so on that axis the two are one implementation and the parity assertion is vacuous. The kind classification is still genuinely duplicated (`review_gate_delta._is_actionable:249-259` vs `review_retrospective._is_actionable:177-192`). `bot-participation-contract.md:663` still says "the two implement the same rule **independently**" |
+| Finding #19: "`review_retrospective` … keyed on `author` while the sibling keyed on `bot_kind` → divergence on **every GitLab finding** — fixed — `resolve_bot_kind` reads either key" | **FALSE as to the GitLab rationale, and the fallback is unreachable on GitHub too** | `gitlab_pr.py:274-282` calls `add_finding` with `plan_id, finding_type, title, detail, file_path, line, raw_input` — and **no** `author=`, `kind=` or `bot_kind=`, though `add_finding` accepts all four (`_findings_core.py:224-241`) and `github_pr.py:1141-1144` passes all four. So neither selector is present on a GitLab record and `resolve_bot_kind` returns `''` there. On GitHub the fallback is equally dead today: executed probe over every registered login and its `[bot]`/mixed-case variants shows `github_re_review.bot_kind_for_author` and `bot_registry.bot_kind_for_login` agree on all of them, so a record with `author` and no `bot_kind` is one whose author no registry doc claims. The rationale at `review_gate_delta.py:180-186` and the corpus case at `test_counting_rule_parity.py:154-158` both encode a shape no producer emits |
 | Finding #24 recorded as accepted-not-resolved | **ACCURATE** | One shared predicate still drives both counters |
 | D3: "100 tests added across six files" | **OVERSTATED** | 91 added `def test_` across eight test files; zero `parametrize` |
 | Build gate: "5 production scripts, 7 test files" | **OVERSTATED** | Six production `.py` (`review_retrospective`, `bot_registry`, `review_gate_delta`, `review_commitments`, `_gate_coverage`, `self_review`) and eight test files, per `git show --stat --name-only 622f4484` |

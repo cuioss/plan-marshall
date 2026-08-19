@@ -53,13 +53,14 @@ Ran (nothing else; no full build):
   `PYTHONPATH`: `parse_participation` on an inadmissible evidence kind, and
   `ci_base.extract_routing_args(['--plan-id','NO_PLAN','pr','create',…])`.
 
-No repository file was modified by this verification other than this file and `gaps.md`. Two
-mutation proofs temporarily edited `automatic-review/SKILL.md` and `branch-cleanup.md`; each was
+No repository file is modified by this verification other than this file and `gaps.md`. Two mutation
+proofs temporarily edited `automatic-review/SKILL.md` and `branch-cleanup.md`; each was
 byte-snapshotted first and restored from that snapshot in a `finally`, and each restore was verified
-byte-identical. `git status --porcelain` carries one entry not from this verification — an in-flight
-`return True` injected into `github_pr.py:699` (`_reviewed_at_merge_candidate`) by another session's
-mutation probe. It was left untouched; it does not reach `review_completeness`, the contract test's
-argparse sweep, or any probe run here.
+byte-identical. No `git checkout` / `restore` / `stash` was used, because the working tree carries
+other sessions' uncommitted work — including, while this pass ran, a `return True` probe injected
+into `github_pr.py`'s `_reviewed_at_merge_candidate`. That probe was left untouched and reaches
+nothing measured here: not `review_completeness`, not the contract test's argparse sweep, not any
+`ci` probe.
 
 ## Deliverables
 
@@ -297,7 +298,7 @@ subcommands, not six. `ci_base.py:260-275` (`add_body_consumer_args`) declares `
 `required=True` on `pr create`, `pr edit`, `pr reply`, `pr thread-reply`, `issue create` and
 `issue comment`; `ci_base.py:1172,1190,1201,1217` call `add_plan_id_arg` on `issue prepare-body`,
 `issue prepare-comment`, `pr prepare-body` and `pr prepare-comment`, and the `add_plan_id_arg`
-`ci_base` imports is `tools-input-validation/scripts/input_validation.py:385-398`, whose signature is
+`ci_base` imports is `tools-input-validation/scripts/input_validation.py:387-400`, whose signature is
 `(parser, required: bool = True)` — so those four are required too. Re-derived by walking the live
 parser tree (`ci_base.build_parser('test')` plus `ci_base.add_pr_create_args`) and collecting every
 subparser carrying a `--plan-id` option: **ten, all `required=True`.** For all ten the
@@ -573,7 +574,7 @@ derivation was the incomplete one: it counted only `add_body_consumer_args`
 (`pr create`, `pr edit`, `pr reply`, `pr thread-reply`, `issue create`, `issue comment`) and missed
 the four `add_plan_id_arg` verbs (`pr prepare-body`, `pr prepare-comment`, `issue prepare-body`,
 `issue prepare-comment`). `ci_base` imports `add_plan_id_arg` from `input_validation`
-(`:385-398`), whose signature is `(parser, required: bool = True)` — so all ten are required, and all
+(`:387-400`), whose signature is `(parser, required: bool = True)` — so all ten are required, and all
 ten were executed to an exit-2 rejection. The blocker is therefore **stronger**, not weaker.
 
 **Understated, corrected (1).** The exit-0 hole was attributed to `ci_base.output_error` at the

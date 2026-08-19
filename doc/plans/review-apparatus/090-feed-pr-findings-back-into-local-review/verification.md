@@ -251,14 +251,21 @@ report's *characterisation* reproduces: the number-follower distribution is domi
 
 But the derivation was used only to justify *not* widening to any noun. The member actually added
 came from the plan's own docstring example, and the report says so at report-01.md:76 ("`check` is
-added because it is (a) the plan's cited evidence…"). The corpus's own frequent structural
-cardinality nouns were never adjudicated in the report. Re-derived over the 517-file domain
-(singular + plural, case-insensitive, counting every match not every line): `state`/`states` 25,
-`phase`/`phases` 24, `flag`/`flags` 20, `column`/`columns` 16, `member`/`members` 13 — against
-`check`/`checks` at **5**, the lowest of the set. The set is stated closed at six, which satisfies
-the second half of the clause; the first half ("derive the noun set from the counts that actually
-appear in the corpus") is claimed but not shown, and every un-adjudicated candidate is more frequent
-than the one added — including the exact noun the report's corroborating finding uses.
+added because it is (a) the plan's cited evidence…"). Re-derived over the 517-file domain (singular
++ plural, case-insensitive, counting every match on a line but never across a newline, so the count
+matches what the line-scoped detector can see), the structural nouns outside the closed set rank:
+`deliverable`/`deliverables` **67**, `module`/`modules` **44**, `state`/`states` **25**,
+`phase`/`phases` **24**, `flag`/`flags` **20**, `column`/`columns` **16**, `member`/`members` **13**
+— against `check`/`checks` at **5**, the lowest of the set.
+
+Two of those were in fact adjudicated, and the critique must say so: `deliverables` and `modules` —
+the top two — are exactly the negative test's fixtures (`test_self_review.py:1597`), pinned as
+must-not-fire, which is an adjudication recorded in executable form even though the report never
+notes they are the corpus's most frequent candidates. The remaining five (`state`, `phase`, `flag`,
+`column`, `member`) are un-adjudicated, and one of them is the exact noun the report's corroborating
+finding uses. The set is stated closed at six, which satisfies the second half of the clause; the
+first half ("derive the noun set from the counts that actually appear in the corpus") is claimed but
+not shown.
 
 **A fifth restatement site was missed.** report-01.md:77 claims consumer sites were updated "across
 **four** restatement kinds", and report-01.md:114 claims "a repo-wide sweep for the five-noun
@@ -307,7 +314,7 @@ under the over-widening the stop rule forbids. `5 checkpoints` does pin the trai
 cannot match inside `checkpoints`. The negative asserts `out == []`
 (`test_self_review.py:1602`), not merely the absence of a substring, so it cannot pass vacuously.
 
-Two honest bounds, both already acknowledged by the report:
+Two bounds on the proof, one acknowledged by the report and one not:
 
 - The mutation harness (`scratchpad/mutation_proof.py`) is not in the repo, so the proof is not
   reproducible from a clone. The report records this as CodeRabbit F5 and as residue.
@@ -315,8 +322,10 @@ Two honest bounds, both already acknowledged by the report:
   (plan.md:117-118). No accepted finding motivated this widening — the motivating case is the plan's
   own docstring observation, and the corpus corroborator was *unanswered*, not accepted. The positive
   fixture is therefore drawn from the docstring example and a real `phase-1-init/SKILL.md:857`
-  instance ("The two checks are ordered: source-origin is primary" — confirmed present at that exact
-  line). That is the best available substitute, but the report does not name the substitution.
+  instance ("The two checks are ordered: source-origin is primary, file-overlap secondary." —
+  confirmed verbatim at that exact line). That is the best available substitute, and the report does
+  **not** name the substitution — it writes the clause as satisfied instead (report-01.md:95). That
+  omission, together with D2's restated clause at report-01.md:81, is recorded as G8.
 
 ## Report-claim audit
 
@@ -362,9 +371,12 @@ plus documentation. Specific things checked and cleared:
   read predates this plan.
 - **Noise bound.** Adding `check` yields **5** additional matches across the 517-file contract-source
   domain (`check` 3, `checks` 2) — re-derived, and smaller than any other candidate considered. Of
-  those five, three are genuine cardinality claims (`phase-1-init/SKILL.md:857`,
-  `phase-4-plan/SKILL.md:825`, `phase-6-finalize/SKILL.md:498`) and two are incidental
-  `Step N check` / `check N` phrasings. The list is a review anchor excluded from `counts.total`
+  those five, two are genuine stale-able cardinality claims (`phase-1-init/SKILL.md:857`
+  "The two checks are ordered: source-origin is primary, file-overlap secondary.",
+  `phase-4-plan/SKILL.md:825`), one is a non-cardinal *"at least one check"* phrasing
+  (`phase-6-finalize/SKILL.md:498`), and two are incidental `Step N check` / `check N` phrasings
+  (`marshall-steward/SKILL.md:672`, `ext-self-review-plan-marshall/SKILL.md:232`). The list is a
+  review anchor excluded from `counts.total`
   (`ext-point-self-review-surfacing.md:177`), so the added surface cannot inflate the defect count.
 - **Non-vacuity.** Neither new test passes both before and after the change: the positive fails
   pre-fix, the negative fails under the named over-widening mutant.
@@ -380,9 +392,12 @@ one-word line ("the SAME") mid-sentence. Not a defect.
    diagnosis names only half the reason. The reach limit is general — a one-word allowance would add
    113 lines to the 189 the predicate matches over the contract-source domain.
 
-2. **The derivation's own candidates were never adjudicated.** `state`/`states` 25,
+2. **Five of the derivation's own candidates were never adjudicated.** `state`/`states` 25,
    `phase`/`phases` 24, `flag`/`flags` 20, `column`/`columns` 16, `member`/`members` 13, all more
-   frequent than the added `check`/`checks` at 5, and none of them named in the report.
+   frequent than the added `check`/`checks` at 5, and none named in the report. The two *most*
+   frequent — `deliverable`/`deliverables` 67 and `module`/`modules` 44 — are adjudicated, as the
+   negative test's must-not-fire fixtures, though the report does not note that they head the
+   distribution.
 
 3. **Fifth restatement site missed** (`ext-self-review-plan-marshall/SKILL.md:379`). The `## Tests`
    coverage index for this detector does not name either new case.
@@ -397,11 +412,45 @@ one-word line ("the SAME") mid-sentence. Not a defect.
    the first.
 
 6. **`automatic-review/SKILL.md` never states its eight-versus-nine scope split.** `:684`, `:686`
-   and `:691` count the eight list flags the FIND-step invocation at `:672-679` passes; `:980` and
+   and `:691` count the eight list flags the FIND-step invocation at `:675-682` passes; `:980` and
    `review_completeness.py:1301` count the parser's nine. Both are correct (see D2), but nothing says
    so, so the document reads as self-contradictory to anyone — or any detector — re-counting it.
 
+7. **Two live stale count claims sit in the automatic-review test contract, outside the detector's
+   file scope.** `test/plan-marshall/automatic-review/test_bot_participation_contract.py:983` reads
+   "the pre-merge barrier passes five flags, not the participation guard's six", while
+   `_CONFIRMED_SITES` (`:817-846`) declares **6** for both family-A sites, the module comment at
+   `:807-809` says six, and the block at `branch-cleanup.md:829-836` interpolates six `--*-bots`
+   flags — so both the figure and the "genuinely differ" rationale are false. `:850` reads "a sixth
+   flag reaches the quoting scan automatically" while `_ALL_LIST_FLAGS`, derived live from the parser
+   by `derive_bot_flags`, holds **seven**. The suite passes (78 passed) because neither claim is
+   asserted. Neither is visible to `_detect_count_prose`: its domain is `SKILL.md` plus
+   `standards/*.md` only (`_collect_skill_contract_sources`, `_self_review_detectors.py:276`), so
+   every `.py` docstring and comment in the tree is outside its **file scope** — a third reach axis,
+   alongside the noun set and the adjacency limit, that the run never names.
+
+8. **Two *Done when* clauses were restated rather than met.** D2's "each yes has either a new
+   detector or a justified widening" (plan.md:114-115) is satisfied by none of the three yeses;
+   report-01.md:81 substitutes a narrower clause. D3's "one positive case drawn from the real
+   accepted finding that motivated it" (plan.md:117-118) is not met either, and report-01.md:95
+   writes it as satisfied. Both dispositions are correct under the plan's own Out-of-scope rules —
+   the defect is the silent rewording, not the routing.
+
 Checked and found NOT to be defects, recorded because a later reader will otherwise re-derive them:
+
+- **The documentation is not wrong about reach.** The pattern comment
+  (`_self_review_patterns.py:162`, `:179`), Detection Rule 14 (`SKILL.md:256`) and the plan's
+  mandated cold read (`report-01.md:110`) all state the *immediately adjacent* requirement
+  correctly, and the cold read's own answer ("does not match `version 3`, `5 deliverables`,
+  `3 modules`, `5 checkpoints`") matches the regex exactly. The adjacency limit is a design limit to
+  be re-decided, not the docstring defect reproduced by its own fix — the plan's cold-read check
+  passes.
+- **`_detect_count_prose`'s `except OSError: continue`** (`_self_review_detectors.py:1081-1082`) is
+  a silent-skip fail-open: an unreadable contract source is dropped with no counter and no note. It
+  predates this plan, is unchanged by the landing, and cannot flip a verdict because `count_prose` is
+  excluded from `counts.total`. Out of scope, recorded so it is not re-found as new.
+- **The symmetric-pair count claims are correct.** `SKILL.md:232` and the `## Tests` row at `:367`
+  both say six pairings; `_PAIR_TOKENS` (`_self_review_patterns.py:47-54`) holds six.
 
 - **Production string literals.** No argparse `help=`, `description=`, error template or log template
   restates the noun set. `self_review.py:565` derives its help prose from the registry
@@ -460,18 +509,21 @@ any residue item.
 
 ## Summary
 
-**Counts by severity:** 0 blockers · 1 major · 5 minor · 1 cosmetic. These map one-to-one onto
-`gaps.md` G1–G7.
+**Counts by severity:** 0 blockers · 1 major · 7 minor · 1 cosmetic. These map one-to-one onto
+`gaps.md` G1–G9.
 
 Major: one report claim attributes a git fact to PR #1153 when the commit is PR #1039, invalidating
 the corroborating detail hung on it and sending a later auditor to an unrelated PR.
 
-Minor: the widening does not reach its own corroborating corpus case, for an adjacency reason the
-report never diagnoses; the derivation's higher-frequency candidates were never adjudicated; a fifth
-consumer restatement (the `## Tests` index) left stale; the mandated registry re-derivation
-unreported; and the derivation and mutation harnesses absent from the repo, so neither D2's "derived,
-not guessed" nor D3's mutation proof is reproducible from a clone. Cosmetic: `plan.md:59`'s "Three."
-against four numbered items, defensible under the D0-is-a-gate reading but never reconciled.
+Minor, in `gaps.md` order: the widening does not reach its own corroborating corpus case, for an
+adjacency reason the report never diagnoses (G2); the derivation is absent from the repo and five of
+its higher-frequency candidates were never adjudicated (G3); a fifth consumer restatement, the
+`## Tests` index, left stale (G4); the mandated registry re-derivation unreported (G5);
+`automatic-review/SKILL.md` never states the scope split that makes its eight- and nine-figures both
+correct (G6); two live stale count claims in `test_bot_participation_contract.py`, outside the
+detector's file scope (G7); and two *Done when* clauses restated rather than met (G8). Cosmetic:
+`plan.md:59`'s "Three." against four numbered items, defensible under the D0-is-a-gate reading but
+never reconciled (G9).
 
 **Bottom line.** This is a well-evidenced run whose every in-clone anchor survives scrutiny: D1 is
 verified anchor-for-anchor, D3's tests exist, pass, and are genuinely discriminating under

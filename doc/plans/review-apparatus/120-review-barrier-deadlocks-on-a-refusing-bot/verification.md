@@ -331,7 +331,7 @@ structural member, on either mode and on either operator choice:
   is total.
 - The precedence rule keeps a mixed block live: `{count} > 0` routes to the pending-findings path,
   which loops back and clears its half, after which `{count} == 0` fires the structural branch
-  (`:1052-1056`).
+  (`:1053`, `:1055`).
 
 The one residual futile shape is **not** new: if the producer's `refused_causes[]` is empty or
 malformed (the documented empty-fallback at `:814`), a size refusal resolves to a temporal member, the
@@ -418,19 +418,139 @@ so this is not a scope violation.
 
 ## Summary
 
-**Gaps by severity: 1 blocker-adjacent major that changes behaviour (G1), 3 further major (G2–G4),
-7 minor (G5–G11). No refuted deliverable.**
+**Gaps by severity: 2 major (G1–G2), 9 minor (G3–G11). Eleven in total. No refuted deliverable.**
 
 The plan landed real work. `refused_structural` is a first-class member decided by an observed cause
 that dominates the per-bot class, the cap is read from the notice rather than declared and is paired
 with a measured diff size, and the pre-merge barrier — the surface that actually fires on a default
 install — renders split / accept / disable with no wait and no re-triage, backed by an 81-test suite
-whose discrimination I re-verified on four of the nine reported mutations. The three claimed
+whose discrimination was re-verified on four of the nine reported mutations. The three claimed
 non-option surfaces were each reached, and the report is unusually honest about its own six rounds of
-self-inflicted regressions. What survives is one structural incompleteness and a cluster of
-placeholder/consumer misses: the leaf's Branch 0 branches on a `cause` that **neither producer feeding
-it emits** and that is not produced until a later stage, so the "no await ever" property is real at
-the two prompt-rendering surfaces and prose-only at the opt-in leaf; `{cap}` is interpolated five
-times at the barrier and bound nowhere, with a test that pins its unbound presence; the recovery-arming
-test still asserts the class-only rule this plan replaced; and the survivor F29's recorded proof is
-factually wrong even though its conclusion happens to hold.
+self-inflicted regressions.
+
+What survives is one structural incompleteness plus a cluster of consumer and hygiene misses. The
+incompleteness is G1, and it is worse than the report's own framing of it: the leaf's Branch 0
+branches on a `cause` that **neither producer feeding it emits** and that is not produced until a
+later stage, so on the opt-in path a Sourcery size refusal falls to Branch 1 and is offered
+`"Wait another {review_rate_window_timeout_seconds}s"` as its first option — non-option pairing **#1**,
+the defect D1 was written to remove, alive for a bot in the tree today rather than for the
+hypothetical `awaitable_window`-plus-size bot the report's pairing #2 needs. The "no await ever"
+property is therefore real at the two prompt-rendering surfaces and prose-only at the opt-in leaf.
+G2 is the F29 survivor: a real latent crash whose recorded proof is factually wrong even though its
+conclusion holds on a substituted one. The minors are a `{cap}` token with no stated derivation, a
+recovery-arming test that still models the class-only rule, two missing test cases, three stale
+consumer statements, and three report-hygiene defects including two bundled rows whose stated counts
+do not match their own enumerations.
+
+## Adversarial review
+
+A second, independent pass re-derived every load-bearing finding above against the tree at
+`HEAD` = `61a43e53` (working tree `dc2ecc5c`), assuming the first pass plausible but fallible. Only
+this file and `gaps.md` were modified; no source file, no commit, no push.
+
+### What was re-derived, and how
+
+- **Ran** `uv run python -m pytest test/plan-marshall/automatic-review/test_structural_refusal.py
+  -o addopts="" -q` → **81 passed**. `wc -l` → 1306; `grep -c 'def test_'` → 71 (81 after
+  parametrisation).
+- **Re-ran mutation A** independently — `if cause == CAUSE_SIZE:` → `if False:` in
+  `review_completeness.py`, byte snapshot taken to `$TMPDIR/adv-120-mutsweep/` first and restored in a
+  `finally`, never via git. Result **9 failed, 72 passed**, with the nine named in the report-claim
+  audit row. `git status --porcelain` empty afterwards.
+- **Re-derived the terminal-state population** in a live interpreter with every bundle `scripts/` on
+  `sys.path`: 11 `STATE_` constants, `len(_UNPROVEN_STATES) == 9`. Counted the contract's
+  `## Failure taxonomy` table: 10 rows. Compared `_PASSABLE_BY_PLAN_ACTION` /
+  `_AWAIT_CAN_EVER_SUCCEED` (`test_structural_refusal.py:98-138`) against the report's D0 table
+  **row by row**: all 11 rows agree on both axes.
+- **Opened both producers and read the literal return dicts** — `_github_pr.py:403-409`,
+  `github_re_review.py:331-337` — rather than trusting the quoted shapes; then traced the section
+  ordering by heading line numbers in `automatic-review/SKILL.md` (recovery `:350`, Branch 0 `:376`,
+  Branch 1 `:400`, Producer: FIND `:589`) and read `_body_excerpt` (`github_re_review.py:142-147`).
+- **Read the three declared `rate_limit_eta_patterns`** (`coderabbit.md:58-60`) to settle whether
+  F29's latency claim survives its refuted premise, and searched the registry docs for any other
+  declaration.
+- **Traced the barrier's own reads** (`branch-cleanup.md:719`, `:721`, `:814`, `:860`, `:864`) before
+  judging `{cap}`, and read the loop-back continuation prompt and its bounds
+  (`plan-marshall/workflow/execution.md:607`, `:609-612`).
+- **Re-counted** the landing's `*.py` files from `git show --stat 9e9e9880` (8), the mutation table
+  rows (9), the build-gate rows (10), the `_add_bot_observation_flags` list flags (9, enumerated from
+  the parser), and each bundled finding row's own enumeration against its id range.
+- **Checked every `path:line` citation** in both documents against the file it names.
+
+### Verdicts on the first pass's findings
+
+**Upheld unchanged (independently reproduced):** the D0 population and its two-axis table; the
+derivation guard in `test_bot_participation_contract.py`; conjunct-1 cause dominance; conjunct-2 cap
+and measurement (F2/F3/F28 fixes present); F1, F4, F5, F6, F7, F21, F22, F25, F26, F27, F43, F48,
+F51–F57, F58–F63, F70; the F8–F20 / F30–F36 / F74 sweep spot-checks; the mutation-row-A inaccuracy
+(reproduced exactly); the `test_refusal_recovery_arming.py` stale model; the missing
+`refused_structural` parity case; the `deficit` synopsis omission; the two `pr-agent.md` defects;
+out-of-scope compliance; the Residue-status claim that Proposals 1–3 landed in `cloud-plan-lane`
+(`:1201`, `:1241`, `:1279`, `:1742` all confirmed).
+
+**Overstated, and corrected here:**
+
+- **C2 / old G2 — `{cap}`.** Downgraded major → minor. The cap is not "unbound": it is retained at
+  `branch-cleanup.md:814` and its source named at `:864`. What is missing is a derivation step and a
+  multi-bot rendering decision. The `:901-904` "would report a fiction" standard was mis-applied — it
+  governs the UNKNOWN path, where the value was never produced.
+- **Old G3 — the recovery-arming test.** Downgraded major → minor. Nothing it asserts is false
+  today; it is a stale model that would bless a future defect, which is the same class as the other
+  test gaps.
+- **Old G6 — advance disclosure.** Kept minor, evidence corrected: both prose sites already disclaim
+  the per-diff prediction explicitly (`create-pr.md:227-231`, `bot-participation-contract.md:419-423`),
+  so the residual defect is the unqualified sentence, not "prose promises a comparison the data
+  cannot support".
+
+**Understated, and strengthened here:** C1 / G1. The first pass framed the consequence as pairing #2
+only — an `awaitable_window` bot refusing on size — which no registry doc can produce today. The
+larger consequence is pairing **#1**: with the cause unavailable, Sourcery's size refusal falls to
+Branch 1 and escalates `rate_window_not_awaitable`, whose first rendered option is a wait. That is the
+exact defect D1 was written to remove, live on the opt-in path with no hypothetical bot required.
+
+**Refuted:** nothing. Every finding checked was a real defect at the severity stated or below.
+
+**Unverifiable from the clone (unchanged):** F37 / F49 (properties of runs, not of the tree); the
+reviewer-participation rows, the dropped `opened` dispatch, the `/review` recovery, run ids and
+timings.
+
+### Citations repaired
+
+`_WAIT_OFFER` (`:558-568` → `:437-451`, twice); the doc-slicing helpers (`:585-620` → `:447-534`);
+`_TERMINAL_STATES` (`:80-84` → `:82-87`); the totality assert (`:172` → `:169`);
+`_refusal_state`'s cause branch (`:461` / `:459-466` → `:460` / `:460-466`);
+`recover_causes_from_caps` (`:466-500` → `:469-503`); `check_deficit`'s call (`:988` → `:980`);
+`measure_diff_size` (`:287-320` → `:287-322`); `refusal_causes_out` (`:884-897` → `:889-902`); the
+`unknown` render (`:1053` → `:1054`); `declared_size_caps` (`:1076-1101` → `:1057-1098`); both
+producer records (`:404-408` → `:403-409`, `:330-336` → `:331-337`); the discriminator claim
+(`SKILL.md:360-362` → `:361-364`); the `deficit` cap flag (`SKILL.md:1003` → `:1007`); the
+required-bot scoping (`SKILL.md:369` → `:370`, `phase-6-finalize/SKILL.md:1392` → `:1391`); F48's
+prompt lines (`:1116` → `:1115`, `:1121-1125` → `:1122-1126`); the disable arm (`:1142` → `:1141`);
+`_extract_rate_limit_eta`'s docstring promise (`:344-345` → `:337-338`); the recovery-arming class
+(`:150` → `:152`), `_refusal_body` (`:60-73` → `:61-73`), and the `hard_quota` docstring
+(`:176-186` → `:179`); `pr-agent.md` (`:253` → `:252-253`, `:255` → `:254-255`); `sourcery.md:111`
+→ `:110-112`; the parity test (`:686` → `:666-685` parametrisation, `:687` definition).
+
+### Added
+
+- **A third survivor row** — F78's "the durable repair is not to state a count beside a table at all
+  … is not made here". Its scoping bound holds, and the residue it predicted is present: F8–F20 says
+  "Thirteen" against an enumeration of fifteen, and F30–F36 says "Seven" against an enumeration of
+  eight. Neither was caught by any of the four earlier count fixes. Folded into G9 as evidence.
+- **A liveness re-derivation** (C5) covering both barrier modes, all three `ask` options, the
+  two-value `{barrier_mode}` enumeration, the mixed-block precedence, and the fact that the barrier
+  reads `required_bots` from the same step-params the "Disable this reviewer" remedy writes — which is
+  what makes that remedy settle at the barrier as well as at the leaf. No unbounded shape was found;
+  the one residual futile shape (an empty or malformed `refused_causes[]`) is pre-existing and stated.
+- **One weak-test note** in D2: `test_the_barrier_names_the_structural_remedy` (`:698`) uses a fixed
+  1500-character window, the shape the file's own slicing helpers reject. Nothing load-bearing rests
+  on it, so it is recorded as fact rather than raised as a gap.
+- **A note in D1 ⭐** that both advance-disclosure prose sites already disclaim the per-diff reading.
+
+### Gap-document reconciliation
+
+`gaps.md` was renumbered contiguously and re-ordered by severity: **G1–G2 major, G3–G11 minor, eleven
+entries**, and its header states that count. Old G4 became G2 (major, kept); old G2 became G3 (minor);
+old G3 became G4 (minor). No entry was deleted — every one traces to a defect reproduced here — and
+each `Done when` was checked for observability, with G1 gaining a fourth clause pinning the
+`hard_quota`-plus-size case that the strengthened impact names.
