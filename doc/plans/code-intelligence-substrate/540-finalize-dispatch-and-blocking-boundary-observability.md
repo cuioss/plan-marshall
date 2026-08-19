@@ -496,8 +496,14 @@ Each exclusion names its reason, because there is no operator in this run to ask
   ordering.
 - **Deleting or rewriting `test_finalize_dispatch_emits_one_line_per_spawn`**, the test whose comments
   claim to pin the finalize per-spawn property while passing against the very defect D1 fixes. Same
-  sibling plan, same file family; and once D1 lands, the mutation that exposes it no longer
-  reproduces, so that plan needs D1 first.
+  sibling plan, same file family.
+  ⛔ **Do not claim D1's landing changes whether that vacuity reproduces.** The demonstration in
+  `180-finalize-dispatch-manifest-observability/gaps.md#G7` is a *deliberate* mutation of
+  `phase-6-finalize/SKILL.md` applied by the tester, and what it shows is that the test **reads no
+  finalize document at all** — so it reproduces whether or not D1 has landed, because D1 migrates two
+  other sites and does not touch that mutation's reachability. An earlier draft of this bullet said
+  the mutation stops reproducing after D1 and used it to argue an ordering; that was wrong on the
+  mechanism and is withdrawn.
 - **Correcting the source plans' run reports** (`report-NN.md` under
   `doc/plans/code-intelligence-substrate/*/`). Report corrections are a documentation-truthfulness
   bucket owned by another 5xx plan, and a report is a dated record of one execution: the correct
@@ -677,11 +683,17 @@ are authored to be settled by driving the handler directly instead.
 
 **Sequencing against the sibling 5xx plans.** Four constraints, all real:
 
-1. **This plan must land before the test-integrity plan** (the bucket whose subject is test vacuity
-   and detector populations). That plan widens the finalize seam-pairing sweep to every `.md` under
-   `skills/phase-6-finalize/`, and its own *Done when* is that the widened check **fails while D1's
-   two sites are unmigrated**. Landing it first puts a red detector on `main`. It also plans to
-   delete a test that only looks vacuous *because* D1's defect exists.
+1. **This plan SHOULD land before the test-integrity plan — a preference, not a block.** That plan
+   (`550-test-suite-anti-vacuity`) widens the finalize seam-pairing sweep to every `.md` under
+   `skills/phase-6-finalize/`, which is red while D1's two sites are unmigrated. Landing D1 first
+   means the widened sweep lands green in one step.
+   ⛔ **It is NOT a prerequisite, and must not be reported as one.** `550` § Notes states it is
+   *"order-independent by construction"* and *"must not be read as blocked on any sibling"*: the six
+   items whose production fix belongs elsewhere — this one among them — run through its D1
+   prerequisite probe, which holds the test with its body recorded when the sibling has not landed
+   and lands it green when it has. So `550` running first does **not** put a red detector on `main`.
+   An earlier draft of this entry claimed it did, and claimed the vacuous test only looks vacuous
+   because D1's defect exists; both are withdrawn — see the § Out of scope entry for that test.
 2. **D4b's raising-seam test overlaps a gap in that same plan.** It is required here by D4b's own
    *Done when*, so land it here and say so in the report; the sibling plan should find it already
    present rather than author a second.

@@ -2,10 +2,21 @@
 
 A ground-truth audit of every landed plan in this epic, and the fix plans derived from it.
 
-⚠ **This directory is not a plan.** The leading underscore marks it as an epic-level record, like
-`doc/plans/_template/`. The collect step (`doc/plans/cloud-bridge.md` § Path 3) treats every
-*plan* directory here as a landed plan to ingest; `_audit/` is neither a plan nor a run and carries
-no `plan.md`. Read it as the account of how the `5xx` fix plans came to exist.
+⚠ **This directory holds records, not a plan** — no `plan.md`, no `report-NN.md`. Read it as the
+account of how the `5xx` fix plans came to exist.
+
+⛔ **The collect step does not yet know that.** `doc/plans/cloud-bridge.md` § Path 3 step 1 states
+without qualification that *every* directory under an epic is a plan a run has worked, and the
+`_`-prefix convention it would need is documented only for the **epic** level
+(`doc/plans/README.md`, on `_template/`), never for a directory inside one. `_audit/` is the first
+such directory in this repository.
+
+The bound, stated because the run owes it rather than left for a reader to derive: § Path 3 step 2
+records nothing without a merged PR **and** a `report-NN.md`, and step 6 deletes only what steps 2–5
+corroborated. `_audit/` has neither, so a collector following the steps reaches an unhandled case and
+**stops** — it cannot record a false landing and cannot delete anything. Extending the contract to
+exclude `_`-prefixed directories explicitly is a change to the governing contract, which this run may
+not self-approve, so it is raised as a proposal in `570-cloud-plan-lane-contract-proposals.md`.
 
 ## What was audited
 
@@ -33,7 +44,17 @@ result is appended to each `verification.md` as `## Adversarial review`.
 | PARTIAL | 1 |
 
 No plan was found to have shipped nothing, and no plan was found wholly sound. **472 gaps** were
-recorded — 48 high, 214 medium, 210 low.
+recorded — **46 high, 216 medium, 210 low**, counted from the `Severity` field of the entries
+themselves.
+
+⚠ **Two gaps carry a higher severity in the fix plans than in their own entries**, and the difference
+is disclosed rather than averaged away. `200-lsp-derivation-resolver/gaps.md#G13` and
+`310-main-sha-records-the-pinned-cwd/gaps.md#G1` are each rated **medium** by their entry *and* by
+their adversarial review; the plan that carries `200/#G13` escalates it on the entry's own stated
+condition (see `500` § Notes), and `310/#G1` is carried at its entry severity. An earlier roll-up
+here read both as high — a parsing error over severity lines containing the word "high" in prose
+("*Raise to high if…*", "*why medium and not high*"). The entry-derived figures above are
+authoritative; re-derive them from the entries rather than trusting this paragraph.
 
 ### The recurring defect
 
@@ -65,7 +86,7 @@ sentence nine hundred lines above it in the same file.
 It was not a formality. Every one of the 36 reviews returned *sound after correction* — none
 returned sound as written. Beyond citation and count fixes, it:
 
-- **recovered three proved gaps, one of them high, that were cited in a `verification.md` but never
+- **recovered three proved gaps, two of them high, that were cited in a `verification.md` but never
   written into the `gaps.md` a fix run reads** — they would have been invisible;
 - **withdrew a gap** whose evidence was an artifact of this shared audit tree (timings taken while
   sibling agents ran full suites), which would have sent a fix run to rewrite correct documentation;
@@ -83,8 +104,8 @@ plan's `## Gap coverage` section names the gap ids it discharges:
 
 | Plan | Gaps | High |
 |---|---|---|
-| `500-lsp-and-derivation-resolver-correctness` | 28 | 11 |
-| `510-architecture-store-query-truthfulness` | 59 | 6 |
+| `500-lsp-and-derivation-resolver-correctness` | 28 | 10 |
+| `510-architecture-store-query-truthfulness` | 59 | 5 |
 | `520-measurement-and-cost-integrity` | 64 | 9 |
 | `530-detector-and-auditor-integrity` | 36 | 11 |
 | `540-finalize-dispatch-and-blocking-boundary-observability` | 24 | 6 |
@@ -101,9 +122,11 @@ because the lane contract forbids a run from self-approving a change to the cont
 
 Recorded in each plan's Notes, and binding where stated:
 
-- `540` **before** `550` — `550`'s widened seam sweep is written to fail while `540`'s two
-  unmigrated dispatch sites remain, and it would delete a test that only looks vacuous because that
-  defect exists.
+- `540` **preferably before** `550` — `550` widens the finalize seam sweep, which is red while
+  `540`'s two unmigrated dispatch sites remain, so landing `540` first gets there in one step.
+  ⚠ **This is a preference, not a prerequisite.** `550` is order-independent by construction: its D1
+  prerequisite probe holds each such item with its test body recorded when the sibling has not
+  landed. Do not hold `550` for it.
 - `560` **last** — it corrects descriptions of behaviour that the other seven plans change.
 - `520`, `530` and `550` must not run concurrently against `audit.py`; `510`, `540` and `550`
   overlap on the architecture and finalize surfaces. These are conflict-avoidance constraints, not

@@ -955,9 +955,12 @@ say so in the report and proceed.
 
 ## Gap coverage
 
-Fifty-nine gaps across seventeen source plans: six high, thirty-one medium, twenty-two low. Every one is
-mapped. `sev` is the severity carried in the audit's bucket manifest; where the gap entry and its
-adversarial review re-rated it, the note says so.
+Fifty-nine gaps across seventeen source plans: **five high, thirty-two medium, twenty-two low** by the
+severity the entries themselves carry. Every one is mapped. `sev` is the severity carried in the
+audit's bucket manifest; where the gap entry and its adversarial review re-rated it, the note says so
+— and for `310/#G1` they agree at **medium** against a manifest that read high, so the entry wins and
+the totals above count it as medium. Re-derive these three figures from the `Severity` field of the
+cited entries rather than trusting this line.
 
 | Deliverable | Source plan | Gap | sev |
 |---|---|---|---|
@@ -1022,5 +1025,6 @@ adversarial review re-rated it, the note says so.
 | D6 | 350-outline-derived-set-closure-integrity | G15 | medium |
 
 Counts: D1 12, D2 9, D3 9, D4 6, D5 14, D6 9 — fifty-nine. Re-derive that sum from the table rather than
-trusting this line. All six high-severity gaps are fixed in a deliverable (`150/#G1`, `150/#G2` in D1;
-`220/#G1` in D2; `120/#G3` in D3; `160/#G2` in D4; `310/#G1` in D5); none is out of scope.
+trusting this line. All five high-severity gaps are fixed in a deliverable (`150/#G1`, `150/#G2` in D1;
+`220/#G1` in D2; `120/#G3` in D3; `160/#G2` in D4); none is out of scope. `310/#G1` is fixed in D5 too
+— it is listed separately here only because it is **medium**, not high, per its entry and review.

@@ -120,7 +120,9 @@ Re-derive each at the moment you state it, and record the command and the ref yo
    every source plan in § Gap coverage with one of the three states and the check that produced it.
 
 2. **D1 — `proposals.md`: the operator's decision register** — a new file
-   `doc/plans/{epic}/{this-plan}/proposals.md` carrying **seven** proposals, each written so the
+   `doc/plans/{epic}/{this-plan}/proposals.md` carrying **every proposal enumerated below** — count
+   them in this deliverable at the moment you write the file rather than trusting a number here, since
+   a proposal added or withdrawn during the run invalidates it — each written so the
    operator can decide without opening anything else. Per proposal: **what happened** (the run and the
    observable consequence — never a speculative improvement), **the exact proposed edit** quoted against
    the anchors D0 re-derived, **the risk the wording must handle**, and **the decision being asked**
@@ -200,7 +202,22 @@ Re-derive each at the moment you state it, and record the command and the ref yo
      Decision: permit / forbid / permit only via a follow-up `chore/` PR authored from a correction
      document. ⛔ Note for the operator, and the reason this proposal is worth answering: on "permit",
      the follow-up is mechanical — `record-corrections.md` is already the patch set.
-   *Done when:* `proposals.md` exists with all seven proposals, each carrying what happened, the exact
+   - **P8 — is every directory under an epic a plan?** `doc/plans/cloud-bridge.md` § Path 3 step 1
+     says so without qualification: "List `doc/plans/{epic}/` — **every directory** is a plan a run
+     has worked, and the `report-NN.md` inside names its PR." The epic now contains
+     `code-intelligence-substrate/_audit/`, which holds the audit's own account and carries **no**
+     `plan.md` and **no** `report-NN.md`. It is the first `_`-prefixed directory *inside* an epic in
+     this repository; the convention exists only at the **epic** level (`doc/plans/README.md`, on
+     `_template/`), and § Path 3 and § Status vocabulary carry no `_`-prefix exclusion.
+     ⚠ **Bound, so the operator can weigh urgency rather than take the proposal's word for it:** step
+     2 records nothing without a merged PR *and* a `report-NN.md`, and step 6 deletes only what steps
+     2–5 corroborated. `_audit/` satisfies neither, so a collector following the steps reaches an
+     unhandled case and **stops** — it cannot record a false landing and cannot delete anything. The
+     defect is an undeclared stop, not a data loss. Proposed: add to § Path 3 step 1 and § Status
+     vocabulary that a directory whose name begins with `_` is a record, not a plan, and is skipped
+     by collect. Decision: adopt / adopt with a different marker (a marker file rather than a name
+     convention) / decline and require records to live outside `doc/plans/{epic}/`.
+   *Done when:* `proposals.md` exists with all eight proposals, each carrying what happened, the exact
    edit against a D0-re-derived anchor, and an explicit decision with options; and the cold read in
    § Verification returns **DECIDE**, not APPLY.
 
@@ -430,8 +447,9 @@ Beyond each deliverable's *done when*:
   disposition: `corrected`, `already corrected upstream`, `target collected`, or `unverifiable` with the
   reason. A gap with no disposition is reported as **not done**; a silently dropped gap is the failure
   this section exists to prevent.
-- **Report and hand-off.** The run report names the two deliverable documents and reproduces the seven
-  proposal titles with their one-line asks, so the orchestrator's collect step — which reads the
+- **Report and hand-off.** The run report names the two deliverable documents and reproduces **every**
+  proposal title with its one-line ask — enumerate them from `proposals.md` as written, not from any
+  count stated in this plan — so the orchestrator's collect step — which reads the
   report's findings and writes the landing record before deleting the directory — carries the register
   forward. ⚠ Distinguish the two kinds of proposal in the report: § Step 9's "what have we learned" asks
   what **this run's own execution** revealed about the contract, and is answered on its own terms

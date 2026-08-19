@@ -751,9 +751,19 @@ overlap is by file, not by subject.
 **Where a gap entry and its adversarial review disagree, the adversarial review wins.** It was the
 later, evidence-bearing pass. Four places where that changes what this run does are already folded in
 above and are listed here so they are not re-litigated: the PEP 508 `@` split must be on the **bare**
-`@`, not `' @ '`; the mid-apply rollback test must **not** use `chmod`; the `200/G13` severity is
-raised from its entry's medium to high; and `240/G10`'s lean is **presume the deferral needs
-reversing**, not upholding — while still recording rather than deciding.
+`@`, not `' @ '`; the mid-apply rollback test must **not** use `chmod`; and `240/G10`'s lean is
+**presume the deferral needs reversing**, not upholding — while still recording rather than deciding.
+
+⛔ **`200/G13`'s severity is raised by THIS plan, on the entry's own escalation condition — not by
+the adversarial review, which rated it medium and said why.** Do not read the raise as a
+review outcome. `200-lsp-derivation-resolver/verification.md` files G13 at medium because the
+wrong-edge half "*is **not reachable today*** — the harvest is materialized only by a discovery whose
+module paths are all `marketplace/bundles/{name}` with no root-scoped module". The entry then states
+its own trigger: "*Raise to high if the harvest is ever materialized for a project whose module set
+includes a root-scoped module.*" **D3 of this plan is what materializes that harvest**, so the
+condition the entry names is met by the change this plan makes, and G13 is carried at high *inside
+this plan's scope*. A run that descopes D3 must carry G13 back down to medium. Elsewhere — in the
+entry, in the audit roll-up — it is medium, and that is not a contradiction to reconcile.
 
 **The source gap files are corroboration, not required reading.** Every citation of the form
 `{plan}/gaps.md#G7` points at a git-tracked file under
@@ -770,8 +780,13 @@ say so, rather than taking it.
 
 ## Gap coverage
 
-Twenty-eight gaps across six source plans: 11 high, 15 medium, 2 low. Every one is discharged by a
-deliverable below; none is placed out of scope.
+Twenty-eight gaps across six source plans: **10 high, 16 medium, 2 low** by the severity the entries
+carry. Every one is discharged by a deliverable below; none is placed out of scope.
+
+The table below rates `200/#G13` **high**, and that is this plan's own escalation on the entry's
+stated trigger, not the entry's severity — see § Notes. Counted at the entry, it is medium, which is
+where the tenth high goes. Re-derive all three figures from the `Severity` field of the cited entries
+rather than trusting this line.
 
 | Deliverable | Source plan | Gap ids | Severity |
 |---|---|---|---|
