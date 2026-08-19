@@ -1,6 +1,6 @@
 # Run report — 080-plugin-development-and-generator-test-reduction (run 02)
 
-**Date (UTC):** 2026-08-19    **Branch:** `chore/plugin-dev-generator-tests-run-02`    **PR:** _pending_    **Outcome:** completed
+**Date (UTC):** 2026-08-19    **Branch:** `chore/plugin-dev-generator-tests-run-02`    **PR:** [#1306](https://github.com/cuioss/plan-marshall/pull/1306)    **Outcome:** completed
 
 > **Verification loop exit:** `verifier-clear`
 
@@ -184,7 +184,70 @@ run in default **and reverse** directory order with identical results. The seven
 
 ## Reviewer participation
 
-_Pending — recorded before the merge gate._
+**The expected population is derived from configuration, not transcribed**: the `author_login` of every
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/{bot_kind}.md` registry doc —
+`coderabbit.md` → `coderabbitai`, `pr-agent.md` → `cuioss-review-bot`, `sourcery.md` → `sourcery-ai`.
+**M = 3.** Every verdict is derived from the reviewer's own stored comment body across all three surfaces
+(`get_comments`, `get_reviews`, `get_review_comments`), never from a check-run state — which matters
+here, since `Sourcery review` reports `skipped` as a check while the reviewer published a refusal as a
+review.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence |
+|---|---|---|---|
+| `cuioss-review-bot` | `reviewed` | — | Issue comment: *"PR Reviewer Guide 🔍 — PR contains tests / No security concerns identified / No major issues detected."* A review artifact against this diff, with no actionable finding |
+| `coderabbitai` | `rate-limited` | **yes** | Issue comment: *"Review limit reached … Next review available in: 41 minutes … You've used the included review currently available."* A clock condition, stated with its clearing time — **not** a property of this diff. It listed all 14 files as selected for processing before refusing |
+| `sourcery-ai` | `rate-limited` | **yes** | Review body: *"you have reached your **weekly** rate limit of 500000 diff characters."* A quota that resets, not a per-diff ceiling |
+
+**Coverage: 1 of 3.** No verdict is `unreadable` — all three surfaces read cleanly, returning 2 issue
+comments, 1 review summary, and **0** inline review threads (`totalCount: 0`). Merge-gate condition 3 is
+therefore **established**: every comment that exists has been read and dispositioned, and neither refusal
+is actionable.
+
+**No `silent` verdict arose, so no recovery check was needed.** Both shortfalls are explicit refusals
+published as comments, not absences.
+
+⭐ **Both shortfalls are `yes` here — and in run 01 on the same PR pair, both were `no`.** That inversion
+is the case the lane's `Reopens?` column exists to make visible. Run 01's refusals were size ceilings
+(*"112 files, which is 12 over the limit of 100"*; *"larger than the review limit of 150000 diff
+characters"*) that this 14-file diff does not trip at all. `sourcery-ai` in particular refused under
+**both kinds across the two runs**, which is exactly why the skill says to take the value from the notice
+body and never infer it from the reviewer's identity.
+
+### Why `coderabbitai` was not re-requested, despite `Reopens? yes`
+
+⚠️ **The countdown is not simply elapsing, and this was established from evidence rather than assumed.**
+A concurrent session working PR #1305 in the same repository recorded three refusals: a notice at 16:10
+saying *"57 minutes"*, a retry at **17:16** — 66 minutes later, so after that window had passed — refused
+again with a **new 53-minute** countdown, and this PR's 17:29 notice saying **41 minutes**. Three notices
+under one account, with the window moving rather than draining.
+
+That fits CodeRabbit's documented mechanism, which the notice itself states: the allowance is derived
+from *"a developer's included PR review attempts over the past 7 days"*. It is a **rolling per-developer
+allowance shared across every PR**, not a per-PR timer — so a retry does not merely wait out a window,
+it **consumes an attempt** and can push the window further out.
+
+Two consequences, and both point the same way:
+
+1. **Waiting is not reliably productive.** `Reopens? yes` is recorded because the notice states a
+   clearing condition — that is what the column reports, and it is not softened here. But the observed
+   behaviour is that the condition did not clear on schedule when it was tested.
+2. **An attempt spent here is an attempt taken from #1305**, where the operator *explicitly required* a
+   CodeRabbit review and the PR is not merging without one. This PR has no such requirement: the
+   operator's standing decision from run 01 — **land at 1-of-3 with the shortfall disclosed** — was
+   taken for exactly this shape of gap.
+
+So the attempt is left for the PR that needs it. ⛔ **This is a scheduling judgement, not a claim that
+the review was unobtainable**, and it is recorded as one so a later reader is not misled: with enough
+elapsed time and no competing PR, `coderabbitai` would presumably review this diff.
+
+**What stands in for the missing coverage, stated so the gap is not papered over.** The verification
+round's evidence was **executable rather than a re-read** — it simulated the collision walker on the
+exact call shape, ran the doctor on a converted copy against an unconverted control (`1` → `0`), dumped
+`vars(parse_ns(...))` for all 14 templates and compared every overlaid key per site, and ran the slice in
+both directory orders. The full `./pw verify` ran four times. And the round's most valuable finding was
+that **this run's own rationale was false** — a defect no lint and no CI check would have surfaced.
+**None of that is a substitute for a second reader**, and the residue below should be read with 1-of-3
+coverage in mind.
 
 ## Cost
 
@@ -222,11 +285,86 @@ cannot fall, but that is an argument, not a measurement.
 
 ## Contract check (Step 9)
 
-_Pending — completed before the merge gate._
+**GitHub access path:** the GitHub MCP server (`mcp__github__*`). No `gh` CLI is present in this session.
+**Branch form:** **run-created** — `chore/plugin-dev-generator-tests-run-02`, for the reason recorded in
+§ Skills loaded: the session's harness-assigned `claude/plugin-dev-generator-tests-v0zvzg` was consumed
+by run 01 and locked at enqueue, so it could not carry a second run's commits. ⚠️ **This is a deviation
+from the harness rule that a cloud session keeps its assigned branch**, and it is recorded as one rather
+than presented as the norm. The risk that rule protects against — work stranded on a branch no remote
+carries, which a VM reclaim then destroys — **does not apply here**: the branch was pushed on creation
+and after every one of its three commits, so `origin` holds the run's complete history at all times.
+**Arrival:** re-entry run; the branch was cut from `origin/main` at `34e7b99` and pushed before any edit.
+A cloud run **never owes** a `/sync-plugin-cache`; none is recorded as owed, and this run touched no
+`marketplace/bundles/` file at all.
+
+| Step | Verdict | Artifact |
+|---|---|---|
+| 1 Skills loaded | **Done** | § Skills loaded, with the route used and the one domain skill the surface reaches |
+| 2 Branch | **Done, with a recorded deviation** | On `origin` before the first edit and after every commit; form and reason above |
+| 3 Plan directory | **Done** | `doc/plans/test-quality/080-…/plan.md` exists and opens with the first-instruction block; re-entry adds `report-02.md` beside `report-01.md` rather than moving anything |
+| 4 Implement | **Done** | 3 commits (`fb326db`, `802730b`, `5679efa`), every one carrying the trailer and no "Generated with" footer; D3's two open halves addressed |
+| 4 Per-commit gate | **Done** | Both `*.py`-touching commits were preceded by a **full** `./pw verify`, quoted in their own messages (`21070 passed, 14 skipped, SUCCESS`). The report commit touches no source |
+| 4 Pushed | **Done** | Pushed after every commit; no unpushed commit remains |
+| 5 Build gate | **Done** | § Build gate. The full `./pw verify` ran four times, not the `quality-gate` substitute that was run 01's C1 defect. It caught a test failure and, with `--preview` added, three blank-line defects |
+| 6 Verification sub-agent | **Done** | One round, exit `verifier-clear`, budget 5 with no extension needed. Findings V1–V8 with dispositions; the verifier's last answer quoted; evidence executable rather than a re-read; residue-to-assume stated; no survivors, and the one behavioural delta characterised under B(a) |
+| 7 PR cycle | **Done** | PR **#1306**. Every comment on the PR is dispositioned in § Reviewer participation; the table carries a verdict **and** a `Reopens?` value per reviewer |
+| 8 Merge gate | **Done** | Condition 1 required contexts green (`verify / conclusion`, `verify / gate`, `review / review`, `dependency-review`); condition 2 stale base re-checked immediately before arming (§ Build gate); condition 3 established in § Reviewer participation — 0 open comments; condition 4 this report finalized and committed as the **last** pre-merge commit. The **1-of-3** coverage shortfall was disclosed to the operator in words, with each reviewer's `Reopens?` value, before arming |
+| 8 Bridge | **Done** | `git diff --name-only origin/main...HEAD -- doc/` returns exactly one path, this plan's `report-02.md`. No status or bookkeeping write landed elsewhere under `doc/plans/` |
+| 9 This check | **Done** | This table |
+| 9 What have we learned | **Done** | Below |
+
+**Re-verified at report time, per § Step 9.** *Tree* claims: the plan directory holds exactly `plan.md`,
+`report-01.md` and `report-02.md`; `.plan/` was never written by this run and no `.plan/` path appears in
+the diff. *History* claims: **this run performed no rebase**, so every SHA quoted here is reachable from
+the branch under review, each re-derived from `git log` at the moment of writing.
 
 ## What have we learned (Step 9)
 
-_Pending._
+**The run's own worst defect was an argument standing in for an experiment, and it survived self-review
+because it looked like caution.** Commit `fb326db` recorded `test_extension_profiles.py` as unconvertible
+and kept its B7 finding, reasoning from two true premises: routing it through `load_skill_module` pushed
+the loader-collision guard to 91 unresolved call sites against a bound of 90, and that guard's own
+comment says the bound *"may not grow (that widens what the guard cannot see)"*. The conclusion was
+false — the walker skips any call that opts out of registration, and the rule's own message names the
+escape verbatim. One `register=False` converts the module and leaves the count at exactly 90.
+
+⭐ **The direction of that error is the lesson.** It was *conservative*: it kept a finding rather than
+removed one, preserved a guard rather than weakened it, and shrank the run's own claimed result from 9→2
+to 9→3. Nothing about it triggered the suspicion a self-serving claim would. It was caught only because
+the verifier **ran the walker on the exact call shape** instead of re-reading the reasoning.
+
+**One contract change is proposed, on that evidence.** § Step 4 and the Report's § Residue both let a run
+record an item as **unreachable** — a stronger claim than *deferred*, since it asserts the item can never
+be done rather than that this run did not do it — and neither asks the run to demonstrate it. The
+proposed clause, in § Report under Residue:
+
+> An item recorded as **unreachable** (as opposed to deferred) must carry the **executed** evidence of
+> its unreachability — the command run and what it returned — not the reasoning that predicts it. Where
+> execution is genuinely impossible, name the structural fact that makes it so and say how *that fact*
+> was checked. A deferred item needs no such evidence: it claims only that this run stopped, which its
+> own scope statement already establishes.
+
+This run passes the proposed clause on its remaining two B7 survivors, which is why it is worth
+proposing rather than merely confessing: `test_dist_manifest.py` and `test_spdx_enforcement.py` load
+`marketplace/targets/generate.py` and the repository-root `build.py`, and the structural fact — neither
+path lives under `marketplace/bundles`, which is the only tree `load_skill_module` can address — was
+checked **by resolving the paths**, not by predicting them.
+
+⛔ **Deliberately not proposed: extending this to deferred items.** Requiring executed proof for every
+item a run chooses not to do would tax honest scope statements — the six `test_analyze_*.py` modules are
+*deferred and characterised*, not claimed impossible, and demanding an experiment per module would buy
+nothing. The clause is scoped to the strong claim precisely because only the strong claim can be wrong
+in the way this run's was.
+
+⛔ **Also not proposed, though adjacent: a rule against reasoning from a comment.** The premise that
+misled this run came from a code comment that was itself accurate. The defect was not trusting the
+comment; it was never testing whether the comment's rule *bound this case*. A prohibition on reading
+comments would be the wrong lesson from a run that read one correctly and applied it wrongly.
+
+**Presented to the operator rather than self-approved**, per § Step 9, and **not shipped in this PR**:
+the lane requires a contract amendment to be its own `chore/` branch with its own review audience, and
+this run does not self-approve a change to the contract that governs it. It joins run 01's § Step 6
+dispatch-checklist proposal, which is still unshipped.
 
 ## Residue
 
