@@ -782,3 +782,177 @@ def test_a_valueless_key_with_no_indented_content_is_still_empty(tmp_path, front
     """
     with pytest.raises(TargetScopeError, match='empty list'):
         read_target_scope(_component(tmp_path, frontmatter))
+
+
+# ---------------------------------------------------------------------------
+# Round 11: shapes the previous round's fixes left open, and the guards those
+# fixes added that nothing pinned.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ('text', 'expected'),
+    [
+        pytest.param(
+            '---\n# a note\n  name: demo\n  targets: [claude]\n---\n',
+            {'claude'},
+            id='comment-above-an-indented-block',
+        ),
+        pytest.param(
+            '---\n  name: demo\n# a note\n  targets: [claude]\n---\n',
+            {'claude'},
+            id='comment-among-indented-keys',
+        ),
+        pytest.param(
+            '---\n\n  name: demo\n  targets: [claude]\n---\n',
+            {'claude'},
+            id='blank-line-above-an-indented-block',
+        ),
+    ],
+)
+def test_a_comment_does_not_defeat_the_dedent(tmp_path, text, expected):
+    """A comment line carries no structure and must not set the block's indent.
+
+    ``textwrap.dedent`` ignores blank lines but not comment lines, so one
+    ``#`` at column 0 pinned the common prefix at zero and re-opened the
+    fail-open the dedent was added to close: every key skipped, the
+    declaration unread, the component shipped everywhere. Worse, an INVALID
+    declaration under such a comment passed the build unreported — the
+    fail-closed contract defeated by a comment.
+    """
+    path = tmp_path / 'demo.md'
+    path.write_text(text, encoding='utf-8')
+
+    assert read_target_scope(path) == expected
+
+
+@pytest.mark.parametrize(
+    'text',
+    [
+        pytest.param('---\n# note\n  targets: [typo]\n---\n', id='unknown-name'),
+        pytest.param('---\n# note\n  targets: []\n---\n', id='empty-list'),
+    ],
+)
+def test_an_invalid_declaration_under_a_comment_still_fails_the_build(tmp_path, text):
+    """The direction that matters most: fail-closed must not be evadable.
+
+    A fail-open here is not only a component shipping too widely — it is a
+    typo'd or empty declaration passing the build with nothing reported.
+    """
+    path = tmp_path / 'demo.md'
+    path.write_text(text, encoding='utf-8')
+
+    with pytest.raises(TargetScopeError):
+        read_target_scope(path)
+
+
+@pytest.mark.parametrize(
+    ('frontmatter', 'expected'),
+    [
+        pytest.param('targets: # note\n- opencode', {'opencode'}, id='block-at-column-zero'),
+        pytest.param('targets: # note\n  - opencode', {'opencode'}, id='block-indented'),
+        pytest.param('targets:  # note\n  - claude', {'claude'}, id='two-spaces-before-the-hash'),
+    ],
+)
+def test_a_comment_is_not_an_inline_value(tmp_path, frontmatter, expected):
+    """``targets: # note`` has no inline value to YAML; the list below is the value.
+
+    Testing the raw text for emptiness treated the comment as the value and
+    reported a perfectly good declaration as "declares an empty list" —
+    describing a file the author did not write.
+    """
+    assert read_target_scope(_component(tmp_path, frontmatter)) == expected
+
+
+@pytest.mark.parametrize(
+    ('frontmatter', 'expected'),
+    [
+        pytest.param('targets:\n  [claude, opencode]', {'claude', 'opencode'}, id='one-line'),
+        pytest.param('targets:\n  [claude,\n  opencode]', {'claude', 'opencode'}, id='two-lines'),
+        pytest.param('targets:\n  [claude]  # why', {'claude'}, id='with-a-comment'),
+    ],
+)
+def test_a_flow_sequence_may_open_on_the_line_below_the_key(tmp_path, frontmatter, expected):
+    """A flow sequence is one value however many lines it spans.
+
+    Opening it below the key was reported first as "declares an empty list"
+    and then, after the shape work, as "a plain scalar continued across
+    lines". Both name a construct the author did not write; the value is a
+    flow sequence and is now read as one.
+    """
+    assert read_target_scope(_component(tmp_path, frontmatter)) == expected
+
+
+def test_a_three_hyphen_prefix_line_does_not_close_the_block(tmp_path):
+    """The closing fence is a whole LINE. Nothing pinned the line-end anchor.
+
+    The first version of this test used ``description: ---x``, where the
+    hyphens sit mid-line and the pattern never reaches them - green either
+    way, and so no pin at all. The ``----`` must START a line for the anchor
+    to be what rejects it.
+
+    This also pins the one documented divergence from the tree's canonical
+    frontmatter reader, which matches a ``---`` PREFIX and does close here.
+    Adopting that would truncate this block and hide ``targets:`` - the
+    defect the whole-line match exists to prevent.
+    """
+    path = tmp_path / 'demo.md'
+    path.write_text(
+        '---\ndescription: a\n----\ntargets: [claude]\n---\n', encoding='utf-8'
+    )
+
+    assert read_target_scope(path) == {'claude'}
+
+
+@pytest.mark.parametrize(
+    'frontmatter',
+    [
+        pytest.param('targets: claude,\n# why\n  opencode', id='inline-value'),
+        pytest.param('targets:\n# why\n  claude', id='no-inline-value'),
+    ],
+)
+def test_a_comment_at_column_zero_does_not_end_a_continuation(tmp_path, frontmatter):
+    """A comment carries no structure, so it cannot be what ends a value.
+
+    Treating it as structure made the first meaningful line a column-zero one,
+    so the continuation went undetected and the value was read as its first
+    line alone - silent narrowing, the one direction this must never fail in.
+    """
+    with pytest.raises(TargetScopeError, match='continued across lines'):
+        read_target_scope(_component(tmp_path, frontmatter))
+
+
+def test_an_immediately_closed_block_has_no_fields(tmp_path):
+    """``---`` / ``---`` is an EMPTY frontmatter block; what follows is body.
+
+    This is the only shape the fence search's ``start - 1`` offset changes.
+    Nothing pinned it: searching from ``start`` instead skipped the real
+    closing fence and read the body's first lines as frontmatter fields.
+    """
+    path = tmp_path / 'demo.md'
+    path.write_text('---\n---\ntargets: [claude]\n---\n', encoding='utf-8')
+
+    assert read_target_scope(path) is None
+
+
+@pytest.mark.parametrize(
+    ('frontmatter', 'expected_noun'),
+    [
+        pytest.param('targets: >gibberish\n  claude', 'plain scalar', id='not-a-header-at-all'),
+        pytest.param('targets: |x\n  claude', 'plain scalar', id='indicator-then-junk'),
+        pytest.param('targets: > # c\n  claude', 'block scalar', id='header-with-a-comment'),
+        pytest.param('targets: "claude"\n  extra', 'plain scalar', id='quote-already-closed'),
+        pytest.param('targets: "claude,\n  opencode"', 'quoted scalar', id='quote-left-open'),
+    ],
+)
+def test_the_shape_boundaries_are_where_they_are_documented(tmp_path, frontmatter, expected_noun):
+    """Pin each edge of the two shape tests; all three were unguarded.
+
+    The block-header pattern's end anchor, its comment stripping, and the
+    quoted test's "the quote does not recur" threshold could each be loosened
+    with the whole suite green. Every input here is rejected either way — what
+    is pinned is which construct the failure NAMES, which is the entire point
+    of having three nouns.
+    """
+    with pytest.raises(TargetScopeError, match=expected_noun):
+        read_target_scope(_component(tmp_path, frontmatter))

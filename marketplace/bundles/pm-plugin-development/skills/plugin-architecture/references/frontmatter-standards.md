@@ -453,9 +453,9 @@ targets: [claude]
 
 That last row is **one** rule, and the build reports it under whichever of three YAML constructs you wrote: a plain scalar continued across lines, a quoted scalar continued across lines, or a block scalar (`>` / `|`, whose value is the indented lines beneath it). A YAML reader parses all three perfectly well — the build declines them because it does not read them, so being told you wrote the wrong one sends you looking for a defect that is not in your file. Write the list inline or as a `- ` block and none of them arises.
 
-A flow sequence is the exception and spans lines freely: `targets: [claude,` continued on the next line is read whole.
+A flow sequence is the exception: it is one value however many lines it spans, whether it opens on the key line (`targets: [claude,` continued below) or on the line beneath it (`targets:` then an indented `[claude, opencode]`). A `- ` block spans lines too, and so does a `targets: # note` whose list follows underneath.
 
-The plugin-doctor `targets-scope-invalid` rule reports every one of these at authoring time except the ships-nowhere case, which needs each target's `emits_bundle_tree` capability and is checked by the build alone.
+The plugin-doctor `targets-scope-invalid` rule reports these at authoring time with two gaps, both of which the build still catches. The ships-nowhere case needs each target's `emits_bundle_tree` capability, so it is checked by the build alone. And the unknown-name check needs the `marketplace/targets/` tree to derive the registered set from — a meta-project tree that a consumer install does not have — so in a consumer project that check is skipped rather than answered from a transcribed list. The empty-declaration and multi-line checks need no registry and always run.
 
 ### Admission test — when a target-scoped component is the right answer
 

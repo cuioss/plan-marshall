@@ -50,8 +50,12 @@ moment it is read and an invalid one aborts the build
   physical line, so accepting one would silently narrow the scope to
   whatever fitted on that line.
 
-That last rejection is ONE condition (a value that is not a flow sequence,
-followed by an indented line). Three names appear in the message because
+That last rejection is ONE condition, tested at two sites that cannot both
+apply: an INLINE value that is not a flow sequence and is followed by an
+indented line, or a key with no inline value whose indented continuation is
+neither a ``- `` item nor a flow sequence. (A ``- `` block IS followed by an
+indented line and is accepted, so the condition is about the value's shape,
+not about indentation alone.) Three names appear in the message because
 three different YAML constructs produce it — a plain scalar continued across
 lines, a quoted scalar continued across lines, and a block scalar
 (``>``/``|``) — and naming the wrong one sends the author looking for a
@@ -104,7 +108,6 @@ it is actually consumed.
 from __future__ import annotations
 
 import re
-import textwrap
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -147,16 +150,27 @@ _SKILL_MANIFEST = 'SKILL.md'
 #:
 #: The first version of this matched a fixed set of the six chomping
 #: spellings and so misdiagnosed every header carrying an indentation
-#: indicator (``|2``, ``>3-``, ``|-2``) — 54 of the 60 legal spellings —
-#: under the very message it was added to remove.
+#: indicator (``|2``, ``>3-``, ``|-2``). The grammar admits 96 headers — two
+#: indicators × {bare, indent 1-9, chomp, and both orders of the two} — so
+#: that set covered 6 and misdiagnosed **90**, under the very message it was
+#: added to remove. This form matches all 96, and over-matches only the ten
+#: ``0``-bearing spellings, which YAML rejects as headers anyway.
 _BLOCK_SCALAR_HEADER_RE = re.compile(r'^[>|](?:[0-9][-+]?|[-+][0-9]?)?$')
 
 #: A frontmatter fence line: exactly three hyphens, then only spaces or
 #: tabs. Trailing whitespace on a fence is invisible in an editor, and the
 #: tree's own canonical frontmatter reader (``_dep_detection`` in the
-#: plugin-doctor) accepts it — so refusing it here made the two parsers
+#: ``tools-marketplace-inventory`` skill, which the plugin-doctor imports)
+#: accepts it — so refusing it here made the two parsers
 #: disagree about whether such a file has frontmatter at all, and a
 #: ``targets:`` declaration beneath a space-suffixed fence went unread.
+#:
+#: Parity is restored for trailing whitespace and for nothing else. That
+#: reader matches ``\n---`` as a PREFIX, so it also treats ``----`` as a
+#: closing fence where this one does not, and the two still disagree there.
+#: Adopting the prefix match would re-open the defect the whole-line match
+#: exists to prevent: a value containing three hyphens would truncate the
+#: block and hide every field after it.
 _OPEN_FENCE_RE = re.compile(r'^---[ \t]*\n')
 _CLOSE_FENCE_RE = re.compile(r'\n---[ \t]*(?:\n|$)')
 
@@ -261,8 +275,11 @@ def _frontmatter_block(text: str) -> str | None:
     if open_fence is None:
         return None
     start = open_fence.end()
-    # From start - 1, so the newline ending the opening fence can serve as
-    # the newline opening the closing one \u2014 i.e. an empty frontmatter block.
+    # From start - 1, so the newline ending the opening fence can also serve
+    # as the newline opening the closing one. What that changes is a block
+    # closed immediately (`---` / `---` / more text): the block is then EMPTY,
+    # and any keys below the second fence are body, not frontmatter. Searching
+    # from `start` would skip that fence and read them as fields.
     close_fence = _CLOSE_FENCE_RE.search(text, start - 1)
     if close_fence is None:
         return None
@@ -401,6 +418,57 @@ def _unquote_key(key: str) -> str:
     return key
 
 
+def _first_meaningful(lines: list[str]) -> tuple[int, str]:
+    """Return ``(index, line)`` of the first line that carries structure.
+
+    Blank lines and whole-line ``#`` comments carry none: YAML ignores both
+    when deciding what a block contains and how deeply it is indented.
+    ``(-1, '')`` when there is no such line.
+    """
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped and not stripped.startswith('#'):
+            return index, line
+    return -1, ''
+
+
+def _dedent_block(block: str) -> list[str]:
+    """Split ``block`` into lines, dedented by the common indent of its keys.
+
+    Top-level is relative to the BLOCK, not to column zero: a frontmatter
+    block whose every key is indented by the same amount has all of them at
+    top level, and YAML reads it that way. Scanning for column-zero keys
+    instead reported "no declaration" — the component then shipped to every
+    target with its declaration unread, and an INVALID declaration passed the
+    build unreported.
+
+    ``textwrap.dedent`` is not enough on its own, and that is not a detail:
+    it ignores blank lines but not comment lines, so a single ``# note`` at
+    column 0 above an indented block pinned the common prefix at zero and
+    re-opened the whole hole. The indent is therefore computed over lines
+    that carry structure — see :func:`_first_meaningful` — and comment lines
+    are dedented along with everything else.
+
+    A non-blank, non-comment line at column zero legitimately sets the indent
+    to zero: YAML has a node there, so keys beneath it are nested and must
+    stay skipped. The residue is exotic spellings that are neither a comment
+    nor a node — a ``...`` document-end marker, a ``%YAML`` directive — which
+    read as column-zero content and suppress the dedent.
+    """
+    lines = block.split('\n')
+    indents = [
+        len(line) - len(line.lstrip())
+        for line in lines
+        if line.strip() and not line.strip().startswith('#')
+    ]
+    if not indents:
+        return lines
+    common = min(indents)
+    if not common:
+        return lines
+    return [line[common:] if line[:common].isspace() else line.lstrip() for line in lines]
+
+
 def _has_continuation(rest: list[str]) -> bool:
     """Whether the next meaningful line continues the value rather than ending it.
 
@@ -411,12 +479,7 @@ def _has_continuation(rest: list[str]) -> bool:
     which is the one direction this module must never fail in. Detecting it
     is what lets the caller reject rather than guess.
     """
-    for line in rest:
-        stripped = line.strip()
-        if not stripped or stripped.startswith('#'):
-            continue
-        return line[:1].isspace()
-    return False
+    return _first_meaningful(rest)[1][:1].isspace()
 
 
 def _multiline_shape(value: str) -> str:
@@ -434,9 +497,11 @@ def _multiline_shape(value: str) -> str:
     hide the quote this looks for.
 
     The quoted test asks only whether the opening quote recurs, so a value
-    whose closing quote is escaped (``"cla\\"ude``) reads as terminated and
-    falls through to ``plain-scalar``. That is a wrong noun on invalid input
-    that is rejected either way; it is not worth a second quote parser.
+    carrying an ESCAPED quote reads as terminated and falls through to
+    ``plain-scalar``. Both spellings of that are valid YAML rather than
+    malformed input, so the noun is simply wrong on them; they are rejected
+    either way, and getting it right would need a second quote parser, which
+    is the cure this module keeps trying not to re-invent.
     """
     if _BLOCK_SCALAR_HEADER_RE.match(_strip_comment(value)):
         return _SHAPE_BLOCK_SCALAR
@@ -451,45 +516,63 @@ def _declared_tokens(text: str) -> list[str] | None:
     ``None`` means the field is absent (ship everywhere). An empty list means
     the field is present but names nothing, which the validator rejects.
 
-    Only a TOP-LEVEL key counts. Top-level is relative to the BLOCK, not to
-    column zero: a frontmatter block whose every line is indented by the same
-    amount has all its keys at top level, and YAML reads it that way. The
-    block is dedented by its common prefix first, because scanning for
-    column-zero keys instead reported "no declaration" for such a file and
-    shipped it to every target with its declaration unread. A ``targets:``
-    indented BEYOND its siblings still belongs to a nested mapping and is
-    still a different field.
+    Only a TOP-LEVEL key counts — see :func:`_dedent_block` for what
+    "top-level" means here. A ``targets:`` indented BEYOND its siblings still
+    belongs to a nested mapping and is still a different field.
+
+    The inline value is tested AFTER its comment is stripped. ``targets: # w``
+    has no inline value to YAML, so the list that follows is the value;
+    testing the raw text instead treated the comment as the value and
+    reported the declaration empty.
     """
     block = _frontmatter_block(text)
     if block is None:
         return None
-    lines = textwrap.dedent(block).split('\n')
+    lines = _dedent_block(block)
     for index, line in enumerate(lines):
         if line[:1].isspace():
             continue
         key, separator, value = line.partition(':')
         if not separator or _unquote_key(key) != TARGET_SCOPE_FIELD:
             continue
-        value = value.strip()
+        head = _strip_comment(value.strip())
         rest = lines[index + 1:]
-        if value:
-            head = _strip_comment(value)
+        if head:
             # ONE rejection, three diagnoses. A flow sequence spans lines
             # legitimately and is folded; anything else that is continued is
             # a value this parser reads only the first line of.
             if not head.startswith('[') and _has_continuation(rest):
-                raise _MultilineValue(_multiline_shape(value))
-            return _split_inline(_join_flow_sequence(value, rest))
-        items = _collect_block_items(rest)
-        # An indented line that yielded no `- ` item is not an empty
-        # declaration — it is a plain scalar whose content begins on the next
-        # line (`targets:` / `  claude` is the value `claude` to YAML).
-        # Reporting "declares an empty list" describes a file the author did
-        # not write. A NON-indented next line really is an empty value.
-        if not items and _has_continuation(rest):
-            raise _MultilineValue(_SHAPE_PLAIN_SCALAR)
-        return items
+                raise _MultilineValue(_multiline_shape(value.strip()))
+            return _split_inline(_join_flow_sequence(head, rest))
+        return _continued_value(rest)
     return None
+
+
+def _continued_value(rest: list[str]) -> list[str]:
+    """Read the value of a ``targets:`` key that carries none on its own line.
+
+    Three shapes are legal and one is not:
+
+    * a ``- `` block sequence — the ordinary block spelling;
+    * a flow sequence opening on the next line (``targets:`` / ``  [a, b]``),
+      which is one value spanning as many lines as it needs;
+    * nothing at all, or a non-indented next line — an EMPTY declaration,
+      which the validator rejects under its own name;
+    * an indented line that is none of the above — a plain scalar whose
+      content begins on the next line (``targets:`` / ``  claude`` is the
+      value ``claude`` to YAML). Reporting that as "declares an empty list"
+      describes a file the author did not write.
+    """
+    items = _collect_block_items(rest)
+    if items:
+        return items
+    index, line = _first_meaningful(rest)
+    if not line[:1].isspace():
+        return items
+    head = _strip_comment(line.strip())
+    if head.startswith('['):
+        return _split_inline(_join_flow_sequence(head, rest[index + 1:]))
+    raise _MultilineValue(_SHAPE_PLAIN_SCALAR)
 
 
 # ---------------------------------------------------------------------------

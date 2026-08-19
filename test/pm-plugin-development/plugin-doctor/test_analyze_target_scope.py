@@ -597,3 +597,123 @@ def test_a_valueless_key_with_no_indented_content_is_still_empty(tmp_path, value
 
     assert len(findings) == 1
     assert findings[0]['details']['reason'] == 'targets_empty'
+
+
+# ---------------------------------------------------------------------------
+# Round 11: the same shapes and guards, mirrored.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    'text',
+    [
+        pytest.param('---\n# note\n  targets: [cluade]\n---\n', id='comment-above'),
+        pytest.param('---\n  name: d\n# note\n  targets: [cluade]\n---\n', id='comment-among'),
+    ],
+)
+def test_a_comment_does_not_defeat_the_dedent(tmp_path, text):
+    """A comment line carries no structure and must not set the block's indent.
+
+    ``textwrap.dedent`` ignores blank lines but not comment lines, so one
+    ``#`` at column 0 left every key unscanned — and the authoring-time net
+    reported nothing about a declaration the build also failed to read.
+    """
+    bundles = _marketplace(tmp_path)
+    _write(bundles / 'demo' / 'commands' / 'shape.md', text)
+
+    findings = analyze_target_scope(bundles)
+
+    assert len(findings) == 1
+    assert findings[0]['details']['reason'] == 'targets_unknown'
+
+
+@pytest.mark.parametrize(
+    'value',
+    [
+        pytest.param('targets: # note\n- opencode', id='block-at-column-zero'),
+        pytest.param('targets: # note\n  - opencode', id='block-indented'),
+    ],
+)
+def test_a_comment_is_not_an_inline_value(tmp_path, value):
+    """``targets: # note`` has no inline value; the list below is the value."""
+    bundles = _marketplace(tmp_path)
+    _component(bundles, 'commands/commented.md', value)
+
+    assert analyze_target_scope(bundles) == []
+
+
+@pytest.mark.parametrize(
+    ('value', 'expected'),
+    [
+        pytest.param('targets:\n  [claude, opencode]', ['claude', 'opencode'], id='one-line'),
+        pytest.param('targets:\n  [claude,\n  opencode]', ['claude', 'opencode'], id='two-lines'),
+    ],
+)
+def test_a_flow_sequence_may_open_on_the_line_below_the_key(value, expected):
+    """A flow sequence is one value however many lines it spans."""
+    declaration = declared_targets(f'---\nname: a\n{value}\n---\n')
+
+    assert declaration is not None
+    assert declaration[0] == expected
+
+
+def test_a_three_hyphen_prefix_line_does_not_close_the_block():
+    """The closing fence is a whole LINE; the line-end anchor was unpinned.
+
+    The ``----`` must START a line: a mid-line ``---x`` is green either way
+    and pins nothing. This also pins the documented divergence from
+    ``_dep_detection.extract_frontmatter``, which closes here and would
+    truncate the block before ``targets:``.
+    """
+    declaration = declared_targets('---\ndescription: a\n----\ntargets: [cluade]\n---\n')
+
+    assert declaration is not None
+    assert declaration[0] == ['cluade']
+
+
+@pytest.mark.parametrize(
+    'value',
+    [
+        pytest.param('targets: claude,\n# why\n  opencode', id='inline-value'),
+        pytest.param('targets:\n# why\n  claude', id='no-inline-value'),
+    ],
+)
+def test_a_comment_at_column_zero_does_not_end_a_continuation(tmp_path, value):
+    """A comment carries no structure, so it cannot be what ends a value.
+
+    Treating it as structure let the continuation go undetected, and the value
+    was read as its first line alone - silent narrowing.
+    """
+    bundles = _marketplace(tmp_path)
+    _component(bundles, 'commands/comment.md', value)
+
+    findings = analyze_target_scope(bundles)
+
+    assert len(findings) == 1
+    assert findings[0]['details']['reason'] == 'targets_multiline_scalar'
+
+
+def test_an_immediately_closed_block_has_no_fields():
+    """``---`` / ``---`` is an EMPTY block; the fence search's offset was unpinned."""
+    assert declared_targets('---\n---\ntargets: [cluade]\n---\n') is None
+
+
+@pytest.mark.parametrize(
+    ('value', 'expected_reason'),
+    [
+        pytest.param('targets: >gibberish\n  claude', 'targets_multiline_scalar', id='not-a-header'),
+        pytest.param('targets: |x\n  claude', 'targets_multiline_scalar', id='indicator-then-junk'),
+        pytest.param('targets: > # c\n  claude', 'targets_block_scalar', id='header-with-a-comment'),
+        pytest.param('targets: "claude"\n  extra', 'targets_multiline_scalar', id='quote-closed'),
+        pytest.param('targets: "claude,\n  opencode"', 'targets_quoted_scalar', id='quote-open'),
+    ],
+)
+def test_the_shape_boundaries_are_where_they_are_documented(tmp_path, value, expected_reason):
+    """Pin each edge of the two shape tests; all three were unguarded here too."""
+    bundles = _marketplace(tmp_path)
+    _component(bundles, 'commands/shape.md', value)
+
+    findings = analyze_target_scope(bundles)
+
+    assert len(findings) == 1
+    assert findings[0]['details']['reason'] == expected_reason

@@ -36,10 +36,10 @@ The plan's claim table required re-derivation. All were re-checked against the t
 
 | Deliverable | What was done | Commit | Verification state |
 |---|---|---|---|
-| **D1 — filter mechanism** | New `marketplace/targets/component_targets.py` parses the `targets:` declaration and answers `emits_to(path, target_name)`. Both component-tree-emitting targets consult it: the Claude verbatim emitter (`excluded_emission_roots` + `is_under_any`, skipping a scoped-out file or a whole scoped-out skill directory) and its manifest generator (`plugin_json_gen` drops the same entries), and the OpenCode emitter (per-skill / per-agent / per-command skip). The governed set is derived from `TARGET_REGISTRY` filtered by each target's `emits_bundle_tree` capability — never enumerated. Absent field still means every target. | `fab9611` | `test_component_targets.py`, `test_target_scoped_emission.py` — **89 and 14 collected at HEAD**. Counts are stated at HEAD only, never against the implementing commit: `test_component_targets.py` has grown in most rounds and had 24 cases at `fab9611`, so attributing its current count there would name a number that commit never had. (`test_target_scoped_emission.py` has been 14 since `a9c90ef`; the HEAD-only rule is uniform, not a claim that every file moved.) |
+| **D1 — filter mechanism** | New `marketplace/targets/component_targets.py` parses the `targets:` declaration and answers `emits_to(path, target_name)`. Both component-tree-emitting targets consult it: the Claude verbatim emitter (`excluded_emission_roots` + `is_under_any`, skipping a scoped-out file or a whole scoped-out skill directory) and its manifest generator (`plugin_json_gen` drops the same entries), and the OpenCode emitter (per-skill / per-agent / per-command skip). The governed set is derived from `TARGET_REGISTRY` filtered by each target's `emits_bundle_tree` capability — never enumerated. Absent field still means every target. | `fab9611` | `test_component_targets.py`, `test_target_scoped_emission.py` — **109 and 14 collected at HEAD**. Counts are stated at HEAD only, never against the implementing commit: `test_component_targets.py` has grown in most rounds and had 24 cases at `fab9611`, so attributing its current count there would name a number that commit never had. (`test_target_scoped_emission.py` has been 14 since `a9c90ef`; the HEAD-only rule is uniform, not a claim that every file moved.) |
 | **D2 — fail-closed validation** | `_validate` rejects an unknown target name, an empty list, and a list naming only non-component-tree targets. Every message names the component path and the offending value. Validation fires wherever the emission predicate is CALLED: both component-tree targets' emit paths, and the Claude target's validate-only mode (which re-walks each bundle's components for this check alone). Reading a component is not the same as validating it — a `pr-agent`-only run opens skill manifests to harvest rule text, yet never asks whether a component is in scope, because it emits no component. The doctor rule is the authoring-time net there. | `fab9611` | `test_component_targets.py` + `test_target_scoped_emission.py::test_generation_fails_*` |
 | **D3 — first consumer** | `marketplace/bundles/plan-marshall/commands/tools-fix-intellij-diagnostics.md` declares `targets: [claude]`. | `fab9611` | Asserted by generation-output listing (below) |
-| **D4 — authoring surface** | New `targets-scope-invalid` plugin-doctor rule (`_analyze_target_scope.py`), registered in `_rule_registry.py` and wired into both the quality gate and analyze mode, with rows in `rule-provenance.md` and `rule-catalog.md` and a firing positive fixture in `_fixtures.py`. The field, its semantics, its validation table, and the three-condition admission test are documented in `plugin-architecture/references/frontmatter-standards.md` § "Target Scoping". | `fab9611` | `test_analyze_target_scope.py` — **59 collected at HEAD** (same HEAD-only rule); the doctor runs clean over the real tree with D3's declaration in place |
+| **D4 — authoring surface** | New `targets-scope-invalid` plugin-doctor rule (`_analyze_target_scope.py`), registered in `_rule_registry.py` and wired into both the quality gate and analyze mode, with rows in `rule-provenance.md` and `rule-catalog.md` and a firing positive fixture in `_fixtures.py`. The field, its semantics, its validation table, and the three-condition admission test are documented in `plugin-architecture/references/frontmatter-standards.md` § "Target Scoping". | `fab9611` | `test_analyze_target_scope.py` — **74 collected at HEAD** (same HEAD-only rule); the doctor runs clean over the real tree with D3's declaration in place |
 
 ### D3 generation-output listing (the plan's own "Done when" evidence)
 
@@ -69,7 +69,7 @@ rather than reported here:
 - quality-gate: `ruff … All checks passed!`, `mypy … Success: no issues found in 415 source files`,
   `SPDX-header check passed`, plugin-doctor `total_issues: 0`
 - test-compile: mypy over 775 test files, clean
-- module-tests: **21122 passed, 14 skipped** — 0 failed, 0 errors
+- module-tests: **21157 passed, 14 skipped** — 0 failed, 0 errors
 
 One `./pw verify` run in round 10 reported 3 failures in `test_component_targets.py`; they were an
 artefact of a mutation sweep editing the parser while the build was reading it, and the run is
@@ -84,7 +84,7 @@ sweeps nothing outside the named paths. No commit staged the whole worktree.
 
 ## Findings
 
-Source key: **V1**–**V10** = pre-PR verification sub-agent, rounds 1 to 10. **S** = self-found
+Source key: **V1**–**V11** = pre-PR verification sub-agent, rounds 1 to 11. **S** = self-found
 (mutation sweep or my own re-read).
 
 One row per finding. A row states its own instance count where it spans more than one site — `F14–F17`
@@ -94,7 +94,7 @@ covers four, and a row saying "both copies" or "both suites" covers two.
 instances all differ — a row may cover several sites, and a round's verifier may label its findings
 differently from how this report tabulates them. Earlier drafts conflated the three and were wrong
 every time, so exactly one unit is used here: rows, countable by looking. They are 13, 17, 12, 17, 16,
-13, 12, 13, 16, 16 for rounds 1 to 10.
+13, 12, 13, 16, 16, 19 for rounds 1 to 11.
 
 ### Round 1
 
@@ -310,7 +310,11 @@ mutations) and a full `--target all` regeneration reproducing the D3 listing end
 ⚠️ **On corpus figures generally:** the sizes quoted for rounds 6 and 7 (20,580 / 6,768 / 16,806 /
 24,046 / 18 spellings / 288 shapes) are each one verifier's measurement, not a branch artifact — no
 script or corpus is persisted. Round 8's 441-shape sweep is exhaustive over a defined space and so is
-re-derivable from its description; the others are not. Read them as testimony.
+re-derivable from its description; the others are not. **This applies to every round, including
+the ones below it** — rounds 9, 10 and 11 each state corpus figures whose scripts live in a
+session scratch directory, not on the branch, and round 11 found them still being stated as fact
+here. Read every corpus figure in this report as that verifier's testimony, attributed to the
+round that produced it, not as a reproducible branch artifact.
 
 ### Round 9 — BLOCKED, and what was checked without it
 
@@ -397,7 +401,7 @@ is described here rather than left implicit.
 | R10-05 | V10 | **Both quoted multi-line spellings were still misdiagnosed**, and the report said round 9 fixed all four over-rejections it found. `targets: "claude,` / `  opencode"` is `claude, opencode` to PyYAML and is not a PLAIN scalar by definition. | **Fixed** — a third shape with its own noun and its own reason code (`targets_quoted_scalar`). The probe row that missed it is corrected. |
 | R10-06 | V10 | **A new fail-OPEN of the same class as the fixed R6-03a.** A frontmatter block whose every line is indented has top-level keys to YAML; the column-zero scan read "no declaration" and shipped the component to every target with its scope unread. 42 of 9,100 combinatorial shapes; the only fail-open family the sweep found. Both parsers. | **Fixed** — the block is dedented by its common prefix first. A key indented BEYOND its siblings still reads as nested, pinned from that side too so the fix is not itself an over-correction. |
 | R10-07 | V10 | **Second fail-OPEN: a fence carrying trailing whitespace.** `--- ` and `---\t` read as "no frontmatter" — while `_dep_detection.extract_frontmatter`, this tree's own canonical frontmatter reader, accepts them. Two parsers in one repository disagreed about whether such a file has frontmatter at all. | **Fixed** — both fences match `^---[ \t]*$`, matching the canonical reader. |
-| R10-08 | V10 | Three collection counts wrong — **fifth recurrence** of this class. | **Fixed** — re-derived after round 10's own additions: 84 / 14 / 56. |
+| R10-08 | V10 | Three collection counts wrong — **fifth recurrence** of this class. | **Fixed twice.** Round 10 re-derived them and then went stale again inside its own commit, because it measured before adding its last fixtures — the SIXTH recurrence, in the row recording the fifth. No figure is stated here any more: the D1 and D4 rows carry the counts, and one site cannot disagree with itself. |
 | R10-09 | V10 | The flow-join kill count was stated as one figure ("7 per suite") where the suites were 8 and 7; it contradicted the R2-07 disposition twenty lines away, which says no single figure covers both; and the R9-08 disposition called the figure withdrawn while it was still stated. Three instances. | **Fixed** — re-measured per suite after this round's fixtures: `_strip_comment` 3 / 3, flow-join 8 / 8, stated as a pair. |
 | R10-10 | V10 | "The series is maintained in the § Findings lead-in **and nowhere else**" — it was stated at two sites. (Both agreed, and both were correct; the claim about uniqueness was the false part.) | **Fixed** — the Stop record now cross-references the lead-in instead of restating it. |
 | R10-11 | V10 | The authoring standards' validation table reinstated the misdiagnosis round 9 removed from the code: it merged the two rejections into one row and gave the plain-scalar reason for the block-scalar half. Code and register disagreed. | **Fixed** — the row now states the ONE condition and names all three constructs under it. |
@@ -417,20 +421,75 @@ all` exits 0 at 1166 / 1090 / 1 entries, 160 components walked with exactly 1 sc
 `tools-fix-intellij-diagnostics.md` present in the Claude tree and its `plugin.json` and absent from
 OpenCode's. Mutation sweep 37 mutants, 34 killed, 3 survivors — R10-01/02/03.
 
-**Round 10's own fixes were then mutation-tested, cache-disabled: 24 mutants, 24 killed, no
-survivors.** Every guard added or changed this round is pinned in both parsers — the two fail-open
-fixes, the dedent's nested-key side, the block-scalar header regex, the quoted shape, the collapsed
-sentinel comparison, and the F9 guard in both directions (deleting it, and dropping its `not items`
-half). The tree was byte-restored from an in-memory snapshot after every mutant and `git status
+**Round 10's own fixes were mutation-tested, cache-disabled: 24 mutants, 24 killed** — the two
+fail-open fixes, the dedent's nested-key side, the block-scalar header regex, the quoted shape, the
+collapsed sentinel comparison, and the F9 guard in both directions. **The sweep was not exhaustive,
+and round 10 said it was:** "every guard added or changed this round is pinned in both parsers" was
+false of five more guards round 10 introduced and never mutated — the close fence's line anchor, the
+fence search's offset, the block-header pattern's end anchor and its comment stripping, and the
+quoted test's threshold. Round 11 found all five unpinned and round 11's own sweep covers them. A
+mutation sweep proves what it mutates and nothing else; the count is not the claim.
+
+The tree was byte-restored from an in-memory snapshot after every mutant and `git status
 --porcelain` re-checked at the end; no `git checkout`, `restore`, `stash` or `clean` was used at any
 point, because the working tree held uncommitted work throughout.
 
-**Convergence, restated for the third time.** Shipped-change findings by round: 9, 10, 9, 7, 5, 3, 9,
-**7**. Round 10 is the **fourth consecutive round to find a defect inside the previous round's fix**
-(round 7 in round 6's, round 9 in round 8's, round 10 in round 9's — twice, R10-04 and R10-05). The
-series does not describe a loop that is converging; it describes one where each behaviour change
-re-seeds the next round. That is the argument for the design decision recorded in § Residue, not for
-another round.
+**Convergence, restated for the third time.** The shipped-change series is maintained in the § Stop
+record and is not restated here, because a second copy is a second thing to keep in step — the R10-10
+remedy, applied to this series too after round 10 stated two different figures for its own round.
+
+What the series shows: rounds 7, 9, 10 and 11 each found a behavioural defect inside the PREVIOUS
+round's fix — 7-04 in round 6's, R9-01 and R9-05 in round 8's, R10-04 and R10-05 in round 9's, and
+round 11's B1 in round 10's. Rounds 9, 10 and 11 are three consecutive. (Round 8 is not in that list:
+it was the first commit since `fab9611` to change module behaviour at all, so it had no predecessor's
+fix to find a defect in.) This does not describe a loop that is converging; it describes one where each behaviour change re-seeds the next round. That is
+the argument for the design decision recorded in § Residue, not for another round.
+
+### Round 11
+
+The operator granted up to five further rounds after round 10 ("if needed"). Round 10 changed module
+behaviour in five places, and this branch's own established finding is that a behaviour change
+re-seeds the defect rate, so round 11 was dispatched against round 10's fix commit. It found a
+fail-open **inside round 10's fix for a fail-open**.
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| R11-01 | V11 | **The dedent fix was defeated by a single comment line, in both parsers.** `textwrap.dedent` ignores blank lines but NOT comment lines, so one `#` at column 0 above an indented block pinned the common indent at zero and left every key unscanned — R10-06 re-opened by the shape one over. The severe half is not the widening: `# note` / `  targets: [typo]` and `…[]` **passed the build with nothing reported**, by generator and doctor alike. The fail-closed contract, defeated by a comment. | **Fixed** — a `_dedent_block` helper computes the indent over lines that CARRY STRUCTURE, excluding blanks and whole-line comments, which is what YAML does. Pinned in both parsers from both sides, including the invalid-declaration-under-a-comment case. |
+| R11-02 | V11 | `targets: # note` followed by a `- ` block was rejected as "declares an empty list" — a valid declaration naming a real target, refused under a description of a file the author did not write. The comment was being read as the value. | **Fixed** — the inline value is tested AFTER its comment is stripped, so a comment-only value is no value, and the list beneath it is read. |
+| R11-03 | V11 | A flow sequence opening on the line BELOW the key (`targets:` / `  [claude, opencode]`) was rejected — first as "empty list", then, after round 10's shape work, as "a plain scalar continued across lines". Round 10 changed the noun on it and never noticed it was rejecting valid YAML. | **Fixed** — `_continued_value` recognises a `[`-initial continuation and folds it, so a flow sequence is one value wherever it opens. |
+| R11-04 | V11 | **Five guards round 10 added were pinned by nothing**, and round 10's report said every guard it added was pinned: the close fence's line anchor, the fence search's `start - 1` offset, the block-header pattern's end anchor, its comment stripping, and the quoted test's `< 2` threshold. Each could be loosened with both suites green. | **Fixed** — all five pinned in both parsers, and the false claim corrected at its site. |
+| R11-05 | S | **Three of round 11's OWN first pins were vacuous**, caught by mutating them rather than by re-reading. The `---`-prefix fixture used `description: ---x`, where the hyphens sit mid-line and the pattern never reaches them; and the column-zero-comment case was pinned in neither parser. Green either way is not a pin. | **Fixed** — the fixture now uses a `----` line at column 0, and a column-zero comment between a key and its continuation is pinned in both suites. Re-run: 22 mutants, 22 killed, no survivors. |
+| R11-06 | V11 | "54 of the 60 legal spellings" — the block-header grammar admits **96**, so the fixed set it replaced misdiagnosed **90**. Four instances (both parsers, both suites) plus the report. | **Fixed** — re-derived mechanically (2 indicators × {bare, indent 1-9, chomp, both orders} = 96) and corrected at every site. The regex covers all 96 and over-matches only the ten `0`-bearing spellings, which YAML rejects as headers anyway. |
+| R11-07 | V11 | `_dep_detection` was placed "in the plugin-doctor" / "in this same skill". It is owned by `tools-marketplace-inventory` and imported across skills. Two instances. | **Fixed** — the owning skill is named in both. |
+| R11-08 | V11 | **The fence-parity claim was broader than the fix.** That reader matches `\n---` as a PREFIX and so also closes on `----`, where this one does not; parity was restored for trailing whitespace only. | **Fixed** — the divergence is stated at both constants, with the reason it is not closed: adopting the prefix match would re-open the truncation defect the whole-line match exists to prevent. Pinned by the R11-05 fixture. |
+| R11-09 | V11 | `_multiline_shape`'s stated limit called its escaped-quote blind spot "a wrong noun **on invalid input**". `"cla\"ude,` / `  opencode"` and the `'it''s,` doubling are valid YAML. | **Fixed** — the limit is stated as what it is: a wrong noun on valid YAML, rejected either way. |
+| R11-10 | V11 | The module docstring's ONE-condition parenthetical — "a value that is not a flow sequence, followed by an indented line" — describes `targets:` / `  - claude` exactly, which is ACCEPTED. | **Fixed** — the condition is stated as coded, at both of its sites, with the block form named as the case the loose wording swallowed. |
+| R11-11 | V11 | The `start - 1` comment justified the offset by "an empty frontmatter block", where the offset has no observable effect at all. Its only observable effect is on `---` / `---` / more text. Two instances. | **Fixed** — the comment names the case that actually changes, which is also now pinned (it was not). |
+| R11-12 | V11 | The authoring standards said a flow sequence "spans lines **freely**" — falsified by R11-03 at the moment it was written. | **Fixed** — restated over the shapes that do span lines, all of which now work. |
+| R11-13 | V11 | The standards' coverage sentence named ONE gap in the doctor rule ("except the ships-nowhere case"). In a consumer install the unknown-name check is skipped too — and this document ships to consumers. `rule-catalog.md` already carried the caveat; the authoring surface did not. | **Fixed** — both gaps named, with what still runs. |
+| R11-14 | V11 | Round 10 stated **two different** shipped-change figures for itself, in two places. | **Fixed** — one site, and the § Stop record is it. |
+| R11-15 | V11 | "the **fourth consecutive** round to find a defect inside the previous round's fix" named three rounds, and a second site called the same set "rounds 7, 9 and 10", which are not consecutive. | **Fixed** — each round named, the ordinal dropped, and round 8's exclusion explained rather than left as an off-by-one. |
+| R11-16 | V11 | Three collection counts stale again — the **sixth** recurrence, inside the row recording the fifth. | **Fixed** — the figure is deleted rather than re-derived; the D-rows carry the counts and one site cannot disagree with itself. |
+| R11-17 | V11 | "24 mutants, 24 killed … **every** guard added or changed this round is pinned in both parsers" — false of the five guards in R11-04. | **Fixed** — the sweep is described by what it mutated, and the gap is stated. A mutation count is not a coverage claim. |
+| R11-18 | V11 | "**Eight** defects, one root cause" in § Residue omits round 1's empty-list misfire and round 4's R4-4 regression, both parser-vs-YAML divergences. | **Fixed** — restated as at least eleven with round 11's three added, which strengthens the row's own argument rather than weakening it. |
+| R11-19 | V11 | The corpus-attribution rule ("read them as testimony") is applied to rounds 6 and 7 only, while an R8-12 disposition claims it now applies to every round including its own. Rounds 8, 9 and 10's figures are stated as fact. | **Fixed** — the note is scoped to every round's unpersisted corpus figures, this one included. |
+
+**Round 11's evidence.** A 38,716-case structured corpus and a 25,000-case randomized corpus, each run
+four ways: this parser at HEAD, the same parser at the parent commit (extracted with `git show` to a
+temp path — never checked out), the doctor mirror, and PyYAML as oracle.
+
+- **HEAD vs the parent commit:** 10,281 verdict changes, **all** attributable to round 10's five
+  intended fixes — 10,244 to the dedent, 36 to the fence regexes, 1 to the search offset — and none
+  of them a narrowing. No unintended behaviour change.
+- **HEAD vs the doctor mirror:** **0 divergences** over 63,716 cases, other than the `emits_bundle_tree`
+  check the doctor deliberately omits.
+- **HEAD vs PyYAML:** 0 invented scopes and 0 wrong scopes outside the known duplicate-key survivor.
+  The only fail-open families were R11-01 and the `----` fence.
+
+**Round 11's own fixes were then mutation-tested, cache-disabled, with no build running: 22 mutants,
+22 killed, no survivors** — every guard this round added or changed, in both parsers, in both
+directions where a guard has two halves. Three of the round's first-draft pins were vacuous and were
+caught by that sweep rather than by re-reading them (R11-05).
 
 ### Cold read (the plan's § Verification requirement)
 
@@ -457,8 +516,10 @@ It surfaced two wording gaps, both fixed rather than waved through:
 
 ### Stop record
 
-**Both budgets are now spent — the contract's default five, and the operator's five-round
-extension. Round 10 was the last.** No round ever returned "nothing remains": round 10 answered the
+**A third budget is open.** The contract's default five rounds and the operator's first five-round
+extension are spent; after round 10 the operator granted up to five more, "if needed". Round 11 is
+the first of those, and it was needed: round 10 changed module behaviour in five places, and round 11
+found a fail-open inside round 10's fix for a fail-open. No round ever returned "nothing remains": round 10 answered the
 stop question **"Yes, condition A is violated"** and named fifteen items, all of which were fixed,
 as condition A requires regardless of budget. What a spent budget ends is the *verifying*, never the
 *fixing*.
@@ -491,7 +552,7 @@ verification and counting it would be the "silence read as a pass" defect this l
 
 **Convergence: none.** Each round was asked for the shipped-change vs report split: round 3 9/12,
 round 4 10/17, round 5 9/19, round 6 7/13, round 7 5/11, round 8 3/13, round 9 **9/16**, round 10
-**8/16** (each as its verifier reported it, in that verifier's own units). Rounds 7 and 8 read the
+**8/16**, round 11 **12/19** (each as its verifier reported it, in that verifier's own units). Rounds 7 and 8 read the
 fall through rounds 4–8 as narrowing; **round 9 refuted that** and this report's earlier statement of
 it, and round 10 confirmed the refutation. The fall was an artefact of what those rounds examined —
 the report, not the code — and round 8 was the first commit since `fab9611` to change what the module
@@ -571,7 +632,7 @@ claim is true. None of them has standing to answer these, and no further round w
 
 | Decision | The evidence for putting it on the table |
 |---|---|
-| **Should `marketplace/targets/` keep a hand-rolled line parser at all?** `yaml.safe_load` would delete the entire defect class. The stdlib-only constraint that justifies hand-rolling applies to the plugin-doctor mirror in a consumer install — where `marketplace/targets/` is absent anyway — not to the generator half, which already runs inside a Python build | **Every** behavioural defect across ten rounds is a divergence between this parser and YAML: R6-03a (quoted key), 7-04 (quote-set strip), F8 (`-` exemption), R9-05 (block scalars), R10-04 (block-scalar headers), R10-05 (quoted multi-line), R10-06 (uniform indent), R10-07 (fence whitespace). Eight defects, one root cause |
+| **Should `marketplace/targets/` keep a hand-rolled line parser at all?** `yaml.safe_load` would delete the entire defect class. The stdlib-only constraint that justifies hand-rolling applies to the plugin-doctor mirror in a consumer install — where `marketplace/targets/` is absent anyway — not to the generator half, which already runs inside a Python build | **Every** behavioural defect across ten rounds is a divergence between this parser and YAML: round 1's empty-list misfire on `[claude]`, R4-4 (a round-3 regression rejecting two valid declarations), R6-03a (quoted key), 7-04 (quote-set strip), F8 (`-` exemption), R9-05 (block scalars), R10-04 (block-scalar headers), R10-05 (quoted multi-line), R10-06 (uniform indent), R10-07 (fence whitespace), and round 11's R11-01, R11-02 and R11-03. Thirteen defects, one root cause |
 | **Is `targets:` the right mechanism, versus a per-target ignore manifest?** A manifest puts the policy in one reviewable place instead of distributing it across 160 frontmatter blocks, and needs no parser | An architecture question the plan settled by assumption. The delivered mechanism works; that is not the same as its being the better of the two |
 | **Is the fail-open degradation direction acceptable?** The module now argues both sides and picks one (see its Degradation docstring). Someone with standing should confirm the pick | R6-03a, R10-06 and R10-07 were all treated as defects **because** they failed open. The module's own history argues against its own default |
 | **Duplicate `targets:` keys** (survivor B3) — first-declaration wins here, last wins in YAML | The plan does not specify it. It is a choice, not a bug |

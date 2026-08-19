@@ -67,7 +67,6 @@ Public API
 from __future__ import annotations
 
 import re
-import textwrap
 from pathlib import Path
 
 from _doctor_shared import Finding
@@ -100,15 +99,19 @@ _MULTILINE_SENTINELS: dict[str, list[str]] = {
     _SHAPE_PLAIN_SCALAR: ['\x00multiline-plain-scalar'],
 }
 
-#: A whole YAML block-scalar header — see ``component_targets``. Matching a
-#: fixed set of the six chomping spellings instead misdiagnosed every header
-#: carrying an indentation indicator (``|2``, ``>3-``).
+#: A whole YAML block-scalar header — see ``component_targets``. The
+#: fixed set of the six chomping spellings this replaced misdiagnosed 90 of
+#: the 96 spellings the grammar admits — every header carrying an
+#: indentation indicator (``|2``, ``>3-``) among them.
 _BLOCK_SCALAR_HEADER_RE = re.compile(r'^[>|](?:[0-9][-+]?|[-+][0-9]?)?$')
 
 #: A frontmatter fence line: three hyphens, then only spaces or tabs — see
-#: ``component_targets``. ``_dep_detection.extract_frontmatter`` in this same
-#: skill already accepts a space-suffixed fence, so refusing it here made two
-#: parsers in one tree disagree about whether a file has frontmatter at all.
+#: ``component_targets``. ``_dep_detection.extract_frontmatter`` (owned by the
+#: ``tools-marketplace-inventory`` skill, imported by this one) already accepts
+#: a space-suffixed fence, so refusing it here made two parsers in one tree
+#: disagree about whether a file has frontmatter at all. Parity is restored for
+#: trailing whitespace only: that reader matches ``\n---`` as a PREFIX and so
+#: also closes on ``----``, where this one does not.
 _OPEN_FENCE_RE = re.compile(r'^---[ \t]*\n')
 _CLOSE_FENCE_RE = re.compile(r'\n---[ \t]*(?:\n|$)')
 
@@ -292,6 +295,42 @@ def _unquote_key(key: str) -> str:
     return key
 
 
+def _first_meaningful(lines: list[str]) -> tuple[int, str]:
+    """Return ``(index, line)`` of the first line that carries structure.
+
+    Blank lines and whole-line ``#`` comments carry none. ``(-1, '')`` when
+    there is no such line.
+    """
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped and not stripped.startswith('#'):
+            return index, line
+    return -1, ''
+
+
+def _dedent_block(block: str) -> list[str]:
+    """Split ``block`` into lines, dedented by the common indent of its keys.
+
+    Mirrors ``component_targets._dedent_block``. The indent is computed over
+    lines that carry structure, not over every line: ``textwrap.dedent``
+    ignores blank lines but not comment lines, so one ``# note`` at column 0
+    above an indented block pinned the common prefix at zero and left the
+    whole block unscanned.
+    """
+    lines = block.split('\n')
+    indents = [
+        len(line) - len(line.lstrip())
+        for line in lines
+        if line.strip() and not line.strip().startswith('#')
+    ]
+    if not indents:
+        return lines
+    common = min(indents)
+    if not common:
+        return lines
+    return [line[common:] if line[:common].isspace() else line.lstrip() for line in lines]
+
+
 def _has_continuation(rest: list[str]) -> bool:
     """Whether the next meaningful line continues the value rather than ending it.
 
@@ -300,12 +339,7 @@ def _has_continuation(rest: list[str]) -> bool:
     first physical line would silently narrow the declared scope, which the
     build rejects outright.
     """
-    for line in rest:
-        stripped = line.strip()
-        if not stripped or stripped.startswith('#'):
-            continue
-        return line[:1].isspace()
-    return False
+    return _first_meaningful(rest)[1][:1].isspace()
 
 
 def _multiline_shape(value: str) -> str:
@@ -313,7 +347,9 @@ def _multiline_shape(value: str) -> str:
 
     Mirrors ``component_targets._multiline_shape``. Diagnosis only: the caller
     has already decided to flag, so a misclassification changes the reason
-    code and the sentence, never whether the component is reported.
+    code and the sentence, never whether the component is reported. A value
+    carrying an escaped quote reads as terminated and is named a plain scalar
+    — valid YAML with the wrong noun on it, flagged either way.
     """
     if _BLOCK_SCALAR_HEADER_RE.match(_strip_comment(value)):
         return _SHAPE_BLOCK_SCALAR
@@ -341,7 +377,7 @@ def declared_targets(text: str) -> tuple[list[str], int] | None:
     block = _frontmatter_block(text)
     if block is None:
         return None
-    lines = textwrap.dedent(block).split('\n')
+    lines = _dedent_block(block)
     for index, line in enumerate(lines):
         if line[:1].isspace():
             continue
@@ -350,22 +386,35 @@ def declared_targets(text: str) -> tuple[list[str], int] | None:
             continue
         # +2: the opening fence occupies line 1, so block line 0 is file line 2.
         line_number = index + 2
-        value = value.strip()
+        head = _strip_comment(value.strip())
         rest = lines[index + 1:]
-        if value:
-            head = _strip_comment(value)
+        if head:
             # ONE condition, three diagnoses — see the module docstring.
             if not head.startswith('[') and _has_continuation(rest):
-                return _MULTILINE_SENTINELS[_multiline_shape(value)], line_number
-            return _split_inline(_join_flow_sequence(value, rest)), line_number
-        items = _collect_block_items(rest)
-        # An indented line that yielded no `- ` item is a plain scalar whose
-        # content begins on the next line, not an empty declaration — see
-        # ``component_targets``. A NON-indented next line really is empty.
-        if not items and _has_continuation(rest):
-            return _MULTILINE_SENTINELS[_SHAPE_PLAIN_SCALAR], line_number
-        return items, line_number
+                return _MULTILINE_SENTINELS[_multiline_shape(value.strip())], line_number
+            return _split_inline(_join_flow_sequence(head, rest)), line_number
+        return _continued_value(rest), line_number
     return None
+
+
+def _continued_value(rest: list[str]) -> list[str]:
+    """Read the value of a ``targets:`` key that carries none on its own line.
+
+    Mirrors ``component_targets._continued_value``: a ``- `` block, a flow
+    sequence opening on the next line, an empty declaration, or an indented
+    line that is none of those — a plain scalar whose content begins on the
+    next line, which "declares an empty list" would misname.
+    """
+    items = _collect_block_items(rest)
+    if items:
+        return items
+    index, line = _first_meaningful(rest)
+    if not line[:1].isspace():
+        return items
+    head = _strip_comment(line.strip())
+    if head.startswith('['):
+        return _split_inline(_join_flow_sequence(head, rest[index + 1:]))
+    return _MULTILINE_SENTINELS[_SHAPE_PLAIN_SCALAR]
 
 
 def registered_target_names(marketplace_root: Path) -> frozenset[str] | None:
