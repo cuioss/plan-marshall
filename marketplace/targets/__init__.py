@@ -33,6 +33,13 @@ def register_target(name: str, target_cls: type[TargetBase]) -> None:
     no-op. Re-registering with a different class is rejected so reload
     accidents do not silently replace a target.
     """
+    if not name or any(ch.isspace() for ch in name):
+        raise ValueError(
+            f'Target name {name!r} must be non-empty and contain no whitespace. '
+            'Component target scoping relies on this: a declared scope is split on '
+            'commas and matched against these names, and a name carrying a space '
+            'could be produced by a mis-parse rather than by an author.'
+        )
     existing = TARGET_REGISTRY.get(name)
     if existing is target_cls:
         return

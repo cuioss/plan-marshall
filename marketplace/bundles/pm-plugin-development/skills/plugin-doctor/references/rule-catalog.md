@@ -1258,13 +1258,13 @@ through the `scoped(...)` wrapper) and also active in `doctor-marketplace.py ana
 
 **Scope**: every component that may carry the field — `marketplace/bundles/*/agents/*.md`, `marketplace/bundles/*/commands/*.md`, and `marketplace/bundles/*/skills/*/SKILL.md`.
 
-**Intent**: A component may declare the build-time `targets:` frontmatter field naming the build targets it ships to (absent ⇒ every target). The multi-target generator rejects an unknown target name and an empty declaration; this rule surfaces both while the author is still looking at the file rather than at build time. An absent field is correct and is the state of nearly every component — it is never flagged.
+**Intent**: A component may declare the build-time `targets:` frontmatter field naming the build targets it ships to (absent ⇒ every target). The multi-target generator rejects an unknown target name, an empty declaration, a plain scalar continued across lines, and a YAML block scalar; this rule surfaces each while the author is still looking at the file rather than at build time. An absent field is correct and is the state of nearly every component — it is never flagged.
 
-**Detection**: Pure static analysis — the leading `---`-fenced frontmatter is parsed line-by-line for a TOP-LEVEL `targets:` key in either the inline-flow (`[a, b]`) or block (`- a`) form. Valid names are derived from the targets' own `register_target('{name}', …)` registrations under `marketplace/targets/*/__init__.py`, never transcribed into the analyzer. `details.reason` distinguishes `targets_unknown` (with `details.unknown_targets` and `details.registered_targets`) from `targets_empty`.
+**Detection**: Pure static analysis — the leading `---`-fenced frontmatter is parsed line-by-line for a TOP-LEVEL `targets:` key in either the inline-flow (`[a, b]`) or block (`- a`) form. Valid names are derived from the targets' own `register_target('{name}', …)` registrations under `marketplace/targets/*/__init__.py`, never transcribed into the analyzer. `details.reason` distinguishes `targets_unknown` (with `details.unknown_targets` and `details.registered_targets`), `targets_empty`, `targets_multiline_scalar`, and `targets_block_scalar`.
 
 **Coverage boundary**: The generator additionally rejects a declaration naming ONLY targets that emit no component tree. That check asks each target class for its `emits_bundle_tree` capability; this analyzer does not import the target classes, and pattern-matching the method body to guess the answer would restate a contract the build can ask for directly, so that rejection stays in the build. And `marketplace/targets/` is a meta-project tree absent from a consumer install: when it cannot be located the unknown-name check is skipped (nothing to check names against) while the empty-declaration check, which needs no registry, still runs.
 
-**Recommended fix**: Correct the target name to a registered one, or delete the `targets:` field entirely to ship the component to every target.
+**Recommended fix**: Correct the target name to a registered one; delete the `targets:` field entirely to ship the component to every target; or, for the two value-shape reasons, write the list explicitly as `targets: [a, b]` or a `- ` block.
 
 **Suppression mechanism**: None — a declaration the build rejects is a hard breakage.
 

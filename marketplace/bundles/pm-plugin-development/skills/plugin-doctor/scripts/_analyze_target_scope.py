@@ -18,6 +18,10 @@ What is flagged
 - **Empty declaration** — ``targets: []`` or a ``targets:`` key with no items.
   A component that ships nowhere is an authoring error; omitting the field is
   how an author says "every target".
+- **Plain scalar continued across lines** — one YAML value the build reads
+  from one line only, so accepting it would silently narrow the scope.
+- **YAML block scalar** (``>``/``|``) — a value the build does not read at
+  all, reported under its own name rather than as one of the above.
 
 What is NOT flagged
 -------------------
@@ -29,8 +33,8 @@ emit no component tree. That check asks each target class for its
 ``emits_bundle_tree`` capability. This analyzer does not import the target
 classes — pattern-matching the method body to guess the answer would be a
 second, weaker restatement of a contract the build can simply ask for — so
-that check stays in the build and this rule covers the two defects a static
-scan settles outright.
+that check stays in the build and this rule covers every defect a static scan
+settles outright.
 
 Deriving the target set
 -----------------------
@@ -80,6 +84,13 @@ RULE_NAME = 'analyze_target_scope'
 #: silently narrowing the scope.
 _MULTILINE_SCALAR = ['\x00multiline-plain-scalar']
 
+#: Sentinel for a YAML block-scalar value (``>``/``|``), reported separately
+#: so the finding names the construct the author wrote.
+_BLOCK_SCALAR = ['\x00block-scalar']
+
+#: YAML block-scalar indicators — see ``component_targets``.
+_BLOCK_SCALAR_INDICATORS = frozenset({'>', '>-', '>+', '|', '|-', '|+'})
+
 #: Frontmatter field under inspection.
 TARGET_SCOPE_FIELD = 'targets'
 
@@ -110,8 +121,14 @@ _DESCRIPTION_UNKNOWN = (
 
 _DESCRIPTION_MULTILINE = (
     'component `targets:` frontmatter is a plain scalar continued across lines. That is one '
-    'YAML value, but the build reads only its first line, so the declared scope would be '
-    'silently narrowed. Write the list explicitly — `targets: [a, b]` or a `- ` block.'
+    'YAML value spanning several lines, and the build reads a value from one line only, so '
+    'the declared scope would be silently narrowed rather than read as written. Write the list explicitly — `targets: [a, b]` or a `- ` block.'
+)
+
+_DESCRIPTION_BLOCK_SCALAR = (
+    'component `targets:` frontmatter uses a YAML block scalar (`>` or `|`). The build does '
+    'not read block scalars, so it cannot tell what was declared and rejects the component. '
+    'Write the list explicitly — `targets: [a, b]` or a `- ` block.'
 )
 
 _DESCRIPTION_EMPTY = (
@@ -246,7 +263,7 @@ def _has_continuation(rest: list[str]) -> bool:
         stripped = line.strip()
         if not stripped or stripped.startswith('#'):
             continue
-        return line[:1].isspace() and not stripped.startswith('-')
+        return line[:1].isspace()
     return False
 
 
@@ -273,7 +290,10 @@ def declared_targets(text: str) -> tuple[list[str], int] | None:
         value = value.strip()
         rest = lines[index + 1:]
         if value:
-            if not _strip_comment(value).startswith('[') and _has_continuation(rest):
+            head = _strip_comment(value)
+            if head in _BLOCK_SCALAR_INDICATORS and _has_continuation(rest):
+                return _BLOCK_SCALAR, line_number
+            if not head.startswith('[') and _has_continuation(rest):
                 return _MULTILINE_SCALAR, line_number
             return _split_inline(_join_flow_sequence(value, rest)), line_number
         return _collect_block_items(rest), line_number
@@ -347,6 +367,21 @@ def _scan_component(path: Path, registered: frozenset[str] | None) -> list[dict]
     if declaration is None:
         return []
     tokens, line_number = declaration
+
+    if tokens is _BLOCK_SCALAR:
+        return [
+            Finding(
+                type=RULE_ID,
+                file=str(path),
+                line=line_number,
+                severity='error',
+                fixable=False,
+                rule_id=RULE_ID,
+                description=_DESCRIPTION_BLOCK_SCALAR,
+                details={'reason': 'targets_block_scalar'},
+                extra={'rule': RULE_NAME},
+            ).to_dict()
+        ]
 
     if tokens is _MULTILINE_SCALAR:
         return [

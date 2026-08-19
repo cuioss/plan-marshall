@@ -45,7 +45,17 @@ moment it is read and an invalid one aborts the build
 * a list naming ONLY targets that emit no component tree (``pr-agent``
   derives a single reviewer configuration from skill rules, so it has no
   component to filter) — such a declaration passes a registry-membership
-  check while still shipping the component nowhere.
+  check while still shipping the component nowhere;
+* a plain scalar continued across lines — one YAML value this parser reads
+  from one line only, so accepting it would silently narrow the scope;
+* a YAML block scalar (``>``/``|``) — a value this parser does not read at
+  all, rejected under its own name rather than misdiagnosed as the above.
+
+Adding a rejection means adding it here **and** in the doctor rule that
+mirrors this validation, its rule-catalog and rule-provenance rows, and the
+authoring standards' validation table. A behaviour change has landed in the
+code alone before; every one of those registers then stated a count that was
+one short.
 
 The valid names are derived from ``TARGET_REGISTRY`` and from each
 target's own :attr:`~marketplace.targets.base.TargetBase.emits_bundle_tree`
@@ -110,6 +120,23 @@ _SKILLS_DIR = 'skills'
 
 #: Manifest filename of a directory-shaped component.
 _SKILL_MANIFEST = 'SKILL.md'
+
+
+#: YAML block-scalar indicators. A value of one of these is not a plain
+#: scalar at all — the indented lines beneath it are the value's content —
+#: so calling it "a plain scalar continued across lines" is a wrong
+#: diagnosis on a declaration a YAML reader parses perfectly well.
+_BLOCK_SCALAR_INDICATORS = frozenset({'>', '>-', '>+', '|', '|-', '|+'})
+
+
+class _BlockScalarValue(Exception):
+    """Internal marker: the value is a YAML block scalar (``>``/``|``).
+
+    Distinct from :class:`_MultilinePlainScalar` so the diagnostic names the
+    shape the author actually wrote. Both are rejected — this parser reads
+    neither — but a message naming the wrong construct sends the author
+    looking in the wrong place.
+    """
 
 
 class _MultilinePlainScalar(Exception):
@@ -338,7 +365,7 @@ def _has_continuation(rest: list[str]) -> bool:
         stripped = line.strip()
         if not stripped or stripped.startswith('#'):
             continue
-        return line[:1].isspace() and not stripped.startswith('-')
+        return line[:1].isspace()
     return False
 
 
@@ -363,7 +390,10 @@ def _declared_tokens(text: str) -> list[str] | None:
         value = value.strip()
         rest = lines[index + 1:]
         if value:
-            if not _strip_comment(value).startswith('[') and _has_continuation(rest):
+            head = _strip_comment(value)
+            if head in _BLOCK_SCALAR_INDICATORS and _has_continuation(rest):
+                raise _BlockScalarValue
+            if not head.startswith('[') and _has_continuation(rest):
                 raise _MultilinePlainScalar
             return _split_inline(_join_flow_sequence(value, rest))
         return _collect_block_items(rest)
@@ -429,11 +459,19 @@ def read_target_scope(path: Path) -> frozenset[str] | None:
         return None
     try:
         tokens = _declared_tokens(text)
+    except _BlockScalarValue:
+        raise TargetScopeError(
+            f'{path}: `{TARGET_SCOPE_FIELD}:` uses a YAML block scalar (`>` or `|`). '
+            f'This parser does not read block scalars, so it cannot tell what you '
+            f'declared. Write the list explicitly — `{TARGET_SCOPE_FIELD}: [a, b]` or a '
+            f'`- ` block.'
+        ) from None
     except _MultilinePlainScalar:
         raise TargetScopeError(
             f'{path}: `{TARGET_SCOPE_FIELD}:` is a plain scalar continued across lines. '
-            f'That is one YAML value, but this parser reads only its first line, which '
-            f'would silently narrow the declared scope. Write the list explicitly — '
+            f'That is one YAML value spanning several lines, and this parser reads a value '
+            f'from one line only — so it would silently narrow the declared scope rather '
+            f'than read what you wrote. Write the list explicitly — '
             f'`{TARGET_SCOPE_FIELD}: [a, b]` or a `- ` block — so what ships is what you wrote.'
         ) from None
     if tokens is None:

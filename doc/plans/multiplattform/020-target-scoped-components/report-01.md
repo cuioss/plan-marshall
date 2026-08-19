@@ -36,10 +36,10 @@ The plan's claim table required re-derivation. All were re-checked against the t
 
 | Deliverable | What was done | Commit | Verification state |
 |---|---|---|---|
-| **D1 — filter mechanism** | New `marketplace/targets/component_targets.py` parses the `targets:` declaration and answers `emits_to(path, target_name)`. Both component-tree-emitting targets consult it: the Claude verbatim emitter (`excluded_emission_roots` + `is_under_any`, skipping a scoped-out file or a whole scoped-out skill directory) and its manifest generator (`plugin_json_gen` drops the same entries), and the OpenCode emitter (per-skill / per-agent / per-command skip). The governed set is derived from `TARGET_REGISTRY` filtered by each target's `emits_bundle_tree` capability — never enumerated. Absent field still means every target. | `fab9611` | `test_component_targets.py`, `test_target_scoped_emission.py` — **55 and 14 collected at HEAD**. Counts are stated at HEAD only, never against the implementing commit: `test_component_targets.py` has grown in most rounds and had 24 cases at `fab9611`, so attributing its current count there would name a number that commit never had. (`test_target_scoped_emission.py` has been 14 since `a9c90ef`; the HEAD-only rule is uniform, not a claim that every file moved.) |
+| **D1 — filter mechanism** | New `marketplace/targets/component_targets.py` parses the `targets:` declaration and answers `emits_to(path, target_name)`. Both component-tree-emitting targets consult it: the Claude verbatim emitter (`excluded_emission_roots` + `is_under_any`, skipping a scoped-out file or a whole scoped-out skill directory) and its manifest generator (`plugin_json_gen` drops the same entries), and the OpenCode emitter (per-skill / per-agent / per-command skip). The governed set is derived from `TARGET_REGISTRY` filtered by each target's `emits_bundle_tree` capability — never enumerated. Absent field still means every target. | `fab9611` | `test_component_targets.py`, `test_target_scoped_emission.py` — **73 and 14 collected at HEAD**. Counts are stated at HEAD only, never against the implementing commit: `test_component_targets.py` has grown in most rounds and had 24 cases at `fab9611`, so attributing its current count there would name a number that commit never had. (`test_target_scoped_emission.py` has been 14 since `a9c90ef`; the HEAD-only rule is uniform, not a claim that every file moved.) |
 | **D2 — fail-closed validation** | `_validate` rejects an unknown target name, an empty list, and a list naming only non-component-tree targets. Every message names the component path and the offending value. Validation fires wherever the emission predicate is CALLED: both component-tree targets' emit paths, and the Claude target's validate-only mode (which re-walks each bundle's components for this check alone). Reading a component is not the same as validating it — a `pr-agent`-only run opens skill manifests to harvest rule text, yet never asks whether a component is in scope, because it emits no component. The doctor rule is the authoring-time net there. | `fab9611` | `test_component_targets.py` + `test_target_scoped_emission.py::test_generation_fails_*` |
 | **D3 — first consumer** | `marketplace/bundles/plan-marshall/commands/tools-fix-intellij-diagnostics.md` declares `targets: [claude]`. | `fab9611` | Asserted by generation-output listing (below) |
-| **D4 — authoring surface** | New `targets-scope-invalid` plugin-doctor rule (`_analyze_target_scope.py`), registered in `_rule_registry.py` and wired into both the quality gate and analyze mode, with rows in `rule-provenance.md` and `rule-catalog.md` and a firing positive fixture in `_fixtures.py`. The field, its semantics, its validation table, and the three-condition admission test are documented in `plugin-architecture/references/frontmatter-standards.md` § "Target Scoping". | `fab9611` | `test_analyze_target_scope.py` — **36 collected at HEAD** (same HEAD-only rule); the doctor runs clean over the real tree with D3's declaration in place |
+| **D4 — authoring surface** | New `targets-scope-invalid` plugin-doctor rule (`_analyze_target_scope.py`), registered in `_rule_registry.py` and wired into both the quality gate and analyze mode, with rows in `rule-provenance.md` and `rule-catalog.md` and a firing positive fixture in `_fixtures.py`. The field, its semantics, its validation table, and the three-condition admission test are documented in `plugin-architecture/references/frontmatter-standards.md` § "Target Scoping". | `fab9611` | `test_analyze_target_scope.py` — **50 collected at HEAD** (same HEAD-only rule); the doctor runs clean over the real tree with D3's declaration in place |
 
 ### D3 generation-output listing (the plan's own "Done when" evidence)
 
@@ -69,7 +69,7 @@ rather than reported here:
 - quality-gate: `ruff … All checks passed!`, `mypy … Success: no issues found in 415 source files`,
   `SPDX-header check passed`, plugin-doctor `total_issues: 0`
 - test-compile: mypy over 775 test files, clean
-- module-tests: **21076 passed, 14 skipped** — 0 failed, 0 errors
+- module-tests: **21088 passed, 14 skipped** — 0 failed, 0 errors
 
 No lockfile churn: `git status --porcelain` was empty after the build, and every commit staged
 deliverable paths explicitly — by name, or with `git add -A --` bounded by an explicit pathspec, which
@@ -87,7 +87,7 @@ covers four, and a row saying "both copies" or "both suites" covers two.
 instances all differ — a row may cover several sites, and a round's verifier may label its findings
 differently from how this report tabulates them. Earlier drafts conflated the three and were wrong
 every time, so exactly one unit is used here: rows, countable by looking. They are 13, 17, 12, 17, 16,
-13, 12, 13 for rounds 1 to 8.
+13, 12, 13, 16 for rounds 1 to 9.
 
 ### Round 1
 
@@ -117,7 +117,7 @@ every time, so exactly one unit is used here: rows, countable by looking. They a
 | R2-04 | V2 | "the gate saw the whole branch" was false of HEAD: the recorded `./pw verify` predated the round-1 fix commit. | **Fixed** — the claim now names the commit its figures come from, and `./pw verify` was re-run after the round-2 commit. |
 | R2-05 | V2 | Round 1 corrected "one exception" to "two"; still short — variant emission and the excluded cache directories are also exceptions, and `claude/emitter.py`'s docstring already listed them, so the two disagreed. | **Fixed** — the list defers to the emitter rather than restating it. |
 | R2-06 | V2 | The new sentence "That list is the **closed** set of supported top-level skill fields" made a pre-existing omission load-bearing: `implements` is a supported skill field, documented fifteen lines below the list it is missing from. | **Fixed** — `implements` added to both copies of the list. |
-| R2-07 | V2 | A flow sequence spanning lines (`targets: [claude,` continued next line) was truncated to its first physical line, yielding the token `[claude`. Same class as B1; the round-1 fix reached block sequences and inline comments but not flow sequences. | **Fixed** — both parsers fold continuation lines in; pinned by three tests per suite at the time; seven per suite at HEAD, after rounds 3–6 each added a fold fixture. |
+| R2-07 | V2 | A flow sequence spanning lines (`targets: [claude,` continued next line) was truncated to its first physical line, yielding the token `[claude`. Same class as B1; the round-1 fix reached block sequences and inline comments but not flow sequences. | **Fixed** — both parsers fold continuation lines in; pinned by three tests per suite at the time. At HEAD the two suites are no longer symmetric — rounds 3–9 added fold fixtures unevenly — so no single figure covers both; count them from the suites if you need one. |
 | R2-08 | V2 | `component_targets._strip_comment`'s comment-vs-value guard had NO test — deleting it left the suite green, so the documented behaviour could regress silently. | **Fixed** — three parametrised cases; deleting the guard now reddens three tests. |
 | R2-09 | V2 | Same guard, same gap, in the doctor's copy — whose docstring claims it "mirrors the generator's parser so the two agree", with nothing pinning the agreement. | **Fixed** — same three cases in the doctor suite. |
 | R2-10 | V2 | M2's falsity survived verbatim in `rule-catalog.md` § Coverage boundary. | **Fixed** |
@@ -179,7 +179,7 @@ every time, so exactly one unit is used here: rows, countable by looking. They a
 | F5 | V5 | **The `quoting-a-colon` fixture quotes no colon**, was green against the pre-fix parser, and pins nothing — so the second of R4-4's two restored shapes was pinned in NEITHER suite. Two instances (both suites). | **Fixed** — replaced with `"a: b"`, and replayed against a reconstruction of the pre-fix boundary to confirm it goes red (`['[claude']` before, `['claude', 'a: b']` after). The url-comment fixture was replayed too and is a genuine regression test. |
 | F6 | V5 | Round 4's "the skill fields **this document names**" is false: the very next paragraph names six more (`scope`, `lane`, `order`, `default_on`, `presets`, `mutates_source`). Round 4 fixed an overstatement about four fields by making the sentence false about six others. | **Fixed** — the sentence no longer characterises the document's scope at all. |
 | F7 | V5 | The same phrasing at the Issue-4 site. | **Fixed** |
-| F8 | V5 | **Behavioural:** the plain-scalar form (`targets: claude,` continued on an indented line) is one multi-line YAML value the fold did not engage on, so both parsers read the first line only. **Rounds 5–7 labelled this fail-OPEN; round 8 executed it and the label was backwards** — the same value written on one line yields `{claude, opencode}`, so the multi-line form silently DROPPED a declared target. That is silent narrowing, the one direction this mechanism must never fail in. | **Fixed in round 8, not carried as a survivor.** A continued plain scalar is now rejected with a message naming the supported spellings, and the rejection is pinned alongside five supported forms it must not disturb. |
+| F8 | V5 | **Behavioural:** the plain-scalar form (`targets: claude,` continued on an indented line) is one multi-line YAML value the fold did not engage on, so both parsers read the first line only. **Rounds 5–7 labelled this fail-OPEN; round 8 executed it and the label was backwards** — the same value written on one line yields `{claude, opencode}`, so the multi-line form silently DROPPED a declared target. That is silent narrowing, the one direction this mechanism must never fail in. | **Fixed in round 8, INCOMPLETELY — closed in round 9.** Round 8's guard exempted continuation lines beginning with `-`, meaning to protect the block form; the guard only runs when the key has a value and a block form's key has none, so the exemption protected nothing and left the hole open for `targets: claude,` / `  - opencode`. Nothing tested it — deleting the exemption reddened no test. Round 9 removed it and pinned both shapes. |
 | F9 | V5 | `targets:` followed by an indented scalar reports "declares an empty list" — the build outcome is right, the message names a defect the file does not have. | **Survivor (B), characterised below.** |
 | F10 | V5 | The R4-3 disposition read "Fixed — the docstrings describe the real test". They did not. | **Fixed** |
 | F11 | V5 | The R4-4 disposition claimed both shapes "pinned in both suites" (F5 refutes). | **Fixed** |
@@ -255,7 +255,7 @@ its own corpora and one of its results proves a GAP rather than confirming a cla
 | 7-05 | V7 | The R6-05 figure went stale in the commit that stated it: round 6 measured the flow-join kill count *before* adding its own fold fixtures and labelled the result "re-derived at HEAD". 5 at `b0d454e`, 7 at `913965b`. | **Fixed** — re-measured after this round's additions (3 and 7 per suite), and the figure now states the rule that keeps it honest: measure after the round's own fixtures, not before. |
 | 7-06 | V7 | The same wrong figure at the R2-07 disposition. | **Fixed** |
 | 7-07 | V7 | Three collection counts were the values from *before* round 6's test additions, and were attributed to `fab9611`, where the real values are 24/11/16. All three were wrong. | **Fixed** — stated at HEAD only (55 / 14 / 36), with the reason a commit attribution cannot work for a number that grows every round. |
-| 7-08 | V7 | The R6-08 counting convention was wrong on every figure it stated — it called label counts row counts, and its two instance totals contradicted each other and the Stop record. | **Fixed, then fixed again in round 8** — the unit it named was still wrong. The report now counts ROWS, which are countable by looking, and states no instance total anywhere. |
+| 7-08 | V7 | The R6-08 counting convention was wrong on every figure it stated — it called label counts row counts, and its two instance totals contradicted each other and the Stop record. | **Fixed, then fixed again in round 8** — the unit it named was still wrong. The report now counts ROWS, which are countable by looking, and states no instance total anywhere. The series is maintained in the § Findings lead-in and nowhere else, so it cannot fall out of step with itself. |
 | 7-09 | V7 | The Stop record still described a five-round run: round counts, the convergence series and the evidence paragraph all omitted round 6. Three instances. | **Fixed** |
 | 7-10 | V7 | The Residue said "the first four [docstring rewrites] were false of their own regex"; round 5's was accurate-but-unguarded, which is round 6's own finding. | **Fixed** |
 | 7-11 | V7 | The doctor's quoted-key pin exercised the parser only, while its docstring claimed "the authoring-time net missed it too" — an entry point no test reached. | **Fixed** — the rule's own entry point is now exercised, from both sides. |
@@ -319,7 +319,7 @@ reader, which is the part of the round that is missing.
 
 | Probe | Result |
 |---|---|
-| **Over-rejection matrix** — 13 shapes through the new continued-scalar guard, against PyYAML | **No genuine over-rejection.** Three shapes are refused: two are files PyYAML itself rejects as invalid (a nested mapping under a scalar, a tab-indented continuation), and the third has the value `claude ]`, which is not a target name under any reading. Every supported form — block, block-with-comment, flow-across-lines, bare-then-next-key, bare-then-comment, quoted-key-plus-block — passes through untouched. |
+| **Over-rejection matrix** — a hand-built shape set through the new continued-scalar guard, against PyYAML | ⚠️ **This verdict was WRONG, and round 9 refuted it.** It reported no genuine over-rejection; round 9's own matrix found four — `>-`, `\|-` and quoted multi-line values, which PyYAML reads as sound single values naming a real target. The matrix was hand-built by the author of the guard and is not persisted, so it is testimony of the weakest kind: a sample chosen by the party with an interest in it passing. Round 9 fixed the diagnosis; this row is kept as the record of a self-check that missed. |
 | **Falsification of the fold's safety claim** — 81 two-line continuations, both failure directions | **0 accepted without a closing bracket.** No misread smuggles a scope past `_validate`. |
 | **Falsification of the fold docstring's stated REASON** | **Falsified, and corrected.** See below. |
 
@@ -334,6 +334,37 @@ it is pinned as a test, so the property is checked rather than asserted.
 That correction is the whole point of the exercise: **the code was right and the explanation was
 wrong**, which is this branch's most persistent defect class, and it took execution rather than
 reading to catch — the same method that produced rounds 6, 7 and 8's headline findings.
+
+### Round 9
+
+The round that ran after the blocked dispatch. **It is the most consequential of the nine**, because
+it refuted a fix, a self-check and a convergence trend all at once.
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| R9-01 | V9 | **F8 was not fixed.** Round 8's guard exempted continuation lines starting with `-`, meaning to protect the block form — but the guard runs only when the key HAS a value, and a block form's key has none, so the exemption protected nothing and left the silent-narrowing hole open for `targets: claude,` / `  - opencode`. Deleting the exemption reddened **no test**. Three report claims said it was fixed. | **Fixed** — exemption removed, both shapes pinned in both suites. |
+| R9-02 | V9 | Round 8's behaviour change landed in two code sites and **none of the ten registers documenting them** — two module docstrings, an explicit "two defects" count, three `rule-catalog.md` clauses, two `rule-provenance.md` clauses, the standards validation table, and a test module docstring. | **Fixed at all ten**, and `component_targets`' own docstring now names the registers a new rejection must be added to, so the next one is not a hunt. |
+| R9-03 | V9 | The docstring calls the space join "the load-bearing half"; replacing `' '.join` with `''.join` left the suite **fully green**, including the very test round 9's predecessor added to check the property. | **Fixed** — pinned by a case where only the space rejects (`targets: [open,` / `code]`). |
+| R9-04 | V9 | "No registered target name contains a space" is the premise that argument rests on, asserted in one docstring and enforced nowhere: `register_target('my target', T)` succeeded. | **Fixed** — `register_target` now rejects a name with whitespace, so the premise is true by construction. |
+| R9-05 | V9 | **The guard over-rejects, and my own probe said it did not.** `targets: >-` / `  claude` and `targets: \|-` / `  claude` are valid YAML whose value is `claude`, a registered target; they were refused under a message calling them plain scalars. | **Fixed** — block scalars are detected and rejected under their own name, in both parsers. The probe row above is corrected and kept as the record of a self-check that missed. |
+| R9-06 | V9 | Two shipped messages say the build "reads only its first line" — true before the guard, false after. | **Fixed** |
+| R9-07 | V9 | Two collection counts stale again — the fourth recurrence of this class. | **Fixed** — re-derived at HEAD. |
+| R9-08 | V9 | "seven per suite at HEAD" states no unit, and under any unit the two suites are no longer symmetric. | **Fixed** — the figure is withdrawn rather than restated. |
+| R9-09 | V9 | The docstring-rewrite enumeration stops at round 8 and presents its reason as current, in a commit that had just falsified it. | **Fixed** |
+| R9-10 | V9 | The row-count restatement lists seven numbers for a convention covering eight rounds. | **Fixed** — the series lives in one place now. |
+| R9-11 | V9 | The Round-9 probe row cites "13 shapes" while characterising nine, unpersisted — the standard the report's own ⚠️ note imposes on other rounds. | **Fixed** — the row no longer cites a corpus size, and says plainly what kind of evidence it was. |
+| R9-12 | V9 | The block-form "pin" is vacuous: `_has_continuation → True` leaves both block-form checks green, because the guard is structurally unreachable for that form. The commit message claimed the named over-correction was pinned against. | **Fixed** — the claim is withdrawn; the tests remain as coverage of the surrounding behaviour, which is what they actually are. |
+| R9-13 | V9 | The sentinel's identity contract ("cannot collide") had no check: `is` → `==` left the suite green. | **Fixed** — pinned by a component declaring the sentinel's literal text, which must be reported as an unknown NAME. |
+| R9-14 | V9 | **Survivor B3's bound was measured against the parser's own answer** — the same vacuous-guard shape round 8 found in F8, one survivor over — and its second half was vacuous. | **Fixed** — restated against the YAML-authoritative last declaration, with both directions named. |
+| R9-15 | V9 | Rounds 3 and 5 both use labels `F1`–`F12`, so `F8`/`F9` each name two findings and the survivors table refers to them unqualified. | **Fixed** — survivor references now say which round's F8/F9 they mean. |
+| R9-16 | V9 | The field-list sentence, fourth rewrite, classified 13 of 14 fields — the unclassified one being `targets`, this plan's own addition, whose block is in a sibling section. | **Fixed** — all fourteen are placed. |
+
+**Round 9's verdict on convergence, which supersedes rounds 7 and 8's.** Shipped-change findings by
+round: 9, 10, 9, 7, 5, 3, **9**. The fall through rounds 4–8 was an artefact of what those rounds were
+looking at — rounds 7 and 8 examined the report, and round 8 was the first commit since `fab9611` to
+change what the module *does*. **A behaviour change resets the shipped-defect rate**; the loop had not
+converged, it had been re-seeded. Any reading of the earlier trend as evidence the mechanism was
+settling was wrong, and this report stated that reading twice.
 
 ### Cold read (the plan's § Verification requirement)
 
@@ -383,19 +414,19 @@ five rounds; stop and hand the branch over; or narrow the loop to one named surf
 This record exists because a conversation event is not a committed artifact — the report is its only
 durable trace.
 
-**Rounds and what they found:** 13, 17, 12, 17, 16, 13, 12, 13 — rows, per the counting note in
+**Rounds and what they found:** 13, 17, 12, 17, 16, 13, 12, 13, 16 — rows, per the counting note in
 § Findings. Two further round-5 dispatches died to server-side API errors (one mid-response, one a
 529) before doing any work; neither is counted as a round, because a failed dispatch produced no
 verification and counting it would be the "silence read as a pass" defect this loop exists to catch.
 
 **Convergence: partial, and only on volume.** Each round was asked for the shipped-change vs report
-split: round 3 9/12, round 4 10/17, round 5 9/19, round 6 7/13, round 7 5/11, round 8 3/13 (each as its
-verifier reported it, in that verifier's own units). Round 7 was the first to
-narrow on a *shrinking* denominator, and called it *"narrower, genuinely — and fewer … convergence on
-severity has not been achieved; only on volume."* That qualifier is the point: rounds 6 and 7 each
-found a **behavioural** defect the earlier rounds had missed — a fail-open quoted key, then a
-fail-closed regression in the fix for it — so falling counts are not evidence the code had stopped
-changing underneath them.
+split: round 3 9/12, round 4 10/17, round 5 9/19, round 6 7/13, round 7 5/11, round 8 3/13, round 9 **9/16**
+(each as its verifier reported it, in that verifier's own units). Rounds 7 and 8 read the fall as narrowing; **round 9 refuted that**
+and this report's earlier statement of it. Its finding: the fall was an artefact of what those rounds
+examined — the report, not the code — and round 8 was the first commit since `fab9611` to change what
+the module does. Round 9's count returned to round-1 levels. *A behaviour change re-seeds the
+shipped-defect rate*, and four of the nine rounds have now found a behavioural defect introduced by a
+previous round's fix.
 
 **Evidence stronger than another read.** Rounds 5, 6 and 7 each produced some; the branch carried none
 before round 5. Round 6's is the strongest in kind, because it proved a GAP rather than confirming a
@@ -418,9 +449,9 @@ still rests on reading — which is precisely where round 5 found most of what i
 
 | Survivor | Kind | (a) proof / (b) bound |
 |---|---|---|
-| **F8** — a plain scalar continued across lines was read as its first line only | ~~Survivor~~ **FIXED in round 8** | Carried as a survivor through rounds 5–7 under a **backwards direction label** ("fail-open"). Round 8 executed it: the multi-line form silently dropped a declared target, i.e. narrowed. Once the direction was right the survivor argument collapsed — silent narrowing is what this mechanism exists to prevent — so it was fixed rather than re-characterised. The lesson worth keeping: a survivor's *bound* was checked every round and held; its *kind* was not, and that is what was wrong. |
-| **F9** — `targets:` plus an indented scalar reports "declares an empty list" | Diagnostic text | **(a)** The build outcome is unchanged (rejection); only the message misnames the defect. It cannot change what the deliverable does. |
-| **B3** — a duplicate top-level `targets:` resolves to the first declaration, silently | Behavioural | **(b)** Verified again at HEAD: cannot narrow below the first declaration and cannot widen past "every target"; the result is then fully validated. |
+| **F8** (round 5's) — a plain scalar continued across lines was read as its first line only | ~~Survivor~~ **fixed in round 8, incompletely; closed in round 9** | Carried as a survivor through rounds 5–7 under a **backwards direction label** ("fail-open"). Round 8 executed it: the multi-line form silently dropped a declared target, i.e. narrowed. Once the direction was right the survivor argument collapsed — silent narrowing is what this mechanism exists to prevent — so it was fixed rather than re-characterised. The lesson worth keeping: a survivor's *bound* was checked every round and held; its *kind* was not, and that is what was wrong. |
+| **F9** (round 5's) — `targets:` plus an indented scalar reports "declares an empty list" | Diagnostic text | **(a)** The build outcome is unchanged (rejection); only the message misnames the defect. It cannot change what the deliverable does. |
+| **B3** — a duplicate top-level `targets:` resolves to the FIRST declaration; YAML takes the LAST | Behavioural — **both directions**: against the YAML-authoritative last declaration it both adds a target and drops one | **(b)** The bound stated through round 8 — "cannot narrow below the first declaration" — measured the parser against its own answer, which is the vacuous-guard defect one survivor over from where round 8 found it. Stated against the right baseline: for a component with two `targets:` keys, the shipped scope is the first list rather than the last, so it may both add and remove targets relative to YAML. Reach: a component would have to declare the key twice, which no component does and which a YAML-aware editor flags. Left open because closing it means choosing a duplicate-key policy the plan does not specify. |
 | **B5** — OpenCode's `_prune_stale_outputs` runs only on a full regeneration, so a `--bundles` subset emit can leave a scoped-out component behind | Behavioural, pre-existing | **(b)** Bounded to scoped emits. The normal build and both drift checks run full regenerations; the constraint is documented at the function with its reason. Unchanged by this plan — reachable through a new cause, not newly created. |
 | **B6** — `check_bundle`'s orphan sweep covers `agents/` and `commands/`, not skill directories | Behavioural, pre-existing | **(b)** Bounded to validate-only mode over a stale tree. Any emit wipes each bundle's destination first, and `content_drift`'s `orphan_in_target` catches a stale `.md` because it regenerates through `ClaudeTarget`. A deleted skill was equally invisible before this plan. |
 
@@ -469,6 +500,8 @@ the residue is documentary, and it is concentrated in exactly the sentences writ
 round."* Every round from 3 onward has rewritten `_join_flow_sequence`'s docstring, and most rewrites were
 themselves defective: rounds 3 and 4 wrote versions false of their own regex, round 5's was accurate
 but had no test behind any of it, round 6 scoped an overstated sweep claim and pinned the clauses,
-round 7 corrected the boundary description again, and round 8 replaced its corpus appeal with the
-structural reason. It is the single most-revised sentence on this branch. Treat any self-descriptive comment in the two parsers, and any "X is pinned in both
+round 7 corrected the boundary description again, round 8 replaced its corpus appeal with a
+structural reason, and round 9 falsified THAT reason by enumeration and replaced it with the
+space-join argument now in the file. It is the single most-revised sentence on this branch, and every
+rewrite before the last was wrong about its own code. Treat any self-descriptive comment in the two parsers, and any "X is pinned in both
 suites" claim, as needing its own check rather than trusting the sentence.

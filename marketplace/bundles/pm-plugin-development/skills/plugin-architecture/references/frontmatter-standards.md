@@ -199,7 +199,7 @@ user-invocable: true
 
 Skills do not use `model`, `color`, or `tools`/`allowed-tools` fields.
 
-Skill fields named in this document, required and optional together: `name`, `description`, `user-invocable`, `mode`, `implements`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`, `profiles`, `priming_preamble`, `composes`, `targets`. Some have a field-specification block elsewhere in this section — `name`, `description` and `user-invocable` above, the rest below — and `argument-hint`, `compatibility`, `disable-model-invocation` and `license` are named here and nowhere else. A name in this list is not a statement that the field is optional, nor that it is explained anywhere.
+Skill fields named in this document, required and optional together: `name`, `description`, `user-invocable`, `mode`, `implements`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`, `profiles`, `priming_preamble`, `composes`, `targets`. Where each is specified: `name`, `description` and `user-invocable` above; `mode`, `implements`, `profiles`, `priming_preamble`, `composes` and `metadata` below; `targets` in its own section, [Target Scoping](#target-scoping); and `argument-hint`, `compatibility`, `disable-model-invocation` and `license` nowhere but this list. A name in this list is not a statement that the field is optional, nor that it is explained anywhere.
 
 ⛔ **That is not the whole set of frontmatter a skill may carry, and this document is not the register of it.** A field belongs to whichever contract declares it, and several are declared elsewhere: `scope:` by [`plan-marshall:ref-workflow-architecture` § manage-contract](../../../../plan-marshall/skills/ref-workflow-architecture/standards/manage-contract.md), `lane:` by [`ext-point-lane-element`](../../../../plan-marshall/skills/extension-api/standards/ext-point-lane-element.md), and a finalize-step's `order` / `default_on` / `presets` / `mutates_source` and their siblings by [`ext-point-finalize-step`](../../../../plan-marshall/skills/extension-api/standards/ext-point-finalize-step.md). Read the owning contract before concluding a field is unsupported — an enumeration here would go stale the moment a contract adds one, which is why this one does not claim to be exhaustive.
 
@@ -449,8 +449,9 @@ targets: [claude]
 | A name absent from `TARGET_REGISTRY` (a typo) | Build fails, naming the component and the unknown value |
 | `targets: []` | Build fails — a component shipped nowhere is an authoring error, not an intent |
 | Only targets that emit no component tree | Build fails — such a declaration also ships the component nowhere |
+| A plain scalar continued across lines, or a YAML block scalar (`>` / `|`) | Build fails — the build reads a value from one line only, so accepting either would silently narrow the scope to whatever fitted on that line |
 
-The plugin-doctor `targets-scope-invalid` rule reports the unknown-name and empty-list cases at authoring time, so those surface before the build. The ships-nowhere case needs each target's `emits_bundle_tree` capability and is checked by the build alone.
+The plugin-doctor `targets-scope-invalid` rule reports every one of these at authoring time except the ships-nowhere case, which needs each target's `emits_bundle_tree` capability and is checked by the build alone.
 
 ### Admission test — when a target-scoped component is the right answer
 

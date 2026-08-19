@@ -361,6 +361,67 @@ def test_no_fold_misread_can_smuggle_an_accepted_scope(tmp_path):
     assert accepted_without_closing == []
 
 
+@pytest.mark.parametrize(
+    'frontmatter',
+    [
+        pytest.param('targets: claude,\n  - opencode', id='dash-continuation-with-comma'),
+        pytest.param('targets: claude\n  - opencode', id='dash-continuation-bare'),
+    ],
+)
+def test_a_dash_continuation_does_not_escape_the_guard(tmp_path, frontmatter):
+    """A continuation beginning with ``-`` is still a continuation.
+
+    The first version of this guard exempted such lines, meaning to protect
+    the block form — but the guard only runs when the key HAS a value, and a
+    block form's key has none, so the exemption protected nothing and left
+    the silent-narrowing hole open for exactly this shape. Nothing tested
+    it: deleting the exemption reddened no test at all.
+    """
+    with pytest.raises(TargetScopeError, match='continued across lines'):
+        read_target_scope(_component(tmp_path, frontmatter))
+
+
+@pytest.mark.parametrize(
+    'frontmatter',
+    [
+        pytest.param('targets: >-\n  claude', id='folded'),
+        pytest.param('targets: |-\n  claude', id='literal'),
+        pytest.param('targets: >\n  claude', id='folded-clip'),
+    ],
+)
+def test_a_block_scalar_is_named_as_one(tmp_path, frontmatter):
+    """A ``>``/``|`` value is rejected, but not as a "plain scalar".
+
+    PyYAML reads these as the single value ``claude`` — a real target — so
+    the rejection is the parser declining a shape it cannot read, not the
+    author writing something malformed. Calling it a continued plain scalar
+    sent the author looking for a defect that is not in their file.
+    """
+    with pytest.raises(TargetScopeError, match='block scalar'):
+        read_target_scope(_component(tmp_path, frontmatter))
+
+
+def test_the_fold_joins_with_a_space_and_that_is_what_rejects_an_overrun(tmp_path):
+    """The space join is the load-bearing half of the fold's safety argument.
+
+    ``targets: [open`` / ``code]`` closes its bracket, so the bracket half of
+    the argument does not apply; only the space in ``open code`` keeps it out
+    of the registry. Joining without one would yield an accepted ``opencode``
+    — a scope the author never wrote. Nothing pinned this: replacing the
+    join with ``''.join`` left the whole suite green.
+    """
+    with pytest.raises(TargetScopeError, match='unknown target'):
+        read_target_scope(_component(tmp_path, 'targets: [open,\ncode]'))
+
+
+def test_no_registered_target_name_may_contain_a_space(tmp_path):
+    """The premise the space-join argument rests on, enforced rather than assumed."""
+    from marketplace.targets import register_target
+
+    with pytest.raises(ValueError, match='no whitespace'):
+        register_target('my target', _TreeTarget)
+
+
 def test_absent_field_means_every_target(tmp_path):
     """A component with no declaration ships everywhere — the default."""
     path = tmp_path / 'demo.md'

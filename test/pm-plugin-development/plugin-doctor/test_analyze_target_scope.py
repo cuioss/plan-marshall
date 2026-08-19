@@ -4,13 +4,16 @@
 
 A component may declare the build-time ``targets:`` frontmatter field naming
 the build targets it ships to. The multi-target generator rejects an unknown
-target name and an empty declaration; this analyzer surfaces both at authoring
-time. An absent field means "every target" and is never flagged.
+target name, an empty declaration, a plain scalar continued across lines, and a
+YAML block scalar; this analyzer surfaces each at authoring time. An absent
+field means "every target" and is never flagged.
 
 Test layers:
   * Absent / valid declarations → no finding (positive)
   * Unknown target name → one finding, ``reason == targets_unknown``
   * Empty declaration → one finding, ``reason == targets_empty``
+  * Continued plain scalar → ``reason == targets_multiline_scalar``
+  * Block scalar (``>``/``|``) → ``reason == targets_block_scalar``
   * Every component kind (agent, command, skill) is in scope
   * The registered set is DERIVED from the targets' own registrations
   * A tree without ``marketplace/targets/`` still runs the registry-free check
@@ -265,6 +268,57 @@ def test_a_supported_form_is_not_flagged_as_a_continued_scalar(tmp_path):
     _component(bundles, 'commands/block.md', 'targets:\n  - claude')
 
     assert analyze_target_scope(bundles) == []
+
+
+@pytest.mark.parametrize(
+    'value',
+    [
+        pytest.param('targets: claude,\n  - opencode', id='dash-continuation'),
+        pytest.param('targets: claude\n  - opencode', id='dash-continuation-bare'),
+    ],
+)
+def test_a_dash_continuation_does_not_escape_the_guard(tmp_path, value):
+    """A continuation beginning with ``-`` is still a continuation."""
+    bundles = _marketplace(tmp_path)
+    _component(bundles, 'commands/dash.md', value)
+
+    findings = analyze_target_scope(bundles)
+
+    assert len(findings) == 1
+    assert findings[0]['details']['reason'] == 'targets_multiline_scalar'
+
+
+@pytest.mark.parametrize(
+    'value',
+    [pytest.param('targets: >-\n  claude', id='folded'), pytest.param('targets: |-\n  claude', id='literal')],
+)
+def test_a_block_scalar_is_reported_as_one(tmp_path, value):
+    """The finding names the construct the author wrote, not a different one."""
+    bundles = _marketplace(tmp_path)
+    _component(bundles, 'commands/block.md', value)
+
+    findings = analyze_target_scope(bundles)
+
+    assert len(findings) == 1
+    assert findings[0]['details']['reason'] == 'targets_block_scalar'
+    assert 'block scalar' in findings[0]['description']
+
+
+def test_a_real_token_equal_to_a_sentinel_is_not_mistaken_for_one(tmp_path):
+    """The sentinels are compared by IDENTITY, and that is what makes them safe.
+
+    A component could declare the sentinel's literal text as a target name.
+    It must be treated as an unknown NAME, not as the shape the sentinel
+    stands for — which is why the comparison is ``is`` and not ``==``.
+    Nothing pinned that: swapping the operator left the suite green.
+    """
+    bundles = _marketplace(tmp_path)
+    _component(bundles, 'commands/collide.md', 'targets: ["\x00multiline-plain-scalar"]')
+
+    findings = analyze_target_scope(bundles)
+
+    assert len(findings) == 1
+    assert findings[0]['details']['reason'] == 'targets_unknown'
 
 
 # ---------------------------------------------------------------------------
