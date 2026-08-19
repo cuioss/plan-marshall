@@ -15,10 +15,26 @@ import tempfile
 from argparse import Namespace
 from pathlib import Path
 
-from conftest import get_script_path, load_script_module, run_script
+from conftest import get_script_path, load_script_module, parse_ns, run_script
 
 # Script under test
 SCRIPT_PATH = get_script_path('pm-dev-frontend', 'javascript', 'jsdoc.py')
+
+# Argument namespaces come from the script's OWN parser, so each carries every
+# default the real CLI applies — a hand-built Namespace carries only the keys its
+# author remembered. Parsed once at module scope: parse_ns re-executes the script
+# module on every call.
+_ANALYZE_NS = parse_ns(
+    'pm-dev-frontend', 'javascript', 'jsdoc.py',
+    'analyze', '--file', 'placeholder.js', register=False,
+)
+
+
+def _ns(template: Namespace, **overrides) -> Namespace:
+    """A parser-produced namespace with this test's values overlaid."""
+    return Namespace(**{**vars(template), **overrides})
+
+
 FIXTURES_DIR = Path(__file__).parent / 'jsdoc'
 
 # Load the analysis surface in-process. ``analyze_jsdoc`` returns the same dict
@@ -175,7 +191,7 @@ def test_analyze_violation_structure():
 
 def test_cmd_analyze_file_prints_toon_and_returns_success(capsys):
     """cmd_analyze on a single file serializes the result to TOON and returns 0."""
-    rc = cmd_analyze(Namespace(directory=None, file=str(FIXTURES_DIR / 'valid-jsdoc.js'), scope='all'))
+    rc = cmd_analyze(_ns(_ANALYZE_NS, directory=None, file=str(FIXTURES_DIR / 'valid-jsdoc.js'), scope='all'))
 
     assert rc == 0
     assert 'status:' in capsys.readouterr().out
@@ -183,7 +199,7 @@ def test_cmd_analyze_file_prints_toon_and_returns_success(capsys):
 
 def test_cmd_analyze_directory_prints_toon_and_returns_success(capsys):
     """cmd_analyze on a directory serializes the aggregate result to TOON."""
-    rc = cmd_analyze(Namespace(directory=str(FIXTURES_DIR), file=None, scope='all'))
+    rc = cmd_analyze(_ns(_ANALYZE_NS, directory=str(FIXTURES_DIR), file=None, scope='all'))
 
     assert rc == 0
     out = capsys.readouterr().out
