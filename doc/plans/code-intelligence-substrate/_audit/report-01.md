@@ -46,14 +46,18 @@ documented skip path on the merged head: `verify / verify` **skipped**, `verify 
 
 **Stale-base re-verification (merge gate condition 2).** `git rev-list --count HEAD..origin/main` was
 **2** at the gate — `main` had taken `#1302` and `#1303`. Shape used: **merged on the branch and
-pushed**, merge commit `eb46c15`. The gate was re-run on that merged tree: the `*.py` predicate is
+pushed**, and it happened **twice** — `main` moved again during the review cycle. The tested merge
+commits are `eb46c15` (two upstream commits) and `534ece7` (one more, during the CodeRabbit cycle).
+The gate was re-run on each merged tree: the `*.py` predicate is
 still empty and the changed-path set is still epic-only.
 
 Because this diff's substance is `path:line` citations into code, the merge mattered for a reason the
 `*.py` predicate cannot express: `#1303` renamed test fixture modules. The citation sweep was
-therefore re-run **against the merged tree** — 3,396 resolvable citations, **zero** genuine past-EOF,
-one expected overshoot which is a citation the document deliberately quotes as an example of a wrong
-citation. Condition 2 is **established**.
+therefore re-run **against each merged tree**, and it is the gate that matters for a citation-bearing
+diff. Both runs: **zero** genuine past-EOF, and one expected overshoot which is a citation the
+document deliberately quotes as an example of a wrong citation. The resolvable-citation count was
+3,396 after `eb46c15` and **3,431** after `534ece7` — it moves as the tree moves, which is why it is
+recorded per-run rather than as one figure. Condition 2 is **established** on both.
 
 ## Findings
 
@@ -181,7 +185,7 @@ class in this run — and `030`'s opening summary read stronger than its own ver
 | 5 Build gate | done | Git-derived verdict and result in § Build gate |
 | 6 Verification sub-agent | done | Six rounds, all findings fixed; stop record in § Findings |
 | 7 PR cycle | done | PR #1304; no `skip-bot-review`; all three comment surfaces read; every finding dispositioned — fixed, or refuted on the thread with evidence. Reviewer verdicts and the four-attempt CodeRabbit sequence in § Reviewer participation |
-| 8 Merge gate | see § Build gate and § Reviewer participation | Condition 2 established on merge commit `eb46c15` |
+| 8 Merge gate | see § Build gate and § Reviewer participation | Condition 2 established twice, on merge commits `eb46c15` and `534ece7` — the base moved again mid-review |
 | 8 Bridge | done | No status or bookkeeping write outside `_audit/`; no other plan's directory touched |
 | 9 This check | done | This table |
 | 9 What have we learned | done | Below |
