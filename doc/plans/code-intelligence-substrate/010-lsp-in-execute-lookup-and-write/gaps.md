@@ -182,15 +182,37 @@ change, not six.
   (`tools-file-ops/scripts/file_ops.py:1664-1700`; the `except Exception` →
   `output_toon_error('internal_error', …)` → `sys.exit(1)` arm is at `:1696-1698`) — with file one
   already rewritten, `originals` discarded, and no footprint in the output.
+
+  **Reproduced** through `_run_edit` over a three-file footprint (`a.py`, `b.py`, `c.py`) whose
+  middle file carries a malformed `TextEdit` (no `range` key — `apply_text_edits` raises `KeyError`
+  at `_lsp_workspace_edit.py:130` while splicing):
+
+  ```
+  EXCEPTION escaped _run_edit: KeyError: 'range'
+  a.py: 'bar = 1\n'   <- MODIFIED
+  b.py: 'foo = 2\n'   <- unchanged
+  c.py: 'foo = 3\n'   <- unchanged
+  ```
+
+  ⚠ **Narrower than it first looks, and the narrowing matters for the test.** Two failure modes an
+  earlier reading of this gap named are *not* mid-apply failures: a footprint path that no longer
+  exists, and a file that is not valid UTF-8, both raise inside `_run_edit`'s **pre-edit**
+  `session.open(target)` / `errors_before` loop (`lsp_client.py:231-233`), which reads every footprint
+  file before `apply_workspace_edit` is reached — verified: with `b.py` absent the exception fires
+  with **no file modified**. The failures that genuinely strike mid-apply are a malformed `TextEdit`
+  from the server (above), a write-side `OSError` (read-only filesystem, disk full, permissions), and
+  a file removed between the pre-edit read and the apply.
 - **Why it matters:** the write side's whole safety argument is that a failed edit leaves no trace.
   A half-applied multi-file rename is the worst outcome available: the tree is inconsistent, the
   consumer has no footprint to act on, and the error payload does not say which files changed.
 - **Action:** wrap the apply loop so a failure restores every file already written (reuse
   `restore_files(originals)`), then re-raise or return a `status: failed` payload carrying
   `reason: apply_failed`, the offending path, and the partial footprint that was rolled back.
-- **Done when:** a test making the second file of a three-file edit unwritable (e.g. `chmod 0444` or a
-  patched `write_text`) asserts every file is byte-identical to its pre-edit content afterwards and
-  the payload names the failure.
+- **Done when:** a test whose three-file edit fails on the second file asserts every file is
+  byte-identical to its pre-edit content afterwards and that the payload names the failing path.
+  ⛔ Do **not** trigger it with `chmod 0444` — the test suite here runs as `root`, where a read-only
+  mode bit does not stop the write (verified: the whole three-file edit applied cleanly). Use a
+  malformed `TextEdit` (proved above) or a patched `Path.write_text` that raises on the second call.
 - **Effort:** S
 - **Risk if fixed:** the restore itself can fail (read-only directory); that second-order failure must
   be reported rather than swallowed, or the payload will again overstate what happened.
