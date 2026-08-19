@@ -343,15 +343,16 @@ is a **cold read** (see § Verification), not "the text was changed".
   the one an executing agent follows); `bot-participation-contract.md` § "Evidence for a bot that
   edits one comment in place" (the "stored finding, or … the noise sidecar" two-source arm; and the
   "edited in place (`updated_at` differs from `created_at`)" arm, which the code does not compute);
-  `automatic-review/SKILL.md`'s restatement of the same predicate in a workflow body;
-  ⛔ **Two passages in that document are NOT this plan's**, because plan `500` changes the behaviour
-  they describe and rewrites them there: the **"by definition an observation at the merge candidate"**
-  claim in the same section (`500`'s `010 G3`), and the **"union of the stored-finding SHAs and the
-  recorded sidecar SHAs" paragraphs together with the "observation sidecar" naming** (`500`'s
-  `010 G11`, which renames the artifact those paragraphs describe). Read them, and if either still
-  states the pre-`500` claim, **report it as owned by `500` and leave it** — do not rewrite it here,
-  and do not count it a survivor. Note that `010 G4`'s own site list stops short of both, so this
-  exclusion narrows nothing the gap asked for.
+  `bot-participation-contract.md` § the "union of the stored-finding SHAs and the recorded sidecar
+  SHAs" paragraphs and its "observation sidecar" naming — **`010 G4` names this site explicitly, and
+  the deletion of the union claim is this deliverable's**, so do not defer it (the sibling plan
+  renames the artifact those paragraphs describe and depends on this rewrite landing, in either
+  order); `automatic-review/SKILL.md`'s restatement of the same predicate in a workflow body;
+  ⛔ **One sentence in that document is NOT this plan's:** the **"by definition an observation at the
+  merge candidate"** claim in § "Evidence for a bot that edits one comment in place", which is
+  rewritten as a bounded assumption by the plan discharging **`010 G3`** — the plan that changes the
+  behaviour the sentence describes. Read it; if it still states the pre-fix claim, **report it as
+  owned there and leave it** — do not rewrite it here, and do not count it a survivor.
   `automatic-review/standards/pr-agent.md` at two sites; and `bot_registry.py`'s
   `participation_requires_update` docstring. Sweep for survivors with **two** different searches, not
   one — "first presence / first-present / `updated_at` movement / `updated_at` vs `created_at`" finds

@@ -32,5 +32,6 @@ surfaced them, so one seam is repaired once:
 | `560` | The instruments that measure our own gates |
 | `570` | The epic's records, which carry the defect the epic is named after |
 
-`500` and `510` contend on one seam and MUST NOT run concurrently; each names the boundary in its
-Notes.
+`500` and `510` contend on one seam and MUST NOT run concurrently. Both carry the boundary — `500`
+in its Notes, `510` in its Notes and in the ⛔ on the deliverable that sweeps the shared document —
+and both resolve ownership by gap id rather than by describing each other.
