@@ -119,7 +119,8 @@ change, not six.
   silently becomes "an edit nobody read". Nothing in CI would catch a regression here either: mutating
   `wait_for_diagnostics` to `return list(self._diagnostics.get(uri, []))` — deleting the settle
   window, the freshness loop and the timeout outright — leaves the suite at **31 passed, 5 skipped**
-  on a runner without pyright.
+  on a runner without pyright (mutation M3, re-run independently by the adversarial review; with
+  pyright present it costs exactly one test, `test_real_adversarial_defect_fails_and_rolls_back`).
 - **Action:** track a per-URI publish counter (not just the global `_diag_seq`) and give
   `wait_for_diagnostics` an `after_seq` / `min_seq` parameter; have `LspSession.change_to_disk` capture
   the URI's current counter and `LspSession.diagnostics` wait for a counter strictly greater than it.
