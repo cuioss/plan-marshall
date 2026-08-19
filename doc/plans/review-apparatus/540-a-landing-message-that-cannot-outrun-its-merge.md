@@ -529,11 +529,12 @@ Beyond each deliverable's *Done when*:
   `verification.md` beside it. They are corroboration, not required reading: this plan restates
   everything the run needs.
 - **No gap failed to reproduce.** Every defect named here was re-read at the head of this branch during
-  authoring. One piece of supporting evidence was **corrected**: 080-G10 attributes the roster closure
-  test's blindness to `.plan/marshal.json` being git-ignored. It is not — it is one of the two tracked
-  exceptions. The defect stands for a different reason, stated in D0: the tracked snapshot is *stale*
-  (25 steps, no `emit-landing`), so the invariant passes without covering the step. D0 is written against
-  the corrected mechanism.
+  authoring. One piece of supporting evidence needed **correcting**: the roster closure test's blindness
+  is not caused by `.plan/marshal.json` being git-ignored — that file is one of two tracked exceptions
+  (`.gitignore:45-47`). The defect stands for a different reason, stated in D0: the tracked snapshot is
+  *stale* (25 steps, no `emit-landing`), so the invariant passes without covering the step. D0 is written
+  against the corrected mechanism, and `080-G10` now states it that way too — so read D0, not the
+  mechanism any earlier revision of that gap gave.
 - **Why seven entries rather than a split.** The template's heuristic treats six or more deliverables as
   a signal to split. This plan carries seven, of which one is a gating derivation (D0) and one is a
   proposal record (D6) — five substantive changes. Splitting would separate D0 from the deliverables it

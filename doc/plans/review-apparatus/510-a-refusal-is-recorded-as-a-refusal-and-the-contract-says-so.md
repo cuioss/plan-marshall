@@ -341,13 +341,17 @@ is a **cold read** (see § Verification), not "the text was changed".
   remembered description, and not from this plan. The sites: `workflow-integration-github/SKILL.md`
   (the canonical `fetch_findings` step body — the single most-read description of the behaviour, and
   the one an executing agent follows); `bot-participation-contract.md` § "Evidence for a bot that
-  edits one comment in place" (the "stored finding, or … the noise sidecar" two-source arm; the
-  "edited in place (`updated_at` differs from `created_at`)" arm, which the code does not compute; and
-  the "by definition an observation at the merge candidate" claim, which is a **fail-open heuristic**
-  the code cannot verify and must be stated as a bounded assumption naming what it cannot check, why,
-  and which direction it errs in); `bot-participation-contract.md` § the "union of the stored-finding
-  SHAs and the recorded sidecar SHAs" paragraphs and its "observation sidecar" naming;
+  edits one comment in place" (the "stored finding, or … the noise sidecar" two-source arm; and the
+  "edited in place (`updated_at` differs from `created_at`)" arm, which the code does not compute);
   `automatic-review/SKILL.md`'s restatement of the same predicate in a workflow body;
+  ⛔ **Two passages in that document are NOT this plan's**, because plan `500` changes the behaviour
+  they describe and rewrites them there: the **"by definition an observation at the merge candidate"**
+  claim in the same section (`500`'s `010 G3`), and the **"union of the stored-finding SHAs and the
+  recorded sidecar SHAs" paragraphs together with the "observation sidecar" naming** (`500`'s
+  `010 G11`, which renames the artifact those paragraphs describe). Read them, and if either still
+  states the pre-`500` claim, **report it as owned by `500` and leave it** — do not rewrite it here,
+  and do not count it a survivor. Note that `010 G4`'s own site list stops short of both, so this
+  exclusion narrows nothing the gap asked for.
   `automatic-review/standards/pr-agent.md` at two sites; and `bot_registry.py`'s
   `participation_requires_update` docstring. Sweep for survivors with **two** different searches, not
   one — "first presence / first-present / `updated_at` movement / `updated_at` vs `created_at`" finds
@@ -378,7 +382,7 @@ is a **cold read** (see § Verification), not "the text was changed".
   over-long neighbour. Cosmetic, and included because it is the visible trace of an edit made without
   re-reading the surrounding paragraph.
 
-*Done when:* both survivor searches return no hit that describes the currency test, and each
+*Done when:* both survivor searches return no hit that describes the currency test other than the two passages this deliverable excludes as `500`'s, each of which is reported rather than fixed, and each
 rewritten site names the single ledger as the sole source; neither pr-agent sentence contradicts
 `automatic-review/SKILL.md` § "Rate-limit refusal recovery" or `bot-participation-contract.md`
 § "The three per-bot marker lists"; no shipped document claims the size exclusion is decidable in
