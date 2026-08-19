@@ -88,8 +88,11 @@ returned sound as written. Beyond citation and count fixes, it:
 
 - **recovered three proved gaps, two of them high, that were cited in a `verification.md` but never
   written into the `gaps.md` a fix run reads** — they would have been invisible;
-- **withdrew a gap** whose evidence was an artifact of this shared audit tree (timings taken while
-  sibling agents ran full suites), which would have sent a fix run to rewrite correct documentation;
+- **withdrew a gap's central claim** — `300-freshness-gate-cannot-distinguish-test-authored-evidence/gaps.md`
+  § G1, whose evidence was a timing artifact of this shared audit tree (measurements taken while
+  sibling agents ran full suites). The claim was struck, the severity lowered to `low` and the action
+  narrowed; the entry itself survives and is carried by `560`. As written it would have sent a fix run
+  to rewrite correct documentation;
 - **executed proposed fixes** and found several would break the suite or were unsatisfiable as
   written — one required breaking a guard the epic had deliberately built and mutation-proven;
 - **found defects reachable only by driving the real interface**, notably a protocol surface handing

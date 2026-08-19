@@ -198,7 +198,7 @@
 
 ## Correctness review
 
-I read `_footprint_resolver.py` (all 235 lines), `_cmd_compute_footprint.py:40-132`,
+I read `_footprint_resolver.py` (all 235 lines), `_cmd_compute_footprint.py:40-131`,
 `manage-metrics.py:778-824` / `:1138-1281` / `:1403-1440`, `check-routing-decisions.py:379-413` and
 `:740-800`, `check-artifact-consistency.py:490-600` and `:820-880`, `check-manifest-consistency.py:166-222`
 and `:570-666`, `analyze-logs.py:220-300`, plus the four contract documents. Findings:

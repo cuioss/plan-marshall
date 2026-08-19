@@ -118,23 +118,26 @@ Re-derive each at the moment you state it, and record the command and the ref yo
    naming the file, and write only the proposals whose anchors you did derive. Do not write a proposal
    against a document you could not open, and do not reconstruct its numbering from this plan.
    ⛔ **Do not assume every proposal edits the skill, and do not trust a partition stated here.**
-   **P8** edits `cloud-bridge.md` only; **P2** proposes an edit to § Report in the skill *and/or* to
-   `cloud-bridge.md` § Path 2 — Sync, so it straddles both. A run that derives anchors only from the
-   skill cannot satisfy D1's quoted-against-a-derived-anchor requirement for either.
+   **P8** edits `cloud-bridge.md` only; **P2** touches three sections across both files — § Report and
+   § Step 8 in the skill, and `cloud-bridge.md` § Path 2 — Sync — because it reconciles two existing
+   copies of one rule rather than moving a single sentence. A run that derives anchors only from the
+   skill cannot satisfy D1's quoted-against-a-derived-anchor requirement for either proposal.
    **Derive the target set by reading each proposal below and recording the file and section it
    names — do not carry this sentence forward as the answer.** An earlier revision of this block
    asserted a clean P1–P7 / P8 split and was falsified by P2, which the split placed on the wrong
    side; a later revision then found P6 naming no target at all. The list in (a) is a
    starting point, not a closed enumeration.
-   (b) **The target census.** For each source plan named in § Gap coverage, record one of three states:
+   (b) **The target census.** For each source plan named in § Gap coverage — **and for
+   `240-skill-lsp-server/`, which is not a source plan but holds a document D4 must quote** (see
+   § Expected surface) — record one of three states:
    `present` (the directory exists and the quoted defective text is still there), `already corrected`
    (the directory exists and the text has changed), or `collected` (the directory is gone — a landed
    cloud plan's directory is deleted at collect in a ledger-backed epic, which this one is). A
    `collected` or `already corrected` target is not a failure; it is a recorded disposition.
    *Done when:* the report carries a table of the re-derived contract anchors — **one row per section
    listed in (a), plus one row for every further section any proposal below names**, counted as you
-   write it rather than against a number quoted here — and a census row for every source plan in
-   § Gap coverage with one of the three states and the check that produced it. ⛔ The (a) list is the
+   write it rather than against a number quoted here — and a census row for every target named in (b),
+   each with one of the three states and the check that produced it. ⛔ The (a) list is the
    floor, not the ceiling: satisfying this criterion against (a) alone, while some proposal names a
    section absent from it, is **not** done — that is exactly how two proposals were left without a
    derived anchor in earlier revisions.
@@ -247,9 +250,10 @@ Re-derive each at the moment you state it, and record the command and the ref yo
      vocabulary that a directory whose name begins with `_` is a record, not a plan, and is skipped
      by collect. Decision: adopt / adopt with a different marker (a marker file rather than a name
      convention) / decline and require records to live outside `doc/plans/{epic}/`.
-   *Done when:* `proposals.md` exists with all eight proposals, each carrying what happened, the exact
-   edit against a D0-re-derived anchor, and an explicit decision with options; and the cold read in
-   § Verification returns **DECIDE**, not APPLY.
+   *Done when:* `proposals.md` exists with **every proposal enumerated in this deliverable** — counted
+   from the list as you write the file, not against a number quoted anywhere in this plan — each
+   carrying what happened, the exact edit against a D0-re-derived anchor, and an explicit decision with
+   options; and the cold read in § Verification returns **DECIDE**, not APPLY.
 
 3. **D2 — `record-corrections.md`, part one: citations that no longer resolve** — a new file
    `doc/plans/{epic}/{this-plan}/record-corrections.md`, opening with a ⛔ stating that it **records**
@@ -415,8 +419,15 @@ the § Verification containment gate mechanical.
 - `doc/plans/code-intelligence-substrate/{this-plan}/report-NN.md` — the run report, per the contract.
 
 **Read but never written** (the census in D0 and the re-derivations in D2–D4 read them):
-`.claude/skills/cloud-plan-lane/SKILL.md`, `doc/plans/cloud-bridge.md`, `CLAUDE.md`, and the fourteen
-source plan directories named in § Gap coverage — each of which may already be gone.
+`.claude/skills/cloud-plan-lane/SKILL.md`, `doc/plans/cloud-bridge.md`, `CLAUDE.md`, every source plan
+directory named in § Gap coverage — each of which may already be gone — **and one directory that is
+not a source plan**: `240-skill-lsp-server/`, whose `proposal-protocol-surface.md` D4 must quote. The
+covering gap is `135`/G10, filed against `135`, but the document to be quoted lives in `240`.
+⛔ **Give `240` a census row in D0(b) like any other target**, with the same three states, and take
+the `collected` branch if its directory is gone: record the gap as `discharged-by-collection` with the
+directory listing as evidence and do **not** reconstruct the quote from git history. An earlier
+revision omitted `240` from this list entirely, so a run reaching a collected `240` had no
+disposition to take.
 
 **Not touched, expected to appear nowhere in the diff:** `.claude/skills/**`, `marketplace/bundles/**`,
 `doc/plans/README.md`, `doc/plans/_template/**`, any other plan's directory, and any `*.py`.
@@ -496,11 +507,15 @@ form that makes acting on them mechanical.
 
 **The audit and its adversarial review.** Every gap here was produced by a ground-truth audit and then
 adversarially re-reviewed. **Where the two disagree, the review wins** — it was the later, evidence-bearing
-pass. Three places where that changes what this run does are called out in the deliverables: the `350`
+pass. The places where that changes what this run does are called out in the deliverables — each at
+its own site, and this list names rather than counts them, because a count here goes stale the moment
+a reversal is added: the `350`
 test figures were true-then-invalidated rather than miscounted; the `350` sweep count was under-enumerated
-by the audit's own correction and must be re-run rather than copied; and the commit-loss mechanism was
+by the audit's own correction and must be re-run rather than copied; the commit-loss mechanism was
 asserted by the audit and **withdrawn** by the review — only the effect is established, and both lost
-commits were documentation-only.
+commits were documentation-only; and the audit's premise that the plan citing `135`'s `rationale.md`
+"is queued, not yet run" was **struck as false** by the review, which is why D4 inlines the quoted
+claim rather than waiting on that plan.
 
 **Counts.** Every number in this plan is a lead. The instance counts in P4, the per-plan SHA counts, the
 site counts in D3 — all were true when this plan was authored and none is to be restated without
