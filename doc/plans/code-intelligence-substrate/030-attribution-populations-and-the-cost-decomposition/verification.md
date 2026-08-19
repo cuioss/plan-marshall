@@ -8,9 +8,10 @@ is empty, so every code and standards citation below was re-checked against an u
 **Overall verdict:** CONFIRMED WITH GAPS
 
 All four deliverables are implemented, present in the tree now, and covered by non-vacuous tests
-(two mutations proved). The gaps are in the *surrounding* documentation surfaces the deliverables
-lean on, plus one name collision introduced by a later plan that contravenes this plan's explicit
-one-writer constraint.
+(two mutations proved). **Implemented is not the same as intact**, and two are rated PARTIAL below:
+D2 documented its limitation only at the consumer contract, and D3's one-writer constraint is
+contravened in the tree today by a second writer a later plan added. The remaining gaps are in the
+*surrounding* documentation surfaces the deliverables lean on.
 
 ## Deliverable verdicts
 
