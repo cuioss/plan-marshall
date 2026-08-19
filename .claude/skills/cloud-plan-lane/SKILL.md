@@ -1079,7 +1079,9 @@ correctness. Where a reviewer is still owed a look (§ Step 7), give it to them:
 substitute for review coverage, and a rate-limited reviewer whose window reopens is worth
 another attempt precisely because its method differs from the loop that just ended — by whichever
 route that reviewer honours (§ Step 7), which for an auto-review reviewer is a push and not a comment.
-None of this applies on a `skip-bot-review` PR, where no attempt is owed at all.
+None of this applies to a reviewer the label governs on a `skip-bot-review` PR, where no attempt
+is owed at all — but it applies in full to a reviewer that does **not** honour the label
+(`honors_skip_label: false` in its registry doc), which is invited on a labelled PR like any other.
 
 ## GitHub access
 
@@ -1264,7 +1266,7 @@ words; do not use one for the other.**
   triggered, so the first-pass review of the whole diff never happened. Owed whether or not a later
   push recovered a review, because a push review sees the increment, not the whole diff.
 - **`applied-late` → "post-open reviews suppressed".** The PR was created open, so the PR-open
-  review **did** fire (§ Step 7's draft route, case B) — that is what `applied-late` means. What the
+  review **did** fire (§ Step 7's draft route, second outcome) — that is what `applied-late` means. What the
   label then suppresses is every subsequent push review. ⛔ **Do not record "PR-open review missed"
   here**: it is false by this contract's own account of the state, and condition A forbids leaving a
   false statement standing.
@@ -1331,7 +1333,7 @@ assign exactly one verdict:
 |---|---|
 | `reviewed` | The author published a review artifact **against the diff** — an inline thread comment, or a review/issue-comment body carrying findings (or an explicit "nothing to report" over the diff). |
 | `rate-limited` | The author published **only a refusal/quota notice** in place of a review (e.g. "Review limit reached", "reached your weekly rate limit of … diff characters"). It engaged but did not review this diff. |
-| `silent` | The author published **nothing at all** — no review, no notice. Before recording it, run the recovery check below — **not owed on a `skip-bot-review` PR** (⛔ below); an unexplained silence is recorded as such only once that check has been made. |
+| `silent` | The author published **nothing at all** — no review, no notice. Before recording it, run the recovery check below — **not owed where the label governs this reviewer** (⛔ below), owed as usual where it does not; an unexplained silence is recorded as such only once that check has been made. |
 | `unreadable` | The surface that would carry this author's body **errored**. Not a statement about the author at all — a statement about the run's access. |
 
 ⛔ **An unreadable surface is not an empty one, and `silent` MUST NOT be used for it.** `silent` claims
@@ -1478,12 +1480,13 @@ cosmetic commit to summon a reviewer: § Step 7 forbids that for CI, and the rea
 `coderabbitai`, or `get_review_comments` carries its inline threads. A green check, an absence of
 complaint, and the acceptance reply are none of them evidence.
 
-#### A `silent` verdict is not terminal until the recovery check says so — on a PR the label rule leaves reviewable
+#### A `silent` verdict is not terminal until the recovery check says so — unless the label governs that reviewer
 
 Silence has several causes that look identical from the comment surfaces — the bodies are empty, which
 is what `silent` means — and **one of them is recoverable**. So `silent` is a provisional verdict:
-before disclosing it, establish *why*, and act on the answer. On a `skip-bot-review` PR the why is
-already established and no check is owed (⛔ below).
+before disclosing it, establish *why*, and act on the answer. Where the PR carries
+`skip-bot-review` **and** the registry says this reviewer honours it, the why is already established
+and no check is owed (⛔ below); for every other reviewer the check is owed as usual.
 
 Check whether the reviewer's workflow ran at all, and split on it:
 
@@ -1504,10 +1507,13 @@ exception it does not override. **For CodeRabbit on a PR carrying no `skip-bot-r
 condition 6 still applies**, and this recovery attempt is what satisfies it in the `silent` and
 `Reopens? unknown` cases. Carrying on is licensed by having made the attempt, not by skipping it.
 
-⛔ **Do not run this recovery on a `skip-bot-review` PR.** No recovery is owed, and the reason is
-the spend decision, not a mechanism: the label is a deliberate choice not to spend review budget on
-this diff, so a run must not undo it by another route. The prohibition is stated rather than left to
-be inferred precisely because a run *may* find a working route — do not go looking for one. A run
+⛔ **Do not run this recovery for a reviewer the label governs.** The scope is the reviewer, not
+the PR: read `honors_skip_label` from that reviewer's registry doc (§ Step 8 condition 5). Where it
+is `true` and the PR carries the label, no recovery is owed — the reason is the spend decision, not
+a mechanism, so a run must not undo it by another route, and the prohibition is stated rather than
+inferred precisely because a run *may* find a working route. **Where it is `false`, that reviewer
+was invited and the recovery check is owed in full**, on a labelled PR exactly as on any other;
+suppressing it would leave a real gap recorded as label-explained. A run
 must equally **not**
 hold back a finished commit to avoid "summoning" a reviewer: Step 4's push cadence is unconditional.
 There
@@ -1686,7 +1692,10 @@ hold:**
    spent without obtaining it; `sourcery-ai` rate-limited on a size ceiling, does not reopen."
    **A run that merges on 1-of-3 must _say_ 1-of-3.**
 
-   **On a `skip-bot-review` PR an empty result is expected, and is not a shortfall.** The
+   **On a `skip-bot-review` PR an empty result is expected from the reviewers the label governs,
+   and is not a shortfall for them.** A reviewer with `honors_skip_label: false` was invited, so its
+   silence is a real shortfall and gets a real reason (§ Step 7's recovery check, which is owed for
+   it). The
    population is still the registry set (§ Step 7) — it is never emptied — and every verdict is
    still read **from the bodies**, never from this contract's prose. Where the bodies are empty and
    the label was in place at PR-open, annotate the `silent` as `(suppressed by label)` and state the
@@ -1696,10 +1705,9 @@ hold:**
    docs the run already reads to derive the population: each carries `honors_skip_label`. Read it
    there rather than inferring it from a bot's own config — the registry is authoritative and not
    every reviewer honours the label (one in this repository does not, so annotating its silence as
-   `(suppressed by label)` would record something the registry contradicts). Only where a registry
-   doc omits the field, fall back on that reviewer's own config, and for CodeRabbit specifically
-   take the same default § "Obtaining a CodeRabbit review" takes for the route — assume auto-review
-   is on, so it **is** label-governed — recording the assumption. What *is* disclosed on
+   `(suppressed by label)` would record something the registry contradicts). Only where a registry doc omits the
+   field does the run fall back on that reviewer's own config; and where that too is unreadable,
+   default to **not governed** — the reading that discloses a gap rather than explaining it away. What *is* disclosed on
    every labelled PR is the label decision itself, before creation, per § Step 7.
 
    ⛔ **The example says "six attempts spent" for a reason.** A CodeRabbit line here reports a state
@@ -1929,7 +1937,7 @@ that its artifact exists on disk:
 | 4 Pushed | No unpushed commit remains (`git status -sb` reports no `ahead`) |
 | 5 Build gate | Report states the git-derived Python-change verdict and the build outcome |
 | 6 Verification sub-agent | Findings and dispositions in the report; **which of the two exits ended the loop** — named with the same `verifier-clear` / `budget-exhausted` token the report header carries, plus the `non-converging` qualifier where it applies (§ Report) — the **budget that applied** (five, or the plan's) with **every extension and who granted it**, and the round that stopped it. Where the budget ran out with an operator reachable, that the boundary question was **put to them** and what they answered; where it ran out headless, that fact and the fallback taken. On the verifier exit: **the verifier's own last answer** — never the author's verdict — and the **evidence stronger than a read** it rests on, named. On the budget exit: that fact, with everything A forbids **fixed** regardless and what closing each remaining B survivor would take. Either way: each survivor — and each behavioural finding left `deferred` — listed individually with its (a) proof or (b) bound and confirmation it was **re-put to the verifier** in the stopping round; whether the late rounds' findings were **narrower and not merely fewer**; the **residue to assume remains**; and `Outcome` still reporting the deliverables, not the loop (§ Step 6, "When the loop stops") |
-| 7 PR cycle | PR exists; every comment dispositioned in the report; the participation table carries a verdict per reviewer and a `Reopens?` value wherever § Report requires one, and every `silent` verdict records one of three: what its recovery check found; that the PR carried `skip-bot-review` when the reviewers were triggered **and still carries it**, so no recovery was owed; or that the label was applied immediately after creation (`applied-late`), so the reviewers fired but no recovery was owed once it was on. Where the label was removed mid-cycle the row also records **PR-open review missed**; where it was applied late, **post-open reviews suppressed** (§ Step 7 — the two are not interchangeable). An `unreadable` verdict means condition 3 is NOT established — the row is reported as **not done**, whatever the merge outcome |
+| 7 PR cycle | PR exists; every comment dispositioned in the report; the participation table carries a verdict per reviewer and a `Reopens?` value wherever § Report requires one, and every `silent` verdict records one of three: what its recovery check found; that the PR carried `skip-bot-review` when the reviewers were triggered **and still carries it** and this reviewer honours the label, so no recovery was owed; or that the label was applied immediately after creation (`applied-late`), so the reviewers fired but no recovery was owed once it was on. The row also records the coverage-loss phrase for the label state, per § Step 7: **PR-open review missed** where the label was on at PR-open, **post-open reviews suppressed** where the PR was created open and labelled after. Take the phrase from the state, never from whether a removal happened later — a PR that was `applied-late` and then stripped is still the second phrase. An `unreadable` verdict means condition 3 is NOT established — the row is reported as **not done**, whatever the merge outcome |
 | 8 Merge gate | Conditions 1–4 and 6 met and auto-merge armed; where the base had advanced, the report names the shape used, the merge commit tested, and the gate's result on it (condition 2) — and a condition 2 that failed closed is reported as **not established**, with nothing armed. Either `state: MERGED` was confirmed after arming, **or** the session could not self-wake to watch the queue (§ Cloud session affordances) and delegated the landing to the orchestrator's collect — both are completed, neither is partial (§ Step 8). The merge commit is recorded to the operator, not in the pre-merge report |
 | 8 Bridge | No **status or bookkeeping** write landed under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan's directory was touched; a **declared-deliverable** edit to a shared lane doc (e.g. `cloud-bridge.md`, `README.md`, the plan template) is permitted — and the report carries the PR number and per-deliverable outcome the orchestrator will collect from |
 | 9 This check | Its result appended to the report |
@@ -2097,7 +2105,7 @@ cross-named by `.github/workflows/pr-agent.yml` — never a list transcribed her
 reviewer, each verdict derived from the stored comment bodies (§ Step 7), never from a check state or
 a summary:
 
-| Reviewer (`author_login`) | Verdict (`reviewed` / `rate-limited` / `silent` / `unreadable`), annotated `(suppressed by label)` where § Step 8 condition 5 calls for it | Reopens? (`yes` / `no` / `unknown`; blank when `reviewed`, and blank when the label suppressed the invitation) | Body evidence / reason — for `unreadable`, the surface and the error, plus whatever positive control was taken |
+| Reviewer (`author_login`) | Verdict (`reviewed` / `rate-limited` / `silent` / `unreadable`), annotated `(suppressed by label)` where § Step 8 condition 5 calls for it | Reopens? (`yes` / `no` / `unknown`; blank when `reviewed`, and blank where the label suppressed this reviewer's invitation and was still in place at the gate — a PR-open-only reviewer on an `applied-then-removed` PR takes `no`, not blank) | Body evidence / reason — for `unreadable`, the surface and the error, plus whatever positive control was taken |
 |---|---|---|---|
 | … | … | … | … |
 
@@ -2121,9 +2129,10 @@ arm cannot be checked against the gate. Some arms are reached with no retry log 
 presence is not what names the arm.
 Where a `silent` verdict triggered the recovery check (§ Step 7), record what the check found and
 whether the reviewer was recovered; where the PR carried `skip-bot-review` when the reviewers were
-triggered, record that instead — no check was owed. Where the label was removed mid-cycle add the words
-**PR-open review missed** alongside the arm; where it was applied late, **post-open reviews
-suppressed** (§ Step 7 — the two name opposite losses). Where a verdict is `unreadable`, state plainly that merge-gate
+triggered, record that instead — no check was owed. Add the coverage-loss phrase for the label state
+alongside the arm — **PR-open review missed** where the label was on at PR-open, **post-open reviews
+suppressed** where the PR was created open and labelled after (§ Step 7 — they name opposite losses,
+and the phrase follows the state, not a later removal). Where a verdict is `unreadable`, state plainly that merge-gate
 condition 3 was **not established** and say whether the merge proceeded anyway on an operator
 instruction — an overridden gate is reported as overridden, never as met.
 
@@ -2148,8 +2157,9 @@ token from § Step 7's decision table, in that table's spelling (⛔ do not enum
 the last enumeration went stale on a rename); **(3)** whether the label was read back; **(4)** where a label was applied, whether suppression was **verified**
 or **unverified** (§ Step 7's draft route, where the governing config could not be read) — `n/a`
 where no label was applied; and
-**(5)** the disclosure made to the operator before creation — or that no operator was reachable. It is the one irreversible scrutiny choice the run
-makes, so it leaves a record. A cloud run **never owes** a
+**(5)** the disclosure made to the operator before creation — or that no operator was reachable. The creation-time half of it cannot be taken back — the
+reviewers fire on open — so it leaves a record even though the label itself can later be removed
+(§ Step 7). A cloud run **never owes** a
 `/sync-plugin-cache` — it is a machine-local build step, not a debt a cloud run records (§ Scope and
 precedence).
 
