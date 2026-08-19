@@ -192,11 +192,34 @@ implementations.
   only with *zero registered resolvers* (never true on a real tree, since seven ship); this plan makes
   it one menu action away. See G1.
 
+- **`_cmd_client_render.py:97-101` — the all-switched-off provenance footer contradicts the adjacency
+  table it sits under.** `render_overview` on the same fixture prints a row `app | core` and then
+  `_Edge provenance: 1 resolver(s) discovered but switched off … No edges were derived._` two lines
+  below it. "Derived" is defensible as resolver-scoped jargon; the footer is the surface aimed at a
+  reader who does not hold that distinction. The rendered half of G1. See G2.
+
+- **`configured` means two different things in the two surfaces that report it.**
+  `extension_api.py:167` computes it as `resolver_id in section`; `run_config.py:872` computes it as
+  `isinstance(entry, dict)`. For a malformed entry (`{"markdown": "yes"}`) the roster reports
+  `configured: true` and `derivation-resolver get` reports `configured: false`, while both fail open to
+  `enabled: true`. `menu-derivation-resolvers.md:51` instructs the agent to render `configured` as the
+  "left at the default" vs "deliberately set" distinction, so the operator is told two different things
+  about one store. See G9.
+
+- **`_derivation_merge.py:105-108` still states the retired discriminator.** "The caller distinguishes
+  … by the length of the returned report list" — which the caller (`_cmd_client_query.py:1103-1122`,
+  `count_dispatched` at `:412`) no longer does, and which the same docstring contradicts 20 lines
+  below at `:125-130`. The one Axis-C instance the run's five-site sweep missed; the identical sentence
+  at `_path_attribution_merge.py:215` is correct there and must not be swept. See G10.
+
 **Checked and found sound:**
 
 - The gate has exactly one dispatch site. `grep -rn "discover_derivation_resolvers" marketplace
-  --include=*.py` returns the seam (`_cmd_client_query.py:1096`) and the roster
-  (`extension_api.py:130`) as the only call sites, so no edge-deriving path bypasses the binding.
+  --include=*.py` returns **14** hits; exactly two are *calls* — the seam (`_cmd_client_query.py:1096`)
+  and the roster (`extension_api.py:130`). The rest are the definition
+  (`extension_discovery.py:533`), imports, and docstring/comment mentions. `_partition_configured_resolvers`
+  (`:966`) has one caller, `_derive_edges` (`:1103`), which itself has one caller (`:1192`), so no
+  edge-deriving path bypasses the binding.
 - Fail-open is symmetric across all three readers (seam, roster, store-listing verb), and every
   failure mode — import failure, store read failure, per-entry failure, malformed entry, non-dict
   section, missing `enabled` key — resolves to *active*. No branch can blank the graph.

@@ -347,3 +347,96 @@ needs its own change.
 - **Effort:** S
 - **Risk if fixed:** None — the report is a dated record and the correction does not change any
   deliverable verdict.
+
+## G10 — Read a setuptools project's `setup.cfg` so it derives edges
+
+- **Kind:** incomplete
+- **Severity:** high
+- **Topic:** lsp/resolvers
+- **Where:** `marketplace/bundles/plan-marshall/skills/build-pyproject/scripts/_pyproject_cmd_discover.py:269`
+  (`_parse_pyproject_metadata`, `pyproject = module_path / 'pyproject.toml'`), against
+  `_find_descriptor_file` at `:308-321`, which also accepts `setup.cfg` and `setup.py`
+- **Evidence:** Discovery and metadata extraction disagree about what a Python descriptor is.
+  `_find_descriptor_file` accepts `pyproject.toml`, `setup.cfg` **and** `setup.py`, so a setuptools
+  module is admitted, stamped `build_systems: ['python']` and given its real descriptor path — which
+  puts it squarely inside the `pyproject` resolver's `scoped_modules` filter. But
+  `_parse_pyproject_metadata` opens `pyproject.toml` only and returns early when it is absent
+  (`:273-274`), so that module publishes no name and declares no dependency. Driven end to end over a
+  synthetic three-module setuptools monorepo where `lib_app` declares `st-core` under
+  `[options] install_requires`:
+
+  ```text
+  SETUPTOOLS modules: ['default', 'lib_app', 'lib_core']
+     default  | descriptor= setup.py    metadata= {} deps= []
+     lib_app  | descriptor= lib_app/setup.cfg   metadata= {} deps= []
+     lib_core | descriptor= lib_core/setup.cfg  metadata= {} deps= []
+    edges: ([], [])
+  ```
+
+- **Why it matters:** Identical misreport to G1 and, unlike G1, the discoverer *names the file it
+  never reads*: `paths.descriptor` points at `setup.cfg` while the parser never opens it, so the
+  module dict itself asserts a capability that does not exist. The module enters the join's scope and
+  contributes nothing, which is worse than being filtered out — a filtered module could at least be
+  counted. As with G1 the answer arrives as `{'id': 'pyproject', 'status': 'ok', 'edge_count': 0}`.
+- **Action:** In `_parse_pyproject_metadata` (or a sibling it delegates to), fall back to `setup.cfg`
+  when `pyproject.toml` is absent or yields no `name`: read `[metadata] name` / `version` /
+  `description` into `metadata`, and each newline-separated entry of `[options] install_requires`
+  into the `name:scope` dependency list with scope `runtime`, running it through the same
+  version-specifier strip the `[project]` path uses. `configparser` is in the standard library, so no
+  dependency is added. ⚠ `setup.py` is executable Python and is **not** statically parseable in
+  general — do not attempt it; a `setup.py`-only module keeps today's behaviour, and that should be
+  stated in `doc/user/dependency-intelligence.adoc` § Python specifics rather than left silent. Add a
+  `setuptools-monorepo` fixture under `test/plan-marshall/build-pyproject/fixtures/` shaped like the
+  existing `multi-module-python` one.
+- **Done when:** A fixture whose modules declare their names and inter-module dependencies only in
+  `setup.cfg` yields a non-empty edge set through `BuildExtension.derive_edges`, the existing PEP 621
+  fixture's exact 5-edge assertion still passes unchanged, and § Python specifics states that a
+  `setup.py`-only module publishes no name.
+- **Effort:** M
+- **Risk if fixed:** Same widening concern as G1 — `metadata` and `dependencies` grow for every
+  setuptools consumer, which changes what `architecture` emits for readers of those fields beyond
+  edge derivation. Mitigate by making the `setup.cfg` read a strict fallback that never fires when
+  `pyproject.toml` supplies a `[project] name`.
+
+## G11 — Stop swallowing an unreadable `pyproject.toml`
+
+- **Kind:** bug
+- **Severity:** medium
+- **Topic:** lsp/resolvers
+- **Where:** `marketplace/bundles/plan-marshall/skills/build-pyproject/scripts/_pyproject_cmd_discover.py:279-280`
+  (`except Exception: return {'metadata': metadata, 'dependencies': dependencies}`), and `:273-274`
+  (the `tomllib is None` arm of the same early return)
+- **Evidence:** The bare `except Exception` returns the empty metadata/dependency pair it was
+  initialised with, so a malformed descriptor is indistinguishable from a descriptor that declares
+  nothing. Driven end to end over a two-module project whose root correctly declares `b-a` and whose
+  `mod_a/pyproject.toml` has one unbalanced bracket:
+
+  ```text
+  MALFORMED TOML modules: ['default', 'mod_a']
+     default  metadata= {'name': 'b-root'} deps= ['b-a:runtime']
+     mod_a    metadata= {}                 deps= []
+    edges: ([], [])
+  ```
+
+  The root's declared edge is lost because its target published no name, and nothing anywhere records
+  that a file failed to parse. The npm side is not symmetric: `_load_package_json`
+  (`_npm_cmd_discover.py:379-392`) catches the same class but returns `None`, which drops the module
+  entirely rather than admitting an empty one — a different, more visible outcome.
+- **Why it matters:** This is the fail-open form of the same misreport. The resolver's `notes[]`
+  channel exists precisely to surface suppressed edges, but a discovery-time parse failure never
+  reaches the resolver, so `notes[]` stays empty and the row still reads `status: ok, edge_count: 0`.
+  ADR-009's fail-closed reporting discipline — cited by `client-api.md:114` as the reason the
+  zero-edge disambiguation table exists — is not applied at this layer.
+- **Action:** Keep returning the empty pair (dropping the module would be a larger behaviour change),
+  but record the failure where a consumer can see it: log a WARNING through the module's existing
+  `log_entry` seam naming the file and the exception, and narrow `except Exception` to the parse and
+  I/O errors actually expected (`tomllib.TOMLDecodeError`, `OSError`, `UnicodeDecodeError`) so an
+  unexpected exception is not silently absorbed too.
+- **Done when:** Discovering a module whose `pyproject.toml` is syntactically invalid emits a WARNING
+  log entry naming that file, pinned by a test in
+  `test/plan-marshall/build-pyproject/test_pyproject_discover_modules.py`; and an exception outside
+  the narrowed set propagates rather than being swallowed.
+- **Effort:** S
+- **Risk if fixed:** Low. Narrowing the catch can turn a previously-absorbed unexpected error into a
+  discovery failure — which is the point, but it means the narrowed set must cover the real I/O and
+  decode cases, not just `TOMLDecodeError`.

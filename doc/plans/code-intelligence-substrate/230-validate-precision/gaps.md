@@ -513,3 +513,50 @@ file, and synthetic probes of every excluded shape in both directions.
 - **Effort:** M
 - **Risk if fixed:** parsing argparse surfaces at index time is heavier than the current lookup and
   couples this skill to that helper; some of the 37 live retargets may turn back into findings.
+
+## G21 — Dispose of the seven in-namespace residue rows no other gap covers
+
+- **Kind:** omission
+- **Severity:** low
+- **Topic:** bundle-docs
+- **Where:** the seven in-namespace unresolved rows left over once G5 (2), G16 (11), G17 (13) and
+  G18 (2) are removed from the 35. Sites pinned at HEAD:
+  - `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/references/rule-catalog.md:194`
+    → `plan-marshall:manage-findings:manage_findings`
+  - `marketplace/bundles/plan-marshall/skills/phase-3-outline/references/recipe-flow.md:320`
+    → `plan-marshall:recipe-` (a truncated notation inside an ASCII diagram)
+  - `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/required-steps.md:7`
+    → `plan-marshall:plan-marshall:_invariants`
+  - `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/standards/doctor-skills.md:101`
+    → `plan-marshall:domain-extension-api:validate_manifest`
+  - `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/references/fix-catalog.md:323`
+    → `pm-dev-java:java-core:java-core`
+  - `marketplace/bundles/plan-marshall/skills/tools-script-executor/standards/domain-aware-notation-spec.md:15`
+    → `pm-dev-java:build-maven:maven`
+  - one `pm-plugin-development:plugin-maintain → pm-plugin-development:README.md` skill-reference row
+    whose site is reported in the `context` field of the `validate` output
+- **Evidence:** the 61 unresolved rows at HEAD partition 35 in-namespace / 26 unknown-bundle
+  (re-derived row-by-row against the indexed bundle list). Of the 35, G5/G16/G17/G18 account for 28;
+  the remaining 7 are the "`manage_findings` 1 + six one-offs" line of `verification.md` § Declared
+  residue, and no gap entry covers them.
+- **Why it matters:** a later fix plan reading only `gaps.md` clears 28 of 35 in-namespace rows and
+  is left with 7 findings and no record of why they survive. That is exactly the "a set of findings
+  nobody can account for" state the precision work exists to end.
+- **Action:** dispose of each row explicitly — correct the notation, or record it in
+  `tools-marketplace-inventory/SKILL.md` § "Precision of `validate`" as a known-permanent finding
+  with its reason.
+  ⛔ **The `manage_findings` row must NOT be "corrected".** `rule-catalog.md:194` spells the
+  underscored notation *deliberately*, as the documented example of the defect
+  `manage-findings-invocation-invalid` exists to catch; rewriting it would break the rule
+  catalogue. It belongs on the known-permanent list, not in a notation fix.
+  `plan-marshall:recipe-` (a truncated placeholder in a diagram) and `plan-marshall:plan-marshall:_invariants`
+  (a module path, not a component notation) are the same shape of problem: prose the detector reads
+  as a reference, which either needs typesetting so the detector does not match it, or a documented
+  exemption.
+- **Done when:** each of the seven rows either leaves the unresolved set or is named, with its
+  reason, in the § "Precision of `validate`" known-permanent list — and `validate`'s in-namespace
+  finding count equals the number of rows that list does not name.
+- **Effort:** M
+- **Risk if fixed:** re-typesetting a notation inside a rule catalogue or a diagram can change what a
+  plugin-doctor rule matches; check `manage-findings-invocation-invalid` still fires on
+  `rule-catalog.md` after any edit near line 194.

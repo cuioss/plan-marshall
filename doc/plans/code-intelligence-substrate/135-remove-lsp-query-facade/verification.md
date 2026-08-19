@@ -231,19 +231,32 @@ Two pre-existing inconsistencies, **neither** caused by this run, remain live in
 | D1 — wrapped verbs unchanged | `test_graph_queries.py` (`cmd_graph`/`path`/`neighbors`/`impact`), `test_cmd_resolve.py`, `test_cmd_client.py`, `test_find_confident_negative.py`, `test_overview.py`, `test_architecture_input_validation.py`, `test_which_module_plan_claim.py`, `test_files_inventory.py` | **573 passed** over the whole `manage-architecture` module at `a90adeb` (superseding the earlier six-file, 163-test run, which did not include the last three files this row names). PR #1214 modified none of them, so their passing is genuine evidence that only the facade moved — and the mutation sweep below shows the coverage is not vacuous |
 | D1 — `lsp` no longer parses | none — asserted by direct CLI invocation here | No regression test guards re-introduction. Not warranted: re-adding the group would require re-adding a parser block, which no existing test would silently permit but which also nothing detects. Recorded as an observation, not a gap — a "verb X must not exist" test is a poor guard shape |
 | D2 — search docs intact | `plugin-doctor quality-gate` (36 rules, structural lint over `SKILL.md`/`client-api.md`) | Clean, but see below |
-| Kept plan-130 behaviour | `test_capabilities.py`, `test_search_content.py`, `test_feasibility_underivable_guard.py` | All in the passing 163 |
+| Kept plan-130 behaviour | `test_capabilities.py`, `test_search_content.py`, `test_feasibility_underivable_guard.py` | All in the passing 573 |
 
-**No vacuous test was found, and no mutation sweep was needed**, because this plan added no production
-logic: it is a deletion whose *Done when* conditions are observable directly (an argparse error, an
-absent file, an absent string). I therefore mutated nothing and took no byte snapshot; `git status
---porcelain` shows no modification to any production or test file by this audit.
+**Mutation sweep — the wrapped-verb coverage is non-vacuous.** This plan added no production logic, so
+the original audit reasoned that a sweep was unnecessary. That reasoning is incomplete: the *evidence*
+for "the wrapped verbs are unchanged" is a set of passing tests, and a passing test is only evidence if
+it could have come back red. The sweep was therefore run:
 
-**One genuine test/lint gap** is visible from the doctor run: none of the 36 marketplace rules compares
-the argparse verb set against what `SKILL.md` and `client-api.md` document. A census I ran directly
+- Byte snapshot of `_cmd_client_handlers.py` taken to `$TMPDIR/adv-135-remove-lsp-query-facade-mutsweep/`
+  (md5 `05f5f620…`).
+- Mutation: `cmd_impact` line 648, `'impact': impact` → `'impact': []` — the reverse-dependency closure
+  the deleted `lsp references` facade wrapped.
+- `uv run python -m pytest test_graph_queries.py` → **2 failed, 30 passed**
+  (`test_cmd_impact_returns_shape`, `test_argparse_wiring_impact_subcommand`). **RED as required.**
+- File written back from the snapshot; md5 re-matches `05f5f620…`, and `git status --porcelain` lists
+  no modification to it. (Two unrelated `plan-retrospective/scripts/` files are modified in this tree
+  by concurrent agents; neither was touched here.)
+
+**One genuine detector gap** is visible from the doctor run: none of the 36 marketplace rules compares
+the argparse verb set against what `SKILL.md` and `client-api.md` document — and the two nearest rules
+do something else (`canonical-enum-choices-drift` checks a **flag enum** against `choices=`;
+`literal-count-drift` checks an **integer count** against a derived population). A census run directly
 (argparse `add_parser` names vs `### ` headings vs the Command Summary rows) shows `siblings` and
 `profiles` documented in `SKILL.md` but contracted nowhere, and `descriptor-regression-check` contracted
 in `client-api.md` but absent from both `SKILL.md` surfaces. The doctor passing clean while that drift
-exists is why the drift survived plan 130 and plan 135 both (G4–G6).
+exists is why the drift survived plan 130 and plan 135 both — filed as **G14**, with the drift instances
+themselves as G4–G6 and a third instance of the same mirror class as G15.
 
 ## Report accuracy
 
@@ -285,7 +298,7 @@ UNVERIFIABLE, not as passes.
 | **Pre-existing doc-hygiene: `info` adjacency overstatement** | **STILL OPEN** | `doc/concepts/code-intelligence.adoc:36` — "plus the adjacency surfaces of `overview` and `module` / `info`"; `client-api.md:22-52` shows `info` returning `project` / `technologies` / `modules{name,path,purpose,description,freshness}` with no edge or dependency field, while `module` (`client-api.md:346` region) does carry `internal_dependencies`. (G7) |
 | **Pre-existing doc-hygiene: intra-doc duplication in `client-api.md § search`** | **STILL OPEN** | `--ignore-case`/`--literal` composition stated at 941-946 and again at 1111-1116; `count` vs `file_count` at 1034-1038 and again at 1117-1120. (G8, G9) |
 | **Rationale's permanent home** — promote to an ADR or concepts note if it should outlive collect | **STILL OPEN** | `doc/adr/` holds 17 ADRs, none about LSP conformance or the query vocabulary; no concepts page carries the argument. `rationale.md` still lives only in the plan directory. (G10, G11) |
-| **No orchestrator parent** | **N/A — correct as recorded** | Nothing to transition; `.plan/` does not exist in this clone. No action possible or needed |
+| **No orchestrator parent** | **N/A — correct as recorded** | Nothing to transition. Evidence corrected: `.plan/` **does** exist in this clone (`execute-script.py`, `marshal.json`, `project-architecture/`, `temp/`, `local/`), but `.plan/local/` holds only `logs/` and `marshall-state.toon` — there is no `orchestrator/` directory and so no parent plan spec. Note that this local state belongs to the audit machine, not to the cloud session that ran plan 135, which genuinely had no `.plan/` at all; the report's claim is about that session and stands |
 
 ## Out-of-scope and collateral
 

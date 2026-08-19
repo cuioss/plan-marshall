@@ -51,7 +51,12 @@ hole is **latent**: it does not occur anywhere in the reachable 81-transcript co
   pairing the quoted close still pairs with the outer open and yields the same tail. Cover (b) as well:
   e.g. when the turn's first token is an open `<T>` and its last token is a close `</T>`, treat the
   whole span as one envelope and take that residue if it is emptier. Do not change the innermost-first
-  primary pass, which `test_nested_same_name_envelope_is_fully_stripped` pins for the balanced case.
+  primary pass, which `test_nested_same_name_envelope_is_fully_stripped` pins for the balanced case,
+  and note the constraint that rules out the naive form of that fallback: any whole-span
+  reinterpretation must still run the `OPERATOR_BEARING_TAGS` recovery, or a bare
+  `<command-args>do it</command-args>` — first token an open, last token its close — would strip to an
+  empty residue and the operator's typed instruction would be dropped, which
+  `test_a_command_with_arguments_routes_normally` pins.
 - **Done when:** all three of `is_operator_authored('<system-reminder>a<system-reminder>b</system-reminder>')`,
   `is_operator_authored('<sr>a</sr>b</sr>')` and the `<task-notification>`-with-quoted-`</task-notification>`
   shape are `False`; a 30-turn transcript of each shape reports `no_signal: true` with

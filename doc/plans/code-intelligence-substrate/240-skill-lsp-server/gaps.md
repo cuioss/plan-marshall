@@ -2,12 +2,13 @@
 
 The surface ships and works: all six deliverables are present, D4's no-op is reproducible on this
 real unconfigured repository, and the versioned-cache bootstrap that round 4 fixed holds up when
-driven from a real two-version cache. Driven as a client drives it, a running `serve` subprocess
-answers `definition`, `hover` and `references` correctly from the real corpus. What remains is five
-code defects — one of them a demonstrated
-crash-plus-stream-corruption of the resident server, and one a documented provenance contract that
-holds on the `query` verb but is silently dropped on the LSP surface — a mutation-proven vacuous test
-pair, four
+driven from a real two-version cache. Driven the way a client drives it, a running `serve` subprocess
+answers `definition`, `hover` and `references` correctly from the real corpus.
+
+What remains is **five code defects** (G1, G2, G28, G3, G4 — grouped together below rather than in
+numeric order, since the file groups by kind): one a demonstrated crash-plus-stream-corruption of the
+resident server, one a documented provenance contract that holds on the `query` verb but is silently
+dropped on the LSP surface. Then a mutation-proven vacuous test pair, four
 uncovered paths, and a family of stale D3 justifications created by `230-validate-precision` landing
 on `main` 74 minutes **before** this plan merged: every artifact that explains why diagnostics are
 withheld still names an unexecuted gate and a 380/97 % measurement that is now 61 of 5 081.

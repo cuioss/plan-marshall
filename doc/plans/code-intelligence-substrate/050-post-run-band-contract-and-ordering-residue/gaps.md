@@ -116,19 +116,28 @@ appeared — did not fire when exactly that happened, because it watches `reads`
 - **Kind:** bug
 - **Severity:** medium
 - **Topic:** detectors/auditor
-- **Where:** `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py:1265-1266`
-  (`modified_files_count`), `:1327-1329` (`plan_ships`), `:1808-1809` (actual touched-file count);
-  documented in `checks/token-economics.md:116`, `checks/scope-estimate-accuracy.md:14-15`,
-  `checks/execution-context-manifest.md:59-60`, `checks/sequence-and-build-minimality.md:74`
-- **Evidence:** `inputs.modified_files_count = len(refs.get("modified_files") or [])` and
-  `return bool(plan_pr_number(inputs.plan_dir)) or inputs.modified_files_count > 0`.
+- **Where:** `.claude/skills/audit-archived-plan-retrospectives/scripts/audit.py:1266`
+  (`modified_files_count`), `:1329` (`_plan_shipped`), `:1571` (execution-context-manifest `modified`
+  column), `:1810` (scope-estimate), `:3061` (token-economics `files`), `:4178`
+  (sequence-and-build-minimality); documented in `checks/token-economics.md:116`,
+  `checks/scope-estimate-accuracy.md:14-15`, `checks/execution-context-manifest.md:59-60`,
+  `checks/sequence-and-build-minimality.md:74`
+- **Evidence:** `inputs.modified_files_count = len(refs.get("modified_files") or [])` (`:1266`).
   `_footprint_resolver.py:156-162` declares `modified_files` a `SHIM(B)` and states *"the current writer no
-  longer emits the key"*; `_references_core.py:25-45` (`ReferencesData`) has no `modified_files` member,
-  and a grep for a writer across `marketplace/bundles/` finds none.
-- **Why it matters:** For every plan created after the ledger removal, `modified_files_count` is 0. That
-  drives the shipping partition (`plan_ships`), `tokens_per_file`, the `big_spend_tiny_footprint`
-  anti-pattern flag, the scope-estimate-accuracy comparison and the execution-context-manifest `modified`
-  column — i.e. the retrospective auditor grades recent plans against a footprint it never reads.
+  longer emits the key"*; `_references_core.py:25-45` (`ReferencesData`) has no `modified_files` member;
+  `_invariants.py:740-749` records that the key was *"intentionally dropped"*; and a grep for a writer
+  across `marketplace/bundles/` finds none.
+- **Why it matters:** For every plan created after the ledger removal, `modified_files_count` is 0. The
+  consequence differs per consumer and is **not** uniform blindness — re-derived at each call site:
+  - `:1810` (scope-estimate), `:3061` (token-economics `files`, the divisor behind `tokens_per_file` and
+    the `big_spend_tiny_footprint` flag) and `:4178` (sequence-and-build-minimality) each read
+    `modified_files_count or affected_files_count`, so they silently **substitute the declared footprint
+    for the realized one**. They do not read zero — they read the wrong set, unlabelled. That is exactly
+    the declared-vs-realized conflation this plan's R3 names, and it is harder to notice than a zero.
+  - `:1571` (the execution-context-manifest `modified` column) has **no** fallback and reports a hard 0.
+  - `:1329` (`_plan_shipped`) is `bool(plan_pr_number(...)) or modified_files_count > 0` — two
+    independent sufficient criteria, so a plan carrying a PR record is still classified as shipping. The
+    shipping partition is **not** meaningfully at risk; only a plan with no PR record at all would flip.
 - **Action:** Resolve the footprint through the same tier order the shared resolver uses —
   `realized_footprint` → `merge_commit_sha` → `modified_files` — inside `audit.py`, and update the four
   check documents to name the resolved source rather than the raw key.

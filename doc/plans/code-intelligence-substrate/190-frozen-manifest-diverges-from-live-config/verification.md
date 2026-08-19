@@ -388,6 +388,12 @@ request is larger than the review limit of 150000 diff characters"*, `coderabbit
 *"Review limit reached"* issue comment, and `cuioss-review-bot[bot]`'s *"PR contains tests / No
 security concerns identified / No major issues detected"*, exactly as recorded.
 
+**One code claim needs a qualifier.** The F7 disposition at `report-01.md:175` — *"the verdict now
+comes from disk"* — is true as written and insufficient as evidence: the disk property it reads is
+*presence*, not *freshness*, and the population it runs in always satisfies presence (gap G15). The
+report's three D3 bounds themselves all hold, including the indeterminate one, which I confirmed
+against the real generator rather than the stubbed seam.
+
 Three bookkeeping claims are false against the landed diff:
 
 1. `report-01.md:119` — *"`git diff --name-only origin/main...HEAD -- '*.py'` → **4 Python files
@@ -397,14 +403,14 @@ Three bookkeeping claims are false against the landed diff:
    `workflow-integration-git/scripts/_executor_slot.py`, +59) and four test (three new plus a
    **modified** `test/plan-marshall/phase-6-finalize/test_manifest_loadability_guard.py`, +51/−12).
    `_executor_slot.py` was created in the `c81aee6` round, i.e. after the figure was first recorded,
-   and the figure was never re-derived. Gap G7.
+   and the figure was never re-derived. Gap G9.
 
 2. `report-01.md:109-111` — the D5 table annotates the three files *"(15 tests)"*, *"(6 tests)"*,
    *"(7 tests)"*. What landed at `d2e94b4` is **19 / 10 / 8** (`git show d2e94b4:<file> | grep -c
    "def test_"`). The column header does say "Pre-fix failure observed", so the numbers are
    defensible as pre-fix snapshots — but they sit beside the file paths and read as the files'
    contents. The PR description's own *"32 tests across …"* is unambiguously wrong: the three files
-   carry **37**. Gap G9.
+   carry **37** (re-derived independently: 19 + 10 + 8, and `37 passed`). Gap G10.
 
 3. `report-01.md:322` — *"(2053 insertions across 23 files)"* as the sourcery size-refusal basis.
    The PR reports `additions: 2115, deletions: 50, changed_files: 23`. The file count holds; the

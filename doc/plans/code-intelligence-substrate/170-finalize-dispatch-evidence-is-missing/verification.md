@@ -314,10 +314,15 @@ Claims re-derived at audit time. Everything material held; three items are stale
 - ✅ *"`_cmd_effort.py` and the dispatch-line seam untouched — confirmed absent from `git diff
   --name-only`"* — verified: `git show --stat c93431f` lists exactly ten paths, none of them
   `_cmd_effort.py` or `phase-6-finalize/`.
-- ✅ *"Three imprecise 'LLM aspects' labels in sibling docs — FIXED"* — verified at
+- ⚠️ *"Three imprecise 'LLM aspects' labels in sibling docs — FIXED … Relabelled to 'analytical
+  aspects' (count unchanged)"* — the **relabel** is verified at
   `plan-marshall/standards/effort-roles.md:65` and `ref-workflow-architecture/standards/call-graph.md:323`
-  and `:462`, all now reading "analytical aspects". (The accompanying *"No further known stale
-  sites"* claim in Residue is false — see the residue table and G12.)
+  and `:462`, all now reading "analytical aspects". The **count** was carried over, not re-derived,
+  and does not hold: `plan-retrospective/SKILL.md:180-196` lists 15 aspects and the SKILL's own LLM
+  enumeration at `:251` names six. `git log -L 65,65` on `effort-roles.md` shows "eight" arrived with
+  `59b716d` (#1035), so the staleness is inherited rather than introduced — but the run asserted the
+  count still held and this document originally accepted that. → **G14.** (The accompanying *"No
+  further known stale sites"* claim in Residue is separately false — see the residue table and G12.)
 - ✅ *"the sibling's `build_time` block and this PR's `artifact_emission` block coexist"* — verified:
   `analyze-logs.py:1667` and `:1678`; `TestBuildTimeFromLedger` at `test_analyze_logs.py:1877` and
   `TestArtifactEmissionPopulation` at `:1760` both present.
