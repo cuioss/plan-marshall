@@ -4,17 +4,19 @@ Arm B of this plan shipped working, correct, mutation-verified code: the publish
 discriminator has one owner and six consumers that branch on it, and outline classification is
 derived from the write-set. What remains is not in that machinery. Two stub sites in the very corpus
 D5's population rule governs were swept up and then left behind unconverted and undeclared, which
-makes the report's coverage sentence false and the population rule undischarged. Two documentation
-surfaces still describe the pre-materialization degrade the fix removed — one of them inside a file
-this plan edited, three hundred lines from the comment that contradicts it. One regression test has
-since stopped discriminating the defect it names (proved by mutation). One deliverable clause (D4's
-footprint precondition) was disclosed as deferred and remains open in the successor plan too. The
+makes the report's coverage sentence false and the population rule undischarged. **Six** documentation
+surfaces still describe the pre-materialization framing the fix removed — two of them (G4, G5) about
+the `get-module-context` degrade, and four more (G13) explaining an unresolvable footprint by
+pre-materialization alone, one of those inside a file this plan edited two lines of, nine hundred lines
+from the line the plan corrected. One regression test has since stopped discriminating the defect it
+names (proved by mutation — and no other test in its bundle catches it either). One deliverable clause
+(D4's footprint precondition) was disclosed as deferred and remains open in the successor plan too. The
 rest are report-level count and traceability defects.
 
 ## G1 — Convert the retired-boolean seam stub in `test_freshness_notation_crosscheck.py`'s autouse fixture
 
 - **Kind:** test-gap
-- **Severity:** low
+- **Severity:** medium
 - **Topic:** tests
 - **Where:** `test/plan-marshall/manage-tasks/test_freshness_notation_crosscheck.py:166`
   (fixture `_stub_resolver_seam`)
