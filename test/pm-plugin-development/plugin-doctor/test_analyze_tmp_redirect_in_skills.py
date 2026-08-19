@@ -17,6 +17,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -72,8 +74,7 @@ class TestOverwriteTmpRedirect:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID])
         assert findings[0]['redirect_type'] == 'overwrite'
 
     def test_overwrite_var_tmp_detected(self, tmp_path):
@@ -83,8 +84,7 @@ class TestOverwriteTmpRedirect:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID])
         assert findings[0]['target_prefix'] == '/var/tmp/'
 
     def test_overwrite_tmp_in_sh_fence(self, tmp_path):
@@ -94,8 +94,7 @@ class TestOverwriteTmpRedirect:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID])
         assert findings[0]['redirect_type'] == 'overwrite'
 
 
@@ -112,8 +111,7 @@ class TestAppendTmpRedirect:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID])
         assert findings[0]['redirect_type'] == 'append'
 
     def test_append_var_tmp_detected(self, tmp_path):
@@ -123,8 +121,7 @@ class TestAppendTmpRedirect:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID])
         assert findings[0]['redirect_type'] == 'append'
         assert findings[0]['target_prefix'] == '/var/tmp/'
 
@@ -141,8 +138,7 @@ class TestProseNotScanned:
             'Another line with > /tmp/data.txt mention.\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
     def test_non_bash_fence_not_scanned(self, tmp_path):
         content = (
@@ -152,8 +148,7 @@ class TestProseNotScanned:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
     def test_text_fence_not_scanned(self, tmp_path):
         content = (
@@ -162,8 +157,7 @@ class TestProseNotScanned:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
 
 # ---------------------------------------------------------------------------
@@ -179,8 +173,7 @@ class TestCommentLinesExempt:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
     def test_indented_comment_line_not_flagged(self, tmp_path):
         content = (
@@ -189,8 +182,7 @@ class TestCommentLinesExempt:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
 
 # ---------------------------------------------------------------------------
@@ -212,8 +204,7 @@ class TestBacktickSpanInBashFence:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID])
 
     def test_redirect_outside_backtick_span_flagged(self, tmp_path):
         """A /tmp/ redirect outside a backtick span on the same line is also flagged."""
@@ -223,8 +214,7 @@ class TestBacktickSpanInBashFence:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID])
 
 
 # ---------------------------------------------------------------------------
@@ -240,10 +230,8 @@ class TestFindingShape:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID])
         f = findings[0]
-        assert f['rule_id'] == RULE_ID
         assert f['type'] == FINDING_TYPE
         assert isinstance(f['file'], str)
         assert isinstance(f['line'], int)
@@ -264,8 +252,7 @@ class TestFindingShape:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID])
         assert findings[0]['line'] == 4
 
     def test_file_path_is_absolute(self, tmp_path):
@@ -275,8 +262,7 @@ class TestFindingShape:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID])
         assert Path(findings[0]['file']).is_absolute()
 
 
@@ -293,8 +279,7 @@ class TestMultipleFindingsPerLine:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert len(findings) == 2
+        findings = assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID] * 2)
         assert all(f['redirect_type'] == 'overwrite' for f in findings)
 
     def test_mixed_append_and_overwrite_on_one_line(self, tmp_path):
@@ -304,8 +289,7 @@ class TestMultipleFindingsPerLine:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert len(findings) == 2
+        findings = assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID] * 2)
         types = {f['redirect_type'] for f in findings}
         assert types == {'overwrite', 'append'}
 
@@ -323,8 +307,7 @@ class TestAgentMarkdownScanned:
             '```\n'
         )
         _make_agent_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert len(findings) == 1
+        assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [RULE_ID])
 
     def test_agent_md_clean_no_findings(self, tmp_path):
         content = (
@@ -333,8 +316,7 @@ class TestAgentMarkdownScanned:
             '```\n'
         )
         _make_agent_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
 
 # ---------------------------------------------------------------------------
@@ -352,8 +334,7 @@ class TestCleanBaseline:
             'Reference: use `.plan/temp/plan_id-output.txt`\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
     def test_bash_fence_plan_temp_no_findings(self, tmp_path):
         content = (
@@ -362,8 +343,7 @@ class TestCleanBaseline:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
     def test_bash_fence_pipe_no_findings(self, tmp_path):
         content = (
@@ -372,10 +352,8 @@ class TestCleanBaseline:
             '```\n'
         )
         _make_skill_md(tmp_path, content)
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])
 
     def test_empty_marketplace_root_no_findings(self, tmp_path):
         # No plan-marshall bundle directory at all
-        findings = analyze_tmp_redirect_in_skills(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_tmp_redirect_in_skills, tmp_path, [])

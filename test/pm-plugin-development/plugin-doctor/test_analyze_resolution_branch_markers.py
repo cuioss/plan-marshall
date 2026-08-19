@@ -20,6 +20,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -64,8 +66,7 @@ class TestCompliantBranch:
             'Record the decision to decision.log and pause execution.\n'
         )
         skill_dir, _ = _make_standards_file(tmp_path, content)
-        findings = analyze_resolution_branch_markers(skill_dir)
-        assert findings == []
+        assert_analyzer_findings(analyze_resolution_branch_markers, skill_dir, [])
 
     def test_mentions_metadata(self, tmp_path: Path) -> None:
         content = (
@@ -74,8 +75,7 @@ class TestCompliantBranch:
             'Write acceptance to the metadata store for audit purposes.\n'
         )
         skill_dir, _ = _make_standards_file(tmp_path, content)
-        findings = analyze_resolution_branch_markers(skill_dir)
-        assert findings == []
+        assert_analyzer_findings(analyze_resolution_branch_markers, skill_dir, [])
 
     def test_mentions_status(self, tmp_path: Path) -> None:
         content = (
@@ -84,8 +84,7 @@ class TestCompliantBranch:
             'Update the task status to deferred and re-schedule.\n'
         )
         skill_dir, _ = _make_standards_file(tmp_path, content)
-        findings = analyze_resolution_branch_markers(skill_dir)
-        assert findings == []
+        assert_analyzer_findings(analyze_resolution_branch_markers, skill_dir, [])
 
     def test_mentions_artifact(self, tmp_path: Path) -> None:
         content = (
@@ -94,8 +93,7 @@ class TestCompliantBranch:
             'Emit an artifact containing the split plan.\n'
         )
         skill_dir, _ = _make_standards_file(tmp_path, content)
-        findings = analyze_resolution_branch_markers(skill_dir)
-        assert findings == []
+        assert_analyzer_findings(analyze_resolution_branch_markers, skill_dir, [])
 
     def test_multi_paragraph_body(self, tmp_path: Path) -> None:
         """Side-effect keyword found in later paragraph — still compliant."""
@@ -107,8 +105,7 @@ class TestCompliantBranch:
             'Finally, write the rejection to work.log for the audit trail.\n'
         )
         skill_dir, _ = _make_standards_file(tmp_path, content)
-        findings = analyze_resolution_branch_markers(skill_dir)
-        assert findings == []
+        assert_analyzer_findings(analyze_resolution_branch_markers, skill_dir, [])
 
 
 # ===========================================================================
@@ -126,10 +123,8 @@ class TestNonCompliantBranch:
             'Pause execution and await further instructions.\n'
         )
         skill_dir, _ = _make_standards_file(tmp_path, content)
-        findings = analyze_resolution_branch_markers(skill_dir)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_resolution_branch_markers, skill_dir, [RULE_ID])
         f = findings[0]
-        assert f['rule_id'] == RULE_ID
         assert f['branch_name'] == 'Hold'
         assert isinstance(f['line'], int)
         assert f['line'] >= 1
@@ -168,8 +163,7 @@ class TestOutOfScope:
             encoding='utf-8',
         )
         # No standards files → no findings
-        findings = analyze_resolution_branch_markers(skill_dir)
-        assert findings == []
+        assert_analyzer_findings(analyze_resolution_branch_markers, skill_dir, [])
 
 
 # ===========================================================================
@@ -189,9 +183,8 @@ class TestMixedCompliance:
             'Record acceptance in decision.log for auditing.\n'
         )
         skill_dir, _ = _make_standards_file(tmp_path, content)
-        findings = analyze_resolution_branch_markers(skill_dir)
         # Only "Hold" should be flagged
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_resolution_branch_markers, skill_dir, [RULE_ID])
         assert findings[0]['branch_name'] == 'Hold'
 
     def test_two_non_compliant_branches(self, tmp_path: Path) -> None:
@@ -203,8 +196,7 @@ class TestMixedCompliance:
             'Discard the request.\n'
         )
         skill_dir, _ = _make_standards_file(tmp_path, content)
-        findings = analyze_resolution_branch_markers(skill_dir)
-        assert len(findings) == 2
+        findings = assert_analyzer_findings(analyze_resolution_branch_markers, skill_dir, [RULE_ID] * 2)
         branch_names = {f['branch_name'] for f in findings}
         assert branch_names == {'Hold', 'Reject'}
 
@@ -227,9 +219,7 @@ class TestNonAllowlistHeading:
             'Pause with a log entry to work.log.\n'
         )
         skill_dir, _ = _make_standards_file(tmp_path, content)
-        findings = analyze_resolution_branch_markers(skill_dir)
-        # Background not on allowlist → ignored; Hold is compliant → no findings
-        assert findings == []
+        assert_analyzer_findings(analyze_resolution_branch_markers, skill_dir, [])
 
 
 # ===========================================================================
@@ -249,20 +239,16 @@ class TestNoResolutionSection:
             'Pause without logging.\n'
         )
         skill_dir, _ = _make_standards_file(tmp_path, content)
-        findings = analyze_resolution_branch_markers(skill_dir)
-        # "Hold" is inside a "## Workflow" section, not "## Resolution"
-        assert findings == []
+        assert_analyzer_findings(analyze_resolution_branch_markers, skill_dir, [])
 
     def test_empty_file(self, tmp_path: Path) -> None:
         skill_dir, _ = _make_standards_file(tmp_path, '')
-        findings = analyze_resolution_branch_markers(skill_dir)
-        assert findings == []
+        assert_analyzer_findings(analyze_resolution_branch_markers, skill_dir, [])
 
     def test_no_standards_directory(self, tmp_path: Path) -> None:
         skill_dir = tmp_path / 'skill-no-standards'
         skill_dir.mkdir()
-        findings = analyze_resolution_branch_markers(skill_dir)
-        assert findings == []
+        assert_analyzer_findings(analyze_resolution_branch_markers, skill_dir, [])
 
 
 # ===========================================================================
@@ -286,6 +272,5 @@ class TestMultipleStandardsFiles:
             '## Resolution\n\n### Skip\n\nSimply move on.\n',
             encoding='utf-8',
         )
-        findings = analyze_resolution_branch_markers(skill_dir)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_resolution_branch_markers, skill_dir, [RULE_ID])
         assert findings[0]['branch_name'] == 'Skip'

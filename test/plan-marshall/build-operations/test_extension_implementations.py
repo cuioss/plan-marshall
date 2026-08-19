@@ -78,7 +78,7 @@ def skill_exists(skill_ref: str) -> bool:
 def create_test_project(build_system: str) -> Path:
     """Create a temporary test project for a given build system.
 
-    Intentionally NOT hoisted to ``test/plan-marshall/manage-architecture/_fixtures.py``
+    Intentionally NOT hoisted to ``test/plan-marshall/manage-architecture/_arch_fixtures.py``
     (D5 in solution_outline.md). This helper shares only its name with the
     ``manage-architecture`` ``create_test_project`` family — the signature
     is ``(build_system: str) -> Path`` (returns a filesystem path seeded

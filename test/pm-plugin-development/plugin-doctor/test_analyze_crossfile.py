@@ -12,14 +12,14 @@ FINDINGS are emitted SOLELY by ``verify_findings(analysis, llm_findings)`` in
 
 This is therefore a verifier-echo test — it calls ``verify_findings()`` with a
 crafted ``analysis`` + ``llm_findings`` pair (authored once in
-``_fixtures.crossfile_verified_findings``) and asserts each rule type lands in
+``_plugin_doctor_fixtures.crossfile_verified_findings``) and asserts each rule type lands in
 ``verified``. It is NOT a duplication-detector test against a scratch tree. Each
 emitted finding is fed through the shared ``record_fired(...)`` tap so the
 suite-coverage meta-test (``test_zero_match_suite_coverage.py``) counts these
 three rules as fired even when run in isolation.
 """
 
-from _fixtures import crossfile_verified_findings, record_fired
+from _plugin_doctor_fixtures import crossfile_verified_findings, record_fired
 
 
 def test_duplication_rule_fires_from_verified_claim():

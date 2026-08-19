@@ -37,10 +37,9 @@ test-session scope.
 from pathlib import Path
 
 import pytest
+from _plugin_doctor_fixtures import assert_analyzer_findings
 
-from conftest import get_script_path, load_script_module
-
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+from conftest import PROJECT_ROOT, get_script_path, load_script_module
 
 
 def _load_module(name: str, filename: str):
@@ -188,9 +187,9 @@ def test_build_subparser_tree_nested_three_levels(tmp_path):
 def test_build_subparser_tree_registers_bare_add_parser_calls(tmp_path):
     """Bare ``subparsers.add_parser('verb', ...)`` calls must register a verb.
 
-    Regression for lesson 2026-05-02-10-001: the analyzer historically
-    only walked ``ast.Assign`` statements, so a bare-Expr ``add_parser``
-    call (whose return value is discarded) was invisible to the verb-chain
+    The analyzer walks bare-Expr statements as well as ``ast.Assign``: an
+    ``add_parser`` call whose return value is discarded is otherwise
+    invisible to the verb-chain
     scanner. Mixed-form scripts must register every verb regardless of
     whether the call's result was bound to a variable.
 
@@ -232,19 +231,16 @@ def test_build_subparser_tree_real_architecture_script_includes_bare_verbs():
     ``marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/
     architecture.py`` registers ``derived`` and ``info`` via the bare
     ``subparsers.add_parser('verb', ...)`` shape (no assignment target).
-    Per lesson 2026-05-02-10-001, both verbs must appear in the tree
-    returned by ``build_subparser_tree`` — historically they were
-    silently dropped.
+    Both verbs must appear in the tree returned by ``build_subparser_tree``;
+    a walker that only visits assignments drops them silently.
 
-    This test also acts as a guard against future refactors of
-    ``architecture.py`` that might switch to the assigned form for
-    these specific verbs and accidentally make the regression test
-    above pass for the wrong reason.
+    This anchors the synthetic fixture above to a live instance: it fails if
+    ``architecture.py`` stops registering these verbs in the bare form, so the
+    fixture can never go on passing against a shape the tree no longer has.
     """
-    # locate the real script via the project layout. The test
-    # file lives at test/pm-plugin-development/plugin-doctor/, so four
-    # ``parent`` hops reach the project root (mirroring ``PROJECT_ROOT``
-    # at module top).
+    # Locate the real script from ``PROJECT_ROOT``, which conftest resolves —
+    # counting ``parent`` hops from this file would rebind the moment the module
+    # moves.
     script_path = (
         PROJECT_ROOT
         / 'marketplace'
@@ -479,9 +475,7 @@ def test_analyze_happy_path_no_findings(tmp_path):
         )
     )
 
-    findings = analyze_verb_chains(caller_skill)
-
-    assert findings == []
+    assert_analyzer_findings(analyze_verb_chains, caller_skill, [])
 
 
 def test_analyze_unknown_top_level_verb(tmp_path):
@@ -499,11 +493,8 @@ def test_analyze_unknown_top_level_verb(tmp_path):
         _bash_fence('python3 .plan/execute-script.py plan-marshall:manage-status:manage-status bogusverb --flag')
     )
 
-    findings = analyze_verb_chains(caller_skill)
-
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_verb_chains, caller_skill, [RULE_ID])
     finding = findings[0]
-    assert finding['rule_id'] == RULE_ID
     assert finding['script_notation'] == ('plan-marshall:manage-status:manage-status')
     assert finding['verb_chain'] == ['bogusverb']
     assert finding['first_unknown_segment'] == 'bogusverb'
@@ -531,11 +522,8 @@ def test_analyze_unknown_nested_verb_driving_lesson(tmp_path):
         )
     )
 
-    findings = analyze_verb_chains(caller_skill)
-
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_verb_chains, caller_skill, [RULE_ID])
     finding = findings[0]
-    assert finding['rule_id'] == RULE_ID
     assert finding['verb_chain'] == ['request', 'clarify']
     assert finding['first_unknown_segment'] == 'clarify'
 
@@ -558,10 +546,7 @@ def test_analyze_frontmatter_disable_suppresses_whole_file(tmp_path):
     )
 
     # Act
-    findings = analyze_verb_chains(caller_skill)
-
-    # Assert
-    assert findings == []
+    assert_analyzer_findings(analyze_verb_chains, caller_skill, [])
 
 
 def test_analyze_frontmatter_disable_block_list_form(tmp_path):
@@ -583,10 +568,7 @@ def test_analyze_frontmatter_disable_block_list_form(tmp_path):
     )
 
     # Act
-    findings = analyze_verb_chains(caller_skill)
-
-    # Assert
-    assert findings == []
+    assert_analyzer_findings(analyze_verb_chains, caller_skill, [])
 
 
 def test_analyze_frontmatter_disable_for_other_rule_does_not_suppress(tmp_path):
@@ -607,11 +589,8 @@ def test_analyze_frontmatter_disable_for_other_rule_does_not_suppress(tmp_path):
     )
 
     # Act
-    findings = analyze_verb_chains(caller_skill)
-
     # Assert
-    assert len(findings) == 1
-    assert findings[0]['rule_id'] == RULE_ID
+    findings = assert_analyzer_findings(analyze_verb_chains, caller_skill, [RULE_ID])
     assert findings[0]['first_unknown_segment'] == 'clarify'
 
 
@@ -634,11 +613,8 @@ def test_analyze_retired_ignore_marker_no_longer_suppresses(tmp_path):
         )
     )
 
-    findings = analyze_verb_chains(caller_skill)
-
     # Assert
-    assert len(findings) == 1
-    assert findings[0]['rule_id'] == RULE_ID
+    findings = assert_analyzer_findings(analyze_verb_chains, caller_skill, [RULE_ID])
     assert findings[0]['first_unknown_segment'] == 'clarify'
 
 
@@ -657,9 +633,7 @@ def test_analyze_skips_non_bash_fence(tmp_path):
         '```\n'
     )
 
-    findings = analyze_verb_chains(caller_skill)
-
-    assert findings == []
+    assert_analyzer_findings(analyze_verb_chains, caller_skill, [])
 
 
 def test_analyze_multiline_invocation_notation_on_head_line(tmp_path):
@@ -683,9 +657,7 @@ def test_analyze_multiline_invocation_notation_on_head_line(tmp_path):
         )
     )
 
-    findings = analyze_verb_chains(caller_skill)
-
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_verb_chains, caller_skill, [RULE_ID])
     finding = findings[0]
     assert finding['verb_chain'] == ['request', 'clarify']
     assert finding['first_unknown_segment'] == 'clarify'
@@ -702,9 +674,7 @@ def test_analyze_nested_three_levels_happy_path(tmp_path):
         _bash_fence('python3 .plan/execute-script.py pm:deep-skill:deep-script alpha beta gamma --flag')
     )
 
-    findings = analyze_verb_chains(caller_skill)
-
-    assert findings == []
+    assert_analyzer_findings(analyze_verb_chains, caller_skill, [])
 
 
 def test_analyze_nested_three_levels_unknown_leaf(tmp_path):
@@ -718,9 +688,7 @@ def test_analyze_nested_three_levels_unknown_leaf(tmp_path):
         _bash_fence('python3 .plan/execute-script.py pm:deep-skill:deep-script alpha beta stale')
     )
 
-    findings = analyze_verb_chains(caller_skill)
-
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_verb_chains, caller_skill, [RULE_ID])
     finding = findings[0]
     assert finding['verb_chain'] == ['alpha', 'beta', 'stale']
     assert finding['first_unknown_segment'] == 'stale'
@@ -779,9 +747,7 @@ def test_analyze_skips_unresolvable_notation(tmp_path):
         _bash_fence('python3 .plan/execute-script.py ghost-bundle:ghost-skill:ghost-script request clarify')
     )
 
-    findings = analyze_verb_chains(caller_skill)
-
-    assert findings == []
+    assert_analyzer_findings(analyze_verb_chains, caller_skill, [])
 
 
 def test_analyze_missing_marketplace_root_returns_empty(tmp_path):
@@ -790,9 +756,7 @@ def test_analyze_missing_marketplace_root_returns_empty(tmp_path):
     orphan_skill.mkdir()
     (orphan_skill / 'SKILL.md').write_text(_bash_fence('python3 .plan/execute-script.py a:b:c verb'))
 
-    findings = analyze_verb_chains(orphan_skill)
-
-    assert findings == []
+    assert_analyzer_findings(analyze_verb_chains, orphan_skill, [])
 
 
 def test_analyze_no_markdown_targets(tmp_path):
@@ -801,9 +765,7 @@ def test_analyze_no_markdown_targets(tmp_path):
     caller_skill = bundles / 'pm' / 'skills' / 'empty-skill'
     caller_skill.mkdir(parents=True)
 
-    findings = analyze_verb_chains(caller_skill)
-
-    assert findings == []
+    assert_analyzer_findings(analyze_verb_chains, caller_skill, [])
 
 
 # =============================================================================
@@ -822,9 +784,7 @@ def test_finding_shape_contract(tmp_path):
         _bash_fence('python3 .plan/execute-script.py pm:target-skill:target-script request clarify')
     )
 
-    findings = analyze_verb_chains(caller_skill)
-
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_verb_chains, caller_skill, [RULE_ID])
     finding = findings[0]
     # Migrated to the uniform ``Finding`` record: the common fields
     # (``type``/``severity``/``fixable``/``rule_id``/``description``) come from
@@ -880,9 +840,7 @@ def test_finding_is_byte_identical_to_pre_refactor_baseline(tmp_path):
         _bash_fence('python3 .plan/execute-script.py pm:target-skill:target-script request clarify')
     )
 
-    findings = analyze_verb_chains(caller_skill)
-
-    assert len(findings) == 1
+    findings = assert_analyzer_findings(analyze_verb_chains, caller_skill, [RULE_ID])
     notation = 'pm:target-skill:target-script'
     expected = {
         'type': 'prose-verb-chain-consistency',

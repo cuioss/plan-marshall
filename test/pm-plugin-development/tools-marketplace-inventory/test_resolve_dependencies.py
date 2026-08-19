@@ -31,7 +31,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import load_script_module
+from conftest import PROJECT_ROOT, load_script_module
 
 
 def _load_module(name, filename):
@@ -60,9 +60,9 @@ SKILL_SUBDOC_DIRS = _dep_index_mod.SKILL_SUBDOC_DIRS
 SkillFile = _dep_index_mod.SkillFile
 AstCache = _dep_index_mod.AstCache
 
-# Repository root, derived from this file's own location
-# (``test/pm-plugin-development/tools-marketplace-inventory/`` → three levels up).
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+# Repository root, taken from conftest rather than counted from this file's
+# own depth, so moving the module cannot silently repoint it.
+_REPO_ROOT = PROJECT_ROOT
 _BUNDLES_ROOT = _REPO_ROOT / 'marketplace' / 'bundles'
 
 cmd_deps = _resolve_mod.cmd_deps

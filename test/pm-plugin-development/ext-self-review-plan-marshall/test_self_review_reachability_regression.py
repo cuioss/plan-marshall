@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""End-to-end regression pinning the PR #1013 unreachable-guard defect.
+"""End-to-end regression pinning the unreachable-guard defect.
 
 This module is deliberately NOT a second copy of the ``_detect_scan_derived_keys``
 unit cases (those live in ``test_self_review.py``). It exercises the **composed
 surface path** — the real ``self_review.py surface`` subcommand over a git
-fixture — and pins the historical defect that motivated the check:
+fixture — and pins the defect shape the check exists for:
 
-* **Case (a)** — the #1013 pre-fix *scanning* form of ``_split_bundle_version``,
+* **Case (a)** — the pre-fix *scanning* form of ``_split_bundle_version``,
   together with the ``_check_emitted_path_provenance`` guard it feeds, IS
   surfaced as a ``scan_derived_keys`` candidate. The same case asserts the
   complementary negative as a REAL assertion (never a docstring claim): **none**
@@ -40,10 +40,10 @@ from _self_review_patterns import CANDIDATE_LISTS
 from conftest import get_script_path, run_script
 
 # =============================================================================
-# The #1013 forms, verbatim from standards/unreachable-guard-detection.md § 4
+# The two forms, verbatim from standards/unreachable-guard-detection.md § 4
 # =============================================================================
 
-#: The version-directory pattern #1013 added. Reproduced verbatim from § 2(c).
+#: The version-directory pattern. Reproduced verbatim from § 2(c).
 _VERSION_DIR_NAME_RE = re.compile(r'^\d+\.\d+')
 
 
@@ -102,7 +102,7 @@ _ANCESTOR_PATHS = (
 # Candidate-list vocabulary
 # =============================================================================
 
-#: The candidate list this plan added. Everything else predates it.
+#: The candidate list this check contributes; every other list is independent of it.
 _NEW_LIST = 'scan_derived_keys'
 
 #: The twenty-one candidate lists OTHER than the one under test. The complementary
@@ -274,7 +274,7 @@ def _list_entries(data: dict, key: str) -> list:
 
 
 class TestPreFixScanningFormIsSurfaced:
-    """Request item D4(a): the #1013 pre-fix form reaches a true positive."""
+    """The pre-fix form reaches a true positive."""
 
     def test_pre_fix_form_surfaces_a_scan_derived_key_candidate(self, tmp_path):
         data = _surface(_fixture_repo(tmp_path, _PRE_FIX_SOURCE))
@@ -303,7 +303,7 @@ class TestPreFixScanningFormIsSurfaced:
         )
 
     def test_guard_in_the_same_diff_sets_key_consumed(self, tmp_path):
-        # #1013 shipped the consuming guard in the SAME commit, so the Tier-2
+        # The consuming guard ships in the SAME commit, so the Tier-2
         # identity-consumption flag must resolve true here. (Its false value is
         # a narrowing signal, never a suppression — see the gate doc § 1.)
         data = _surface(_fixture_repo(tmp_path, _PRE_FIX_SOURCE))

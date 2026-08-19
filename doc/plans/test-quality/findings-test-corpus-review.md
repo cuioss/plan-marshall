@@ -274,7 +274,7 @@ than average and several are load-bearing:
 * **Matched positive/negative control pairs** under `test/plan-marshall/script-shared/`, pinning the
   autouse neutralization fixtures, with module docstrings recording that each arm is evidence only in
   contrast with the other.
-* **`test/pm-plugin-development/plugin-doctor/_fixtures.py`** — a shared fixture corpus plus an
+* **`test/pm-plugin-development/plugin-doctor/_plugin_doctor_fixtures.py`** — a shared fixture corpus plus an
   `assert_analyzer_findings` scaffold that makes per-rule modules assert *which* rules fired rather
   than how many findings came back. This is the architecture the other five slices are converging
   toward; it already exists here and works.

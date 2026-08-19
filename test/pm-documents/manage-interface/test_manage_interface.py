@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import get_script_path, load_script_module, run_script
+from conftest import get_script_path, load_script_module, parse_ns, run_script
 
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('pm-documents', 'manage-interface', 'manage-interface.py')
@@ -19,6 +19,36 @@ SCRIPT_PATH = get_script_path('pm-documents', 'manage-interface', 'manage-interf
 _mod = load_script_module('pm-documents', 'manage-interface', 'manage-interface.py', 'manage_interface')
 
 cmd_list = _mod.cmd_list
+
+# Argument namespaces come from the script's OWN parser, so each carries every
+# default the real CLI applies — a hand-built Namespace carries only the keys its
+# author remembered. Parsed once at module scope: parse_ns re-executes the script
+# module on every call.
+_CREATE_NS = parse_ns(
+    'pm-documents', 'manage-interface', 'manage-interface.py',
+    'create', '--title', 'placeholder', '--type', 'REST_API', register=False,
+)
+_LIST_NS = parse_ns(
+    'pm-documents', 'manage-interface', 'manage-interface.py',
+    'list', register=False,
+)
+_DELETE_NS = parse_ns(
+    'pm-documents', 'manage-interface', 'manage-interface.py',
+    'delete', '--number', '1', '--force', register=False,
+)
+_READ_NS = parse_ns(
+    'pm-documents', 'manage-interface', 'manage-interface.py',
+    'read', '--number', '1', register=False,
+)
+_NEXT_NUMBER_NS = parse_ns(
+    'pm-documents', 'manage-interface', 'manage-interface.py',
+    'next-number', register=False,
+)
+
+
+def _ns(template: Namespace, **overrides) -> Namespace:
+    """A parser-produced namespace with this test's values overlaid."""
+    return Namespace(**{**vars(template), **overrides})
 cmd_create = _mod.cmd_create
 cmd_read = _mod.cmd_read
 cmd_update = _mod.cmd_update
@@ -43,14 +73,14 @@ def interface_dir(tmp_path, monkeypatch):
 
 
 def test_next_number_returns_one_for_empty_dir(interface_dir):
-    result = cmd_next_number(Namespace(command='next-number'))
+    result = cmd_next_number(_ns(_NEXT_NUMBER_NS, command='next-number'))
 
     assert result['status'] == 'success'
     assert result['next_number'] == 1
 
 
 def test_create_interface_writes_numbered_file(interface_dir):
-    result = cmd_create(Namespace(command='create', title='User Service API', type='REST_API'))
+    result = cmd_create(_ns(_CREATE_NS, command='create', title='User Service API', type='REST_API'))
 
     assert result['status'] == 'success'
     assert result['number'] == 1
@@ -64,64 +94,64 @@ def test_create_interface_writes_numbered_file(interface_dir):
 
 
 def test_create_multiple_interfaces_increments_number(interface_dir):
-    cmd_create(Namespace(command='create', title='First', type='REST_API'))
-    cmd_create(Namespace(command='create', title='Second', type='Event'))
+    cmd_create(_ns(_CREATE_NS, command='create', title='First', type='REST_API'))
+    cmd_create(_ns(_CREATE_NS, command='create', title='Second', type='Event'))
 
-    result = cmd_create(Namespace(command='create', title='Third', type='gRPC'))
+    result = cmd_create(_ns(_CREATE_NS, command='create', title='Third', type='gRPC'))
 
     assert result['number'] == 3
 
 
 def test_list_returns_all_interfaces(interface_dir):
-    cmd_create(Namespace(command='create', title='API One', type='REST_API'))
-    cmd_create(Namespace(command='create', title='API Two', type='Event'))
+    cmd_create(_ns(_CREATE_NS, command='create', title='API One', type='REST_API'))
+    cmd_create(_ns(_CREATE_NS, command='create', title='API Two', type='Event'))
 
-    result = cmd_list(Namespace(command='list', type=None))
+    result = cmd_list(_ns(_LIST_NS, command='list', type=None))
 
     assert result['status'] == 'success'
     assert result['count'] == 2
 
 
 def test_list_filters_by_type(interface_dir):
-    cmd_create(Namespace(command='create', title='REST One', type='REST_API'))
-    cmd_create(Namespace(command='create', title='Event One', type='Event'))
-    cmd_create(Namespace(command='create', title='REST Two', type='REST_API'))
+    cmd_create(_ns(_CREATE_NS, command='create', title='REST One', type='REST_API'))
+    cmd_create(_ns(_CREATE_NS, command='create', title='Event One', type='Event'))
+    cmd_create(_ns(_CREATE_NS, command='create', title='REST Two', type='REST_API'))
 
-    result = cmd_list(Namespace(command='list', type='REST_API'))
+    result = cmd_list(_ns(_LIST_NS, command='list', type='REST_API'))
 
     assert result['status'] == 'success'
     assert result['count'] == 2
 
 
 def test_read_returns_interface_content(interface_dir):
-    cmd_create(Namespace(command='create', title='Test Read', type='Database'))
+    cmd_create(_ns(_CREATE_NS, command='create', title='Test Read', type='Database'))
 
-    result = cmd_read(Namespace(command='read', number=1))
+    result = cmd_read(_ns(_READ_NS, command='read', number=1))
 
     assert result['status'] == 'success'
     assert 'Test Read' in result['content']
 
 
 def test_read_missing_interface_reports_not_found(interface_dir):
-    result = cmd_read(Namespace(command='read', number=999))
+    result = cmd_read(_ns(_READ_NS, command='read', number=999))
 
     assert result['status'] == 'error'
     assert 'not found' in result['message'].lower()
 
 
 def test_delete_without_force_is_rejected(interface_dir):
-    cmd_create(Namespace(command='create', title='Delete Test', type='File'))
+    cmd_create(_ns(_CREATE_NS, command='create', title='Delete Test', type='File'))
 
-    result = cmd_delete(Namespace(command='delete', number=1, force=False))
+    result = cmd_delete(_ns(_DELETE_NS, command='delete', number=1, force=False))
 
     assert result['status'] == 'error'
     assert '--force' in result['message']
 
 
 def test_delete_with_force_removes_file(interface_dir):
-    cmd_create(Namespace(command='create', title='Delete Me', type='Other'))
+    cmd_create(_ns(_CREATE_NS, command='create', title='Delete Me', type='Other'))
 
-    result = cmd_delete(Namespace(command='delete', number=1, force=True))
+    result = cmd_delete(_ns(_DELETE_NS, command='delete', number=1, force=True))
 
     assert result['deleted']
     assert list(interface_dir.glob('001-*.adoc')) == []
@@ -129,13 +159,13 @@ def test_delete_with_force_removes_file(interface_dir):
 
 @pytest.mark.parametrize('interface_type', VALID_INTERFACE_TYPES)
 def test_create_accepts_valid_type(interface_dir, interface_type):
-    result = cmd_create(Namespace(command='create', title=f'Test {interface_type}', type=interface_type))
+    result = cmd_create(_ns(_CREATE_NS, command='create', title=f'Test {interface_type}', type=interface_type))
 
     assert result['status'] == 'success'
 
 
 def test_create_sanitizes_special_characters_in_filename(interface_dir):
-    result = cmd_create(Namespace(command='create', title='API/Service with Special!', type='REST_API'))
+    result = cmd_create(_ns(_CREATE_NS, command='create', title='API/Service with Special!', type='REST_API'))
 
     assert result['status'] == 'success'
     filename = Path(result['path']).name

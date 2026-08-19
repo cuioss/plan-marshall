@@ -22,6 +22,8 @@ from pathlib import Path
 
 from conftest import load_script_module
 
+from _plugin_doctor_fixtures import assert_analyzer_findings
+
 
 def _load_module(name: str, filename: str):
     return load_script_module('pm-plugin-development', 'plugin-doctor', filename, name)
@@ -82,8 +84,7 @@ class TestRoleFieldPresent:
             '\n'
             '# Quality Check\n',
         )
-        findings = analyze_role_field(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_role_field, tmp_path, [])
 
     def test_role_field_with_double_quoted_value_accepted(self, tmp_path: Path) -> None:
         """Quoted YAML scalars are accepted (``role: "quality-gate"``)."""
@@ -95,8 +96,7 @@ class TestRoleFieldPresent:
             'role: "quality-gate"\n'
             '---\n',
         )
-        findings = analyze_role_field(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_role_field, tmp_path, [])
 
     def test_role_field_with_single_quoted_value_accepted(self, tmp_path: Path) -> None:
         """Single-quoted YAML scalars are accepted (``role: 'module-tests'``)."""
@@ -110,8 +110,7 @@ class TestRoleFieldPresent:
             "role: 'module-tests'\n"
             '---\n',
         )
-        findings = analyze_role_field(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_role_field, tmp_path, [])
 
     def test_helper_doc_without_default_name_prefix_is_not_required_to_declare_role(
         self, tmp_path: Path
@@ -136,8 +135,7 @@ class TestRoleFieldPresent:
             '\n'
             '# Operations\n',
         )
-        findings = analyze_role_field(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_role_field, tmp_path, [])
 
 
 # ===========================================================================
@@ -160,10 +158,8 @@ class TestRoleFieldMissing:
             '\n'
             '# Quality Check\n',
         )
-        findings = analyze_role_field(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_role_field, tmp_path, [RULE_ID])
         finding = findings[0]
-        assert finding['rule_id'] == RULE_ID
         assert finding['type'] == FINDING_TYPE
         assert finding['severity'] == 'error'
         assert finding['file'] == str(path)
@@ -183,8 +179,7 @@ class TestRoleFieldMissing:
         """
         scoped = _make_scoped_dir(tmp_path)
         _write(scoped / 'orphan.md', '# Just a heading, no frontmatter\n')
-        findings = analyze_role_field(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_role_field, tmp_path, [])
 
     def test_multiple_missing_files_produce_one_finding_each(self, tmp_path: Path) -> None:
         scoped = _make_scoped_dir(tmp_path)
@@ -201,8 +196,7 @@ class TestRoleFieldMissing:
             scoped / 'c.md',
             '---\nname: default:c\ndescription: c step\norder: 30\nrole: quality-gate\n---\n',
         )
-        findings = analyze_role_field(tmp_path)
-        assert len(findings) == 2
+        findings = assert_analyzer_findings(analyze_role_field, tmp_path, [RULE_ID] * 2)
         snippets = {f['snippet'] for f in findings}
         assert snippets == {'a', 'b'}
 
@@ -226,8 +220,7 @@ class TestRoleFieldEmpty:
             'role:\n'  # bare key with empty value
             '---\n',
         )
-        findings = analyze_role_field(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_role_field, tmp_path, [RULE_ID])
         assert findings[0]['file'] == str(path)
 
     def test_whitespace_only_role_value_produces_finding(self, tmp_path: Path) -> None:
@@ -241,8 +234,7 @@ class TestRoleFieldEmpty:
             'role:    \n'  # whitespace-only after the colon
             '---\n',
         )
-        findings = analyze_role_field(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_role_field, tmp_path, [RULE_ID])
         assert findings[0]['file'] == str(path)
 
     def test_empty_quoted_role_value_produces_finding(self, tmp_path: Path) -> None:
@@ -256,8 +248,7 @@ class TestRoleFieldEmpty:
             scoped / 'b.md',
             '---\nname: default:b\ndescription: b\norder: 20\nrole: \'\'\n---\n',
         )
-        findings = analyze_role_field(tmp_path)
-        assert len(findings) == 2
+        assert_analyzer_findings(analyze_role_field, tmp_path, [RULE_ID] * 2)
 
 
 # ===========================================================================
@@ -293,8 +284,7 @@ class TestCanonicalVerifyExemption:
             '\n'
             '# Canonical Verify\n',
         )
-        findings = analyze_role_field(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_role_field, tmp_path, [])
 
     def test_non_string_name_does_not_crash(self, tmp_path: Path) -> None:
         """A malformed frontmatter with a non-string ``name`` (YAML int/null) must NOT
@@ -329,8 +319,7 @@ class TestCanonicalVerifyExemption:
             'order: 11\n'
             '---\n',
         )
-        findings = analyze_role_field(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_role_field, tmp_path, [])
 
     def test_legacy_role_less_step_still_fires_alongside_exempt_canonical_verify(
         self, tmp_path: Path
@@ -360,8 +349,7 @@ class TestCanonicalVerifyExemption:
             'order: 20\n'
             '---\n',
         )
-        findings = analyze_role_field(tmp_path)
-        assert len(findings) == 1
+        findings = assert_analyzer_findings(analyze_role_field, tmp_path, [RULE_ID])
         assert findings[0]['file'] == str(legacy)
         assert findings[0]['snippet'] == 'quality_check'
 
@@ -394,8 +382,7 @@ class TestPathScope:
         sibling.mkdir(parents=True)
         _write(sibling / 'push.md', '---\nname: push\n---\n')
 
-        findings = analyze_role_field(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_role_field, tmp_path, [])
 
     def test_file_in_other_bundle_is_not_scanned(self, tmp_path: Path) -> None:
         """A markdown file in a different bundle is silently skipped."""
@@ -415,11 +402,9 @@ class TestPathScope:
         other.mkdir(parents=True)
         _write(other / 'rule-catalog.md', '---\nname: rule-catalog\n---\n')
 
-        findings = analyze_role_field(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_role_field, tmp_path, [])
 
     def test_missing_scoped_directory_returns_empty_list(self, tmp_path: Path) -> None:
         """When phase-5-execute/standards/ does not exist, return empty findings."""
         # No directory created at all.
-        findings = analyze_role_field(tmp_path)
-        assert findings == []
+        assert_analyzer_findings(analyze_role_field, tmp_path, [])

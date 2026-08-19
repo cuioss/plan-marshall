@@ -105,8 +105,8 @@ def test_profile_resolves_focused_skill(bundle, domain_key, profile, expected_sk
 # phase-4-plan's closed task-profile enum ({implementation, module_testing,
 # verification}) looks up skills_by_profile.implementation for every
 # deliverable, so a documentation module whose extension declares only core and
-# documentation profiles resolves an EMPTY skill set for doc tasks (lesson
-# 2026-07-16-17-011 gap 1). The alias folds the core doc skills into
+# documentation profiles resolves an EMPTY skill set for doc tasks. The alias
+# folds the core doc skills into
 # skills_by_profile.implementation via _build_applicable_result's core-merge.
 # =============================================================================
 
