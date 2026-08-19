@@ -76,6 +76,8 @@ either is handed to a session:
    that names no passage. Any other hit is a second copy of the split, and a second copy is what goes
    stale.
 
-The same rule is why no count of passages or sites appears in either plan: every falsehood this
-boundary produced was a stale numeral. Counts are re-derived from `010 gaps.md` § Where at the moment
-of the claim, never written down here or there.
+The same rule is why **neither plan counts the passages or sites of this shared document**: every
+falsehood this boundary produced was a stale numeral. That set is re-derived from `010 gaps.md`
+§ Where at the moment of the claim, and written down neither here nor there. The rule is scoped to
+this document — a count elsewhere in a plan is fine where it names its members in the same breath,
+so a reader can check it without leaving the sentence.
