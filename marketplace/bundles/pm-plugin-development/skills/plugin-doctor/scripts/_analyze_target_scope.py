@@ -18,10 +18,14 @@ What is flagged
 - **Empty declaration** — ``targets: []`` or a ``targets:`` key with no items.
   A component that ships nowhere is an authoring error; omitting the field is
   how an author says "every target".
-- **Plain scalar continued across lines** — one YAML value the build reads
-  from one line only, so accepting it would silently narrow the scope.
-- **YAML block scalar** (``>``/``|``) — a value the build does not read at
-  all, reported under its own name rather than as one of the above.
+- **A value spanning more than one line** — the build reads a value from one
+  physical line, so accepting one would silently narrow the scope to whatever
+  fitted on that line. This is ONE condition; it is reported under three
+  reasons because three YAML constructs produce it (``targets_multiline_scalar``
+  for a plain scalar, ``targets_quoted_scalar`` for a quoted one, and
+  ``targets_block_scalar`` for a ``>``/``|`` block scalar), and naming the
+  wrong construct sends the author looking for a defect that is not in their
+  file. Which name is chosen is a diagnosis made after the decision to flag.
 
 What is NOT flagged
 -------------------
@@ -63,6 +67,7 @@ Public API
 from __future__ import annotations
 
 import re
+import textwrap
 from pathlib import Path
 
 from _doctor_shared import Finding
@@ -78,18 +83,34 @@ RULE_DESCRIPTOR = RuleDescriptor(
 )
 RULE_NAME = 'analyze_target_scope'
 
-#: Sentinel token list marking a plain scalar continued across lines. It is
-#: not a target name and cannot collide with one — the build rejects this
-#: shape outright, and the rule reports it rather than reading line one and
-#: silently narrowing the scope.
-_MULTILINE_SCALAR = ['\x00multiline-plain-scalar']
+#: The three YAML constructs that can produce a value spanning more than one
+#: line. Naming them is a DIAGNOSIS, never a decision — see
+#: :func:`_multiline_shape`.
+_SHAPE_BLOCK_SCALAR = 'block-scalar'
+_SHAPE_QUOTED_SCALAR = 'quoted-scalar'
+_SHAPE_PLAIN_SCALAR = 'plain-scalar'
 
-#: Sentinel for a YAML block-scalar value (``>``/``|``), reported separately
-#: so the finding names the construct the author wrote.
-_BLOCK_SCALAR = ['\x00block-scalar']
+#: One sentinel token list per shape. A sentinel is compared by IDENTITY, so
+#: its string content is decoration: a component that literally declares
+#: ``targets: ["\x00block-scalar"]`` is an unknown target name, not a block
+#: scalar. Each list is a distinct object, which is what makes that true.
+_MULTILINE_SENTINELS: dict[str, list[str]] = {
+    _SHAPE_BLOCK_SCALAR: ['\x00block-scalar'],
+    _SHAPE_QUOTED_SCALAR: ['\x00quoted-scalar'],
+    _SHAPE_PLAIN_SCALAR: ['\x00multiline-plain-scalar'],
+}
 
-#: YAML block-scalar indicators — see ``component_targets``.
-_BLOCK_SCALAR_INDICATORS = frozenset({'>', '>-', '>+', '|', '|-', '|+'})
+#: A whole YAML block-scalar header — see ``component_targets``. Matching a
+#: fixed set of the six chomping spellings instead misdiagnosed every header
+#: carrying an indentation indicator (``|2``, ``>3-``).
+_BLOCK_SCALAR_HEADER_RE = re.compile(r'^[>|](?:[0-9][-+]?|[-+][0-9]?)?$')
+
+#: A frontmatter fence line: three hyphens, then only spaces or tabs — see
+#: ``component_targets``. ``_dep_detection.extract_frontmatter`` in this same
+#: skill already accepts a space-suffixed fence, so refusing it here made two
+#: parsers in one tree disagree about whether a file has frontmatter at all.
+_OPEN_FENCE_RE = re.compile(r'^---[ \t]*\n')
+_CLOSE_FENCE_RE = re.compile(r'\n---[ \t]*(?:\n|$)')
 
 #: Frontmatter field under inspection.
 TARGET_SCOPE_FIELD = 'targets'
@@ -121,13 +142,22 @@ _DESCRIPTION_UNKNOWN = (
 
 _DESCRIPTION_MULTILINE = (
     'component `targets:` frontmatter is a plain scalar continued across lines. That is one '
-    'YAML value spanning several lines, and the build reads a value from one line only, so '
-    'the declared scope would be silently narrowed rather than read as written. Write the list explicitly — `targets: [a, b]` or a `- ` block.'
+    'YAML value spanning several lines, and the build reads a value from one physical line, '
+    'so the declared scope would be silently narrowed rather than read as written. '
+    'Write the list explicitly — `targets: [a, b]` or a `- ` block.'
 )
 
 _DESCRIPTION_BLOCK_SCALAR = (
-    'component `targets:` frontmatter uses a YAML block scalar (`>` or `|`). The build does '
-    'not read block scalars, so it cannot tell what was declared and rejects the component. '
+    'component `targets:` frontmatter uses a YAML block scalar (`>` or `|`), whose value is '
+    'the indented lines beneath it. The build reads a value from one physical line, so it '
+    'would narrow the declared scope to whatever fitted on the first. '
+    'Write the list explicitly — `targets: [a, b]` or a `- ` block.'
+)
+
+_DESCRIPTION_QUOTED_SCALAR = (
+    'component `targets:` frontmatter is a quoted scalar continued across lines. That is one '
+    'YAML value spanning several lines, and the build reads a value from one physical line, '
+    'so the declared scope would be silently narrowed rather than read as written. '
     'Write the list explicitly — `targets: [a, b]` or a `- ` block.'
 )
 
@@ -136,23 +166,34 @@ _DESCRIPTION_EMPTY = (
     'to no target is an authoring error. Omit the field to ship to every target.'
 )
 
+#: Description and reason code per multi-line shape. One table, so a shape
+#: cannot be added to the parser without a finding to report it.
+_MULTILINE_FINDING: dict[str, tuple[str, str]] = {
+    _SHAPE_BLOCK_SCALAR: (_DESCRIPTION_BLOCK_SCALAR, 'targets_block_scalar'),
+    _SHAPE_QUOTED_SCALAR: (_DESCRIPTION_QUOTED_SCALAR, 'targets_quoted_scalar'),
+    _SHAPE_PLAIN_SCALAR: (_DESCRIPTION_MULTILINE, 'targets_multiline_scalar'),
+}
+
 
 def _frontmatter_block(text: str) -> str | None:
     """Return the leading ``---``-fenced block's inner text, or ``None``.
 
     A UTF-8 BOM is stripped first so a BOM'd file does not read as having no
-    frontmatter at all. The closing fence is matched as a whole ``---`` line,
-    so a value that itself contains three hyphens does not truncate the block.
+    frontmatter at all. Each fence is matched as a whole LINE, so a value that
+    itself contains three hyphens does not truncate the block, and trailing
+    spaces or tabs on a fence are accepted \u2014 see :data:`_OPEN_FENCE_RE`.
     """
     text = text.lstrip('\ufeff')
-    if not text.startswith('---\n'):
+    open_fence = _OPEN_FENCE_RE.match(text)
+    if open_fence is None:
         return None
-    end = text.find('\n---\n', 4)
-    if end != -1:
-        return text[4:end]
-    if text.endswith('\n---'):
-        return text[4: len(text) - len('\n---')]
-    return None
+    start = open_fence.end()
+    # From start - 1, so the newline ending the opening fence can serve as
+    # the newline opening the closing one \u2014 i.e. an empty frontmatter block.
+    close_fence = _CLOSE_FENCE_RE.search(text, start - 1)
+    if close_fence is None:
+        return None
+    return text[start:close_fence.start()]
 
 
 def _strip_comment(value: str) -> str:
@@ -267,18 +308,40 @@ def _has_continuation(rest: list[str]) -> bool:
     return False
 
 
+def _multiline_shape(value: str) -> str:
+    """Name the YAML construct a flagged multi-line value is written in.
+
+    Mirrors ``component_targets._multiline_shape``. Diagnosis only: the caller
+    has already decided to flag, so a misclassification changes the reason
+    code and the sentence, never whether the component is reported.
+    """
+    if _BLOCK_SCALAR_HEADER_RE.match(_strip_comment(value)):
+        return _SHAPE_BLOCK_SCALAR
+    if value[:1] in {'"', "'"} and value.count(value[0]) < 2:
+        return _SHAPE_QUOTED_SCALAR
+    return _SHAPE_PLAIN_SCALAR
+
+
 def declared_targets(text: str) -> tuple[list[str], int] | None:
     """Return ``(tokens, line_number)`` for a top-level ``targets:`` declaration.
 
     ``None`` means the field is absent, which is the correct default. An empty
-    token list means the field is present but names nothing. Only a TOP-LEVEL
-    key counts — an indented ``targets:`` belongs to a nested mapping and is a
-    different field. The line number is 1-based within the whole file.
+    token list means the field is present but names nothing. The line number is
+    1-based within the whole file.
+
+    Only a TOP-LEVEL key counts, where top-level is relative to the BLOCK
+    rather than to column zero: a frontmatter block whose every line is
+    indented by the same amount has all its keys at top level, and YAML reads
+    it that way. The block is dedented by its common prefix first — scanning
+    for column-zero keys instead reported "no declaration" for such a file,
+    which is how the build ships a component everywhere with its declaration
+    unread. A ``targets:`` indented BEYOND its siblings still belongs to a
+    nested mapping and is still a different field.
     """
     block = _frontmatter_block(text)
     if block is None:
         return None
-    lines = block.split('\n')
+    lines = textwrap.dedent(block).split('\n')
     for index, line in enumerate(lines):
         if line[:1].isspace():
             continue
@@ -291,12 +354,17 @@ def declared_targets(text: str) -> tuple[list[str], int] | None:
         rest = lines[index + 1:]
         if value:
             head = _strip_comment(value)
-            if head in _BLOCK_SCALAR_INDICATORS and _has_continuation(rest):
-                return _BLOCK_SCALAR, line_number
+            # ONE condition, three diagnoses — see the module docstring.
             if not head.startswith('[') and _has_continuation(rest):
-                return _MULTILINE_SCALAR, line_number
+                return _MULTILINE_SENTINELS[_multiline_shape(value)], line_number
             return _split_inline(_join_flow_sequence(value, rest)), line_number
-        return _collect_block_items(rest), line_number
+        items = _collect_block_items(rest)
+        # An indented line that yielded no `- ` item is a plain scalar whose
+        # content begins on the next line, not an empty declaration — see
+        # ``component_targets``. A NON-indented next line really is empty.
+        if not items and _has_continuation(rest):
+            return _MULTILINE_SENTINELS[_SHAPE_PLAIN_SCALAR], line_number
+        return items, line_number
     return None
 
 
@@ -368,35 +436,25 @@ def _scan_component(path: Path, registered: frozenset[str] | None) -> list[dict]
         return []
     tokens, line_number = declaration
 
-    if tokens is _BLOCK_SCALAR:
-        return [
-            Finding(
-                type=RULE_ID,
-                file=str(path),
-                line=line_number,
-                severity='error',
-                fixable=False,
-                rule_id=RULE_ID,
-                description=_DESCRIPTION_BLOCK_SCALAR,
-                details={'reason': 'targets_block_scalar'},
-                extra={'rule': RULE_NAME},
-            ).to_dict()
-        ]
-
-    if tokens is _MULTILINE_SCALAR:
-        return [
-            Finding(
-                type=RULE_ID,
-                file=str(path),
-                line=line_number,
-                severity='error',
-                fixable=False,
-                rule_id=RULE_ID,
-                description=_DESCRIPTION_MULTILINE,
-                details={'reason': 'targets_multiline_scalar'},
-                extra={'rule': RULE_NAME},
-            ).to_dict()
-        ]
+    for shape, sentinel in _MULTILINE_SENTINELS.items():
+        # IDENTITY, not equality: a component whose declaration literally
+        # spells a sentinel's content is an unknown target name, not a
+        # multi-line value.
+        if tokens is sentinel:
+            description, reason = _MULTILINE_FINDING[shape]
+            return [
+                Finding(
+                    type=RULE_ID,
+                    file=str(path),
+                    line=line_number,
+                    severity='error',
+                    fixable=False,
+                    rule_id=RULE_ID,
+                    description=description,
+                    details={'reason': reason},
+                    extra={'rule': RULE_NAME},
+                ).to_dict()
+            ]
 
     if not tokens:
         return [

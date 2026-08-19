@@ -387,6 +387,10 @@ def test_a_dash_continuation_does_not_escape_the_guard(tmp_path, frontmatter):
         pytest.param('targets: >-\n  claude', id='folded'),
         pytest.param('targets: |-\n  claude', id='literal'),
         pytest.param('targets: >\n  claude', id='folded-clip'),
+        pytest.param('targets: |2\n   claude', id='literal-indent-indicator'),
+        pytest.param('targets: >3-\n   claude', id='folded-indent-then-chomp'),
+        pytest.param('targets: |-2\n   claude', id='literal-chomp-then-indent'),
+        pytest.param('targets: >+9\n   claude', id='folded-keep-then-indent'),
     ],
 )
 def test_a_block_scalar_is_named_as_one(tmp_path, frontmatter):
@@ -396,9 +400,52 @@ def test_a_block_scalar_is_named_as_one(tmp_path, frontmatter):
     the rejection is the parser declining a shape it cannot read, not the
     author writing something malformed. Calling it a continued plain scalar
     sent the author looking for a defect that is not in their file.
+
+    The indentation-indicator spellings are here because the first version
+    matched a fixed SET of the six chomping spellings, which left 54 of the 60
+    legal headers carrying the very message the fix removed.
     """
     with pytest.raises(TargetScopeError, match='block scalar'):
         read_target_scope(_component(tmp_path, frontmatter))
+
+
+@pytest.mark.parametrize(
+    'frontmatter',
+    [
+        pytest.param('targets: "claude,\n  opencode"', id='double-quoted'),
+        pytest.param("targets: 'claude,\n  opencode'", id='single-quoted'),
+    ],
+)
+def test_a_quoted_scalar_continued_across_lines_is_named_as_one(tmp_path, frontmatter):
+    """A quoted multi-line value is rejected, but it is not a PLAIN scalar.
+
+    PyYAML reads both of these as ``claude, opencode`` — two real targets. A
+    quoted scalar is by definition not plain, so the word was simply wrong.
+    """
+    with pytest.raises(TargetScopeError, match='quoted scalar continued across lines'):
+        read_target_scope(_component(tmp_path, frontmatter))
+
+
+def test_the_shape_only_names_the_construct_it_never_decides(tmp_path):
+    """Every multi-line shape is rejected; the shape chooses the noun alone.
+
+    The rejection is one condition, so no classification error can turn a
+    rejection into an acceptance. Pinned rather than asserted: every earlier
+    version tangled the shape test into the rejection condition, and each one
+    then changed the verdict on some valid input while improving a sentence.
+    """
+    from marketplace.targets.component_targets import _MULTILINE_NOUN, _multiline_shape
+
+    shapes = {
+        'targets: >-\n  claude': 'block-scalar',
+        'targets: "claude,\n  opencode"': 'quoted-scalar',
+        'targets: claude,\n  opencode': 'plain-scalar',
+    }
+    assert set(shapes.values()) == set(_MULTILINE_NOUN)
+    for frontmatter, shape in shapes.items():
+        assert _multiline_shape(frontmatter.split('\n')[0].partition(':')[2].strip()) == shape
+        with pytest.raises(TargetScopeError):
+            read_target_scope(_component(tmp_path, frontmatter))
 
 
 def test_the_fold_joins_with_a_space_and_that_is_what_rejects_an_overrun(tmp_path):
@@ -407,11 +454,16 @@ def test_the_fold_joins_with_a_space_and_that_is_what_rejects_an_overrun(tmp_pat
     ``targets: [open`` / ``code]`` closes its bracket, so the bracket half of
     the argument does not apply; only the space in ``open code`` keeps it out
     of the registry. Joining without one would yield an accepted ``opencode``
-    — a scope the author never wrote. Nothing pinned this: replacing the
-    join with ``''.join`` left the whole suite green.
+    — a scope the author never wrote.
+
+    There must be NO comma in the fixture. The first version of this test used
+    ``[open,`` / ``code]``, where the comma alone does the splitting, so it
+    passed under ``''.join`` too — a test whose name asserted the property and
+    whose body did not exercise it, exactly the defect it was written to
+    prevent.
     """
     with pytest.raises(TargetScopeError, match='unknown target'):
-        read_target_scope(_component(tmp_path, 'targets: [open,\ncode]'))
+        read_target_scope(_component(tmp_path, 'targets: [open\ncode]'))
 
 
 def test_no_registered_target_name_may_contain_a_space(tmp_path):
@@ -468,6 +520,60 @@ def test_a_byte_order_mark_does_not_hide_the_declaration(tmp_path):
 
     assert read_target_scope(path) == {'claude'}
     assert emits_to(path, 'opencode') is False
+
+
+@pytest.mark.parametrize(
+    'text',
+    [
+        pytest.param('--- \nname: demo\ntargets: [claude]\n---\n', id='opening-space'),
+        pytest.param('---\nname: demo\ntargets: [claude]\n--- \n', id='closing-space'),
+        pytest.param('---\t\nname: demo\ntargets: [claude]\n---\n', id='opening-tab'),
+        pytest.param('---\nname: demo\ntargets: [claude]\n---  ', id='closing-space-at-eof'),
+    ],
+)
+def test_trailing_whitespace_on_a_fence_does_not_hide_the_declaration(tmp_path, text):
+    """A space after ``---`` is invisible in an editor and must not fail open.
+
+    ``_dep_detection.extract_frontmatter`` — this tree's own canonical
+    frontmatter reader — accepts these fences, so refusing them made two
+    parsers in one repository disagree about whether the file has frontmatter
+    at all, and the declaration went unread while the component shipped
+    everywhere.
+    """
+    path = tmp_path / 'demo.md'
+    path.write_text(text, encoding='utf-8')
+
+    assert read_target_scope(path) == {'claude'}
+    assert emits_to(path, 'opencode') is False
+
+
+def test_a_uniformly_indented_frontmatter_block_is_still_top_level(tmp_path):
+    """Top-level is relative to the BLOCK, not to column zero.
+
+    YAML reads every key here as top-level, because nothing opened a mapping
+    above them. Scanning for column-zero keys instead read "no declaration"
+    and shipped a claude-only component into every target's tree — the same
+    silent widening as the unrecognised quoted key, one shape over.
+    """
+    path = tmp_path / 'demo.md'
+    path.write_text('---\n  name: demo\n  targets: [claude]\n---\n', encoding='utf-8')
+
+    assert read_target_scope(path) == {'claude'}
+    assert emits_to(path, 'opencode') is False
+
+
+def test_dedenting_does_not_promote_a_genuinely_nested_key(tmp_path):
+    """The other side of the dedent: a key indented BEYOND its siblings stays nested.
+
+    Without this, the fix for the uniformly-indented block would be an
+    over-correction that read someone else's ``targets:`` as the component's.
+    """
+    path = tmp_path / 'demo.md'
+    path.write_text(
+        '---\n  name: demo\n  metadata:\n    targets: nonsense\n---\n', encoding='utf-8'
+    )
+
+    assert read_target_scope(path) is None
 
 
 def test_crlf_line_endings_do_not_hide_the_declaration(tmp_path):
@@ -638,3 +744,41 @@ def test_a_skill_directory_exclusion_covers_its_whole_subtree():
 def test_no_exclusions_means_nothing_is_under_any():
     """The empty-exclusion fast path agrees with the general answer."""
     assert is_under_any(Path('agents/a.md'), frozenset()) is False
+
+
+@pytest.mark.parametrize(
+    ('frontmatter', 'expected'),
+    [
+        pytest.param('targets:\n  claude', 'plain scalar continued', id='indented-scalar'),
+        pytest.param('targets:\n  claude, opencode', 'plain scalar continued', id='indented-list'),
+    ],
+)
+def test_a_valueless_key_with_an_indented_scalar_is_not_an_empty_declaration(
+    tmp_path, frontmatter, expected
+):
+    """``targets:`` / ``  claude`` is the value ``claude``, not an empty list.
+
+    Both are rejected either way, so the build outcome is unchanged — but
+    "declares an empty list" describes a file the author did not write, which
+    is the same misdiagnosis the block-scalar and quoted-scalar shapes carried.
+    """
+    with pytest.raises(TargetScopeError, match=expected):
+        read_target_scope(_component(tmp_path, frontmatter))
+
+
+@pytest.mark.parametrize(
+    'frontmatter',
+    [
+        pytest.param('targets:\nname: after', id='next-key-at-column-zero'),
+        pytest.param('targets:', id='nothing-follows'),
+        pytest.param('targets:\n\n  # only a comment', id='comment-only'),
+    ],
+)
+def test_a_valueless_key_with_no_indented_content_is_still_empty(tmp_path, frontmatter):
+    """The other side: a genuinely empty declaration keeps its own message.
+
+    Without this the fix above would be an over-correction, renaming every
+    empty declaration after the construct it is not.
+    """
+    with pytest.raises(TargetScopeError, match='empty list'):
+        read_target_scope(_component(tmp_path, frontmatter))

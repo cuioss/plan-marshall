@@ -46,10 +46,18 @@ moment it is read and an invalid one aborts the build
   derives a single reviewer configuration from skill rules, so it has no
   component to filter) — such a declaration passes a registry-membership
   check while still shipping the component nowhere;
-* a plain scalar continued across lines — one YAML value this parser reads
-  from one line only, so accepting it would silently narrow the scope;
-* a YAML block scalar (``>``/``|``) — a value this parser does not read at
-  all, rejected under its own name rather than misdiagnosed as the above.
+* a value spanning more than one line — this parser reads a value from one
+  physical line, so accepting one would silently narrow the scope to
+  whatever fitted on that line.
+
+That last rejection is ONE condition (a value that is not a flow sequence,
+followed by an indented line). Three names appear in the message because
+three different YAML constructs produce it — a plain scalar continued across
+lines, a quoted scalar continued across lines, and a block scalar
+(``>``/``|``) — and naming the wrong one sends the author looking for a
+defect that is not in their file. Which name is chosen is a DIAGNOSIS made
+after the decision to reject; misclassifying cannot change whether the build
+fails, only what the failure calls the construct.
 
 Adding a rejection means adding it here **and** in the doctor rule that
 mirrors this validation, its rule-catalog and rule-provenance rows, and the
@@ -79,16 +87,24 @@ target fails the suite rather than shipping quietly.
 Degradation
 -----------
 A component file that cannot be read or decoded yields "no declaration",
-i.e. the pre-existing emit-everywhere behaviour. Failing OPEN is correct
-here specifically because this module only ever REMOVES output: a read
-fault must not be able to make a component vanish from a target it
-belongs on. The unreadable file itself still fails wherever it is
-actually consumed.
+i.e. the pre-existing emit-everywhere behaviour.
+
+That is a choice between two bad outcomes, not a safe default, and an
+earlier version of this paragraph argued only one side of it. Failing open
+also SHIPS a scoped component onto a target it excluded — the same silent
+widening this module treats as a defect elsewhere, and the reason an
+unrecognised quoted key was fixed rather than tolerated. The vanish
+direction is judged the worse of the two: a component missing from a target
+it belongs on is absent from the output and breaks a runtime that expects
+it, while a surplus component is present and inspectable. So a read fault
+degrades towards shipping. The unreadable file itself still fails wherever
+it is actually consumed.
 """
 
 from __future__ import annotations
 
 import re
+import textwrap
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -122,29 +138,60 @@ _SKILLS_DIR = 'skills'
 _SKILL_MANIFEST = 'SKILL.md'
 
 
-#: YAML block-scalar indicators. A value of one of these is not a plain
-#: scalar at all — the indented lines beneath it are the value's content —
-#: so calling it "a plain scalar continued across lines" is a wrong
-#: diagnosis on a declaration a YAML reader parses perfectly well.
-_BLOCK_SCALAR_INDICATORS = frozenset({'>', '>-', '>+', '|', '|-', '|+'})
+#: A whole YAML block-scalar header: the ``>`` or ``|`` indicator, plus an
+#: optional indentation indicator and an optional chomping indicator in
+#: either order. A value of this shape is not a plain scalar at all — the
+#: indented lines beneath it are the value's content — so calling it "a
+#: plain scalar continued across lines" is a wrong diagnosis on a
+#: declaration a YAML reader parses perfectly well.
+#:
+#: The first version of this matched a fixed set of the six chomping
+#: spellings and so misdiagnosed every header carrying an indentation
+#: indicator (``|2``, ``>3-``, ``|-2``) — 54 of the 60 legal spellings —
+#: under the very message it was added to remove.
+_BLOCK_SCALAR_HEADER_RE = re.compile(r'^[>|](?:[0-9][-+]?|[-+][0-9]?)?$')
+
+#: A frontmatter fence line: exactly three hyphens, then only spaces or
+#: tabs. Trailing whitespace on a fence is invisible in an editor, and the
+#: tree's own canonical frontmatter reader (``_dep_detection`` in the
+#: plugin-doctor) accepts it — so refusing it here made the two parsers
+#: disagree about whether such a file has frontmatter at all, and a
+#: ``targets:`` declaration beneath a space-suffixed fence went unread.
+_OPEN_FENCE_RE = re.compile(r'^---[ \t]*\n')
+_CLOSE_FENCE_RE = re.compile(r'\n---[ \t]*(?:\n|$)')
+
+#: The three YAML constructs that can produce a value spanning more than one
+#: line. Naming them is a DIAGNOSIS, never a decision — see
+#: :func:`_multiline_shape`.
+_SHAPE_BLOCK_SCALAR = 'block-scalar'
+_SHAPE_QUOTED_SCALAR = 'quoted-scalar'
+_SHAPE_PLAIN_SCALAR = 'plain-scalar'
+
+#: How each shape is named in the build failure. The remedy is the same for
+#: all three, so only the noun differs — but a YAML reader parses each of
+#: them perfectly well, and an author told they wrote the wrong construct
+#: goes looking for a defect that is not in their file.
+_MULTILINE_NOUN = {
+    _SHAPE_BLOCK_SCALAR: 'a YAML block scalar (`>` or `|`), whose value is the indented '
+                         'lines beneath it',
+    _SHAPE_QUOTED_SCALAR: 'a quoted scalar continued across lines',
+    _SHAPE_PLAIN_SCALAR: 'a plain scalar continued across lines',
+}
 
 
-class _BlockScalarValue(Exception):
-    """Internal marker: the value is a YAML block scalar (``>``/``|``).
+class _MultilineValue(Exception):
+    """Internal marker: the value spans more than one physical line.
 
-    Distinct from :class:`_MultilinePlainScalar` so the diagnostic names the
-    shape the author actually wrote. Both are rejected — this parser reads
-    neither — but a message naming the wrong construct sends the author
-    looking in the wrong place.
+    Carries the name of the construct it is written in (one of the
+    ``_SHAPE_*`` constants) so the diagnostic names the shape the author
+    actually wrote. Raised by the parser, which has no component path, and
+    turned into a :class:`TargetScopeError` by :func:`read_target_scope`,
+    which does.
     """
 
-
-class _MultilinePlainScalar(Exception):
-    """Internal marker: the value is a plain scalar continued across lines.
-
-    Raised by the parser, which has no component path, and turned into a
-    :class:`TargetScopeError` by :func:`read_target_scope`, which does.
-    """
+    def __init__(self, shape: str) -> None:
+        super().__init__(shape)
+        self.shape = shape
 
 
 class TargetScopeError(RuntimeError):
@@ -204,19 +251,22 @@ def _frontmatter_block(text: str) -> str | None:
     all — which reads as "declares no scope" and silently ships the component
     everywhere.
 
-    The closing fence is matched as a whole ``\\n---\\n`` line rather than as
-    a bare ``---`` substring, so a value that itself contains three hyphens
-    does not truncate the block and hide the fields after it.
+    Each fence is matched as a whole LINE rather than as a bare ``---``
+    substring, so a value that itself contains three hyphens does not
+    truncate the block and hide the fields after it. Trailing spaces or tabs
+    on either fence are accepted \u2014 see :data:`_OPEN_FENCE_RE`.
     """
     text = text.lstrip('\ufeff')
-    if not text.startswith('---\n'):
+    open_fence = _OPEN_FENCE_RE.match(text)
+    if open_fence is None:
         return None
-    end = text.find('\n---\n', 4)
-    if end != -1:
-        return text[4:end]
-    if text.endswith('\n---'):
-        return text[4: len(text) - len('\n---')]
-    return None
+    start = open_fence.end()
+    # From start - 1, so the newline ending the opening fence can serve as
+    # the newline opening the closing one \u2014 i.e. an empty frontmatter block.
+    close_fence = _CLOSE_FENCE_RE.search(text, start - 1)
+    if close_fence is None:
+        return None
+    return text[start:close_fence.start()]
 
 
 def _strip_comment(value: str) -> str:
@@ -369,18 +419,51 @@ def _has_continuation(rest: list[str]) -> bool:
     return False
 
 
+def _multiline_shape(value: str) -> str:
+    """Name the YAML construct a rejected multi-line value is written in.
+
+    Diagnosis only. The caller has ALREADY decided to reject; this picks the
+    noun the message uses, so a misclassification can change what the failure
+    calls the construct but never whether the build fails. That separation is
+    deliberate: every earlier version tangled the shape test into the
+    rejection condition, and each one then changed the verdict on some valid
+    input while trying to improve a sentence.
+
+    ``value`` is the raw post-``strip`` value, not the comment-stripped one:
+    a ``#`` inside a quoted scalar is content, and stripping it first would
+    hide the quote this looks for.
+
+    The quoted test asks only whether the opening quote recurs, so a value
+    whose closing quote is escaped (``"cla\\"ude``) reads as terminated and
+    falls through to ``plain-scalar``. That is a wrong noun on invalid input
+    that is rejected either way; it is not worth a second quote parser.
+    """
+    if _BLOCK_SCALAR_HEADER_RE.match(_strip_comment(value)):
+        return _SHAPE_BLOCK_SCALAR
+    if value[:1] in {'"', "'"} and value.count(value[0]) < 2:
+        return _SHAPE_QUOTED_SCALAR
+    return _SHAPE_PLAIN_SCALAR
+
+
 def _declared_tokens(text: str) -> list[str] | None:
     """Return the raw ``targets:`` tokens declared by ``text``, or ``None``.
 
     ``None`` means the field is absent (ship everywhere). An empty list means
     the field is present but names nothing, which the validator rejects.
-    Only a TOP-LEVEL key counts: an indented ``targets:`` belongs to a nested
-    mapping and is a different field.
+
+    Only a TOP-LEVEL key counts. Top-level is relative to the BLOCK, not to
+    column zero: a frontmatter block whose every line is indented by the same
+    amount has all its keys at top level, and YAML reads it that way. The
+    block is dedented by its common prefix first, because scanning for
+    column-zero keys instead reported "no declaration" for such a file and
+    shipped it to every target with its declaration unread. A ``targets:``
+    indented BEYOND its siblings still belongs to a nested mapping and is
+    still a different field.
     """
     block = _frontmatter_block(text)
     if block is None:
         return None
-    lines = block.split('\n')
+    lines = textwrap.dedent(block).split('\n')
     for index, line in enumerate(lines):
         if line[:1].isspace():
             continue
@@ -391,12 +474,21 @@ def _declared_tokens(text: str) -> list[str] | None:
         rest = lines[index + 1:]
         if value:
             head = _strip_comment(value)
-            if head in _BLOCK_SCALAR_INDICATORS and _has_continuation(rest):
-                raise _BlockScalarValue
+            # ONE rejection, three diagnoses. A flow sequence spans lines
+            # legitimately and is folded; anything else that is continued is
+            # a value this parser reads only the first line of.
             if not head.startswith('[') and _has_continuation(rest):
-                raise _MultilinePlainScalar
+                raise _MultilineValue(_multiline_shape(value))
             return _split_inline(_join_flow_sequence(value, rest))
-        return _collect_block_items(rest)
+        items = _collect_block_items(rest)
+        # An indented line that yielded no `- ` item is not an empty
+        # declaration — it is a plain scalar whose content begins on the next
+        # line (`targets:` / `  claude` is the value `claude` to YAML).
+        # Reporting "declares an empty list" describes a file the author did
+        # not write. A NON-indented next line really is an empty value.
+        if not items and _has_continuation(rest):
+            raise _MultilineValue(_SHAPE_PLAIN_SCALAR)
+        return items
     return None
 
 
@@ -459,20 +551,14 @@ def read_target_scope(path: Path) -> frozenset[str] | None:
         return None
     try:
         tokens = _declared_tokens(text)
-    except _BlockScalarValue:
+    except _MultilineValue as multiline:
         raise TargetScopeError(
-            f'{path}: `{TARGET_SCOPE_FIELD}:` uses a YAML block scalar (`>` or `|`). '
-            f'This parser does not read block scalars, so it cannot tell what you '
-            f'declared. Write the list explicitly — `{TARGET_SCOPE_FIELD}: [a, b]` or a '
-            f'`- ` block.'
-        ) from None
-    except _MultilinePlainScalar:
-        raise TargetScopeError(
-            f'{path}: `{TARGET_SCOPE_FIELD}:` is a plain scalar continued across lines. '
+            f'{path}: `{TARGET_SCOPE_FIELD}:` is {_MULTILINE_NOUN[multiline.shape]}. '
             f'That is one YAML value spanning several lines, and this parser reads a value '
-            f'from one line only — so it would silently narrow the declared scope rather '
-            f'than read what you wrote. Write the list explicitly — '
-            f'`{TARGET_SCOPE_FIELD}: [a, b]` or a `- ` block — so what ships is what you wrote.'
+            f'from one physical line — so it would silently narrow the declared scope to '
+            f'whatever fitted on the first line rather than read what you wrote. Write the '
+            f'list explicitly — `{TARGET_SCOPE_FIELD}: [a, b]` or a `- ` block — so what '
+            f'ships is what you wrote.'
         ) from None
     if tokens is None:
         return None

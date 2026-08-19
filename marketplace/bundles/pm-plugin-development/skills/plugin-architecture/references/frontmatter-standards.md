@@ -449,7 +449,11 @@ targets: [claude]
 | A name absent from `TARGET_REGISTRY` (a typo) | Build fails, naming the component and the unknown value |
 | `targets: []` | Build fails — a component shipped nowhere is an authoring error, not an intent |
 | Only targets that emit no component tree | Build fails — such a declaration also ships the component nowhere |
-| A plain scalar continued across lines, or a YAML block scalar (`>` / `|`) | Build fails — the build reads a value from one line only, so accepting either would silently narrow the scope to whatever fitted on that line |
+| A value spanning more than one line | Build fails — the build reads a value from one physical line, so accepting one would silently narrow the scope to whatever fitted on that line |
+
+That last row is **one** rule, and the build reports it under whichever of three YAML constructs you wrote: a plain scalar continued across lines, a quoted scalar continued across lines, or a block scalar (`>` / `|`, whose value is the indented lines beneath it). A YAML reader parses all three perfectly well — the build declines them because it does not read them, so being told you wrote the wrong one sends you looking for a defect that is not in your file. Write the list inline or as a `- ` block and none of them arises.
+
+A flow sequence is the exception and spans lines freely: `targets: [claude,` continued on the next line is read whole.
 
 The plugin-doctor `targets-scope-invalid` rule reports every one of these at authoring time except the ships-nowhere case, which needs each target's `emits_bundle_tree` capability and is checked by the build alone.
 

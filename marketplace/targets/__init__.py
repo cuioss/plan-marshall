@@ -32,13 +32,19 @@ def register_target(name: str, target_cls: type[TargetBase]) -> None:
     Idempotent: re-registering the same name with the same class is a
     no-op. Re-registering with a different class is rejected so reload
     accidents do not silently replace a target.
+
+    Raises:
+        ValueError: ``name`` is empty or contains whitespace.
+        RuntimeError: ``name`` is already registered to a different class.
     """
     if not name or any(ch.isspace() for ch in name):
         raise ValueError(
             f'Target name {name!r} must be non-empty and contain no whitespace. '
-            'Component target scoping relies on this: a declared scope is split on '
-            'commas and matched against these names, and a name carrying a space '
-            'could be produced by a mis-parse rather than by an author.'
+            'Component target scoping relies on this: when it folds a flow sequence '
+            'across lines it joins the pieces with a SPACE, so a token drawn from '
+            'more than one source line always carries one — and can therefore never '
+            'match a registered name. A name containing a space would break that '
+            'argument and let a mis-parse produce a scope no author wrote.'
         )
     existing = TARGET_REGISTRY.get(name)
     if existing is target_cls:
