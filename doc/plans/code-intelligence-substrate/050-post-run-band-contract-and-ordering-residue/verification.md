@@ -260,8 +260,24 @@ and `:570-666`, `analyze-logs.py:220-300`, plus the four contract documents. Fin
    defect — both calls take the same tiers — but the comment at `:840-844` asserting the two "must
    agree on the source of truth" would be structurally guaranteed by one call. → **G9**
 
-No fail-open branch, unfireable guard, off-by-one, unguarded `None`, or stale-surface read was found in
-the code this plan actually shipped. The two places I specifically hunted for a fail-open — the
+7. **D1's coverage canary is blind to the half of the vocabulary that was actually added.**
+   `test_finalize_edge_ordering.py` asserts — in its module docstring (`:18-23`) and in
+   `test_consumer_side_data_edges_are_undeclared_below_the_floor` (`:201-221`) — that *"the CONSUMER
+   side of an artifact-level data edge … has **no** frontmatter marker at all"*. That is **false against
+   the current tree**: `ext-point-finalize-step.md` now defines `reads` and `destroys` as optional
+   consumer-side fields, and `finalize-step-order-bands.md:76-99` states the ordering obligation they
+   carry. Two steps declare `destroys` today (`branch-cleanup.md:9` → `[worktree]`,
+   `archive-plan.md:9` → `[plan-directory]`). The canary does not fire because
+   `_ABSENT_CONSUMER_MARKERS` (`:58`) lists only `reads`, `consumes`, `reads_artifacts`,
+   `consumes_artifacts` — not `destroys`. Verified empirically by running the module's own discovery
+   with `destroys` added to the probe set: the two declarers are found, and neither is watched.
+   Attribution: the vocabulary arrived in `308528d` (#1211, plan 300) on 2026-08-13, one day after this
+   plan landed — so this is not a defect plan 050 shipped, but it is the failure of the guard plan 050
+   shipped to keep its own coverage claim honest. → **G10**
+
+No fail-open branch, off-by-one, unguarded `None`, or stale-surface read was found in the code this plan
+actually shipped, and the one guard that has since gone partly blind is item 7 above (it still fires for
+a declared `reads`, only not for `destroys`). The two places I specifically hunted for a fail-open — the
 `FOOTPRINT_UNRESOLVED` sentinel vs. empty-set distinction (`_footprint_resolver.py:135-148`, `:114-120`)
 and the `_apply_provenance` add-vs-assign split (`manage-metrics.py:813-823`) — are both correct and
 both covered by behavioural tests.
@@ -303,10 +319,14 @@ Claims checked one by one against the tree now:
   workflow.
 - **"`analyze-logs.resolve_footprint` keeps its own diff-failure fall-through policy"** — verified at
   `analyze-logs.py:262-296`. True.
-- **"A final marketplace-wide grep confirms no stale 2-tier resolver claim remains"** — re-derived with a
-  fresh grep for `three-tier|two-tier|3-tier|2-tier` across `marketplace/`, `test/`, `doc/`: 19 hits, none
-  about the footprint resolver (bypass-actor resolution, executor logging, manifest source model, effort
-  presets, chat-history degradation, etc.). True.
+- **"A final marketplace-wide grep confirms no stale 2-tier resolver claim remains"** — **True**, but the
+  hit count first recorded here (19) does not reproduce and should not be read as a measurement of the
+  tree: re-derived at `a90adeb`, `three-tier|two-tier|3-tier|2-tier` across `marketplace/`, `test/`,
+  `doc/` now returns **45** hits, of which **42** never mention a footprint and the remaining **3** are
+  plan 050's own `plan.md:185` and `report-01.md:135,143` — historical records of the pre-fix chain,
+  correctly out of scope. The count moves with `doc/plans/` (which now carries this audit and later
+  plans); the load-bearing claim — *no stale 2-tier claim about the resolver survives in a live surface*
+  — re-derives as true.
 - **"16001 passed, 1 skipped"**, the per-commit `quality-gate` runs, the PR/CI/review-thread observations,
   and the seven branch commit SHAs (`5e589b4`, `3c8f400`, `d2dabf7`, `a4b7f25`, `52366d0`, `603568f`,
   `5382861`) — **UNVERIFIABLE.** `git cat-file -t` reports *"Not a valid object name"* for all seven: the

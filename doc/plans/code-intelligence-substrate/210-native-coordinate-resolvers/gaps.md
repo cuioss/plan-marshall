@@ -265,19 +265,26 @@ needs its own change.
   discovery publishes the coordinate pair — is still uncovered. The claim is asserted in four shipped
   documents (`ext-point-derivation-resolver.md:265`, `build-maven/SKILL.md:91`,
   `code-intelligence.adoc:67`, `dependency-intelligence.adoc:58-60`). The premise is in fact true —
-  `_gradle_cmd_discover.py:448-453` returns `'artifact_id': name, 'group_id': group_id` — but nothing
-  executable would notice if it stopped being true.
-- **Action:** Replace the assertion with one that calls `_extract_gradle_module` (or, if its Gradle
-  subprocess dependency makes that impractical without a daemon, `_parse_gradle_properties` plus the
-  metadata assembly) and asserts the returned `metadata` carries both keys. Note that
-  `_parse_gradle_properties` defaults `group_id` to `None` (`_gradle_cmd_discover.py:272`), so the
-  new test should also pin what happens when a Gradle build declares no `group` — currently that
-  module publishes no joinable coordinate and derives no edges, which is undocumented.
+  `_gradle_cmd_discover.py:448-453` returns `'artifact_id': name, 'group_id': group_id`, confirmed by
+  a live hermetic call to `_extract_gradle_module` — but nothing executable would notice if it
+  stopped being true.
+- **Action:** Replace the assertion with one that calls the real `_extract_gradle_module`
+  (`_gradle_cmd_discover.py:348`) and asserts the returned `metadata` carries both keys. ⛔ Do **not**
+  take the "the real function needs a Gradle daemon" escape: it does not. `_extract_gradle_module`
+  receives `gradle_data` as a **parameter** — the subprocess belongs to its caller — and runs none
+  itself, so a temp directory containing an empty `build.gradle` plus a literal
+  `gradle_data={'name': 'core', 'group_id': 'com.example', 'version': '1.0', 'dependencies': []}` is
+  a complete hermetic call. Demonstrated during adversarial review: that call returns
+  `{'artifact_id': 'core', 'group_id': 'com.example', 'packaging': 'jar', 'description': None}`. Note
+  the key is `gradle_data['group_id']` (`:410`), not `group`. Add a second case pinning the no-`group`
+  build — `_parse_gradle_properties` defaults `group_id` to `None` (`:272`) and the same call then
+  returns `'group_id': None`, so that module publishes no joinable coordinate and derives no edges,
+  which is undocumented.
 - **Done when:** Removing `'group_id': group_id` from `_extract_gradle_module`'s returned `metadata`
-  dict makes `test_gradle_rides_the_maven_join.py` fail.
-- **Effort:** M
-- **Risk if fixed:** The replacement must stay hermetic — no JDK or Gradle daemon is available in CI
-  for this test module, which is why the current test avoided the real function.
+  dict (`_gradle_cmd_discover.py:450`) makes `test_gradle_rides_the_maven_join.py` fail.
+- **Effort:** S
+- **Risk if fixed:** None. The replacement is hermetic by construction — no JDK, no Gradle daemon, no
+  subprocess — as the demonstration above shows.
 
 ## G8 — Correct the "Three further joins" count in the user-facing dependency page
 

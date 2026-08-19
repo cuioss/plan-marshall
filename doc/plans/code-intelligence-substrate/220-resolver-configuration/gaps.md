@@ -262,29 +262,38 @@ engineering, so they are recorded in `verification.md` rather than filed as gaps
   bug they currently expose; the deferral must be applied per file and each file re-run alone and in a
   sweep.
 
-## G8 — Build the Configuration menu's Page 5 continuation before the next entry needs it
+## G8 — Record the Page-5 continuation obligation where the next Configuration author will read it
 
-- **Kind:** incomplete
+- **Kind:** doc-defect
 - **Severity:** low
 - **Topic:** bundle-docs
-- **Where:** `marketplace/bundles/plan-marshall/skills/marshall-steward/references/menu-configuration.md:89-108`
-  (Page 4) and `:110-129` (routing table)
-- **Evidence:** Page 4 now holds "Derivation Resolvers", "Merge Queue", "Full Reconfigure" and "Back" —
-  the `AskUserQuestion` 4-element cap. The plan's Coordination note requires two sibling plans to land
-  their language-server settings *inside* this surface; neither
+- **Where:** `marketplace/bundles/plan-marshall/skills/marshall-steward/references/menu-configuration.md:89`
+  (the Page 4 block, `:89-108`), `:110-129` (routing table), and the option-count sentence at `:24`
+- **Evidence:** re-derived in the file. `:24` states "The Configuration submenu has 12 options"; the four
+  pages carry exactly 12 non-navigation options (skill-domains, plan-phases, structure; quality-pipelines,
+  review-gates, credentials; terminal-title, enforcement-hook, recipes; derivation-resolvers, merge-queue,
+  wizard) plus three "More..." elements and one "Back", and no page exceeds the `AskUserQuestion`
+  4-element cap. **The surface is internally consistent today** — Page 4 is simply full: "Derivation
+  Resolvers", "Merge Queue", "Full Reconfigure", "Back". The plan's Coordination note requires two
+  sibling plans to land their language-server settings *inside* this surface; neither
   `doc/plans/code-intelligence-substrate/010-lsp-in-execute-lookup-and-write/` nor `240-skill-lsp-server/`
   has added a menu entry, and no `references/menu-language-servers.md` exists.
-- **Why it matters:** the next author adding a Configuration entry must restructure Page 4 (replace
-  "Back" with "More...", add Page 5 and a `more-4` routing row) in the same change as their feature —
-  which is exactly the kind of adjacent edit that produced this run's cross-surface misses. The run's
-  operator decision was to leave it as residue, which is recorded, not disputed.
-- **Action:** when the next Configuration entry lands, add Page 5 via the documented "More..."
-  continuation and move "Back" onto it, updating the option count in `:24` and the routing table.
-- **Done when:** the Configuration submenu's stated option count matches the number of non-navigation
-  options across its pages, and no page carries a fifth element.
+- **Why it matters:** ⚠ **There is no defect to fix here now.** The next author adding a Configuration
+  entry must restructure Page 4 (replace "Back" with "More...", add Page 5 and a `more-4` routing row)
+  and update `:24` in the same change as their feature — exactly the kind of adjacent edit that produced
+  this run's cross-surface misses. Nothing in `menu-configuration.md` tells them so: `:24` describes the
+  pagination *pattern* but never states that the final page is at its cap and what to do about it.
+- **Action:** add one sentence to `menu-configuration.md` immediately after the Page 4 block stating
+  that Page 4 is at the 4-element cap, and that the next option added must convert its "Back" element
+  into a "More..." continuation, introduce Page 5 carrying "Back", add a `more-4` routing row, and
+  update the option count at `:24`. This is a documentation change, executable now; the restructuring
+  itself is not, and must not be pre-built for plans that do not exist.
+- **Done when:** `menu-configuration.md` states, in or beside the Page 4 block, that the page is at the
+  cap and names the four edits the next entry requires; and the option count at `:24` still equals the
+  number of non-navigation options across the pages.
 - **Effort:** S
-- **Risk if fixed:** the `:24` count sentence and the routing table must move together; a stale count
-  there is a plugin-doctor-invisible inconsistency.
+- **Risk if fixed:** the `:24` count sentence and the routing table must move together whenever the
+  restructuring does happen; a stale count there is a plugin-doctor-invisible inconsistency.
 
 ## G9 — Make `configured` mean the same thing in the roster and in the store verb
 

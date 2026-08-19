@@ -446,8 +446,9 @@ withheld still names an unexecuted gate and a 380/97 % measurement that is now 6
 - **Kind:** report-defect
 - **Severity:** low
 - **Topic:** documentation-surface
-- **Where:** `doc/plans/code-intelligence-substrate/240-skill-lsp-server/report-01.md:178` (§ D3) and
-  the Residue bullet at `:465-467`
+- **Where:** `doc/plans/code-intelligence-substrate/240-skill-lsp-server/report-01.md:175` (§ D3 —
+  the sentence itself; `:178` opens the measurement table beneath it) and the Residue bullet at
+  `:465-467`
 - **Evidence:** *"`230-validate-precision.md` is still an unexecuted plan file"*. It executed as
   `3d96e40` on 2026-08-16T08:54:13Z; this plan merged as `5edca5a` at 10:08:21Z.
 - **Why it matters:** the report is the record a retrospective reads; it asserts a blocked state that

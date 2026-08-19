@@ -220,21 +220,74 @@ every one of which was re-taken independently by an adversarial pass at `a90adeb
 - **Risk if fixed:** none to shipped behaviour; a documentation-only close must not overstate — the
   harness-grant question genuinely is outside the verb's reach.
 
-## G8 — Correct the run report's commit count
+## G8 — Correct the run report's three inaccurate claims
 
 - **Kind:** report-defect
 - **Severity:** low
 - **Topic:** plan-lane-contract
 - **Where:** `doc/plans/code-intelligence-substrate/130-lsp-shaped-query-api/report-01.md:170`
-- **Evidence:** the Contract check says "DONE — six commits, all carrying the `Co-Authored-By:
-  Claude` trailer". PR #1207 carries eight: `31b8ede`, `0d12e4b`, `6126013`, `8159710`, `0df29ed`,
-  `32d4c27`, `8469daf`, `1f2fdee` (GitHub API, `get_commits`). All eight do carry the trailer.
+  (commit count), `:69` (the "uncached" claim), `:104-105` (the blanket verification claim)
+- **Evidence:**
+  1. The Contract check at `:170` says "DONE — six commits, all carrying the `Co-Authored-By:
+     Claude` trailer". PR #1207 carries eight: `31b8ede`, `0d12e4b`, `6126013`, `8159710`,
+     `0df29ed`, `32d4c27`, `8469daf`, `1f2fdee` (GitHub API `get_commits`, re-read at audit time;
+     the PR object also reports `commits: 8`). All eight do carry the trailer.
+  2. `:69` claims D2 is "per-call (uncached)". The path-attribution half is memoised for the
+     process lifetime (`_architecture_core.py:1122`) — see G2. The accurate phrasing is the one the
+     shipped `SKILL.md` uses: "never cached across dispatches".
+  3. `:104-105` records the verification sub-agent's "All five deliverables verified as
+     implemented-as-specified with tests". Two of the five are not: the D3 test never touches the
+     shipped guard (G4) and the D2 `content_search` row does not draw the distinction D2 is named
+     for (G1).
 - **Why it matters:** the contract check is the record a later retrospective reads as measurement;
   an under-count there is a small but real defect in the audit trail, and the same line is the one
-  that certifies the trailer property.
-- **Action:** correct the count to eight (and, while editing, add the squash SHA `8d5055f` so a
-  later reader can resolve the run locally — the branch SHAs no longer exist in a fresh clone).
-- **Done when:** `report-01.md` states the true commit count and names the squash commit.
+  that certifies the trailer property. The other two claims are the ones a later plan would cite as
+  evidence that this surface was already verified.
+- **Action:** correct the count to eight; narrow the D2 claim at `:69` to "never cached across
+  dispatches"; and qualify `:104-105` with a pointer to the two deliverables whose verification did
+  not hold up. While editing, add the squash SHA `8d5055f` so a later reader can resolve the run
+  locally — the eight branch SHAs no longer exist in a fresh clone (`git cat-file -t` → `Not a valid
+  object name` for all of them).
+- **Done when:** `report-01.md` states the true commit count, names the squash commit, and carries
+  no claim contradicted by G1, G2 or G4.
 - **Effort:** S
 - **Risk if fixed:** none — a run record edited for factual accuracy; the dated-record carve-out in
-  `CLAUDE.md` already covers this file.
+  `CLAUDE.md` already covers this file. Do not rewrite the report's narrative beyond these three
+  claims: it is a record of one execution, not documentation of current state.
+
+## G9 — Give the `path_attribution` row a `derived_count`, or stop documenting one
+
+- **Kind:** doc-defect
+- **Severity:** low
+- **Topic:** architecture-core
+- **Where:** entry built at
+  `marketplace/bundles/plan-marshall/skills/manage-architecture/scripts/_cmd_client_handlers.py:236-242`;
+  contradicting documentation at
+  `marketplace/bundles/plan-marshall/skills/manage-architecture/standards/client-api.md:1383-1390`,
+  `.../scripts/_cmd_client_handlers.py:172-176` (the handler docstring) and
+  `doc/concepts/code-intelligence.adoc:262`
+- **Evidence:** all three documents state the entry shape as three distinct states —
+  `not_derivable`/`producer_count: 0`, `derivable`/`derived_count: 0`, `derivable`/`derived_count:
+  N`. The `path_attribution` entry carries `capability`, `verbs`, `status`, `producers` and
+  `producer_count`, and no `derived_count` at all, so an attributor that ran and claimed nothing and
+  one that claimed fifty both report `derivable, producer_count: 1`. (`module_edges` does carry
+  `derived_count`, and `content_search` is separately documented as using its own vocabulary — see
+  G1.) The data needed is already computed: each attributor report carries `claim_count`
+  (`marketplace/bundles/plan-marshall/skills/extension-api/scripts/_path_attribution_merge.py:342`).
+- **Why it matters:** D2's own *Done when* is still met on this row — `producer_count` draws the
+  cannot-derive versus derived-nothing binary — so this is not an unmet deliverable. What is wrong
+  is that the shipped contract describes a field one of its three rows never emits, which is the
+  doc-contract-divergence archetype D5 was written to prevent, at small scale. A consumer coding
+  against the documented table gets a `KeyError`, not a wrong answer.
+- **Action:** either add `'derived_count': sum(report['claim_count'] for report in
+  attributor_reports)` to the `path_attribution` entry, or amend the three documents to say that
+  `derived_count` is carried by `module_edges` only and that `path_attribution` reports producer
+  presence without a claim volume.
+- **Done when:** for every capability row, the fields named in `client-api.md`'s entry-shape table
+  are the fields the handler emits, asserted by a test that reads the payload keys of all three
+  entries.
+- **Effort:** S
+- **Risk if fixed:** adding the field changes the entry's key set, so the TOON examples at
+  `client-api.md:1396-1415` must be updated in lock-step (the same coupling G1 carries). Summing
+  `claim_count` across attributors double-counts a path two attributors both claim; if that matters,
+  document the field as claims-reported rather than paths-attributed.

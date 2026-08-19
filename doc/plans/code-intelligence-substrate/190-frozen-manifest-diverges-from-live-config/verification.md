@@ -292,7 +292,25 @@ Defects found:
    supports non-string entries as position pins (`_manifest_validation.py:390-393`). Only reachable
    on a hand-edited manifest, which `SKILL.md:450` explicitly sanctions. Gap G8.
 
+6. **Step 1.5 enumerates two of `cmd_reconcile`'s four `status` outcomes.**
+   `phase-6-finalize/SKILL.md:368-370` gives a branch for `success` and one for
+   `error: unreconcilable_step`. The verb also returns `error: file_not_found`
+   (`manage-execution-manifest.py:2917-2922`) and `error: invalid_manifest` (`:2926-2939`). The
+   dispatcher is an LLM following prose, so an unenumerated error leaves it improvising at the
+   phase-entry gate D1 argued must have a deliberately chosen direction — and the correct answer
+   already exists fifteen lines above for the `read` call ("abort finalize with an explicit error").
+   Gap G7.
+
 Not defects (checked and cleared):
+
+- **The indeterminate-drift bound is real and reachable**, not merely asserted by a stubbed test.
+  Both generator verbs were run directly against a directory with no `marketplace/bundles`: `drift`
+  prints `status: error / error: Could not read executor mappings` with no `drift_status` field, so
+  the seam's `:889` guard maps it to `unknown` and never calls `generate`. And the explicit
+  `--marketplace-root` anchor outranks the plugin cache for the `cache-first` scope
+  (`script-shared/scripts/marketplace_paths.py:775-784`, which raises rather than falling back to a
+  cache hit), so the probe cannot silently answer "did the worktree's script set change?" from the
+  cached main checkout.
 
 - Canonicalization is symmetric. `_live_phase_6_candidates` canonicalizes the live set (`:2866`);
   the stale test canonicalizes the frozen id (`:2960`); backfill canonicalizes both `composed_set`

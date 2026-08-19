@@ -43,6 +43,13 @@ false claims confined to `report-01.md` (G12, G13). None is a regression caused 
   including hidden trees, with `.claude/` positive-controlled via `cloud-plan-lane` (2 hits) and then
   swept for `lsp` (0 hits); `target/` does not exist in this clone; `marketplace/targets/` carries no
   facade text.
+- **Coverage gap found and closed by the adversarial pass.** A git-grep sweep cannot see the
+  git-ignored `.plan/` tree, and this document originally justified that by asserting `.plan/` does
+  not exist in this clone. **It does** — it carries `execute-script.py`, `marshal.json`,
+  `project-architecture/`, `temp/`, and `local/`. The generated executor is the one consumer surface
+  a verb removal can leave stale, so it was swept directly: `grep -ci "cmd_lsp_|lsp hover|lsp
+  workspace-symbol" .plan/execute-script.py` → **0**, and `grep -rli "cmd_lsp_" .plan/` → no files.
+  The negative therefore now covers the gitignored surface as well, not only the tracked one.
 - **Verdict:** CONFIRMED. The absence claim — the plan's own highest-risk claim — holds, and the PR's
   13-file footprint independently corroborates it: had a consumer existed, a fourteenth file would have
   had to change.
@@ -67,7 +74,13 @@ false claims confined to `report-01.md` (G12, G13). None is a regression caused 
   - Invoked the CLI directly with every marketplace `scripts/` dir on `PYTHONPATH`:
     `python3 …/architecture.py lsp hover --module x` →
     `error: argument command: invalid choice: 'lsp' (choose from 'discover', …, 'enrich')`. The literal
-    *Done when* is met.
+    *Done when* is met. The `choices` list argparse prints holds 26 entries — the 25 verbs of the
+    `handlers` dict plus the `enrich` group.
+  - Re-checked through the **second** dispatch surface, the generated executor (which does exist in
+    this clone — see D0's coverage note): `python3 .plan/execute-script.py
+    plan-marshall:manage-architecture:architecture lsp hover --module x` → `reason: unknown_verb`,
+    `rejected: lsp`, with a 26-entry `accepted` list carrying no `lsp`. Two independent registries
+    agree the verb is gone, so the *Done when* does not rest on argparse alone.
   - `uv run python -m pytest test_graph_queries.py test_cmd_resolve.py test_capabilities.py
     test_search_content.py test_feasibility_underivable_guard.py test_cmd_client.py -o addopts=""` →
     **163 passed** (re-run at `a90adeb`: 163 passed in 4.61s).

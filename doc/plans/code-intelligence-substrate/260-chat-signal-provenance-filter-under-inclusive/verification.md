@@ -330,7 +330,7 @@ concerns identified / No major issues detected"; `coderabbitai` rate-limited wit
 | `test_extract_chat_signal.py` over the 400-line budget | **Open** | `wc -l` → 575; rule is `severity='warning'` (`_analyze_test_conventions.py:61`) |
 | `parse_turn` has no production caller | **Open** | Only definition site in `marketplace/bundles/**` is `extract-chat-signal.py:199`; 15 references, all in `test_extract_chat_signal.py` |
 | Envelope-less notice class remains an enumeration | **Open, published** | `_chat_provenance.py:48-52`; gap published at `chat-history-analysis.md:69-73`. Confirmed live: a new tagless notice ("System notice: …") classifies operator |
-| "Zero operator turns survived" case not re-witnessed | **Still unwitnessed** | 42-transcript sweep: the genuine operator turn survives in every transcript that has one |
+| "Zero operator turns survived" case not re-witnessed | **Still unwitnessed** | 81-transcript sweep: the genuine operator turn survives in every transcript that has one |
 | `<command-args>`-plus-notice co-occurrence unwitnessed | **Still unwitnessed** | No such turn in the reachable corpus |
 | Contract-change proposal (stopping rule) awaiting an operator decision | **Closed by a later plan** | `2b5d1aa` — "chore(cloud-plan-lane): fold the two stopping rules into one (#1273)", explicitly "Follow-up to #1271"; later refined by `18b1b5c` (#1292) |
 
@@ -357,13 +357,15 @@ rule.
   `wc -l`); no number was copied from the report.
 - Extracted the pre-fix reducer from `8a11858^` and ran it, and the shipped reducer, over (a) the two
   shipped fixtures and (b) a live 265-turn session transcript.
-- Swept 42 reachable transcripts (8,382 parseable turns) for false positives; none.
+- Swept the reachable transcripts for false positives (81 files / 16,163 parseable turns / 6,190 `user`
+  turns at the time of the adversarial pass; 42 / 8,382 at the first pass); none at either size.
 - Ran 10 targeted mutants with self-taken byte snapshots; all killed; tree verified clean afterwards.
+  Re-run independently during adversarial review with the same result.
 - Read PR #1271 through the GitHub MCP server: commit list, per-commit file stats for `3224ea1`,
   reviews, comments, and the merged head SHA.
 - **Could not check:** the report's own session figures (457 raw / 8 kept / 1.8 %) and the "zero
   operator turns survived" incident — the transcripts are machine-local and unreachable, exactly as
   the plan states; the "sixteen `./pw verify` runs" count; and the live behaviour of the gate-decision
-  channel against a real `AskUserQuestion` exchange — no such tool call exists anywhere in the 42
+  channel against a real `AskUserQuestion` exchange — no such tool call exists anywhere in the
   reachable transcripts, though the block shapes the code keys on were confirmed against real data.
 - Deliberately did not run `./pw verify` (out of scope for this audit and multi-minute).

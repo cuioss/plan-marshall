@@ -1,14 +1,19 @@
 # Gaps — 250-footprint-read-outside-its-window
 
-Seven gaps remain. One is high: the plan's own defect class survives in the file the plan changed —
-`verify_failure_scope._resolve_declared_footprint` still derives the plan footprint from the **main
-checkout** when the plan's worktree is `pending`, because it reads `PlanContext.worktree_path` (which is
-documented to fall back to the main checkout) instead of gating on `has_worktree` the way both of its
-peer sites do. The PR-review fix removed the `Path.cwd()` fallback but left the sibling route open, and
-the function's own docstring still describes the removed behaviour as current. The remaining six are a
-missing reason-token in the published consumer contract, the reason-token half of D2 unapplied at two
-sites, one omission from the D1 population, one test gap that explains why the high finding survived,
-and one safe-but-divergent tier-1 failure policy between the two resolvers.
+Seven gaps remain — one high, four medium, two low. The high one is that the plan's own defect class
+survives in the file the plan changed: `verify_failure_scope._resolve_declared_footprint` still derives
+the plan footprint from the **main checkout** when the plan's worktree is `pending`, because it reads
+`PlanContext.worktree_path` (which is documented to fall back to the main checkout) instead of gating on
+`has_worktree` the way both of its peer sites do. The PR-review fix removed the `Path.cwd()` fallback but
+left the sibling route open, and the function's own docstring still describes the removed behaviour as
+current. The remaining six are that stale docstring (G2), a missing reason token in the published
+consumer contract (G3), the reason-token half of D2 unapplied at two of the five reader sites (G4), one
+omission from the D1 population (G5), one test gap that explains why the high finding survived (G6), and
+one safe-but-divergent tier-1 failure policy between the two resolvers (G7).
+
+**G1 and G2 must land together**, in one change to `verify_failure_scope.py`: the docstring paragraph G2
+removes is the stated sanction for the read G1 removes, and fixing either alone leaves the file
+self-contradictory. **G6 is G1's regression test** and lands with them.
 
 ## G1 — Gate the verify-failure footprint on `has_worktree`, not on `worktree_path`
 
@@ -217,14 +222,16 @@ and one safe-but-divergent tier-1 failure policy between the two resolvers.
 - **Kind:** test-gap
 - **Severity:** medium
 - **Topic:** tests
-- **Where:** `test/plan-marshall/phase-5-execute/test_verify_failure_scope.py:315-346`
+- **Where:** `test/plan-marshall/phase-5-execute/test_verify_failure_scope.py:316-346`
   (`test_footprint_resolver_never_diffs_the_current_directory`)
 - **Evidence:** The test stubs `file_ops._query_worktree_path` to **raise**
-  `WorktreeResolutionError`, so it exercises only that route; its name and docstring claim the broader
-  property *"no diff may be attempted against any tree"*. No test drives the `pending` /
-  non-materialized state, which is the route that still diffs the main checkout (G1). The test directly
-  above it (`:300-313`) deliberately asserts that the `NO_PLAN` sentinel **does** diff
-  `MAIN_CHECKOUT_ROOT`, which makes the missing case easy to overlook.
+  `WorktreeResolutionError` (`:339-343`), so it exercises only that route; its docstring claims the
+  broader property *"An unresolvable worktree yields ``None``; no diff is attempted at all"* and its
+  final assertion message is *"no diff may be attempted against any tree"* (`:346`). No test drives the
+  `pending` / non-materialized state, which is the route that still diffs the main checkout (G1). The
+  test directly above it (`:296-313`, `test_footprint_resolver_accepts_the_no_plan_sentinel`)
+  deliberately asserts that the `NO_PLAN` sentinel **does** diff `MAIN_CHECKOUT_ROOT`, which makes the
+  missing case easy to overlook.
 - **Why it matters:** The suite currently reads as though the cwd/foreign-tree class is closed. It is
   not, and no test would go red if G1 were fixed and later regressed.
 - **Action:** Add a test that stubs `_query_worktree_path` to `('pending', '')` and asserts
