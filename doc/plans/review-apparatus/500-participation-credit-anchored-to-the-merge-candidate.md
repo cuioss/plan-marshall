@@ -288,8 +288,8 @@ thing holding it.
 
 - **The stale-prose sweep** (`010 G4`) — restatements of the deleted two-arm predicate and its
   abandoned two-source anchor across `workflow-integration-github/SKILL.md`,
-  `automatic-review/SKILL.md`, `pr-agent.md`, `bot_registry.py` and the contract passages the README
-  table assigns to the sibling plan. Re-derive the site set from `010 G4` § Where; it is not counted
+  `automatic-review/SKILL.md`, `pr-agent.md`, `bot_registry.py` and the contract passages that are
+  not this plan's, per the README table. Re-derive the site set from `010 G4` § Where; it is not counted
   here, because a count in this position goes stale the moment either plan is edited.
   Excluded because a documentation sweep across two skills would dwarf the behaviour change in the
   diff and make the currency fix unreviewable by the PR's reviewers. D2 and D5 rewrite **only** the
@@ -329,8 +329,9 @@ thing holding it.
 - `marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md`
   — exactly the rows the README table (§ "The shared-document split") assigns to `500`, and nothing
   else: the currency-rule scope sentence and the bounded-gap § (D5), the first-observation arm's
-  wording (D2), the § "Consumers" rows (D3), and D0's two records — the wait-predicate answer and the
-  NEW-INFORMATION site classification.
+  wording (D2), the § "Consumers" rows (D3), and D0's recorded answer on the wait predicate.
+  **D0's NEW-INFORMATION site classification is recorded in the expectation records, not in this
+  document** — do not write it here.
   **The "observation sidecar" paragraphs are NOT in this plan's surface, per the README table** — it
   assigns them elsewhere, and D5 defers them. If the branch diff touches them, that is collateral to
   report, not scope.

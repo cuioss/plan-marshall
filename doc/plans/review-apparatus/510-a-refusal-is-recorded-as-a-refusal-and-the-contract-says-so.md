@@ -384,7 +384,7 @@ is a **cold read** (see § Verification), not "the text was changed".
   re-reading the surrounding paragraph.
 
 *Done when:* both survivor searches return no hit that describes the currency test, except for
-passages the README table assigns elsewhere — each of those reported rather than fixed, and each
+passages the README table assigns elsewhere **or does not name at all** — each of those reported rather than fixed, and each
 rewritten site names the single ledger as the sole source; neither pr-agent sentence contradicts
 `automatic-review/SKILL.md` § "Rate-limit refusal recovery" or `bot-participation-contract.md`
 § "The three per-bot marker lists"; no shipped document claims the size exclusion is decidable in
@@ -524,8 +524,8 @@ Beyond the per-deliverable *Done when* conditions:
    - (a) Reading `bot-participation-contract.md` § "Evidence for a bot that edits one comment in
      place": what is a participation credit anchored to, and **how many sources supply that anchor?**
      The intended reading is *one* — a single currency ledger. ⚠ **Do not ask about, and do not act
-     on, the first-observation arm's definition-versus-assumption wording**: the README table assigns
-     that sentence to the sibling plan, so a "wrong" reading there is that plan's to fix, and a
+     on, the first-observation arm's definition-versus-assumption wording** — that sentence is not
+     this plan's, per the README table — so a "wrong" reading there is the other plan's to fix, and a
      mismatch is **reported, never corrected here.**
    - (b) Reading `automatic-review/standards/pr-agent.md`'s `rate_limit_class` section alone: a
      PR-Agent refusal caused by the diff being over a size ceiling escalates with which `reason`?
@@ -575,9 +575,9 @@ each passage. Where the two plans touch, this plan cites rather than duplicates:
   the run**. Read the code, not this plan and not a landed report; if `500` has already changed the
   predicate, describe the changed one. If `500` has *not* landed, describe the predicate as it stands
   and note in the report that the section may need a follow-up touch once `500` lands.
-- D5's `--declined-bots` work and `500`'s participation work both edit `automatic-review/SKILL.md`.
-  The edits are in different sections (the re-review consumer arms versus the FIND-step producer
-  description); a conflict there is a signal that one plan drifted out of its lane.
+- **`automatic-review/SKILL.md` is this plan's alone.** `500` excludes it — see its § Out of scope
+  and § Expected surface — so a conflict there is not an expected overlap but a signal that `500`
+  drifted out of its lane; report it rather than resolving it.
 
 ### Provenance, and what not to go looking for
 

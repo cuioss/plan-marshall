@@ -32,7 +32,10 @@ surfaced them, so one seam is repaired once:
 | `560` | The instruments that measure our own gates |
 | `570` | The epic's records, which carry the defect the epic is named after |
 
-`500` and `510` contend on one seam and MUST NOT run concurrently.
+`500` and `510` contend on one seam and MUST NOT run concurrently. `560` adds a row to the same
+§ "Consumers" table that `500` D3 and `510` D2 both add rows to — distinct rows, so this is a textual
+merge risk rather than an ownership question, but do not run `560` alongside either without checking
+that table.
 
 ### The shared-document split
 
@@ -50,7 +53,7 @@ exactly how this boundary was stated wrongly four times in succession.
 | The "by definition an observation at the merge candidate" claim in § "Evidence for a bot that edits one comment in place" | `010 G3` | `500` |
 | The § "Consumers" rows for fields `500` adds | — | `500` |
 | The new bounded-gap section | — | `500` |
-| The records D0 writes: whether a timestamp-anchored completion arm is correct for a wait, and the classification of the sites that decide whether a comment is new information | — | `500` |
+| The recorded answer on whether a timestamp-anchored completion arm is correct for a wait (D0) | — | `500` |
 | The "stored finding, or … the noise sidecar" two-source arm | `010 G4` | `510` |
 | The "edited in place (`updated_at` differs from `created_at`)" arm | `010 G4` | `510` |
 | The "union of the stored-finding SHAs and the recorded sidecar SHAs" paragraphs, **including the "observation sidecar" naming inside them** | `010 G4` | `510` |
@@ -92,20 +95,16 @@ Checks 1 and 2 are read against the **deliverable bodies and § Expected surface
 where every instance of this defect has actually lived. Phrases in the table are paraphrases; match
 on the passage, not on the wording.
 
-**What these checks are worth, measured rather than asserted.** Three defects this boundary actually
-produced were re-introduced into scratch copies and the checks run against them:
+⛔ **The greps are aids; check 2 is the authority, and it is done by reading.** Do not infer from a
+clean grep that the split is sound. One defect shape this boundary actually produced — a *Done when*
+whose clause **covers** a deferred passage without **naming** it — escapes all three checks as
+specified, because there is no passage token to match and no ownership verb to find. It was caught by
+reading, and only by reading.
 
-| Defect | Caught by |
-|---|---|
-| A plan's ⛔ stating a passage is "owned by" the other plan, on a false premise | check 3 (grep) |
-| A *Done when* whose clause covers a passage the plan defers | check 1 (grep, marker absent) |
-| § Expected surface listing a passage the table assigns elsewhere | check 2 — **and not by grep**: the neighbouring legitimate deferral supplies the marker |
-
-So **check 2 is not optional and is not a grep**: it is a row-by-row reconciliation of this table
-against each plan's § Expected surface, and it is the only one of the three that catches the last
-shape. The table is short and the surfaces are short; do it by reading. A grep alone reports clean
-over that defect — which is the failure mode this whole epic is named after, so do not let the
-tooling stand in for the reconciliation.
+No per-defect table of what-each-check-catches appears here on purpose. An earlier revision carried
+one; a later verification refuted a row of it by re-running the checks against a scratch revert. A
+claim about a heuristic's coverage is exactly as prone to going stale as the split it guards, and a
+false coverage claim is worse than none — it licenses trusting a grep that did not look.
 
 The same rule is why **neither plan counts the passages or sites of this shared document**: every
 falsehood this boundary produced was a stale numeral. That set is re-derived from `010 gaps.md`
