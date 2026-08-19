@@ -281,8 +281,9 @@ and never neither"* — pinned by `test/plan-marshall/phase-6-finalize/test_disp
 calls it inline, `SKILL.md:772` names it among *"the inline consumers"*, and `SKILL.md:848` names it as
 the owner of the run's one landing. (`grep -n "emit-landing"` over `SKILL.md` returns `:178`, `:766`,
 `:770`, `:772`, `:796`, `:848` — six lines, none of them in a roster.) The guarding
-test reads `.plan/marshal.json`, which is git-ignored; the local snapshot predates the step, so the test
-passes without covering it (run locally: exit 0).
+test reads `.plan/marshal.json`, which is **tracked** (one of the two exceptions at
+`.gitignore:45-47`) but **stale**: the committed snapshot predates the step, so the test passes
+without covering it (run locally: exit 0).
 
 **C9 — Branch F names a recovery its own `done` record suppresses (CONFIRMED).** `branch-cleanup.md:1801`
 closes Branch F with *"Re-entering finalize once the queue merge lands takes the `state == merged` path,

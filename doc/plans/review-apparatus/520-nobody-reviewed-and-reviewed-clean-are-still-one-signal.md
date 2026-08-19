@@ -601,9 +601,12 @@ ledger, no generated `execute-script.py`, no plan state — **except for two tra
 `.plan/marshal.json` and `.plan/project-architecture/` (per `.gitignore:45-47`). Re-derive that from
 `.gitignore` rather than trusting this sentence. Three consequences bind this run. The configured
 `required_bots` / `optional_bots` / `bot_lists_provenance` values for *this* repository are
-therefore readable in `marshal.json`, but **no deliverable may depend on them**: D0 leg 3 settles
-that population from `manage-config/SKILL.md`, and every value the run reports must be one it
-observed at run time, never one transcribed from this plan or from a gaps file. The
+therefore readable in `marshal.json`, but **no deliverable may depend on them.** D0 leg 3 settles
+only that the required set is *separable* from the enabled roster and what the provenance schema is
+— `manage-config/SKILL.md` documents both lists as defaulting EMPTY, so it yields no repository's
+actual roster and cannot stand in for one. Every value the run reports must therefore be one it
+observed at run time, never one transcribed from this plan, from a gaps file, or from a documented
+default. The
 `review_rate_window_await` value is readable for the same reason, and D4 still uses the documented
 git-tracked default, so that the fix holds for a consumer whose knob differs from this repository's.
 And no `python3 .plan/execute-script.py …` command in this repository's skills can be executed from

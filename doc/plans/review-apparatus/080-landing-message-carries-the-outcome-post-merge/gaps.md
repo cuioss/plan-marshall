@@ -352,14 +352,16 @@ without re-deriving the analysis. Eleven entries: one blocker, five major, five 
   at compose time)"*; `SKILL.md:772` names it among *"the inline consumers"* and `:848` names it as the
   owner of the run's one landing. The guarding test
   derives its registry from `_MARSHAL_JSON = PROJECT_ROOT / '.plan' / 'marshal.json'` (`:86`, read in
-  `_registered_steps` at `:213-217`), which is git-ignored; the local snapshot holds 25 steps and does not
-  include `emit-landing`, so the test passes (run locally: 21 passed) without covering it.
+  `_registered_steps` at `:213-217`). That file is **tracked** — one of the two exceptions at
+  `.gitignore:45-47` — so the blindness is not a missing file but a **stale** one: the committed
+  snapshot holds 25 steps and does not include `emit-landing`, so the test passes (run locally:
+  21 passed) without covering it.
 - **Impact:** The document that governs whether a step dispatches or runs inline is silent about the step
   that emits the landing, and the invariant meant to catch that is blind because its population comes
-  from an untracked file.
+  from a tracked snapshot nothing keeps current.
 - **Task:** Add `default:emit-landing` to the `## Inline steps` roster. Separately, decide whether the
-  closure test's registry source should fall back to the discovered built-in set when `.plan/marshal.json`
-  is absent or stale, so the invariant is enforceable in a fresh clone.
+  closure test's registry source should fall back to the discovered built-in set when the tracked
+  `.plan/marshal.json` snapshot is stale or absent, so the invariant is enforceable in a fresh clone.
 - **Done when:** `emit-landing` appears in exactly one roster, and the closure test fails when a
   registered step is unclassified regardless of the state of `.plan/marshal.json`.
 - **Suggested grouping:** `phase-6-finalize` / step roster

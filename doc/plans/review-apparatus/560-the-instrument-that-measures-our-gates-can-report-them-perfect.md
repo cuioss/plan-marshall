@@ -537,8 +537,10 @@ stops mid-run drift.
 
 ## Claim labels
 
-Every scoping premise is labelled. Each confirm/refute artifact is **git-reachable from this clone** —
-no `.plan/` path appears, because none is reachable.
+Every scoping premise is labelled. Each confirm/refute artifact is **git-reachable from this clone**,
+and none is a `.plan/` path. That is a scoping choice, not a reachability fact: `.plan/` carries two
+tracked exceptions (`.plan/marshal.json` and `.plan/project-architecture/`, per `.gitignore:45-47`),
+and this plan simply settles no premise from either.
 
 | Claim | Label | Confirm/refute artifact |
 |---|---|---|

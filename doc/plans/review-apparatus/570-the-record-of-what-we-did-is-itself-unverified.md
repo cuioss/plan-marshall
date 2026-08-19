@@ -699,10 +699,12 @@ mechanism and *Done when* this plan depends on is restated above, and the run ca
 without opening one. Open them when a gap's evidence is worth seeing in full — and note that a gap
 entry's own figures are leads, exactly as this plan's are.
 
-**Nothing under `.plan/` exists here.** The orchestrator ledger, the plan specs, the findings store
-and the landing records live under `.plan/`, which is git-ignored and therefore absent from this
-clone. Do **not** go looking for one. No deliverable needs it, and D0 halts rather than substituting
-a hand-maintained list for a derivation.
+**Effectively nothing under `.plan/` exists here.** The orchestrator ledger, the plan specs, the
+findings store and the landing records are git-ignored and therefore absent from this clone. Do
+**not** go looking for one. Two paths under `.plan/` *are* tracked and so do exist
+(`.plan/marshal.json` and `.plan/project-architecture/`, per `.gitignore:45-47`) — re-derive that
+from `.gitignore` rather than trusting this sentence — but no deliverable here reads either. D0
+halts rather than substituting a hand-maintained list for a derivation.
 
 **What a clone cannot settle.** One claim in this plan — that `sourcery-ai` published a rate-limit
 notice on PR #1182's PR-level reviews surface — is about a GitHub surface, not about the tree. In a

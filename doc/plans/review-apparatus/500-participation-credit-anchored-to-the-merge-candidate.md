@@ -420,13 +420,18 @@ Beyond each deliverable's *Done when*:
 - **Sequencing against plan `510`.** `510-a-refusal-is-recorded-as-a-refusal-and-the-contract-says-so`
   edits the same three surfaces this plan does — `github_pr.py`'s participation path,
   `automatic-review/SKILL.md`, and `bot-participation-contract.md` — so **the two MUST NOT run
-  concurrently.** The boundary: this plan owns the **currency** mechanics (the per-comment ledger,
-  the SHA anchor, the dedup identity, and the contract's currency-scope sentence); `510` owns
-  **refusal and decline accounting** (the refusal `cause`/`cap` producers, wording drift, the
-  registry, and the decline consumers). Where a fix here would touch `510`'s side, make the minimum
-  change, say so in the run report, and leave the rest to `510`. `510` § Notes states the same
-  boundary from its side; if the two descriptions disagree, report the disagreement rather than
-  picking one.
+  concurrently.** The boundary: this plan owns the **currency mechanics** — the per-comment ledger,
+  the SHA anchor, the dedup identity — and `510` owns **refusal and decline accounting**: the refusal
+  `cause`/`cap` producers, wording drift, the registry, and the decline consumers.
+  **`bot-participation-contract.md` is shared, and the split inside it is by sentence, not by
+  section.** This plan rewrites exactly the two sentences whose *behaviour* it changes — the
+  currency-scope sentence (`010 G2`) and the "by definition an observation at the merge candidate"
+  sentence in § "Evidence for a bot that edits one comment in place" (`010 G3`, rewritten as a
+  bounded assumption). Every other stale passage in that document, including the rest of that same
+  section, belongs to `510`'s D6 sweep (`010 G4`). If either sentence already reads as this plan
+  requires when the run reaches it, `510` landed first: **verify it against the code and move on; do
+  not rewrite or revert it.** `510` § Notes states the same split from its side; if the two
+  descriptions disagree, report the disagreement rather than picking one.
 
 - **Corroborating evidence lives in git**, in the two `gaps.md` files named under § Deliverables and
   the `verification.md` beside each. They carry the original reproduction notes, including an

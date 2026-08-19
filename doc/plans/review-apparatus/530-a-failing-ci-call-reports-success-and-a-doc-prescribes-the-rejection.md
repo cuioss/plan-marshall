@@ -527,9 +527,12 @@ Beyond each deliverable's *Done when*:
   `doc/plans/review-apparatus/020-a-foreign-task-reports-done-with-no-pr-anywhere/gaps.md`
   (G12, G13). The `verification.md` beside each carries the supporting analysis. This plan is written
   to stand on its own without them; they are corroboration, not required reading.
-- **`.plan/` is invisible to this run.** The orchestrator ledger, the plan specs and the landing
-  records live under `.plan/local/orchestrator/…`, which is git-ignored and therefore absent from the
-  clone. **Do not go looking for it.** Nothing this plan needs is there.
+- **`.plan/` is all but invisible to this run.** The orchestrator ledger, the plan specs and the
+  landing records live under `.plan/local/orchestrator/…`, which is git-ignored and therefore absent
+  from the clone. **Do not go looking for any of them.** `.plan/` does carry two tracked exceptions
+  (`.plan/marshal.json` and `.plan/project-architecture/`, per `.gitignore:45-47`) — re-derive that
+  from `.gitignore` rather than trusting this sentence — but no deliverable here reads either, and
+  none may be made to.
 - **Gap ids not carried here.** The three source `gaps.md` files contain further entries that are
   deliberately **not** in this plan's scope: `030` G5, G8, G11; `060` G5, G6, G7; and `020` G1–G11 and
   G14–G19. Each is excluded for a reason stated in § Out of scope (bot-flag parsing, run-report
