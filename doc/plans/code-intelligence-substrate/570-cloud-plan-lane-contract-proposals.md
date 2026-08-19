@@ -403,6 +403,7 @@ Re-derive each at the moment you state it, and record the command and the ref yo
    in the run report. That is a discharge, not a shortfall. A `collected` target that also appears as a
    bullet above is satisfied by the disposition alone; do not write a stub entry to make the bullet list
    look complete.
+
    *Done when:* every entry in part three names its document and location, quotes the original claim,
    states the corrected claim with the check that established it, and — for the two `350` entries that
    depend on the source branch — states either the recovered text or an explicit unrecoverable outcome.

@@ -2,8 +2,9 @@
 
 The plan's seven deliverables all shipped and the five load-bearing guards (population-mismatch refusal,
 aggregate invalidation, population-count persistence, the unclosed-boundary `end_time` guard, the
-over-covering marker) were each driven red by mutation, so the core is sound. What remains is **ten
-instances in five families**:
+over-covering marker) were each driven red by mutation, so the core is sound. What remains is the
+families below — count the `## G` entries themselves rather than trusting a number here, since this
+list has already gone stale once when G11 was added after it was written:
 
 - **One false claim in shipped documentation** — the `reconcile-ledgers` `--help` description restates a
   claim round 2 refuted (G1).
@@ -15,8 +16,12 @@ instances in five families**:
   unasserted (G8) and one of two readers of `total_tokens` sums booleans as counts (G6).
 - **Four documentation-surface defects** — three in `report-01.md` (G5, G9, G10) and one missing
   cross-reference between the two `*_population` field families (G7).
+- **One unrun check** — D3's *Done when* runs report→store, and only the store→report direction was
+  ever established, so the deliverable is PARTIAL until the reverse walk is done (G11). It needs a
+  corpus this clone does not have.
 
-No gap is `high` — nothing shipped mis-measures, and no guard was found unable to fire.
+No gap is `high` — nothing shipped mis-measures, and no guard was found unable to fire. G11 is the one
+entry that records an **unverified** deliverable rather than a defect found in one.
 
 ## G1 — Correct the `reconcile-ledgers` `--help` description, which restates a claim round 2 refuted
 
@@ -320,3 +325,35 @@ No gap is `high` — nothing shipped mis-measures, and no guard was found unable
   section names the unverified half.
 - **Effort:** S
 - **Risk if fixed:** none.
+
+## G11 — Run D3's reverse store check, which no evidence in this audit covers
+
+- **Kind:** test-gap
+- **Severity:** medium
+- **Topic:** measurement/metrics
+- **Where:** `marketplace/bundles/plan-marshall/skills/manage-metrics/scripts/manage-metrics.py:2014-2097`
+  (the annotation blockquotes), against the plan's D3 *Done when*.
+- **Evidence:** D3's *Done when* runs report→store: **every rendered figure has a persisted
+  counterpart**. Everything this audit established runs the other way — that every key `write_metrics`
+  writes reaches the store, and that the **Total row's** printed figures resolve to keys written in that
+  same call (`:1908-1980`, `:948-957`, read directly rather than through the run's reasoning). The
+  annotation blockquotes were never traced back into the store: the reconciliation clause renders
+  `f'{name} → {field} {value:,}'` (`:2015-2018`), and the two boundary-fold clauses (`:2067`, `:2084`)
+  and the assembled phase-name lists (`:2039-2059`) render derived or reformatted values.
+- **Why it matters:** D3 is the deliverable that makes a rendered metrics report trustworthy — the whole
+  point is that a reader can take any figure on the page back to a stored value. A rendered figure with
+  no persisted counterpart is precisely the unverifiable-claim shape this epic exists to remove, and it
+  would live in the annotation text a reader is most likely to quote.
+- **Action:** generate a metrics report from a real corpus, walk it **top-down**, and for each rendered
+  figure resolve it to a key in the persisted store — treating a derived or reformatted figure as
+  satisfied only when its inputs are all persisted and the derivation is stated. File whatever the walk
+  finds; do not assume the likely outcome.
+  ⛔ **This gap cannot be discharged by reading.** It needs a corpus.
+- **Done when:** the report-to-store direction has been walked over a real rendered report and its result
+  recorded — either every rendered figure resolves (D3 returns to CONFIRMED), or the figures that do not
+  are filed with their line numbers.
+- **Effort:** M — the walk is quick; obtaining a corpus is the cost.
+- **Risk if fixed:** none to the tree; this is a measurement, not a change.
+- **Blocked by:** `.plan/local/` in a fresh clone holds only `logs/` and `marshall-state.toon`, with no
+  `plans/` tree, so there is nothing to render. Run this from a corpus-bearing machine, or after a plan
+  has executed locally. The same blockage is recorded against D1.
