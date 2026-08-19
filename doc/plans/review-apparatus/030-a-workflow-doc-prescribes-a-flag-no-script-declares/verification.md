@@ -517,3 +517,128 @@ step marks itself `done` on an absent PR number — the plan's own Goal class, s
 finalize path. The exit-code-only keying of the widened convention is what makes that last one
 possible, and it is exactly the narrowing D0's text forbade. All are cheap to close and none undoes
 what landed.
+
+## Adversarial review
+
+An independent pass re-derived every load-bearing finding above against the tree rather than
+accepting it, corrected what it contradicted, and extended the gap set. This section states what was
+re-run, precisely enough to re-run again.
+
+### What was re-derived, and how
+
+**Executed against the live modules** (bundle `scripts/` directories on `PYTHONPATH`; probes run
+through `uv run python`):
+
+- `ci_base.build_parser('test')` + `ci_base.add_pr_create_args(pr_sub)`, walked recursively for every
+  subparser declaring a `--plan-id` option, printing `(path, action.required)`.
+- `ci_base.extract_routing_args` on a pre-verb `--plan-id` for each of those subcommands, then
+  `parser.parse_args(remaining)` on the returned argv, with `stderr` captured.
+- `parse_participation` on an inadmissible evidence kind, an unregistered bot, and an admissible
+  pair; `parse_causes` on a bare token and on a pair; `bot_registry.participation_evidence('pr-agent')`.
+- `ci.py checks pull-request-runs --pr-number 1` from a directory with no configured provider.
+- `github_ops.py checks pull-request-runs --pr-number 1` and
+  `github_ops.py pr create --title T --plan-id NO_PLAN --base main`, each with `PATH=''`.
+
+**Test runs:** `test_review_merge_invocation_contract.py` (`11 passed`), the same with
+`--collect-only` (six `test_documented_invocation_parses` ids), and
+`test_review_completeness.py -k "Malformed or StaleParticipation"` (`10 passed, 131 deselected`).
+
+**Mutations, each byte-snapshotted before the edit and restored from that snapshot in a `finally`,
+with the restore verified byte-identical:** the `--enabled-bots` reintroduction in
+`automatic-review/SKILL.md`'s FIND `fetch_findings` invocation, and the narrow-heading reversion in
+`branch-cleanup.md`. No `git checkout`/`restore`/`stash` was used.
+
+**Sweeps re-implemented from scratch** (not reusing the earlier pass's scripts): the WIDE / NARROW /
+NONE classification over every `*.md` in the four skills using the landed test's own
+`_fenced_commands` / `_invoked_notations` / `_is_manage_star` logic; and a regex sweep of every `ci`
+invocation in `marketplace/bundles/**/*.md` for a router-level `--plan-id` before the verb.
+
+### Verdicts on the findings this document already carried
+
+**UPHELD, unchanged (14).** The blocker's mechanism (`execution-context.md:23` vs `ci_base`, router
+strip confirmed by execution); the exit-0 `status: error` return from `ci`; `branch-cleanup-rereview.md`
+carrying one `## ` heading and no convention while invoking two non-`manage-*` scripts; the
+3 WIDE / 13 NARROW / 6 NONE sweep and every one of its 13 narrow line citations; the 42 / 3 / 39
+heading count; the `--stale-participation-bots` admissibility drop, reproduced with identical output;
+the D1 symbols and both test classes at their cited lines; the D3 population of exactly 6 and its
+six ids; the absence of `print` / `record_property` / `capsys`; the three D2 null results as scoped;
+`review_gate_delta.py:504` declaring `--enabled-bots` and not existing at `3c7a1cc8`; the canonical
+post-verb forms at `pr-operations.md:163` and `tool-usage-patterns.md:133,261,268`; the landed
+diff's seven non-plan paths and the `R100` plan.md rename; `3c7a1cc8` being an ancestor of `HEAD`
+with no production path moved since `61a43e53`.
+
+**OVERSTATED, corrected (1).** The claim was stated at **six** `ci` verbs in the body, the
+Correctness review and the Summary while the headline said ten. Ten is right, and the body's
+derivation was the incomplete one: it counted only `add_body_consumer_args`
+(`pr create`, `pr edit`, `pr reply`, `pr thread-reply`, `issue create`, `issue comment`) and missed
+the four `add_plan_id_arg` verbs (`pr prepare-body`, `pr prepare-comment`, `issue prepare-body`,
+`issue prepare-comment`). `ci_base` imports `add_plan_id_arg` from `input_validation`
+(`:385-398`), whose signature is `(parser, required: bool = True)` — so all ten are required, and all
+ten were executed to an exit-2 rejection. The blocker is therefore **stronger**, not weaker.
+
+**Understated, corrected (1).** The exit-0 hole was attributed to `ci_base.output_error` at the
+router tier. The provider tier does the same thing unconditionally: `github_ops.py:1906-1908` and
+`gitlab_ops.py:2600-2602` both `return 0` after `dispatch` with no branch on `result['status']`, so
+**every** `ci` verb reports failure at exit 0, not only an unrouted one.
+
+**Corrected in scope (1).** Report-claim 12's `enabled_bots` null result holds for the marshal.json
+config knob but not tree-wide as written: `review_gate_delta.py:264`,
+`automatic-review/SKILL.md:1092` and `bot-participation-contract.md:627` are live, non-retirement
+uses that post-date the landing.
+
+**Upgraded from PLAUSIBLE to ACCURATE (2).** Report-claims 17 and 19 were recorded as
+structurally-certain-but-not-re-run. Both mutations were run: the heading reversion failed exactly
+`…[standards-branch-cleanup.md]`, and the `--enabled-bots` reintroduction failed exactly
+`…[skill-md-github-pr]` with `github_pr.py: error: unrecognized arguments: --enabled-bots`.
+
+**REFUTED (0).** No finding in this document was contradicted by the re-derivation.
+
+**UNVERIFIABLE, unchanged (3).** Report-claims 22 (the full-build figures), 23 (the four pre-squash
+commit ids) and 24 (GitHub-side CI, review and CLA state). Each is unverifiable for a structural
+reason — no full build was run, the branch was deleted on squash-merge, and the clone carries no
+GitHub state — not for want of looking.
+
+**Citation drift corrected (12).** `_documented_invocations` `:170-192` → `:162-185`; the bracket
+skip `:187` → `:182`; the derived-skill-set assertion `:262` → `:244-248`; the wide-heading assertion
+`:271` → `:272`; `TestDocumentedReviewMergeInvocationsParse` `:287` → `:288`; the size assertions
+`:299-306` → `:299` and `:304-309`; the floor `:302` → `:304`; the module prose `:128-133` →
+`:128-134`; the `MalformedBotFlag` docstring `:315-322` → `:316-322`; `parse_causes` `:382-422` →
+`:382-423`; `github_pr.py:952-953` → `:953`; the canonical blocks `:970-990` / `:1000-1010` →
+`:964-997` / `:999-1010`. Every other `path:line` in this document was opened and matched the quoted
+text.
+
+**Count corrected (1).** The plan's Claim-labels table has **eight** rows, not seven.
+
+### What the re-derivation added
+
+- **G2 — `create-pr.md` Step 4 marks the step `done` on a failed `ci pr create`.** Neither document
+  named it. It is a live instance of the plan's own Goal class inside D0's stated population,
+  reachable because the provider returns exit 0 on failure and the step states no `status` branch.
+  Reproduced end to end.
+- **G3 sharpened** from "the router returns exit 0" to "both providers return exit 0
+  unconditionally", with the three validating sites and the two non-validating sites enumerated.
+- **G8 broadened** from the module docstring to the three prose-bearing literals that carry the same
+  false two-FORM split — including the `_split_bots` rejection message, which is user-facing error
+  text that names the wrong flags for a `bot_kind:cause` token — plus the `deficit` usage line's
+  omission of `--refusal-size-caps`.
+- **G9 absorbed** the D3 derivation fragility the Correctness review had recorded without raising:
+  the first-notation / all-remaining-tokens split and the broad `'[' in block` skip are the mechanism
+  by which the sweep can shrink while staying green, so they belong with the unpublished size and the
+  under-set floor.
+- **G11 extended** to cover both unreported obligations (the executor empty-value claim label and the
+  never-fired endorsement-trap condition), and its evidence now cites the executor stripping at its
+  real source, `execute-script.py.template:1419-1420`, rather than only the doc that describes it.
+- **G1 evidence extended** with the sweep establishing that no *authored* `ci` invocation places
+  `--plan-id` before a verb that declares it — the three pre-verb sites all name verbs that do not —
+  so the exposure is the runtime-composed invocation, exactly as the plan's Notes predicted.
+
+`gaps.md` was renumbered contiguously G1–G11 in severity order (1 blocker, 5 major, 5 minor) and
+every cross-reference in this document now points at the renumbered entry.
+
+### What did not change
+
+The verdict stays **verified-with-gaps**. Every deliverable landed, both owned suites pass, both
+mutation proofs hold, and no gap here undoes what shipped. The blocker survives and is broader than
+first recorded; the single most important correction is that the envelope contract's `ci` claim is
+false for **ten** subcommands rather than six, all of them `required=True`, all executed to an exit-2
+rejection.

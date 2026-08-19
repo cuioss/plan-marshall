@@ -315,43 +315,63 @@ survives `parse_causes`' first-colon split (pinned at `:957`); `_refusal_state` 
 fail-closed on an unrecognised class. `classify_bot`'s branch order puts the refusal branch after
 proven participation and before `declined` / `participated_stale`, which matches every document.
 
-**C5 — the liveness question.** The barrier cannot block forever on the structural member. On
-`fail_into_loopback` it records `loop_back` to `6-finalize`; re-entry re-runs § "Authorization check"
-*before* the disposition (`branch-cleanup.md:1066`), and the run is bounded by `max_iterations` and by
-`loop_back_without_asking: false` halting after one pass (`:1094`). The one residual futile shape is
-**not** new: if the producer's `refused_causes[]` is empty or malformed (the documented empty-fallback
-at `:814`), a size refusal resolves to a temporal member, the structural carve-out never fires, and
-the pre-fix loop-back is taken — bounded, but silent. `recover_causes_from_caps` closes only the
-cap-survives-but-cause-lost half of that.
+**C5 — the liveness question, re-derived independently.** The barrier cannot block forever on the
+structural member, on either mode and on either operator choice:
+
+- `fail_into_loopback` records `loop_back` to `6-finalize`; re-entry re-runs § "Authorization check"
+  *before* the disposition (`branch-cleanup.md:1066`), and the run is bounded by `max_iterations`
+  (default 3, `plan-marshall/workflow/execution.md:607`) and by `loop_back_without_asking: false`
+  halting after one pass (`branch-cleanup.md:1094`, `execution.md:609`).
+- `ask` → "Split the PR" takes the same bounded loop-back (`:1139`); "Accept the coverage gap" mints
+  the grant and merges (`:1140`); "Disable this reviewer" moves the bot via `step-params set` on the
+  `plan-marshall:automatic-review` step — **the same step the barrier reads `required_bots` from**
+  (`:721`) — so the next predicate evaluation genuinely sees an optional bot. That closes the loop
+  F26 found on the leaf's equivalent option, at the barrier too.
+- `{barrier_mode}` has exactly two legal values (`:719`), so the carve-out's two-branch enumeration
+  is total.
+- The precedence rule keeps a mixed block live: `{count} > 0` routes to the pending-findings path,
+  which loops back and clears its half, after which `{count} == 0` fires the structural branch
+  (`:1052-1056`).
+
+The one residual futile shape is **not** new: if the producer's `refused_causes[]` is empty or
+malformed (the documented empty-fallback at `:814`), a size refusal resolves to a temporal member, the
+structural carve-out never fires, and the pre-fix loop-back is taken — bounded, but silent.
+`recover_causes_from_caps` closes only the cap-survives-but-cause-lost half of that.
 
 ## Completeness review
 
 - **`test_refusal_recovery_arming.py` was not updated and still models arming as class-only.**
   `_RECOVERY_BY_CLASS` (`:49-53`) and `_arms` (`:56-58`) contain no cause axis; the class is named
-  `TestRecoveryArmingFollowsTheRegistryClass` (`:150`) with the docstring *"The recovery is chosen by
-  the refusing bot's own declared class"* — the rule this plan replaced. `_refusal_body`
-  (`:60-73`) feeds each bot `refusal_patterns[0]`, which for `sourcery` **is its size pattern**, so
-  the suite already exercises a size refusal and asserts the class-only outcome for it. It passes
-  today only because no `awaitable_window` bot declares a size pattern. Its
-  `test_a_hard_quota_escalates_immediately` docstring additionally calls `hard_quota` *"a per-PR
-  ceiling"* — the size/quota conflation the plan's finding 3 removed elsewhere. This is the test-fixture
-  consumer kind, and the sweep missed it.
+  `TestRecoveryArmingFollowsTheRegistryClass` (`:152`) with the docstring *"The recovery is chosen by
+  the refusing bot's own declared class"* (`:153`) — the rule this plan replaced. `_refusal_body`
+  (`:61-73`) feeds each bot `refusal_patterns[0]`, which for `sourcery` **is its size pattern**
+  (`sourcery.md:43`), so the suite already exercises a size refusal and asserts the class-only outcome
+  for it. ⚠ Nothing it asserts is false today — `escalate_immediately` remains the coarse-grained
+  right answer for Sourcery — so this is a stale MODEL rather than a wrong test; it would bless the
+  defect the moment an `awaitable_window` bot declares a size pattern, and its model has no room for
+  the `refusal_structural` / `rate_window_not_awaitable` distinction C1 turns on. Its
+  `test_a_hard_quota_escalates_immediately` docstring additionally calls `hard_quota` *"A per-PR
+  ceiling"* (`:179`) — the size/quota conflation the plan's finding 3 removed everywhere else, and the
+  last live instance of it. This is the test-fixture consumer kind, and the sweep missed it.
 - **The module's own usage synopsis contradicts the parser.**
   `review_completeness.py:116` documents `deficit` without `--refusal-size-caps`, while
   `_add_bot_observation_flags(deficit_parser)` (`:1525`) declares it. Same class as F43, fixed only
   in `SKILL.md`.
 - **`test_pre_merge_barrier.py` was named in the plan's Expected surface and never touched.** Its
-  `test_widened_member_gates_byte_identically_to_absent` (`:686`) hand-lists three widened members
-  (`participated_stale`, `not_triggered`, `declined`) and omits `refused_structural` — a hand-list
-  that a new blocking member must join, which is the exact staleness shape D0 rejects.
-- **`pr-agent.md:253` restates the recovery unconditionally**: "The recovery sequence therefore
+  `test_widened_member_gates_byte_identically_to_absent` (parametrised at `:666-685`, defined at
+  `:687`) hand-lists three widened members (`participated_stale`, `not_triggered`, `declined`) and
+  omits `refused_structural` — a hand-list that a new blocking member must join, which is the exact
+  staleness shape D0 rejects. A search of the whole file for `structural` returns one hit, in an
+  unrelated comment at `:296`: the member has no coverage there at all.
+- **`pr-agent.md:252-253` restates the recovery unconditionally**: "The recovery sequence therefore
   escalates immediately for this class (`escalate_ask{reason: rate_window_not_awaitable}`)". Branch 1
   is now conditional — "`hard_quota` or `unknown` **(and `cause` is not `size`)**"
-  (`automatic-review/SKILL.md:400`). Same stale-consumer class as F30–F36 and F74, in a registry doc
-  the plan's Expected surface named.
-- **Pre-existing, adjacent, and worth a later plan:** `pr-agent.md:255` instructs *"record its
-  OBSERVED text in `ignore_patterns`"* for a refusal. `sourcery.md:111` states the opposite in as many
-  words — a refusal "lives in the separate `refusal_patterns` list, **not** in `ignore_patterns`" —
+  (`automatic-review/SKILL.md:400`). It is the only occurrence of `rate_window_not_awaitable` outside
+  the two SKILL files (`grep -rn "rate_window_not_awaitable" marketplace/ test/`). Same stale-consumer
+  class as F30–F36 and F74, in a registry doc the plan's Expected surface named.
+- **Pre-existing, adjacent, and worth a later plan:** `pr-agent.md:254-255` instructs *"record its
+  OBSERVED text in `ignore_patterns`"* for a refusal. `sourcery.md:110-112` states the opposite in as
+  many words — a refusal "lives in the separate `refusal_patterns` list, **not** in `ignore_patterns`" —
   and `ignore_patterns` is an unconditional noise **drop** (`bot-participation-contract.md:457`).
   `git log -S` dates it to #1041, so this landing neither caused nor inherited an obligation for it.
 - **Everything else in the F8–F20 / F30–F36 sweep that I re-checked is genuinely fixed** —
