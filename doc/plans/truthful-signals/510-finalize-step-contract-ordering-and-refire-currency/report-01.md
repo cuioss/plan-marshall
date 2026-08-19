@@ -264,9 +264,10 @@ restatement rather than the import, so the help string now interpolates the cons
 ran ahead of every `*.py`-touching commit; both defects show that a per-commit gate scoped to the
 changed modules does not substitute for the whole-tree run.
 
-The passing dimensions, from the same streamed output:
+**Green whole-tree result**, third run, over the tree carrying the carve-out and its three guards:
 
 ```text
+21107 passed, 14 skipped in 337.67s (0:05:37)
 coverage: COMPLETE over the dimensions below — checked over full scope:
   mypy(production) [415 files, cache disabled], ruff [marketplace/bundles, test, .claude],
   SPDX headers [marketplace/bundles, test, .claude, marketplace/targets, build.py],
@@ -274,8 +275,17 @@ coverage: COMPLETE over the dimensions below — checked over full scope:
   module-tests [whole-tree pytest]
 ```
 
-Reaching `module-tests` at all proves `quality-gate` and `test-compile` passed — `verify` exits early
-on either. The green whole-tree re-run over the corrected tree is recorded at the merge gate below.
+Zero `FAILED` lines, and all six sub-steps observed in the stream — `quality-gate` (ruff, SPDX,
+plugin-doctor), `test-compile` (`mypy test`) and `module-tests` — so the green is not an early exit.
+The count reconciles against the red run rather than being read off on its own: 21103 passed **+ 1**
+(the sweep assertion that was failing) **+ 3** (the new carve-out guards) = **21107**. A total that did
+not reconcile would mean tests had been lost, which a rising pass count alone would hide.
+
+The gate's own scope-limit block is worth carrying rather than eliding, because this run demonstrated
+its point twice: `module-tests` "executes the tests that exist; it cannot evaluate behaviour under
+inputs no test supplies", and a green here is evidence about the six dimensions listed, not whole-tree
+assurance that the change is sound. Both defects this gate caught (a ruff `F401`, the sweep assertion)
+were found by reading its output while the wrapper exited 0 — never by the exit code.
 
 **Stale-base re-verification (§ Step 8 condition 2)** — recorded at the merge gate below.
 
