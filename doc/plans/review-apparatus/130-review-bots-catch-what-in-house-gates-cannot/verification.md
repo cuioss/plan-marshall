@@ -3,12 +3,12 @@
 **Landed as:** PR #1239, squash commit `622f4484`
 **Verdict:** partially-implemented
 
-Every artifact the report names exists in the tree today, and the two deliverables D1 and D3 are
-really implemented. D0 and D2 are each partially discharged against their own *Done when*: two
-reachable gate-verdict render paths carry no scope limit at all, and the metric D2 ships **can**
-produce the inversion the plan says must not ship — by a route the plan's own inversion test does not
-cover. Further correctness defects sit in the landed code. The report is accurate on substance and
-inaccurate on two counts (test/file tallies).
+Every artifact the report names exists in the tree today. D1 is fully discharged; D3 falls short only
+on the mutation clause its own Verification section demands. D0 and D2 are each partially discharged
+against their own *Done when*: two reachable gate-verdict render paths carry no scope limit at all,
+and the metric D2 ships **can** produce the inversion the plan says must not ship — by a route the
+plan's own inversion test does not cover. Further correctness defects sit in the landed code. The
+report is accurate on substance and inaccurate on two counts (test/file tallies).
 
 ## Method
 
@@ -565,8 +565,8 @@ PR` remedy that makes C1 reachable.
 
 **Gaps by severity: 1 blocker, 7 major, 10 minor (18 total).**
 
-Everything the report claims to have built exists in the tree today and works as described; D1 and D3
-are genuinely implemented, the test suites pass, the out-of-scope boundary was respected, and the
+Everything the report claims to have built exists in the tree today and works as described; D1 is fully discharged and D3
+falls short only on the mutation clause, the test suites pass, the out-of-scope boundary was respected, and the
 report's disclosures — the dropped deliverable, the named gate-set boundary, the labelled regression
 pin, the un-emitted rate — are honest and mostly accurate. D0 and D2 are each partially discharged
 against their own *Done when*, which is what moves the verdict to **partially-implemented**.
