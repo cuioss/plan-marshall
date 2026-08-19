@@ -879,6 +879,57 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
   [--skip-fetch] [--no-emit]
 ```
 
+Mechanical baseline reconciliation: resolves the worktree, fetches `origin/{base_branch}`, lists the
+upstream commits since the captured `worktree_sha`, and runs `git merge-tree` to detect potential
+conflicts.
+
+**Return**. Every consumer MUST branch on `status` **before** reading `classification`: the wrapper
+prints the payload through a helper that always exits 0, so an "if the script exits non-zero" test
+never fires, and only the `success` payload carries a `classification` field at all.
+
+`status: success` — the classification fields:
+
+| Field | Meaning |
+|-------|---------|
+| `classification` | `no_overlap` \| `overlap_no_content_conflict` \| `overlap_with_content_conflict` |
+| `auto_reconcilable` | **Derived**, not measured: it is exactly `classification == overlap_no_content_conflict`, so it never downgrades an auto-resolvable overlap. A consumer already inside an `overlap_no_content_conflict` branch has no information left to gain from it |
+| `worktree_path`, `base_branch`, `base_branch_source` | The resolved target and where the base branch came from |
+| `base_branch_updated`, `original_base_branch` | The stale-base auto-update below. `original_base_branch` is present only when the update fired |
+| `merge_base_sha`, `merge_base_source` | The anchor every range below is computed against, recomputed per call |
+| `upstream_commit_count`, `upstream_commits` | Commits on the base since the merge base |
+| `conflict_count`, `conflicts`, `merge_tree_error` | The `git merge-tree` probe's result |
+| `in_flight_files` | Files the branch itself changed since the merge base |
+| `findings_emitted`, `emit` | Q-Gate findings written, and whether emission was enabled |
+
+`status: skipped` — the probe **declined to classify**; no `classification` field is present. A skip is
+never evidence that a rebase is safe, so a consumer forces its own conservative decision and logs
+`reason`. An unconfigured base branch is NOT among them: it falls back to `main`
+(`base_branch_source: default`) and the probe proceeds.
+
+| `reason` | Cause |
+|----------|-------|
+| `main_checkout_flow` | The plan's worktree state is `disabled` — it runs against the main checkout |
+| `worktree_not_materialized` | The plan is bound to a worktree in state `pending` — declared, not yet created |
+| `status_not_found` / `status_module_unavailable` / `worktree_path_missing` / `worktree_path_not_a_directory` | The worktree could not be resolved: status unreadable, the resolver unavailable, or the declared path absent or not a directory |
+| `worktree_unresolved` | Fallback, used only when the resolver returns no path AND names no reason of its own |
+| `no_remote` | The repository has no remote to fetch from |
+| `fetch_failed` | `git fetch origin {base_branch}` failed (network, auth, missing ref) |
+| `head_unresolved` | `git rev-parse HEAD` does not resolve in the worktree — nothing to anchor the comparison on |
+| `merge_base_unresolved` | `merge-base(HEAD, origin/{base_branch})` does not resolve — unrelated histories or an absent upstream ref leave no anchor for the commit range or the conflict probe |
+
+`status: error` — typed failures:
+
+| `error` | Cause |
+|---------|-------|
+| `probe_mutated_head` | HEAD changed during the probe. The classifier performs no writes, so a moved ref means it cannot be trusted to have classified the state it reported; it refuses to return a verdict derived from a mutated tree. This takes precedence over every other outcome, including a persist failure |
+| `finding_persist_failed` | A conflict finding could not be written to the store. The finding is that path's primary output, so the caller sees an error carrying the rejected content (`qgate_persist_failures`) rather than a clean result with `findings_emitted: 0` |
+
+**Side effects.** The probe never moves the branch ref and never touches the working tree. Its one
+persisted write is a **stale-`base_branch` auto-update**: when the configured base branch no longer
+resolves on origin and a remote default is detectable, it rewrites `base_branch` in `references.json`
+and emits a decision-log entry. That write runs **before** the fetch and is **not** gated by
+`--no-emit` — `--no-emit` suppresses Q-Gate findings only.
+
 ### prepare_execute — prepare
 
 ```bash

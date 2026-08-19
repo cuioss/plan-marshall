@@ -227,7 +227,11 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 
 Parse the TOON return for fields `classification`, `auto_reconcilable`, `conflict_count`, `conflicts[]`, `upstream_commit_count`.
 
-If the script exits non-zero (per the **Exit-code convention** at the top of this document) → STOP and return an error TOON to the dispatcher carrying the stderr verbatim. Do NOT silently fall back to `needs_user` on classifier failure — a broken probe is a different signal than a real conflict and must surface as an error so the user can repair the environment.
+Branch on the returned `status` **before** parsing `classification` — the wrapper prints the payload through a helper that always exits 0, so an "if the script exits non-zero" test never fires and a skipped or errored payload carries no `classification` field to parse:
+
+- **`status: error`** → STOP and return the error TOON to the dispatcher verbatim. Do NOT silently fall back to `needs_user` on classifier failure — a broken probe is a different signal than a real conflict and must surface as an error so the user can repair the environment.
+- **`status: skipped`** → force `{decision} = needs_user` and log the returned `reason`. A skip is the probe declining to classify (no worktree, no remote, a failed fetch, an unresolvable HEAD, or an unresolvable merge base), which is not evidence that the rebase is safe.
+- **`status: success`** → proceed to parse `classification`.
 
 #### Compute the gate decision
 
@@ -235,7 +239,7 @@ Apply the following rules in order; the first match wins:
 
 - `classification == no_overlap` → `{decision} = auto_proceed` (regardless of threshold, except `never` which already short-circuited above).
 - `classification == overlap_no_content_conflict` AND `auto_reconcilable == true` AND `{threshold} == auto_resolvable` → `{decision} = auto_proceed`.
-- `classification == overlap_no_content_conflict` AND (`auto_reconcilable == false` OR `{threshold} == no_overlap_only`) → `{decision} = needs_user` (the threshold opts out even for an auto-reconcilable overlap — `auto_reconcilable` is a non-mutating capability signal, so an `overlap_no_content_conflict` always reports `auto_reconcilable == true`; the probe never performs the reconcile itself, that is `worktree-rebase-to`'s job).
+- `classification == overlap_no_content_conflict` AND `{threshold} == no_overlap_only` → `{decision} = needs_user` (the threshold opts out even for an auto-reconcilable overlap — `auto_reconcilable` is a non-mutating capability signal, so an `overlap_no_content_conflict` always reports `auto_reconcilable == true`; the probe never performs the reconcile itself, that is `worktree-rebase-to`'s job).
 - `classification == overlap_with_content_conflict` → `{decision} = needs_user` (genuine conflict requiring human resolution).
 
 #### Log the classifier decision
@@ -516,7 +520,13 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 
 Parse the TOON return for refreshed `classification`, `auto_reconcilable`, `conflict_count`, `upstream_commit_count` values. These values are surfaced to the operator in the prompt below so the merge decision is anchored to current reality, not to the pre-rebase snapshot. Under `merge_hold_window == full_window_release_at_waits` this re-run classifier IS the mandatory post-hold re-validation before the merge (§ "Merge-Mutex Hold Window" invariant 1).
 
-If the script exits non-zero, STOP and return an error TOON to the dispatcher carrying the stderr verbatim. Do NOT silently fall back to `needs_user` on classifier failure — a broken probe is a different signal than a real conflict. **Release-on-abort**: release the merge mutex if held before returning (§ "Merge-Mutex Hold Window" invariant 4).
+Branch on the returned `status` **before** parsing `classification` — the wrapper prints the payload through a helper that always exits 0, so an "if the script exits non-zero" test never fires and a skipped or errored payload carries no `classification` field to parse:
+
+- **`status: error`** → STOP and return the error TOON to the dispatcher verbatim. Do NOT silently fall back to `needs_user` on classifier failure — a broken probe is a different signal than a real conflict.
+- **`status: skipped`** → force `{decision} = needs_user` and log the returned `reason`; a skip is the probe declining to classify, not a clean re-validation.
+- **`status: success`** → proceed to parse `classification`.
+
+**Release-on-abort**: on either non-success branch, release the merge mutex if held before returning (§ "Merge-Mutex Hold Window" invariant 4).
 
 #### Auto-merge bypass (`final_merge_without_asking == true`)
 
