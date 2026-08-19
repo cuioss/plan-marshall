@@ -34,6 +34,8 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 The resolve carries the dispatch context (`--workflow`/`--plan-id`/`--caller`), so the seam emits the standardized `[DISPATCH]` work-log line and its paired decision-log record itself — see [`dispatch-logging.md`](../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. Do NOT hand-write a separate `[DISPATCH]` line; every firing re-runs the resolve, so the record is re-emitted per firing.
 
+**On a standalone run** — this skill's `plan_id` is documented below as "unset for standalone runs" — pass `--plan-id none` rather than interpolating an empty `{plan_id}`. The flag is optional and the resolver accepts the literal `none`, routing the seam emission to the global log instead of a plan work-log; `--plan-id` with an empty value is not the same thing and is not a supported form.
+
 Then dispatch the returned `target` (`execution-context-{level}` or canonical) with this prompt body:
 
 ```yaml
