@@ -257,11 +257,9 @@ corroboration, not required reading, and the run is not blocked if it chooses no
      currency-subject comment, stored-as-finding and noise-dropped alike — the module's own comment at
      `:569-574` says so. Rename to `_CURRENCY_LEDGER_ARTIFACT` / `_currency_ledger_path` with a
      filename that says currency ledger, and make the reader **read both names** (old filename when
-     the new one is absent) while writing only the new one. The "observation sidecar" paragraphs in
-     `bot-participation-contract.md` are rewritten by the plan discharging **`010 G4`**, whose site
-     list names them; this deliverable does **not** rewrite them. If they still carry the old name
-     when this run finishes, say so in the run report as a cross-plan dependency rather than editing
-     them here — and if that plan has already landed, confirm the new name is the one it used.
+     the new one is absent) while writing only the new one. **The "observation sidecar" paragraphs in
+     `bot-participation-contract.md` are not this deliverable's, per the README table** — it assigns
+     them elsewhere. Report their state as a cross-plan dependency rather than editing them.
    - **Scope.** The contract says the currency rule "governs every site that credits participation";
      the code gates it on `participation_requires_update`. **This plan decides the disposition; the
      run implements it and does not re-open it.** Implement the contract-narrowing disposition:
@@ -331,9 +329,10 @@ thing holding it.
 - `marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md`
   — exactly the rows the README table (§ "The shared-document split") assigns to `500`, and nothing
   else: the currency-rule scope sentence and the bounded-gap § (D5), the first-observation arm's
-  wording (D2), the § "Consumers" rows (D3), and the NEW-INFORMATION site classification (D0).
-  **The "observation sidecar" paragraphs are NOT in this plan's surface** — the table assigns them to
-  the sibling plan, and D5 defers them. If the branch diff touches them, that is collateral to
+  wording (D2), the § "Consumers" rows (D3), and D0's two records — the wait-predicate answer and the
+  NEW-INFORMATION site classification.
+  **The "observation sidecar" paragraphs are NOT in this plan's surface, per the README table** — it
+  assigns them elsewhere, and D5 defers them. If the branch diff touches them, that is collateral to
   report, not scope.
 - `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md` —
   § "UNKNOWN — the re-fetch itself failed" gains the unresolved-head shape (D3).
@@ -428,16 +427,17 @@ Beyond each deliverable's *Done when*:
   knob rather than an invariant. **Report whatever value you observe; never transcribe one from this
   plan or from a gaps file**, and let no deliverable's outcome depend on the value.
 - **Sequencing against plan `510`.** `510-a-refusal-is-recorded-as-a-refusal-and-the-contract-says-so`
-  edits the same three surfaces this plan does — `github_pr.py`'s participation path,
-  `automatic-review/SKILL.md`, and `bot-participation-contract.md` — so **the two MUST NOT run
-  concurrently.** The boundary: this plan owns the **currency mechanics** — the per-comment ledger,
+  edits two surfaces this plan also edits — `github_pr.py`'s participation path and
+  `bot-participation-contract.md` — so **the two MUST NOT run concurrently.** (`510` also edits
+  `automatic-review/SKILL.md`; this plan does not — see § Out of scope.) The boundary: this plan owns the **currency mechanics** — the per-comment ledger,
   the SHA anchor, the dedup identity — and `510` owns **refusal and decline accounting**: the refusal
   `cause`/`cap` producers, wording drift, the registry, and the decline consumers.
   **`bot-participation-contract.md` is shared.** Do not resolve ownership from this plan: read
   the table in [`doc/plans/review-apparatus/README.md`](../README.md) § "The shared-document
-  split", which is the **single authority** for who writes which passage. This plan deliberately
-  restates none of it, because a split written down twice goes
-  stale in one copy — the failure this pointer exists to prevent. Read the table, write only the rows
+  split", which is the **single authority** for who writes which passage. Nothing in this plan
+  assigns a passage; where a deliverable names one, it does so to identify a site it edits or defers,
+  never to state who owns it — because a split written down twice goes stale in one copy, which is
+  the failure this pointer exists to prevent. Read the table, write only the rows
   it assigns to `500`, **report** any passage it does not name rather than choosing, and never revert
   or rewrite a passage the other plan has already written.
 

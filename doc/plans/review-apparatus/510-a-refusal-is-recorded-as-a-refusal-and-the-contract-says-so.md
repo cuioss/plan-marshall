@@ -345,10 +345,9 @@ is a **cold read** (see § Verification), not "the text was changed".
   edits one comment in place" (the "stored finding, or … the noise sidecar" two-source arm; and the
   "edited in place (`updated_at` differs from `created_at`)" arm, which the code does not compute);
   `bot-participation-contract.md` § the "union of the stored-finding SHAs and the recorded sidecar
-  SHAs" paragraphs, **including the "observation sidecar" naming inside them** (the sibling plan
-  renames the *code* artifact they describe and does not edit them, in either landing order — the
-  table settles this); `automatic-review/SKILL.md`'s restatement of the same predicate in a workflow
-  body;
+  SHAs" paragraphs, **including the "observation sidecar" naming inside them** (the README table
+  assigns these here; describe the ledger under whatever name the code carries when this run reads
+  it); `automatic-review/SKILL.md`'s restatement of the same predicate in a workflow body;
   ⛔ **Ownership of that document's passages is not settled here.** Do not resolve it from this
   deliverable: read the table in [`doc/plans/review-apparatus/README.md`](../README.md) § "The
   shared-document split", which is the **single authority** for who writes which passage. A
@@ -523,8 +522,11 @@ Beyond the per-deliverable *Done when* conditions:
    sub-agent read the changed text **cold — without this plan and without the gaps files** — and
    report, in its own words and **verbatim in the run report**:
    - (a) Reading `bot-participation-contract.md` § "Evidence for a bot that edits one comment in
-     place": what is a participation credit anchored to, how many sources supply that anchor, and is
-     the first-observation arm stated as a **definition** or as a **bounded assumption**?
+     place": what is a participation credit anchored to, and **how many sources supply that anchor?**
+     The intended reading is *one* — a single currency ledger. ⚠ **Do not ask about, and do not act
+     on, the first-observation arm's definition-versus-assumption wording**: the README table assigns
+     that sentence to the sibling plan, so a "wrong" reading there is that plan's to fix, and a
+     mismatch is **reported, never corrected here.**
    - (b) Reading `automatic-review/standards/pr-agent.md`'s `rate_limit_class` section alone: a
      PR-Agent refusal caused by the diff being over a size ceiling escalates with which `reason`?
    - (c) Reading the advance-disclosure paragraphs in `bot-participation-contract.md` and
@@ -552,8 +554,9 @@ Beyond the per-deliverable *Done when* conditions:
 Plan `500` in this epic is authored in parallel and owns the **participation-currency mechanics**:
 the currency ledger and its artifact naming, the merge-candidate SHA anchor and its first-observation
 guard, the empty-SHA and key-only-row defects, the unresolved-head UNKNOWN signal, and the
-cross-iteration filing dedup. This plan owns **refusal and decline accounting and the contract
-prose**. Where they touch, this plan cites rather than duplicates:
+cross-iteration filing dedup. This plan's subject is **refusal and decline accounting**, and it also
+carries the stale-prose sweep of `010 G4`; for the shared contract document the README table decides
+each passage. Where the two plans touch, this plan cites rather than duplicates:
 
 - **`github_pr.py` is a shared file.** This plan edits only its refusal-detection block and adds one
   return field (D2). It must not touch `_reviewed_at_merge_candidate`, the currency-record readers
@@ -562,8 +565,9 @@ prose**. Where they touch, this plan cites rather than duplicates:
   does not own the mechanism is how a fix gets silently reverted.
 - **`bot-participation-contract.md` is a shared file.** Do not resolve ownership from this plan:
   read the table in [`doc/plans/review-apparatus/README.md`](../README.md) § "The shared-document
-  split", which is the **single authority** for who writes which passage. This plan restates none
-  of it, and neither does D6 — both point at the table, so
+  split", which is the **single authority** for who writes which passage. Neither this note nor D6
+  assigns a passage; where either names one, it does so to identify a site it edits, never to state
+  who owns it — so
   there is one copy to keep true. A passage the table assigns to `500` is **reported and left alone**
   when it still carries a pre-fix claim; the two runs must never write conflicting rewrites of one
   passage. D6 rewrites the *prose* describing the

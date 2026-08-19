@@ -37,17 +37,20 @@ surfaced them, so one seam is repaired once:
 ### The shared-document split
 
 Both plans edit
-`marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md`.
-**This table is the single authority for who writes what.** Each plan references it and restates
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md`,
+and so — in smaller, disjoint ways — do `520`, `560` and `570`; check each plan's own § Expected
+surface rather than assuming this pair is the whole set. **For the passages below, this table is the
+single authority for who writes what.** Each plan references it and restates
 none of it — a split described in two documents is a split that goes stale in one of them, which is
 exactly how this boundary was stated wrongly four times in succession.
 
 | Passage | Gap id | Written by |
 |---|---|---|
-| The currency-rule scope sentence, and the "today, only PR-Agent" statements that qualify it | `010 G2` | `500` |
+| The currency-rule scope sentence | `010 G2` | `500` |
 | The "by definition an observation at the merge candidate" claim in § "Evidence for a bot that edits one comment in place" | `010 G3` | `500` |
 | The § "Consumers" rows for fields `500` adds | — | `500` |
 | The new bounded-gap section | — | `500` |
+| The records D0 writes: whether a timestamp-anchored completion arm is correct for a wait, and the classification of the sites that decide whether a comment is new information | — | `500` |
 | The "stored finding, or … the noise sidecar" two-source arm | `010 G4` | `510` |
 | The "edited in place (`updated_at` differs from `created_at`)" arm | `010 G4` | `510` |
 | The "union of the stored-finding SHAs and the recorded sidecar SHAs" paragraphs, **including the "observation sidecar" naming inside them** | `010 G4` | `510` |
@@ -65,16 +68,44 @@ Line numbers here are **leads** — re-derive each passage by its quoted text, n
 
 A passage this table does not name is settled by neither plan: **report it, do not choose.**
 
-**Two checks keep this from drifting, and both can fail.** Run them against `500` and `510` before
-either is handed to a session:
+**Three checks keep this from drifting, and each can fail.** Run them against `500` and `510` before
+either is handed to a session. Check 1 is the one that matters: an earlier version tested only
+whether a named passage *appeared* in the table, which is why it caught one of three known defects —
+presence was never the question, **agreement with the `Written by` column** is.
 
-1. **Every contract passage either plan names appears in this table.** Grep each plan for its quoted
-   passage phrases and confirm each occurs here. A passage named in a plan and absent from the table
-   is a passage owned by nobody — the defect that took four rounds to find.
-2. **Neither plan assigns ownership.** Grep both for `owns` / `owned by` / `belongs to` within a
-   sentence that also names a contract passage. The only permitted hit is a pointer *to this table*
-   that names no passage. Any other hit is a second copy of the split, and a second copy is what goes
-   stale.
+1. **Every contract passage a plan names, it names in the role this table gives it.** For each
+   passage row, find **every** occurrence of it in each plan — not the first; a first-occurrence test
+   is satisfied by a legitimate deferral and never reaches the offending mention below it, which is a
+   guard that cannot fire. The plan in `Written by` may name it freely. **Every occurrence in any
+   other plan MUST carry the literal phrase `per the README table`** — that token, not a paraphrase,
+   so the check is a grep rather than a judgement. A plan listing a passage in its § Expected surface,
+   or under a *Done when* it must satisfy, is claiming to write it, so an unmarked mention there is a
+   failure. Test the assignee, not the mention.
+2. **Every contract passage a plan writes has a row here.** A passage a deliverable writes and this
+   table does not name is owned by nobody — the defect that took four rounds to find. Read the
+   deliverable bodies for this, not the Notes.
+3. **Neither plan assigns ownership.** Grep both for `owns` / `owned by` / `belongs to` in a sentence
+   that also names a contract passage. The only permitted hit is a pointer *to this table* naming no
+   passage. Any other hit is a second copy of the split, and a second copy is what goes stale.
+
+Checks 1 and 2 are read against the **deliverable bodies and § Expected surface**, because that is
+where every instance of this defect has actually lived. Phrases in the table are paraphrases; match
+on the passage, not on the wording.
+
+**What these checks are worth, measured rather than asserted.** Three defects this boundary actually
+produced were re-introduced into scratch copies and the checks run against them:
+
+| Defect | Caught by |
+|---|---|
+| A plan's ⛔ stating a passage is "owned by" the other plan, on a false premise | check 3 (grep) |
+| A *Done when* whose clause covers a passage the plan defers | check 1 (grep, marker absent) |
+| § Expected surface listing a passage the table assigns elsewhere | check 2 — **and not by grep**: the neighbouring legitimate deferral supplies the marker |
+
+So **check 2 is not optional and is not a grep**: it is a row-by-row reconciliation of this table
+against each plan's § Expected surface, and it is the only one of the three that catches the last
+shape. The table is short and the surfaces are short; do it by reading. A grep alone reports clean
+over that defect — which is the failure mode this whole epic is named after, so do not let the
+tooling stand in for the reconciliation.
 
 The same rule is why **neither plan counts the passages or sites of this shared document**: every
 falsehood this boundary produced was a stale numeral. That set is re-derived from `010 gaps.md`
