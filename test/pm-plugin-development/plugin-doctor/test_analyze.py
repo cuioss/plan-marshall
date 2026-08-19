@@ -2158,10 +2158,16 @@ def test_simplicity_unused_parameter_del_local_no_false_positive(tmp_path):
 def test_simplicity_unused_parameter_detects_marker_on_last_multiline_param(tmp_path):
     """A ``# unused`` marker on the last parameter of a multi-line signature is detected.
 
-    Detection is structural, not textual. A line-shape heuristic keyed on
-    ``def ``, ``):`` or ``,`` cannot see this case: the last parameter of a
-    multi-line signature sits on its own line with none of those tokens, so the
-    marker was missed. The AST-based parameter-line binding catches it.
+    A ``# unused`` marker is the author's own declaration that a parameter is
+    dead. These detectors are the mechanical enforcement layer for the
+    minimum-viable-code posture, so a marker the detector cannot see is a
+    declared-dead parameter that no gate reports — the declaration is made in
+    the source and then never acted on.
+
+    Detection must therefore be structural rather than textual: a line-shape
+    heuristic keyed on ``def ``, ``):`` or ``,`` cannot see this case, because
+    the last parameter of a multi-line signature sits on its own line carrying
+    none of those tokens. The AST-based parameter-line binding catches it.
     """
     body = 'def f(\n    name,\n    flag  # unused\n):\n    return name\n'
     _write_simplicity_script(tmp_path, body)

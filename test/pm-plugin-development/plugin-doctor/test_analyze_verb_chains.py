@@ -234,15 +234,13 @@ def test_build_subparser_tree_real_architecture_script_includes_bare_verbs():
     Both verbs must appear in the tree returned by ``build_subparser_tree``;
     a walker that only visits assignments drops them silently.
 
-    This test also acts as a guard against future refactors of
-    ``architecture.py`` that might switch to the assigned form for
-    these specific verbs and accidentally make the regression test
-    above pass for the wrong reason.
+    This anchors the synthetic fixture above to a live instance: it fails if
+    ``architecture.py`` stops registering these verbs in the bare form, so the
+    fixture can never go on passing against a shape the tree no longer has.
     """
-    # locate the real script via the project layout. The test
-    # file lives at test/pm-plugin-development/plugin-doctor/, so four
-    # ``parent`` hops reach the project root (mirroring ``PROJECT_ROOT``
-    # at module top).
+    # Locate the real script from ``PROJECT_ROOT``, which conftest resolves —
+    # counting ``parent`` hops from this file would rebind the moment the module
+    # moves.
     script_path = (
         PROJECT_ROOT
         / 'marketplace'

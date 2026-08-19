@@ -6,8 +6,10 @@
 The argument-naming analyzer previously scanned only ``SKILL.md``,
 ``agents/*.md``, ``commands/*.md``, and the ``standards/``, ``references/``,
 ``recipes/`` skill subdirectories. Workflow bodies (``skills/*/workflow/*.md``)
-are in scope too; leaving them out lets an invented subcommand such as
-``manage_status get`` slip through review.
+are in scope too. A workflow body is executed prose: an invocation naming a
+subcommand or flag the script's parser does not declare is one argparse rejects
+at run time, so a doc left unscanned prescribes a command that fails when an
+agent follows it.
 
 These tests pin the extended scope: an invented subcommand inside a
 ``workflow/*.md`` file MUST surface as an ``ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN``
@@ -100,9 +102,10 @@ def _findings_by_rule(findings: list[dict], rule_id: str) -> list[dict]:
 def test_workflow_md_invented_subcommand_emits_subcommand_unknown(tmp_path):
     """Invented subcommand inside skills/*/workflow/*.md surfaces SUBCOMMAND_UNKNOWN.
 
-    Workflow bodies are inside the analyzer's markdown scope, so an
-    invocation such as ``manage_status get`` (no such subcommand) is
-    detected rather than escaping. The
+    Workflow bodies are inside the analyzer's markdown scope. ``manage_status
+    get`` names a subcommand the script does not register, so argparse rejects
+    it with ``invalid choice`` when an agent runs what the workflow prescribes;
+    the finding is what stops that reaching a reader. The
     extended scope MUST flag the bad subcommand at the exact line.
     """
     marketplace_root = tmp_path / 'marketplace'
@@ -173,8 +176,9 @@ def test_workflow_md_invented_flag_emits_flag_unknown(tmp_path):
     Complements the SUBCOMMAND_UNKNOWN workflow-scope test: a flag absent
     from the resolved subparser's argparse declarations MUST surface as an
     ``ARGUMENT_NAMING_FLAG_UNKNOWN`` finding when it appears inside a
-    ``workflow/*.md`` body, so argument drift in a workflow doc is caught
-    where drift in a skill body already is.
+    ``workflow/*.md`` body. A flag the parser never declares is rejected as an
+    unrecognized argument, so the documented command fails when run — which is
+    why these findings carry ``severity='error'`` rather than a warning.
     """
     marketplace_root = tmp_path / 'marketplace'
     write_dispatching_executor(tmp_path / '.plan', ['plan-marshall:manage-findings:manage-findings'])
