@@ -123,7 +123,8 @@ Re-derive each at the moment you state it, and record the command and the ref yo
    skill cannot satisfy D1's quoted-against-a-derived-anchor requirement for either.
    **Derive the target set by reading each proposal below and recording the file and section it
    names — do not carry this sentence forward as the answer.** An earlier revision of this block
-   asserted a clean P1–P7 / P8 split and was falsified by P2 one proposal over; the list in (a) is a
+   asserted a clean P1–P7 / P8 split and was falsified by P2, which the split placed on the wrong
+   side; a later revision then found P6 naming no target at all. The list in (a) is a
    starting point, not a closed enumeration.
    (b) **The target census.** For each source plan named in § Gap coverage, record one of three states:
    `present` (the directory exists and the quoted defective text is still there), `already corrected`
@@ -131,9 +132,12 @@ Re-derive each at the moment you state it, and record the command and the ref yo
    cloud plan's directory is deleted at collect in a ledger-backed epic, which this one is). A
    `collected` or `already corrected` target is not a failure; it is a recorded disposition.
    *Done when:* the report carries a table of the re-derived contract anchors — **one row per section
-   listed in (a), across both files**, counted as you write it rather than against a number quoted
-   here — and a census row for every source plan in § Gap coverage with one of the three states and
-   the check that produced it.
+   listed in (a), plus one row for every further section any proposal below names**, counted as you
+   write it rather than against a number quoted here — and a census row for every source plan in
+   § Gap coverage with one of the three states and the check that produced it. ⛔ The (a) list is the
+   floor, not the ceiling: satisfying this criterion against (a) alone, while some proposal names a
+   section absent from it, is **not** done — that is exactly how two proposals were left without a
+   derived anchor in earlier revisions.
 
 2. **D1 — `proposals.md`: the operator's decision register** — a new file
    `doc/plans/{epic}/{this-plan}/proposals.md` carrying **every proposal enumerated below** — count
@@ -157,10 +161,15 @@ Re-derive each at the moment you state it, and record the command and the ref yo
      epic (`020`, `080`) blocked on a corpus living under the git-ignored `.plan/` tree, and each
      inferred the same behaviour unaided. The nearest existing rule — that the report states the PR
      number and the per-deliverable outcome *including a run that ended blocked or partial, and why* —
-     sits in § Step 8 (merge gate), which a blocked run never reaches. Proposed: one line in § Report
-     (and/or `cloud-bridge.md` § Path 2 — Sync) stating that such a run still performs Step 3, still
-     lands a report with `Outcome: blocked`, and names the prerequisite; optionally relocating the
-     blocked-or-partial sentence into § Report where a blocked run will read it. Decision: adopt /
+     exists in **two** places, and D0(a) derives both: `SKILL.md` § Step 8 (the merge gate, which a
+     blocked run never reaches) **and** `cloud-bridge.md` § Path 2 — Sync, which is not gated on the
+     merge gate and which a blocked run therefore does reach. ⛔ **Do not describe this as one
+     sentence in one place** — an earlier revision said the rule sat only in § Step 8 and called it
+     unreachable, which the § Path 2 copy falsifies, and a remedy written on that premise would leave
+     the second copy behind. What neither site says is the thing worth proposing: that a blocked run
+     still performs Step 3, still lands a report with `Outcome: blocked`, and names the prerequisite.
+     Proposed: state that in § Report, and reconcile **both** existing copies to it rather than
+     relocating either. Decision: adopt /
      decline — **and if declined, the reason is recorded**, so a later reader can tell "declined" from
      "never looked at", which is the state this proposal has been in.
    - **P3 — post-PR push batching, and the § Step 8 conditions sequencing note.** A run consumed
@@ -205,7 +214,12 @@ Re-derive each at the moment you state it, and record the command and the ref yo
      original, the re-derived value, the command, and the ref; a structural remnant carrying no claim (a
      duplicated template stub) is deleted outright with one line recording the deletion; a document that
      is **not** a dated record (`plan.md`, `gaps.md`, `rationale.md`) is edited in place under the normal
-     documentation standards. Decision: adopt / adopt a different convention / decline.
+     documentation standards. **Target: `SKILL.md` § Report**, whose anchor D0(a) derives — stated
+     explicitly because every other proposal here names its target and this one did not, which left
+     D1's quoted-against-a-derived-anchor requirement satisfiable for it only by an unstated mid-run
+     choice. If the run judges § Step 9's contract-check table the better home, it records that as
+     part of the proposal for the operator rather than deciding it. Decision: adopt / adopt a
+     different convention / decline.
    - **P7 — may a run correct another plan's landed directory at all?** § Step 9's contract-check row
      "8 Bridge" requires that no **status or bookkeeping** write land under `doc/plans/` outside the
      run's own directory — "no ledger, no status file, no other plan's directory was touched" — while

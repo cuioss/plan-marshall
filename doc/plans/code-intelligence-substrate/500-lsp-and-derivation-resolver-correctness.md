@@ -751,8 +751,8 @@ overlap is by file, not by subject.
   `570-cloud-plan-lane-contract-proposals`.
 
 **Where a gap entry and its adversarial review disagree, the adversarial review wins.** It was the
-later, evidence-bearing pass. Four places where that changes what this run does are already folded in
-above and are listed here so they are not re-litigated: the PEP 508 `@` split must be on the **bare**
+later, evidence-bearing pass. The places where that changes what this run does are already folded in
+above and are named here so they are not re-litigated: the PEP 508 `@` split must be on the **bare**
 `@`, not `' @ '`; the mid-apply rollback test must **not** use `chmod`; and `240/G10`'s lean is
 **presume the deferral needs reversing**, not upholding — while still recording rather than deciding.
 
@@ -811,4 +811,4 @@ cited entries rather than trusting this line.
 Totals: high 3+1+2+2+2 = 10; medium 4+3+4+3+2 = 16; low 2 — twenty-eight, matching the lead-in above
 and the entries themselves. ⛔ Re-derive these totals against the table rather than trusting the
 arithmetic here; an earlier revision left this line carrying the addends of a withdrawn severity
-raise, contradicting its own table twenty lines up.
+raise, contradicting both the table above it and the lead-in that opens this section.
