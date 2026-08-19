@@ -1756,12 +1756,12 @@ The Step 3 dispatch loop is fully resumable across re-entries: each step's `stat
 | (no record) | Dispatch as a first-time run. |
 | any other value | Dispatch as a first-time run (treat as a degraded record). |
 
-**Special case — head-dependent steps** (`pre-push-quality-gate` is the canonical example): a head-dependent step's resumable check is augmented with a worktree-HEAD comparison so a loop-back commit re-fires the gate instead of skipping it on a stale `done`. The augmented rule applies to exactly the steps whose authoritative doc declares `head_dependent: true` — see § "Special case — HEAD-dependent steps" in Step 3 for the single authoritative statement of that membership and its governing discriminator. Every step that does not declare the fact uses the general table above verbatim.
+**Special case — head-dependent steps** (`pre-push-quality-gate` is the canonical example): a head-dependent step's resumable check is augmented with a worktree-HEAD comparison, so a `done` record is not taken at face value once HEAD has advanced. **Step 3 owns both halves of this case — which steps it applies to AND what a differing SHA does** — see § "Special case — HEAD-dependent steps" there; the membership discriminator and the differing-SHA action are stated once, in that section, and are not restated here. Every step that does not declare the fact uses the general table above verbatim.
 
 | Outcome on re-entry | `head_at_completion` vs live HEAD | Action |
 |---------------------|-----------------------------------|--------|
 | `done` | matches live `git -C {worktree_path} rev-parse HEAD` | Skip dispatch entirely (steady-state — gate already validated this exact tree). |
-| `done` | differs from live HEAD | Re-fire (treat as no record — HEAD has advanced past the validated SHA, e.g., after a loop-back commit). |
+| `done` | differs from live HEAD | **Consult the verdict-currency classifier — see Step 3's table, which owns this decision.** The action is NOT an unconditional re-fire: a step that declares a `verdict_inputs` surface the tree difference does not touch resolves `preserved` and SKIPs. |
 | `done` | `head_at_completion` field absent | Re-fire AND report the prior verdict UNVERIFIED — a record with no SHA was never anchored to a tree, so it is never left standing as green. |
 | `failed` | n/a | Retry from scratch (unchanged). |
 | (no record) | n/a | Dispatch as a first-time run (unchanged). |
@@ -1769,7 +1769,7 @@ The Step 3 dispatch loop is fully resumable across re-entries: each step's `stat
 
 The live HEAD MUST be resolved fresh per iteration via `git -C {worktree_path} rev-parse HEAD` — do NOT cache across the loop, so a step that advances HEAD mid-loop is observed correctly by every later check. Cross-reference: `standards/pre-push-quality-gate.md` "Mark Step Complete" Branch A, which persists `head_at_completion` on the success path.
 
-This makes finalize safe to interrupt and re-enter — completed work is preserved, failed work gets a retry, never-run work runs for the first time, and the HEAD-dependent quality gate re-fires whenever the tree it validated has been superseded. There is no separate "resume" mode; every Phase 6 entry is implicitly resumable.
+This makes finalize safe to interrupt and re-enter — completed work is preserved, failed work gets a retry, never-run work runs for the first time, and a HEAD-dependent step whose validated tree has been superseded is re-decided rather than skipped on a stale record. Whether that re-decision re-fires the step or preserves its verdict is the verdict-currency classifier's call (Step 3), not an unconditional re-fire. There is no separate "resume" mode; every Phase 6 entry is implicitly resumable.
 
 In-step state checks (consulted by individual standards docs after dispatch — these guard idempotent operations, not skip activation):
 

@@ -34,10 +34,11 @@ boundaries below track it.
 
 | Band | Range | Owner of the range | Meaning |
 |------|-------|--------------------|---------|
-| **Settle** (pre-merge) | 1–69 | The pre-push settle steps pack the low integers (2–11); the post-push majors anchor on a coarse grid (`create-pr` 20, `ci-verify` 22, `automatic-review` 30, `sonar-roundtrip` 40, `adr-propose` 62); project-local / third-party insert in the interior gaps | Steps that prepare, gate quality, review, mutate source, push, open the PR, and run CI — everything before the merge gate. A `mutates_source: true` step MUST live here (its edit is only pushable while the branch is open). The pre-push cluster is dense by necessity (eight settle steps below `push`); the guaranteed insertion room is in the major-step gaps above it. |
+| **Settle — pre-push** | 1–11 | Shared bundle + project-local / third-party, densely packed | Steps that prepare, gate quality, review and mutate source before the single `push` barrier at 11. **There is NO guaranteed insertion room in this sub-region today** — the integers 1–11 are fully occupied. A new pre-push step's sanctioned remedy is a deliberate re-space of the sub-cluster (see the alternative named below), not a slot in the post-push gaps, which are all numbered above `push` and so cannot hold a pre-push step. |
+| **Settle — post-push** | 12–69 | The majors anchor on a coarse grid (`create-pr` 20, `ci-verify` 22, `automatic-review` 30, `sonar-roundtrip` 40, `adr-propose` 62); project-local / third-party insert in the interior gaps | Steps that open the PR, run CI, review and re-settle after the push — everything between the push barrier and the merge gate. The interior gaps (12–19, 23–29, 31–39, 41–61, 63–69) are the band's guaranteed insertion room. |
 | **Merge gate** | 70 | Shared bundle (fixed) | `default:branch-cleanup` — the partition. Not a member of any insertable band. |
-| **Post-merge operational** | 71–899 | project-local / third-party | Post-merge steps that **act** (deploy, cache-sync) but are not backward-looking reports. They fail the post-run band's P1 predicate, so they are ordered here rather than in the post-run band. Each MUST still declare `mutates_source` explicitly (it sits at/after the merge gate). |
-| **Post-run review** | 900–999 | Shared bundle + project-local / third-party | `post_run_review: true` backward-looking reports — the band `code-intelligence-substrate` plan 050 owns. Every member MUST declare `mutates_source: false`. Existing members cluster at 990–999; **900–989 is reserved insertion room.** |
+| **Post-merge operational** | 71–899 | project-local / third-party | Post-merge steps that **act** (deploy, cache-sync) but are not backward-looking reports. They fail the post-run band's P1 predicate, so they are ordered here rather than in the post-run band. The `mutates_source` obligation for a step at or after the merge gate is owned by [`ext-point-finalize-step.md`](ext-point-finalize-step.md) § "Implementor Frontmatter" — read it there. |
+| **Post-run review** | 900–999 | Shared bundle + project-local / third-party | `post_run_review: true` backward-looking reports — the band `code-intelligence-substrate` plan 050 owns. Its members' `mutates_source` obligation is owned by that band's contract; this file does not restate it. Existing members cluster at 990–999; **900–989 is reserved insertion room.** |
 | **Terminal emission** | 1000–1099 | Shared bundle (reserved) | The single machine-readable terminal emission — the run's landing, emitted after every reporting step and before the archive move. Reserved; occupied by the terminal-emission step. |
 | **Terminus** | 1100 | Shared bundle (fixed) | `default:archive-plan` — moves the plan directory out from under every later reader, so nothing may follow it. Numerically the highest order, last by construction. |
 
@@ -45,12 +46,18 @@ boundaries below track it.
 numbers and leaves the interior free, so a third-party or project-local step always has a slot to claim
 without renumbering a neighbour:
 
-- **Settle** — the pre-push cluster occupies the low integers (`push` at 11 sits just above it); the
-  gaps between the post-push majors (12–19, 23–29, 31–39, 41–61, 63–69) are open. Existing project-local
-  steps already use the low room (`finalize-step-lessons-housekeeping` 4, `finalize-step-plugin-doctor` 6,
-  `finalize-step-era-stamp-fill` 21). The pre-push sub-cluster itself is dense (eight steps below `push`):
-  a new pre-push step that cannot fit is what the reserved major-step gaps and, if ever needed, a
-  deliberate re-space of the sub-cluster are for.
+- **Settle — pre-push (1–11)** — **no guaranteed insertion room.** Every integer from 3 to 11 is
+  occupied (`finalize-step-sync-baseline` 3, `finalize-step-lessons-housekeeping` 4,
+  `pre-push-quality-gate` 5, `finalize-step-plugin-doctor` 6, `pre-submission-self-review` 7,
+  `finalize-step-simplify` 8, `finalize-step-security-audit` 9, `architecture-refresh` 10, `push` 11),
+  leaving only 1–2 free below the whole cluster. The post-push gaps below CANNOT absorb a pre-push step:
+  every one of them is numbered above `push`, so a step placed there runs after the branch has already
+  shipped. The sanctioned remedy for a new pre-push step is therefore a **deliberate re-space of the
+  sub-cluster** — renumbering the existing members to open a slot — which is a change to this contract,
+  made once and recorded, not an insertion into reserved room that does not exist.
+- **Settle — post-push (12–69)** — the gaps between the majors (12–19, 23–29, 31–39, 41–61, 63–69) are
+  open, and this is where the band's guaranteed insertion room lives. `finalize-step-era-stamp-fill` (21)
+  already uses it.
 - **Post-merge operational (71–899)** — almost entirely open; existing members sit at 81 and 85.
 - **Post-run review (900–999)** — 900–989 is open insertion room below the existing 990–999 cluster.
 - **Terminal emission (1000–1099)** — reserved for the one terminal emission; 1001–1099 stays open for a
@@ -91,7 +98,8 @@ numbered after a `destroys` step still reads a destroyed input). The declaration
 step declares only the artifacts it genuinely reads or destroys, and absence means "no declared
 dependency", not "obligation unwritten".
 
-Two canonical `destroys` declarations anchor the vocabulary, and both sides are live:
+The canonical `destroys` declarations anchor the vocabulary, and both sides of it are now live — the
+`reads` bullets below name the readers that pair with each:
 
 - `default:archive-plan` declares `destroys: [plan-directory]` — it moves the plan directory, which is
   why it is the terminus and why every plan-file reader must precede it.

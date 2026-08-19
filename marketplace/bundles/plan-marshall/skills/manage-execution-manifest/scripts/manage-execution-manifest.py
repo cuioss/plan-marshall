@@ -2278,8 +2278,10 @@ def cmd_compose(args: argparse.Namespace) -> dict[str, Any] | None:
     # cmd_compose never re-sorted the marshal.json ``phase_6.steps`` map by
     # frontmatter order, so ``manage-config sync-defaults`` back-filling a
     # missing default-on step by APPENDING it landed the new step after
-    # ``archive-plan`` (the terminus) regardless of its own order (e.g.
-    # ``finalize-step-preference-emitter``, order 61). Sorting here makes
+    # ``archive-plan`` (the terminus) regardless of its own order (the observed
+    # instance was ``finalize-step-preference-emitter``, which carried order 61 AT
+    # THE TIME OF THE INCIDENT; its standards doc declares order 992 today).
+    # Sorting here makes
     # ``archive-plan`` sort last among order-resolvable steps automatically —
     # every other finalize step's order is below ``archive-plan``'s terminus
     # order 1100 (nearest tail below the reserved terminal-emission band 1000-1099:
