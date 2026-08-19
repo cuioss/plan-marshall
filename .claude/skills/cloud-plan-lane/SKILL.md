@@ -1112,36 +1112,49 @@ git push
 gh pr create --fill
 ```
 
-**Suppress bot review only when the PR has no reviewable footprint.** Bot-review capacity is contended
-across this repository and is regularly exhausted; a diff with nothing a reviewer can act on spends
-budget another PR needs. But **a skill is code, and is reviewed as code**: any change under
-`.claude/skills/**` or `marketplace/bundles/**` — a `SKILL.md`, a workflow doc, a script — keeps its
-review exactly as a `*.py` change does. It is prose, but it is *behavioural* prose that governs how
-every future run acts, which is precisely what a reviewer should see; do **not** treat it as
-documentation.
+**Suppress bot review where the budget buys least.** Bot-review capacity is contended across this
+repository and is regularly exhausted; every PR that draws a review spends budget another PR needs.
+Two kinds of diff therefore carry `skip-bot-review` **by default**:
+
+- **A diff with no reviewable footprint** — nothing a reviewer can act on.
+- **A change to this repository's own project-level skills** (`.claude/skills/**`). These are the
+  operating instructions the meta-project runs itself by, not the product it ships. A reviewer
+  *could* act on them, so this is a deliberate spend decision and not a claim that they are
+  unreviewable: the scarce budget goes to the shipped bundles and to code. **The operator can
+  reverse it per PR** — asked for a bot review on a project-level skill change, create the PR
+  without the label.
+
+**A bundle skill is the product, and is reviewed as code.** Any change under `marketplace/bundles/**`
+— a `SKILL.md`, a workflow doc, a script — keeps its review exactly as a `*.py` change does. It is
+prose, but it is *behavioural* prose that governs how every consumer project's runs act, which is
+precisely what a reviewer should see; do **not** treat it as documentation.
 
 **A plan is behavioural prose too, and is reviewed the same way.** A diff that adds or edits a
 `plan.md` — or a not-yet-moved `{NNN}-{slug}.md` — under `doc/plans/` keeps its review, for the
-identical reason a skill does: a plan is executed by a later run that has no operator to ask, so a
+identical reason a bundle skill does: a plan is executed by a later run that has no operator to ask, so a
 wrong path, an unobservable *done when*, a contradiction between deliverables, or an invented
 rationale is a defect that run will act on. Only the *records* under `doc/plans/` are unreviewable in
 this sense — a `report-NN.md`, a `verification.md`, a `gaps.md`, an epic `README.md`.
 
-So `skip-bot-review` applies to **one** case only: a diff with **no `*.py`, no `.claude/skills/**`,
-no `marketplace/bundles/**`, and no plan file under `doc/plans/`** — genuinely nothing but `doc/**`
-prose, run reports, or ledger bookkeeping. This is narrower than Step 5's build skip: a skill-,
-bundle- or plan-only change **skips the local build** (the gate is `*.py`-only) yet **still gets
-reviewed** — build and review are different questions. Determine it from the same git evidence Step 5
-uses, and apply the label **at creation** — applying it afterwards is too late, because the bots are
+So `skip-bot-review` applies to **two** cases: a change under `.claude/skills/**` that the operator
+has not asked to have reviewed, and a diff with **no `*.py`, no `marketplace/bundles/**`, and no plan
+file under `doc/plans/`** — genuinely nothing but `doc/**` prose, run reports, or ledger bookkeeping.
+The label is all-or-nothing, so a PR that mixes a project-level skill change with any reviewable
+class **keeps its review**: the reviewable part decides. Note this is a different question from Step
+5's build skip: a bundle- or plan-only change **skips the local build** (the gate is `*.py`-only) yet
+**still gets reviewed**. Determine it from the same git evidence Step 5 uses, and apply the label
+**at creation** — applying it afterwards is too late, because the bots are
 triggered by the PR opening:
 
 ```bash
 gh pr create --label skip-bot-review --fill
 ```
 
-The rule in one line: **only a PR with no `*.py`, no skill, no bundle change and no plan gets
-`skip-bot-review`.** Anything that touches code keeps its review — and a skill is code, and so is a
-plan. This suppresses waste, never scrutiny.
+The rule in one line: **a project-level skill change gets `skip-bot-review` unless the operator asks
+otherwise; every other PR gets it only when it has no `*.py`, no bundle change and no plan.** A
+bundle change is code, and so is a plan. This suppresses waste, never scrutiny — a project-level
+skill change is one the operator approved before it was written (§ closing self-check), which is the
+scrutiny that matters most for text that governs future runs.
 
 ⛔ **The label is a one-way, creation-time decision, so it is disclosed before it is applied.** It
 cannot be added later and removing it afterwards does not summon the reviewers that were never
@@ -1376,7 +1389,8 @@ condition 6 still applies**, and this recovery attempt is what satisfies it in t
 `Reopens? unknown` cases. Carrying on is licensed by having made the attempt, not by skipping it.
 
 ⛔ **Do not run this recovery on a `skip-bot-review` PR.** The label means the bot was deliberately
-not invited, so posting its trigger comment summons the reviewer the label exists to suppress. There
+not invited, so inviting it — by comment or by push — summons the reviewer the label exists to
+suppress. There
 the `silent` verdict is expected, is recorded as such, and needs no recovery.
 
 ⛔ **Query by `event`, never by head branch.** A **command**-triggered run (`issue_comment`) is
@@ -1591,9 +1605,11 @@ hold:**
    are the gates on the merge itself.
 
 6. **CodeRabbit has reviewed, or the run has established it cannot — on a PR with no
-   `skip-bot-review` label.** A plan, a skill and a bundle change are behavioural prose a later run executes with no
+   `skip-bot-review` label.** A plan and a bundle change are behavioural prose a later run executes with no
    operator (§ Step 7), and CodeRabbit is the reviewer that reads them as such. So on any PR the
-   label rule leaves reviewable, **do not arm auto-merge on a first CodeRabbit refusal.**
+   label rule leaves reviewable, **do not arm auto-merge on a first CodeRabbit refusal.** A
+   project-level skill change is normally *not* such a PR — it carries the label by default — so this
+   condition reaches it only when the operator asked for the review.
 
    Satisfy it one of three ways, and say which:
 
@@ -1618,8 +1634,9 @@ hold:**
    epic exists to eliminate.
 
    **A `skip-bot-review` PR is out of scope for this condition entirely** — the label means no bot was
-   invited, so there is nothing to wait for. § Step 7 governs when that label may be applied, and it
-   is narrow.
+   invited, so there is nothing to wait for. § Step 7 governs when that label may be applied; a
+   project-level skill change carries it by default, everything else only on an empty reviewable
+   footprint.
 
    **A `silent` or `Reopens? unknown` CodeRabbit satisfies it once the § Step 7 recovery check has
    been RUN.** Neither posts a countdown, so § Step 7's retry schedule — which waits "the window the
@@ -1818,9 +1835,10 @@ If there is something worth changing:
    gh pr create --title "chore(cloud-plan-lane): {what changed}" --body-file {file}
    ```
 
-   **Do not apply `skip-bot-review`.** This PR changes a skill, and a skill is code that gets reviewed
-   (§ Step 7). The change is behavioural — it governs how future runs act — so the automated reviewers
-   see it like any other code change.
+   **Apply `skip-bot-review`.** A project-level skill change carries the label by default (§ Step 7):
+   the scarce bot-review budget goes to the shipped bundles and to code. Its scrutiny is step 1 above
+   — the operator approved this change before it was written. If the operator asks for a bot review
+   on it instead, create the PR without the label and condition 6 applies as usual.
 
 Keep it out of the plan's own PR. Two changes with different review audiences in one diff means
 neither gets read properly, and it couples a contract amendment to whether the plan lands.
