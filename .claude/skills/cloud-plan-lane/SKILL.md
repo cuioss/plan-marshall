@@ -1137,10 +1137,12 @@ each path:
 | **S** | `.claude/skills/**` — this repository's own project-level skills | no |
 | **—** | everything else: `CLAUDE.md`, `.github/**`, `pyproject.toml`, and `doc/**` outside `doc/plans/` | no |
 
-The five classes are exclusive except for one overlap: **`.claude/skills/**/scripts/*.py` is both R1
-and S**, and there the reviewable class decides — row 1 below fires on **any** R1/R2/R3 membership.
-Classification is not most-specific-wins; a run that let S shadow R1 would build the Python at Step 5
-and suppress its review, the inverse of every reason stated below. No other path holds two classes.
+**A path may hold more than one class, and the reviewable class always decides** — row 1 below fires
+on **any** R1/R2/R3 membership. Classification is never most-specific-wins. Most overlaps are
+harmless because both classes are reviewable (`marketplace/**/*.py` is R1 and R2). The one that
+matters is **`.claude/skills/**/scripts/*.py`, which is R1 and S** — opposite verdicts — and a run
+that let S shadow R1 would build the Python at Step 5 and suppress its review, the inverse of every
+reason stated below. Do not look for a rule that makes one class win by specificity; there is none.
 
 Then take the **first** row that matches. Its **arm** is the token the report records:
 
@@ -1173,23 +1175,30 @@ records, epic READMEs, lane docs like `cloud-bridge.md`, the template. **Do not 
 and do not ask whether content changed.** Both refinements were tried and both failed, for reasons
 worth keeping:
 
-- **A records carve-out cannot fire.** § Report requires `report-NN.md` in the plan directory and
-  condition 4 requires it as the last pre-merge commit, so a record path is present on *every*
-  labelled PR. Carve it out and the run must strip its own label at condition 4, every time.
+- **A records carve-out is dead text.** Carve the records out by name and a `report-NN.md` holds two
+  classes — R3 by location, non-reviewable by name — with opposite verdicts. The tie-break above
+  resolves that in favour of the reviewable class, so the carve-out never fires. Making it fire
+  would need most-specific-wins, which is exactly the rule the R1∧S overlap forbids.
 - **"Whose content changed" is not decidable from the evidence this subsection names.** `git diff
   --name-only` prints **one** path for a pure `git mv` and one for a `git mv` plus an edit — the two
-  are indistinguishable, and § Step 4 forbids answering from recollection instead of from git.
+  are indistinguishable, and § Step 5 forbids answering from recollection instead of from git.
 
-What this costs is a review spent on a PR that only moved a plan file or only added a record. That
-is the whole price, it is small, and it buys a rule with no undecidable predicate and no path in two
-classes.
+**State the price plainly, because it is larger than it looks.** § Report puts `report-NN.md` in the
+plan directory and condition 4 requires it as the last pre-merge commit, so **a plan run's own PR
+always carries an R3 path and can never be labelled** — arms 3 and 4 are for skill-only and
+footprint-free PRs, not for plan runs. A plan run that labelled its PR at creation (S-only
+deliverables, report not yet committed) strips the label when the report lands, per the
+re-evaluation rule below. That is the intended behaviour, not churn to be designed away: a plan's
+prose is exactly what a reviewer should see.
 
 **S — a project-level skill is not the product.** These are the operating instructions the
 meta-project runs itself by. A reviewer could act on them; the budget simply buys more elsewhere.
 This suppresses waste, not scrutiny — but say what the remaining scrutiny actually is, per PR, rather
-than assuming an operator read it: a `doc/plans/` plan may deliver arbitrary `.claude/skills/**`
-changes, and a headless run has no operator at all (§ Cloud session affordances). The pre-PR
-verification sub-agent (§ Step 6) is the check that always runs.
+than assuming an operator read it. A headless run has no operator at all (§ Cloud session affordances),
+and the pre-PR verification sub-agent (§ Step 6) is the check that always runs. Note a plan
+delivering `.claude/skills/**` changes does **not** reach this arm — its PR carries its own report,
+which is R3 — so this arm is for a standalone skill PR, such as the contract change § Step 9
+produces.
 
 Note this is a different question from Step 5's build skip: an R2- or R3-only change **skips the
 local build** (that gate is `*.py`-only) yet **still gets reviewed**. Apply the label **at creation**
@@ -1204,8 +1213,10 @@ after create is too late for the PR-open trigger, which has already fired. Where
 reachable, say which way the rule comes out and why *before* creating the PR; a run that applies it
 silently has made a scrutiny decision on the operator's behalf. If they ask for a review in
 response: on a diff with an **S** path that is row 2's predicate — re-take the table and record
-`operator-override`; on any other diff row 2 cannot fire, so create the PR without the label, record
-the arm the table gave, and say the label was withheld on the operator's instruction.
+`operator-override`. On any other diff row 2 cannot fire. If the table already gave row 1 there is
+nothing to do — the review was never suppressed. If it gave row 4, create the PR without the label
+anyway, record arm `no-reviewable-footprint`, and say the label was withheld on the operator's
+instruction against the table.
 
 ⛔ **On the MCP path, creation-time labelling needs the draft route.** `create_pull_request` takes no
 `labels` argument (§ Cloud session affordances maps `--label` to a *separate* call after create), so
@@ -1383,7 +1394,7 @@ below is exhausted; until then the run owes another attempt.
 - **One attempt per wake. Never two.** A second attempt in the same turn cannot succeed where the
   first failed — the window has not moved — so it buys nothing and obscures the record.
 - **Never poll in Bash, and never `sleep` on a reviewer.** Arm a timer (§ Cloud session affordances)
-  and let the wake do it. Where no timer is available, § Step 8 condition 6's cannot-re-enter arm
+  and let the wake do it. Where no timer is available, § Step 8 condition 6's `could-not-re-enter` arm
   applies — do not wait without one.
 - **A finished commit is never held back to time an attempt.** § Step 4's push cadence outranks this
   schedule: push it when it is ready, and treat the review the push triggers as that wake's attempt.
@@ -1955,9 +1966,10 @@ If there is something worth changing:
    because the label must be on before the PR is visible to the reviewers.
 
    **Run § Step 7's decision table for the label** — do not assume the answer. The PR above touches
-   only the skill and lane docs, so it normally lands on the `project-skill` arm — but take the
-   table, do not take that. Here the remaining scrutiny is step 1 above: this is the one PR the
-   operator approved before it was written.
+   the skill, and possibly `CLAUDE.md` or `doc/plans/README.md`. **Take the table** — the arm turns
+   on which of those the change actually reaches, and `doc/plans/README.md` is R3, so a change that
+   touches it keeps its review. Whatever the table gives, the remaining scrutiny here is step 1
+   above: this is the one PR the operator approved before it was written.
 
 Keep it out of the plan's own PR. Two changes with different review audiences in one diff means
 neither gets read properly, and it couples a contract amendment to whether the plan lands.
