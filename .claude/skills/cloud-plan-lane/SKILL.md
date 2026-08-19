@@ -1223,7 +1223,7 @@ was trustworthy where the other two were not.
 read. A count from a surface you *can* read is the cheapest control available; take it, and record what
 it says.
 
-⭐ **`unreadable` blocks merge-gate condition 3, where `rate-limited` and `silent` do not.** The
+⭐ **`unreadable` blocks merge-gate condition 3, where `rate-limited` and `silent` do not** — a statement about condition 3 alone, since condition 6 separately gates CodeRabbit, so a `rate-limited` or `silent` CodeRabbit can hold the merge under *that* condition while leaving condition 3 satisfied. The
 shortfall verdicts say a reviewer did not review — condition 3 is about whether every *comment* was
 handled, and a reviewer who filed none leaves nothing to handle. An unreadable surface is different in
 kind: comments may exist and be unhandled, and the run cannot show otherwise. So condition 3 is **not
@@ -1258,6 +1258,74 @@ Record the population, each reviewer's verdict, its `Reopens?` value, and the bo
 the report's **Reviewer participation** table (§ Report), and state the coverage as N-of-M. A reviewer
 that never spoke is then *visibly* `silent` in the record, not merely unmentioned.
 
+#### A `Reopens? yes` refusal is RETRIED, not recorded
+
+A `Reopens? no` refusal is a fact about this diff: waiting cannot change it, so it goes straight into
+the record. A **`Reopens? yes`** refusal is not a fact about anything — it is a clock. Recording it as
+a shortfall the moment it appears converts a delay into a permanent gap, and the run then discloses a
+missing review it never actually tried to get.
+
+**So a `Reopens? yes` verdict is provisional.** It becomes a shortfall only once the retry schedule
+below is exhausted; until then the run owes another attempt.
+
+- **Wait the window the notice states, then add jitter** — a random 5–20 minutes on top. ⛔ **The
+  jitter is not politeness, it is correctness.** Several plans run in parallel against **one
+  per-developer allowance**, and every one of them reads the same "available in N minutes" from its
+  own notice. Without jitter they all wake at the same instant and race for a single slot: one wins,
+  the rest are refused and re-synchronise on the *next* slot, and the convoy never breaks up. Jitter
+  is what decorrelates them.
+- **One attempt per wake. Never two.** Each attempt consumes the allowance, so a retry loop inside a
+  single turn spends the very slot the next attempt needs.
+- **Never poll in Bash, and never `sleep` on a reviewer.** Arm a timer (§ Cloud session affordances)
+  and let the wake do it.
+- **Budget: six attempts.** Six covers roughly a working day of hourly windows. When it is spent,
+  stop attempting, record `rate-limited` with its `Reopens?` value and the attempt count, and treat
+  it as a shortfall from that point on. **An attempt that was accepted and yielded nothing counts**
+  — the slot was consumed, which is what the budget measures. So does the attempt fired by opening
+  the PR.
+
+Record every attempt — its time and the notice it drew — in the report. An attempt that was made and
+refused is different evidence from one that was never made, and only the record distinguishes them.
+
+#### Obtaining a CodeRabbit review — the strategy that actually works
+
+Written out because three separate mechanisms interact here, and a run that knows only one of them
+draws the wrong conclusion from a refusal.
+
+**1. The trigger.** Post the registry's declared `trigger_comment` (`@coderabbitai review`, read from
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/coderabbit.md` — never
+transcribed from here) as an ordinary PR comment. Opening a PR triggers it too.
+
+**2. The allowance is per DEVELOPER, and every attempt draws it down** — including the attempt fired
+by **opening a PR**. It is not per PR, not per commit, and not per branch. Two consequences a run
+must not get wrong:
+
+- **Closing and re-opening a PR buys nothing against the limit**, and costs an attempt to learn that.
+- **A sibling plan's PR consumes the same allowance.** A refusal here may be caused entirely by work
+  elsewhere, which is why the retry schedule above carries jitter rather than a fixed wait.
+
+**3. The incremental-review trap — the one that wastes a whole slot.** CodeRabbit "does not re-review
+already reviewed commits". So an attempt accepted against a head it has already seen returns
+*"Reviews are available now"* and then produces **nothing**: no review body, no inline threads, no
+status change. The slot is spent and the run has no review.
+
+⛔ **Do not read "Reviews are available now" as a review.** It reports the allowance, not the outcome.
+Confirm the review by reading the surfaces (§ Step 7), never by reading that reply.
+
+**So, when a retry is accepted but yields nothing, the remedy is a NEW HEAD SHA, not a new PR.** Merge
+`origin/main` in — usually owed anyway under § Step 8 condition 2 — or land the next real commit.
+**When neither is available** — the base has not moved and the plan has no further commit to make —
+there is no unreviewed head to offer, and further attempts cannot become productive. Record that,
+treat the budget as spent for this reviewer, and proceed under § Step 8 condition 5. Spending the
+remaining attempts on a head already known to be seen is the non-option this contract exists to
+eliminate.
+That gives the reviewer material it has genuinely not seen. A new PR on the *same* head hits the same
+trap while also spending an attempt on the open event.
+
+**4. Verify by the bodies.** A review has happened when `get_reviews` carries a summary body from
+`coderabbitai`, or `get_review_comments` carries its inline threads. A green check, an absence of
+complaint, and the acceptance reply are none of them evidence.
+
 #### A `silent` verdict is not terminal until the recovery check says so
 
 Silence has several causes that look identical from the comment surfaces — the bodies are empty, which
@@ -1273,8 +1341,15 @@ Check whether the reviewer's workflow ran at all, and split on it:
 - **A run that concluded `skipped`, or failed** → a guard or a failure suppressed it, and no comment
   will change that. Record the run's conclusion as the reason and disclose.
 
-This adds a cheap recovery attempt before the disclosure. It is **not** a gate: if the trigger
-produces nothing, disclose the shortfall and carry on exactly as § Step 8 condition 5 says.
+This adds a cheap recovery attempt before the disclosure. It is **not** a gate *of its own*: if the
+trigger produces nothing, disclose the shortfall and carry on as § Step 8 condition 5 says — with one
+exception it does not override. **For CodeRabbit on a PR carrying no `skip-bot-review` label,
+condition 6 still applies**, and this recovery attempt is what satisfies it in the `silent` and
+`Reopens? unknown` cases. Carrying on is licensed by having made the attempt, not by skipping it.
+
+⛔ **Do not run this recovery on a `skip-bot-review` PR.** The label means the bot was deliberately
+not invited, so posting its trigger comment summons the reviewer the label exists to suppress. There
+the `silent` verdict is expected, is recorded as such, and needs no recovery.
 
 ⛔ **Query by `event`, never by head branch.** A **command**-triggered run (`issue_comment`) is
 attributed to the repository's **default** branch, because `issue_comment` is not a pull-request
@@ -1309,8 +1384,9 @@ review-side effects, and each has a defined handling so neither is misread:
 
 ## Step 8 — Merge gate
 
-**The merge is gated on conditions 1–4 below. Condition 5 is a disclosure the run performs before
-arming auto-merge — it is not a gate on the merge. Merge only when conditions 1–4 hold:**
+**The merge is gated on conditions 1–4 and 6 below. Condition 5 is a disclosure the run performs
+before arming auto-merge — it is not a gate on the merge. Merge only when conditions 1–4 and 6
+hold:**
 
 1. **Every required context is present on the exact head SHA and concluded successfully** — not
    merely "all checks green." A repository's check set mixes two kinds of context: those the branch
@@ -1378,8 +1454,8 @@ arming auto-merge — it is not a gate on the merge. Merge only when conditions 
    This is systematic for this lane rather than incidental. A cloud session can end at any point, and
    the interval between "PR opened" and "PR armed" is exactly where `main` moves. An observed PR sat
    `clean` with every check green while a sibling slice's rename had already reddened one of its
-   guards against merged `main`; the queue would have rejected it, and nothing in conditions 1, 3 or
-   4 could have caught it.
+   guards against merged `main`; the queue would have rejected it, and nothing in conditions 1, 3, 4, 5
+   or 6 could have caught it.
 
    Read the gap from git, never from recollection or from `mergeable_state`:
 
@@ -1434,27 +1510,104 @@ arming auto-merge — it is not a gate on the merge. Merge only when conditions 
    record. So Step 9's report sections are written here; only the post-merge landing confirmation
    (below) happens after.
 
-5. **A review-coverage shortfall is disclosed to the operator — this is a disclosure step, not a
-   merge condition.** From the per-reviewer participation record (§ Step 7), read the verdict of every
-   expected reviewer. When **any** expected reviewer's verdict is not `reviewed`, state the shortfall
-   and its reason to the operator, explicitly and in words, *before* arming auto-merge — carrying each
-   reviewer's `Reopens?` value (§ Step 7), since that is what tells the operator whether the gap was
-   ever closable. For example: "Review coverage: 1 of 3 — `cuioss-review-bot` reviewed; `coderabbitai`
-   rate-limited, reopens in 27 minutes; `sourcery-ai` rate-limited on a size ceiling, does not reopen."
+   **A retry cycle under condition 6 may add commits after this one, and that is fine.** The branch
+   locks at *arming*, not at the report commit, so a run waiting on § Step 7's schedule re-commits
+   the report — retry log included — each time it wakes. What condition 4 requires is that the report
+   is complete and pushed **immediately before arming**, whichever commit that turns out to be.
+
+5. **A review-coverage shortfall is disclosed to the operator.** From the per-reviewer participation
+   record (§ Step 7), read the verdict of every expected reviewer. When **any** expected reviewer's
+   verdict is not `reviewed`, state the shortfall and its reason to the operator, explicitly and in
+   words, *before* arming auto-merge — carrying each reviewer's `Reopens?` value (§ Step 7), since
+   that is what tells the operator whether the gap was ever closable. For example: "Review coverage:
+   1 of 3 — `cuioss-review-bot` reviewed; `coderabbitai` rate-limited on a countdown, six attempts
+   spent without obtaining it; `sourcery-ai` rate-limited on a size ceiling, does not reopen."
    **A run that merges on 1-of-3 must _say_ 1-of-3.**
+
+   ⛔ **The example says "six attempts spent" for a reason.** A CodeRabbit line here reports one of
+   four states, and no other: a budget that ran out; a refusal that cannot reopen; a `skip-bot-review`
+   PR; or **a run that could not re-enter to spend the budget, naming the missing affordance**. A
+   live countdown that the run *could* still wait out is not among them — condition 6 forbids arming
+   there. The fourth state is what a headless run discloses, and its sentence says so plainly: for
+   example "`coderabbitai` rate-limited on a countdown, one attempt made; no self-wake available in
+   this session, so the budget could not be spent." 
 
    A `silent` verdict reaches this disclosure only after its recovery check (§ Step 7) — so what is
    disclosed here is a shortfall that survived an attempt to fix it, not merely one that was noticed.
 
-   ⛔ **This is a disclosure requirement, and it is NOT a block — the two must never be collapsed.**
-   The gate does **not** hold the merge open, does **not** wait for the shortfall to clear, and does
-   **not** fail because a reviewer was rate-limited or silent. Rate limits and quotas are routine,
-   outside our control, and blocking on them would strand every landing behind a bot's quota — which
-   is explicitly the wrong direction. **The defect this closes is the _silence_, not the shortfall:** a
-   run that proceeds on partial coverage is fine; a run that proceeds on partial coverage *without
-   saying so* is the failure. The shortfall therefore changes only what the run **says**, never
-   whether it **merges**. Once the shortfall is stated, arm auto-merge exactly as full coverage would
-   — conditions 1–4 are the only gates on the merge itself.
+   ⛔ **Disclosing a shortfall and being free to proceed past it are different acts.** The run
+   **always** says what coverage it got. Whether it may then proceed depends on which of three rules
+   the shortfall falls under:
+
+   - **A clearing rate limit (`Reopens? yes`) is not a shortfall yet.** § Step 7 retries it on a
+     jittered schedule; it reaches this disclosure once that budget is spent — or, for a run that
+     cannot re-enter to spend it, once that inability is established and named (condition 6).
+     Recording it here on first sight discloses a gap the run never tried to close.
+   - **CodeRabbit, on a PR carrying no `skip-bot-review` label, is gated by condition 6.** Disclosure
+     does not discharge that condition; obtaining the review, or exhausting its budget, does.
+   - **Every other shortfall proceeds on disclosure** — a ceiling that cannot reopen, a silence that
+     survived its recovery check, any other reviewer's absence. For these the shortfall changes what
+     the run **says**, never whether it **merges**.
+
+   **The defect this closes is the _silence_, not the shortfall:** a run that proceeds on partial
+   coverage, having satisfied whichever rule above applies, is fine; a run that proceeds *without
+   saying so* is the failure. A quota outside our control must not strand a finished landing
+   indefinitely, which is why condition 6 is bounded by a budget rather than left open-ended. Once
+   the applicable rule is satisfied and the shortfall stated, arm auto-merge — conditions 1–4 and 6
+   are the gates on the merge itself.
+
+6. **CodeRabbit has reviewed, or its retry budget is spent — on a PR with no `skip-bot-review`
+   label.** A plan, a skill and a bundle change are behavioural prose a later run executes with no
+   operator (§ Step 7), and CodeRabbit is the reviewer that reads them as such. So on any PR the
+   label rule leaves reviewable, **do not arm auto-merge on a first CodeRabbit refusal.**
+
+   Satisfy it one of two ways, and say which:
+
+   - **Obtained** — `get_reviews` carries a `coderabbitai` summary body, or `get_review_comments`
+     carries its inline threads, and every finding in them is handled per § Step 7. This is the
+     intended outcome.
+   - **Budget spent** — § Step 7's budget of six attempts is exhausted, counted as that section
+     counts it: every attempt draws it down, including the one fired by opening the PR and any that
+     was accepted but yielded nothing. Each *retry* was made after its stated window plus jitter.
+     Record every attempt with its time and notice, then proceed under condition 5's disclosure.
+
+   ⛔ **A `Reopens? yes` refusal does NOT satisfy this condition** — it is the state the retry
+   schedule exists to work through. ⛔ **Nor does an accepted attempt that produced no review**: read
+   § Step 7's incremental-review trap, get a new head SHA, and spend the next attempt on material the
+   reviewer has not seen.
+
+   **A `Reopens? no` refusal satisfies it immediately**, because waiting cannot change a property of
+   this diff. Record it and proceed — retrying a size ceiling is the non-option this contract's own
+   epic exists to eliminate.
+
+   **A `skip-bot-review` PR is out of scope for this condition entirely** — the label means no bot was
+   invited, so there is nothing to wait for. § Step 7 governs when that label may be applied, and it
+   is narrow.
+
+   **A `silent` or `Reopens? unknown` CodeRabbit satisfies it once the § Step 7 recovery check has
+   been RUN.** Neither posts a countdown, so § Step 7's retry schedule — which waits "the window the
+   notice states" — has nothing to key on and does not apply. Run that check **as it is written,
+   including its split**: post the `trigger_comment` only where no workflow run exists; where a run
+   concluded `skipped` or failed, or where the reviewer posted a bare refusal naming no clearing
+   condition, the check is discharged by *establishing that*, with no comment posted. Either way the
+   condition is satisfied once the check has been run and yielded no review, and the run proceeds
+   under condition 5. Do not invent a wait for a clock that was never stated.
+
+   ⛔ **This condition delays; it must never deadlock — and the run that cannot wait is the case to
+   get right.** § Step 7's retry schedule needs a timer, and § Cloud session affordances records that
+   the self-wake tools may be approval-gated or absent entirely. **A run that cannot re-enter cannot
+   spend the budget, and must not treat that as a reason to hold the PR.** So:
+
+   - **A run that can re-enter** (a live session, a working timer, an operator who will resume it)
+     spends the budget as written.
+   - **A run that cannot re-enter** satisfies this condition with the attempts it was able to make —
+     one, if that is all it had — and records **why** the budget was not spent, naming the missing
+     affordance. That is a complete outcome, not a partial one: it is the same arm-and-hand-off
+     completion § Step 8 already defines for the landing, applied to review coverage.
+
+   Either way the condition is bounded — by the budget, by the recovery attempt, or by the run's
+   inability to wait — and never by another team's quota consumption. A finished, green PR is never
+   held open indefinitely.
 
 Then merge (the repository uses a merge queue, so enable auto-merge and let the queue land it):
 
@@ -1505,7 +1658,7 @@ one.** Confirming `state: MERGED` assumes the run can wait for the queue to land
 cloud session often cannot: the self-wake tools (`send_later`, `subscribe_pr_activity`) may be
 approval-gated **or absent entirely**, and Bash cannot poll GitHub (§ Cloud session affordances), so
 there is no way to block-until-landed inside the session. When that is the case, the run has finished once it has (a) met
-conditions 1–4, (b) armed auto-merge, and (c) handed the `MERGED` confirmation to the orchestrator's
+conditions 1–4 and 6, (b) armed auto-merge, and (c) handed the `MERGED` confirmation to the orchestrator's
 collect step, which reads it from the PR merge event. Record the outcome as **completed with the
 landing delegated** — not `partial`, and not a failure. A run that armed a green PR into the queue and
 merely could not self-wake to watch it has done everything the lane asks; reading its own inability to
@@ -1513,7 +1666,9 @@ watch the queue as a failed run is the mistake this paragraph prevents. (A run t
 still does — this is not licence to assert a merge that was never read back.)
 
 **When there is no self-wake AND a required check is still `in_progress` at the gate, arm anyway — the
-merge queue is the enforcer, not this session.** Condition 1's "BLOCKED → wait" assumes the run can
+merge queue is the enforcer, not this session.** (Condition 6 is unaffected by this carve-out: the
+queue enforces the ruleset's checks, not review coverage, so a CodeRabbit review that has been neither
+obtained nor budget-exhausted is still outstanding when the required build is merely in progress.) Condition 1's "BLOCKED → wait" assumes the run can
 wait for the required check to conclude; a run with no self-wake cannot, and holding the arm until green
 would strand a fully-ready PR indefinitely with no one to land it. On this merge-queue repo the queue
 admits a PR only when the ruleset's required contexts pass and re-verifies on `merge_group`, so arming
@@ -1576,7 +1731,7 @@ that its artifact exists on disk:
 | 5 Build gate | Report states the git-derived Python-change verdict and the build outcome |
 | 6 Verification sub-agent | Findings and dispositions in the report; **which of the two exits ended the loop** — named with the same `verifier-clear` / `budget-exhausted` token the report header carries, plus the `non-converging` qualifier where it applies (§ Report) — the **budget that applied** (five, or the plan's) with **every extension and who granted it**, and the round that stopped it. Where the budget ran out with an operator reachable, that the boundary question was **put to them** and what they answered; where it ran out headless, that fact and the fallback taken. On the verifier exit: **the verifier's own last answer** — never the author's verdict — and the **evidence stronger than a read** it rests on, named. On the budget exit: that fact, with everything A forbids **fixed** regardless and what closing each remaining B survivor would take. Either way: each survivor — and each behavioural finding left `deferred` — listed individually with its (a) proof or (b) bound and confirmation it was **re-put to the verifier** in the stopping round; whether the late rounds' findings were **narrower and not merely fewer**; the **residue to assume remains**; and `Outcome` still reporting the deliverables, not the loop (§ Step 6, "When the loop stops") |
 | 7 PR cycle | PR exists; every comment dispositioned in the report; the participation table carries a verdict **and** a `Reopens?` value per reviewer, and every `silent` verdict records what its recovery check found. An `unreadable` verdict means condition 3 is NOT established — the row is reported as **not done**, whatever the merge outcome |
-| 8 Merge gate | Conditions 1–4 met and auto-merge armed; where the base had advanced, the report names the shape used, the merge commit tested, and the gate's result on it (condition 2) — and a condition 2 that failed closed is reported as **not established**, with nothing armed. Either `state: MERGED` was confirmed after arming, **or** the session could not self-wake to watch the queue (§ Cloud session affordances) and delegated the landing to the orchestrator's collect — both are completed, neither is partial (§ Step 8). The merge commit is recorded to the operator, not in the pre-merge report |
+| 8 Merge gate | Conditions 1–4 and 6 met and auto-merge armed; where the base had advanced, the report names the shape used, the merge commit tested, and the gate's result on it (condition 2) — and a condition 2 that failed closed is reported as **not established**, with nothing armed. Either `state: MERGED` was confirmed after arming, **or** the session could not self-wake to watch the queue (§ Cloud session affordances) and delegated the landing to the orchestrator's collect — both are completed, neither is partial (§ Step 8). The merge commit is recorded to the operator, not in the pre-merge report |
 | 8 Bridge | No **status or bookkeeping** write landed under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan's directory was touched; a **declared-deliverable** edit to a shared lane doc (e.g. `cloud-bridge.md`, `README.md`, the plan template) is permitted — and the report carries the PR number and per-deliverable outcome the orchestrator will collect from |
 | 9 This check | Its result appended to the report |
 | 9 What have we learned | A contract-change proposal presented to the operator, or a recorded "none, because …" |
@@ -1744,6 +1899,18 @@ a summary:
 | … | … | … | … |
 
 State the coverage as N-of-M, and whether the § Step 8 shortfall disclosure fired and what it said.
+
+Where a reviewer was `rate-limited` with `Reopens? yes`, add its **retry log** — one row per attempt,
+each carrying the time, the notice the attempt drew, and the wait-plus-jitter that preceded it:
+
+| # | Waited before it | Attempt time | Notice returned |
+|---|---|---|---|
+| … | window + jitter | … | … |
+
+An attempt that was made and refused is different evidence from one that was never made, and only
+this log distinguishes them. State the budget that applied (six, per § Step 7), how many attempts
+were spent, and — for CodeRabbit on a PR without `skip-bot-review` — whether § Step 8 condition 6 was
+satisfied by **obtaining** the review or by **spending the budget**.
 Where a `silent` verdict triggered the recovery check (§ Step 7), record what the check found and
 whether the reviewer was recovered. Where a verdict is `unreadable`, state plainly that merge-gate
 condition 3 was **not established** and say whether the merge proceeded anyway on an operator
