@@ -372,28 +372,43 @@ All 86 tests in the four suites I ran pass on the current tree.
 
 **C1 — the coverage guard compares against a mutable denominator.** `review_gate_delta.py:417`
 withholds the share when `len(covered) < len(roster)`, where `roster` is whatever the caller passed as
-`--enabled-bots`. Nothing anchors the roster to a stable configuration, and the taxonomy's own remedy
-for a size-capped reviewer is to disable it for the PR. The metric therefore *can* report improving
-parity as real reviewer coverage collapses — the plan's named prohibition. CONFIRMED by execution.
+`--enabled-bots`. Nothing anchors the roster to a stable configuration and no baseline is recorded, so
+a shrink is not even detectable from the verdict; the taxonomy's own remedy for a size-capped reviewer
+is to disable it for the PR. The metric therefore *can* report improving parity as real reviewer
+coverage collapses — the plan's named prohibition. CONFIRMED by execution (two arms, above). The
+precondition is an operator config change, and the two other remedies in the same set do not reach
+it.
 
 **C2 — no resolution filter on the escape set.** A `rejected` finding (the reviewer was wrong) is
 counted as a gate escape and can drive `structural_share` to 100.0. CONFIRMED by execution and by
-`grep -n "resolution" review_gate_delta.py` returning nothing.
+`grep -n "resolution" review_gate_delta.py` returning nothing (exit 1). The sibling module classifies
+the same field in the opposite direction — `review_commitments.RELEASED_RESOLUTIONS`
+(`:101`) is `{'rejected', 'suppressed'}` — so two counters over one store disagree about what a
+rejected finding is.
 
-**C3 — the GitLab fallback cannot fire on the path it names.** `resolve_bot_kind`'s docstring
-(`:178-186`) justifies the `author` fallback with *"the GitLab producer (`gitlab_pr`) never sets
-[`bot_kind`] at all"*. `gitlab_pr.py:274-280` sets neither `bot_kind` nor `author` nor `kind`.
-Consequences on GitLab: `_is_actionable` (`:250-258`) sees no `kind` and returns `False` for every
-record, so `escapes_total` is always 0; `resolve_bot_kind` returns `''`, so no summary pattern ever
-applies; and no `reviewed_commit_sha` is stored, so `EXCLUSION_GATE_TREE_UNKNOWN` fires on every
-GitLab PR. The instrument is inert there, and the stated rationale for the fallback is false.
-CONFIRMED by reading both call sites.
+**C3 — the `author` fallback cannot fire on either producer.** `resolve_bot_kind`'s docstring
+(`:180-186`) justifies the fallback with *"the GitLab producer (`gitlab_pr`) never sets [`bot_kind`]
+at all"* — true — and concludes that keying on `bot_kind` alone *"would silently disable every per-bot
+rule on the whole GitLab path"* — which does not follow, because `gitlab_pr.py:274-282` sets neither
+`bot_kind` nor `author` nor `kind`. Consequences on GitLab: `_is_actionable` (`:249-259`) sees no
+`kind` and returns `False` for every record, so `escapes_total` is always 0; `resolve_bot_kind`
+returns `''`; and no `reviewed_commit_sha` is stored, so `EXCLUSION_GATE_TREE_UNKNOWN` fires on every
+GitLab PR. On GitHub the fallback is dead for a different reason: `github_pr` derives `bot_kind` via
+`bot_kind_for_author`, and an executed probe over every registered login plus its `[bot]` and
+mixed-case variants shows that function and `bot_registry.bot_kind_for_login` agree on all of them —
+so a record carrying `author` without `bot_kind` is one neither resolver can place. The instrument is
+inert on GitLab, and the fallback is currently unreachable everywhere. CONFIRMED by reading both call
+sites and by execution.
 
-**C4 — the published selection effect is wrong about the measurable set.** See D2 above. The
-conclusion drawn from it in the report ("few or no measurements will accumulate until the finalize
-ordering changes") does not follow, and the actual bias direction — toward PRs that looped back, i.e.
-toward PRs where review found escapes — is the opposite of the misreading the disclosure guards
-against. CONFIRMED against `pre-push-quality-gate.md:313-321` and `verdict_currency.py:410-448`.
+**C4 — the published selection effect is wrong about the measurable set.** See D2 above: the gate
+declares no `verdict_inputs`, so a loop-back re-entry re-fires and re-stamps it, and the measurable
+condition is a property of the final pass rather than of the run. CONFIRMED against
+`pre-push-quality-gate.md:313-321`, its frontmatter (`order: 5`, `head_dependent: true`) and
+`verdict_currency.py:410-448`. The report's conclusion ("few or no measurements will accumulate until
+the finalize ordering changes") nonetheless **survives** the correction: the mixed-`reviewed_commit_sha`
+rule at `finalize-step-review-retrospective/SKILL.md:347-348`, against a pre-filter that never
+re-stamps (`github_pr.py:1093-1103`), excludes a review-driven loop-back either way. What is wrong is
+only the stated mechanism and the word "ONLY", not the pessimism.
 
 **C5 — a PARTIAL verdict on the most reachable degradation path renders no structural-limit block.**
 See D0. The suppression is deliberate for "checked nothing" but conflates it with "attempted nothing":
@@ -401,29 +416,42 @@ a boundary with one degraded dimension and no checked one *did* attempt an analy
 line — the very thing that would tell the reader what this gate does not do — is suppressed with it.
 CONFIRMED by reading `_gate_coverage.py:322-324` against `build.py:442-450`.
 
-**C6 — an empty boundary reports COMPLETE.** `complete = not self.degraded`
+**C6 — an empty boundary reports COMPLETE, but not from production.** `complete = not self.degraded`
 (`_gate_coverage.py:181-184`). "No dimension was analysed" and "every dimension passed" produce the
 same verdict word. This is the one-signal-two-meanings archetype the plan's Notes call out as living
 in at least three places; it is now demonstrably in a fourth, inside the function D0 rewrote.
-CONFIRMED by reading, and pinned as intended by `test_gate_coverage.py:372`.
+CONFIRMED by execution, and pinned as intended by `test_gate_coverage.py:376`. **Reachability is the
+limit of the finding**: `build.py` is `_gate_coverage`'s only consumer and every one of its five
+`render_coverage_summary` call sites (`:448`, `:502`, `:556`, `:563`, `:572`) is preceded by a
+recorded dimension, so no production path renders an empty boundary. The live half is the plan's
+reporting obligation, which asked the run to say so on reaching the archetype.
 
-**C7 — the un-run line's wording is false for an attempted-but-empty scope.** `build.py:344-346` /
-`:365-367` return 0 without recording, and `_gate_coverage.py:353-357` then prints *"absent from the
-list above because this gate never performs them, NOT because they passed"*. For a module-scoped run
-whose mypy scope collapsed to nothing, the gate does perform that analysis; it found nothing to
-analyse. CONFIRMED by reading.
+**C7 — the un-run line's wording is false for two reachable states.** `_gate_coverage.py:352-358`
+prints *"absent from the list above because this gate never performs them, NOT because they passed"*.
+Neither of these is that: (a) `build.py:344-345` / `:364-365` return 0 without recording, so a scope
+that collapsed to no type-checkable file lands in the un-run list although the gate does perform that
+analysis; (b) `cmd_quality_gate` runs plugin-doctor only when `module is None` (`build.py:485`), so an
+ordinary module-scoped `quality-gate` prints `plugin-doctor` under "never performs them" for a gate
+that performs it in whole-tree mode. The governing standard names only the true case
+(`pre-push-quality-gate.md:116-117`). CONFIRMED by reading.
 
-**C8 — the published per-escape `bot_kind` is degraded relative to the module's own resolver.**
-`:317` uses `record.get('bot_kind')` raw while `resolve_bot_kind` exists two functions above for
-exactly the records that lack it. Probe with `{'author': 'coderabbitai', …}` yields
-`escapes[0]['bot_kind'] == ''`. The population field a reader uses to attribute escapes is blank
-precisely where the resolver would have filled it. CONFIRMED by execution.
+**C8 — the published per-escape `bot_kind` is degraded relative to the module's own resolver, but
+latently.** `:317` uses `record.get('bot_kind')` raw while `resolve_bot_kind` exists two functions
+above for exactly the records that lack it. Probe with `{'author': 'coderabbitai', …}` yields
+`escapes[0]['bot_kind'] == ''` while `resolve_bot_kind` on the same record returns `'coderabbit'` —
+two answers to "which bot" inside one function. It does not diverge on any record a producer emits
+today (see C3), so this is a consistency defect waiting on the fallback becoming reachable, not a
+live blank-attribution defect. CONFIRMED by execution.
 
-**C9 — error-handling asymmetry between the two new CLIs.** `review_gate_delta.cmd_assess:469`
-catches `(OSError, ValueError)` around `query_findings(...)['findings']`;
-`review_commitments.cmd_reconcile:404` catches `(OSError, ValueError, KeyError)` around the identical
-expression. A malformed store that produces a payload without a `findings` key would traceback out of
-the delta and be rendered as an error TOON by the sibling. CONFIRMED by reading; low likelihood.
+**C9 — the error-handling asymmetry between the two new CLIs is a dead guard in the sibling, not a
+missing one in the delta.** `review_gate_delta.cmd_assess:469` catches `(OSError, ValueError)` around
+`query_findings(...)['findings']`; `review_commitments.cmd_reconcile:403` catches
+`(OSError, ValueError, KeyError)` around the identical expression. The delta's tuple is the correct
+one: `_findings_core.query_findings:316-353` has no error-return branch and unconditionally returns a
+dict containing `findings`, so the `KeyError` clause can never fire — and `review_commitments`' own
+`_read_pr_comment_findings` docstring states the rule against exactly that three lines above it
+(`:376-381`: *"a dead guard against a shape the callee never produces reads as defence and provides
+none"*). REFUTED as a defect in the delta; recorded as a trivial dead clause in the sibling.
 
 **Checked and found sound.** The diff parser's edge cases (whole-file removal, `\ No newline`,
 content lines opening `--`, contiguous-run collapsing, multi-file reset on `diff --git`); the
@@ -439,9 +467,12 @@ prefix; the `not_run` derivation excluding degraded dimensions; and `structural_
 **Consumers.** `review_gate_delta` is invoked from exactly one place —
 `.claude/skills/finalize-step-review-retrospective/SKILL.md:354` — which is a **project-local** skill
 under `.claude/skills/`. The grep over `--include=*.py --include=*.md --include=*.json
---include=*.toon`, excluding `doc/plans` and `target`, found no bundle-level consumer. The
-instrument, its contract and its counting rule ship to every consuming project; the step that would
-run it does not. D2's "recurring measured signal" is therefore a meta-project-only signal.
+--include=*.toon`, excluding `doc/plans/`, `target/` and `.plan/`, found no bundle-level consumer, and
+`find marketplace -type d -name "*review-retrospective*"` returns nothing. The instrument, its
+contract and its counting rule ship to every consuming project; the step that would run it does not.
+D2's "recurring measured signal" is therefore a meta-project-only signal — a narrower miss than it
+looks, since the plan's Expected surface named *"`manage-metrics` or a retrospective check"* as D2's
+home and this repository's only retrospective check is project-local.
 
 **Doc restatements swept.** For `review_body_summary_patterns` (the field this plan added), all
 registry-field enumerations carry it: `automatic-review/SKILL.md:132` and `:140`, `coderabbit.md:19`,
@@ -453,22 +484,29 @@ state the empty default and its fail-closed direction in prose. That sweep is co
 live in different bundles, so a change to the rule must land in both"* — is no longer true of the
 status-summary half, which `review_retrospective.py:172` imports from `review_gate_delta`. The
 sentence is the stated motivation for `test_counting_rule_parity.py`, whose
-`test_both_implementations_agree_on_every_corpus_record` is now partly tautological.
+`test_both_implementations_agree_on_every_corpus_record` (`:174-190`) is now partly tautological. Only
+the kind classification is still genuinely two implementations, and they differ in shape:
+`review_gate_delta._is_actionable:249-259` ends `return kind in _ACTIONABLE_KINDS`, while
+`review_retrospective._is_actionable:177-192` branches explicitly and returns `False` for everything
+else.
 
-**Test-fixture shapes.** `test_counting_rule_parity.py:150-153` encodes
+**Test-fixture shapes.** `test_counting_rule_parity.py:154-158` encodes
 `{'author': 'coderabbitai', 'kind': 'review_body', 'body': …}` under the label *"summary identified
-from the author login with no bot_kind"*, justified in the comment at `:148` by "`gitlab_pr` never
-sets it at all". No producer emits that shape: `github_pr` always sets both `author` and `bot_kind`
-(when classified) plus `kind`; `gitlab_pr` sets none of the three. This is the same class the run's
-own § "What have we learned" proposes a contract bullet for — a fixture asserting a shape production
-never emits, making a predicate look verified.
+from the author login with no bot_kind"*, justified in the comment at `:144-148` by "`gitlab_pr` never
+sets it at all". No producer emits that shape: `gitlab_pr` sets none of the three, and on GitHub a
+login that resolves through `bot_registry` also resolves through `bot_kind_for_author`, so
+`github_pr` would have stored `bot_kind` (executed probe over all three registered logins and their
+variants). This is the same class the run's own § "What have we learned" proposes a contract bullet
+for — a fixture asserting a shape production never emits, making a predicate look verified.
 
 **Untested reachable shapes.** No test seeds a `CoverageBoundary` with an empty `checked` and a
 non-empty `degraded` (the reachable PARTIAL) — searched `test_gate_coverage.py` for every
-`record_degraded` call site: `:288` and `:365`, both paired with a `record_checked`. No test varies
-`enabled_bots` between two arms of a coverage-collapse comparison — searched
+`record_degraded` call site: `:126`, `:146`, `:293` and `:368`, each paired with a `record_checked`.
+No test varies `enabled_bots` between two arms of a coverage-collapse comparison — searched
 `test_review_gate_delta.py` for `enabled_bots=`; every occurrence in the collapse tests passes
-`_ROSTER`. No test drives either counter with a `resolution` field.
+`_ROSTER`. No test drives either counter with a `resolution` field. No test drives `assess_delta` with
+a record carrying no `bot_kind` — `test_a_substantive_review_body_from_another_author_is_still_an_escape`
+(`:539`) varies the **bot**, not the presence of the key.
 
 **Prose-bearing string literals in production code.** Swept the two new scripts' `argparse`
 `help=` / `description=` strings against the implemented behaviour: `--enabled-bots`'
@@ -504,9 +542,9 @@ not a scope violation.
 | Residue item recorded by the report | Status today | Evidence |
 |---|---|---|
 | Finding #24 — the two consumers' opposite loss functions; one shared predicate errs toward counting | **OPEN** | `review_retrospective._is_status_summary:172` still delegates to the single shared predicate; no second predicate exists |
-| The finalize step ordering is the real unblocker for D2 | **OPEN, and its statement needs correction** | Orders unchanged: `pre-push-quality-gate.md:7` = 5, `pre-submission-self-review.md:7` = 7, `finalize-step-simplify.md:8` = 8, `finalize-step-security-audit.md:9` = 9, `automatic-review/SKILL.md:10` = 30. But see C4 — the loop-back re-entry already re-gates, so the item overstates its own blocking effect |
+| The finalize step ordering is the real unblocker for D2 | **OPEN; its stated mechanism needs correction, its conclusion does not** | Orders unchanged: `pre-push-quality-gate.md:7` = 5, `pre-submission-self-review.md:7` = 7, `finalize-step-simplify.md:8` = 8, `finalize-step-security-audit.md:9` = 9, `automatic-review/SKILL.md:10` = 30. See C4 — the loop-back re-entry already re-gates, so "a forward pass never returns to order 5" is not the whole story; but the mixed-SHA rule keeps a review-driven loop-back excluded anyway, so "few measurements will accumulate" stands |
 | The residual status-summary misclassification (a body opening with the status line and carrying same-line substance) | **OPEN, pinned** | `test_review_gate_delta.py:457 test_the_known_residual_is_pinned_rather_than_hidden`; the narrowing mechanism (`contentless_review_markers` / `actionable_content_markers`) is still undeclared by `coderabbit.md` |
-| Three gates carry no structural limit — `default:ci-verify`, `finalize-step-plugin-doctor`'s step verdict, `sonar-roundtrip` | **OPEN** | Greps over all three docs for `structural limit` / `does NOT evaluate` / `cannot evaluate`: no hits in `ci-verify.md` or `sonar-roundtrip.md`; plugin-doctor's hits at `:23` and `:167` are scope statements |
+| Three gates carry no structural limit — `default:ci-verify`, `finalize-step-plugin-doctor`'s step verdict, `sonar-roundtrip` | **OPEN** | Greps over all three docs for `structural limit` / `does NOT evaluate` / `cannot evaluate`: no hits in `ci-verify.md` or `sonar-roundtrip.md`; plugin-doctor's hits at `:23` and `:167` are scope statements, which `pre-push-quality-gate.md:85-88` defines as the thing a structural limit is not |
 | The sibling epic's zero-scoped-modules / null-test-scope branch was NOT reached | **ACCURATE for that branch** | No `pyproject.toml`, no footprint file in the diff. See Out-of-scope for the adjacent archetype the report does not mention |
 | Both lesson retirements recorded, not performed | **UNVERIFIABLE** | The corpus is `.plan/`-local and absent from the clone |
 
@@ -518,19 +556,89 @@ PR` remedy that makes C1 reachable.
 
 ## Summary
 
-**Gaps by severity: 1 blocker, 7 major, 8 minor (16 total).**
+**Gaps by severity: 1 blocker, 7 major, 10 minor (18 total).**
 
-Everything the report claims to have built exists in the tree today and works as described; three of
-four deliverables are genuinely implemented, the test suites pass, the out-of-scope boundary was
-respected, and the report's disclosures — the dropped deliverable, the named gate-set boundary, the
-labelled regression pin, the un-emitted rate — are honest and mostly accurate. The plan's central
-prohibition is nonetheless violated: `structural_share` reaches `100.0` at `1/1` coverage the moment
-the reviewer roster shrinks, which is exactly the "the gates are perfectly configured" inversion the
-plan says must not ship, reached by a route (disable-a-size-capped-reviewer) that a sibling PR made a
-first-class remedy two hours later — and the plan's own inversion test holds the roster fixed, so
-nothing catches it. Alongside it sit a metric that counts rejected bot false positives as gate
-escapes, a documented GitLab fallback that cannot fire because the GitLab producer stores none of the
-fields it reads, a published provenance that mis-states the measurable population, and two gate-verdict
-render paths that carry no scope limit at all — including one where an empty boundary still prints
-COMPLETE. None of these is a regression; all of them are things a second pass over the same surfaces
-should now close.
+Everything the report claims to have built exists in the tree today and works as described; D1 and D3
+are genuinely implemented, the test suites pass, the out-of-scope boundary was respected, and the
+report's disclosures — the dropped deliverable, the named gate-set boundary, the labelled regression
+pin, the un-emitted rate — are honest and mostly accurate. D0 and D2 are each partially discharged
+against their own *Done when*, which is what moves the verdict to **partially-implemented**.
+
+The plan's central prohibition is violated: `structural_share` reaches `100.0` at `1/1` coverage the
+moment the reviewer roster shrinks, which is exactly the "the gates are perfectly configured"
+inversion the plan says must not ship, reached by a route (disable-a-size-capped-reviewer) that a
+sibling PR made a first-class remedy — and the plan's own inversion test holds the roster fixed, so
+nothing catches it. The route needs an operator config change, and the verdict does publish the roster
+it used; neither weakens the fact that four sites state the guarantee absolutely and none of them is
+true.
+
+Alongside it sit a metric that counts rejected bot false positives as gate escapes, an escape
+numerator whose population is not the coverage denominator's (a human review comment withholds the
+share on every PR that carries one), an `author` fallback whose documented rationale cannot fire on
+either producer, a published provenance that mis-states the measurable population, and a gate-verdict
+render path — the most reachable PARTIAL — that carries no scope limit at all, against the governing
+standard's own statement that it carries one on both verdict forms. None of these is a regression; all
+of them are things a second pass over the same surfaces should now close.
+
+## Adversarial review
+
+An independent pass re-derived every load-bearing claim above against the tree rather than accepting
+the citations, and rewrote this document and `gaps.md` where it disagreed. What it ran, so the pass
+can be repeated:
+
+- **Executed `assess_delta` directly** (a scratch probe importing `test/conftest.py` for the
+  marketplace `sys.path`, no repository file touched) across: a fixed-roster coverage collapse (3
+  enabled / 1 reviewed) versus a shrunk roster (1 enabled / 1 reviewed); a `resolution: rejected`
+  finding; an all-`gate_addressable` partition; an empty escape set; an `author`-only record; a human
+  record carrying no `bot_kind`; and 1-of-8 and 1-of-16 partitions for rounding.
+- **Executed `render_coverage_summary`** on an empty boundary, a degraded-only boundary, and a
+  checked-plus-degraded boundary.
+- **Executed `serialize_toon`** on `None` / `0.0` shares.
+- **Executed the login resolvers** (`github_re_review.bot_kind_for_author` versus
+  `bot_registry.bot_kind_for_login`) over all three registered logins plus `[bot]`-suffixed and
+  mixed-case variants.
+- **Re-ran the four suites** — `test_review_gate_delta.py`, `test_review_commitments.py`,
+  `test_gate_coverage.py`, `test_counting_rule_parity.py` — with `-o addopts="" -q`: **86 passed**.
+- **Re-derived every count**: `91` added `def test_` across `8` test files
+  (4/3/4/32/11/4/29/4, per file), `0` `parametrize`, `6` production `.py` files, `6` entries in
+  `_ANALYSIS_LIMITS`, `11` tests attributed in the report's mutation table, `19752` in the squash
+  commit message against `19748` in the report.
+- **Re-checked every `path:line` citation** in this document and in `gaps.md` against the quoted text.
+
+**Upheld unchanged:** the roster-shrink blocker (C1); the missing resolution filter (C2); the
+degraded-only PARTIAL rendering no limit block (C5); the stale "two independent implementations"
+sentence (C-completeness); the three gates with no structural limit; the self-review limit reaching
+the surfacer's TOON but not the step verdict; both report tallies and the two `./pw verify` totals;
+the absence grep backing the plan's no-pre-existing-metric hypothesis; and the whole "Checked and
+found sound" list.
+
+**Overstated, now corrected:** C3 — the GitLab rationale's factual half is true, and the finding is
+*stronger* than stated (the fallback is unreachable on GitHub too, by probe) but its stated reason
+was imprecise. C4 — the mechanism correction stands, but the inferred bias direction ("toward PRs that
+looped back") is withdrawn: the never-re-stamped `reviewed_commit_sha` plus Step 3b's
+disagree-pass-nothing rule excludes a review-driven loop-back either way, so the report's pessimistic
+conclusion survives its own wrong reason. C6 — the empty-boundary COMPLETE is real but unreachable
+from `build.py`, the only consumer; downgraded to minor. C8 — the raw-versus-resolved `bot_kind` split
+is real but cannot diverge on any producer-emitted record today; kept minor, restated as latent. The
+"no bundle consumer" gap is downgraded to minor because the plan's Expected surface named a
+retrospective check as D2's home.
+
+**Refuted:** C9 as originally written. `_findings_core.query_findings` has no error-return branch and
+always returns a dict containing `findings`, so no `KeyError` is reachable at either call site; the
+delta is not missing a guard — the sibling is carrying a dead one, against the rule its own docstring
+states three lines above it. The gap survives only in that inverted, trivial form.
+
+**Could not verify:** the seven branch commit SHAs (branch deleted after squash); the three cold
+reads (no persisted artifact); the reviewer-participation table and its two refusal bodies
+(provider-side state); both `./pw verify` totals (a full build is out of scope); the cost figures; and
+the two lesson retirements (the corpus is `.plan`-local).
+
+**Added:** two gaps this document had not recorded — the escape numerator carrying no reviewer
+population, so a human PR comment lands `unpartitioned` and withholds the share (major, probe-shown);
+and the mutation obligation covering eleven of ninety-one added tests against a plan Verification
+clause demanding every one (minor). The un-run-wording gap gained a second reachable instance
+(module-scoped `quality-gate` printing `plugin-doctor` as "never performed") and was raised to major.
+Roughly twenty `path:line` citations across the two documents were drifted by one to seven lines and
+have been corrected; the enumeration of `record_degraded` call sites in `test_gate_coverage.py` was
+wrong in both count and position (four sites at `:126`, `:146`, `:293`, `:368`, not two) and the
+conclusion it supports is unchanged.

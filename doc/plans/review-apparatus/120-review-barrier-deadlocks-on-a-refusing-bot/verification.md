@@ -57,7 +57,10 @@ Ground truth is `HEAD` = `61a43e53` on `claude/review-apparatus-analysis-mcf8md`
   `refused_structural` from `_UNPROVEN_STATES`), E (fold the structural summary bucket into
   `refused`), I (strip `refusal_size_caps` from `check_deficit`).
 
-No repository file was modified other than this file and `gaps.md`. No commits, no pushes.
+No repository file was modified other than this file and `gaps.md` — with the single, reverted
+exception recorded under § Adversarial review (one mutation applied to `review_completeness.py` under
+a byte snapshot and restored from it; `git status --porcelain` empty afterwards). No commits, no
+pushes.
 
 ## Deliverables
 
@@ -214,7 +217,7 @@ so nothing load-bearing rests on it.
 | Build gate: "8 files", enumerated | **ACCURATE** | `git show --stat 9e9e9880` lists exactly those eight `*.py` paths |
 | Build gate: "ran **ten times**" against a ten-row table | **ACCURATE** | Ten rows counted |
 | Mutation table: nine rows A–I, heading "nine mutations" | **ACCURATE** as a count | Nine rows |
-| Mutation row A: "7, all in case (a) + the summary and both-commands checks" | **INACCURATE** | Re-run independently (`if cause == CAUSE_SIZE` → `if False`, snapshot-and-restore, tree left clean): **9 failed, 72 passed**. The nine are `test_size_refusal_is_structural_not_a_rate_refusal`, `test_cause_dominates_an_awaitable_window_class`, `test_a_size_refusal_is_structural_for_every_registered_bot` ×3, `test_check_and_deficit_agree_on_the_member` ×2, `test_the_summary_distinguishes_structural_from_temporal`, and `TestTheCapIsRecorded::test_a_cap_arriving_without_its_cause_still_resolves_structural` — the last in case (c), which the row's composition does not mention. Discrimination is *stronger* than claimed, but the row is wrong in both count and composition |
+| Mutation row A: "7, all in case (a) + the summary and both-commands checks" | **INACCURATE** | Re-run independently (`if cause == CAUSE_SIZE` → `if False`, snapshot-and-restore, tree left clean): **9 failed, 72 passed**. The nine are `test_size_refusal_is_structural_not_a_rate_refusal`, `test_cause_dominates_an_awaitable_window_class`, `test_a_size_refusal_is_structural_for_every_registered_bot` ×3, `test_check_and_deficit_agree_on_the_member` ×2, `test_the_summary_distinguishes_structural_from_temporal`, and `TestTheCapIsRecorded::test_a_cap_arriving_without_its_cause_still_resolves_structural` — the last in case (c), which the row's composition does not mention. Discrimination is *stronger* than claimed, but the row is wrong in both count and composition. See G8 |
 | Mutation rows D (3), E (1), I (1, cap-only) | **ACCURATE** | Re-run reproduces each exactly |
 | "⛔ **No test pins the real provider figure** … every cap assertion uses a synthetic notice" | **ACCURATE in substance** | The literal `150000` does appear in this landing's own test fixtures (`test_github_pr.py:2599`, and asserted at `:2671`, `:2845`), but only as a value extracted from a **synthetic** body defined in the test — a provider budget change cannot fail it. The claim's meaning holds; the literal's presence is worth knowing |
 | "One row per INSTANCE, never bundled" | **FALSE as applied, and two of the four bundles miscount** | F8–F20 (13 ids), F30–F36 (7), F44–F47 (4) and F65–F69 (5) are each one bundled row — the discipline is broken four times in the section that states it. Re-counting each cell's own enumeration: F8–F20 says "Thirteen" but enumerates **fifteen** (2 advisory sites + 1 "only labels" + 5 member enumerations + 1 help text + 3 producer-side + 2 flag counts + 1 field enumeration); F30–F36 says "Seven" but enumerates **eight**. F44–F47 and F65–F69 do match. See G9 |
@@ -352,23 +355,23 @@ structural carve-out never fires, and the pre-fix loop-back is taken — bounded
   the `refusal_structural` / `rate_window_not_awaitable` distinction C1 turns on. Its
   `test_a_hard_quota_escalates_immediately` docstring additionally calls `hard_quota` *"A per-PR
   ceiling"* (`:179`) — the size/quota conflation the plan's finding 3 removed everywhere else, and the
-  last live instance of it. This is the test-fixture consumer kind, and the sweep missed it.
+  last live instance of it. This is the test-fixture consumer kind, and the sweep missed it. See G4.
 - **The module's own usage synopsis contradicts the parser.**
   `review_completeness.py:116` documents `deficit` without `--refusal-size-caps`, while
-  `_add_bot_observation_flags(deficit_parser)` (`:1525`) declares it. Same class as F43, fixed only
-  in `SKILL.md`.
+  `_add_bot_observation_flags(deficit_parser)` (`:1525`) declares it at `:1434`. Same class as F43,
+  fixed only in `SKILL.md`. See G5.
 - **`test_pre_merge_barrier.py` was named in the plan's Expected surface and never touched.** Its
   `test_widened_member_gates_byte_identically_to_absent` (parametrised at `:666-685`, defined at
   `:687`) hand-lists three widened members (`participated_stale`, `not_triggered`, `declined`) and
   omits `refused_structural` — a hand-list that a new blocking member must join, which is the exact
   staleness shape D0 rejects. A search of the whole file for `structural` returns one hit, in an
-  unrelated comment at `:296`: the member has no coverage there at all.
+  unrelated comment at `:296`: the member has no coverage there at all. See G7.
 - **`pr-agent.md:252-253` restates the recovery unconditionally**: "The recovery sequence therefore
   escalates immediately for this class (`escalate_ask{reason: rate_window_not_awaitable}`)". Branch 1
   is now conditional — "`hard_quota` or `unknown` **(and `cause` is not `size`)**"
   (`automatic-review/SKILL.md:400`). It is the only occurrence of `rate_window_not_awaitable` outside
   the two SKILL files (`grep -rn "rate_window_not_awaitable" marketplace/ test/`). Same stale-consumer
-  class as F30–F36 and F74, in a registry doc the plan's Expected surface named.
+  class as F30–F36 and F74, in a registry doc the plan's Expected surface named. See G10.
 - **Pre-existing, adjacent, and worth a later plan:** `pr-agent.md:254-255` instructs *"record its
   OBSERVED text in `ignore_patterns`"* for a refusal. `sourcery.md:110-112` states the opposite in as
   many words — a refusal "lives in the separate `refusal_patterns` list, **not** in `ignore_patterns`" —
@@ -497,7 +500,7 @@ out-of-scope compliance; the Residue-status claim that Proposals 1–3 landed in
 - **Old G3 — the recovery-arming test.** Downgraded major → minor. Nothing it asserts is false
   today; it is a stale model that would bless a future defect, which is the same class as the other
   test gaps.
-- **Old G6 — advance disclosure.** Kept minor, evidence corrected: both prose sites already disclaim
+- **G6 — advance disclosure.** Kept minor, evidence corrected: both prose sites already disclaim
   the per-diff prediction explicitly (`create-pr.md:227-231`, `bot-participation-contract.md:419-423`),
   so the residual defect is the unqualified sentence, not "prose promises a comparison the data
   cannot support".
@@ -514,7 +517,11 @@ exact defect D1 was written to remove, live on the opt-in path with no hypotheti
 reviewer-participation rows, the dropped `opened` dispatch, the `/review` recovery, run ids and
 timings.
 
-### Citations repaired
+### Citation audit
+
+Every `path:line` in both documents was opened and checked against the text it quotes; all now
+resolve. The ones that did not are listed with the value each now carries, so a re-runner can
+spot-check the corrections rather than the whole set:
 
 `_WAIT_OFFER` (`:558-568` → `:437-451`, twice); the doc-slicing helpers (`:585-620` → `:447-534`);
 `_TERMINAL_STATES` (`:80-84` → `:82-87`); the totality assert (`:172` → `:169`);

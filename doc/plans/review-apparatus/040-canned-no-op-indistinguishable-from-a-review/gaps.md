@@ -348,8 +348,8 @@ Sixteen entries, ordered by severity: majors G1–G3, then minors G4–G16.
 - **Severity:** minor
 - **Kind:** stale-doc
 - **Where:** `marketplace/bundles/plan-marshall/skills/automatic-review/SKILL.md:800`
-- **Evidence:** The sentence reads "So a run where three **required** reviewers all refused renders `"0
-  comment(s) found — 3 refused (unified triage pending)"`". But every refusal member is in
+- **Evidence:** The sentence reads, verbatim, "So a run where three required reviewers all refused renders
+  `"0 comment(s) found — 3 refused (unified triage pending)"`". But every refusal member is in
   `_UNPROVEN_STATES` (`review_completeness.py:252-264`), `participation_complete = not required_unproven`
   (`:865`), and `SKILL.md:789` states Branch A is "entered only after the participation guard above returns
   `participation_complete: true`, or a force-done WARNING was recorded". Three refusing *required*
@@ -369,7 +369,7 @@ Sixteen entries, ordered by severity: majors G1–G3, then minors G4–G16.
 - **Severity:** minor
 - **Kind:** missing-test
 - **Where:** `test/plan-marshall/automatic-review/test_review_completeness.py`, class `TestDeficitSignal`
-  (`:1939-2072`)
+  (`:1939-2067`, nine tests)
 - **Evidence:** `grep -rn "required_reviewed" test/` returns nothing. Of the nine deficit tests, none
   constructs a required reviewer with `reviewed: False` alongside a *reviewing* baseline;
   `test_rows_c_and_d_unassessable_when_every_baseline_refused` (`:1982`) sets `reviewed=False` on the

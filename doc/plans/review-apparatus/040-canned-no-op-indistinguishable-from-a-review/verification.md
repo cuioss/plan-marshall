@@ -477,8 +477,8 @@ gained `refused_structural` in #1167 and the bucket list was updated by hand —
 survived by attention, not by a guard. **CONFIRMED.**
 
 **C5 — an illustrative example describes a state its own branch cannot normally reach.**
-`automatic-review/SKILL.md:800` says "So a run where three **required** reviewers all refused renders
-`"0 comment(s) found — 3 refused (unified triage pending)"`". But every refusal member is in
+`automatic-review/SKILL.md:800` says, verbatim, "So a run where three required reviewers all refused
+renders `"0 comment(s) found — 3 refused (unified triage pending)"`". But every refusal member is in
 `_UNPROVEN_STATES` (`:252-264`), `participation_complete = not required_unproven`
 (`review_completeness.py:865`), and Branch A is "entered only after the participation guard above returns
 `participation_complete: true`, or a force-done WARNING was recorded" (`SKILL.md:789`). Three refusing

@@ -337,13 +337,13 @@ Two bounds on the proof, one acknowledged by the report and one not:
 | 4 | PR #1170 finding #8 is MD040, already covered by markdownlint (:39) | ACCURATE | Thread 4 on #1170 is verbatim an MD040 fenced-code-language finding, dispositioned fixed |
 | 5 | PR #1198 finding #23 is a recurring run-report placeholder finding (:41, :43) | ACCURATE | #1198 thread 1 is "Remove the leftover `_pending_` template block" on `doc/plans/truthful-signals/250-.../report-01.md` |
 | 6 | The `--max-per-component` anchor's flag and guard shipped together in PR #1153 (:49) | **FALSE** (PR number) | `git log -S` on that file returns one commit, `010ea461` = PR #1039. PR #1153 (`1296ede1`) touches no `manage-lessons` path. The "same PR" structure and the `:232` anchor are correct |
-| 7 | PR #1167 finding #3 flagged a stale "six/seven list flags" count whose noun sits outside the set (:45) | ACCURATE, diagnosis INCOMPLETE | The thread body matches verbatim in substance, and the thread is genuinely unanswered. But the binding reason the detector misses it is adjacency, not only the noun set — adding `flags?` still yields no match on `the eight list flags`. The finding was also *fixed* in the next PR (`064560ab`, #1168), which the report does not note; unanswered ≠ unfixed |
+| 7 | PR #1167 finding #3 flagged a "six/seven list flags" count whose noun sits outside the set (:45) | ACCURATE, diagnosis INCOMPLETE | The thread body matches verbatim in substance, and the thread is genuinely unanswered. But the binding reason the detector misses it is adjacency, not only the noun set — adding `flags?` still yields no match on `the eight list flags`. The finding was also *fixed* in the next PR (`064560ab`, #1168), which the report does not note; unanswered ≠ unfixed |
 | 8 | The security audit is `tier: full`, `persona-security-expert`, `order: 9` (:58) | ACCURATE | Frontmatter of `finalize-step-security-audit.md` |
 | 9 | Both drop paths, with line anchors and the drop-reason string (:60-61) | ACCURATE | Every anchor exact at `bb9ab493`; the reason string matches `_SECURITY_CLASS_DROP_REASON` |
 | 10 | `unguarded_boundaries` would not have caught the #1201 traversal (:63) | ACCURATE | The `read_text` sits inside a `try:`; `.exists()` is not a matched boundary |
 | 11 | The `SKILL.md`-only file scope was already fixed upstream in PR #1189 (:73) | ACCURATE | `git log -S'_collect_skill_contract_sources'` → `94bcddf2` (#1189); the resolver at `_self_review_detectors.py:276` returns `SKILL.md` plus `standards/*.md` |
 | 12 | The docstring claimed `nine checks` while the set lacked `checks` (:75) | ACCURATE | Visible in the landed diff's `-` lines |
-| 13 | The widening was derived from a 510-file scan of the detector's domain (:76) | POPULATION ACCURATE, INFERENCE OVERSTATED | 510 is exact at the landing commit (`git ls-tree -r bb9ab493`); the domain is 517 at HEAD. The *distribution characterisation* reproduces. But the added member was not selected from that distribution, and every named higher-frequency structural candidate (`state`/`states` 25, `phase`/`phases` 24, `flag`/`flags` 20) is unadjudicated against `check`/`checks` at 5. The scan output is not in the repo |
+| 13 | The widening was derived from a 510-file scan of the detector's domain (:76) | POPULATION ACCURATE, INFERENCE OVERSTATED | 510 is exact at the landing commit (`git ls-tree -r bb9ab493`); the domain is 517 at HEAD. The *distribution characterisation* reproduces. But the added member was not selected from that distribution: five higher-frequency structural candidates (`state`/`states` 25, `phase`/`phases` 24, `flag`/`flags` 20, `column`/`columns` 16, `member`/`members` 13) are unadjudicated against `check`/`checks` at 5, while the two that top the distribution (`deliverable` 67, `module` 44) are adjudicated only implicitly, as the negative test's fixtures. The scan output is not in the repo |
 | 14 | Consumer sites updated in lock-step across four restatement kinds (:77) | ACCURATE but INCOMPLETE | All four carry `check` at HEAD. A fifth restatement — the `## Tests` coverage index at `SKILL.md:379` — was not updated |
 | 15 | A repo-wide sweep confirmed no other consumer site remained stale (:114) | ACCURATE as scoped | The five-noun enumeration sweep is complete; my independent sweep finds the same four sites. The sweep did not cover test-coverage index rows |
 | 16 | The count_prose N15 schema is noun-agnostic and unaffected (:111) | ACCURATE | `extension-api/standards/ext-point-self-review-surfacing.md:152` — `count_prose[N15]{file,line,text}`, and `:215` describes it noun-agnostically |
@@ -451,12 +451,12 @@ Checked and found NOT to be defects, recorded because a later reader will otherw
   excluded from `counts.total`. Out of scope, recorded so it is not re-found as new.
 - **The symmetric-pair count claims are correct.** `SKILL.md:232` and the `## Tests` row at `:367`
   both say six pairings; `_PAIR_TOKENS` (`_self_review_patterns.py:47-54`) holds six.
-
 - **Production string literals.** No argparse `help=`, `description=`, error template or log template
   restates the noun set. `self_review.py:565` derives its help prose from the registry
   (`f'Emit {len(CANDIDATE_LISTS)} candidate lists '`), so it cannot go stale; `:556` is a
-  noun-agnostic `description=`. `grep -rni "cardinality noun"` over `*.py`/`*.md` returns only doc
-  sites, two non-enumerating comments, one noun-agnostic schema row and one test comment.
+  noun-agnostic `description=`. `grep -rni "cardinality noun"` over `*.py`/`*.md` (excluding
+  `doc/plans/`) returns eight hits — doc sites, the `## Tests` coverage row, two non-enumerating
+  comments, one noun-agnostic schema row and one test comment — and no string literal among them.
 - **`ext-self-review-plan-marshall/SKILL.md:60`'s "twenty-two candidate lists" is correct.**
   `len(CANDIDATE_LISTS)` computes to 22.
 - **The hand-maintained sibling-list mirror is complete.**
