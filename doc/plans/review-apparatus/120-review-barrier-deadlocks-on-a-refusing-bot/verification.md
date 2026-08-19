@@ -5,10 +5,15 @@
 
 The plan's three deliverables are all present in the tree and are real, not relabelling. The
 classification change, the cap extraction, the measured-diff-size pairing, the barrier's structural
-carve-out, the dispatcher hook's disjoint branch table and the 81-test suite all exist and pass. Four
-gaps survive, one of them load-bearing: the leaf's own refusal-recovery Branch 0 — the branch the
-report names as the closure of non-option pairing #2 — reads a `cause` discriminator that **neither of
-the two producers that feed it emits**, so it can never fire from the data the section names.
+carve-out, the dispatcher hook's disjoint branch table and the 81-test suite all exist and pass.
+Eleven gaps survive — **two major, nine minor** — and one is load-bearing: the leaf's own
+refusal-recovery Branch 0 reads a `cause` discriminator that **neither of the two producers that feed
+it emits**, so it can never fire from the data the section names. Its consequence is worse than the
+report's own framing: on the opt-in path a **Sourcery** size refusal — a bot in the tree today, not a
+hypothetical one — falls past Branch 0 into Branch 1 and escalates
+`rate_window_not_awaitable`, whose first operator option is literally
+`"Wait another {review_rate_window_timeout_seconds}s"`. That is non-option pairing **#1**, the defect
+D1 was written to remove, still live wherever `review_rate_window_await` is enabled.
 
 ## Method
 
@@ -59,19 +64,19 @@ No repository file was modified other than this file and `gaps.md`. No commits, 
 | # | *Done when* (plan) | Report claim | Ground truth in the tree | Verdict |
 |---|---|---|---|---|
 | D0 | "every terminal state is classified with its remedy set, and each non-option pairing is named" | Gate did not halt; 11 terminal states derived from two sources; two-axis classification; four non-option pairings named | 11 `STATE_` constants confirmed by live derivation; both classification maps in `test_structural_refusal.py:98-138` are total in **both** directions and guarded (`test_every_derived_state_is_classified`); the report's table matches the code mirror row for row | **met** |
-| D1 | "a size-capped refusal resolves to the structural member, carries the cap, and is never offered an await — proven by a test per branch" | All three conjuncts met | Conjunct 1 **met** (`_refusal_state` consults the cause first, `review_completeness.py:461`). Conjunct 2 **met** (`refusal_size_cap` + `measured_diff_size`, both reported, unknown never defaulted). Conjunct 3 **met at the two rendering surfaces** (barrier + item 7a) but **prose-only at the leaf recovery**, whose discriminator is not produced — see G1 | **met with a gap** |
+| D1 | "a size-capped refusal resolves to the structural member, carries the cap, and is never offered an await — proven by a test per branch" | All three conjuncts met | Conjunct 1 **met** (`_refusal_state` consults the cause first, `review_completeness.py:460`). Conjunct 2 **met** (`refusal_size_cap` + `measured_diff_size`, both reported, unknown never defaulted). Conjunct 3 **met at the two rendering surfaces** (barrier + item 7a) but **prose-only at the leaf recovery**, whose discriminator is not produced — see G1 | **met with a gap** |
 | D1 ⭐ | "Surface each bot's declared size limits where a plan can consult them" | `size-caps` + routed from `create-pr.md` | The surface exists, is routed, and runs — but reports two **booleans**, never a limit. No plan can learn a cap value before a refusal exists | **partially met** |
 | D2 | four cases, each verified to fail pre-fix | 4 cases, 9 mutations, each failing exactly its intended case(s) | 81 tests pass; four mutations re-run — D, E and I reproduce the reported counts exactly; **A produces 9 failures, not the reported 7**, and one of them is in case (c), which the row does not mention | **met**; the report's row A is inaccurate |
 
 ### D0 — the terminal-state population
 
-**CONFIRMED.** `test_structural_refusal.py:80-84` derives `_TERMINAL_STATES` by a `vars()` sweep for
+**CONFIRMED.** `test_structural_refusal.py:82-87` derives `_TERMINAL_STATES` by a `vars()` sweep for
 the `STATE_` prefix — not a hand-list — and `test_the_derived_population_is_non_empty` (`:143`) is
 asserted first, exactly as D2(d) requires:
 
 > `assert _TERMINAL_STATES, ('zero terminal states were derived from review_completeness — the sweep is vacuous …')`
 
-Both classification maps are asserted **equal** to the derived set (`:172`), so neither a new nor a
+Both classification maps are asserted **equal** to the derived set (`:169`), so neither a new nor a
 retired member can sit outside an arm. A live derivation returns 11 members, matching the report's
 "Population size: 11 terminal states". The contract's own `## Failure taxonomy`
 (`bot-participation-contract.md:49-68`) carries exactly ten rows plus the stated complement, and
@@ -82,17 +87,17 @@ corrected (`participated` / `participated_but_empty` render booleans, not `—`)
 
 ### D1 conjunct 1 — a size refusal resolves structurally
 
-**CONFIRMED.** `review_completeness.py:459-466`:
+**CONFIRMED.** `review_completeness.py:460-466`:
 
 ```python
 if cause == CAUSE_SIZE:
     return STATE_REFUSED_STRUCTURAL
 ```
 
-evaluated before the class branches. `recover_causes_from_caps` (`:466-500`) is the fail-closed
+evaluated before the class branches. `recover_causes_from_caps` (`:469-503`) is the fail-closed
 recovery for a cap that arrives without its cause, is `setdefault`-based (never overrides an observed
 `quota`), is one-directional, and is called by **both** `check_completeness` (`:827`) and
-`check_deficit` (`:988`) — so the cross-command disagreement F27 found is closed at the shared seam.
+`check_deficit` (`:980`) — so the cross-command disagreement F27 found is closed at the shared seam.
 `--refused-causes` and `--refusal-size-caps` are both in `_add_bot_observation_flags`
 (`:1415`, `:1434`), which both subcommands call (`:1487`, `:1525`).
 
@@ -104,7 +109,7 @@ Mutation A (disabling cause-dominance) turns 9 tests red, including both paramet
 **CONFIRMED.** `_github_pr.refusal_size_cap` (`:221-283`) reads the ceiling from the notice through
 `refusal_size_cap_patterns`, handles the F2 crash (`match.groups()` truthy on a one-tuple holding
 `None`) and the F28 regression (a declared group capturing nothing yields UNKNOWN, never
-`group(0)`'s prose). `measure_diff_size` (`:287-320`) returns `''` on every unusable read — never a
+`group(0)`'s prose). `measure_diff_size` (`:287-322`) returns `''` on every unusable read — never a
 zero. `github_pr.py:1174-1175` gates the measurement on the **cause**, not on a successfully-extracted
 cap, which is F3's fix:
 
@@ -114,8 +119,8 @@ measured_diff_size = measure_diff_size(args.pr_number) if saw_size_refusal else 
 ```
 
 `check_completeness` emits `refusal_causes[]{bot_kind,cause,cap}` derived per-record from the
-classifier rather than from a second hand-maintained state set (`:884-897`), and the CLI renders an
-unstated cap as the literal `unknown` (`:1053`).
+classifier rather than from a second hand-maintained state set (`:889-902`), and the CLI renders an
+unstated cap as the literal `unknown` (`:1054`).
 
 ### D1 conjunct 3 — never an await
 
@@ -131,11 +136,14 @@ unstated cap as the literal `unknown` (`:1053`).
   `prompt_options[]` as returned, mints the `barrier-ask-override` grant, and names the required-bot
   scoping its settling claim depends on.
 - **The leaf's Branch 0 (`automatic-review/SKILL.md:376-398`) cannot fire from the data the section
-  names.** See G1 in `gaps.md` and § Correctness review below.
+  names**, and the branch it falls through to — Branch 1, `:400` — escalates
+  `rate_window_not_awaitable`, whose first rendered option is a wait. So on the opt-in path a size
+  refusal IS offered an await today, for Sourcery. See G1 in `gaps.md` and § Correctness review
+  below.
 
 ### D1 ⭐ — advance disclosure
 
-**Partially met.** `declared_size_caps()` (`review_completeness.py:1076-1101`) reports
+**Partially met.** `declared_size_caps()` (`review_completeness.py:1057-1098`) reports
 `{bot_kind, structural_cap, cap_extractable}` — two booleans. Running it yields
 `sourcery,true,true`. There is no cap **value** anywhere in the registry (by the deliberate
 "the cap is READ, never declared" decision), so a plan can learn *that* a reviewer has a ceiling but
@@ -144,7 +152,11 @@ nonetheless asserts (`bot-participation-contract.md:411-412`) that
 
 > "a diff's size is measurable at PR creation, so the exclusion is knowable in advance."
 
-which the surface does not deliver. `create-pr.md:213-216` repeats it.
+which the surface does not deliver, and `create-pr.md:213-216` echoes the phrasing. ⚠ The
+overstatement is narrower than that reads: both sites go on to disclaim the per-diff prediction in as
+many words — the contract enumerates the two booleans honestly at `:419-423`, and `create-pr.md:227-231`
+says the surface *"neither blocks PR creation nor predicts a refusal for this particular diff"*. What
+survives is the unqualified sentence, not the surrounding treatment. See G6.
 
 ### D2 — tests
 
@@ -158,9 +170,13 @@ negations), `test_the_barriers_own_prompt_offers_the_structural_remedies` (`:716
 `test_a_declared_group_that_captures_nothing_yields_unknown` (`:1228`, F28),
 `test_a_non_participating_group_does_not_crash_the_producer` (`:1206`, F2).
 The document-slicing helpers are anchored on headings/fences rather than character windows
-(`:585-620`), which is the right shape.
+(`:447-534`), which is the right shape — with one exception the file does not flag:
+`test_the_barrier_names_the_structural_remedy` (`:698`) scans a fixed 1500-character window from each
+`refused_structural` mention, the shape the helpers' own docstrings reject. It is a weaker sibling of
+`test_the_barriers_own_prompt_offers_the_structural_remedies` (`:716`), which does slice structurally,
+so nothing load-bearing rests on it.
 
-`_WAIT_OFFER` (`:558-568`) covers "wait another/for/until", "await the window/reset/limit",
+`_WAIT_OFFER` (`:437-451`) covers "wait another/for/until", "await the window/reset/limit",
 "retry later/in/after", "try again", "back off" — F6's widening is present.
 
 ## Report-claim audit

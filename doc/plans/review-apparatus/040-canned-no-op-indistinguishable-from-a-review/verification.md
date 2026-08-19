@@ -7,10 +7,15 @@ The plan's central mechanism landed and is real: the three-valued `rate_limit_cl
 a state distribution reaches `display_detail`, a deficit signal exists with the right verdict vocabulary
 for the baseline axis, and the contract document states the counting rule with its populations. Its D4
 tests are discriminating rather than decorative — a naive count-only detector, constructed and run as a
-mutant, fails five of the nine deficit tests including both load-bearing negative cases. Two material
-gaps remain: the deficit signal is never invoked by any workflow, and its rendered envelope suppresses
-the very populations the plan required it to publish — printing `verdict: clean` with no row at all for a
-required reviewer that did not review, and printing no population line whatsoever on `unassessable`.
+mutant, fails five of the nine deficit tests including both load-bearing negative cases. Three material
+gaps remain. **The plan's own title condition is still live on its second surface:** the retrospective's
+`comparison` grade separates *reviewed-clean* from *nobody-reviewed* only when it is handed the
+reviewed-at-all set, and its own SKILL.md states that no persisted handoff of that classification reaches
+the step, instructing the step to pass the flag bare — so every zero-findings run, reviewed or not, grades
+`indeterminate` and renders one string. The deficit signal is never invoked by any workflow. And its
+rendered envelope suppresses the very populations the plan required it to publish — printing
+`verdict: clean` with no row at all for a required reviewer that did not review, and printing no
+population line whatsoever on `unassessable`.
 
 ## Method
 
@@ -40,14 +45,18 @@ guard, "Mark Step Complete", "Output", "Canonical invocations".
 Searches run (repository root as the search path unless stated; `__pycache__` hits discounted
 throughout):
 
-- `grep -rn "deficit" marketplace/ .claude/ doc/ -l` (excluding `doc/plans`) — four source files, none of
+- `grep -rln "deficit" marketplace/ .claude/ doc/` (excluding `doc/plans`) — four source files, none of
   which is a workflow step. `grep -rn "check_deficit\|assess_deficit\|cmd_deficit\|review_completeness
   deficit" --include=*.py --include=*.md marketplace/ test/ .claude/` — the only non-test callers are
-  inside `review_completeness.py` itself; the two other test-tree hits are a docstring cross-reference
-  (`test_review_commitments.py:398`) and a cause-agreement test (`test_structural_refusal.py:399`).
-- `grep -rni "\(five\|six\|seven\|eight\|nine\|ten\|eleven\)[ -]member\|one of \(five\|…\|eleven\)"
-  --include=*.md --include=*.py marketplace/ test/ .claude/ doc/developer/` — six taxonomy-count
-  statements, all reading "ten", all correct (the remaining hits are unrelated five/six-bucket prose).
+  inside `review_completeness.py` itself; the test-tree hits are a docstring cross-reference
+  (`test_review_commitments.py:398`) and two guards in `test_structural_refusal.py` — a cause-agreement
+  test (`:385`) and a documentation guard that pins `--refusal-size-caps` into `automatic-review/SKILL.md`'s
+  `deficit` invocation block (`:799`).
+- `grep -rniE "(five|six|seven|eight|nine|ten|eleven)[ -]member" --include=*.md --include=*.py
+  marketplace/ test/ .claude/ doc/developer/`, widened with `"one of ten|of the ten|ten non-participation"`
+  because two sites state the count in forms the first pattern misses — **seven** taxonomy-count
+  statements, all reading "ten", all correct (the remaining hits are unrelated metrics-bucket and
+  HEAD-dependence prose).
 - `grep -rn "refused_awaitable" … | grep -v "refused_unknown"` — fifteen hits, every one a single-member
   mention in context; no surviving two-way refusal enumeration.
 - `grep -rn "comment(s) found" --include=*.md --include=*.py marketplace/ test/ .claude/` — nine hits, all
@@ -65,9 +74,12 @@ throughout):
 - `grep -n "required_bots\|optional_bots" .plan/marshal.json` — this repository configures
   `required_bots: pr-agent`, `optional_bots: coderabbit,sourcery` at `:117-118`. That file is
   git-ignored, so this one figure is machine-local rather than re-derivable from a fresh clone.
-- `grep -rn -- "--display-detail" --include=*.md marketplace/ .claude/ | grep "—"` — the em-dash
-  `display_detail` template is not unique to this plan; `architecture-refresh.md:124`, `:196`, `:412`
-  prescribe em-dash strings too.
+- `grep -rn "\-\-display-detail" --include=*.md marketplace/ .claude/ | grep "—"` — the em-dash
+  `display_detail` template is not unique to this plan; `architecture-refresh.md` prescribes em-dash
+  strings at `:124`, `:196`, `:412` and again in its error table at `:467-471`.
+- `grep -rn "bot_states" --include=*.md --include=*.py marketplace/ .claude/` — every hit is an
+  in-memory read of `review_completeness check`'s immediate TOON or a docstring about it. Nothing writes
+  the classification anywhere a later step can read, which is the substantiating search behind C7.
 
 Pre-fix comparison: `git show fd292004^:<path>` for `review_completeness.py` (lines 309-311) and
 `review_retrospective.py` (line 201), confirming both "before" claims literally.
@@ -114,7 +126,11 @@ clean afterwards for every source path). Result: **5 failed, 4 passed** — the 
 String measurement (arithmetic only, `python3 -c`): `len('0 comment(s) found — 1 empty, 1 refused, 1
 refused-structural (unified triage pending)') == 86`, `isascii() is False`; the worst three-bucket
 expansion `'0 comment(s) found — 1 refused-structural, 1 not-triggered, 1 in-progress (unified triage
-pending)'` measures 98.
+pending)'` measures 98; and the unbounded nine-bucket expansion — reachable on a nine-reviewer roster,
+one per bucket — measures 161, so no relabelling alone can bring the template inside the bound. The
+review-retrospective surface's own three grade strings measure 73 (`clean`, at its shortest placeholder
+expansion), 50 (`vacuous`) and **109** (`indeterminate`, a fixed literal with no placeholder), all three
+`isascii() is False`.
 
 ## Deliverables
 
@@ -123,7 +139,7 @@ pending)'` measures 98.
 | D0 | "the contract is written with each population published, and the absence corpus is partitioned by cause" | Contract written in `bot-participation-contract.md`; partition documented as derivable from `refusal_patterns`; HALT does not trigger | § "The counting rule" exists with all three populations named (`bot-participation-contract.md:508-534`). No corpus was partitioned — derivability was documented instead | met-in-substance, weakened |
 | D1 | "one vocabulary is defined in one place, and every consumer named in D2/D3 uses it" | `STATE_REFUSED_UNKNOWN` + `_refusal_state()`; nine-member taxonomy in the contract; cause member split out | `STATE_REFUSED_UNKNOWN` at `review_completeness.py:204`; `_refusal_state` at `:425-466` is total and injective; the contract is the single definition site; eight downstream restatements corrected | met |
 | D2 | "the signal fires on the two deficit rows, stays silent on the clean row, and reports the two baseline-less rows as unassessable" | `assess_deficit()` + a `deficit` subcommand, `gates_merge: false` | `assess_deficit` at `:614-705`, `check_deficit` at `:928-1009`, `cmd_deficit` at `:1268`, subcommand registered at `:1540`. All four verdict behaviours tested and passing — the clause as written is discharged. **But** no workflow invokes it, and its rendering suppresses the required-reviewer population | clause met; deliverable's purpose unmet |
-| D3 | "no surface renders 'nobody reviewed' and 'reviewed clean' as the same string, proven by a test per surface" | Both surfaces done | Surface 1 met and tested (`test_nobody_reviewed_and_reviewed_clean_render_differently`). Surface 2 met only at the aggregate `comparison` grade, and only from #1170 — the per-row `participation` field still renders both facts as `unmeasurable` | met, with a residual row-level collapse |
+| D3 | "no surface renders 'nobody reviewed' and 'reviewed clean' as the same string, proven by a test per surface" | Both surfaces done | Surface 1 met and tested (`test_nobody_reviewed_and_reviewed_clean_render_differently`). Surface 2's discriminator (`comparison`, from #1170) works in the library and is tested there, but its input never reaches the step: `finalize-step-review-retrospective/SKILL.md:151-155` records that no persisted reviewed-at-all handoff exists and instructs the step to pass `--reviewed-reviewers` bare, so every zero-findings run grades `indeterminate` and renders one string. The per-row `participation` field renders both facts `unmeasurable` too | surface 1 met; surface 2 unmet in the shipped workflow |
 | D4 | "all five behave as specified, each proven to fail before the change" | Two flipped tests observed `2 failed`; new-symbol tests AttributeError pre-fix | All five behaviours are tested and pass, and are discriminating: a naive count-only mutant fails five of the nine deficit tests, cases (b) and (c) among them | met |
 
 ### D0 — the counting rule, stated as a reusable contract
@@ -180,15 +196,21 @@ All three registry documents declare the field, with the values the report state
 wording was honoured.
 
 The drift risk the new member created was chased down. A whole-tree sweep for member-count prose returns
-six statements, all reading "ten" and all correct: `bot-participation-contract.md:52` and `:73`,
-`review_completeness.py:189`, `automated-review-lifecycle.md:56`, `create-pr.md:201` ("closed ten-member"),
-and `automatic-review/SKILL.md:24` ("the ten-member failure taxonomy"). A sweep for
-`refused_awaitable`/`refused_hard` without `refused_unknown` finds no surviving two-way enumeration. The
-count is partly machine-guarded:
-`test/plan-marshall/automatic-review/test_bot_participation_contract.py:501` reads the contract's own
-closure sentence back as an integer and compares it to a member tuple whose length is load-bearing. That
-guard's reach is one sentence in one document — the test says so itself at `:528-529` ("a count restated
-anywhere else is outside its reach") — so the other five restatements are unguarded prose.
+**seven** statements, all reading "ten" and all correct: `bot-participation-contract.md:52`
+("classified into exactly one of ten members") and `:73` ("Seven of the ten members"),
+`review_completeness.py:189` ("Ten members"), `automated-review-lifecycle.md:56` ("exactly one of ten"),
+`create-pr.md:201` ("closed ten-member"), `automatic-review/SKILL.md:24` ("the ten-member failure
+taxonomy"), and `pr-review-operations.md:248` ("That taxonomy has **ten** non-participation members").
+The derived cardinality agrees: `_NON_PARTICIPATION_MEMBERS` in
+`test/plan-marshall/automatic-review/test_bot_participation_contract.py:114-125` is a ten-tuple. A sweep
+for `refused_awaitable`/`refused_hard` without `refused_unknown` finds no surviving two-way enumeration.
+The count is partly machine-guarded: that file's `:501`,
+`test_the_contracts_closure_count_agrees_with_the_derived_member_count`, applies
+`_CLOSURE_COUNT = re.compile(r'classified into exactly one of (?P<count>\w+) members')` (`:174`) to the
+contract's own § "Failure taxonomy" and compares the word to the tuple's length. That guard's reach is one
+sentence in one document — the test says so itself at `:528-529` ("a count restated anywhere else is
+outside its reach") — so the other **six** restatements are unguarded prose. A sibling guard at `:525`
+does sweep the whole tree, but for `N blocking members` claims, a different and strictly smaller quantity.
 
 ### D2 — the deficit signal
 
@@ -264,8 +286,8 @@ asserting `nobody == '3 refused'`, `reviewed_clean == '3 empty'`, and `nobody !=
 covers the composer rather than the rendered `display_detail`, because the composition itself is prose in
 `SKILL.md` rather than code.
 
-**Surface 2 — met at the surface, residual at the row.** `review_retrospective.py:331` is the whole
-per-row classifier:
+**Surface 2 — met in the library, unreachable in the shipped workflow.** `review_retrospective.py:331`
+is the whole per-row classifier:
 
 ```python
 participation = 'measured' if raw_total > 0 else 'unmeasurable'
@@ -280,22 +302,37 @@ as many words (`test_review_retrospective.py:697`,
 > render identically. The row names the reviewer and marks it unmeasurable — never scored — rather than
 > omitting it.
 
-At the landing that was the whole of surface 2, and the plan's *Done when* was not discharged for it. It is
-discharged today, by #1170 (`b286928c`, confirmed by `git log -S'_grade_comparison'`), which added
-`_grade_comparison` (`review_retrospective.py:108-153`) and the `comparison` field. On a zero-findings run
-that grade separates `clean` (an enabled reviewer is substantiated as having reviewed) from
-`indeterminate` (none is), and the reader-facing string differs accordingly:
-`finalize-step-review-retrospective/SKILL.md:190-192` maps the grade to distinct `--display-detail` values.
-The proving test exists and is explicitly a discrimination proof —
+At the landing that was the whole of surface 2. #1170 (`b286928c`, confirmed by
+`git log -S'_grade_comparison'`) added `_grade_comparison` (`review_retrospective.py:108-153`) and the
+`comparison` field, which on a zero-findings run separates `clean` (an enabled reviewer is substantiated
+as having reviewed) from `indeterminate` (none is), and
+`finalize-step-review-retrospective/SKILL.md:190-192` maps the grade to distinct `--display-detail`
+values. The proving test exists and is explicitly a discrimination proof —
 `test_review_retrospective.py:835`, `test_comparison_clean_vs_indeterminate_discriminate_on_identical_zero_store`,
 which holds the roster and the empty store fixed, asserts every row is `unmeasurable` in both runs, and
 then asserts `reviewed_clean['comparison'] != nobody_reviewed['comparison']`.
 
-What remains is the per-row field: it still ignores `reviewed_reviewers`, even though that set is a
-parameter of the same `aggregate()` call (`:217`), so a reader scanning the per-reviewer table alone —
-rather than the grade above it — cannot tell a reviewer that reviewed and found nothing from one that
-never ran. That is a refinement of a surface that now discriminates, not a live collapse of the plan's
-headline distinction.
+**But the discriminating input never reaches the step, and the skill says so in as many words.** That
+test supplies `reviewed_reviewers=['cuioss-review-bot']` directly to `aggregate()`. The workflow cannot.
+`finalize-step-review-retrospective/SKILL.md:151-155` states: "⚠ **No persisted handoff of that
+classification currently reaches this step.** `review_completeness check` emits `bot_states` in its
+immediate TOON during the automatic-review step and the merge-gate barrier, but nothing persists it in a
+form this step can read at `order: 990` (after the merge gate). So **pass `--reviewed-reviewers` bare**
+here, and the zero-findings grade **fails closed to `indeterminate`**" — repeated at `:225-230` for the
+ordinary Step 2 call. A whole-tree sweep for `bot_states` (§ Method) finds no writer: every hit reads the
+classifier's immediate TOON in-process. So on every zero-findings run the enabled roster is non-empty,
+`reviewed_reviewers` is empty, `_grade_comparison` returns `COMPARISON_INDETERMINATE` at
+`review_retrospective.py:153`, and the step renders the one `indeterminate` string — whether a reviewer
+reviewed and found nothing or nobody reviewed at all. That is the plan's D3 *Done when* ("no **surface**
+renders 'nobody reviewed' and 'reviewed clean' as the same string") undischarged on the second surface,
+not a refinement of one that discriminates. The `clean` branch is fail-closed rather than wrong — an
+unsubstantiated review is correctly never credited — but the consequence is that the two facts share a
+rendering, which is exactly the defect this plan is named after.
+
+The per-row field is the smaller half of the same root cause: `:331` ignores `reviewed_reviewers` even
+though that set is a parameter of the same `aggregate()` call (`:217`), so even once the handoff exists a
+reader scanning the per-reviewer table alone — rather than the grade above it — still cannot tell a
+reviewer that reviewed and found nothing from one that never ran.
 
 ### D4 — tests, each verified to fail pre-fix
 
@@ -308,9 +345,13 @@ Every behaviour the plan enumerates has a test, and all 184 tests in the two fil
   `DEFICIT_UNASSESSABLE`, `!= DEFICIT_CLEAN`, and `baseline_reviewers == []`.
 - The named blind-spot test exists: `test_required_count_alone_cannot_distinguish_the_rows`, holding
   `required_count == 0` fixed and varying only the baseline across all three verdicts.
-- The 150,000 figure is not pinned anywhere; `sourcery.md:43` keeps the detection pattern number-free
-  ("your pull request is larger than the review limit of") and reads the figure through
-  `refusal_size_cap_patterns` (`:47-48`) instead, exactly as the plan's ⛔ demanded.
+- The 150,000 figure is pinned to no threshold, constant, or detection pattern; `sourcery.md:43` keeps the
+  detection pattern number-free ("your pull request is larger than the review limit of") and reads the
+  figure through `refusal_size_cap_patterns` (`:47-48`) instead, exactly as the plan's ⛔ demanded. A
+  whole-tree `grep -rn "150000\|150,000"` returns it only inside test fixtures that author their own
+  notice body and assert the extractor reads back what that body states
+  (`test_github_pr.py:2599`, `:2671`, `:2845`), plus two illustrative comments
+  (`sourcery.md:48`, `_github_pr.py:301`) — never as a production figure the code depends on.
 
 The report's own *stated* proof for the new tests — "New/changed functions did not exist pre-fix, so their
 tests AttributeError against pre-fix code" — is true of any new symbol and carries no discriminating
@@ -350,6 +391,7 @@ account of *why* they are was weak.
 | "Fires only against a real baseline; `unassessable` when every other reviewer refused; never on `0 : 0`" | ACCURATE | `:681-691`, plus the four passing tests and the mutation probe |
 | `compose_review_state_summary()` + `review_state_summary` field; Branch A interpolates it | ACCURATE | `:586`, `:915`, `automatic-review/SKILL.md:797`, `:805` |
 | Surface 2 "emits a row per **enabled** reviewer (roster ∪ observed), each carrying `participation: measured \| unmeasurable`, closing the vacuous-set (no-row) defect" | ACCURATE | The row emission is at `review_retrospective.py:317`, and the no-row collapse is what the claim names as closed. It does not claim the per-row field separates reviewed-clean from never-ran, and it does not: `:331` renders both `unmeasurable`, as the accompanying test asserts |
+| Surface 2 closes D3's *Done when* (the report's "D3 … (both surfaces)" heading) | OVERSTATED | The no-row collapse is closed. The *string* collapse D3 names is not: at the landing surface 2 had no discriminating rendering at all, and the `comparison` grade that supplies one (#1170) is fed by an input `finalize-step-review-retrospective/SKILL.md:151-155` records as unavailable to the step (§ D3) |
 | "eight documentation-drift instances … all were **fixed** (commit `607fa10`), then confirmed clean by full-tree greps" | ACCURATE | All eight named sites carry the corrected text today, at drifted line numbers: `review_completeness.py:189` ("Ten members"), `automated-review-lifecycle.md:56` ("exactly one of ten"), `pr-review-operations.md:248` ("**ten** non-participation members") and `:258` (three-way refused row), `workflow-integration-github/SKILL.md:137`, `github_pr.py:812` and `:1034-1035`, `_github_pr.py:178`, `test_github_pr.py:1009`. My independent whole-tree sweeps for stale member counts and two-way refusal enumerations return clean |
 | "`test_required_count_alone_cannot_distinguish_the_rows` pins that `required_count == 0` is identical across all five rows" | ACCURATE | The test exists at `:1999`, passes, and varies only the baseline |
 | "New/changed functions did not exist pre-fix, so their tests AttributeError against pre-fix code" (as the D4 fail-pre-fix proof) | ACCURATE BUT NON-DISCRIMINATING | True of any new symbol, so it is not the pre-fix evidence the plan's Verification section demanded. The tests themselves are nonetheless discriminating — the naive-detector mutant fails five of nine (§ D4) |
@@ -443,6 +485,40 @@ between two reviewers on the same diff is ordinary variance, not a reviewer-qual
 only the default and the gap between "materially" and "strictly fewer" are arguable. **CONFIRMED** as a
 design choice worth revisiting, not as a defect.
 
+**C7 — surface 2's discriminator has no input in the shipped workflow.** Established in § D3 above and
+recorded here because it is the sharpest correctness finding in the review: the `comparison` grade can
+reach `clean` only when the caller supplies `reviewed_reviewers`, and the step's own SKILL.md
+(`:151-155`, again at `:225-230`) records that no persisted reviewed-at-all handoff reaches it and
+instructs it to pass the flag bare. The whole-tree `bot_states` sweep confirms no writer exists. Both
+zero-findings cases therefore render the `indeterminate` string. Fail-closed and honest, but the two facts
+share a rendering — D3's *Done when*, unmet on the second surface. **CONFIRMED.**
+
+**C8 — the review-retrospective's own `display_detail` strings break the ≤80/ASCII contract, and one
+breaks it unconditionally.** `finalize-step-review-retrospective/SKILL.md:190-192` prescribes three grade
+strings; measured with `len()` and `isascii()` they are 73 / 50 / **109** characters and all three carry
+an em dash. The `indeterminate` string — `indeterminate — 0 findings and no reviewer produced content;
+review-quality comparison could not be performed` — has no placeholder, so its 109 characters are not a
+worst case but the only case, and it is the string this deliverable's second surface emits on exactly the
+run the plan is about. The governing contract is the one the same skill cites at `:447-448` as its reason
+for keeping the Step 3b delta verdict *out* of `display_detail`:
+`phase-6-finalize/standards/external-step-contract.md` § "Required termination", whose constraint list
+gives "≤80 characters" (`:52`) and "Plain ASCII — no unicode glyphs" (`:55`). The skill therefore invokes
+the ceiling as binding in one section and overruns it by 29 characters in another. **CONFIRMED.**
+
+**C9 — `review_completeness.py`'s own `Usage:` line omits the flag its documentation guard calls
+load-bearing.** The module docstring gives two invocation lines: `check` at `:115` carries
+`[--refusal-size-caps [<csv>]]`; `deficit` at `:116` does not, though `_add_bot_observation_flags`
+(`:1298`) registers the flag on both subparsers (`:1434`) and `automatic-review/SKILL.md:1010-1018` marks
+it ⛔ "the load-bearing one: a cap arriving WITHOUT its cause drives the fail-closed cause recovery, so a
+caller that passes it to `check` but not `deficit` reproduces exactly the disagreement the pair exists to
+prevent". A caller following the module's own Usage line does precisely that. The SKILL.md invocation
+block is machine-guarded against this omission —
+`test/plan-marshall/automatic-review/test_structural_refusal.py:799`,
+`test_the_deficit_invocation_block_documents_the_cap_flag`, whose docstring notes that "plugin-doctor
+cannot catch it, because it validates documented invocations against the parser, not the parser against
+the docs" — but the guard reads `SKILL.md` only, and the module docstring is the second documented
+invocation surface. **CONFIRMED.**
+
 No fail-open exception path, off-by-one, non-idempotence, or unguarded `None` was found in the changed
 code. `check_deficit`'s store read is fail-closed (`:960-967`, an `OSError`/`ValueError` returns the
 `load_failure` error branch rather than an empty-and-clean result), matching the plan's Notes rule "Branch
@@ -480,18 +556,32 @@ nothing. Of the nine tests in `TestDeficitSignal`, none constructs a required re
 reviewer but also on both baselines, so the `not baseline` branch short-circuits at
 `review_completeness.py:681` before the gap can be observed.
 
+**Missing: the reviewed-at-all handoff surface 2 needs** (C7 above). The classification exists, the
+consumer flag exists, the grading logic exists and is tested — and nothing writes the classification where
+the consumer can read it, so the flag is documented as always-bare and the grade is pinned to
+`indeterminate` on every zero-findings run.
+
 **Missing: no test for the row-level half of surface 2.** The surface has a discrimination test at the
-aggregate grade (`test_review_retrospective.py:835`), and that is what discharges the plan's "a test per
-surface". No test asserts that a reviewed-clean *row* differs from a never-ran *row* — because it does not;
-the existing tests assert the opposite deliberately.
+aggregate grade (`test_review_retrospective.py:835`), and that test supplies `reviewed_reviewers`
+directly. No test asserts that a reviewed-clean *row* differs from a never-ran *row* — because it does not;
+the existing tests assert the opposite deliberately. Nor does any test pin the *step's* rendering, which is
+where the collapse survives.
 
 **Missing: no bucket-coverage guard** (C4 above).
 
 **Missing: the member-count guard reaches one sentence.**
 `test_bot_participation_contract.py:501` checks the contract's own closure sentence, and a separate sweep
-(`:525`) checks every "N blocking members" claim across the marketplace docs — but no check reads the five
-other *taxonomy*-count restatements. Those five are exactly the class of site the run's own sub-agent had
-to correct by hand when the taxonomy went from eight members to nine.
+(`:525`) checks every "N blocking members" claim across the marketplace docs — but no check reads the
+**six** other *taxonomy*-count restatements. Those six are exactly the class of site the run's own
+sub-agent had to correct by hand when the taxonomy went from eight members to nine. The same shape now
+exists one level down for this plan's own additions: the three-member deficit verdict vocabulary is
+restated at five sites — `review_completeness.py:171` (the docstring's TOON shape), `:283-285` (the
+constants), `:646-647` (`assess_deficit`'s Returns), `bot-participation-contract.md:554-559`, and
+`automatic-review/SKILL.md:1021-1024` — with no guard reading any of them, so adding the verdict C1 calls
+for would repeat the eight-to-nine drift by hand.
+
+**Missing: a guard over the module docstring's invocation lines** (C9 above). The equivalent guard for the
+SKILL.md block exists and names its own reach; nothing extends it to the `Usage:` lines in the script.
 
 **Missing: the deferred pre-filter remedy left no trace.** The plan's Notes carry "Candidate remedy for the
 pre-filter, not yet applied: restate it **positively** — a stored `pr-comment` finding must positively look
@@ -553,7 +643,7 @@ artifacts (still unrecorded). Both are carried into `gaps.md`.
 
 ## Summary
 
-Counts by severity: **0 blockers, 2 major, 11 minor** (13 gaps, listed in `gaps.md`).
+Counts by severity: **0 blockers, 3 major, 13 minor** (16 gaps, listed in `gaps.md`).
 
 The plan's hard mechanism landed and is correct where it landed: the three-valued `rate_limit_class` no
 longer folds `unknown` into a positive hard-quota finding, the counting rule is written once with all three

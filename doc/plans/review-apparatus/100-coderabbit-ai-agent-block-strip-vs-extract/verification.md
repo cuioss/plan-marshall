@@ -13,7 +13,10 @@ read, which this verification settled by executing the ingestion chain rather th
 same false claim is the second of the three evidence items D2's verdict rests on. Alongside it, a
 separate misstatement about *where the untrusted comment body lives* stands unfixed at **seven** sites
 across four bundles' documentation — a defect that predates this plan but that D0's rationale and D1's
-own quoted evidence both turn on.
+own quoted evidence both turn on. And the first of D2's evidence items — *"No consumer, in the machine
+sense"* — is sound about parsing and unsound as stated: the producer pre-filter matches its shared
+acknowledgment regexes against the whole comment body, block included, so block text can silently drop
+an entire real finding, which execution reproduces.
 
 ## Method
 
@@ -90,6 +93,23 @@ Commands executed (not merely read):
 - `analyze_triage_read_surface('marketplace/bundles')` → **0 findings**; the plugin-doctor rule is
   clean over the tree and does not fire on `coderabbit.md`'s `raw_input.body` mention (that file is
   not a triage surface).
+- `validate_candidate('finding', {'body': <9094 characters>})` → `status: success`,
+  `clamped: ['body (string 9094→8000)']`, tail dropped — the clamp bound C-1 states.
+- `github_pr._is_obvious_noise(body, 'coderabbit')` called over paired bodies that differ only by the
+  presence of an AI-agent block → the block flips the verdict from `False` to `True` for each of four
+  unanchored shared `ignore` regexes. See C-4.
+- The marker-edge battery: eight body shapes (plain, CRLF, nested `<details>`, unterminated, two
+  blocks, block-only, block inside a code fence, CJK + non-BMP emoji) pushed through
+  `_quarantine_raw_input` → `_classify` → `record.update`; every one promoted with `clamped: []` and a
+  byte-identical top-level `body`. A ninth pushed 30 000 CJK characters through the 65 536-byte
+  quarantine cap without exception. See C-3.
+
+Counts and populations re-derived rather than restated: `git ls-files` → 2980 tracked files, 1151 of
+them under `marketplace/bundles/`; the twelve `ignore.low` regexes loaded out of
+`workflow-integration-github/standards/comment-patterns.json`;
+`git log --oneline 71dd3779..HEAD -- .../automatic-review/` → three later landings, and
+`git diff 71dd3779 HEAD -- .../coderabbit.md` shows **no** change to any `strip` / trust-boundary /
+`Prompt for AI Agents` line, so the landed D0 text is what the tree still carries.
 
 No repository file was modified other than this file and `gaps.md`.
 
@@ -98,7 +118,7 @@ No repository file was modified other than this file and `gaps.md`.
 | # | *Done when* (plan) | Report claim | Ground truth in the tree | Verdict |
 |---|---|---|---|---|
 | D0 | "one treatment is stated in one place, the other reading is deleted, and the rationale is recorded beside it" | Resolved to STRIP in `eb2913e`; extract reading deleted; rationale recorded; `sourcery.md` aligned; `pr-agent.md` untouched | `coderabbit.md:153-171` states STRIP once; the "high-value structure / cleanest per-finding payload / extract file/line/summary as fields" text is gone from the whole tree; `sourcery.md:182-189` aligned; `pr-agent.md` unchanged | **met, with a false rationale sentence** (see D0 below) |
-| D1 | "the enacting site is named, or its absence is stated as a finding with the search that established it" | Prose-only; no-op; four searches published | Independently reproduced: no `.py`, `.json` or `.toml` in the tree references the block; `comment-patterns.json` `ignore` is bot-agnostic acknowledgment noise only | **met** |
+| D1 | "the enacting site is named, or its absence is stated as a finding with the search that established it" | Prose-only; no-op; four searches published | Independently reproduced: no `.py`, `.json` or `.toml` in the tree references the block; `comment-patterns.json` `ignore` is bot-agnostic acknowledgment noise only | **met** — nothing strips or extracts the block. But see C-4: code still *reads* it, as part of the body the producer pre-filter matches |
 | D2 | "the run report carries the verdict, its evidence, and the recommended action — and no commit touches another repository" | Verdict "config change STANDS", three evidence items, recommended action, no cross-repo commit | `report-01.md:76-89` carries all three; `git show --name-status 71dd3779` touches 4 paths, all in this repo | **met; evidence item 2 is false** |
 | D3 | "If the resolution is STRIP, this deliverable is **not attempted** and the report says so" | Not attempted, recorded | `report-01.md:107-111` records exactly that; no fabricated count anywhere | **met** |
 
@@ -151,11 +171,15 @@ The no-op verdict is unaffected.
 evidence items. The Out-of-scope obligation held: `git show 71dd3779 --name-status` lists four paths,
 all under `doc/plans/…` and `marketplace/bundles/…`, none in another repository.
 
-Evidence items 1 and 3 are sound and independently confirmed. **Evidence item 2 is false**
+Evidence item 3 is sound and independently confirmed. Evidence item 1 is sound in the sense it was
+reached for — nothing parses or extracts the block — but **overstated as written**: § C-4 shows the
+producer pre-filter reads the block as part of the body and can drop the whole finding on its content,
+which is a machine consuming it, destructively. That strengthens the verdict rather than weakening it.
+**Evidence item 2 is false**
 (`report-01.md:83-87`) — it is the same claim as C-1 below, stated in the report as *"The architecture
 forbids the extraction the block was kept for … There is no supported path by which a consumer
 re-parses the block for fields."* The verdict still stands on items 1 and 3, so D2's conclusion
-survives; the stated basis does not.
+survives; the stated basis needs both corrections.
 
 ### D3 — not attempted
 
@@ -174,8 +198,8 @@ anywhere in the report. The ⛔ "do not manufacture one" obligation was honoured
 | "The strip is **prose-only** … No code strips or extracts the block" | **ACCURATE** | reproduced by four independent searches, § D1 |
 | "`comment-patterns.json`'s `ignore` category is bot-agnostic acknowledgment noise … names neither the AI-agent block nor any coderabbit strip-list item" | **ACCURATE** | the twelve regexes loaded out of the file |
 | "Grep `Prompt for AI Agents` across the whole working tree → matches only four `automatic-review` documents … and this plan. **No code file.**" | **ACCURATE** | reproduced exactly: 4 bundle docs + this plan directory |
-| Absence-claim scope: "5 files … broadened `🤖` → 8 files" | **ACCURATE at the time it was written** | the substantive part reproduces (4 `Prompt for AI Agents` bundle docs; `🤖` adds only `coderabbit.md` and the 3 `workflow-integration-git/*.json` commit-footer fixtures). The raw totals are self-referential — every document added to this plan directory changes them, and this verification and `gaps.md` have since done so |
-| D2 evidence 1 — "No consumer, in the machine sense" | **ACCURATE** | § D1 |
+| Absence-claim scope: "5 files … broadened `🤖` → 8 files" | **ACCURATE at the time it was written; incompletely published — see § Completeness review P-5** | the substantive part reproduces (4 `Prompt for AI Agents` bundle docs; `🤖` adds only `coderabbit.md` and the 3 `workflow-integration-git/*.json` commit-footer fixtures). The raw totals are self-referential — every document added to this plan directory changes them, and this verification and `gaps.md` have since done so |
+| D2 evidence 1 — "No consumer, in the machine sense" | **ACCURATE about parsing, OVERSTATED as written** | Nothing parses or extracts the block (§ D1). But `_is_obvious_noise` matches the shared acknowledgment regexes against the whole body, block included, and a block containing `looks good` / `ship it` / `no objection` / `[bot]` drops the entire finding — reproduced by execution, § Correctness review C-4. The D2 verdict is unaffected and, if anything, reinforced |
 | D2 evidence 2 — "The architecture forbids the extraction the block was kept for … There is no supported path by which a consumer re-parses the block for fields" | **FALSE** | § Correctness review C-1 |
 | D2 evidence 3 — "The block's payload is redundant … file/line already trusted structured metadata (`path`, `line` in `detail`)" | **ACCURATE** | `github_pr.py:1114-1125` builds `detail` from `pr_number/kind/author/thread_id/comment_id/path/line` |
 | "the finding text is the comment body the consumer already reads" (D0 rationale, restated in the report) | **ACCURATE but mis-sited** | true — but the body is the promoted top-level `body`, not `detail` as `coderabbit.md:139` says; see § Completeness review P-3 |
@@ -232,10 +256,12 @@ and it carries the block intact. The `triage-reads-top-level-only` invariant for
 behind that invariant (`_analyze_triage_read_surface.py`) matches only `raw_input.<field>` access
 expressions in triage surfaces — it has no notion of the block at all.
 
-**One bound on the claim's reach:** promotion clamps `body` to 8000 characters, so on a comment longer
-than that the tail is truncated, and the AI-agent block — which CodeRabbit renders near the end of a
-comment — can be lost incidentally. That is length-based truncation, not a strip: for any comment
-under the cap the block arrives verbatim, which is enough to falsify "no supported path".
+**One bound on the claim's reach:** promotion clamps `body` to 8000 characters — confirmed by calling
+the validator with a 9094-character body, which returned `status: success`,
+`clamped: ['body (string 9094→8000)']`, and a `struct['body']` whose tail, block included, was gone.
+So any content past the cap is dropped, and a block sitting in the truncated tail of an over-long
+comment is lost incidentally. That is length truncation, not a strip: for any comment under the cap
+the block arrives verbatim, which is enough to falsify "no supported path".
 
 Two consequences:
 
@@ -276,14 +302,53 @@ neither a test nor a lint rule would notice if the extract reading were reintrod
 accepted consequence of D1's (correct) no-op, not a defect in the landing, but it is the reason the
 recorded rationale is the *only* regression guard — which makes C-1 worse than a wording slip.
 
-No other logic defect was found. There is no regex, no marker parser, no state, and no idempotence
-surface in the landing: it is 32 lines of prose across two files. The marker-edge questions a
-text-processing change would normally owe — nested `<details>`, unterminated or empty blocks, several
-blocks in one comment, a marker inside a code fence, CRLF, non-BMP characters — have **no code to
-probe**, and the searches above are what establishes that. The one nearby marker consumer,
+There is no regex, no marker parser, no state, and no idempotence surface in the landing itself: it is
+32 lines of prose across two files. The marker-edge questions a text-processing change would normally
+owe were nonetheless **run against the only chain the block traverses** —
+`_quarantine_raw_input` → `_classify` → `record.update` — rather than answered by "no code exists".
+Eight body shapes were pushed through it in-process: a plain block, CRLF line endings, a nested
+`<details>` inside the block, an unterminated block, two blocks in one comment, a comment that is
+*only* a block, a block inside a fenced code block, and a body carrying CJK plus a non-BMP emoji.
+Every one promoted with `clamped: []` and a top-level `body` **byte-identical to the input** — there
+is no parser to confuse, so no edge case has anything to fail at. A ninth probe pushed 30 000 CJK
+characters (90 000 bytes) through the 65 536-byte quarantine cap: the defensive multi-byte-boundary
+decode held (21 856 characters out, no exception) and the validator then clamped to 8000, i.e. the
+block is lost twice over on a long comment, by length alone. The one nearby marker consumer,
 `bot_registry.actionable_content_markers`, declares `<details>` for `pr-agent` only, and
 `coderabbit.md`'s own registry block states CodeRabbit declares no `actionable_content_markers`, so
 the block never reaches that path.
+
+One logic defect *was* found beyond the landing, at the producer stage rather than in any marker
+parser — see C-4.
+
+### C-4 — the block is not inert to code: its text can silently drop the whole finding (CONFIRMED, major)
+
+D1's conclusion is that no code strips or extracts the block, and D2's first evidence item generalises
+that to *"No consumer, in the machine sense."* The first is true. The second is true only of
+*parsing*: code does **read** the block, as part of the body it matches against, and can act
+destructively on its content.
+
+`github_pr.py:326-338` (`_is_obvious_noise`) lowercases the whole comment body and applies the shared
+`ignore.low` regexes with `re.search` (`:331-333`). Four of the twelve are unanchored substrings —
+`\blooks good\b`, `\bship it\b`, `\bno objection\b`, `\[bot\]`. The AI-agent block is part of that
+body and restates the reviewed code plus an imperative about it, so any of those four phrases
+occurring **inside the block** drops the entire finding as acknowledgment noise, before it ever
+becomes a `pr-comment` record.
+
+Reproduced by execution against the real module: a CodeRabbit body carrying a
+`cr-indicator-types:potential_issue` finding plus an AI-agent block whose instruction quotes an
+assertion message `'looks good'` returns `_is_obvious_noise(body, 'coderabbit') is True`; the
+identical finding with the block removed returns `False`. The same flip reproduced for `ship it`,
+`no objection`, and `[bot]`.
+
+The loss is silent: the call site (`github_pr.py:1076-1078`) increments `skipped_noise` and
+`continue`s, so a real finding dropped this way is indistinguishable from a genuine "lgtm" in every
+counter the verb reports. The exposure is currently latent because the bot's
+`enable_prompt_for_ai_agents` is off, which makes this an **additional, independent argument for D2's
+"leave it off"** rather than a reason to revisit the verdict. It does not disturb the STRIP resolution
+either: it is a second, stronger reason the block is a liability rather than a payload. What it does
+disturb is the shape of the claim D1 and D2 record — "nothing consumes the block" is sound in the
+parsing sense and unsound as stated.
 
 ## Completeness review
 
@@ -394,6 +459,26 @@ two files, both under `standards/`; `grep -rn "scripts/comment-patterns.json" ma
 line). The plan's own § Expected surface repeats a third, also non-existent path:
 `.../automatic-review/standards/comment-patterns.json`. Traced to `2d29edfa`.
 
+### P-5 — the absence claim publishes its match count but not its denominator (CONFIRMED, minor)
+
+The plan's § Verification requires *"State how much of the tree was searched **and how many files** —
+an absence claim without its search scope is the failure that produced this plan,"* and the
+higher-risk absence claim-label requires *"publish the scope searched and the file count with the
+claim."* `report-01.md:196-201` publishes the scope qualitatively (*"the entire working tree rooted at
+the repo"*) and then gives **match** counts only — *"→ 5 files"*, *"→ 8 files"*. The population those
+matches were drawn from is never sized, so a reader cannot tell whether "entire working tree" meant
+three hundred files or three thousand. Re-derived here: `git ls-files` → **2980** tracked files, of
+which **1151** are under `marketplace/bundles/` — the "whole marketplace tree" the claim-label names.
+
+The same paragraph's raw totals are **self-referential**: a tree-wide count of `Prompt for AI Agents`
+or `enable_prompt_for_ai_agents` rises with every document added to this plan directory, this one
+included, so no such total stays true for long. The durable form is the scoped absence, which is how
+this document states it throughout: outside this plan directory `Prompt for AI Agents` occurs in
+exactly 4 bundle documents and `enable_prompt_for_ai_agents` in none.
+
+The underlying absence is sound — it re-derives exactly (§ Method). What is weak is only its
+published form.
+
 ### What is NOT missing
 
 - No stale mirror of the standards docs exists — `grep -rn "Prompt for AI Agents"` over the whole tree
@@ -441,13 +526,19 @@ M     marketplace/bundles/plan-marshall/skills/automatic-review/standards/source
 
 ## Summary
 
-**Counts by severity:** 2 major (a false, load-bearing rationale claim, restated as one of D2's three
-evidence items; and a seven-site false statement about where the untrusted comment body lives, which
-predates the plan but that D0's rationale and D1's own quoted evidence both turn on) and 6 minor (an
-unswept third instance of the corrected clause in the owning skill, a self-weakening instruction, no
-regression guard, a stale pointer row in the corrected file, a wrong path to the shared pre-filter,
-and the D2 proposal having no tracked follow-up handle). Eight findings, carried into `gaps.md` as
-seven entries — the two stale-pointer defects in `coderabbit.md` share one entry.
+**Counts by severity: 3 major, 7 minor — ten findings, carried into `gaps.md` as nine entries** (P-2
+and P-4, both stale pointers in the same file and correctable in one edit, share entry G6).
+
+Major: C-1, a false and load-bearing rationale claim, restated as the second of D2's three evidence
+items; P-3, a false statement about where the untrusted comment body lives, standing at seven sites
+across four bundles, predating the plan but load-bearing for D0's rationale and D1's own quoted
+evidence; and C-4, the block's text reaching the producer pre-filter and silently dropping a whole
+real finding, which qualifies the first of D2's evidence items.
+
+Minor: C-2, a self-weakening instruction; C-3, no regression guard; P-1, an unswept third instance of
+the corrected clause in the owning skill; P-2, a stale pointer row in the corrected file; P-4, a wrong
+path to the shared pre-filter; P-5, an absence claim published without its denominator; and the D2
+proposal having no tracked follow-up handle.
 
 No false report claim of the highest severity kind — every symbol, file, section, and search the report
 says it produced or ran exists and reproduces; the only unverifiable claims are commit SHAs on a
@@ -462,48 +553,50 @@ architecture already strips the block and that no consumer can re-parse it, when
 arrives verbatim in the promoted top-level `body` that triage is explicitly told to read — a claim that
 contradicts the same run's own D1 finding and that any auditor can falsify by calling four functions,
 which is exactly how a settled contradiction re-opens. Fix that sentence, correct the
-`detail`-versus-`body` claim at its seven sites, and align `SKILL.md:104-105` to STRIP, and this
-becomes cleanly verified.
+`detail`-versus-`body` claim at its seven sites, stop the producer pre-filter from dropping a finding
+on text that lives only inside the block, and align `SKILL.md:104-105` to STRIP, and this becomes
+cleanly verified.
 
 ## Adversarial review
 
-This document and `gaps.md` were re-checked end to end by a second, independent pass that assumed the
-first was plausible-but-fallible. Every load-bearing finding was re-derived against the tree rather
-than accepted from the citation. The verdict is unchanged: **verified-with-gaps**.
+This document and `gaps.md` are the product of two independent adversarial passes over the landing,
+each assuming its predecessor was plausible-but-fallible. Every load-bearing finding here has been
+re-derived against the tree twice, by different readers, rather than carried forward from a citation.
+The verdict from both passes is the same: **verified-with-gaps**.
 
 **Method, precisely enough to re-run.** Every `path:line` citation in both documents was opened and
 matched against the quoted text. Every count and enumeration was re-derived by running the search that
-claims it. The ingestion chain behind the headline finding was settled **by execution**, not by
-reading: `validate_candidate('finding', …)` and the `_quarantine_raw_input` → `_classify` →
-`record.update` sequence were each called in-process against a synthetic CodeRabbit body carrying the
-block (with `test/` on `sys.path` so `conftest.py` reproduces the executor's `PYTHONPATH`), and
-`test_findings_ingest.py`, `test_bot_registry.py`, and the `triage-reads-top-level-only` analyzer were
-run. No repository file outside this plan directory was modified; `git status --porcelain` was
-re-checked afterwards.
+claims it. Behavioural claims were settled **by execution**, not by reading: `validate_candidate`, the
+`_quarantine_raw_input` → `_classify` → `record.update` sequence, `github_pr._is_obvious_noise`, and
+`analyze_triage_read_surface` were each called in-process (with `test/` on `sys.path` so `conftest.py`
+reproduces the executor's `PYTHONPATH`), and `test_findings_ingest.py` (13 passed) and
+`test_bot_registry.py` (36 passed) were run. `git status --porcelain` was clean before the two
+in-directory edits and re-checked after; no repository file outside this plan directory was modified.
 
-**Outcome.** Of the eight findings, six were **upheld** unchanged (C-1, C-2, C-3, P-2, P-4, and the
-untracked-residue omission), one was **upheld and enlarged** (P-3: three sites re-derived as seven,
-including the two already-corrected sibling sentences that prove the earlier sweep stopped short), and
-one was **overstated and downgraded** (P-1, major → minor: the `SKILL.md` line is not false, and the
-step carrying it performs no per-finding reasoning — `SKILL.md:630` and `:128-134` route the consumer
-that decides the block's treatment to the registry doc, which now says STRIP; the finding survives as
-an unswept third instance of a clause the run rewrote at two sites). Nothing was **refuted** outright.
-Two classes of claim remain **unverifiable** from this clone and are labelled as such rather than
-scored: the run branch's per-commit SHAs (squashed and branch-deleted) and PR-surface data (CI check
-runs, reviewer participation).
+**Outcome.** Of the eight findings the first pass produced, six are **upheld** unchanged (C-1, C-2,
+C-3, P-2, P-4, and the untracked-residue omission), one is **upheld and enlarged** (P-3: the
+three-site enumeration re-derives as seven, including the two already-corrected sibling sentences that
+prove the earlier sweep stopped short), and one is **overstated and downgraded** (P-1, major → minor).
+Nothing is **refuted** outright. Two findings are **added** by the second pass: C-4 (major) and P-5
+(minor). Ten findings stand: 3 major, 7 minor.
 
-**Corrections applied.** The promoted `body` field's cap was corrected from a "64 KiB-class" figure to
-the `finding` schema's actual `max_length: 8000` characters (the 64 KiB figure is the *quarantine*
-byte cap on `raw_input`, a different stage), and the resulting length-truncation caveat on C-1 is now
-stated. `_findings_ingest.py:73-78` was corrected to `:74-77`; `triage.md` is now cited at its real
-path under `skills/plan-marshall/workflow/`; `pr-agent.md:399-410` → `:400-410`; the lane build-gate
-citation → `:497-511`; and the `report-01.md` line ranges for D1, D2, and D3 were corrected to
-`:51-68`, `:76-89` / `:83-87`, and `:107-111` / `:109`. Three counts were re-derived and restated:
-`triage-reads-top-level-only` (16 → 17 hits across 13 files, `__pycache__` and this plan directory
-excluded), the `test/` treatment sweep (the case-sensitive form returns 0, the case-insensitive form
-4, none about this block — the two documents had disagreed), and the `🤖` and
-`enable_prompt_for_ai_agents` figures, which are self-referential and are now stated as scoped
-absences rather than raw totals that every document added here invalidates. C-1 gained the executed
-evidence and the note that `sourcery.md:189` inherits the false rationale by cross-reference; C-3
-gained the explicit statement that the marker-edge probes a text-processing change would owe have no
-code to run against, and what search establishes that.
+**Why P-1 is minor.** The `automatic-review/SKILL.md:104-105` line is not false — the whole comment
+body genuinely is routed through untrusted-ingestion as data — and the step carrying that "Never" list
+performs no per-finding reasoning: `SKILL.md:630` states the FIND-only step performs no triage and
+routes the per-bot trust-boundary overlay to the unified triage, and `SKILL.md:128-134` points the
+reader at `standards/{bot_kind}.md` for that bot's trust-boundary rationale. The consumer that decides
+the block's treatment therefore reads `coderabbit.md`, which says STRIP. The finding survives as an
+unswept third instance of a clause the run rewrote at two sites — one edit, not an operational split
+in the rule. A reading of `SKILL.md:630` that makes the FIND-stage consumer the decider inverts what
+that line says and does not survive opening it.
+
+**Why C-4 is major and does not move the verdict.** It is a real, reproducible, silent loss of a real
+finding, and it qualifies a claim D1 and D2 both rest on. It nonetheless leaves the STRIP resolution
+untouched and strengthens D2: it is a second, independent reason the block is a liability rather than
+a payload, and the exposure is latent only because the emitting flag is off.
+
+**Not scored, because not decidable from this clone.** The run branch's per-commit SHAs (`eb2913e`,
+`d4d09f8`, `ff27679`, `fb5eabe` — squashed and branch-deleted; `git cat-file -t` fails for all four
+and `git ls-remote --heads origin` shows no matching branch) and PR-surface data (CI check runs,
+reviewer participation) are labelled **UNVERIFIABLE** rather than counted as findings. Unverifiable is
+not refuted: nothing contradicts them, and every claim that *did* leave a trace in the tree reproduces.
