@@ -347,6 +347,69 @@ owns the budget campaign. The 43 splits as **42** modules in this plan's surface
 `test_test_conventions_rule6.py`, which is plan `010`'s and plan `100` run 7's — exactly the split the
 plan states. `subprocess-pythonpath` is not a deliverable of this plan and was not touched.
 
+## Verification by reading
+
+### D1 — three converted modules assert rule ids, not counts (plan § Verification, "By reading")
+
+Read from the module text alone, `test_analyze_role_field.py`, `test_analyze_tmp_redirect_in_skills.py`
+and `test_analyze_shell_substitution_in_skills.py` each assert through
+`assert_analyzer_findings(analyzer, fixture, [RULE_ID])` or `[...]` for the empty case, and each carries
+**zero** residual bare `assert len(findings) == N` lines over an analyzer result. None is a rename
+wearing a conversion's name — the count assertion is gone, replaced by a multiset of rule codes.
+
+### D3 — the cold read (plan § Verification, "By reading — cold read, required for D3's prose half")
+
+An independent sub-agent was given **five rewritten modules and nothing else** — not this plan, not the
+originals, not the production code — and asked of ten named tests: *what contract does this test pin,
+and why does it matter?* It was instructed to report explicitly when (b) is unanswerable from the text
+and not to reconstruct a plausible rationale.
+
+**Result: 6 ANSWERABLE, 4 NOT-ANSWERABLE.** Three of the four were docstrings this run rewrote — over-
+stripped past the citation into the rationale. All three were restored in `f030aa4`, in present tense,
+with the reason grounded rather than invented:
+
+| Test | Verdict | Disposition |
+|---|---|---|
+| `test_analyze.py::test_simplicity_unused_parameter_detects_marker_on_last_multiline_param` | NOT-ANSWERABLE | **Fixed** — the rewritten text gave *implementation* rationale (why a naive detector fails) in place of *contract* rationale (what the miss costs) |
+| `test_analyze_argument_naming_workflow_scope.py::test_workflow_md_invented_subcommand_emits_subcommand_unknown` | NOT-ANSWERABLE | **Fixed** — "detected rather than escaping" was the assertion restated |
+| `test_analyze_argument_naming_workflow_scope.py::test_workflow_md_invented_flag_emits_flag_unknown` | NOT-ANSWERABLE | **Fixed** — the rationale was a symmetry argument ("caught where drift in a skill body already is"), which justifies the scope by appeal to another scope it never justifies |
+| `test_analyze.py::test_simplicity_unused_parameter_marker_in_body_no_false_positive` | NOT-ANSWERABLE | **Not fixed — this run never touched it.** Confirmed against the diff: `git diff origin/main...HEAD` contains no change to it. Recorded as a finding rather than rewritten under a cold read it did not fail |
+
+**The restored rationale was verified against the code, not reasoned from.** The two argument-naming
+docstrings now state that argparse rejects the invocation; both halves were checked by *running the
+parser* rather than by reading it — `invalid choice: 'structure'` for an unregistered subcommand, and
+`unrecognized arguments: --no-such-flag` for an undeclared flag, each `SystemExit(2)`.
+
+⛔ **One rationale this run wrote while fixing the above was itself wrong, and is recorded because the
+class matters more than the instance.** The first draft of the unused-parameter docstring claimed *"the
+cluster's findings are what reach the `default:finalize-step-simplify` step."* Reading
+`_analyze_simplicity.py` shows the opposite relationship: the detectors are the *mechanical* enforcement
+layer and that step handles *"the cognitive judgement calls"* — the work the detectors cannot do, not
+their output. It was corrected in the same commit to the claim the module does support: these detectors
+mechanically enforce the minimum-viable-code posture, so an unseen marker is a declared-dead parameter
+no gate reports. Nothing but reading the named module would have caught it: the suite was green, the
+linter clean, and the sentence had no earlier version to diff against.
+
+**The cold read also returned two findings about statements that were false**, both fixed in `f030aa4`:
+
+* `test_analyze_verb_chains.py` carried a comment describing how the module locates a script by *"four
+  `parent` hops"*. **This run's own preamble rewrite made it false** — the module now imports
+  `PROJECT_ROOT` from conftest and performs no hops at all. A sweep across every file this run touched
+  found this to be the **only** such stale depth claim; the seven other "levels up" comments describe
+  synthetic fixture-tree geometry under `tmp_path`, which the change does not touch, and remain true.
+* The same docstring claimed a test guards against a refactor *"accidentally making the regression test
+  above pass for the wrong reason"*. Directionally wrong: such a refactor would redden **this** test
+  rather than quietly green the other. Pre-existing, but false, so fixed.
+
+**The cold read's own structural observation, recorded because it is a real signal about the corpus.**
+Rationale survives where a rule's violation has a *mechanical* consequence outside the analyzer — a file
+that stops parsing, a handshake that never terminates, real documentation auto-deleted because the rule
+sits in `SAFE_FIX_TYPES`. It collapses into restatement where the rule is a pure detector whose findings
+have no documented consumer. The sharpest indicator the reader named: `severity == 'error'` is asserted
+in both workflow-scope tests, and nothing in either module says what an error-severity finding gates.
+That is a **documentation gap in the rules themselves**, not in these tests, and it is recorded for plan
+`090` (which owns the analyzers) rather than papered over here.
+
 ## Findings
 
 _Pending — the verification round is in flight._
