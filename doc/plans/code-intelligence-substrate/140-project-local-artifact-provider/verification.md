@@ -118,8 +118,9 @@ below still resolves; the corrections applied at review are marked in § Adversa
     entries are `.claude/settings.local.json` and four `.pyc` files under `__pycache__`, all git-ignored
     and all created by concurrent sessions after the audit measured. `git diff 62e3807 HEAD` over
     `marketplace/`, `doc/concepts/`, `test/` and `.claude/` is empty, so no tracked file moved — the
-    delta is build state alone. The report's "47" is therefore right about the tracked corpus and the
-    test's published count is right about neither corpus reliably (G7).
+    delta is build state alone. The report's "47" is therefore right about the *tracked* corpus, while
+    the test publishes the *on-disk* corpus — exact for the moment it ran, and not reproducible on
+    another machine (G7).
   - Non-vacuity proved by mutation. Snapshot of
     `marketplace/bundles/pm-plugin-development/skills/plan-marshall-plugin/extension.py` written to
     `$TMPDIR/.../verify-140-mutsweep/pmpd_extension.py`; claim narrowed to `('.claude/skills', …)`;

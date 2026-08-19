@@ -32,7 +32,7 @@ unwritten.
 
 | # | Deliverable (short) | Report claim | Ground truth | Verdict |
 |---|---|---|---|---|
-| D1 | Make the audit able to fail; population beside every count; never a bare `0` | New deterministic `check-dispatch-audit.py`; `not_evaluated` when Surface B empty; fires on a divergent site | `check-dispatch-audit.py:303-356`; `not_evaluated` branch verified load-bearing by mutation (2 tests go red); divergent-site test present and green. **But `counts.by_category` (`:542-550`) publishes four bare zeros** | PARTIAL — first clause met, "never a bare `0`" clause not (G3; also G4/G10) |
+| D1 | Make the audit able to fail; population beside every count; never a bare `0` | New deterministic `check-dispatch-audit.py`; `not_evaluated` when Surface B empty; fires on a divergent site | `check-dispatch-audit.py:303-356`; `not_evaluated` branch verified load-bearing by mutation (2 tests go red); divergent-site test present and green. **But `counts.by_category` (`:542-550`) publishes four bare zeros** | PARTIAL — first clause met, "never a bare `0`" clause not (G3; also G4/G10/G15) |
 | D2 | Consumer distinguishes dispatched / ran-inline / no-evidence; `missing_dispatch_emission` against the dispatcher | Token record is the discriminator; old "ran inline" finding gone; both mis-attributions tested | `check-dispatch-audit.py:359-413`; `dispatch_coverage_violation` absent from the whole tree; both directions tested (`test_check_dispatch_audit.py:168`, `:199`). The discriminator's `ran_inline` branch is a fall-through default, not a measurement | CONFIRMED against the literal *Done when*; mechanism deviation not outcome-equivalent (G13, G8) |
 | D3 | Publish dispatch-line count vs envelope-completion count; sparse channel downgrades confidence | `channel_completeness` with `none`/`low`/`nominal` | `check-dispatch-audit.py:416-451`. Block exists and grades, but its numerator is **all-caller** dispatch lines while its two denominators are **finalize-only** — a fixture with zero finalize dispatch lines reports `nominal` | PARTIAL (G1, G2, G6) |
 | D4 | Per-task artifact emission complete, or its scope limit declared as an N-of-M **population** | `artifact_emission: {completed_tasks, tasks_with_artifacts, tasks_without_artifacts}`; WARNING only for `0 < N < M` | `analyze-logs.py:928-975`, emitted at `:1678`, finding at `:1571-1586`. Population always published — Done-when met. The code comment's deferral of the `N == 0` case to the plan-level floor is false | CONFIRMED (with G7) |
@@ -286,6 +286,13 @@ Read in full: `check-dispatch-audit.py` (598 lines), `analyze-logs.py:900-975` a
     left `test_check_dispatch_audit.py` at **13 passed**. Every test supplies an integer
     `total_tokens`, so no test exercises the branch that manufactures the ambiguity in 9. (G13's
     *Done when* covers it.)
+11. **`shape_violation` is a caller-blind count comparison, not a pairing** —
+    `check-dispatch-audit.py:333-350`. Surface B carries no caller (`_cmd_effort.py:504-510`), so a
+    `[DISPATCH]` line for a role from *any* caller offsets a resolve for that role, and the negative
+    direction is discarded rather than reported. `role=verification-feedback` has both a
+    seam-emitting producer (`plan-marshall/workflow/execution.md:287-292`) and a hand-writing one
+    (`workflow-pr-doctor/SKILL.md:30-38`) at HEAD, so the offset is live rather than hypothetical.
+    (G15)
 
 No defect was found in: the regexes (`_DISPATCH_LINE_RE` correctly requires the `(caller)` paren and
 the `target=` guard excludes phase-entry markers), `_canon_step` (matches `record-step`'s

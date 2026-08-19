@@ -418,3 +418,177 @@ change, not six.
   or the vestigial status is documented.
 - **Effort:** S
 - **Risk if fixed:** none — the deployed artifact is regenerated with `skills: []` either way.
+
+## G13 — Distinguish an unanswered diagnostics query from a file the server called clean
+
+- **Kind:** bug
+- **Severity:** high
+- **Topic:** lsp/resolvers
+- **Where:** `marketplace/bundles/plan-marshall/skills/lsp-client/scripts/_lsp_jsonrpc.py:204-223`
+  (`wait_for_diagnostics`; the unconditional `return list(self._diagnostics.get(uri, []))` at `:223`),
+  consumed by `lsp_client.py:278-302` (`_run_diagnose`) and `:239-247` (`_run_edit`)
+- **Evidence:** on timeout — or on any path where the server published nothing for the URI —
+  `wait_for_diagnostics` returns an empty list, which is byte-identical to the list a server returns
+  for a file it examined and found clean. Driven through the **shipped `_run_diagnose`** over a real
+  `StdioTransport` against a purpose-built server that answers `initialize` and never pushes
+  `publishDiagnostics` (the pull-diagnostics server class — `textDocument/diagnostic` rather than
+  push), the verb returned after **15064 ms** (the 15 s timeout) with:
+
+  ```
+  status: success   state: ok   provider_count: 1
+  error_count: 0    warning_count: 0    diagnostics: []    boundary_note: <present>
+  ```
+
+  — a payload identical in **every** field to "the server ran and found the file clean". Reproduced
+  by the adversarial review.
+- **Why it matters:** this is the exact archetype the epic's coverage contract exists to remove, and
+  which this skill's own SKILL.md § "The coverage contract (no silent empty result)" claims is *"not
+  representable here"*: `provider_count: 1` + an empty result is documented as *"a **real, positive
+  answer**, not a missing capability"* (`lsp-client/SKILL.md:61`), and here it is neither. It is worse
+  in `_run_edit`, where the same empty list makes `count_error_diagnostics` return 0 and
+  `edit_verdict` score **every** such edit `success` — so against a pull-diagnostics server the write
+  side's verification is inert while reporting itself as satisfied. G2 is the same return contract
+  failing on a *slow* server; this is it failing on a *silent* one.
+- **Action:** give `wait_for_diagnostics` a third outcome. Return a sentinel (or raise) when the
+  deadline expired with no publish ever seen for the URI, instead of the cached/empty list; have
+  `_run_diagnose` emit `state: unknown` with `provider_count: 1` and an explicit
+  `answered: false` + `reason: diagnostics_unanswered`; have `_run_edit` treat unknown as a
+  failure-to-verify — roll back and return `status: failed`, `reason: diagnostics_unavailable`, never
+  a pass. Fix alongside G2: both are the return contract of the same function.
+- **Done when:** a **CI-portable** test (fake server subprocess over the real `StdioTransport`, in the
+  shape of `test_lsp_transport.py`) drives a server that answers `initialize` and never publishes, and
+  asserts that the `diagnose` payload differs in at least one field from the payload the same verb
+  returns against a server that publishes an empty diagnostic list for the file — and that `_run_edit`
+  against the silent server returns `status: failed` with the target file byte-identical to its
+  pre-edit content.
+- **Effort:** M — shared with G2; separately, S if only `diagnose` is fixed.
+- **Risk if fixed:** a server that legitimately publishes nothing for a clean file (rather than
+  publishing an empty array, which pyright does) would newly report `unknown` and, on the write side,
+  fail edits that previously passed. The timeout and the fail-closed choice must be documented in
+  `lsp-client/SKILL.md` so a leaf reads `diagnostics_unanswered` as "verify by build", not as "the
+  edit was wrong" — the same wording obligation G2 carries.
+
+## G14 — Do not send a second `didOpen` for an already-open document
+
+- **Kind:** bug
+- **Severity:** medium
+- **Topic:** lsp/resolvers
+- **Where:** `marketplace/bundles/plan-marshall/skills/lsp-client/scripts/lsp_client.py:214`
+  (`_run_edit` opens the rename target) and `:232` (the `errors_before` loop re-opens every footprint
+  file, which includes that same target); `_lsp_jsonrpc.py:307-313` (`LspSession.open`)
+- **Evidence:** counted through an instrumented transport over a one-file `edit`, the notification
+  sequence is:
+
+  ```
+  textDocument/didOpen   version=1
+  textDocument/didOpen   version=1     <- second open, no didClose between
+  textDocument/didChange version=2
+  ```
+
+  didOpen count 2, didClose count 0. `LspSession.open` resets `_doc_versions[abs] = 1` on each call
+  (`_lsp_jsonrpc.py:310`), so the version sequence a strict server observes is 1, 1, 2. Reproduced by
+  the adversarial review.
+- **Why it matters:** the LSP specification forbids a second `textDocument/didOpen` for a document
+  already open in the server without an intervening `didClose`; the server's document store and the
+  client's version counter are then both in a state the protocol does not define. pyright tolerates
+  it, so nothing observable breaks today — but the plan's Notes require a client *"a second consumer
+  can reuse"*, and a second consumer already exists (`lsp_harvest.py:272-277` drives
+  `client.StdioTransport` / `client.LspSession` directly), so the next server binding pointed at this
+  client is where it surfaces.
+- **Action:** track opened URIs on `LspSession` (a `set[str]` alongside `_doc_versions`) and make
+  `open()` a no-op for a document already open, or add an explicit `ensure_open()` that `_run_edit`
+  uses in both places; do not reset `_doc_versions` for an already-open document.
+- **Done when:** a fake-transport test over a multi-file `edit` asserts exactly one
+  `textDocument/didOpen` per distinct URI, and that each URI's `didChange` versions increase
+  monotonically from its open version.
+- **Effort:** S
+- **Risk if fixed:** none for pyright; a server that relies on a re-open to reset stale state would
+  need an explicit `didClose`/`didOpen` pair instead, which the same `ensure_open` seam can provide.
+
+## G15 — Compare diagnostics per file as a set, not as one aggregate error count
+
+- **Kind:** bug
+- **Severity:** high
+- **Topic:** lsp/resolvers
+- **Where:** `marketplace/bundles/plan-marshall/skills/lsp-client/scripts/_lsp_workspace_edit.py:172-179`
+  (`edit_verdict`, `return 'failed' if errors_after > errors_before else 'success'`) and
+  `lsp_client.py:230-247`, where `errors_before` / `errors_after` are single integers accumulated
+  **across the whole footprint**; `new_diagnostics[]` is built at `:243-245`
+- **Evidence:** three cases proved by driving the shipped `_run_edit` with a fake transport (the
+  pre-edit set is only *counted*, never retained, so no diff is possible downstream):
+
+  1. **Same file, swapped error.** pre `[Error A]` → post `[Error B]` (a *different* error, same
+     count) → `status: success, applied: True`, `errors_before=1, errors_after=1`, and the edit is
+     left on disk (`bar = 1`).
+  2. **Cross-file netting — the multi-file path D2 exists for.** Footprint `[a.py, b.py]`; pre = 1
+     error in `a.py`, 0 in `b.py`; post = 0 in `a.py`, 1 in `b.py` → `errors_before=1`,
+     `errors_after=1`, `status: success, applied: True`, both files left rewritten and `b.py` newly
+     broken. An edit that *moved* breakage from one file to another lands as a pass.
+  3. **`new_diagnostics[]` is misnamed.** pre `[Error A]` → post `[Error A, Error B]` → the failure
+     payload's `new_diagnostics[]` lists **both**, including the pre-existing one, because `:243-245`
+     appends every post-edit `Error` without diffing against the pre-edit set.
+- **Why it matters:** D2's *Done when* and both shipped surfaces state the contract as a **set**
+  — the plan requires "a worsened diagnostic **set** fails the step", and `lsp-client/SKILL.md:82`
+  heads the rule "**A worsened diagnostic set fails the step**". The implementation is an aggregate
+  `>` on error counts, so the guard **cannot fire** for any change that leaves the total unchanged.
+  Case 2 is the realistic one and it strikes precisely on the multi-file rename the deliverable is
+  built for: "an edit nobody read is at minimum an edit the parser re-checked" becomes "an edit nobody
+  read whose error total happened not to rise". Case 3 additionally misreports — a consumer told to
+  "investigate the reported diagnostics" (`execute-task/SKILL.md:244`) is handed pre-existing errors
+  labelled as new. (The count rule *is* stated accurately in the body prose of both surfaces —
+  `lsp-client/SKILL.md:83-86` and `doc/user/lsp-code-intelligence.adoc:88` — so this is an
+  implementation shortfall against the plan and against those surfaces' own headings, not a
+  documentation lie.)
+- **Action:** retain the pre-edit diagnostics per file, not just their count. Key each diagnostic by
+  `(path, severity, code, message, line)`, compute `added = post - pre` and `removed = pre - post`
+  **per file**, fail the step when `added` is non-empty for any file, and populate `new_diagnostics[]`
+  from `added` only. Keep `errors_before` / `errors_after` in the payload for continuity.
+- **Done when:** a fake-transport test over a two-file footprint asserts that (a) pre `[A]` / post
+  `[B]` in the same file returns `status: failed` with the file rolled back, (b) an error moving from
+  `a.py` to `b.py` returns `status: failed` with **both** files rolled back, and (c) with pre `[A]` /
+  post `[A, B]` the payload's `new_diagnostics[]` contains `B` and **not** `A`. Also update
+  `test_edit_verdict_passes_on_equal_or_improved`, which today asserts
+  `edit_verdict(3, 3) == 'success'` (`test_lsp_workspace_edit.py:141`) — it locks in exactly the
+  defect and must change with the contract.
+- **Effort:** M
+- **Risk if fixed:** the step becomes stricter, so a rename that legitimately rewrites which error a
+  file reports (renaming an already-broken symbol) would newly fail. That is the safer direction, but
+  it must be documented in `lsp-client/SKILL.md` § "The write side" alongside the existing rule, and
+  the `errors_before`/`errors_after` fields must not be removed — consumers may already read them.
+
+## G16 — Route a declined rename as an outcome the consumer wiring recognises
+
+- **Kind:** incomplete
+- **Severity:** medium
+- **Topic:** bundle-docs
+- **Where:** `marketplace/bundles/plan-marshall/skills/lsp-client/scripts/lsp_client.py:217-227`
+  (the `no_workspace_edit` return), `marketplace/bundles/plan-marshall/skills/execute-task/SKILL.md:244`
+  (the consumer wiring) and `marketplace/bundles/plan-marshall/skills/lsp-client/SKILL.md:71-86`
+  (§ "The write side")
+- **Evidence:** when the server returns no `WorkspaceEdit` — an ordinary outcome, e.g. the
+  `--line`/`--character` coordinate is not on a renameable symbol — `_run_edit` returns
+  `status: success`, `applied: False`, `reason: no_workspace_edit`, `file_count: 0`. Verified through
+  the shipped `_run_edit`, and asserted by the existing `test_edit_no_workspace_edit`
+  (`test/plan-marshall/lsp-client/test_lsp_client.py:217-225`, which pins `status == 'success'`).
+  The documented consumer wiring names only two returns to route on: *"Treat a `failed` return as a
+  rejected edit (investigate the reported diagnostics; do not force it) and a `degraded` return as
+  'unavailable' (fall back to `Edit`)"* (`execute-task/SKILL.md:244`). A `success` return with
+  `applied: false` matches neither branch, and `lsp-client/SKILL.md` § "The write side" (`:71-86`)
+  describes only the apply-and-verify path and the worsened-set rejection — the declined-rename
+  outcome appears in neither document.
+- **Why it matters:** a leaf following the documented wiring reads `status: success` as "the rename
+  landed" and proceeds to the next step without renaming anything and without falling back to `Edit`.
+  The discriminator exists in the payload (`applied: false`), so this is a wiring gap rather than a
+  missing signal — but the wiring is what a dispatched leaf actually follows.
+- **Action:** state the third outcome in both surfaces: `lsp-client/SKILL.md` § "The write side" gains
+  a sentence that a server may decline the rename, in which case the verb returns `status: success`
+  with `applied: false` and `reason: no_workspace_edit` and **nothing was changed**; and
+  `execute-task/SKILL.md:244` gains the matching branch — treat `applied: false` as "the rename did
+  not happen; fall back to `Edit`". Prefer this over changing `status`, which would break the
+  consumer contract for any existing caller.
+- **Done when:** both documents name the `applied: false` / `no_workspace_edit` outcome and tell the
+  consumer to fall back to `Edit`, and `test_edit_no_workspace_edit` asserts `applied is False` and
+  `reason == 'no_workspace_edit'` as the documented discriminator (it asserts them already; the
+  binding is that the docs now name the same fields).
+- **Effort:** S
+- **Risk if fixed:** none for the documentation-only fix.

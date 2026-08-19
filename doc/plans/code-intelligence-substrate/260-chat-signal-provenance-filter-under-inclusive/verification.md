@@ -1,7 +1,9 @@
 # Verification — 260-chat-signal-provenance-filter-under-inclusive
 
 **Audited:** `plan.md`, `report-01.md` (no other sibling files present)
-**Tree state:** `e678dcb` on `claude/code-intelligence-substrate-analysis-kah884`
+**Tree state:** `e678dcb` on `claude/code-intelligence-substrate-analysis-kah884`; adversarial review
+re-taken on the same branch after further documentation-only commits — the three production modules
+and six test modules under review are byte-identical between the two readings.
 **Overall verdict:** CONFIRMED WITH GAPS
 
 The plan's four deliverables are implemented, in the shape the plan specified, and the shipped tests

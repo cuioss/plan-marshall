@@ -48,7 +48,7 @@ documentation is wrong for those six.
   but is **not** a stable witness in this working tree — repeated clean runs minutes apart gave 295
   and 296 while other sessions held unstaged edits, so the unresolved delta is the figure to assert
   on.) The test's probe bundle is named `probe-bundle` while
-  `PYTHON_MODULE_MAPPINGS['toon_parser']` (`_dep_detection.py:217`) targets
+  `PYTHON_MODULE_MAPPINGS['toon_parser']` (`_dep_detection.py:219`) targets
   `plan-marshall:ref-toon-format:toon_parser`, so `_entry_script_for_subcommand` builds its candidate
   entry as `plan-marshall:ref-toon-format:ref-toon-format`, which is absent from a fixture index that
   contains only `probe-bundle:*` — the lookup misses on the *bundle* segment whether or not the guard

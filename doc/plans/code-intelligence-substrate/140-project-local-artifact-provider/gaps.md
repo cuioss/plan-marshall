@@ -271,17 +271,21 @@ audit and this review (`git diff` over the audited surface is empty), so the del
   reproducible, so no later reader can check the report against a run — they will read 52 and conclude
   the record is wrong. **No assertion is weakened:** every extra entry is still under `.claude` and still
   resolves to `pm-plugin-development`, which is why this is low rather than a broken test.
-- **Action:** derive the walked population from a deterministic source. Preferred: filter the `rglob`
-  (skip any path with a `__pycache__` component, and any entry `git check-ignore -q` accepts) and filter
-  `iterdir()` the same way. `git ls-files .claude` is the other option but gives the test a hard git
-  dependency, so take it only if the suite already assumes a worktree.
+- **Action:** derive the walked population from the tracked corpus rather than from the working tree —
+  enumerate `git ls-files .claude` (as `subprocess.run`, the pattern several suites in this repository
+  already use: `test/sync-plugin-cache/test_staleness_guard.py`,
+  `test/plan-marshall/manage-config/test_build_map_seed.py`) and resolve each returned path, and derive
+  the top-level entry set in `test_each_top_level_claude_subtree_resolves_uniformly` from the first
+  segment of those same paths instead of `iterdir()`. ⛔ **Do not substitute a hard-coded skip list**
+  (`__pycache__`, `settings.local.json`) — that reintroduces the "what one reader saw" trap D1's bare-root
+  claim exists to avoid, and the next git-ignored artifact under `.claude` re-opens the gap.
 - **Done when:** on a machine that has run the suite at least once (so `__pycache__` directories exist
   under `.claude`) and carries a `.claude/settings.local.json`, the count the walk test reports equals
   `git ls-files .claude | wc -l`, and both enumeration tests still pass.
 - **Effort:** S
-- **Risk if fixed:** a filter that is too broad could hide a real tracked file and re-open the vacuity
-  the `assert files` guard at `:120` exists to prevent — keep that guard, and assert the filtered count
-  is non-zero.
+- **Risk if fixed:** the test gains a dependency on running inside a git worktree, and an empty
+  `git ls-files` result would make the walk vacuous — keep the `assert files` guard at `:120`, which
+  already closes that.
 
 ## G8 — Stop the merge fixture from calling its stubs "the two real attributors"
 
