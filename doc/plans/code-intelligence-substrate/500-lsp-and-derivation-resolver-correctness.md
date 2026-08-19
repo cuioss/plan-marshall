@@ -227,8 +227,8 @@ what matters). A guard that only a locally-installed binary can falsify is not a
 
 3. **D3 — The `lsp` harvest resolves real imports, refuses vendored targets, names its real failure,
    and describes its own attribution truthfully**
-   *Covers* `200-lsp-derivation-resolver/gaps.md#G1`, `#G13`, `#G2` (high in this plan's bucket),
-   `#G3`, `#G6` (medium). Owning surface:
+   *Covers* `200-lsp-derivation-resolver/gaps.md#G1`, `#G2` (high), `#G13`, `#G3`, `#G6` (medium).
+   Owning surface:
    `marketplace/bundles/pm-plugin-development/skills/plan-marshall-plugin/scripts/lsp_harvest.py`
    and the resolver at
    `marketplace/bundles/pm-code-intelligence/skills/plan-marshall-plugin/extension.py`.
@@ -273,10 +273,12 @@ what matters). A guard that only a locally-installed binary can falsify is not a
      alone — the inflated count is the reachable defect and is independent of it. Fix this **with or
      before** G1: a wider search path resolves more third-party imports, so the inflation grows with
      G1.
-     ⚠ This gap is filed **medium** in its source entry with an explicit "raise to high if the harvest
-     is materialized for a project whose module set includes a root-scoped module", and **high** in
-     the bucket this plan was authored from. Treat it as high — it is a precondition for G1 — and
-     record the discrepancy rather than silently adopting either rating.
+     ⚠ This gap is **medium** — in its source entry, in its adversarial review, and here. Its entry
+     names a trigger to raise it ("*…if the harvest is ever materialized for a project whose module
+     set includes a root-scoped module*") and **this plan does not meet it**: D3 makes the harvest
+     resolve imports but changes nothing about the module set, whose only producer emits
+     `marketplace/bundles/{name}`, never `.`. See § Notes. Work it before or with G1 for the
+     sequencing reason above, not because it is severe.
    - **G2 — a refusal reported as a timeout.** A JSON-RPC error reply to `initialize` (a server
      refusing the workspace) is caught by the `except client.LspError` arm and reported as
      `server-timeout: … did not respond within 10s (initialize failed: …)` — observed after 5.03 s,
@@ -754,16 +756,21 @@ above and are listed here so they are not re-litigated: the PEP 508 `@` split mu
 `@`, not `' @ '`; the mid-apply rollback test must **not** use `chmod`; and `240/G10`'s lean is
 **presume the deferral needs reversing**, not upholding — while still recording rather than deciding.
 
-⛔ **`200/G13`'s severity is raised by THIS plan, on the entry's own escalation condition — not by
-the adversarial review, which rated it medium and said why.** Do not read the raise as a
-review outcome. `200-lsp-derivation-resolver/verification.md` files G13 at medium because the
-wrong-edge half "*is **not reachable today*** — the harvest is materialized only by a discovery whose
-module paths are all `marketplace/bundles/{name}` with no root-scoped module". The entry then states
-its own trigger: "*Raise to high if the harvest is ever materialized for a project whose module set
-includes a root-scoped module.*" **D3 of this plan is what materializes that harvest**, so the
-condition the entry names is met by the change this plan makes, and G13 is carried at high *inside
-this plan's scope*. A run that descopes D3 must carry G13 back down to medium. Elsewhere — in the
-entry, in the audit roll-up — it is medium, and that is not a contradiction to reconcile.
+⛔ **`200/G13` is MEDIUM. Do not raise it, and do not order D3 by pretending it is high.** Its entry
+and its adversarial review both rate it medium, and they agree on why: the wrong-edge half "*is **not
+reachable today*** — the harvest is materialized only by a discovery whose module paths are all
+`marketplace/bundles/{name}` with no root-scoped module". The entry names a trigger for escalation —
+"*Raise to high if the harvest is ever materialized for a project whose module set includes a
+root-scoped module*" — and **D3 does not meet it.** That trigger is a conjunction, and D3 satisfies
+only the first half: it makes the harvest resolve imports, and changes nothing about the module set.
+Re-derived: `build_lsp_component_refs` has exactly one non-test caller, `plugin_discover.py`, whose
+`module_paths` come from `build_bundle_module` and are always `marketplace/bundles/{name}` or the
+bare bundle name — never `.`. D3's own ⛔ forbids the change that would touch path attribution.
+
+An earlier draft of this plan raised G13 to high and justified it on that trigger. The justification
+was false, and it quoted the refuting fact one sentence earlier. It is withdrawn; **the reason to
+work G13 early is sequencing, not severity** — the vendored-target inflation grows with G1's wider
+search path, so G13 lands before or with G1. Severity plays no part in that ordering.
 
 **The source gap files are corroboration, not required reading.** Every citation of the form
 `{plan}/gaps.md#G7` points at a git-tracked file under
@@ -780,21 +787,18 @@ say so, rather than taking it.
 
 ## Gap coverage
 
-Twenty-eight gaps across six source plans: **10 high, 16 medium, 2 low** by the severity the entries
-carry. Every one is discharged by a deliverable below; none is placed out of scope.
-
-The table below rates `200/#G13` **high**, and that is this plan's own escalation on the entry's
-stated trigger, not the entry's severity — see § Notes. Counted at the entry, it is medium, which is
-where the tenth high goes. Re-derive all three figures from the `Severity` field of the cited entries
-rather than trusting this line.
+Twenty-eight gaps across six source plans: **10 high, 16 medium, 2 low**. Every one is discharged by
+a deliverable below; none is placed out of scope. Every severity here is the one its own entry
+carries — this plan re-rates nothing. Re-derive all three figures from the `Severity` field of the
+cited entries rather than trusting this line.
 
 | Deliverable | Source plan | Gap ids | Severity |
 |---|---|---|---|
 | D1 | `010-lsp-in-execute-lookup-and-write` | G2, G13, G15 | high ×3 |
 | D2 | `010-lsp-in-execute-lookup-and-write` | G1 | high |
 | D2 | `010-lsp-in-execute-lookup-and-write` | G3, G4, G5, G14 | medium ×4 |
-| D3 | `200-lsp-derivation-resolver` | G1, G2, G13 | high ×3 (G13 filed medium in its entry — see Notes) |
-| D3 | `200-lsp-derivation-resolver` | G3, G6 | medium ×2 |
+| D3 | `200-lsp-derivation-resolver` | G1, G2 | high ×2 |
+| D3 | `200-lsp-derivation-resolver` | G3, G6, G13 | medium ×3 |
 | D4 | `210-native-coordinate-resolvers` | G1, G10 | high ×2 |
 | D4 | `210-native-coordinate-resolvers` | G2, G3, G4, G11 | medium ×4 |
 | D5 | `240-skill-lsp-server` | G1, G28 | high ×2 |

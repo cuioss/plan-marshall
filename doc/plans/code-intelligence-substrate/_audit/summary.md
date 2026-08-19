@@ -47,14 +47,14 @@ No plan was found to have shipped nothing, and no plan was found wholly sound. *
 recorded — **46 high, 216 medium, 210 low**, counted from the `Severity` field of the entries
 themselves.
 
-⚠ **Two gaps carry a higher severity in the fix plans than in their own entries**, and the difference
-is disclosed rather than averaged away. `200-lsp-derivation-resolver/gaps.md#G13` and
-`310-main-sha-records-the-pinned-cwd/gaps.md#G1` are each rated **medium** by their entry *and* by
-their adversarial review; the plan that carries `200/#G13` escalates it on the entry's own stated
-condition (see `500` § Notes), and `310/#G1` is carried at its entry severity. An earlier roll-up
-here read both as high — a parsing error over severity lines containing the word "high" in prose
-("*Raise to high if…*", "*why medium and not high*"). The entry-derived figures above are
-authoritative; re-derive them from the entries rather than trusting this paragraph.
+⚠ **No fix plan re-rates a gap; every plan carries the severity its entry carries.** This is worth
+stating because an earlier roll-up here said otherwise. Two entries —
+`200-lsp-derivation-resolver/gaps.md#G13` and `310-main-sha-records-the-pinned-cwd/gaps.md#G1` — are
+rated **medium** by their entry *and* by their adversarial review, and an earlier count read both as
+high: a parsing error over severity lines containing the word "high" in prose ("*Raise to high if…*",
+"*why medium and not high*"). Plan `500` then briefly escalated `200/#G13` on the trigger its entry
+names, on a justification that did not hold, and that escalation is withdrawn — see `500` § Notes.
+Re-derive these figures from the `Severity` field of the entries rather than trusting this paragraph.
 
 ### The recurring defect
 

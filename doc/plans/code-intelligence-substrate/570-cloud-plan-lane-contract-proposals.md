@@ -102,22 +102,33 @@ Re-derive each at the moment you state it, and record the command and the ref yo
 
 1. **D0 — Anchor derivation and target census (gating; this one can halt the plan)** — before any
    other work, derive two things and write both into the run report.
-   (a) **The contract's current anchors.** Read `.claude/skills/cloud-plan-lane/SKILL.md` and record,
-   for each section a proposal touches, its **current** heading and line range: § Step 1's
-   "Conditionally, by what the plan touches" table, § Step 5 (build gate), § Step 7 (PR cycle),
-   § Step 8 (merge gate, and the numbering of its conditions), § Step 9 (the contract-check table, the
-   three-claim-class block, and "What have we learned"), and § Report. The anchors this plan quotes
-   were true when it was authored and the file has been renumbered before — one open proposal is
-   unapplicable *because* of a renumbering — so a proposal written against stale anchors is worthless.
-   ⛔ **If the skill file cannot be read, HALT**: report the run blocked, naming the file. Do not write
-   proposals against a contract you could not open, and do not reconstruct its numbering from this plan.
+   (a) **The current anchors, across BOTH governed files.** The proposals do not all land in one
+   document, so derive anchors in both:
+   - `.claude/skills/cloud-plan-lane/SKILL.md` — § Step 1's "Conditionally, by what the plan touches"
+     table, § Step 5 (build gate), § Step 7 (PR cycle), § Step 8 (merge gate, and the numbering of its
+     conditions), § Step 9 (the contract-check table, the three-claim-class block, and "What have we
+     learned"), and § Report.
+   - `doc/plans/cloud-bridge.md` — § Path 3 step 1 and § Status vocabulary, which **P8** targets and
+     which live in this file rather than in the skill.
+
+   Record each section's **current** heading and line range. The anchors this plan quotes were true
+   when it was authored and the files have been renumbered before — one open proposal is unapplicable
+   *because* of a renumbering — so a proposal written against stale anchors is worthless.
+   ⛔ **If either file cannot be read, HALT** for the proposals that target it: report the run blocked,
+   naming the file, and write only the proposals whose anchors you did derive. Do not write a proposal
+   against a document you could not open, and do not reconstruct its numbering from this plan.
+   ⛔ **Do not assume every proposal edits the skill.** P1–P7 do; **P8 does not** — it edits
+   `cloud-bridge.md`. A run that derives anchors only from the skill cannot satisfy D1's
+   quoted-against-a-derived-anchor requirement for P8.
    (b) **The target census.** For each source plan named in § Gap coverage, record one of three states:
    `present` (the directory exists and the quoted defective text is still there), `already corrected`
    (the directory exists and the text has changed), or `collected` (the directory is gone — a landed
    cloud plan's directory is deleted at collect in a ledger-backed epic, which this one is). A
    `collected` or `already corrected` target is not a failure; it is a recorded disposition.
-   *Done when:* the report carries a table of the six re-derived contract anchors, and a census row for
-   every source plan in § Gap coverage with one of the three states and the check that produced it.
+   *Done when:* the report carries a table of the re-derived contract anchors — **one row per section
+   listed in (a), across both files**, counted as you write it rather than against a number quoted
+   here — and a census row for every source plan in § Gap coverage with one of the three states and
+   the check that produced it.
 
 2. **D1 — `proposals.md`: the operator's decision register** — a new file
    `doc/plans/{epic}/{this-plan}/proposals.md` carrying **every proposal enumerated below** — count
