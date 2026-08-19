@@ -1003,8 +1003,8 @@ something that could have come back different: a differential run against the me
 sweep, a mutation test that proves a new guard non-vacuous, an exhaustive enumeration of a function's
 return branches — or, where the deliverable is prose, opening every cross-reference onto the section
 it names and re-deriving every figure from its source, each of which returns a verdict rather than an
-impression. A skill is behavioural prose reviewed as code (§ Step 7), so exit (i) is reachable for a
-prose deliverable; what it is not reachable by is another read.
+impression. A bundle skill is behavioural prose reviewed as code (§ Step 7), so exit (i) is reachable
+for a prose deliverable; what it is not reachable by is another read.
 *"Three agents read it and found nothing"* is not that. Where the late rounds'
 findings are not merely fewer but **narrower** — about the run's own report and plan documents rather
 than the shipped change — say so, as the observation it is.
@@ -1116,7 +1116,10 @@ gh pr create --fill
 repository and is regularly exhausted; every PR that draws a review spends budget another PR needs.
 Two kinds of diff therefore carry `skip-bot-review` **by default**:
 
-- **A diff with no reviewable footprint** — nothing a reviewer can act on.
+- **A diff with no reviewable footprint** — no `*.py`, no `marketplace/bundles/**`, and no plan
+  file under `doc/plans/`. That path test *is* the definition; do not substitute a judgment about
+  what a reviewer could act on. `CLAUDE.md`, `.github/**`, `pyproject.toml` and `doc/**` prose all
+  pass it and take the label.
 - **A change to this repository's own project-level skills** (`.claude/skills/**`). These are the
   operating instructions the meta-project runs itself by, not the product it ships. A reviewer
   *could* act on them, so this is a deliberate spend decision and not a claim that they are
@@ -1150,17 +1153,33 @@ triggered by the PR opening:
 gh pr create --label skip-bot-review --fill
 ```
 
-The rule in one line: **a project-level skill change gets `skip-bot-review` unless the operator asks
-otherwise; every other PR gets it only when it has no `*.py`, no bundle change and no plan.** A
+The rule in one line: **a project-level skill change gets `skip-bot-review` unless it is mixed with
+a reviewable class or the operator asks otherwise; every other PR gets it only when it has no `*.py`,
+no bundle change and no plan.** A
 bundle change is code, and so is a plan. This suppresses waste, never scrutiny — a project-level
 skill change is one the operator approved before it was written (§ closing self-check), which is the
 scrutiny that matters most for text that governs future runs.
 
-⛔ **The label is a one-way, creation-time decision, so it is disclosed before it is applied.** It
-cannot be added later and removing it afterwards does not summon the reviewers that were never
-triggered. Where an operator is reachable, say which way the rule comes out and why *before* creating
-the PR; a run that applies it silently has made a scrutiny decision on the operator's behalf that the
-operator cannot reverse.
+⛔ **The label is a creation-time decision, so it is disclosed before it is applied.** Adding it
+after create is too late for the PR-open trigger, which has already fired. Where an operator is
+reachable, say which way the rule comes out and why *before* creating the PR; a run that applies it
+silently has made a scrutiny decision on the operator's behalf.
+
+⛔ **On the MCP path, creation-time labelling needs the draft route.** `create_pull_request` takes no
+`labels` argument (§ Cloud session affordances maps `--label` to a *separate* call after create), so
+a run that creates open-and-unlabelled has already triggered the reviewers the label exists to
+suppress. Create with `draft: true`, apply the label, then `update_pull_request` with `draft: false`.
+This works only where the governing `.coderabbit.yaml` leaves `reviews.auto_review.drafts` off —
+**read it**; where drafts are reviewed, the draft route buys nothing and the run says so instead of
+assuming it worked.
+
+**Removing the label is a real remedy, for auto-review reviewers only.** A run that discovers it
+labelled wrongly — or a labelled PR that later acquires a reviewable path, e.g. a `*.py` fix
+committed during the review cycle — removes the label and pushes: an auto-review reviewer reviews on
+each push (§ "Obtaining a CodeRabbit review"), so the review is recoverable. A reviewer triggered
+only at PR-open is not recovered this way. Determine the label from the **planned** deliverable set,
+not only the diff as it stands at creation; where a reviewable class arrives later, remove, push, and
+disclose that the PR-open review was missed.
 
 Then work the review cycle until it is genuinely finished:
 
@@ -1237,7 +1256,7 @@ was trustworthy where the other two were not.
 read. A count from a surface you *can* read is the cheapest control available; take it, and record what
 it says.
 
-⭐ **`unreadable` blocks merge-gate condition 3, where `rate-limited` and `silent` do not** — a statement about condition 3 alone, since condition 6 separately gates CodeRabbit, so a `rate-limited` or `silent` CodeRabbit can hold the merge under *that* condition while leaving condition 3 satisfied. The
+⭐ **`unreadable` blocks merge-gate condition 3, where `rate-limited` and `silent` do not** — a statement about condition 3 alone, since condition 6 separately gates CodeRabbit **on a PR carrying no `skip-bot-review` label**, so there a `rate-limited` or `silent` CodeRabbit can hold the merge under *that* condition while leaving condition 3 satisfied. On a labelled PR condition 6 is out of scope and a `silent` CodeRabbit holds nothing. The
 shortfall verdicts say a reviewer did not review — condition 3 is about whether every *comment* was
 handled, and a reviewer who filed none leaves nothing to handle. An unreadable surface is different in
 kind: comments may exist and be unhandled, and the run cannot show otherwise. So condition 3 is **not
@@ -1388,9 +1407,10 @@ exception it does not override. **For CodeRabbit on a PR carrying no `skip-bot-r
 condition 6 still applies**, and this recovery attempt is what satisfies it in the `silent` and
 `Reopens? unknown` cases. Carrying on is licensed by having made the attempt, not by skipping it.
 
-⛔ **Do not run this recovery on a `skip-bot-review` PR.** The label means the bot was deliberately
-not invited, so inviting it — by comment or by push — summons the reviewer the label exists to
-suppress. There
+⛔ **Do not run this recovery on a `skip-bot-review` PR.** No recovery is owed: the label removes
+the bot from the auto-review population entirely, so neither a comment nor a push produces a review,
+and a run must **not** hold back a finished commit to avoid "summoning" one — Step 4's push cadence
+is unconditional. There
 the `silent` verdict is expected, is recorded as such, and needs no recovery.
 
 ⛔ **Query by `event`, never by head branch.** A **command**-triggered run (`issue_comment`) is
@@ -1566,6 +1586,11 @@ hold:**
    spent without obtaining it; `sourcery-ai` rate-limited on a size ceiling, does not reopen."
    **A run that merges on 1-of-3 must _say_ 1-of-3.**
 
+   **On a `skip-bot-review` PR the expected population is empty by design.** Every reviewer is
+   `silent` because none was invited, which is not a shortfall and is not disclosed as one. Record
+   each reviewer as `silent (suppressed by label)` and state the coverage against that empty
+   population. What *is* disclosed is the label decision itself, before creation, per § Step 7.
+
    ⛔ **The example says "six attempts spent" for a reason.** A CodeRabbit line here reports a state
    in which condition 6 is *satisfied* — never a bare countdown the run could still act on. Those
    states are the ones condition 6 names, and the disclosure borrows its word for each: **obtained**,
@@ -1609,7 +1634,8 @@ hold:**
    operator (§ Step 7), and CodeRabbit is the reviewer that reads them as such. So on any PR the
    label rule leaves reviewable, **do not arm auto-merge on a first CodeRabbit refusal.** A
    project-level skill change is normally *not* such a PR — it carries the label by default — so this
-   condition reaches it only when the operator asked for the review.
+   condition reaches it only when the operator asked for the review, or when the same diff also
+   touches a reviewable class and the label was therefore withheld.
 
    Satisfy it one of three ways, and say which:
 
@@ -1635,8 +1661,8 @@ hold:**
 
    **A `skip-bot-review` PR is out of scope for this condition entirely** — the label means no bot was
    invited, so there is nothing to wait for. § Step 7 governs when that label may be applied; a
-   project-level skill change carries it by default, everything else only on an empty reviewable
-   footprint.
+   project-level skill change carries it by default *unless the diff also touches a reviewable
+   class*, everything else only on an empty reviewable footprint.
 
    **A `silent` or `Reopens? unknown` CodeRabbit satisfies it once the § Step 7 recovery check has
    been RUN.** Neither posts a countdown, so § Step 7's retry schedule — which waits "the window the
@@ -1786,7 +1812,7 @@ that its artifact exists on disk:
 | 4 Pushed | No unpushed commit remains (`git status -sb` reports no `ahead`) |
 | 5 Build gate | Report states the git-derived Python-change verdict and the build outcome |
 | 6 Verification sub-agent | Findings and dispositions in the report; **which of the two exits ended the loop** — named with the same `verifier-clear` / `budget-exhausted` token the report header carries, plus the `non-converging` qualifier where it applies (§ Report) — the **budget that applied** (five, or the plan's) with **every extension and who granted it**, and the round that stopped it. Where the budget ran out with an operator reachable, that the boundary question was **put to them** and what they answered; where it ran out headless, that fact and the fallback taken. On the verifier exit: **the verifier's own last answer** — never the author's verdict — and the **evidence stronger than a read** it rests on, named. On the budget exit: that fact, with everything A forbids **fixed** regardless and what closing each remaining B survivor would take. Either way: each survivor — and each behavioural finding left `deferred` — listed individually with its (a) proof or (b) bound and confirmation it was **re-put to the verifier** in the stopping round; whether the late rounds' findings were **narrower and not merely fewer**; the **residue to assume remains**; and `Outcome` still reporting the deliverables, not the loop (§ Step 6, "When the loop stops") |
-| 7 PR cycle | PR exists; every comment dispositioned in the report; the participation table carries a verdict **and** a `Reopens?` value per reviewer, and every `silent` verdict records what its recovery check found. An `unreadable` verdict means condition 3 is NOT established — the row is reported as **not done**, whatever the merge outcome |
+| 7 PR cycle | PR exists; every comment dispositioned in the report; the participation table carries a verdict **and** a `Reopens?` value per reviewer, and every `silent` verdict records what its recovery check found, or that the PR carried `skip-bot-review` and no recovery was owed. An `unreadable` verdict means condition 3 is NOT established — the row is reported as **not done**, whatever the merge outcome |
 | 8 Merge gate | Conditions 1–4 and 6 met and auto-merge armed; where the base had advanced, the report names the shape used, the merge commit tested, and the gate's result on it (condition 2) — and a condition 2 that failed closed is reported as **not established**, with nothing armed. Either `state: MERGED` was confirmed after arming, **or** the session could not self-wake to watch the queue (§ Cloud session affordances) and delegated the landing to the orchestrator's collect — both are completed, neither is partial (§ Step 8). The merge commit is recorded to the operator, not in the pre-merge report |
 | 8 Bridge | No **status or bookkeeping** write landed under `doc/plans/` outside this plan's own directory — no ledger, no status file, no other plan's directory was touched; a **declared-deliverable** edit to a shared lane doc (e.g. `cloud-bridge.md`, `README.md`, the plan template) is permitted — and the report carries the PR number and per-deliverable outcome the orchestrator will collect from |
 | 9 This check | Its result appended to the report |
@@ -1835,7 +1861,8 @@ If there is something worth changing:
    gh pr create --title "chore(cloud-plan-lane): {what changed}" --body-file {file}
    ```
 
-   **Apply `skip-bot-review`.** A project-level skill change carries the label by default (§ Step 7):
+   **Apply `skip-bot-review`.** The PR above touches only the skill and lane docs — no reviewable
+   class — and a project-level skill change carries the label by default (§ Step 7):
    the scarce bot-review budget goes to the shipped bundles and to code. Its scrutiny is step 1 above
    — the operator approved this change before it was written. If the operator asks for a bot review
    on it instead, create the PR without the label and condition 6 applies as usual.
@@ -1966,8 +1993,7 @@ each carrying the time, the notice the attempt drew, and the wait-plus-jitter th
 
 An attempt that was made and refused is different evidence from one that was never made, and only
 this log distinguishes them. State the budget that applied (six, per § Step 7), how many attempts
-were spent, and — for CodeRabbit on a PR without `skip-bot-review` — **which arm of § Step 8
-condition 6 satisfied it**, in that condition's own words: `obtained`, `budget spent`, `unobtainable`,
+were spent, and **which arm of § Step 8 condition 6 satisfied it**, in that condition's own words: `obtained`, `budget spent`, `unobtainable`,
 `could not re-enter`, or `skip-bot-review` (out of scope). A record that cannot name the arm cannot be
 checked against the gate.
 Where a `silent` verdict triggered the recovery check (§ Step 7), record what the check found and
@@ -1989,7 +2015,10 @@ comparable is worse than none:
 
 ## Contract check (Step 9)
 Per-step verdict, and any step reported as not done. Which GitHub access path was used, and which
-branch form was used (harness-assigned or run-created). A cloud run **never owes** a
+branch form was used (harness-assigned or run-created). The `skip-bot-review` decision: applied or
+not, which arm of § Step 7's rule produced it, and the disclosure made to the operator before
+creation — or that no operator was reachable. It is the one irreversible scrutiny choice the run
+makes, so it leaves a record. A cloud run **never owes** a
 `/sync-plugin-cache` — it is a machine-local build step, not a debt a cloud run records (§ Scope and
 precedence).
 
