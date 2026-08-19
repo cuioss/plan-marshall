@@ -195,9 +195,10 @@ it ("ORDERING IS LOAD-BEARING … `test_bot_participation_contract.py` reads ele
 
 - *"An unmatched refusal notice reaches the participation credit in our classifier"* — **CONFIRMED
   TRUE**, by reading and by probe P3. `github_pr.py:950` calls `_is_refusal_notice`; that function
-  (`_github_pr.py:183–187`) is a `refusal_patterns` substring match **or** the structural
-  `_is_rate_limit_notice`. A reworded vendor notice that matches neither falls through to
-  `github_pr.py:953`, matches a declared publish shape, and is **credited as participation**. See G3.
+  (`_github_pr.py:155–187`, its two-layer test at `:183–187`) is a `refusal_patterns` substring match
+  **or** the structural `_is_rate_limit_notice`. A reworded vendor notice that matches neither falls
+  through to `github_pr.py:953`, matches a declared publish shape, and is **credited as
+  participation**. See G3.
 - *"Inline-comment enumeration under-collects body-level findings"* — **REFUTED for
   `fetch_findings`.** `github_ops.fetch_pr_comments_data` (`github_ops.py:356–465`) walks three
   surfaces: `reviewThreads` → `inline`, `reviews` → `review_body`, `comments` → `issue_comment`. The

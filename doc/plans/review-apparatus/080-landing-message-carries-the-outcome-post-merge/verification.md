@@ -278,7 +278,9 @@ directly relevant to what happens after a non-merging `branch-cleanup`.
 invariant — *"Every step in the authoritative registry carries **exactly one** classification… never both
 and never neither"* — pinned by `test/plan-marshall/phase-6-finalize/test_dispatch_roster_closure.py`.
 `grep -n "emit-landing"` over that document returns nothing, while `SKILL.md:178` registers the step and
-calls it inline, and `SKILL.md:772` and `SKILL.md:883` name it among the inline consumers. The guarding
+calls it inline, `SKILL.md:772` names it among *"the inline consumers"*, and `SKILL.md:848` names it as
+the owner of the run's one landing. (`grep -n "emit-landing"` over `SKILL.md` returns `:178`, `:766`,
+`:770`, `:772`, `:796`, `:848` — six lines, none of them in a roster.) The guarding
 test reads `.plan/marshal.json`, which is git-ignored; the local snapshot predates the step, so the test
 passes without covering it (run locally: exit 0).
 

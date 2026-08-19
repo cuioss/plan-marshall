@@ -354,7 +354,7 @@ hard error, both sites are under-specified. CONFIRMED — see G7.
 ### D3 — a population-derived test that fails when a documented invocation does not parse
 
 `TestDocumentedReviewMergeInvocationsParse`
-(`test_review_merge_invocation_contract.py:287`) exists. Non-emptiness is asserted at import
+(`test_review_merge_invocation_contract.py:288`) exists. Non-emptiness is asserted at import
 (`:194`), before any parametrize, exactly as the plan demanded. I re-derived the population with an
 independent re-implementation of the same walk and got the same six invocations the report claims
 (two `github_pr fetch_findings`, two `ci checks pull-request-runs`, two `review_completeness check`).
@@ -369,9 +369,11 @@ documented divergence survives in those docs** — the narrowing hid nothing tha
 
 **Where it falls short.** The plan's Verification is explicit: "**D3's population size is published in
 the test output**, so a future reader can tell a passing test from an empty one." The number appears
-only inside the assertion messages at `:299-306`; `grep -n "print(\|record_property\|capsys"` over the
+only inside the assertion messages at `:299` and `:304-309`; `grep -n "print(\|record_property\|capsys"` over the
 file returns nothing. A passing `-q` run prints `11 passed`; a passing `-v` run enumerates six
-parametrized ids but states no count. See G6.
+parametrized ids but states no count (re-observed under `--collect-only`: six
+`test_documented_invocation_parses` ids, `branch-cleanup-md-{github-pr,ci,review-completeness}` and
+`skill-md-{github-pr,ci,review-completeness}`). See G9.
 
 ## Report-claim audit
 

@@ -653,20 +653,29 @@ stale member counts and two-way refusal enumerations comes back clean. Every beh
 enumerates has a test, and those tests discriminate: the naive count-only detector the plan warns about
 fails five of the nine, both load-bearing negative cases among them.
 
-What did not land is the *reaching a reader* half of the plan, which is the half the plan's title is about.
+What did not land is the *reaching a reader* half of the plan, which is the half the plan's title is about,
+and it failed in three separate places.
+
+On the second D3 surface the collapse is still live. The `comparison` grade added by #1170 does separate
+*reviewed-clean* from *never-ran*, and an explicit discrimination test proves it — but the test hands
+`aggregate()` the reviewed-at-all set directly, and the step cannot. Its own SKILL.md records that nothing
+persists that classification anywhere a step at `order: 990` can read it, and instructs the step to pass
+`--reviewed-reviewers` bare; a whole-tree sweep for a writer of `bot_states` confirms there is none. So
+every zero-findings run grades `indeterminate` and emits one string, whichever fact produced it. The
+per-row `participation` field renders both `unmeasurable` for the same reason.
+
 The deficit signal has no caller anywhere in the tree, so nothing reports it; and when it is called, its
 rendering publishes a population only when that population is non-empty — printing `verdict: clean` with no
 row at all for a required reviewer that did not review, and printing no population line whatsoever on
 `unassessable`. That is the plan's own "publish each population" requirement inverted at exactly the two
-inputs where the empty population is the finding.
+inputs where the empty population is the finding, and the module docstring documents the suppression
+(`:175-176`, "emitted only when non-empty") rather than treating it as an oversight.
 
-The rest is smaller than it first looks. The second D3 surface does distinguish *reviewed-clean* from
-*never-ran* today — through the `comparison` grade and the distinct `display_detail` it drives, with an
-explicit discrimination test — though the per-row `participation` field still renders both as
-`unmeasurable`; that half arrived in #1170 rather than in this landing. And the display string the plan
-prescribes overruns the repository's 80-character `display_detail` bound at its worst-case expansion and
-carries a non-ASCII em dash, the second of which matches a pre-existing house pattern rather than
-originating here.
+Both surfaces also overrun the repository's `display_detail` contract. The Branch A template exceeds
+80 characters at an ordinary three-bucket expansion (86) and has no bounded worst case at all (161 over
+the full bucket vocabulary); the retrospective's `indeterminate` string is a fixed 109-character literal.
+Both carry a non-ASCII em dash — which, on the Branch A side, matches a pre-existing house pattern rather
+than originating here.
 
 ## Adversarial review
 
