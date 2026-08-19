@@ -6,13 +6,15 @@
 existence (#1295)")
 **Overall verdict:** CONFIRMED WITH GAPS
 
-The shipped code does what D1–D4 asked for, and the guards that protect it are non-vacuous — seven
-independent mutants were applied and every one went red at the guard that names it. The gaps are
-almost entirely in the *records*: run 02's rebase silently dropped two of run 01's commits, so the
-merged `report-01.md` carries a defect run 01 had already fixed and loses a build-gate result run 01
-had already recorded — while `report-02.md` states that "every commit's tree is preserved". One
-substantive coverage hole exists in the shipped closure itself (a declared glob in the write-set is
-enforced by neither closure when it matches nothing yet).
+The shipped code does what D1–D4 asked for, and the guards that protect it are non-vacuous — eight
+independent mutants were applied and every one went red at the guard that names it, and five of them
+plus one new one were re-applied by the adversarial review with identical results. The gaps are almost
+entirely in the *records*: two of run 01's eleven commits never reached the branch that became
+PR #1295, so the merged `report-01.md` carries a defect run 01 had already fixed and loses a
+build-gate result run 01 had already recorded — while `report-02.md` states that run 01 pushed nine
+commits and that "every commit's tree is preserved". Both lost commits are documentation-only; no
+production code or test was lost. One substantive coverage hole exists in the shipped closure itself
+(a declared glob in the write-set is enforced by neither closure when it matches nothing yet).
 
 ## What run 02 changed relative to run 01
 
@@ -22,7 +24,7 @@ Concretely, run 02:
 
 | Change | Verified against the tree |
 |---|---|
-| Rebased run 01's commits onto `origin/main` and re-pushed as `claude/…-3i53aj`; opened PR #1295 | `origin/claude/derived-set-closure-integrity-g7n8x2` still exists with 11 commits above `eb0124c`; `…-3i53aj` no longer exists on `origin` (deleted at merge). **The rebase carried 9 of those 11 commits** — see § Report accuracy, the headline finding. |
+| Rebased run 01's commits onto `origin/main` and re-pushed as `claude/…-3i53aj`; opened PR #1295 | `origin/claude/derived-set-closure-integrity-g7n8x2` still exists with 11 commits above `eb0124c`; `…-3i53aj` no longer exists on `origin` (deleted at merge). **Only 9 of those 11 commits reached the branch under review** — see § Report accuracy, the headline finding. |
 | Ran verification round 4 (the last of run 01's declared 4-round budget) and fixed 15 condition-A findings (A1–A15) | A11–A13 confirmed fixed: `grep -rn "5+6+7\|5, 6, 7\|5 + 6 + 7" marketplace/ doc/ .claude/` returns **no** marketplace hit. A14 fixed at `authoring-guide.md:74`. A15 fixed at `request-result-alignment.md:34,35,41`. |
 | Closed B1 and B2 (two round-4 mutation survivors) rather than characterising them | Both guards proven non-vacuous by mutation here — M5 and M6 below. |
 | Fixed F-R1 (`cuioss-review-bot`): a raw `int(task["number"])` on the referrer-finding path | `_qgate_closure.py:383` now reads `_as_int(task.get('number')) or 0`; guarded by a 3-way parametrized test plus an absent-key test (`test_qgate_closure.py:892-941`). |
