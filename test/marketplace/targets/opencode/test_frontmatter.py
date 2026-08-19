@@ -24,7 +24,7 @@ from marketplace.targets.opencode.frontmatter import (
 @pytest.fixture()
 def opencode_config_dir() -> Path:
     """Path to the canonical OpenCode mapping/rules config directory."""
-    return PROJECT_ROOT / 'marketplace' / 'targets' / 'opencode'
+    return Path(PROJECT_ROOT) / 'marketplace' / 'targets' / 'opencode'
 
 
 @pytest.fixture()

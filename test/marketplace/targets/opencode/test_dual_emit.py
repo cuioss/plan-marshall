@@ -28,7 +28,7 @@ def _write(path: Path, content: str | bytes) -> None:
 @pytest.fixture()
 def opencode_config_dir() -> Path:
     """Canonical OpenCode mapping/rules config directory (real source files)."""
-    return PROJECT_ROOT / 'marketplace' / 'targets' / 'opencode'
+    return Path(PROJECT_ROOT) / 'marketplace' / 'targets' / 'opencode'
 
 
 def _make_bundle(

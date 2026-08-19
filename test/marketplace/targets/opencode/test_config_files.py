@@ -14,7 +14,7 @@ from marketplace.targets.opencode.frontmatter import load_mapping, load_rules
 
 @pytest.fixture()
 def opencode_config_dir() -> Path:
-    return PROJECT_ROOT / 'marketplace' / 'targets' / 'opencode'
+    return Path(PROJECT_ROOT) / 'marketplace' / 'targets' / 'opencode'
 
 
 # ---------------------------------------------------------------------------

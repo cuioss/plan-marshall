@@ -39,7 +39,7 @@ OPENCODE_SLASH_TEMPLATE = '/{name}'
 
 
 def _project_root() -> Path:
-    return PROJECT_ROOT
+    return Path(PROJECT_ROOT)
 
 
 def _opencode_mapping_path() -> Path:
