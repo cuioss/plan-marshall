@@ -5,12 +5,16 @@
 **Landed as:** `d2e94b4` — *"fix(finalize): reconcile the frozen manifest against live config; refresh the executor after a rebase (#1236)"*, 23 files, +2115/−50 (re-derived via `git show --numstat --format="" d2e94b4`)
 **Overall verdict:** CONFIRMED WITH GAPS
 
-Every deliverable is present in the tree and does substantially what the plan asked. The two
-substantive gaps are scope limits inside D2 that neither the code nor its documentation names: the
+Every deliverable is present in the tree and does substantially what the plan asked. **One gap is
+high:** D3's on-disk post-assertion — the round-1 F7 fix that was supposed to tie
+`executor_regenerated` to reality rather than to an exit code — checks only that *an* executor is in
+the slot, and the rebase population always has one there, so a generation that wrote nothing is
+reported as a successful refresh over the stale file it failed to replace (gap G15, measured). Two
+further gaps are scope limits inside D2 that neither the code nor its documentation names: the
 reconciliation cannot fire for external (`project:` / `bundle:skill`) steps at all, and its backfill
 direction bypasses every composer pre-filter, ceremony gate, and lane-resolution pass. D3 carries a
-narrower defect: a "never raises" contract that is only partially implemented. The run report's
-factual claims about the code hold; three of its bookkeeping counts do not.
+second, narrower defect: a "never raises" contract that is only partially implemented. The run
+report's factual claims about the code hold; three of its bookkeeping counts do not.
 
 ## Deliverable verdicts
 
@@ -19,7 +23,7 @@ factual claims about the code hold; three of its bookkeeping counts do not.
 | D0 | GATE: re-ground all four defects | All four CONFIRMED live; one asserted absence half-refuted | Two spot-checked directly against the `d2e94b4^` blobs and both hold; the refutation is recorded and visibly reshaped D2 | CONFIRMED |
 | D1 | GATE: name current behaviour, settle fail-direction | Hard abort today; settled direction = diff-and-backfill, split stale-vs-broken | The split is implemented and documented in three places (`SKILL.md` § `reconcile`, `manifest-schema.md`, `required-steps.md` § Reconciliation Contract) | CONFIRMED |
 | D2 | Reconcile frozen manifest vs live config at finalize entry | `cmd_reconcile` + `compose` candidate snapshot + Step 1.5 rewire | All three present and wired; but external steps are structurally exempt and backfill bypasses the composer's filters | PARTIAL |
-| D3 | Regenerate executor after a script-set-changing rebase | `_run_generate_executor` / `_refresh_worktree_executor` in `cmd_worktree_rebase_to`, three payload fields | Present and correct on every path read; the seam's "never raises" promise is incomplete | PARTIAL |
+| D3 | Regenerate executor after a script-set-changing rebase | `_run_generate_executor` / `_refresh_worktree_executor` in `cmd_worktree_rebase_to`, three payload fields | The three bounds hold (the indeterminate bound confirmed against the real generator), but the success verdict is a presence check that the rebase population always satisfies, and the seam's "never raises" promise is incomplete | PARTIAL |
 | D4 | Finalize prompt and log residue (3 items) | All three shipped | All three verified verbatim in the tree | CONFIRMED |
 | D5 | Three tests, each verified to fail pre-fix | 15 / 6 / 7 tests, pre-fix reds recorded | 19 / 10 / 8 tests landed, 37 pass; three independent mutations each turn one red | CONFIRMED |
 

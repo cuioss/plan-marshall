@@ -329,16 +329,18 @@ Claims checked against the tree now:
   `test_lsp_facade.py`", "developer/`lsp-query-facade.adoc` (new, verb mapping) + README
   registration". They were true at merge; plan 135 removed all of them by decision. Recorded as
   historical, **not** filed as a gap.
-- ❌ *"D2 … per-call (uncached)"* (`report-01.md:69`) and the same claim in the PR body overstate the
-  code: the path-attribution half is memoised for the process lifetime
-  (`_architecture_core.py:1122`). The narrower "never cached across dispatches" would be accurate.
+- ❌ *"D2 … per-call (uncached)"* (`report-01.md:69`) overstates the code: the path-attribution half
+  is memoised for the process lifetime (`_architecture_core.py:1122`). The PR body carries the same
+  overstatement in its D2 paragraph ("recomputed per call") but immediately qualifies it with the
+  accurate per-dispatch gloss ("never cached across dispatches"), so the PR body is misleading only
+  on its first half. Filed under G8 with the commit count.
 - ❌ *"4 Implement | DONE — six commits"* (`report-01.md:170`). PR #1207 carries **eight** commits
   (`31b8ede`, `0d12e4b`, `6126013`, `8159710`, `0df29ed`, `32d4c27`, `8469daf`, `1f2fdee` — read
   from the GitHub API); all do carry the `Co-Authored-By: Claude` trailer.
 - ⚠️ *"All five deliverables verified as implemented-as-specified with tests"* (`report-01.md:104-105`)
   is overstated in two respects the sub-agent did not catch: the D3 test does not exercise the
   shipped guard at all, and the D2 `content_search` row does not draw the distinction D2 is named
-  for.
+  for. Filed under G8.
 - ℹ️ The commit SHAs cited throughout (`0d12e4b`, `6126013`, `8159710`, `0df29ed`, `8469daf`) are not
   resolvable in this clone (`git cat-file -t` → missing) because the PR was squash-merged and the
   branch deleted; they are resolvable through the PR. Not a defect, but the report offers no

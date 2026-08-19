@@ -267,9 +267,14 @@ None of them is a regression caused by the removal.
   "`rationale.md` lives in the plan directory and **is removed at collect** (git history retains it)."
   The two cannot both hold: when collect removes `rationale.md`, plan 240's live proposal document
   acquires a dangling relative link.
-- **Why it matters:** plan 240 is queued, not yet run; its author will follow that link for the reasoning
-  it depends on and find nothing. This is the survivor-sweep failure mode ADR-007 names, arriving on a
-  schedule rather than at edit time.
+- **Why it matters:** the link is the survivor-sweep failure mode ADR-007 names, arriving on a
+  schedule rather than at edit time: nothing breaks at edit time, and the break lands silently when
+  135's collect runs. ⚠ The audit's original framing — "plan 240 is queued, not yet run" — is
+  **false** and has been removed: plan 240 ran on 2026-08-15/16 and landed as PR #1256
+  (`240-skill-lsp-server/report-01.md:3`), so `proposal-protocol-surface.md` is a landed record, not
+  a forward-looking proposal. The gap survives that correction — a landed record that cites the
+  reasoning behind a sibling decision still loses its citation — but its urgency is lower than the
+  original entry implied.
 - **Action:** either (a) promote the durable argument out of the plan directory first (see G11) and
   repoint `proposal-protocol-surface.md:46` at that destination, or (b) inline the two-sentence
   substance of the reference into plan 240's proposal so the link becomes decorative, or (c) exempt this

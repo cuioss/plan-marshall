@@ -136,9 +136,10 @@ audit and this review (`git diff` over the audited surface is empty), so the del
   because the crawl excludes dotfile trees, with an `xref:` to § "Inventory scope is not tree scope".
   Name the consequence explicitly (a caller enumerating this module's files, or searching their content,
   must still read the tree directly).
-- **Done when:** both surfaces state the attribution-vs-inventory boundary for `.claude` in their own
-  words, and a reader of either can answer "does `search --content` cover `.claude/skills`?" correctly
-  without leaving the section.
+- **Done when:** each of the two surfaces contains a sentence that names `search --content` (or
+  `files`/`find`) and states it does **not** cover `.claude`, without requiring the reader to follow a
+  cross-reference to learn it; and the `code-intelligence.adoc` addition carries an `xref:` to
+  § "Inventory scope is not tree scope".
 - **Effort:** S
 - **Risk if fixed:** none — additive prose. If a later plan instead *closes* the gap by inventorying the
   tree, the paragraph must be retired with it.
@@ -230,7 +231,8 @@ audit and this review (`git diff` over the audited surface is empty), so the del
   `test/plan-marshall/manage-architecture/test_which_module_plan_claim.py:246-263`, asserts only the N
   side (`assert result['attributor_count'] > 0`); there is no 0-side assertion at the reader in the PR's
   diff. The 0-vs-N pair at the reader is
-  `test/plan-marshall/manage-architecture/test_cmd_client.py:1040-1059`, a file
+  `test/plan-marshall/manage-architecture/test_cmd_client.py:1039-1061`
+  (`test_which_module_residue_distinction_is_observable_without_reading_module`), a file
   `git show --stat cc923b6` does not list — it pre-dates this plan.
 - **Why it matters:** the plan's § Verification makes the pair the acceptance criterion for D4 ("assert
   both; the pair is the point"). The report claims the pair at two levels; it exists at one level from

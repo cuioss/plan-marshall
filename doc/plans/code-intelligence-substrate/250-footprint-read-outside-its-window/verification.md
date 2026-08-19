@@ -227,35 +227,61 @@ checkout's diff as the plan's footprint** (`verify_failure_scope.py:94`).
 worktree = Path(resolve_plan_context(plan_id, ensure=False).worktree_path)
 ```
 
-`PlanContext.worktree_path` is documented (`file_ops.py:1097-1120`) to fall back to
-`cwd_checkout_root()` for the `pending` and `disabled` worktree states — it raises
-`WorktreeResolutionError` only when the `get-worktree-path` channel itself fails. The PR-review fix (P1)
-removed the `Path.cwd()` fallback but left the read on the path face, so the same wrong answer is still
-reachable through the state face. Both peer sites gate on `has_worktree` instead and document exactly
-this hazard: `_references_core.resolve_live_worktree:188-194` and
-`manage-execution-manifest._resolve_footprint:673-681`.
+`PlanContext.worktree_path` is documented (`file_ops.py:1009-1027`, resolved by
+`_resolve_worktree_face` at `:1097-1120`) to fall back to `cwd_checkout_root()` for the `pending` and
+`disabled` worktree states — it raises `WorktreeResolutionError` only when the `get-worktree-path`
+channel itself fails. The PR-review fix (P1) removed the `Path.cwd()` fallback but left the read on the
+path face, so the same wrong answer is still reachable through the state face. Both peer sites gate on
+`has_worktree` instead and document exactly this hazard:
+`_references_core.resolve_live_worktree:188-194` and
+`manage-execution-manifest._resolve_footprint:673-680` (code at `:682-690`).
 
-Reproduced with `_query_worktree_path` stubbed to `('pending', '')`:
+Reproduced twice, independently, with `_query_worktree_path` stubbed to `('pending', '')` and
+`compute_plan_branch_diff` wrapped in a call spy.
+
+**(a) Standing in this repository** — the classifier's ordinary situation:
 
 ```text
 worktree_state = pending
 has_worktree   = False
 worktree_path  = /home/user/plan-marshall
-_resolve_declared_footprint(...) -> set of 310 paths   # this repository's own diff
+_resolve_declared_footprint(...) -> set of 343 paths   # this repository's own diff
+diff calls     = [('/home/user/plan-marshall', 'main')]
+```
+
+(The cardinality is whatever the checkout happens to hold at the moment of measurement — 343 here — not
+a stable figure. What is stable is that a diff of a foreign tree is attempted at all.)
+
+**(b) Standing in a CLEAN checkout** — a throwaway git repo carrying `.plan/local`, no working-tree
+changes, `HEAD` on `main`. This is the ordinary case in a consumer project, and it is the damaging one:
+
+```text
+checkout root             = /tmp/adv250-clean
+worktree_state            = pending
+has_worktree              = False
+worktree_path             = /tmp/adv250-clean
+_resolve_declared_footprint(...) -> set()          # a MEASURED empty set
+footprint_resolved        = True
+total                     = 2
+in_scope_count            = 0
+out_of_scope_count        = 2
+exclusively_out_of_scope  = True
 ```
 
 Consequence: for a plan whose worktree is opted-in but not yet materialized, every error path is
-classified against an unrelated tree. When that tree is clean against its base — the ordinary case in a
-consumer project — `compute_plan_branch_diff` returns an empty **resolved** set, every error path lands
-out-of-scope, `exclusively_out_of_scope` becomes `true`, and phase-5-execute Step 11 offers *"Stash
-foreign files and re-verify"* as the **default** remedy on no evidence. That is the exact harm the
-module docstring (`:30-36`) and `classify_failure_scope` (`:117-128`) say the change removed. See **G1**.
+classified against an unrelated tree; and when that tree is clean against its base,
+`compute_plan_branch_diff` returns an empty **resolved** set, so every error path lands out-of-scope,
+`exclusively_out_of_scope` becomes `true`, and phase-5-execute Step 11 offers *"Stash foreign files and
+re-verify"* as the **default recommended action** (`phase-5-execute/SKILL.md:833`, verbatim) on no
+evidence. Note the polarity: the unmeasurable state is not merely lost, it is inverted into the single
+most confident verdict the classifier can emit. That is the exact harm the module docstring (`:30-36`)
+and `classify_failure_scope` (`:117-128`) say the change removed. See **G1**.
 
 **Defect 2 — medium. The same function's docstring still describes the removed behaviour**
-(`verify_failure_scope.py:79-81`): *"An unresolvable worktree degrades to the current working directory,
+(`verify_failure_scope.py:78-80`): *"An unresolvable worktree degrades to the current working directory,
 preserving the previous non-fatal behaviour for archived plans and test seams."* This contradicts the
-function's own summary line (`:62`, *"``None`` if unmeasurable"*) and the comment fifteen lines below
-(`:96-104`). It also reads as sanction for Defect 1. See **G2**.
+function's own summary line (`:62`, *"``None`` if unmeasurable"*) and the comment sixteen lines below
+(`:96-103`). It also reads as sanction for Defect 1. See **G2**.
 
 **No other logic defect found.** Specifically checked and found sound:
 

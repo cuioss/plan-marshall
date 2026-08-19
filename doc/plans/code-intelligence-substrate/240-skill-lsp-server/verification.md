@@ -107,8 +107,19 @@ positives" figures shipped into the user, developer, concepts and skill docs are
   - I reproduced the sub-document design finding on a synthetic corpus: the index cites
     `beta:caller line:5`, `SKILL.md` line 5 is blank, and `resolve_reference_site` correctly relocates
     to `workflow/step.md` (0-based line 4) with `verified=True`.
-- **Verdict:** CONFIRMED as specified. See Correctness review for a precision defect in the
-  `verified` flag that does not affect the *Done when*.
+  - ⭐ **The three checks above run the `query` CLI verb, which is a different code path from the
+    protocol.** An earlier pass of this audit drove `serve` only as far as the `initialize`
+    handshake, so the projection layer (`notation_at_position` → `on_definition` /
+    `on_references` / `on_hover` → `_lsp_location`) was asserted from the code rather than exercised.
+    It has now been driven for real: a `serve` subprocess with `PYTHONPATH` stripped, over an
+    enabled project pointed at the real corpus, answered `textDocument/definition` →
+    `manage-architecture/SKILL.md` range 0, `textDocument/hover` → the rendered markdown payload, and
+    `textDocument/references` → 50 `Location`s, then `shutdown`/`exit` with exit 0 and no trailing
+    bytes. `didOpen` was used to supply a buffer differing from disk, and the notation resolved from
+    the buffer — so the synced-document branch works even though no test covers it (G9).
+- **Verdict:** CONFIRMED as specified — now on both surfaces. See Correctness review for a precision
+  defect in the `verified` flag, and for the flag's loss on the LSP projection, which the `query`-only
+  evidence could not have surfaced.
 
 ### D3 — live diagnostics
 

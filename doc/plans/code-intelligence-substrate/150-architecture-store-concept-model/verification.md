@@ -26,7 +26,7 @@ D2 is fully confirmed and its guards are non-vacuous under mutation. D3 is confi
 negative control.
 
 Separately, and not affecting any deliverable verdict: the run's beyond-diff documentation sweep is
-incomplete in both directions the plan changed vocabulary. Twelve shipped locations still teach
+incomplete in both directions the plan changed vocabulary. Twelve shipped files still teach
 either the retired dotted identity (D1) or the retired index-as-gatekeeper semantic (D3) — the
 latter against the plan's only ⛔ **MUST NOT**, and against a PR-body claim that the correction was
 made "across every document that restated it". See § Beyond-diff documentation sweep.
@@ -384,9 +384,9 @@ Claims that are **false, stale, or overstated**:
    > the now-false 'the index is the source of truth for which modules exist' claim **across every
    > document that restated it**."
 
-   **False**, and it is the most consequential false claim in either surface. Eight shipped
-   locations still restate it, six of them inside the `plan-marshall` bundle the run's own Step-6
-   instruction tells it to sweep. Enumerated and itemised in `gaps.md` at G18–G20; see
+   **False**, and it is the most consequential false claim in either surface. Nine shipped files
+   still restate it — seven of them inside the `plan-marshall` bundle the run's own Step-6
+   instruction tells it to sweep, two in `pm-plugin-development`. Enumerated and itemised in `gaps.md` at G18–G20; see
    § Beyond-diff documentation sweep below.
 
 The report is also **silent on three things it should have disclosed**: the second concept-document

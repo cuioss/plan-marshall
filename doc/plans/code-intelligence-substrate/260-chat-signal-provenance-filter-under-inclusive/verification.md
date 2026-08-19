@@ -19,7 +19,7 @@ run-report record (the build gate) is stale against the PR's own history.
 | # | Deliverable (short) | Report claim | Ground truth | Verdict |
 |---|---|---|---|---|
 | D1 | GATE: enumerate survivors by provenance; publish the marker inventory; record the allow-list decision | "Done" — inventory published in the aspect contract; reproduction re-measured first-party | Inventory published at `chat-history-analysis.md:54-73`, with the "cannot be completed by enumeration" finding and the allow-list rationale at `_chat_provenance.py:55-64`. Reproduction independently re-derived on a live transcript and on the shipped fixtures | CONFIRMED |
-| D2 | Provenance filter matches the positive-predicate shape; "by construction" corrected in lock-step | "Done" — `is_operator_authored` replaces the two-class negation list; all three "by construction" sites gone | `_chat_provenance.py:180-206` implements the positive predicate; zero `by construction` occurrences remain in the three chat files or their tests; the contract states why it must never be said (`chat-history-analysis.md:81`). **But** an envelope containing an unmatched same-name open tag leaves residue and reads as operator, falsifying the published failure-direction guarantee | PARTIAL |
+| D2 | Provenance filter matches the positive-predicate shape; "by construction" corrected in lock-step | "Done" — `is_operator_authored` replaces the two-class negation list; all three "by construction" sites gone | `_chat_provenance.py:180-206` implements the positive predicate; zero `by construction` occurrences remain in the three chat files or their tests; the contract states why it must never be said (`chat-history-analysis.md:81`). **But** an envelope whose body carries an unbalanced token of its own outermost tag name — an unmatched open, or a close that terminates it early — leaves residue and reads as operator, falsifying the published failure-direction guarantee | PARTIAL |
 | D3 | Verdict stops being volume-derived; two counters; gate channel visible | "Done" — `operator_turn_count` + `gate_decision_count`, `no_signal` reads only those | `extract-chat-signal.py:302` (`no_signal = not reduction.has_operator_signal`), `:125-127`, `:239-247`; gate recovery in `_chat_gate_decisions.py:85-107` under role `operator-decision`; `reduced + dropped == raw` preserved | CONFIRMED |
 | D4 | Tests (a)–(c) plus the discriminating regression | "160 tests across six modules (34+14+22+17+20+53), 303 assertions"; discriminating regression fails pre-fix | Re-derived: 160 collected, per-module counts match exactly, 303 `assert` statements. All named tests exist. Pre-fix/post-fix fixture measurements reproduce exactly | CONFIRMED |
 
@@ -37,8 +37,8 @@ run-report record (the build gate) is stale against the PR's own history.
   - Inventory table: `marketplace/bundles/plan-marshall/skills/plan-retrospective/references/chat-history-analysis.md:54-67`,
     six classes with "reaches the reducer as" / "recognised by" columns, followed by the
     cannot-be-enumerated finding at `:67` and the residual gap at `:69-73`.
-  - Allow-list decision recorded, not re-argued: `_chat_provenance.py:55-64` (`OPERATOR_BEARING_TAGS`)
-    and `chat-history-analysis.md:44`.
+  - Allow-list decision recorded, not re-argued: `_chat_provenance.py:54-64` (the rationale comment
+    plus the `OPERATOR_BEARING_TAGS` binding at `:64`) and `chat-history-analysis.md:44`.
   - Threshold untouched: `DEFAULT_READ_BUDGET_BYTES = 2 * 1024 * 1024` at `extract-chat-signal.py:94`
     is byte-identical to the pre-fix value (`git show 8a11858^:…:96`).
 - **Checks run:**

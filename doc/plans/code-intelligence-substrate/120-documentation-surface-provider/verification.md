@@ -1,17 +1,18 @@
 # Verification — 120-documentation-surface-provider
 
 **Audited:** `plan.md`, `report-01.md` (the only two files in the plan directory)
-**Tree state:** `0beb095` on `claude/code-intelligence-substrate-analysis-kah884` (HEAD advanced from
-`61a43e5` to `0beb095` during the audit through concurrent sibling sessions; every production file
-named below was byte-identical to my own snapshots at the end of the audit, so no finding depends on
-the move)
+**Tree state:** `0beb095` on `claude/code-intelligence-substrate-analysis-kah884` for the original
+audit; every corpus figure below was **re-measured at HEAD `a90adeb`** during adversarial review, and
+the figures that moved (doc-file count, `files_scanned`, inventory totals) moved only because the
+audit's own documents joined the corpus they measure.
 **Overall verdict:** CONFIRMED WITH GAPS
 
 The plan landed as PR [#1201](https://github.com/cuioss/plan-marshall/pull/1201), squash-merged as
 `28cce1b feat(pm-documents): documentation domain owns its corpus (#1201)`. All five deliverables
 exist and four of them are live-verified against the real repository crawl. D4 ships a
-false-positive class that its own contract forbids, and the suppression note it emits mis-counts the
-population it reports on.
+false-positive class that its own contract forbids. The suppression note that under-counts its
+population is a **shared-substrate** defect this plan surfaced rather than caused — the deduplication
+behind it is mandated by the `component_refs` schema and pinned by a shipped test.
 
 ## Deliverable verdicts
 
@@ -361,11 +362,12 @@ does not list it and a `diff -q` against the snapshot is clean.
 
 Claims in `report-01.md` that no longer hold against the tree now:
 
-1. > "**Zero false positives across 803 real references** (see Findings)."
-   > "Re-measured: still 0 unresolved over 803 references."
+1. > "**Zero false positives across 803 real references** (see Findings)." (`report-01.md:39`)
+   > "Re-measured: still 0 unresolved over 803 references." (`:50`)
+   > "Re-measured: **0 unresolved over 803 real references**" (`:56`)
 
-   Re-derived now: **841** references over 407 doc files, **18** reported unresolved, of which **10**
-   are false positives. The 803/0 figures were plausibly true on 2026-08-13 —
+   Re-derived now: **842** references over **479** doc files, **18** reported unresolved, of which
+   **10** are false positives. The 803/0 figures were plausibly true on 2026-08-13 —
    `doc/plans/test-quality/findings-test-corpus-review.md`, which carries all 10 false positives, was
    added on 2026-08-15 by PR #1242 (`git log --diff-filter=A`), after this plan merged. But the
    *engine defect* was shipped by this plan, and the claim as written is a general property claim

@@ -51,8 +51,15 @@ engineering, so they are recorded in `verification.md` rather than filed as gaps
   `module_edges` record does not claim `not_derivable` while `derived_count > 0`; and the handler
   docstring's state enumeration matches the states the code can emit.
 - **Effort:** M
-- **Risk if fixed:** `capabilities` is consumed by feasibility/anti-vacuity guards
-  (`test_feasibility_underivable_guard.py` derives "underivable" from `resolver_count > 0`); widening
+- **Risk if fixed:** ⛔ **An existing test pins the defective reading and must be revisited in the same
+  change.** `test/plan-marshall/manage-architecture/test_derivation_resolver_configuration.py:249-269`
+  (`test_capabilities_reports_not_derivable_when_every_resolver_is_disabled`) asserts
+  `edges['status'] == 'not_derivable'` for the all-disabled case, and its docstring states the
+  generalisation this gap refutes — "Disabling every resolver leaves the envelope genuinely unable to
+  derive edges." The assertion is only true because its fixture (`_seed_triple`, `:85-99`) seeds modules
+  with no declared `internal_dependencies`; the test must be re-scoped to that precondition rather than
+  deleted. Beyond it: `capabilities` is consumed by feasibility/anti-vacuity guards
+  (`test_feasibility_underivable_guard.py:93` derives "underivable" from `resolver_count > 0`); widening
   `status` without widening those readers could flip a guard that currently keys on the resolver
   population alone. The `producer_count` field must keep its resolver-scoped meaning or
   `test_capabilities.py` and the four handler docstrings drift again.

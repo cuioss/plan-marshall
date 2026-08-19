@@ -289,10 +289,16 @@ independently), so the property is guarded only by the roster-closure detector.
 - **Why it matters:** the report is the record a retrospective and any follow-up plan reads; as
   written it certifies a completed migration and a per-spawn regression test, so the two live
   pre-seam sites read as already handled.
-- **Action:** amend the D2 section to say "four of the six finalize dispatch sites (SKILL.md);
-  `finalize-step-simplify.md` and `pre-submission-self-review.md` were not migrated", and state that
-  the per-spawn property is guarded by roster-closure check (e) rather than by the named seam test.
-- **Done when:** the report's D2 section names the unmigrated sites and attributes the N>1 guard to
-  check (e); this file's G1/G2/G7 cross-reference it.
+- **Action:** the report is a dated record of one execution, so **do not rewrite the original
+  claims**. Append a short "Correction (post-landing audit)" note at the end of the § "D2" section
+  stating: (i) four of the six finalize dispatch sites were migrated — all four in `SKILL.md` —
+  while `finalize-step-simplify.md:113` and `pre-submission-self-review.md:194` were not; and (ii)
+  the per-spawn property is guarded by roster-closure check (e), not by
+  `test_finalize_dispatch_emits_one_line_per_spawn`, which passes against the pre-migration document
+  state.
+- **Done when:** `report-01.md` § "D2" carries an appended correction note naming both unmigrated
+  sites and attributing the N>1 guard to check (e), with the original sentences left intact; G1/G2/G7
+  in this file are cross-referenced from it.
 - **Effort:** S
-- **Risk if fixed:** none — the report is a dated record; amending it does not change behaviour.
+- **Risk if fixed:** none behavioural. The only risk is method: rewriting rather than appending would
+  destroy the record of what the run actually claimed, which is the input a retrospective needs.
