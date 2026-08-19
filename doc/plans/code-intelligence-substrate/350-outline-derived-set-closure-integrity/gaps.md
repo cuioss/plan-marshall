@@ -40,11 +40,13 @@ being codified anywhere a later run would find it (G17).
   reader would rely on rather than re-deriving. Two documented corrections — one of them a correction
   the same run's own contract-change proposal is about — were destroyed by the recovery step and the
   destruction is asserted not to have happened.
-- **Action:** Replace the paragraph with the re-derived figures: run 01 pushed 11 commits; 9 were
-  rebased; `f614b9a` and `33392fd` were not, and their content is restored by G2 and G3. Name
-  `origin/claude/derived-set-closure-integrity-g7n8x2` as the surviving source.
+- **Action:** Replace the paragraph with the re-derived figures: run 01's branch carries 11 commits
+  above `eb0124c`; 9 reached the branch under review; `f614b9a` and `33392fd` did not, and their
+  content is restored by G2 and G3. Name `origin/claude/derived-set-closure-integrity-g7n8x2` as the
+  surviving source, and state that the mechanism (a rebase that dropped them, or a fetch that
+  predated their push) is not recoverable.
 - **Done when:** `report-02.md` § "How run 01's work was recovered" states 11 and 9, names the two
-  dropped commits, and no longer claims every tree was preserved.
+  commits that did not carry over, and no longer claims every tree was preserved.
 - **Effort:** S
 - **Risk if fixed:** None — a documentation record.
 

@@ -219,6 +219,21 @@ touched.
 other eight rows — several mutate test-adjacent constants rather than `_invariants.py`, and three
 independent exact matches are sufficient evidence that the matrix was measured rather than asserted.
 
+**Union of the three red sets I ran: 11 of 19, not 15.** Named, so the figure is checkable — M1 reds
+are `test_invariants_main_resolution.py::{main_repo_root_resolves_to_main_from_pinned_worktree_cwd,
+main_repo_root_returns_none_outside_a_git_repository,
+capture_main_sha_records_main_head_not_the_pinned_worktree_head,
+capture_main_dirty_reads_main_not_the_pinned_worktree, a_commit_less_feature_branch_is_captured_not_refused,
+summariser_sees_no_main_sha_drift_across_the_execute_boundary}`; M2 reds are
+`test_invariants_main_capture_refusal.py::{refuses_when_both_columns_resolved_to_the_same_tree,
+the_gate_is_the_persisted_path_not_the_use_worktree_flag,
+cmd_capture_returns_structured_refusal_and_writes_no_row,
+cmd_verify_returns_the_same_refusal_rather_than_raising}`; M3 reds are
+`a_commit_less_feature_branch_is_captured_not_refused` (shared with M1) and
+`permits_equal_shas_when_the_two_trees_are_distinct`. The report's "union 19 of 19" is a claim about
+its **eleven** mutations, not about these three, and must not be read across — see § Negative results,
+where an earlier draft of this document did exactly that.
+
 **One test gap:** `test_main_repo_root_honours_base_dir_override:154` pins only the *canonical* override
 shape (`<root>/.plan/local` → `<root>`). The **flat** override shape — the one that returns `Path.cwd()`
 and produces the defect in § Correctness review 1 — has no test in either direction. Folded into G1.

@@ -150,26 +150,32 @@ found sound:
 - The `Path.cwd()` fallback on `WorktreeResolutionError` (`:415-418`) is pre-existing and is
   documented as a real limitation at `SKILL.md:429` rather than papered over.
 
-**One latent divergence found, not a live bug** (recorded as G9): the producer's stamp predicate is a
+**One latent coupling found, not a live bug** (recorded as G9): the producer's stamp predicate is a
 **prefix** allow-list (`_BUILD_CLASS_PREFIXES`, four `plan-marshall:build-*:` prefixes) while the new
-consumer's classifier is an **exact-key** map (`_BUILD_NOTATIONS`, four full notations). I computed
-the difference from the repository's own roster helper:
+consumer's classifier is an **exact-key** map (`_BUILD_NOTATIONS`, four full notations).
+
+⛔ **My original arithmetic here was wrong and is corrected by adversarial review.** I labelled the
+nine-element *prefix-matching* population "DOMAIN (stampable)" and reported a five-element
+divergence. Stampable is a **conjunction** — prefix ∧ subcommand ∈ `_BUILD_EXECUTING_SUBCOMMANDS`
+(`{'run'}`) — as the executor template's own comment states at `:311-313` (*"It is NOT sufficient on
+its own"*). Re-derived from `test/_shared/_build_class_roster.py`:
 
 ```text
-DOMAIN (stampable):  build-gradle:extension, build-gradle:gradle, build-maven:extension,
+PREFIX-MATCHING (not stampable): build-gradle:extension, build-gradle:gradle, build-maven:extension,
                      build-maven:maven, build-npm:extension, build-npm:js_coverage,
-                     build-npm:npm, build-pyproject:extension, build-pyproject:pyproject_build
-KNOWN (classifiable): build-gradle:gradle, build-maven:maven, build-npm:npm,
-                     build-pyproject:pyproject_build
-DIVERGENCE:          build-gradle:extension, build-maven:extension, build-npm:extension,
-                     build-npm:js_coverage, build-pyproject:extension
+                     build-npm:npm, build-pyproject:extension, build-pyproject:pyproject_build   (9)
+STAMPABLE (roster):  build-gradle:gradle, build-maven:maven, build-npm:npm,
+                     build-pyproject:pyproject_build                                             (4)
+KNOWN (classifiable): the identical four                                                         (4)
+DIVERGENCE:          EMPTY, in both directions
 ```
 
-None of the five registers a `run` subcommand today (`run` is contributed only by
+That the five non-wrapper scripts register no `run` subcommand (`run` is contributed only by
 `script-shared/scripts/build/_build_cli.build_main`, and `js_coverage.py:281` registers `analyze`
-only), so nothing stamps a row the cross-check would refuse. But the coupling is new, undocumented
-and untested: before this plan an unclassifiable build notation was harmless; now it makes the gate
-refuse **every** transition in the project.
+only) is therefore not a mitigating footnote — it is the reason they are **outside** the stampable
+domain in the first place, so no divergence exists today. The coupling is nonetheless new,
+undocumented and untested: before this plan an unclassifiable build notation was harmless; a future
+one would make the gate refuse **every** transition in the project.
 
 ## Test adequacy
 
