@@ -765,7 +765,8 @@ root-scoped module*" — and **D3 does not meet it.** That trigger is a conjunct
 only the first half: it makes the harvest resolve imports, and changes nothing about the module set.
 Re-derived: `build_lsp_component_refs` has exactly one non-test caller, `plugin_discover.py`, whose
 `module_paths` come from `build_bundle_module` and are always `marketplace/bundles/{name}` or the
-bare bundle name — never `.`. D3's own ⛔ forbids the change that would touch path attribution.
+bare bundle name — never `.`. That fact alone settles it; D3 could not put a root-scoped module into
+`module_paths` whatever else it did.
 
 An earlier draft of this plan raised G13 to high and justified it on that trigger. The justification
 was false, and it quoted the refuting fact one sentence earlier. It is withdrawn; **the reason to
@@ -807,5 +808,7 @@ cited entries rather than trusting this line.
 | D6 | `220-resolver-configuration` | G9 | low |
 | D6 | `020-corpus-residency-admission-control` | G12 | low |
 
-Totals: high 3+1+3+2+2 = 11; medium 4+2+4+3+2 = 15; low 2. ⛔ Re-derive these totals against the table
-rather than trusting the arithmetic here.
+Totals: high 3+1+2+2+2 = 10; medium 4+3+4+3+2 = 16; low 2 — twenty-eight, matching the lead-in above
+and the entries themselves. ⛔ Re-derive these totals against the table rather than trusting the
+arithmetic here; an earlier revision left this line carrying the addends of a withdrawn severity
+raise, contradicting its own table twenty lines up.

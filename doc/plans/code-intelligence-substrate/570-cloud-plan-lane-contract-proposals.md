@@ -108,8 +108,8 @@ Re-derive each at the moment you state it, and record the command and the ref yo
      table, § Step 5 (build gate), § Step 7 (PR cycle), § Step 8 (merge gate, and the numbering of its
      conditions), § Step 9 (the contract-check table, the three-claim-class block, and "What have we
      learned"), and § Report.
-   - `doc/plans/cloud-bridge.md` — § Path 3 step 1 and § Status vocabulary, which **P8** targets and
-     which live in this file rather than in the skill.
+   - `doc/plans/cloud-bridge.md` — § Path 2 — Sync (targeted by **P2**), and § Path 3 step 1 and
+     § Status vocabulary (targeted by **P8**). These live in this file rather than in the skill.
 
    Record each section's **current** heading and line range. The anchors this plan quotes were true
    when it was authored and the files have been renumbered before — one open proposal is unapplicable
@@ -117,9 +117,14 @@ Re-derive each at the moment you state it, and record the command and the ref yo
    ⛔ **If either file cannot be read, HALT** for the proposals that target it: report the run blocked,
    naming the file, and write only the proposals whose anchors you did derive. Do not write a proposal
    against a document you could not open, and do not reconstruct its numbering from this plan.
-   ⛔ **Do not assume every proposal edits the skill.** P1–P7 do; **P8 does not** — it edits
-   `cloud-bridge.md`. A run that derives anchors only from the skill cannot satisfy D1's
-   quoted-against-a-derived-anchor requirement for P8.
+   ⛔ **Do not assume every proposal edits the skill, and do not trust a partition stated here.**
+   **P8** edits `cloud-bridge.md` only; **P2** proposes an edit to § Report in the skill *and/or* to
+   `cloud-bridge.md` § Path 2 — Sync, so it straddles both. A run that derives anchors only from the
+   skill cannot satisfy D1's quoted-against-a-derived-anchor requirement for either.
+   **Derive the target set by reading each proposal below and recording the file and section it
+   names — do not carry this sentence forward as the answer.** An earlier revision of this block
+   asserted a clean P1–P7 / P8 split and was falsified by P2 one proposal over; the list in (a) is a
+   starting point, not a closed enumeration.
    (b) **The target census.** For each source plan named in § Gap coverage, record one of three states:
    `present` (the directory exists and the quoted defective text is still there), `already corrected`
    (the directory exists and the text has changed), or `collected` (the directory is gone — a landed
