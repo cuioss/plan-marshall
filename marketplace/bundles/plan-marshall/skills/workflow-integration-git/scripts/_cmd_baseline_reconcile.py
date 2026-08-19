@@ -5,9 +5,13 @@
 Fetches the upstream tip, walks the commits landed on
 ``origin/{base_branch}`` since the **merge-base of HEAD and
 ``origin/{base_branch}``**, and runs ``git merge-tree`` to detect
-potential merge conflicts. This is a **non-mutating classifier on every
-path**: it never moves the branch ref, never performs a real merge, and
-never modifies the working tree. Each upstream commit and each conflicted
+potential merge conflicts. It never moves the branch ref on any
+path, never performs a real merge, and never modifies the working tree. It is
+NOT side-effect-free: on the stale-base path — when the configured
+``base_branch`` no longer resolves on origin — it rewrites ``base_branch`` in
+``references.json`` and emits a decision-log entry, before the fetch and
+ungated by ``--no-emit`` (which suppresses Q-Gate findings only). That write is
+reported as ``base_branch_updated`` / ``original_base_branch``. Each upstream commit and each conflicted
 file is surfaced in the return TOON; with ``--emit`` an equivalent Q-Gate
 finding is appended under ``--source qgate`` so the phase-2-refine
 iterate-to-confidence loop consumes the result via the existing
@@ -150,8 +154,9 @@ def _resolve_head(worktree_path: str) -> tuple[str, bool]:
 
     Used both to compute the anchor and as the reference point for the
     non-mutation guard: HEAD is captured before the probe and re-read after
-    it, and any change is a contract violation (this is a classifier that
-    performs no writes).
+    it, and any change is a contract violation (this classifier writes no
+    REFS and no working-tree files — see the module docstring for the one
+    persisted write it does make, to ``references.json``).
     """
     rc, stdout, _ = run_git(['-C', worktree_path, 'rev-parse', 'HEAD'])
     if rc != 0 or not stdout.strip():
@@ -371,9 +376,12 @@ def _detect_merge_conflicts(
 def cmd_baseline_reconcile(args) -> dict:
     """Mechanical baseline reconciliation for phase-2-refine Step 3d.
 
-    A **non-mutating classifier**: it computes the merge-base anchor, lists the
-    upstream and in-flight sets against it, and runs a tree-level merge-tree —
-    it never moves the branch ref on any classification. The orchestrator
+    It computes the merge-base anchor, lists the upstream and in-flight sets
+    against it, and runs a tree-level merge-tree — never moving the branch ref
+    on any classification, and never touching the working tree. Its one
+    persisted write is the stale-``base_branch`` auto-update (see
+    :func:`_maybe_auto_update_stale_base_branch`), reported back as
+    ``base_branch_updated`` / ``original_base_branch``. The orchestrator
     parses the return TOON: ``upstream_commits`` is the set of commits the
     branch is behind by (anchored on ``merge-base(HEAD, origin/{base_branch})``,
     each entry carrying its touched files); ``conflicts`` is the list of files
@@ -426,8 +434,8 @@ def cmd_baseline_reconcile(args) -> dict:
                 'base_branch': base_branch,
             }
 
-    # D3 non-mutation guard: capture HEAD before the probe. This is a
-    # classifier that performs no writes, so HEAD must be byte-for-byte
+    # D3 non-mutation guard: capture HEAD before the probe. This classifier
+    # moves no refs, so HEAD must be byte-for-byte
     # identical when the probe returns — checked below, before the payload is
     # built. A regression that reintroduces a ref move is then caught HERE, at
     # the probe, rather than discovered later at the landing.
@@ -539,7 +547,7 @@ def cmd_baseline_reconcile(args) -> dict:
                 findings_emitted += 1
 
     # D3 non-mutation guard: HEAD must be unchanged by a classifier that
-    # performs no writes. If it moved, the probe cannot be trusted to have
+    # moves no refs. If it moved, the probe cannot be trusted to have
     # classified the state it reported, so it fails LOUD here rather than
     # returning a verdict derived from a tree it silently mutated. This takes
     # precedence over every other outcome, including a persist failure — a

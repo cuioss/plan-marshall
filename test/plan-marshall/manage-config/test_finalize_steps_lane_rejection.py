@@ -31,9 +31,22 @@ Covered here:
 - The CLI reaches the handler at all: with an argparse ``choices=`` still in
   place, ``--lane minimal`` would die at exit 2 and no handler message could ever
   be seen.
+- **The canonical-invocations block still names the writer's value set.** Removing
+  ``choices=`` did not only change where the refusal comes from — it silently
+  retired a live binding. The ``canonical-enum-choices-drift`` plugin-doctor rule
+  reads a documented ``{a|b|c}`` enum in a skill's ``## Canonical invocations``
+  block and compares it against the flag's argparse ``choices=``; with no
+  ``choices=`` to resolve, that analyzer takes its fail-closed no-authority branch
+  and SKIPs. It reports clean over a flag it no longer examines. This module
+  replaces the lost binding directly, so the documented enum stays checked rather
+  than becoming an unbound restatement — the exact defect class the plan this test
+  belongs to exists to close, and ``set-lane --lane`` was that rule's own driving
+  example.
 """
 
+import re
 from argparse import Namespace
+from pathlib import Path
 
 from _manage_config_fixtures import SCRIPT_PATH, create_marshal_json
 
@@ -165,4 +178,91 @@ def test_cli_reaches_the_handler_instead_of_dying_at_argparse(plan_context):
     )
     assert _ROUTE_MARKER in combined, (
         f'the CLI refusal does not name the `{_ROUTE_MARKER}` route: {combined}'
+    )
+
+
+# ---------------------------------------------------------------------------
+# The canonical-invocations block, bound in place of the retired analyzer check
+# ---------------------------------------------------------------------------
+
+#: The skill doc whose ``## Canonical invocations`` block documents the verb.
+_MANAGE_CONFIG_SKILL = (
+    Path(__file__).parents[3]
+    / 'marketplace' / 'bundles' / 'plan-marshall' / 'skills' / 'manage-config' / 'SKILL.md'
+)
+
+#: The documented ``--lane {a,b,c}`` enum inside the canonical ``set-lane`` block.
+_DOCUMENTED_LANE_ENUM = re.compile(r'--lane\s*\{([^}]+)\}')
+
+
+def _documented_lane_values() -> list[str]:
+    """The values the canonical `set-lane` invocation block documents for `--lane`.
+
+    Anchored to the ``### finalize-steps set-lane`` section so a ``--lane`` enum
+    documented for some other verb cannot be read in its place.
+    """
+    text = _MANAGE_CONFIG_SKILL.read_text(encoding='utf-8')
+    section = re.search(
+        r'^### finalize-steps set-lane$(.*?)(?=^### |\Z)', text, re.MULTILINE | re.DOTALL
+    )
+    assert section, (
+        f'{_MANAGE_CONFIG_SKILL.name} carries no "### finalize-steps set-lane" canonical '
+        f'section, so the documented enum cannot be located and this binding would be vacuous.'
+    )
+    match = _DOCUMENTED_LANE_ENUM.search(section.group(1))
+    assert match, (
+        'The canonical set-lane block documents no `--lane {…}` enum. If the enum was '
+        'deliberately removed, remove this binding too — but do not leave the block naming '
+        'values that nothing checks.'
+    )
+    return [value.strip() for value in match.group(1).split(',') if value.strip()]
+
+
+def test_the_documented_enum_is_locatable():
+    """Anti-vacuity: the extraction must find something for the equality to mean anything."""
+    assert _documented_lane_values(), 'no values extracted from the canonical block'
+
+
+def test_the_section_anchor_excludes_a_neighbouring_verbs_enum(tmp_path):
+    """The extraction is section-anchored, not first-match in the file.
+
+    Without the anchor a ``--lane`` enum documented for any other verb earlier in
+    the file would be read instead, and the equality below would compare the
+    writer set against an unrelated block — green or red for the wrong reason.
+    """
+    doc = tmp_path / 'SKILL.md'
+    doc.write_text(
+        '### some-other-verb\n\n```bash\nx --lane {alpha,beta}\n```\n\n'
+        '### finalize-steps set-lane\n\n```bash\ny --lane {off,standard,full}\n```\n',
+        encoding='utf-8',
+    )
+    section = re.search(
+        r'^### finalize-steps set-lane$(.*?)(?=^### |\Z)',
+        doc.read_text(encoding='utf-8'),
+        re.MULTILINE | re.DOTALL,
+    )
+    assert section
+    match = _DOCUMENTED_LANE_ENUM.search(section.group(1))
+    assert match and match.group(1) == 'off,standard,full', (
+        'the anchored extraction picked up a neighbouring verb\'s enum'
+    )
+
+
+def test_canonical_block_enum_equals_the_writer_set():
+    """The documented `--lane` enum equals the values this verb actually writes.
+
+    This is the assertion the ``canonical-enum-choices-drift`` analyzer used to
+    make from ``choices=``. That flag no longer declares one, so the analyzer takes
+    its fail-closed no-authority branch and SKIPs — leaving the documented enum
+    bound to nothing, which is a hand-maintained mirror of a Python constant and
+    precisely what that rule exists to catch.
+    """
+    documented = _documented_lane_values()
+
+    assert documented == list(_RESOLVED_ASK_LANE_VALUES), (
+        f'The canonical `finalize-steps set-lane` block documents `--lane '
+        f'{{{",".join(documented)}}}` while the verb writes '
+        f'{list(_RESOLVED_ASK_LANE_VALUES)}. The `## Canonical invocations` block is read as '
+        f'SOURCE OF TRUTH by other consumers, so a divergence here sends a caller to a value '
+        f'the handler refuses — or hides one it accepts.'
     )

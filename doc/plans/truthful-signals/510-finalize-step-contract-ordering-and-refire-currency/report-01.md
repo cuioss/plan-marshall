@@ -247,7 +247,61 @@ The fix removed the restatement rather than the import: the help string now inte
 
 ## Findings
 
-_pending_
+One row per instance. Source is the verification round that raised it.
+
+### Round 1 — the pre-PR verification sub-agent
+
+The verifier independently re-derived populations (a), (b) and (d), **executed** the resolver three
+ways and the manage-config CLI, re-derived every character count and the Settle occupancy, read the
+`baseline-reconcile` implementation and `_cmd_step`, ran 3246 tests, and read every new guard for
+vacuity. It reported the new guards non-vacuous. Ten findings:
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| F1a | round 1 | `ext-point-finalize-step.md` § Declared obligations — `default:branch-cleanup`'s union cell omits the `merge_state` D7.3 added | **fixed** — cell updated, consumer question added |
+| F1b | round 1 | Same table has no row for `default:create-pr`, which now declares `records_facts: [pr_number]` | **fixed** — row added |
+| F2a | round 1 | `ext-point-finalize-step.md:48` still says the agreement is "enforced in BOTH directions"; the same file now says three scopes | **fixed** — row states the three surfaces |
+| F2b | round 1 | `phase-6-finalize/SKILL.md`'s dispatch paragraph says the guard "fails the build when a declared field is not carried" — precisely the behaviour D3.1 removed, sitting beside the template's own declared-field slot | **fixed** — rewritten to the three-surface form, naming the generic-template case as correct rather than a failure |
+| F3 | round 1 | D4's new paragraph said `standard`/`full` "pin its tier". The canonical transform maps every value other than `off`/`minimal` → `auto`, so `full` does **not** force a gate in | **fixed** — the transform is stated as the canonical states it |
+| F4 | round 1 | The same paragraph told the operator to run `step set --step-id pre-push-quality-gate`, which **errors** (`Step 'pre-push-quality-gate' not found`); the seeded key is `default:pre-push-quality-gate`. Verified by execution | **fixed at all three sites** — `configuration.adoc`, and the two upstream sources carrying the same unprefixed id (`manage-config/SKILL.md` twice, `manifest-schema.md`). The transform's own constant is `_QGATE_OWNER_STEP = 'default:pre-push-quality-gate'` |
+| F5a | round 1 | `test_manage_execution_manifest_validate.py:431-432` — fixture annotations `architecture-refresh # order 25` (real 10) and `finalize-step-preference-emitter # order 61` (real 992); a test fixture hardcoding retired values that still passes | **fixed** — both annotations corrected and the list re-sorted so its ascending presentation is true |
+| F5b | round 1 | `test_validate_loadable.py:311` docstring — "sits pre-merge at order 61 (the settle band)" | **fixed** — post-merge, order 992, post-run-review band |
+| F5c | round 1 | `decision-rules.md:463` — "moved the step to its pre-merge `order: 61`", read as current placement | **fixed** — marked historical, with today's order stated |
+| F6a | round 1 | **Behavioural.** Removing `choices=` from `--lane` (D4.3) silently retired a live binding: `canonical-enum-choices-drift` takes its fail-closed no-`choices=` branch and SKIPs, so `manage-config/SKILL.md`'s documented `{off,standard,full}` became an unbound restatement — and this flag was that rule's own driving example | **fixed, not characterised** — the binding is replaced directly by `test_canonical_block_enum_equals_the_writer_set`, section-anchored, with an anti-vacuity companion and a neighbouring-verb control. Mutation-confirmed: reintroducing the historical `{off,auto,full}` drift turns it red |
+| F6b | round 1 | `rule-provenance.md:242` says in the present tense "`choices=` **is** `{off,standard,full}`" | **fixed** — past tense, plus a note that the flag now declares none and where its binding lives |
+| F7 | round 1 | D6's Done-when ("no document claims the probe writes nothing") unmet in the owning script: five prose sites in `_cmd_baseline_reconcile.py` claim "performs no writes" / "non-mutating classifier" | **fixed** — all five narrowed to what the probe guarantees (moves no refs, touches no working tree) with the persisted `references.json` write named. `grep -c "performs no writes"` → 0 |
+| F10a | round 1 | `test_verdict_currency.py` ended the refusal-heading guard with `assert level, …` — a tautology (the regex guarantees 1–6 `#`) whose message reads as success text in a failure slot | **fixed** — replaced with a real level-set check |
+| F10b | round 1 | A paraphrase of `ext-point-execution-context-workflow.md` was presented inside quote marks, in two places | **fixed** — de-quoted; the claim is unchanged and remains true |
+| F10c | round 1 | `test_the_three_scopes_publish_their_populations` claims to publish counts and prints nothing | **fixed** — renamed to what it asserts (own-block population is a proper, non-empty subset), and the module docstring's item (6) updated to match |
+| F8 | round 1 | Collateral check and report sections unfinished | **fixed** — § Collateral check below; the report's remaining sections completed |
+| F9 | round 1 | D5's Done-when clause "every `effort resolve-target` in the former dispatch-site files carries `--workflow`" is not literally met | **rejected, with reason** — see § Collateral check |
+
+### Collateral check (Verification §6)
+
+Changed files outside § Expected surface, each explained:
+
+| File | Why |
+|---|---|
+| `marketplace/.../manage-config/SKILL.md` | D4.3 consequence: the canonical `set-lane` block documents the refusal, and its registry row carried a stale `off`/`auto`/`full` enum and an unprefixed owning-step id (F4). Also the surface the F6a binding now checks |
+| `marketplace/.../manage-execution-manifest/standards/manifest-schema.md` | F4 — the third site carrying the unprefixed `pre-push-quality-gate` owning-step id |
+| `marketplace/.../manage-execution-manifest/standards/decision-rules.md` | F5c — the third `order 61` restatement, in the bundle 300/G9 edits |
+| `marketplace/.../plugin-doctor/references/rule-provenance.md` | F6b — its present-tense `choices=` claim is falsified by D4.3 |
+| `test/plan-marshall/manage-config/test_cmd_ceremony_policy.py`, `.../test_manage_config_cli.py` | D4.3 consequence: both pinned the argparse exit-2 rejection D4.3 replaces. Re-pinned to `status: error` + the routed message |
+| `test/plan-marshall/manage-config/test_finalize_steps_lane_rejection.py` (new) | D4.3's own contract test, plus the F6a replacement binding |
+| `test/plan-marshall/phase-6-finalize/test_loop_back_outcome.py` | D8 / 440-G2 consequence: it pinned the superseded "Re-fire (HEAD has advanced)" wording. Re-pinned to the deferral |
+| `test/plan-marshall/manage-execution-manifest/test_manage_execution_manifest_validate.py`, `.../test_validate_loadable.py` | F5a/F5b — stale order annotations in the bundle 300/G8 edits |
+| `test/plan-marshall/build-pyproject/test_gate_coverage_parity_substrate.py` (new) | D8 / 160-G2's substrate test. § Expected surface anticipates it as "a parity-cell substrate test for D8 / 160/G2" |
+| `.claude/skills/finalize-step-plugin-doctor/SKILL.md` | § Expected surface lists it only as "D2.3 mutation target, restored". It additionally carries a real **D7.1** edit — `reads: [worktree]` — which the surface list did not anticipate |
+
+**F9 — why D5's clause is not literally met, and why that is correct.** The clause reads "every `effort
+resolve-target` in the former dispatch-site files carries `--workflow`".
+`plan-marshall/workflow/planning.md:233` (the light-lane dispatch) is a bare
+`effort resolve-target --role phase-3-outline` and was deliberately left alone: it carried **no**
+hand-written `[DISPATCH]` block, so it was never in population (b). It is a *zero-emission* dispatch
+site — gaps 280/G3 and 280/G7 — which the plan's § Out of scope excludes by name, adding that "D5's
+closing sweep is scoped to the hand-written-emission population and does not claim the dispatch-site
+population is complete." The Out-of-scope section governs; the clause as written overreaches its own
+plan. Recorded rather than silently satisfied.
 
 ## Reviewer participation
 

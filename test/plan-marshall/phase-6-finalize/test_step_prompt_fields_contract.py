@@ -49,9 +49,10 @@ module pins that declaration against every surface that can carry or state it:
     prompt-body-field table marks Required must EQUAL its
     ``requires_prompt_fields``. This is the only direction that reaches a step
     dispatched through the generic template, which is most of the population.
-(6) *(coverage)* The scopes' populations are published side by side, so a reader
-    can see how far (3)/(4) reach rather than inferring whole-population
-    coverage from their quantifiers.
+(6) *(coverage)* The own-block population is asserted to be a PROPER, non-empty
+    subset of the discovered set, so (3)/(4)'s reach is pinned rather than
+    described — the assertion fails if that population empties (making them
+    inert) or becomes the whole set (making this account of them false).
 (7) *(control)* A step whose dispatch body carries only exempt fields
     (``default:finalize-step-simplify``, which carries ``instructions`` in place
     of ``workflow`` — the XOR-alternative in the contract, not a step-specific
@@ -98,8 +99,8 @@ _CONTRACT_FIELDS = frozenset(
 #: reason rather than a stylistic one: a step never carries a dispatcher-inserted
 #: field in its own body, so a declaration naming one could not satisfy the
 #: ∃-direction, which looks for the field exactly there. ``caller_phase`` is
-#: additionally declared by ext-point-execution-context-workflow.md as "the
-#: optional 6th-field extension of the canonical 5-field contract", so treating
+#: additionally declared by ext-point-execution-context-workflow.md to be the
+#: optional 6th-field extension of the canonical 5-field contract, so treating
 #: it as step-specific would contradict a contract that already names it generic.
 _DISPATCHER_SUPPLIED_FIELDS = frozenset(
     {'caller_phase', 'iteration', 'producer', 'session_id'}
@@ -566,13 +567,16 @@ def test_input_table_required_keys_equal_the_declaration():
     )
 
 
-def test_the_three_scopes_publish_their_populations():
-    """(6) State how far each scope reaches, rather than implying full coverage.
+def test_the_first_two_scopes_reach_a_proper_subset_of_the_population():
+    """(6) Pin how far each scope reaches, rather than implying full coverage.
 
     (3) and (4) read a step's own ``prompt:`` block, which most implementors do not
     have — so their quantifiers span a small minority. (5) reads the input table and
-    spans every discovered step. Publishing the three counts is what keeps a green
-    from reading as whole-population coverage of declaration-versus-carriage.
+    spans every discovered step. This test ASSERTS that asymmetry rather than merely
+    describing it: it fails if the own-block population ever becomes empty (making
+    (3)/(4) inert) or ever becomes the whole set (making the module docstring's
+    account of their reach false). The failure message carries the two populations,
+    so a reader who hits it sees the numbers.
     """
     records = find_implementors(_EXT_POINT)
     with_own_block = [

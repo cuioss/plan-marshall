@@ -617,6 +617,13 @@ _REFUSAL_HEADING_RE = re.compile(
 )
 
 
+#: The ATX levels the refusal section legitimately appears at. A project-local
+#: SKILL.md nests it under a section heading (``###``); a standards doc carries it
+#: as a top-level section (``##``). Pinning the SET rather than a single value keeps
+#: the assertion meaningful without forcing both docs into one shape.
+_REFUSAL_HEADING_LEVELS = frozenset({'##', '###'})
+
+
 def _refusal_heading_level(body: str) -> str | None:
     """The ATX level of the refusal heading in ``body``, or ``None`` if absent.
 
@@ -673,7 +680,13 @@ def test_every_tabled_refusal_carries_its_section():
             'The match is anchored to an ATX heading line: a surviving cross-reference to '
             'the other step\'s section does not satisfy it.'
         )
-        assert level, f'{step} matched the refusal heading at level {level!r}'
+        assert level in _REFUSAL_HEADING_LEVELS, (
+            f'{step} carries the refusal section at heading level {level!r}, which is not one '
+            f'of {sorted(_REFUSAL_HEADING_LEVELS)}. The two tabled docs differ legitimately — a '
+            f'project SKILL.md nests it one deeper than a standards doc — but a level outside '
+            f'that set means the section has been re-nested somewhere unexpected, and the '
+            f'cross-references pointing at it are the thing to re-check.'
+        )
 
 
 def test_refusal_heading_match_ignores_a_cross_reference():

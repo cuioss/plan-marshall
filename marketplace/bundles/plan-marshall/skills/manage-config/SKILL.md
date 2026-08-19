@@ -386,7 +386,7 @@ The three surviving lifecycle gates ride the `gate_mode` enum (`auto|always|neve
 | `finalize_without_asking` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field finalize_without_asking` |
 | `loop_back_without_asking` | `plan.phase-6-finalize` | `plan phase-6-finalize get --field loop_back_without_asking` |
 | `final_merge_without_asking` | `plan.phase-6-finalize.steps['default:branch-cleanup']` (step-owned param) | `plan phase-6-finalize step get --step-id default:branch-cleanup` (read `final_merge_without_asking` off `params`) |
-| `qgate` (ceremony, lane) | `plan.phase-6-finalize.steps['pre-push-quality-gate'].lane` | `plan phase-6-finalize step get --step-id pre-push-quality-gate` (read `lane` off `params`) |
+| `qgate` (ceremony, lane) | `plan.phase-6-finalize.steps['default:pre-push-quality-gate'].lane` | `plan phase-6-finalize step get --step-id default:pre-push-quality-gate` (read `lane` off `params`) |
 | `self_review` (ceremony, lane) | `plan.phase-6-finalize.steps['default:pre-submission-self-review'].lane` | `plan phase-6-finalize step get --step-id default:pre-submission-self-review` (read `lane` off `params`) |
 | `simplify` (ceremony, lane) | `plan.phase-6-finalize.steps['default:finalize-step-simplify'].lane` | `plan phase-6-finalize step get --step-id default:finalize-step-simplify` (read `lane` off `params`) |
 | `security_audit` (ceremony, lane) | `plan.phase-6-finalize.steps['default:finalize-step-security-audit'].lane` | `plan phase-6-finalize step get --step-id default:finalize-step-security-audit` (read `lane` off `params`) |
@@ -720,7 +720,7 @@ The three surviving lifecycle gates ride the `gate_mode` enum as flat phase-loca
 | `escalation` | `phase-1-init` | Whether the hard-escalation safety ratchet (explosion / build-break / premise) stays live. `auto` keeps it live; `never` is the explicit full-speed-full-risk opt-in. |
 | `revalidation` | `phase-2-refine` | Whether the premise / narrative-vs-code safety check runs (light lane + deep refine). |
 
-**Finalize ceremony gates (per-element `lane` override, not run-at-all):** the four finalize ceremony gates — `qgate`, `self_review`, `simplify`, `security_audit` — are each governed by their owning step's `steps.<step>.lane` override, resolved by the manifest ceremony transform: `off` → `never`, `minimal` → `always`, and every other accepted lane value (`standard`, `full`, `ask`, or an absent override) → `auto`. Set via `plan phase-6-finalize step set --step-id <owning-step> --param lane --value <value>`. The owning steps are `pre-push-quality-gate` (qgate), `default:pre-submission-self-review` (self_review), `default:finalize-step-simplify` (simplify), `default:finalize-step-security-audit` (security_audit).
+**Finalize ceremony gates (per-element `lane` override, not run-at-all):** the four finalize ceremony gates — `qgate`, `self_review`, `simplify`, `security_audit` — are each governed by their owning step's `steps.<step>.lane` override, resolved by the manifest ceremony transform: `off` → `never`, `minimal` → `always`, and every other accepted lane value (`standard`, `full`, `ask`, or an absent override) → `auto`. Set via `plan phase-6-finalize step set --step-id <owning-step> --param lane --value <value>`. The owning steps are `default:pre-push-quality-gate` (qgate), `default:pre-submission-self-review` (self_review), `default:finalize-step-simplify` (simplify), `default:finalize-step-security-audit` (security_audit).
 
 **Flat phase-1-init recipe-match knobs (under `phase-1-init`):**
 

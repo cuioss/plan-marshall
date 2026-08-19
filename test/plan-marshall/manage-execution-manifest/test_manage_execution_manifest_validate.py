@@ -426,11 +426,11 @@ def test_orchestrator_owned_registry_steps_all_resolve_orchestrator_owned():
 # a non-None frontmatter order, so all participate in the ascending assertion.
 _ORDER_RESOLVABLE_CANDIDATES = [
     'finalize-step-sync-baseline',  # order 3
+    'architecture-refresh',  # order 10
     'push',  # order 11
     'ci-verify',  # order 22
-    'architecture-refresh',  # order 25
-    'finalize-step-preference-emitter',  # order 61
     'branch-cleanup',  # order 70
+    'finalize-step-preference-emitter',  # order 992
     'record-metrics',  # order 998
     'finalize-step-print-phase-breakdown',  # order 999
     'archive-plan',  # order 1100 — the plan-mutating barrier, highest order (terminus)

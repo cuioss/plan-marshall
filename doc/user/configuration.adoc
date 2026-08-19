@@ -188,7 +188,9 @@ The `--plan-id` form exists so an answer you give about one plan does not silent
 | `plan.phase-2-refine.revalidation` | `auto` | Whether the premise / narrative-vs-code safety check runs.
 |===
 
-**The four finalize ceremony gates are not run-at-all keys.** `qgate`, `self_review`, `simplify` and `security_audit` are each set through their owning step's `lane` override — `off` drops the step, `minimal` force-keeps it at the floor (the counterpart of the old `always`), and `standard`/`full` pin its tier — using `step set --step-id <owning-step> --param lane --value <value>`. The owning steps are `pre-push-quality-gate` (`qgate`), `default:pre-submission-self-review` (`self_review`), `default:finalize-step-simplify` (`simplify`) and `default:finalize-step-security-audit` (`security_audit`); the per-element override row is documented in <<execution-profile-lane-selection>>.
+**The four finalize ceremony gates are not run-at-all keys.** `qgate`, `self_review`, `simplify` and `security_audit` are each set through their owning step's `lane` override, using `step set --step-id <owning-step> --param lane --value <value>`. The manifest ceremony transform maps that lane onto the same tri-state the table above uses: `off` → `never`, `minimal` → `always`, and **every other accepted value — `standard`, `full`, `ask`, or an absent override — → `auto`**. So `minimal` is the value that forces a gate in; `full` does not, despite reading like the strongest setting.
+
+The owning steps are `default:pre-push-quality-gate` (`qgate`), `default:pre-submission-self-review` (`self_review`), `default:finalize-step-simplify` (`simplify`) and `default:finalize-step-security-audit` (`security_audit`) — the `default:` prefix is part of the key as seeded, and `step set` rejects the bare name with `Step '<name>' not found in phase-6-finalize`. The per-element override row is documented in <<execution-profile-lane-selection>>.
 
 Read or set the run-at-all gates with the standard phase `get`/`set` verb against the owning phase block; read a ceremony gate through its owning step instead:
 

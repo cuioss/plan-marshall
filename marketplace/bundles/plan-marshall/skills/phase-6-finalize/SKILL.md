@@ -1049,10 +1049,13 @@ FOR each step_id in manifest.phase_6.steps:
            every field the step declares in its `requires_prompt_fields`
            frontmatter — the `<…>` slot above (see
            [`../extension-api/standards/ext-point-finalize-step.md`](../extension-api/standards/ext-point-finalize-step.md)
-           § "Step-specific prompt-body fields"; the both-direction guard
+           § "Step-specific prompt-body fields"; the three-surface guard
            `test/plan-marshall/phase-6-finalize/test_step_prompt_fields_contract.py`
-           fails the build when a declared field is not carried, or a carried
-           field is not declared). The
+           fails the build when a step's input table and its declaration disagree,
+           when a step carries an undeclared field, or when a step that keeps its
+           OWN dispatch body declares a field that body does not carry. A step
+           dispatched through this generic template has no own body, so leaving
+           the carriage to the `<…>` slot above is correct and is not a failure). The
            `[--session-id {session_id}]` runtime input follows the same whitelist
            rule documented under "Interface Contract for External Steps".
 
