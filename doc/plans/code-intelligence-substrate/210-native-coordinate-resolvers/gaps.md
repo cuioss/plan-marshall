@@ -329,8 +329,13 @@ needs its own change.
   (`git rev-list --parents -n 1 87c71d3`), so its diff is the three-dot diff the report's command
   computes. The three uncounted files are ones added after `10` was recorded —
   `test_scoped_module_name_persistence.py` (pass 3 / finding C4) plus the two N14 fixture fixes
-  (`test_cmd_suggest.py`, `test_extension_implementations.py`). The `./pw verify` figures in the same
-  block *were* correctly re-derived (`19716 + 5 = 19721` passed, `740 + 1 = 741` test source files).
+  (`test_cmd_suggest.py`, `test_extension_implementations.py` — both confirmed to carry the
+  `lit:compile` → `lit:runtime` change N14 names). That those three arrived *after* `10` was recorded
+  is inferred from the report's own pass ordering, not observed: the branch was deleted at
+  squash-merge, so no intermediate commit is resolvable in this clone. The `./pw verify` figures in
+  the same block are arithmetically consistent with the N3 correction plus pass 3's additions
+  (`19716 + 5 = 19721` passed, `740 + 1 = 741` test source files) — a consistency check, not a
+  re-measurement; the build was not re-run for this audit.
 - **Why it matters:** It is the one instance of exactly the defect the report's own Step 9 proposal
   is about — a figure observed mid-run and restated at finalization, describing a tree that no longer
   exists. It sits in the section a collector reads to decide whether the build claim covers the

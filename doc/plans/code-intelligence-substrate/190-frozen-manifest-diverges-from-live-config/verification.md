@@ -330,7 +330,7 @@ Not defects (checked and cleared):
 | Deliverable | Covering tests | Evidence of non-vacuity |
 |---|---|---|
 | D2 | `test_reconcile.py` (19) — drop, fail-loud, narrow backfill, canonicalization, fail-closed, converged no-op, compose snapshot | Mutation M2 (below) |
-| D3 | `test_worktree_rebase_executor_refresh.py` (10) — drift/no-drift, noop skip, non-fatal, indeterminate, disk-derived verdict, argv/cwd seam shape, conflict path | Mutation M3 (below) |
+| D3 | `test_worktree_rebase_executor_refresh.py` (10) — drift/no-drift, noop skip, non-fatal, indeterminate, disk-derived verdict, argv/cwd seam shape, conflict path | Mutation M3 (below). ⚠ The disk-derived-verdict test is **non-vacuous but unrepresentative**: it holds only because the fixture worktree starts with an empty executor slot, which no real worktree does (gap G15) |
 | D4b | `test_title_token_repeat_suppression.py` (8) — first set, repeat, state change, owner change, post-clear, aged-out, write-not-suppressed, payload | Mutation M1 (below) |
 | D2 ordering | `test/plan-marshall/phase-6-finalize/test_manifest_loadability_guard.py` — `test_skill_md_reconciles_before_the_loadability_check` asserts `body.index(reconcile…) < body.index(…)`, plus `test_skill_md_names_the_unreconcilable_step_error` and `test_required_steps_md_documents_reconciliation_contract` | Narrative pins; read, not mutated |
 | D4a, D4c | none | Prose-only deliverables; the plan required no test for them |
@@ -354,6 +354,17 @@ afterwards.
   → `landed = True` (revert the F7 fix). Result: `1 failed, 9 passed`;
   `TestSuccessIsDerivedFromDiskNotExitCode::test_generation_exiting_zero_without_landing_a_file_is_not_success`
   → `AssertionError: no executor landed on disk … assert True is False`. **Non-vacuous.**
+
+All three mutations were re-run independently during the adversarial review, from fresh byte
+snapshots in `/tmp/adv-190-mutsweep/`, and reproduced exactly: `1 failed, 7 passed` / `1 failed,
+18 passed` / `1 failed, 9 passed`, each naming the same test. `git status --porcelain` was empty for
+all three files afterwards, and the three files together return to `37 passed`.
+
+- **M4 (added by the adversarial review) — no source mutation; a *fixture* mutation.** Seeding
+  `worktree_executor_path(worktree)` with a file before the rebase, then running the M3 scenario
+  (`drift_status='drift'`, `lands_executor=False`) unchanged: the verb returns
+  `executor_regenerated: True`. The production code is correct-as-written under M3 and wrong under
+  M4, which is what makes M3 a non-vacuous test of an unrepresentative scenario. Gap G15.
 
 One test gap: nothing drives an exception out of the `_run_generate_executor` seam.
 `test_failed_generation_does_not_fail_the_rebase` exercises `generate_rc=1`, not a raise, so the

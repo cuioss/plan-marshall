@@ -205,19 +205,30 @@ plus every hunk of the PR patch for the three scripts.
 - The deletion was purely subtractive in the scripts (`-59`, `-4`, `-81` lines, zero additions), so no
   new logic entered the query path.
 
-One pre-existing correctness-adjacent inconsistency, **not** caused by this run and explicitly carved
-out of it, remains live: `cmd_capabilities` emits `status: 'available' / 'unavailable'` for the
-`content_search` entry (`_cmd_client_handlers.py:246`) while the other two entries emit
-`derivable` / `not_derivable` (lines 231, 239). The `§ capabilities` contract in `client-api.md:1391-1392`
-documents this split correctly, but the **Command Summary** row at `client-api.md:571` does not — it
-promises `derivable`/`not_derivable` for all three including content search. That is a false statement in
-shipped documentation (G1), separate from the vocabulary nit itself (G2).
+Two pre-existing inconsistencies, **neither** caused by this run, remain live in the files it edited:
+
+1. **The `capabilities` status vocabulary** (explicitly carved out of this plan). `cmd_capabilities`
+   emits `status: 'available' / 'unavailable'` for the `content_search` entry
+   (`_cmd_client_handlers.py:246`) while the other two entries emit `derivable` / `not_derivable`
+   (lines 231, 239). The `§ capabilities` contract documents this split correctly at
+   `client-api.md:1392-1393`, but two surfaces above it do not: the entry-shape table at
+   `client-api.md:1386-1390` and the **Command Summary** row at `client-api.md:572`, which promises
+   `derivable`/`not_derivable` for all three including content search. The Command Summary row is a
+   false statement in shipped documentation (G1); the underlying split is the nit itself (G2). The
+   handler's own docstring (`_cmd_client_handlers.py:172-176`) makes the same over-general claim, so
+   the contradiction is in the code as well as the docs — folded into G2's action list.
+2. **A stale hand-maintained mirror in the edited file's module docstring.**
+   `_cmd_client_handlers.py:6-11` enumerates 19 handler names while the file defines 20
+   `def cmd_*` functions; the omission is `cmd_capabilities` (line 142). PR #1214's patch for this
+   file touches only the import block and the deleted 645-731 region, never the docstring, so this
+   dates from plan 130. Filed as G15, and it is a second instance of the mirror-drift class G14
+   exists to detect.
 
 ## Test adequacy
 
 | Deliverable | Covering tests | Status |
 |---|---|---|
-| D1 — wrapped verbs unchanged | `test_graph_queries.py` (`cmd_graph`/`path`/`neighbors`/`impact`), `test_cmd_resolve.py`, `test_cmd_client.py`, `test_find_confident_negative.py`, `test_overview.py` | 163 passed at `61a43e5`; none of these files was modified by PR #1214, so their passing is genuine evidence that only the facade moved |
+| D1 — wrapped verbs unchanged | `test_graph_queries.py` (`cmd_graph`/`path`/`neighbors`/`impact`), `test_cmd_resolve.py`, `test_cmd_client.py`, `test_find_confident_negative.py`, `test_overview.py`, `test_architecture_input_validation.py`, `test_which_module_plan_claim.py`, `test_files_inventory.py` | **573 passed** over the whole `manage-architecture` module at `a90adeb` (superseding the earlier six-file, 163-test run, which did not include the last three files this row names). PR #1214 modified none of them, so their passing is genuine evidence that only the facade moved — and the mutation sweep below shows the coverage is not vacuous |
 | D1 — `lsp` no longer parses | none — asserted by direct CLI invocation here | No regression test guards re-introduction. Not warranted: re-adding the group would require re-adding a parser block, which no existing test would silently permit but which also nothing detects. Recorded as an observation, not a gap — a "verb X must not exist" test is a poor guard shape |
 | D2 — search docs intact | `plugin-doctor quality-gate` (36 rules, structural lint over `SKILL.md`/`client-api.md`) | Clean, but see below |
 | Kept plan-130 behaviour | `test_capabilities.py`, `test_search_content.py`, `test_feasibility_underivable_guard.py` | All in the passing 163 |

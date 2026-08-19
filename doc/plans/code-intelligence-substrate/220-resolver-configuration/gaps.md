@@ -5,9 +5,13 @@ D3 default guard and the roster fail-open guard go red against the defects they 
 one real behavioural defect the four verification rounds did not reach — with every resolver switched
 off, `capabilities` reports `module_edges: not_derivable` on a project whose `graph` verb still returns
 declared edges — plus its rendered and documented companions, two still-open residue items the run
-declared, and three report-level inaccuracies. The plan's two declared deviations (id-keying instead of
-file-pattern keying; no `precedence` knob) were re-checked against the code and are correct
-engineering, so they are recorded in `verification.md` rather than filed as gaps here.
+declared, and three accuracy defects that reach the run report (one of which also reached a shipped test
+comment). The plan's two declared deviations (id-keying instead of file-pattern keying; no `precedence`
+knob) were re-checked against the code and are correct engineering, so they are recorded in
+`verification.md` rather than filed as gaps here.
+
+Every `path:line` below was re-derived against the tree at `a90adeb`, which is byte-identical to the
+audited `62e3807` across `marketplace/`, `test/`, `.gitignore` and `doc/{user,concepts,adr}`.
 
 ## G1 — Stop reporting `module_edges: not_derivable` when declared edges are still returned
 
@@ -328,17 +332,26 @@ engineering, so they are recorded in `verification.md` rather than filed as gaps
 - **Severity:** low
 - **Topic:** architecture-core
 - **Where:** `marketplace/bundles/plan-marshall/skills/extension-api/scripts/_derivation_merge.py:105-108`
-- **Evidence:** the docstring reads "The caller distinguishes 'no resolver ran' from 'N resolvers ran
-  and found nothing' by **the length of the returned report list**." The caller
+  (the sentence ends at `:108`)
+- **Evidence:** the docstring reads "The caller distinguishes "no resolver ran" from "N resolvers ran
+  and found nothing" by **the length of the returned report list**." The caller
   (`_cmd_client_query.py:1103-1122`) folds withheld records into that list and then derives
   `resolver_count` from `count_dispatched` (`:412`), never from its length — which is the whole point of
-  the R2-1 redesign the same docstring explains 20 lines below at `:126-131`.
-- **Why it matters:** this is the one surviving instance of the "length is the discriminator" claim the
-  run swept out of five other surfaces, and it sits in the file whose round-1 docstring was the run's own
-  1→2 leak. A reader implementing a second caller would reproduce the retired rule.
+  the R2-1 redesign the same docstring explains 20 lines below at `:125-130`.
+- **Why it matters:** on Axis-C this is the one surviving instance of the "length is the discriminator"
+  claim the run swept out of five other surfaces, and it sits in the file whose round-1 docstring was
+  the run's own 1→2 leak. A reader implementing a second caller would reproduce the retired rule.
 - **Action:** rewrite the sentence to say the caller distinguishes the two by `count_dispatched` over the
   report list, and that this function's own return contains only resolvers it called.
+- ⛔ **Do not sweep this wording repo-wide.** A repo-wide grep for the phrase returns a second hit,
+  `marketplace/bundles/plan-marshall/skills/extension-api/scripts/_path_attribution_merge.py:215`, where
+  the same sentence is **correct**: path attribution (Axis-D) has no dispatch control, so
+  `attributor_count = len(attributor_reports)` and length *is* the discriminator. ADR-014 scopes the
+  rule to "surfaces with a dispatch control (Axis-C today)" and exempts Axis-D explicitly
+  (`doc/adr/014-An_aggregation_over_N_independent_producers_carries_producer_identity_and_no_producer_suppresses_an_element_silently.adoc:79-83`
+  and `:98`) — a blind sweep would re-introduce the R4-3 over-generalisation this run already had to fix
+  once.
 - **Done when:** no docstring in `_derivation_merge.py` states that the report list's length is the
-  anti-vacuity discriminator.
+  anti-vacuity discriminator, and `_path_attribution_merge.py:215` is unchanged.
 - **Effort:** S
-- **Risk if fixed:** none.
+- **Risk if fixed:** none, provided the Axis-D sibling is left alone.

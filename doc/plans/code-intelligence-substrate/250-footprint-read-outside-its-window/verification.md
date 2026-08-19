@@ -83,13 +83,14 @@ describes the removed behaviour as current.
   - `check-artifact-consistency.py:517` / `:578` read state through `footprint_resolved()`
     (`_footprint_resolver.py:114`), never through emptiness.
 - **Checks run:**
-  - All eight test names the report cites exist:
+  - All **nine** test names the report cites exist — six here plus the three composer-side ones the
+    report names under D4, not two (counted from the two report sections as they now stand):
     `test_unresolvable_footprint_reports_unmeasurable_not_silence` /
     `test_resolved_empty_footprint_stays_a_measured_zero` (`test_analyze_logs_behavior.py`),
     `test_unmeasurable_footprint_does_not_attribute_failures_as_foreign` /
     `test_measured_empty_footprint_still_classifies_as_foreign` (`test_verify_failure_scope.py`),
     `test_unresolvable_when_no_tier_answers` /
-    `test_present_but_empty_key_is_a_resolved_empty_footprint` (`test_analyze_logs.py`), plus the two
+    `test_present_but_empty_key_is_a_resolved_empty_footprint` (`test_analyze_logs.py`), plus the three
     composer-side ones under D4.
   - A fourth both-directions control exists at the recall site that the report does not name:
     `test_check_artifact_consistency.py:866`,

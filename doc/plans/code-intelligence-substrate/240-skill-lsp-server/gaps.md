@@ -77,6 +77,48 @@ withheld still names an unexecuted gate and a 380/97 % measurement that is now 6
 - **Risk if fixed:** some currently-`verified` sites become unverified, lowering the headline
   verified count; that is the honest direction.
 
+## G28 — Stop presenting unverified reference sites to an editor as exact locations
+
+- **Kind:** bug
+- **Severity:** high
+- **Topic:** lsp/resolvers
+- **Where:** `marketplace/bundles/pm-plugin-development/skills/tools-corpus-language-server/scripts/corpus_lsp.py:321-328`
+  (`CorpusLanguageServer.on_references`) and `:343-351` (`_lsp_location`)
+- **Evidence:** `on_references` maps every `Reference` through
+  `_lsp_location(ref.location.path, ref.location.line)`, which emits only `uri` and `range`. The
+  `verified` flag that `resolve_reference_site` computed is discarded, so a site the index itself
+  could not confirm is delivered to the client as an ordinary LSP `Location` — and LSP has no weaker
+  form than `Location`. Measured on the real corpus: of **5 020 reference sites, 162 (3.2 %) are
+  `verified: false`**, and each is reported against the owner's own file at the cited line, which is
+  the wrong-file/wrong-line pairing `resolve_reference_site` exists to avoid. Demonstrated live
+  through a running `serve` subprocess: `plan-marshall:manage-architecture` has one unverified inbound
+  edge, and the server emits `manage-architecture/SKILL.md` `{"line": 515, "character": 0}`, whose
+  text is *"Searches inventoried file **bodies** and reports the module-attributed files containing
+  `--pattern`…"* — a line that never mentions the target. The `query` verb does carry `verified` in
+  its payload; only the protocol projection loses it.
+- **Why it matters:** two shipped pages promise exactly the opposite, in near-identical words.
+  `SKILL.md:121` — *"Reported against the owner's file, and **never presented as exact**"*; and
+  `doc/user/corpus-language-server.adoc:182` — *"one that cannot be confirmed is still shown, but
+  never presented as an exact location"*. On the surface this plan actually shipped, every such site
+  **is** presented as an exact location. This is a documented contract that is unimplemented on the
+  primary surface, which is why it is rated high rather than medium: the flag's whole purpose is to
+  keep an unconfirmed site from being trusted, and the editor never learns of it. It is also a
+  distinct defect from G2 — G2 is the resolver choosing the wrong candidate among several, this is the
+  protocol layer discarding a signal the resolver got right.
+- **Action:** pick one and make the documentation match. Either (a) omit `verified: false` sites from
+  the `textDocument/references` response — 3.2 % recall for a contract the docs already state — or
+  (b) keep emitting them and correct both `SKILL.md:121` and the user page's line 182 to scope the
+  "never presented as exact" promise to the `query` payload, stating plainly that the editor surface
+  cannot carry the distinction.
+- **Done when:** driving a running `serve` over a corpus containing a known-unverified edge either
+  returns no `Location` for that edge, or the two documents no longer claim unconfirmed sites are
+  never presented as exact; and a test pins whichever behaviour was chosen.
+- **Effort:** S
+- **Risk if fixed:** option (a) lowers the reference count an editor shows and can hide a site that
+  was in fact correct but unconfirmable (a non-positional frontmatter edge, for instance); option (b)
+  costs nothing in code but leaves the wrong-line jump in place, so it should be taken only alongside
+  G2.
+
 ## G3 — Invalidate the index and its caches on document change, or document that answers are snapshot-aged
 
 - **Kind:** incomplete

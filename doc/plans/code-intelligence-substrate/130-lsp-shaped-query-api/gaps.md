@@ -39,7 +39,7 @@ every one of which was re-taken independently by an adversarial pass at `a90adeb
   `not_derivable` status when no module descriptor could be read at all, reserving
   `available`/`unavailable` (or, better, the `derivable`/`not_derivable` vocabulary noted as a
   follow-up in `135-remove-lsp-query-facade/plan.md:226-229`) for the crawled case. Update
-  `client-api.md:1392-1414`, `SKILL.md:544`, `doc/user/code-search.adoc:198` and
+  `client-api.md:1392-1415`, `SKILL.md:544`, `doc/user/code-search.adoc:198` and
   `doc/concepts/code-intelligence.adoc:252-262` to match — **and `client-api.md:572`**, whose
   verb-summary row already claims `capabilities` reports "Per-capability
   `derivable`/`not_derivable` (module edges, path attribution, content search)" while the code gives
@@ -288,6 +288,6 @@ every one of which was re-taken independently by an adversarial pass at `a90adeb
   entries.
 - **Effort:** S
 - **Risk if fixed:** adding the field changes the entry's key set, so the TOON examples at
-  `client-api.md:1396-1415` must be updated in lock-step (the same coupling G1 carries). Summing
+  `client-api.md:1395-1415` must be updated in lock-step (the same coupling G1 carries). Summing
   `claim_count` across attributors double-counts a path two attributors both claim; if that matters,
   document the field as claims-reported rather than paths-attributed.

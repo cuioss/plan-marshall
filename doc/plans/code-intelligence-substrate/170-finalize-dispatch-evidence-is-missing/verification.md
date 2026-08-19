@@ -95,18 +95,36 @@ unwritten.
   - Both directions tested: `test_check_dispatch_audit.py:168-196` (dispatched-but-unlogged →
     `missing_dispatch_emission`, and *not* a coverage violation) and `:199-219` (conditional inline →
     `ran_inline`, `_categories(data) == []`). Third state at `:222-239`.
-  - Surface E's premise verified independently: `phase-6-finalize/SKILL.md:1151` — *"this row is
-    recorded for EVERY finalize step — dispatched OR inline — so a skipped or inline step still lands
-    an `execution_log` row (with zero token attribution for inline steps)"*. The docstring's claim is
-    true of the workflow contract.
+  - **Surface E's premise holds in one direction only, and the original audit quoted the half that
+    holds.** The quotation attributed here to `phase-6-finalize/SKILL.md:1151` was neither at that
+    line (`:1151` is blank; the text is at `:1153`) nor verbatim: it ended *"with zero token
+    attribution for inline steps"*, dropping the six words the source actually carries — *"…for
+    inline steps **that carry no `<usage>` tag**"*. Corrected, the contract reads: every finalize
+    step lands an `execution_log` row (true, and that is what makes `no_evidence` meaningful), **but
+    a zero in that row does not identify an inline step.** `:1163` says the triple is *"the SAME
+    triple captured by 5b"*, and `:1081` says *"Inline steps and timed-out steps skip this call"*;
+    the producer states the consequence outright at
+    `manage-execution-manifest.py:2613-2614` — *"a step dispatched without a `<usage>` tag reports
+    zeros rather than a missing column"* — and again at `:2799-2803` (*"`total_tokens` is a
+    FLOOR"*). The forward direction of the docstring's claim (dispatched ⇒ non-zero) is therefore
+    **not** guaranteed, and the converse it actually classifies on (zero ⇒ inline) is false. → **G13.**
 - **Checks run:** the 13-test file green; the negative assertion `'dispatch_coverage_violation' not in
   _categories(data)` is real (the category exists nowhere as a producer, so the assertion is
-  structurally satisfied rather than behaviourally — noted under Test adequacy).
-- **Verdict:** CONFIRMED. The deviation from the plan's literal "roster qualifier" mechanism is
-  disclosed in `report-01.md` § D2 and is outcome-equivalent for the two cases the plan enumerates;
-  the plan's own claim table cites token attribution as the ground truth for the conditional case, so
-  the substitution is consistent with the plan's evidence. One weakness (aggregate rather than
-  per-step pairing) is G8.
+  structurally satisfied rather than behaviourally — noted under Test adequacy). Live runs against
+  two hand-built fixtures settle the discriminator empirically: a terminal step whose `execution_log`
+  row carries `{outcome: error, total_tokens: 0}` and no `[DISPATCH]` line reports
+  `dispatched: 0, ran_inline: 1, missing_dispatch_emission: 0`; the same fixture with the
+  `total_tokens` column **absent entirely** reports identically — `ran_inline`, not `no_evidence`,
+  because `finalize_token_records`' `else: value = 0` (`:278-279`) manufactures the "measured zero"
+  the classifier then treats as proof.
+- **Verdict:** CONFIRMED against the literal *Done when* (*"both mis-attributions are reproduced in
+  tests and both are corrected"*) — both are. But the accepted mechanism deviation is **not**
+  outcome-equivalent, as originally recorded here. Substituting the token record for the plan's
+  literal *roster qualifier* is equivalent for the conditional-inline case (and the plan's claim
+  table does cite token attribution as ground truth *for that case*); it is not equivalent for the
+  dispatched-but-unmeasured case, where a roster qualifier would still have marked the row as
+  dispatching and surfaced the missing emission. The deviation traded one blind spot for another and
+  the trade was never stated. → **G13** (high). The aggregate-rather-than-per-step pairing is G8.
 
 ### D3 — the channel-completeness report
 
@@ -242,12 +260,32 @@ Read in full: `check-dispatch-audit.py` (598 lines), `analyze-logs.py:900-975` a
    still reads a `shape_violation` count as a live signal without warning that at HEAD a `0` over a
    populated Surface B is almost forced. (G10)
 
+9. **`ran_inline` is a fall-through default, not a measurement** — `check-dispatch-audit.py:380-386`
+   classifies `no_evidence` only when the step has no `execution_log` row at all; every row that is
+   not a positive integer — an explicit zero, a dispatched step whose `<usage>` tag never arrived
+   (`manage-execution-manifest.py:2611-2614`, `:2650`), or a row with no `total_tokens` column,
+   which the detector's own `else: value = 0` at `:278-279` converts into a "measured zero" —
+   collapses into `ran_inline`, which `:366-369` and the shipped standard `:62` both call *proof*
+   that the step ran inline. `dispatched` therefore under-counts, and `missing_dispatch_emission`
+   (`:388`) is computed by subtracting from that under-count, so D2's headline finding cannot fire
+   for exactly the class of step whose instrumentation failed; `dispatched_step_count` carries the
+   same under-count into D3's shortfall branch (`:439`). Reproduced against two fixtures. (G13)
+10. **The `else: value = 0` coercion is dead to the test suite** — mutating it to `value = 999999`
+    left `test_check_dispatch_audit.py` at **13 passed**. Every test supplies an integer
+    `total_tokens`, so no test exercises the branch that manufactures the ambiguity in 9. (G13's
+    *Done when* covers it.)
+
 No defect was found in: the regexes (`_DISPATCH_LINE_RE` correctly requires the `(caller)` paren and
 the `target=` guard excludes phase-entry markers), `_canon_step` (matches `record-step`'s
-`default:`-stripping canonicalisation), `finalize_token_records` (`bool` is excluded before the `int`
-branch at `:271-273`, and `max()` at `:281` correctly prevents a later zero masking an earlier
-dispatched measurement), or `read_log_lines` / `load_manifest` (absent files degrade rather than
-raise).
+`default:`-stripping canonicalisation), `finalize_token_records`' `bool`/`int` ordering (`bool` is
+excluded before the `int` branch at `:271-273`) and its `max()` at `:281` (which correctly prevents a
+later zero masking an earlier dispatched measurement — note this is what keeps a re-entry `skipped`
+row from erasing a genuine earlier dispatch), the `ratio` computation at `:436` (it divides before
+rounding, not after), `FINALIZE_DISPATCH_CALLER` (both finalize dispatch sites —
+`phase-6-finalize/SKILL.md:618` and `:950-953` — pass `--caller plan-marshall:phase-6-finalize`), or
+`read_log_lines` / `load_manifest` (absent files degrade rather than raise). The `else: value = 0`
+coercion inside `finalize_token_records` is the one part of that function that IS defective — see 9
+and 10 above; the original audit's clean bill for the function as a whole is corrected here.
 
 ## Test adequacy
 

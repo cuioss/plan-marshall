@@ -9,9 +9,11 @@ repository produces (and which now hard-errors), the manifest cross-check was ne
 shared resolver at all, and the archived-plan auditor plus the lessons-housekeeping step still read the
 retired `references.modified_files` key. **Second**, two documentation claims the plan itself authored are
 false against the tree — one naming a consumer that does not consume, one resting on the retired key.
-**Third**, D3's entire shipped change is a prose workflow step that no test pins, and D1's "published
-cardinality" lives only as report prose that has already drifted (13/24 → 14/25). Nine gaps, one per
-instance.
+**Third**, D3's entire shipped change is a prose workflow step that no test pins; D1's "published
+cardinality" lives only as report prose that has already drifted (13/24 → 14/25); and D1's coverage
+canary — the guard that was supposed to force a re-measurement the moment a consumer-side marker
+appeared — did not fire when exactly that happened, because it watches `reads` and is blind to the
+`destroys` half that was actually declared. Ten gaps, one per instance.
 
 ## G1 — Stop passing a phantom `--diff-file` to the routing-decisions aspect
 
@@ -19,8 +21,9 @@ instance.
 - **Severity:** high
 - **Topic:** measurement/metrics
 - **Where:** `marketplace/bundles/plan-marshall/skills/plan-retrospective/SKILL.md:275` (aspect 13
-  invocation); raise site `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/_footprint_resolver.py:98-111`
-  (`resolve_diff_file_path`); consumer branch `…/scripts/check-routing-decisions.py:750-767`
+  invocation); raise site `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/_footprint_resolver.py:60-111`
+  (`resolve_diff_file_path`; the operative relative-path raise is `:107-111`); consumer branch
+  `…/scripts/check-routing-decisions.py:750-767`
 - **Evidence:** SKILL.md:275 reads
   `run --plan-id {plan_id} --mode {live|archived} --diff-file work/footprint.txt > work/fragment-routing-decisions.toon`.
   A full-repo search for `footprint.txt` (excluding `.git`, `__pycache__`, `doc/plans`) returns 14 hits,
@@ -30,7 +33,17 @@ instance.
   (`tools-file-ops/scripts/file_ops.py:1688-1698`) converts that into `status: error / internal_error`,
   exit 1. The recovery branch at `check-routing-decisions.py:758` (`supplied_footprint is None`) is
   therefore never taken. At plan 050's landing the same missing file returned `[]` and fell through to
-  the resolver; commit `eb0124c` (#1288) introduced the raise.
+  the resolver — confirmed at the source: `git show 0e7f644^:…/check-routing-decisions.py` shows
+  `load_diff_files` returning `[]` for a non-existent path, and `git show 0e7f644:…` shows `cmd_run`
+  branching on `if footprint:` (truthiness), so the empty list fell through. Commit `eb0124c` (#1288)
+  introduced both the raise and the `is not None` branch that no longer absorbs it.
+- **Confirmed by execution, not by reading.** Building a plan directory with the test module's own
+  `_build_plan` helper, writing `references.realized_footprint`, and calling `cmd_run` twice:
+  with `--diff-file work/footprint.txt` (the documented form) it raises
+  `ValueError: Diff file does not exist: work/footprint.txt — … tried: {plan_dir}/work/footprint.txt,
+  {cwd}/work/footprint.txt`; with `--diff-file` omitted, the same plan returns
+  `status: success, footprint_source: resolved`. The recovery D4 built works; the documented command is
+  what prevents it running.
 - **Why it matters:** D4's stated outcome — *"one footprint resolution, two consumers … recover
   together"* — does not happen. The mis-prune half errors out on every run that follows the documented
   command, so the `realized_footprint` capture plan 050 built is consumed by exactly one consumer, and the
