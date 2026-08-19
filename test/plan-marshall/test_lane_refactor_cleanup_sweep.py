@@ -30,8 +30,10 @@ Plus a transitionary-prose assertion over the D14 classification-gate bodies
 
 Exclusions: ``.plan/`` (archived plans + this plan's own fixtures) is never on
 the walk root, this sweep file is excluded by name (it carries every retired
-token as a string literal), and ``doc/plans/`` is excluded as the git-tracked
-equivalent of the ``.plan/`` carve-out — see :data:`_EXCLUDED_SUBTREES`.
+token as a string literal), and lane run reports (``doc/plans/**/report-NN.md``)
+are excluded as dated records rather than current documentation — the boundary
+``CLAUDE.md`` already draws. See :func:`_is_lane_run_report`; everything else
+under ``doc/plans/`` stays on the walk.
 """
 
 from __future__ import annotations
@@ -69,32 +71,43 @@ _SELF_NAME = Path(__file__).name
 # Cache directories never carry source.
 _SKIP_DIR_PARTS = {'__pycache__', '.git', '.plan', 'node_modules', 'target'}
 
-# Subtrees excluded by absolute prefix rather than by directory NAME.
+# Lane RUN REPORTS — ``doc/plans/{epic}/{plan-name}/report-NN.md`` — are excluded.
 #
-# ``doc/plans/`` holds plan documents and dated run reports: records of work that
-# HAS happened, which must be able to name the machinery a run retired, the guard
-# a run tripped, and the token that guard forbids. This is the same carve-out
-# ``.plan`` already takes in ``_SKIP_DIR_PARTS`` ("archived plans … must not be
-# scanned") — ``doc/plans/`` is simply the git-tracked half of it, and the split
-# is an artifact of where the two live, not a difference in kind.
+# A run report is a dated record of one execution, so it must be able to name the
+# machinery a run retired, the guard a run tripped, and the token that guard
+# forbids. Without this the sweep forbids a report from stating why it failed: a
+# report documenting a ``ceremony_policy`` hit has to quote the token to do so,
+# and is then itself the hit. That is not the orphaned-reference class this sweep
+# catches — an orphan is a LIVE reference in source or current documentation, not
+# a historical record of one.
 #
-# Without this, the sweep forbids a run report from stating why it failed: a
-# report documenting a ``ceremony_policy`` hit must quote the token to do so, and
-# is then itself the hit. That is not the orphaned-reference class this sweep
-# exists to catch — an orphan is a LIVE reference in source or current
-# documentation, not a historical record of one.
+# The boundary is NOT this module's invention. ``CLAUDE.md`` already draws it, in
+# the same records-versus-documentation terms, when it exempts a run report from
+# the "No timestamps" / "Current state only" standards: "a lane run report
+# (doc/plans/{epic}/{plan-name}/report-NN.md) carries a date and an ordinal,
+# because it is a dated record of one execution rather than documentation of the
+# current state … No other file in doc/plans/ takes this exemption."
 #
-# Excluded by absolute prefix, deliberately, rather than by adding ``plans`` to
-# ``_SKIP_DIR_PARTS``: a name-based skip would also silence any directory called
-# ``plans`` under ``marketplace/`` or ``test/``, where a retired token IS an
-# orphan. ``test_the_plans_exclusion_does_not_reach_the_rest_of_doc`` pins that
-# the carve-out stays this narrow.
-_EXCLUDED_SUBTREES = (PROJECT_ROOT / 'doc' / 'plans',)
+# So the carve-out is report files ONLY, not the ``doc/plans/`` tree. That tree
+# also holds live documentation the sweep must keep policing: ``doc/plans/
+# README.md`` (cross-referenced from CLAUDE.md), a README per epic,
+# ``doc/plans/_template/plan.md`` (a template that propagates into every new
+# plan), and each plan.md itself — all of which CLAUDE.md says "follow the
+# standards unchanged". A retired token in any of them is a live orphan.
+#
+# Matched on the filename under a ``doc/plans/`` ancestor, deliberately, rather
+# than by adding ``plans`` to ``_SKIP_DIR_PARTS``: a name-based skip would
+# silence any directory called ``plans`` under ``marketplace/`` or ``test/``,
+# where a retired token IS an orphan. The three tests below pin each half of
+# this: reports excluded, everything else under doc/plans still swept, and the
+# match anchored to doc/plans rather than to the name ``report-NN.md`` anywhere.
+_PLANS_ROOT = PROJECT_ROOT / 'doc' / 'plans'
+_RUN_REPORT_NAME = re.compile(r'^report-\d+\.md$')
 
 
-def _in_excluded_subtree(path: Path) -> bool:
-    """True when ``path`` lies under one of :data:`_EXCLUDED_SUBTREES`."""
-    return any(path.is_relative_to(subtree) for subtree in _EXCLUDED_SUBTREES)
+def _is_lane_run_report(path: Path) -> bool:
+    """True for a ``doc/plans/**/report-NN.md`` dated run record."""
+    return path.is_relative_to(_PLANS_ROOT) and bool(_RUN_REPORT_NAME.match(path.name))
 
 
 def _iter_text_files(roots):
@@ -116,7 +129,7 @@ def _iter_text_files(roots):
                 continue
             if path.name == _SELF_NAME:
                 continue
-            if _in_excluded_subtree(path):
+            if _is_lane_run_report(path):
                 continue
             if any(part in _SKIP_DIR_PARTS for part in path.relative_to(root).parts):
                 continue
@@ -148,59 +161,83 @@ def _assert_zero(pattern: re.Pattern[str], token_label: str, roots=_SWEEP_ROOTS)
 
 
 # =============================================================================
-# (0) The doc/plans/ carve-out, and its bounds
+# (0) The run-report carve-out, and its bounds
 # =============================================================================
 
 
-def test_the_plans_exclusion_is_honoured_by_the_walk():
-    """No file under ``doc/plans/`` reaches the sweep.
+def test_the_run_report_exclusion_is_honoured_by_the_walk():
+    """No ``doc/plans/**/report-NN.md`` reaches the sweep.
 
     Asserted over the real walk rather than over the predicate alone, so a
     predicate that is correct but never consulted still fails here.
     """
     walked = list(_iter_text_files((PROJECT_ROOT / 'doc',)))
-    leaked = [str(p.relative_to(PROJECT_ROOT)) for p in walked if _in_excluded_subtree(p)]
+    leaked = [str(p.relative_to(PROJECT_ROOT)) for p in walked if _is_lane_run_report(p)]
     assert not leaked, (
-        f'{len(leaked)} file(s) under doc/plans/ reached the sweep despite the '
+        f'{len(leaked)} lane run report(s) reached the sweep despite the '
         f'exclusion:\n  ' + '\n  '.join(leaked[:10])
     )
 
 
-def test_the_plans_exclusion_does_not_reach_the_rest_of_doc():
-    """The carve-out is ``doc/plans/`` ONLY — the rest of ``doc/`` is still swept.
+def test_the_rest_of_doc_plans_is_still_swept():
+    """The carve-out is run reports ONLY — every other file under ``doc/plans/`` is swept.
 
-    This is the control on the exclusion above. Widening it to ``doc/`` (or
-    skipping by the bare directory name ``plans``, which would also silence a
-    ``plans`` directory under ``marketplace/`` or ``test/``) would make every
-    assertion in this module vacuous over the documentation surface they exist to
-    police, while every one of them still reported green.
+    This is the control that keeps the exclusion at the boundary ``CLAUDE.md``
+    draws. ``doc/plans/`` also holds live documentation — its own README, an
+    epic README each, the plan template that propagates into new plans, and each
+    plan.md — which CLAUDE.md says "follow the standards unchanged". Widening the
+    carve-out from report files to the tree would stop policing all of them while
+    every assertion in this module still reported green.
     """
-    walked = list(_iter_text_files((PROJECT_ROOT / 'doc',)))
-    survivors = [p for p in walked if not _in_excluded_subtree(p)]
-    assert survivors, (
-        'the doc/ walk yielded nothing outside doc/plans/, so every doc-scoped '
-        'assertion in this module is vacuous'
+    walked = {p.relative_to(PROJECT_ROOT) for p in _iter_text_files((PROJECT_ROOT / 'doc',))}
+
+    required = [
+        Path('doc/plans/README.md'),
+        Path('doc/plans/_template/plan.md'),
+    ]
+    missing = [str(p) for p in required if (PROJECT_ROOT / p).is_file() and p not in walked]
+    assert not missing, (
+        f'live documentation under doc/plans/ is no longer swept, so a retired '
+        f'token in it would go uncaught: {missing}'
     )
-    # Named surfaces the config-doc contract lives on: their absence would mean
-    # the walk had been narrowed past the point where these assertions bind.
-    swept = {p.relative_to(PROJECT_ROOT).parts[1] for p in survivors}
+
+    # At least one epic README and one plan.md, located rather than hardcoded, so
+    # the control does not decay into two named files.
+    assert any(p.name == 'README.md' and p.parent != Path('doc/plans') and 'plans' in p.parts
+               for p in walked), 'no per-epic README under doc/plans/ reached the sweep'
+    assert any(p.name == 'plan.md' for p in walked), 'no plan.md reached the sweep'
+
+
+def test_the_rest_of_doc_is_still_swept():
+    """``doc/user`` and ``doc/developer`` stay on the walk."""
+    walked = list(_iter_text_files((PROJECT_ROOT / 'doc',)))
+    swept = {p.relative_to(PROJECT_ROOT).parts[1] for p in walked}
     assert 'user' in swept and 'developer' in swept, (
         f'doc/user and doc/developer must both remain on the walk; swept top-level '
         f'doc subdirectories were {sorted(swept)}'
     )
 
 
-def test_the_exclusion_is_prefix_based_not_name_based():
-    """A ``plans`` directory outside ``doc/`` is NOT excluded.
+def test_the_exclusion_is_anchored_to_doc_plans_and_to_the_report_name():
+    """Both halves of the match are load-bearing.
 
-    Pins the choice of an absolute-prefix test over adding ``plans`` to
-    ``_SKIP_DIR_PARTS``: a retired token under ``marketplace/**/plans/`` or
-    ``test/**/plans/`` is a live orphan and must still be caught.
+    A ``report-NN.md`` OUTSIDE ``doc/plans/`` is not a lane run record and stays
+    swept; a non-report file INSIDE ``doc/plans/`` stays swept too. Pins the
+    filename+ancestor pair over adding ``plans`` to ``_SKIP_DIR_PARTS``, which
+    would also silence a ``plans`` directory under ``marketplace/`` or ``test/``
+    where a retired token IS an orphan.
     """
-    assert not _in_excluded_subtree(PROJECT_ROOT / 'marketplace' / 'plans' / 'x.md')
-    assert not _in_excluded_subtree(PROJECT_ROOT / 'test' / 'plans' / 'x.py')
-    assert not _in_excluded_subtree(PROJECT_ROOT / 'doc' / 'user' / 'configuration.adoc')
-    assert _in_excluded_subtree(PROJECT_ROOT / 'doc' / 'plans' / 'epic' / 'report-01.md')
+    # Anchored to doc/plans: a report-shaped name elsewhere is still swept.
+    assert not _is_lane_run_report(PROJECT_ROOT / 'doc' / 'user' / 'report-01.md')
+    assert not _is_lane_run_report(PROJECT_ROOT / 'marketplace' / 'plans' / 'report-01.md')
+    # Anchored to the report name: live docs under doc/plans are still swept.
+    assert not _is_lane_run_report(PROJECT_ROOT / 'doc' / 'plans' / 'README.md')
+    assert not _is_lane_run_report(PROJECT_ROOT / 'doc' / 'plans' / '_template' / 'plan.md')
+    assert not _is_lane_run_report(PROJECT_ROOT / 'doc' / 'plans' / 'epic' / 'p' / 'plan.md')
+    assert not _is_lane_run_report(PROJECT_ROOT / 'doc' / 'plans' / 'epic' / 'reports.md')
+    # And the record itself is excluded.
+    assert _is_lane_run_report(PROJECT_ROOT / 'doc' / 'plans' / 'epic' / 'p' / 'report-01.md')
+    assert _is_lane_run_report(PROJECT_ROOT / 'doc' / 'plans' / 'epic' / 'p' / 'report-12.md')
 
 
 # =============================================================================

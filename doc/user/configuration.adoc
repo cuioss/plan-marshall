@@ -203,15 +203,17 @@ python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
 
 `step set` is named here rather than `set-lane` because it is the only one of the two that reaches `minimal`, the value that forces a gate *in*. For the three values both verbs accept — `off`, `standard`, `full` — they are interchangeable: both write the same `plan.phase-6-finalize.steps.<step-id>.lane` key, so `finalize-steps set-lane --step-id default:pre-submission-self-review --lane off` produces the identical result. They differ only when the step is absent from the phase step map, which `set-lane` materialises and `step set` refuses; all four owning steps above are seeded, so that difference does not arise for a ceremony gate.
 
-Read or set the run-at-all gates with the standard phase `get`/`set` verb against the owning phase block; read a ceremony gate through its owning step instead:
+Read or set a run-at-all gate with the standard phase `get`/`set` verb against the owning phase block — all three live on `phase-1-init` / `phase-2-refine`, per the table above; `phase-6-finalize` carries none. Read a ceremony gate through its owning step instead:
 
 [source,bash]
 ----
+# A run-at-all gate: flat --field against the owning phase block
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-1-init set --field deep_lane --value always
+
+# A ceremony gate: through its owning step, never a flat --field
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
   plan phase-6-finalize step get --step-id default:pre-submission-self-review
-
-python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize set --field finalize_without_asking --value false
 ----
 
 See the canonical per-key reference in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] for the full per-phase gate catalogue.

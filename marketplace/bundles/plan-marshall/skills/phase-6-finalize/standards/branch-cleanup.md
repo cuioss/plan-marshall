@@ -1767,7 +1767,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --display-detail "local-only: switched to {base_branch}"
 ```
 
-**Branch C — declined by user** (interactive prompt was rejected; cleanup was not performed). Nothing was rebased, merged, or cleaned up, so `work_performed=false` and no other fact is recorded:
+**Branch C — declined by user** (interactive prompt was rejected; cleanup was not performed). Nothing was rebased, merged, or cleaned up, so `work_performed=false`. The PR is left live and unmerged, so `merge_state=open`; no `action` or `merge_mechanism` is recorded, because no path produced one:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
@@ -1777,7 +1777,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   --display-detail "declined by user"
 ```
 
-**Branch D — no PR found** (PR mode, `pr view` returned `status: error` — there is no PR for the current branch, so there is nothing to clean up on the remote side). The path exits before the rebase and before any merge, so it records `work_performed=false` alone:
+**Branch D — no PR found** (PR mode, `pr view` returned `status: error` — there is no PR for the current branch, so there is nothing to clean up on the remote side). The path exits before the rebase and before any merge, so it records `work_performed=false` and, since no PR exists to be in any state, `merge_state=n/a`; no `action` or `merge_mechanism` is recorded:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
