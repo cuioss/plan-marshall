@@ -333,6 +333,34 @@ def test_the_continuation_check_does_not_disturb_any_supported_form(
     assert read_target_scope(_component(tmp_path, frontmatter)) == expected
 
 
+def test_no_fold_misread_can_smuggle_an_accepted_scope(tmp_path):
+    """The safety property the whole fold heuristic rests on, checked by search.
+
+    A misread may widen or truncate the text that gets REJECTED; it must
+    never yield a token set the registry accepts. This enumerates every
+    two-line continuation drawn from a set chosen to exercise both failure
+    directions — surplus absorbed, and fold stopped early — and asserts that
+    the only inputs accepted are the ones that actually close their bracket.
+    """
+    import itertools
+
+    continuations = [
+        'opencode]', 'opencode', '2fa: no', '"q": v', 'https://x',
+        'description: d', ']', '', '# c',
+    ]
+    accepted_without_closing = []
+    for first, second in itertools.product(continuations, repeat=2):
+        frontmatter = f'targets: [claude,\n{first}\n{second}'
+        try:
+            read_target_scope(_component(tmp_path, frontmatter))
+        except TargetScopeError:
+            continue
+        if not (first.rstrip().endswith(']') or second.rstrip().endswith(']')):
+            accepted_without_closing.append(frontmatter)
+
+    assert accepted_without_closing == []
+
+
 def test_absent_field_means_every_target(tmp_path):
     """A component with no declaration ships everywhere — the default."""
     path = tmp_path / 'demo.md'

@@ -69,7 +69,7 @@ rather than reported here:
 - quality-gate: `ruff … All checks passed!`, `mypy … Success: no issues found in 415 source files`,
   `SPDX-header check passed`, plugin-doctor `total_issues: 0`
 - test-compile: mypy over 775 test files, clean
-- module-tests: **21075 passed, 14 skipped** — 0 failed, 0 errors
+- module-tests: **21076 passed, 14 skipped** — 0 failed, 0 errors
 
 No lockfile churn: `git status --porcelain` was empty after the build, and every commit staged
 deliverable paths explicitly — by name, or with `git add -A --` bounded by an explicit pathspec, which
@@ -304,6 +304,36 @@ mutations) and a full `--target all` regeneration reproducing the D3 listing end
 24,046 / 18 spellings / 288 shapes) are each one verifier's measurement, not a branch artifact — no
 script or corpus is persisted. Round 8's 441-shape sweep is exhaustive over a defined space and so is
 re-derivable from its description; the others are not. Read them as testimony.
+
+### Round 9 — BLOCKED, and what was checked without it
+
+**The round did not run.** Two dispatches failed: the first to a mid-response API error, the second to
+a **session limit** (resets 23:40 UTC). Neither produced verification. A failed dispatch is not a
+round, and is not counted as one — counting it would be the "silence read as a pass" defect this loop
+exists to prevent. **Rounds 9 and 10 of the operator's extension are unspent.**
+
+What was done instead is narrower and is labelled as such: the **executable** probes round 9 was
+assigned were run directly. These are mechanical — each returns a verdict that could have come back
+differently — so they are evidence, not self-assessment. What they cannot replace is an independent
+reader, which is the part of the round that is missing.
+
+| Probe | Result |
+|---|---|
+| **Over-rejection matrix** — 13 shapes through the new continued-scalar guard, against PyYAML | **No genuine over-rejection.** Three shapes are refused: two are files PyYAML itself rejects as invalid (a nested mapping under a scalar, a tab-indented continuation), and the third has the value `claude ]`, which is not a target name under any reading. Every supported form — block, block-with-comment, flow-across-lines, bare-then-next-key, bare-then-comment, quoted-key-plus-block — passes through untouched. |
+| **Falsification of the fold's safety claim** — 81 two-line continuations, both failure directions | **0 accepted without a closing bracket.** No misread smuggles a scope past `_validate`. |
+| **Falsification of the fold docstring's stated REASON** | **Falsified, and corrected.** See below. |
+
+**The docstring's reason was wrong again — the sixth time this sentence has been.** Round 8 replaced
+an unpersisted corpus appeal with a structural argument: an overrun "absorbs a fragment containing a
+colon". Enumeration refutes it — `targets: [claude,` continued by two plain lines yields the token
+`opencode opencode`, which contains no colon and no bracket. The safety property still holds, but for
+a different reason than the one written down: the fold joins with a **space**, and no registered
+target name contains a space. That is now what the docstring says, and the 81-shape search that found
+it is pinned as a test, so the property is checked rather than asserted.
+
+That correction is the whole point of the exercise: **the code was right and the explanation was
+wrong**, which is this branch's most persistent defect class, and it took execution rather than
+reading to catch — the same method that produced rounds 6, 7 and 8's headline findings.
 
 ### Cold read (the plan's § Verification requirement)
 

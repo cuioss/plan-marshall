@@ -235,14 +235,24 @@ def _join_flow_sequence(value: str, rest: list[str]) -> str:
     a truncated ``[claude`` — so :func:`_validate` rejects it and the build
     stops. A misread can widen or truncate the text that gets REJECTED; it
     cannot produce a scope the author did not write, and the reason is
-    structural rather than statistical: a fold that runs too far absorbs a
-    fragment containing a colon, which is never split on and never stripped,
-    so the token cannot match a registry name; a fold that stops too early
-    leaves the value opening ``[`` with no closing ``]``, which
-    :func:`_split_inline` therefore does not unwrap, so the token keeps its
-    bracket. Both land outside the registry. That is a property of THIS fold
-    only — a duplicate top-level key resolves to the first declaration here
-    and to the last in YAML, and both spellings may be bracketed.
+    structural rather than statistical:
+
+    * a fold that runs too far joins the surplus line in with a **space**
+      (``' '.join``), and no registered target name contains a space, so any
+      token drawn from more than one source line cannot match one;
+    * a fold that stops too early leaves the value opening ``[`` with no
+      closing ``]``, which :func:`_split_inline` therefore does not unwrap,
+      so the first token keeps its bracket.
+
+    Both land outside the registry, so :func:`_validate` rejects. The space
+    is the load-bearing half: an earlier version of this paragraph claimed
+    the surplus always carries a colon, which is false — absorbing a plain
+    continuation line yields ``opencode opencode``, no colon in sight. It is
+    still rejected, but for the reason stated here rather than that one.
+
+    This is a property of THIS fold only — a duplicate top-level key
+    resolves to the first declaration here and to the last in YAML, and both
+    spellings may be bracketed.
     """
     head = _strip_comment(value)
     if not head.startswith('[') or ']' in head:
