@@ -1,22 +1,81 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001, E402
-"""Shared preamble for the ``record model representability`` test modules.
+"""End-to-end regression over a re-entered, multiply-fired, partly-unmeasured, denominated plan.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+The three fixes this module composes were each pinned in isolation by their own
+deliverable's unit tests. What no unit test can show is whether the RECORD — the
+one artifact a downstream consumer actually reads — still asserts a value it did
+not earn once all four shapes coexist on the same plan:
+
+* a phase closed TWICE by a finalize loop-back, so some of its fields are sums
+  across closes and others are scoped to the latest close;
+* a finalize step fired ``loop_back`` -> ``loop_back`` -> ``done``, so its entry
+  has three firings and only one ``outcome``;
+* dispatch-boundary rows where some context-load flags were passed and some were
+  not, so the same column is a measurement on one row and an abstention on
+  another;
+* denominators counted from live plan state, so every ratio the record supports
+  names the moment its reference class was taken.
+
+That composition is the case the spec named: a plan certified ``partial: false``
+while being arithmetically impossible. This module drives it through the REAL
+verbs — ``start-phase`` / ``phase-boundary`` / ``end-phase`` from
+``manage-metrics``, ``record-dispatch-boundary`` from the same module,
+``mark-step-done`` from ``manage-status``, then ``generate`` — and asserts on the
+composed result.
+
+**Evidence-assertion obligation.** This plan's subject is a class of records that
+pass while proving nothing about what they measured, so its own tests must not
+reproduce that shape. Every assertion below pins the concrete observed evidence —
+a field's presence-vs-absence, its value, the firing count, the named predicate,
+the sampling point — and never only a terminal pass/fail or a bare "no error
+raised". A test that asserts only the outcome cannot distinguish a record that
+stated its uncertainty from one that examined nothing.
+
+Fixture-backed companions close the reader side, where the archived history lives
+and cannot be migrated. Each is read by BOTH the ``plan-retrospective`` reader and
+the ``.claude`` audit skill's ledger reader, which hand-mirror one contract from
+separate trees, so a change that moved only one of them fails here:
+
+* the ``unmeasured/`` dispatch-boundary fixture carries unmeasured columns
+  ALONGSIDE measured zeros on one file;
+* the ``undatable/`` fixture carries the pre-token writer's shape — nine columns,
+  every context-load cell a literal ``0``, nothing on the row dating it — so both
+  readers must decline to report those zeros as measurements;
+* the read-only ``legacy/`` five-column fixture is asserted byte-identical and
+  still parses in both readers, proving the positional-backward-compatibility
+  floor survived the representation change.
 """
 
 
 from __future__ import annotations
+
+
 import importlib
+
+
 import importlib.util
+
+
 import json
+
+
 import sys
+
+
 from argparse import Namespace
+
+
 from pathlib import Path
+
+
 from typing import Any
+
+
 from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, get_script_path, load_script_module, parse_ns
+
+
 from _manage_metrics_fixtures import (
     ns_end_phase,
     ns_generate,

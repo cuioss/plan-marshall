@@ -1,9 +1,20 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``qgate closure`` test modules.
+"""Tests for the phase-4-plan mechanical Q-Gate's CLOSURE checks.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+Existence and closure are different questions, and the end-to-end fixtures are
+built so that difference is actually exercised rather than merely asserted.
+
+⛔ ``files_exist`` applies an INTENT-DEPENDENT predicate: it skips
+``write-replace`` outright, requires existence for ``read`` and ``delete``, and
+inverts for ``write-new``. A fixture whose steps all carry ``write-replace``
+therefore reports ``files_exist: 0`` no matter what its paths are — including
+paths that do not exist — so asserting that zero would prove nothing about
+existence. The end-to-end fixtures below use ``read`` intent on their steps and
+real repository files, which makes the existence check actually run and actually
+pass; ``test_files_exist_zero_is_load_bearing_not_vacuous`` pins that by
+replacing the paths with absent ones and asserting ``files_exist`` goes
+non-zero.
 """
 
 

@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``script failure analysis`` test modules.
+"""Tests for ``script-failure-analysis.py``.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+The script classifies non-zero-exit script calls in
+``script-execution.log`` by stderr signature (invented_subcommand,
+missing_required_flag, invented_flag, script_internal_error) and emits a
+deduped TOON fragment for the retrospective compile-report consumer.
 """
 
 
@@ -13,10 +15,12 @@ import re
 import sys
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT  # noqa: E402
-
 sys.path.insert(0, str(Path(__file__).parent))
 
+
+
+
+from conftest import MARKETPLACE_ROOT  # noqa: E402
 
 SCRIPT_PATH = (
     MARKETPLACE_ROOT

@@ -1,8 +1,37 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``registered aspects render`` test modules.
+"""Registered ⇒ rendered completeness guard for the retrospective report pipeline.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+An aspect key travels through three registries that MUST agree, or the aspect
+ships dead (a producer emits a fragment that is silently dropped at render time):
+
+1. ``retro_sections.SECTION_SPEC`` — the static section registry ``compile-report``
+   iterates. A ``fragment_key`` with a row here is rendered.
+2. ``collect-fragments._registerable_aspect_keys()`` — the closed set
+   ``collect-fragments add`` accepts (``valid_aspect_keys()`` ∪
+   ``_domain_aspect_keys()``). A domain-contributed key is accepted here but is
+   NOT in ``SECTION_SPEC``.
+3. The Step-3 aspect roster in the plan-retrospective ``SKILL.md`` — the concrete
+   ``collect-fragments add --aspect <key>`` commands the workflow runs, whether
+   they sit in ``SKILL.md`` itself or in the reference/standards document the
+   aspect's roster row names.
+
+This guard asserts both directions of the completeness contract:
+
+- **(a) registerable ⇒ renderable**: every member of
+  ``_registerable_aspect_keys()`` either has a ``SECTION_SPEC`` row OR is emitted
+  by ``compile-report.build_document()``'s generic fallback. The fallback is
+  proven by building a document from a synthetic bundle carrying an unlisted
+  aspect and asserting its section appears — this is the D2 fallback that closes
+  the domain-contributed silent-drop (e.g. ``wrapper-tangle``).
+- **(b) dispatched ⇒ has a static row**: every aspect the ``SKILL.md`` dispatches
+  via a literal ``add --aspect <key>`` command has a ``SECTION_SPEC`` render row.
+  The dispatch list is enumerated INDEPENDENTLY of ``SECTION_SPEC`` (scanned from
+  ``SKILL.md``), so the guard fails on a dispatched-but-unlisted aspect like
+  ``routing-decisions`` and passes only once D1's row is in place.
+
+The scripts are loaded by explicit importlib path via ``conftest.load_script_module``
+(the sibling pattern in ``test_compile_report_behavior.py``) so the test does not
+depend on conftest import-name discovery order.
 """
 
 

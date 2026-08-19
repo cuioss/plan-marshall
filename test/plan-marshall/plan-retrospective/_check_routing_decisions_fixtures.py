@@ -1,8 +1,15 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``check routing decisions`` test modules.
+"""In-process behavioral tests for ``check-routing-decisions.py``.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+The aspect's headline defect was inferring a removal *cause* from a removal
+*fact*: any prunable step absent from ``phase_6.steps`` was treated as proof its
+``no_code_delta`` predicate had fired, so a step dropped by the posture cutoff
+(or by any of the three other recorded non-predicate mechanisms) was reported as
+a mis-prune whenever the realized footprint touched production code.
+
+These tests pin the corrected contract: the recorded decision log is consulted
+FIRST, and ``log_readable`` is the sole discriminator between a substantiated
+``fail`` and an honest ``inconclusive``.
 """
 
 

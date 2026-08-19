@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-findings.py script.
-
-Tier 2 (direct import) tests with 2-3 subprocess tests for CLI plumbing.
-"""
+"""Tests for manage-findings.py script."""
 
 
 from _manage_findings_fixtures import (
@@ -25,52 +22,6 @@ from _manage_findings_fixtures import (
 )
 
 from conftest import run_script
-
-
-def test_cli_pr_comment_invalid_bot_kind_rejected(plan_context):
-    """CLI plumbing: --bot-kind outside the allowed set is rejected by argparse."""
-    result = run_script(
-        SCRIPT_PATH,
-        'add',
-        '--plan-id',
-        'cli-prc-badbotkind',
-        '--type',
-        'pr-comment',
-        '--title',
-        'Bad bot_kind',
-        '--detail',
-        'd',
-        '--bot-kind',
-        'sonarcloud',
-    )
-    assert not result.success
-
-
-# =============================================================================
-# Test: Finding Resolve Command
-# =============================================================================
-
-
-def test_finding_resolve(plan_context):
-    """Test resolving a finding."""
-    add_result = cmd_add(
-        _add_ns(
-            type='build-error',
-            title='Compilation error',
-            detail='Missing import',
-        )
-    )
-    hash_id = str(add_result['hash_id'])
-
-    result = cmd_resolve(
-        _resolve_ns(
-            hash_id=hash_id,
-            resolution='fixed',
-            detail='Added missing import statement',
-        )
-    )
-    assert result['status'] == 'success'
-    assert result['resolution'] == 'fixed'
 
 
 def test_finding_resolve_all_statuses(plan_context):
@@ -309,3 +260,69 @@ def test_qgate_query_by_resolution(plan_context):
         )
     )
     assert result['filtered_count'] == 1
+
+
+def test_qgate_query_by_source(plan_context):
+    """Test filtering Q-Gate findings by source."""
+    cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-query-src',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Auto finding',
+            detail='d',
+        )
+    )
+    cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-query-src',
+            phase='3-outline',
+            source='user_review',
+            type='triage',
+            title='User finding',
+            detail='d',
+        )
+    )
+
+    result = cmd_qgate_query(
+        _qgate_query_ns(
+            plan_id='qgate-query-src',
+            phase='3-outline',
+            source='user_review',
+        )
+    )
+    assert result['total_count'] == 2
+    assert result['filtered_count'] == 1
+
+
+def test_qgate_per_phase_isolation(plan_context):
+    """Test that Q-Gate findings are isolated per phase."""
+    cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-phase-iso',
+            phase='3-outline',
+            source='qgate',
+            type='triage',
+            title='Phase 3 finding',
+            detail='d',
+        )
+    )
+    cmd_qgate_add(
+        _qgate_add_ns(
+            plan_id='qgate-phase-iso',
+            phase='4-plan',
+            source='qgate',
+            type='triage',
+            title='Phase 4 finding',
+            detail='d',
+        )
+    )
+
+    result = cmd_qgate_query(_qgate_query_ns(plan_id='qgate-phase-iso', phase='3-outline'))
+    assert result['total_count'] == 1
+    assert result['phase'] == '3-outline'
+
+    result = cmd_qgate_query(_qgate_query_ns(plan_id='qgate-phase-iso', phase='4-plan'))
+    assert result['total_count'] == 1
+    assert result['phase'] == '4-plan'

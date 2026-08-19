@@ -1,9 +1,24 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``findings storage`` test modules.
+"""Storage-layout tests for the per-type findings JSONL split.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+These tests pin the contract for the per-type storage layer:
+
+* findings live under ``findings/{type}.jsonl`` (one file per finding type),
+* Q-Gate findings live under ``findings/qgate-{phase}.jsonl``,
+* assessments live under ``findings/assessments.jsonl``,
+* per-type files are created lazily on first write,
+* ``query_findings`` merges across every per-type file with a stable
+  ``hash_id`` space,
+* type / resolution / promoted / file-pattern filters keep working post-split,
+* ``get_finding`` / ``resolve_finding`` / ``promote_finding`` locate the
+  owning per-type file by ``hash_id`` (not by type),
+* ``add_finding`` / ``add_qgate_finding`` / ``add_assessment`` route writes to
+  their respective files within the same ``findings/`` directory.
+
+Implementation tests (CLI plumbing, validation error paths, qgate dedup/reopen
+semantics) live in ``test_findings_store.py`` and ``test_manage_findings.py``;
+this module is intentionally storage-layout focused.
 """
 
 

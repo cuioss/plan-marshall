@@ -1,15 +1,27 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Shared preamble for the ``remove`` test modules.
+"""Shared preamble for the ``remove`` test module.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+Holds the module-level loads, constants and helpers it uses, so
+the module itself carries the import and not the preamble.
 """
 
 
+
+
+
+
 from pathlib import Path
+
+
+
+
+
+
 from _lessons_helpers import _mod
+
+
 
 
 # The verdicts that assert a weaker claim than ``completely_covered`` and

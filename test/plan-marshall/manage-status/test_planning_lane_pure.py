@@ -1,60 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the ``planning-lane`` subcommand of manage-status.
-
-The router resolves ``planning_lane ∈ {light, deep}`` from the DQ1 signal set
-(S1–S7) plus a ``request.md`` regex, with zero codebase discovery. The default
-is ``light``; any deep-precondition signal forces ``deep``; the
-``plan.phase-1-init.deep_lane`` (``always``/``never``/``auto``) gate
-short-circuits the signal evaluation. The ``escalate`` verb is a one-way
-light→deep ratchet that refuses any downgrade.
-
-Coverage:
-- Each signal (S1–S6) firing deep in isolation. S7 (``risk_prose``) is covered
-  in ``test_planning_lane_risk_prose.py``, not here.
-- The all-light default (no deep signal fires).
-- The deep_lane ``always`` / ``never`` short-circuit.
-- ``--lane-override`` handling.
-- ``--persist`` writes status.metadata.planning_lane.
-- The one-way escalate invariant (deep + lane_escalated, no downgrade).
-- Dispatch wiring (both verbs registered in manage-status.py argparse).
-- ``evaluate_signals_pure`` — direct, I/O-free unit coverage of the extracted
-  pure scorer: each of the six signal arguments firing deep in isolation, the
-  all-light default, the S6 override, and the importability of the S5 regex
-  constants and ``_request_is_concrete`` for downstream consumers.
-- ``project_profile_pure`` — the execution-profile posture projection: the
-  ``full`` / ``minimal`` / ``standard`` recommendation as a pure function of the same
-  signals, the ``profile`` key on the route return, ``--persist`` writing
-  ``status.metadata.execution_profile``, the independence invariant that
-  ``deep_lane=always`` does NOT coerce the posture to ``full``, and the mirrored
-  negative that a concrete but NON-narrow change never projects ``minimal`` (the
-  security-gate half of the shared-predicate defect).
-- ``classify_scope_pure`` / ``scope_estimate_from_request_pure`` — the pre-route
-  coarse scope classifier over the whole band table: ``surgical`` for one-to-three
-  distinct file paths with no fan-out marker, ``single_module`` for the 4–7 middle
-  band and for an ambiguous pathless request, ``multi_module`` for a real fan-out
-  marker or eight-or-more distinct paths, ``none`` as the DECLARED UNKNOWN for an
-  unscoreable body (plus the invariant that the unknown biases S2 deep). Also the
-  band boundaries at 3/4 and 7/8, markdown bold NOT registering as fan-out,
-  distinct-path dedup, the ``scope_provenance`` explanation block, and the
-  zero-architecture-call invariant.
-- ``_read_request_body`` — the whole-body, heading-blind read: text below a
-  nested ``## `` heading is reached, only the host ``# Request`` title line is
-  stripped, and an absent / title-only / non-UTF-8 ``request.md`` degrades to the
-  declared unknown instead of raising.
-- The settled path-counter semantics — the intentional bare-filename exclusion
-  (a directory separator is required) and the declared inapplicability of
-  target-vs-citation discrimination, both asserted with their one-directional
-  (band-widening) residual.
-- The shared-population invariant — S5 concreteness and the scope band are shown
-  to consume the identical body, not merely documented as doing so.
-- ``cmd_scope_estimate_heuristic`` — ``--persist`` writing
-  ``references.json.scope_estimate``, the ``scope_resolved`` classified-vs-unknown
-  discriminator, the no-persist read-only path, the missing plan-dir error, its
-  manage-status dispatch registration, and the D2 acceptance that
-  pre-classification flips the router's S2 from deep to light for a concrete
-  narrow request.
-"""
+"""Tests for the ``planning-lane`` subcommand of manage-status."""
 
 
 from __future__ import annotations

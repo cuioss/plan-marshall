@@ -1,15 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the `batch-add` subcommand of manage-tasks.
-
-Covers:
-  - successful multi-task atomic insertion (sequential numbering, persisted files)
-  - empty array no-op
-  - validation rejection (per-entry error reporting)
-  - schema rejection (top-level type errors)
-  - all-or-nothing semantics (one bad entry → no files written)
-  - depends_on alternative encodings
-"""
+"""Tests for the `batch-add` subcommand of manage-tasks."""
 
 
 import json

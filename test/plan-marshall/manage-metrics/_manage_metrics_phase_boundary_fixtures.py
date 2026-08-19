@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``manage metrics phase boundary`` test modules.
+"""Tests for the `phase-boundary` subcommand of manage_metrics.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+Covers:
+  - end-of-prev + start-of-next persisted in a single call
+  - optional token/duration/tool-uses forwarded to end-phase
+  - metrics.md regenerated as a side-effect
+  - invalid phase names rejected for either side
+  - boundary works even when the previous phase had no start_time
 """
 
 

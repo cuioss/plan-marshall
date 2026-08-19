@@ -1,9 +1,24 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``merge authorization`` test modules.
+"""Tests for the merge-authorization subcommand of manage-status.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+The verb pair binds every merge-gate authorization to TWO things: the HEAD it was
+granted against, and the gap class it was granted over. The cases below pin the
+properties the pre-merge barrier relies on:
+
+- (a) an authorization LAPSES when HEAD advances past the tree it was granted
+  over;
+- (b) a re-grant at the new HEAD re-authorizes, so the escape hatch is BOUND
+  rather than removed;
+- (c) a ruling granted over a DIFFERENT gap at the SAME HEAD is ``valid`` but NOT
+  ``admissible``, so HEAD-binding alone can never be read as authorization —
+  several kinds (``pre-merge-consent`` above all) are granted at sites that run
+  before a gate, at the same HEAD, over a different gap;
+- the empty store is FAIL-CLOSED (``absent`` is never collapsed into ``valid``);
+- admissibility narrows the ROUTING, never the REPORT — an inadmissible record is
+  still reported, never filtered away;
+- ``check`` accepts no ``--kind`` filter, so one valid authorization can never
+  mask a lapsed sibling.
 """
 
 

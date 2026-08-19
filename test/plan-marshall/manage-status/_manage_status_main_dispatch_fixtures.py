@@ -1,9 +1,19 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``manage status main dispatch`` test modules.
+"""In-process tests for the manage-status.py CLI dispatcher (``main``).
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+The existing manage-status suites drive the per-command handlers directly
+(``cmd_create``, ``cmd_metadata``, …) or invoke the script through a
+subprocess. Neither path attributes coverage to the dispatcher body in
+``manage-status.py`` — the argparse construction, the ``func``-dispatch, the
+``transition`` exit-code contract, and the ``_loop_back_target_type`` argparse
+``type=`` validator. These tests call ``main()`` in-process (after setting
+``sys.argv``) so coverage lands on the dispatcher source, while still asserting
+real behaviour: exit codes, the emitted TOON status, and routing payloads.
+
+``main()`` is wrapped by ``@safe_main``, which calls ``sys.exit(main())``;
+every dispatch therefore raises ``SystemExit`` whose ``.code`` is the script's
+integer return.
 """
 
 

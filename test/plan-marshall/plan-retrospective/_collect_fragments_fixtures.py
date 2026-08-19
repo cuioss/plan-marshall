@@ -1,8 +1,22 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``collect fragments`` test modules.
+"""Tests for ``collect-fragments.py``.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+Covers the three subcommands (``init``, ``add``, ``finalize``) across live
+and archived modes, plus the fault paths documented in the script header:
+malformed TOON fragments and duplicate aspect registration without
+``--overwrite``. Mode is now a bundle property (persisted under
+``_meta.mode`` by ``init``); ``add`` and ``finalize`` read it from the
+bundle rather than accepting ``--mode`` as an argument.
+
+``cmd_add`` validates ``--aspect`` against the canonical aspect-key registry
+(static :data:`retro_sections.SECTION_SPEC` keys ∪ domain-contributed aspects)
+before touching the bundle. Every aspect key used across these tests is a
+member of that registry — the registered static keys are hyphenated
+(``request-result-alignment``, ``log-analysis``, ``artifact-consistency``,
+``plan-efficiency``, ``lessons-proposal``, …) to match the consumer's section
+map, never the underscored variants that would silently empty a report
+section. The validation guard itself is exercised by
+:class:`TestAddAspectKeyValidation`.
 """
 
 
@@ -11,10 +25,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
-
 sys.path.insert(0, str(Path(__file__).parent))
 
+
+
+
+from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
 
 SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'collect-fragments.py'
 

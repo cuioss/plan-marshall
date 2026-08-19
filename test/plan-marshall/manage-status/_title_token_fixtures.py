@@ -1,9 +1,31 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``title token`` test modules.
+"""Tests for the field-only ``title-token`` verb of manage-status.py.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+The ``title-token`` verb persists a structured ``{owner, state, set_at}``
+record into ``status.title_token`` and performs NO rendering — the composition
+(glyph vocabulary + ``{icon} {body}`` assembly) lives in
+``manage-terminal-title``. These tests cover:
+
+- ``set`` writes the record for each of the three ``TITLE_TOKEN_STATES``,
+  stamped with the caller's owner and a fresh ``set_at``.
+- Last-writer arbitration: a ``set`` from ANY owner replaces the record
+  wholesale, while ``clear`` is OWNER-SCOPED — a foreign clear is a reported
+  no-op.
+- Aged-token staleness: a record older than
+  ``TITLE_TOKEN_STALE_AFTER_SECONDS`` reads as absent and may be cleared by
+  ANY owner. Staleness is READ-side — the phase writers perform no sweep.
+- ``clear`` removes the ``title_token`` field, and is idempotent when the
+  field is already absent.
+- An invalid ``--state`` / ``--owner`` is rejected by argparse (exit code 2)
+  before the command body runs.
+- The verb writes NO ``title-body.txt`` rendering artifact — manage-status is
+  field-only.
+
+The record shape, owner vocabulary, arbitration rule, and staleness threshold
+are specified in
+``manage-terminal-title/standards/terminal-title-architecture.md``
+§ Channel Delivery Contract ruling (c).
 """
 
 

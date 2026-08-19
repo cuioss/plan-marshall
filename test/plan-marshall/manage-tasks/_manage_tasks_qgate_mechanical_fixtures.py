@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``manage tasks qgate mechanical`` test modules.
+"""Tests for the ``qgate-mechanical-checks`` subcommand of manage-tasks.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+The subcommand runs the deterministic Q-Gate checks over the tasks and parent
+deliverables of a plan, emitting one finding per failure under ``--source
+qgate`` so the existing phase-4-plan aggregate consumes them without
+modification. The check names this file asserts against are enumerated once, in
+:data:`_ALL_CHECKS`, and read from the result rather than restated per test.
+
+The CLOSURE checks (``declared_set_closure``,
+``declared_scope_reconciliation``) have their own suite in
+``test_qgate_closure.py``; here they are exercised only as members of the full
+result — a fixture in this file must be a well-formed plan except for the one
+fault the test injects.
 """
 
 

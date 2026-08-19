@@ -1,8 +1,12 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``summarize invariants`` test modules.
+"""Tests for ``summarize-invariants.py``.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+The script reads phase-handshake captures from ``<plan_dir>/handshakes.toon``
+(canonical storage owned by ``plan-marshall:plan-marshall:phase_handshake``)
+rather than ``status.metadata.phase_handshake``. Fixtures in
+``_plan_retrospective_fixtures.py`` materialize the file in the same TOON
+shape ``_handshake_store.save_rows``
+emits in production.
 """
 
 
@@ -12,10 +16,12 @@ import importlib.util
 import sys
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT  # noqa: E402
-
 sys.path.insert(0, str(Path(__file__).parent))
 
+
+
+
+from conftest import MARKETPLACE_ROOT  # noqa: E402
 
 SCRIPT_PATH = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'summarize-invariants.py'

@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``manage findings`` test modules.
+"""Tests for manage-findings.py script.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+Tier 2 (direct import) tests with 2-3 subprocess tests for CLI plumbing.
 """
 
 
@@ -11,12 +10,13 @@ import importlib.util
 from argparse import Namespace
 from pathlib import Path
 
-# Import toon_parser - conftest sets up PYTHONPATH
 from conftest import get_script_path
 
 # Script path for remaining subprocess (CLI plumbing) tests
 SCRIPT_PATH = get_script_path('plan-marshall', 'manage-findings', 'manage-findings.py')
 
+
+# Import toon_parser - conftest sets up PYTHONPATH
 
 # Tier 2 direct imports - load hyphenated module via importlib
 _MANAGE_FINDINGS_SCRIPT = str(

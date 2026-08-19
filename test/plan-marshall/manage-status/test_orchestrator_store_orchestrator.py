@@ -1,18 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the manage-status orchestrator store (kind=orchestrator, D5).
-
-Covers:
-- create/read/update-field/metadata round-trip under the orchestrator store
-  (PLAN_BASE_DIR isolation via plan_context).
-- kind=orchestrator schema fields validated on create.
-- update-field validation: phase enum, list fields require JSON arrays,
-  unknown fields rejected.
-- CLI boundary: the new ``update-field`` verb and ``--store orchestrator``
-  flags driven through the manage-status.py entry point.
-- Default-store regression: plans-store calls remain byte-identical with and
-  without the explicit ``--store plans`` flag.
-"""
+"""Tests for the manage-status orchestrator store (kind=orchestrator, D5)."""
 
 
 import json

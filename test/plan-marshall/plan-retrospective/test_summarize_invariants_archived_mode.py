@@ -1,13 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``summarize-invariants.py``.
-
-The script reads phase-handshake captures from ``<plan_dir>/handshakes.toon``
-(canonical storage owned by ``plan-marshall:plan-marshall:phase_handshake``)
-rather than ``status.metadata.phase_handshake``. Fixtures in
-``_plan_retrospective_fixtures.py`` materialize the file in the same TOON
-shape ``_handshake_store.save_rows``
-emits in production.
-"""
+"""Tests for ``summarize-invariants.py``."""
 
 
 from __future__ import annotations

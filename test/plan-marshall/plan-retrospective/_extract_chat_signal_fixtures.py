@@ -1,8 +1,25 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``extract chat signal`` test modules.
+"""Parsing, reduction and output-contract tests for ``extract-chat-signal.py``.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+The script reduces a Claude Code session JSONL transcript to its
+signal-bearing turns (Aspect 14 of ``plan-retrospective``). It keeps every
+OPERATOR-AUTHORED ``user`` turn and every ``assistant`` turn carrying a decision
+marker, dropping everything else. A ``user`` turn is operator-authored when
+prose remains after every harness envelope is stripped — a positive predicate,
+not an enumeration of the synthetic shapes anyone happened to have seen. It
+then emits a TOON payload carrying the two Tier-2 trigger flags:
+
+- ``no_signal`` — true when the transcript carried no operator-authored signal
+  of either kind: ``operator_turn_count == 0`` AND ``gate_decision_count == 0``.
+- ``over_budget`` — true when the reduced text exceeds ``--read-budget-bytes``.
+
+Either flag is the orchestrator's signal to fall back to the Tier-2 WARNING
+finding (``reason: transcript_too_large``). A missing transcript yields
+``status: skipped, reason: transcript_unavailable``.
+
+Provenance classification is covered by ``test_chat_provenance.py``; the two
+operator-signal counters and the routing verdict by
+``test_extract_chat_signal_verdict.py``.
 """
 
 
@@ -12,10 +29,10 @@ import json
 import sys
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT, load_script_module  # noqa: E402
-
 sys.path.insert(0, str(Path(__file__).parent))
 
+
+from conftest import MARKETPLACE_ROOT, load_script_module  # noqa: E402
 
 SCRIPT_PATH = (
     MARKETPLACE_ROOT

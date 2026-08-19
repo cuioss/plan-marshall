@@ -1,35 +1,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the generic ``direct-gh-glab-usage.py`` aspect (Surfaces A+B) and
 the retrospective-aspect extension point that homes the former Surface C.
-
-Covers the domain-invariant detection scenarios for the generic aspect:
-
-(a) Fixture log files containing ``gh``/``glab`` invocations (positive
-    detection) — surface ``log_leak``.
-(b) Fixture diff with added ``gh``/``glab`` lines (positive detection)
-    — surface ``diff_leak``.
-(d) Fixture where ``gh`` appears only in a comment — negative, must NOT
-    trip the diff scanner.
-
-Plus the Surface C split contract, scoped to this file per the deliverable:
-
-* Surfaces A+B remain in the generic, domain-invariant ``direct-gh-glab-usage``
-  aspect; ``wrapper_tangle`` is no longer emitted there.
-* Surface C moved to the ``plan-marshall-plugin-dev`` domain aspect
-  ``pm-plugin-development:plan-marshall-plugin:wrapper-tangle-scan``,
-  contributed via the ``provides_retrospective_aspects()`` extension point.
-* ``extension_discovery.py`` discovers the hook and surfaces it through the
-  ``list-retrospective-aspects`` CLI (the deterministic backing for
-  plan-retrospective Step 3's domain-aspect merge).
-* ``pm-plugin-development``'s ``extension.py`` contributes the aspect gated by
-  the ``plan-marshall-plugin-dev`` domain only; ``ExtensionBase`` returns ``[]``
-  by default.
-* plan-retrospective Step 3 merges domain aspects per domain — modelled here as
-  the deterministic ``filter list-retrospective-aspects by plan domain``
-  predicate the workflow step relies on.
-
-The wrapper-tangle DETECTION behaviour itself lives in
-``test/pm-plugin-development/plan-marshall-plugin/test_wrapper_tangle_scan.py``.
 """
 
 

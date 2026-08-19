@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-findings.py script.
-
-Tier 2 (direct import) tests with 2-3 subprocess tests for CLI plumbing.
-"""
+"""Tests for manage-findings.py script."""
 
 
 from _manage_findings_fixtures import (
@@ -278,3 +275,49 @@ def test_cli_pr_comment_reviewed_commit_sha_bot_kind_roundtrip(plan_context):
     assert list_result.success, f'Script failed: {list_result.stderr}'
     data = parse_toon(list_result.stdout)
     assert data['filtered_count'] == 1
+
+
+def test_cli_pr_comment_invalid_bot_kind_rejected(plan_context):
+    """CLI plumbing: --bot-kind outside the allowed set is rejected by argparse."""
+    result = run_script(
+        SCRIPT_PATH,
+        'add',
+        '--plan-id',
+        'cli-prc-badbotkind',
+        '--type',
+        'pr-comment',
+        '--title',
+        'Bad bot_kind',
+        '--detail',
+        'd',
+        '--bot-kind',
+        'sonarcloud',
+    )
+    assert not result.success
+
+
+# =============================================================================
+# Test: Finding Resolve Command
+# =============================================================================
+
+
+def test_finding_resolve(plan_context):
+    """Test resolving a finding."""
+    add_result = cmd_add(
+        _add_ns(
+            type='build-error',
+            title='Compilation error',
+            detail='Missing import',
+        )
+    )
+    hash_id = str(add_result['hash_id'])
+
+    result = cmd_resolve(
+        _resolve_ns(
+            hash_id=hash_id,
+            resolution='fixed',
+            detail='Added missing import statement',
+        )
+    )
+    assert result['status'] == 'success'
+    assert result['resolution'] == 'fixed'

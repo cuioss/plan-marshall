@@ -1,27 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the ``consult`` subcommand of manage-lessons.py.
-
-``cmd_consult`` is the corpus's prospective read side: it derives the plan's
-``{bundle}:{skill}`` component set from its ``solution_outline.md``
-``**Affected files:**`` paths, returns every ACTIVE lesson whose ``component``
-exactly equals one of them, and writes the machine record to
-``work/lessons-consult.toon``.
-
-Coverage: path-to-component mapping (matching and non-matching paths),
-``unmapped_paths[]`` population, exact-match component filtering (no prefix or
-fuzzy expansion), active-only filtering, deterministic ``(component,
-lesson_id)`` ordering, ``--max-per-component`` cap binding with the
-``truncated`` / ``total_matched`` disclosure, the fail-closed
-``outline_not_found`` contract, plan-id traversal rejection, the artifact
-write (including the ``surfaced_count: 0`` present-artifact form), the
-mutation-freedom invariant, and the CLI plumbing including the documented
-default cap.
-
-Fixture lesson IDs are sourced verbatim from real ``manage-lessons list``
-inventory output — never hand-typed — per the live-anchoring discipline the
-lesson-ID scanner enforces.
-"""
+"""Tests for the ``consult`` subcommand of manage-lessons.py."""
 
 
 from _consult_fixtures import (

@@ -1,9 +1,35 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``aggregate`` test modules.
+"""
+Tests for the ``aggregate`` subcommand of manage-lessons.py.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+``cmd_aggregate`` is a read-only classifier that groups active lessons that
+would land in one plan. The classifier rules (signal priority, primary-pick,
+deterministic ordering, merged-body composition) are documented in
+``marketplace/bundles/plan-marshall/skills/manage-lessons/references/aggregate-analysis.md``;
+this test suite is the executable mirror of that contract.
+
+Cases (a–h) from the originating task description:
+
+- (a) grouping by shared component
+- (b) grouping by shared standards directory
+- (c) grouping by cross-reference
+- (d) overlap with deterministic strongest-signal placement (cross-ref beats
+      shared-component)
+- (e) primary-pick ordering across cross-ref-fan-in / recurrence-count /
+      id ascending
+- (f) ``--top-n`` truncation of the headline command list — group composition
+      is unaffected, only ``top_n_commands[]`` length
+- (g) merged-body composition contains primary body at top followed by H2
+      sub-sections in classifier-order
+- (h) end-to-end test that runs aggregate against a fixture of 8–12 synthetic
+      lessons and asserts the returned TOON shape exactly matches the
+      orchestrator's consumption contract documented in aggregate-analysis.md
+
+The tests use Tier 2 (direct import) invocation. Lessons are seeded under
+``{tmp_path}/lessons-learned/`` because ``get_lessons_dir()`` resolves
+``DIR_LESSONS`` against ``PLAN_BASE_DIR`` (set via ``patch.dict`` for each
+test).
 """
 
 

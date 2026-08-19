@@ -1,14 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-metrics.py `print-phase-breakdown` subcommand.
-
-Covers:
-- Successful extraction of the `## Phase Breakdown` section from metrics.md.
-- Error when metrics.md is missing.
-- Error when metrics.md exists but lacks the Phase Breakdown heading.
-- Section bounded correctly when followed by another `##` heading.
-- Direct cmd_* call (Tier 2 import) and CLI plumbing (subprocess).
-"""
+"""Tests for manage-metrics.py `print-phase-breakdown` subcommand."""
 
 
 import io

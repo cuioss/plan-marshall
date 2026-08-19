@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``manage tasks batch add`` test modules.
+"""Tests for the `batch-add` subcommand of manage-tasks.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+Covers:
+  - successful multi-task atomic insertion (sequential numbering, persisted files)
+  - empty array no-op
+  - validation rejection (per-entry error reporting)
+  - schema rejection (top-level type errors)
+  - all-or-nothing semantics (one bad entry → no files written)
+  - depends_on alternative encodings
 """
+
+
 
 
 from argparse import Namespace

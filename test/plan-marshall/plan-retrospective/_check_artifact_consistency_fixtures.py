@@ -1,33 +1,21 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``check artifact consistency`` test modules.
-
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
-"""
+"""Tests for ``check-artifact-consistency.py``."""
 
 
 from __future__ import annotations
 
-# =============================================================================
-# Unit tests for the footprint resolver (_resolve_footprint delegates to the shared
-# whole-chain resolver: live diff → realized-footprint capture → merge-commit →
-# legacy key → unresolvable). These tests exercise the tier-1/legacy/unresolvable
-# endpoints; the capture and merge-commit tiers are covered in test_footprint_resolver.py.
-# =============================================================================
-import importlib.util  # noqa: E402
 import json
-import subprocess  # noqa: E402
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+
 
 from _plan_retrospective_fixtures import (  # noqa: E402
     build_happy_plan_dir,
 )
 
 from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
-
-sys.path.insert(0, str(Path(__file__).parent))
-
 
 SCRIPT_PATH = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'check-artifact-consistency.py'
@@ -225,6 +213,17 @@ def _setup_archived_plan_with_references(tmp_path: Path, references: dict, *, na
 
 def _run_archived(plan_dir: Path):
     return run_script(SCRIPT_PATH, 'run', '--archived-plan-path', str(plan_dir), '--mode', 'archived')
+
+
+# =============================================================================
+# Unit tests for the footprint resolver (_resolve_footprint delegates to the shared
+# whole-chain resolver: live diff → realized-footprint capture → merge-commit →
+# legacy key → unresolvable). These tests exercise the tier-1/legacy/unresolvable
+# endpoints; the capture and merge-commit tiers are covered in test_footprint_resolver.py.
+# =============================================================================
+
+import importlib.util  # noqa: E402
+import subprocess  # noqa: E402
 
 
 def _load_check_module():

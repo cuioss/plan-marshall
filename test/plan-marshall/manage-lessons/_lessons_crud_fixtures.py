@@ -1,15 +1,51 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Shared preamble for the ``lessons crud`` test modules.
+"""Tests for the trivial getter/setter CRUD subcommands of manage-lessons.py.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+This module absorbs the four single-verb suites whose bodies were each small
+enough that a dedicated file cost more navigation than it bought:
+
+* ``get`` — ``cmd_get`` direct invocation (metadata retrieval, not-found) plus
+  the Tier 3 subprocess check pinning ``read`` as an alias for ``get``
+  (TestCmdGet, TestCliReadAlias).
+* ``list`` — core ``cmd_list`` behaviour (empty dir, basic listing,
+  component/category filters, ``--full`` body inclusion, default no-body
+  exclusion), the ``--status`` filter matrix, and legacy ``YYYY-MM-DD-NNN``
+  filename compatibility across both the list and get read paths
+  (TestCmdList, TestLegacyFormatCompatibility, TestCmdListStatusFilter).
+* ``set-title`` — ``cmd_set_title`` H1 rewriting: active and superseded
+  lessons, the not-found and malformed-lesson error paths, idempotency,
+  frontmatter preservation, and first-outside-fence-H1 selection
+  (TestCmdSetTitle*).
+* ``set-body`` — ``cmd_set_body`` body overwrite via the canonical ``--file``
+  form and the secondary ``--content`` form, the mutual-exclusion guard, the
+  file-not-found / file-read-error guards, and frontmatter preservation
+  (TestCmdSetBody).
+
+The complex-verb suites (``supersede``, ``convert_to_plan``,
+``restore_from_plan``, ``from_error``, ``add``, ``remove``, ``update``) keep
+their own files — only the trivial getter/setter verbs are co-located here.
+
+All four absorbed suites now share ONE module-load path: ``_lessons_helpers``
+loads ``manage-lessons.py`` exactly once and re-exports the ``cmd_*``
+callables. ``cmd_set_title`` is not among the helper's re-exports, so it is
+resolved off the shared ``_mod`` handle rather than by re-loading the script —
+the previous ``test_set_title.py`` paid a second ``spec_from_file_location``
+load of the same production module under a separate name.
 """
 
 
+
+
 from pathlib import Path
+
+
+
+
 from _lessons_helpers import _mod
+
+
 
 
 # ``cmd_set_title`` is not re-exported by ``_lessons_helpers`` (that module is

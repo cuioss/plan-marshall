@@ -1,11 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``script-failure-analysis.py``.
-
-The script classifies non-zero-exit script calls in
-``script-execution.log`` by stderr signature (invented_subcommand,
-missing_required_flag, invented_flag, script_internal_error) and emits a
-deduped TOON fragment for the retrospective compile-report consumer.
-"""
+"""Tests for ``script-failure-analysis.py``."""
 
 
 from __future__ import annotations

@@ -1,9 +1,19 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``denominator sampling point`` test modules.
+"""Tests for the persisted denominators and their sampling-point discriminator.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+``metrics.toon`` otherwise persists NUMERATORS only, so a script reading it
+supports exactly one verdict: "this got more expensive". Every denominator a
+ratio needs lived outside the record and was re-derived at render time — a
+figure nobody can check.
+
+Each denominator is also a MOVING quantity (``affected_files`` grows during
+execute, the task count grows as triage appends fix-tasks, the deliverable count
+can change on a Q-Gate re-entry), so the same numerator over the same plan
+yields a different ratio depending on WHEN the denominator was read. That is why
+these tests pin the PAIR — count plus ``{denominator}_sampling_point`` — and why
+the absent case is pinned as hard as the present one: a denominator whose source
+cannot be read is absent from the record, never a guessed ``0``.
 """
 
 

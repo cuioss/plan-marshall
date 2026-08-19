@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-status.py read + phase verbs + worktree-path resolution.
-
-Split from test_manage_status.py: covers cmd_read, cmd_set_phase,
-cmd_update_phase, cmd_progress, cmd_get_worktree_path (incl.
-pre-materialization edge cases), and CLI plumbing/regression entry points.
-"""
+"""Tests for manage-status.py read + phase verbs + worktree-path resolution."""
 
 
 import json

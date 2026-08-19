@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``analyze logs`` test modules.
-
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
-"""
+"""Tests for ``analyze-logs.py``."""
 
 
 from __future__ import annotations
@@ -14,10 +10,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-from conftest import MARKETPLACE_ROOT  # noqa: E402
-
 sys.path.insert(0, str(Path(__file__).parent))
 
+
+
+
+from conftest import MARKETPLACE_ROOT  # noqa: E402
 
 SCRIPT_PATH = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'analyze-logs.py'
 

@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``assert step recorded`` test modules.
+"""Tests for the assert-step-recorded subcommand of manage-status.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+The verb is the read-only post-dispatch guard the phase-6-finalize dispatcher
+calls after every dispatched-step return to detect the silent gap where a step
+returns ``status: success`` but skips its mandated ``mark-step-done``
+side-effect. A record counts as *recorded* iff a dict entry with a terminal
+``outcome`` in ``{done, skipped, loop_back, failed}`` exists under
+``status.metadata.phase_steps[phase][step]``. The verb performs zero writes.
 """
 
 

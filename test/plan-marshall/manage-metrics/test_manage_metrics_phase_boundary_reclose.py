@@ -1,14 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the `phase-boundary` subcommand of manage_metrics.
-
-Covers:
-  - end-of-prev + start-of-next persisted in a single call
-  - optional token/duration/tool-uses forwarded to end-phase
-  - metrics.md regenerated as a side-effect
-  - invalid phase names rejected for either side
-  - boundary works even when the previous phase had no start_time
-"""
+"""Tests for the `phase-boundary` subcommand of manage_metrics."""
 
 
 import pytest

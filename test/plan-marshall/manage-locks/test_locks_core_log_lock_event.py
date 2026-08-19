@@ -1,29 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-locks ``_locks_core.py`` shared coordination primitives.
-
-``_locks_core`` is the single TOCTOU-safe coordination surface that both the
-merge mutex and the build-queue limiter build on. It is imported as a module
-(never an executor entry point) and exposes two public pieces plus the private
-helpers they compose:
-
-  * :func:`holder_is_dead` — the plan-liveness predicate. A recorded holder is
-    dead when its plan dir lives in NEITHER the main checkout NOR the holder's
-    worktree.
-  * :func:`rmw_json` — a serialized, main-anchored read-modify-write for JSON
-    state files, guarded by an ``O_EXCL`` guard-file mutex and committed via an
-    atomic temp-file replace.
-
-Isolation: under the autouse ``_plan_base_dir_sandbox`` fixture, ``PLAN_BASE_DIR``
-is redirected into a per-test tmp dir; ``resolve_main_anchored_path`` (which
-``holder_is_dead`` and the call sites of ``rmw_json`` anchor on) honours that
-override, so ``holder_is_dead`` resolves liveness against the sandbox tree rather
-than the real main checkout. Tests that exercise ``holder_is_dead`` therefore use
-the ``plan_context`` fixture (whose ``PLAN_BASE_DIR`` redirect wins over the
-autouse default) and build plan/worktree dirs under ``plan_context.fixture_dir``.
-The guard / RMW tests operate on free-standing JSON files under ``tmp_path`` and
-need no plan-tree scaffolding.
-"""
+"""Tests for manage-locks ``_locks_core.py`` shared coordination primitives."""
 
 
 from __future__ import annotations

@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``plan retrospective manifest`` test modules.
+"""Tests for ``check-manifest-consistency.py`` and the manifest-aware
+forward in ``check-artifact-consistency.py``.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+The cross-check matrix being exercised is documented in
+``marketplace/bundles/plan-marshall/skills/plan-retrospective/standards/manifest-crosscheck.md``.
 """
 
 
@@ -11,12 +12,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
+
+
 from _plan_retrospective_fixtures import build_happy_plan_dir  # noqa: E402
 
 from conftest import MARKETPLACE_ROOT, run_script  # noqa: E402
-
-sys.path.insert(0, str(Path(__file__).parent))
-
 
 MANIFEST_SCRIPT = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'check-manifest-consistency.py'

@@ -1,20 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Cross-ledger reconciliation: a disagreement becomes a finding, not a silent choice.
-
-The two row ledgers — `execution.toon`'s `execution_log[]` and each phase's
-`work/metrics-dispatch-boundaries-{phase}.toon` — are written by independent
-call sites with no shared transaction and no shared key, so a dispatch can land
-in one and not the other in BOTH directions. Nothing previously reconciled them,
-and nothing told a reader that only their union counts every dispatch.
-
-These tests pin that the reconciliation emits one finding per divergent row in
-each direction, that the two partiality shapes are labelled DISTINCTLY (a phase
-whose boundary never closed versus a row with no partner), that a re-entered
-phase is called out as its own shape, and that a structurally-impossible absence
-is declared rather than reported. Each includes a negative control, because a
-reconciliation that fires on agreement is worse than none.
-"""
+"""Cross-ledger reconciliation: a disagreement becomes a finding, not a silent choice."""
 
 
 from datetime import timedelta

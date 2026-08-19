@@ -1,16 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-status.py transition + archive + delete + orphans + loop-back.
-
-Split from test_manage_status.py: covers cmd_transition (incl. inline
-strict-verify guard for guarded boundaries, and last-phase symmetry with
-cmd_archive), cmd_archive (incl. --reason flag), cmd_delete_plan (incl. the main-anchored
-lesson carry-back, its five-value ``lesson_carry_back_action`` and that
-vocabulary's stated relationship to ``_lessons_query.RESTORE_ACTIONS``, and the
-veto that refuses the deletion when a carried lesson did not land), cmd_list (incl.
-worktree moved-in plan discovery), cmd_list_orphans, and cmd_mark_step_done
-loop-back target validation.
-"""
+"""Tests for manage-status.py transition + archive + delete + orphans + loop-back."""
 
 
 import json

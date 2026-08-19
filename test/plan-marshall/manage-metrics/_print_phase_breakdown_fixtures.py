@@ -1,15 +1,31 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``print phase breakdown`` test modules.
+"""Tests for manage-metrics.py `print-phase-breakdown` subcommand.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+Covers:
+- Successful extraction of the `## Phase Breakdown` section from metrics.md.
+- Error when metrics.md is missing.
+- Error when metrics.md exists but lacks the Phase Breakdown heading.
+- Section bounded correctly when followed by another `##` heading.
+- Direct cmd_* call (Tier 2 import) and CLI plumbing (subprocess).
 """
 
 
 # ruff: noqa: I001
 import importlib.util
+
+
+
+
+
+
+
+
 from conftest import get_script_path
+
+
+
+
 from _manage_metrics_fixtures import (
     ns_end_phase,
     ns_generate,

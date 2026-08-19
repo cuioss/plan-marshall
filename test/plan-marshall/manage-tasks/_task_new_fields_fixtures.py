@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``task new fields`` test modules.
+"""Tests for manage-tasks.py new fields: domain, profile, skills, origin.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+Tier 2 (direct import) tests with 2 subprocess tests for CLI plumbing.
 """
+
+
+
+
 
 
 from argparse import Namespace

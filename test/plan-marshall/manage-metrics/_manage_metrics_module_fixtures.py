@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``manage metrics`` test modules.
+"""Tests for manage-metrics.py CLI script.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+Covers: start-phase, end-phase, generate, enrich, accumulate-agent-usage subcommands.
+
+Tier 2 (direct import) tests for cmd_* functions, with 2 subprocess
+tests retained for CLI plumbing verification.
 """
 
 

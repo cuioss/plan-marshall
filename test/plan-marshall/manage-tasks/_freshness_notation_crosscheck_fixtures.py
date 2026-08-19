@@ -1,9 +1,43 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``freshness notation crosscheck`` test modules.
+"""Tests for the notation cross-check on ``pre-commit-verify-freshness``.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+The gate's primary predicate ("a ``kind=build`` row with ``status == 'success'``
+and a matching ``worktree_sha`` exists") asserts a row EXISTS; it never asks
+whether the row is evidence of a build THIS project performs. This file pins the
+check that closes that gap, in BOTH directions — because a one-directional fix
+trades one false signal for its mirror:
+
+* **Refusal direction.** A matching row whose notation the project's
+  architecture does not resolve is refused (``stale`` / ``notation_unrelated``).
+  Against the pre-change gate the same ledger returned ``fresh`` with no
+  indication anything was odd, which is what made the defect undetectable.
+* **Acceptance direction.** A project that legitimately builds with several
+  notations still passes, including when an unrelated row sits AHEAD of the
+  related one in ledger file order — a first-match return would refuse it.
+
+Three further properties are pinned here because losing any would reintroduce a
+defect this work exists to close:
+
+* **The record names its evidence.** A ``fresh`` verdict carries the matched
+  notation, the matched row's index in the ledger, its ``plan_id`` and its
+  timestamp, plus the cross-check verdict and the resolved notation set. A pass
+  is auditable rather than a bare assertion.
+* **Structural stale verdicts stay stale.** A tree mutated after its last build
+  is correctly ``stale``, and nothing here re-stamps or relaxes the sha
+  comparison to make it pass. Weakening that would reintroduce the false-green
+  class the cross-check exists to close.
+* **The check is not a no-op.** One case drives the gate with NO seam stubbed at
+  all, so a resolver that stopped importing at runtime — or stopped resolving
+  anything against a real tree — is a failure here rather than a permanent
+  ``unverified`` pass that leaves every other case green. Its comparison target
+  has its own coverage in
+  ``test/plan-marshall/manage-architecture/test_project_build_notations.py``.
+
+The resolver seam (``resolve_expected_notations``) is stubbed in most gate-level
+cases so they neither depend on the working tree nor pay for a crawl; the
+resolver's own outcome contract is exercised directly against
+``_freshness_crosscheck``, and the live path has the dedicated case named above.
 """
 
 

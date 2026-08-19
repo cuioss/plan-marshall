@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``manage status transition`` test modules.
+"""Tests for manage-status.py transition + archive + delete + orphans + loop-back.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+Split from test_manage_status.py: covers cmd_transition (incl. inline
+strict-verify guard for guarded boundaries, and last-phase symmetry with
+cmd_archive), cmd_archive (incl. --reason flag), cmd_delete_plan (incl. the main-anchored
+lesson carry-back, its five-value ``lesson_carry_back_action`` and that
+vocabulary's stated relationship to ``_lessons_query.RESTORE_ACTIONS``, and the
+veto that refuses the deletion when a carried lesson did not land), cmd_list (incl.
+worktree moved-in plan discovery), cmd_list_orphans, and cmd_mark_step_done
+loop-back target validation.
 """
 
 
@@ -11,9 +17,6 @@ import json
 import sys as _sys
 from argparse import Namespace
 from pathlib import Path
-
-import _handshake_commands as _cmds  # noqa: E402
-import _invariants as _inv  # noqa: E402
 
 from conftest import get_script_path, load_script_module
 
@@ -195,6 +198,10 @@ _PLAN_HANDSHAKE_SCRIPTS_DIR = str(
 
 if _PLAN_HANDSHAKE_SCRIPTS_DIR not in _sys.path:
     _sys.path.insert(0, _PLAN_HANDSHAKE_SCRIPTS_DIR)
+
+
+import _handshake_commands as _cmds  # noqa: E402
+import _invariants as _inv  # noqa: E402
 
 
 def _seed_plan_with_5_execute_capture(plan_id):

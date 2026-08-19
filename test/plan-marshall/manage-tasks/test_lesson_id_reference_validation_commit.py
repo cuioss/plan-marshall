@@ -1,28 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for at-write-time lesson-ID reference validation in manage-tasks.
-
-Covers the validation surface in ``cmd_commit_add`` and ``cmd_batch_add``
-(``_tasks_crud.py``):
-tasks that cite lesson IDs MUST resolve against the live manage-lessons
-inventory at write time. A miss aborts the entire write atomically — no
-``TASK-NNN.json`` file is created.
-
-Cases:
-  (a) task with no lesson-ID-shaped tokens succeeds
-  (b) task citing an ID that resolves in inventory succeeds
-  (c) task citing a phantom ID hard-fails with
-      ``validation_error: lesson_id_not_found`` and no TASK file is written
-  (d) batch-add with one valid + one phantom rejects the entire batch
-      with no TASK files written
-  (e) lesson IDs cited in the title only are still scanned
-
-The inventory is mocked at the ``_tasks_crud`` module-level binding so the
-tests are deterministic and do NOT depend on the live ``manage-lessons``
-inventory state. Real-ID fixtures are copy-pasted from live
-``manage-lessons list`` output (mirrors the fixture pattern in
-``test/plan-marshall/tools-input-validation/test_lesson_id_scanner.py``).
-"""
+"""Tests for at-write-time lesson-ID reference validation in manage-tasks."""
 
 
 import json

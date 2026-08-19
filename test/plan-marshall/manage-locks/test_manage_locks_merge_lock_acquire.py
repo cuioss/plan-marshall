@@ -2,65 +2,6 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for the unified ``manage-locks/merge_lock.py`` — the single main-anchored
 merge-to-main serializer fronted by a FIFO admission queue.
-
-Contract under test (lock-reconciliation-analysis.md §4 behavioural-equivalence
-criteria + §5 massive-parallel-concurrency invariants (ii) + (iv); the FIFO
-merge-queue admission layer + its canonical contract in manage-locks/SKILL.md;
-ADR-002):
-
-* **Atomic acquire** — ``acquire`` creates the lock file via ``O_EXCL`` and
-  records the holder ``plan_id`` in the file contents.
-* **FIFO admission (fairness)** — ``acquire`` first FIFO-enqueues ``--plan-id``
-  into ``merge-queue.json``; ONLY the FIFO-front plan (the oldest entry by
-  admit-``ts``) is admission-eligible. A non-front plan returns
-  ``admission: blocked`` WITHOUT attempting the ``O_EXCL`` create — it never
-  contends the kernel race — even when the lock file is FREE.
-* **Idempotent re-poll position preservation** — a plan already in the queue
-  KEEPS its FIFO position on re-poll; it is never re-appended to the back, so a
-  plan polling repeatedly never loses priority to a later-arriving plan.
-* **Release advances the front** — ``release`` dequeues ``--plan-id`` from
-  ``merge-queue.json`` so the next FIFO entry becomes the front and is admitted
-  on its next re-poll.
-* **No double-grant** — exactly one of N concurrent ``acquire`` calls holds the
-  lock; the rest return ``status: blocked``. Two plans never both hold the lock.
-* **``blocked`` still escalates** — a blocked admission returns ``status: blocked``
-  + ``blocking_plan_id`` (when a foreign live holder holds the lock) +
-  ``waiting_count``, so the Pre-Merge Gate's poll/backoff loop and last-resort
-  orchestrator escalation fire. ``blocked`` is NOT a hard error (no ``error_code``).
-* **Stale reclamation** — a lock whose recorded holder has no live plan dir (on
-  main OR in its worktree) is reclaimable (``reclaimed: true``) by the FIFO-front
-  plan; a lock whose holder IS live is NOT reclaimable.
-* **Idempotent release** — ``release`` removes the lock so the next acquire
-  succeeds; release is idempotent (already-free / foreign-holder → no-op success,
-  the foreign holder's lock left intact) and ALWAYS dequeues the FIFO entry.
-* **``check`` holder read** — ``check`` returns ``{free}`` when no lock file
-  exists and ``{held, holder_plan_id}`` when one does, without creating or
-  mutating the lock, and never touching the FIFO queue.
-* **Holder liveness via the shared core** — liveness is the imported
-  :func:`_locks_core.holder_is_dead`, NOT a re-implemented copy; both main and
-  worktree paths are consulted.
-* **Main-anchored resolution (the single exception)** — both the lock AND the
-  FIFO queue resolve to the MAIN checkout regardless of caller cwd, even when cwd
-  is pinned to a worktree fixture.
-
-Real-parallel obligations (§5 (ii) + (iv)): the no-double-grant invariant (ii) and
-the dead-holder-reclaim-without-evicting-a-live-holder invariant (iv) are BOTH
-asserted under REAL spawned-subprocess contention — N processes racing the SAME
-main-anchored ``merge.lock`` + ``merge-queue.json`` via the CLI entry point — not
-sequential calls. A sequential test can never exercise the kernel ``O_EXCL`` race
-window (ii), the FIFO enqueue read-modify-write race, nor the interleave between
-the stale-holder unlink and the atomic re-create (iv).
-
-Isolation (test-isolation lessons): every test runs against an isolated
-``PLAN_BASE_DIR`` staged under ``tmp_path`` so the suite never contends for the
-real ``.plan/merge.lock`` / ``.plan/merge-queue.json`` under ``-n auto``. Under
-``PLAN_BASE_DIR`` the lock resolves to ``<PLAN_BASE_DIR>/merge.lock``, the queue
-to ``<PLAN_BASE_DIR>/merge-queue.json``, and holder plan dirs to
-``<PLAN_BASE_DIR>/plans/{holder}``.
-
-Filename note: this file is named ``test_manage_locks_merge_lock.py`` rather than
-``test_merge_lock.py`` because pytest's default ``prepend`` import mode requires
-unique test-module basenames across the suite.
 """
 
 

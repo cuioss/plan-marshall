@@ -1,21 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""The suspect-zero census — the class guard.
-
-A detector that has never produced a positive is indistinguishable, from its
-output alone, from one that CANNOT produce one. The census makes every zero
-SUSPECT rather than silently clean, and classifies what KIND of zero it is:
-
-* ``structural`` — the check declared it could not measure. Not evidence.
-* ``starved`` — the corpus supplied no plans. Not evidence either, for a
-  different reason, and with a different remedy.
-* ``disciplinary`` — a non-empty corpus was examined and nothing was genuine.
-  Evidence about the corpus; never proof the check is able to fire.
-
-The distinction is the deliverable. A census that lumped the three together
-would report the same thing for a check whose predicate cannot fire and a check
-that is doing its job over a clean corpus.
-"""
+"""The suspect-zero census — the class guard."""
 
 
 from pathlib import Path

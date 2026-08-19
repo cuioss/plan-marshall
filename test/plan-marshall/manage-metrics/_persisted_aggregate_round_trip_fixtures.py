@@ -1,9 +1,24 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``persisted aggregate round trip`` test modules.
+"""The rendered report and the store agree about what exists.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+Three things `metrics.md` showed had no counterpart in `metrics.toon` at all:
+the headline Total row, the population qualifier that makes it safe to quote,
+and the caveats carrying the semantics (which measure won a reconciliation,
+which dispatch classes are excluded by declaration). `write_metrics` ran BEFORE
+the Total row was built, so the store's header carried no aggregate — a script
+reading the record had to re-sum the rows itself and re-derive a population, and
+could legitimately pick a different one than the renderer did.
+
+These tests pin the round trip: every figure the Total row renders is locatable
+in the store, beside the count of phase rows that fed it. A figure present only
+in the render fails the deliverable.
+
+They also pin the unclosed-boundary fold: a phase whose terminal close never
+fired still has a dispatch-boundary file that accumulated a row per dispatch, and
+that sum is folded into its Tokens cell as a LABELLED floor — while its duration
+partiality verdict is deliberately left intact, because the boundary file cannot
+honestly supply a wall-clock the close never stamped.
 """
 
 

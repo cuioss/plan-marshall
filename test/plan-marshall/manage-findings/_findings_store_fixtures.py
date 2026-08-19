@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``findings store`` test modules.
-
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
-"""
+"""Unit tests for _findings_core.py - the storage engine for findings and Q-Gate findings."""
 
 
 from conftest import get_scripts_dir, load_script_module

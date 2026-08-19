@@ -1,8 +1,21 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``footprint oracle classification`` test modules.
+"""Tests for the oracle-backed footprint classification shared by the two checks.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+Each test here pins one deliverable of the plan that introduced
+``_footprint_classification`` and was verified to FAIL against the pre-fix code:
+
+* ``TestProjectLocalTreeSurvivesFilter`` (D5a) — a multi-file footprint under the
+  project-local skill tree survives the filter intact, because ``build.map``
+  routes it ``production``. Pre-fix the private ``('.plan/', '.claude/')`` prefix
+  tuple discarded every one of them.
+* ``TestReducedInputSetReportsReduction`` (D5b) — a rule whose input set was
+  reduced reports the reduction instead of a bare clean pass.
+* ``TestTestsOnlyRuleFires`` (D5c) — rule M3 fires on the composer's REAL
+  ``verify:``-prefixed step-list shape. Pre-fix it compared against a bare
+  ``['module-tests']`` the composer never emits, so it could never fire.
+* ``TestDiffFileRelativeResolution`` (D5d) — the documented plan-relative
+  ``--diff-file`` invocation produces the same verdict as the absolute one, and a
+  genuinely unresolvable path fails loudly rather than reporting skip.
 """
 
 
@@ -12,12 +25,12 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent))
+
+
 from _plan_retrospective_fixtures import build_happy_plan_dir  # noqa: E402
 
 from conftest import MARKETPLACE_ROOT  # noqa: E402
-
-sys.path.insert(0, str(Path(__file__).parent))
-
 
 MANIFEST_SCRIPT = (
     MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'check-manifest-consistency.py'

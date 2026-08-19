@@ -1,9 +1,43 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``pre commit verify freshness`` test modules.
+"""Tests for the ``pre-commit-verify-freshness`` subcommand of manage-tasks.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+The subcommand answers a single deterministic question — "does the unified
+change-ledger contain a ``kind=build`` entry with ``status == 'success'`` whose
+``worktree_sha`` equals the CURRENT working-tree currency hash?" — and returns
+one of three statuses (``fresh``, ``stale``, ``undecidable``) for the
+orchestrator to consume as a fail-closed gate. Matching on ``status`` rather
+than ``exit_code`` is load-bearing: the build wrapper exits 0 on timeout, so an
+exit-code predicate would launder a build that never finished into a false
+``fresh`` (regression covered below). See
+``marketplace/bundles/plan-marshall/skills/manage-tasks/SKILL.md`` §
+"Pre-Commit Verify Freshness" for the contract.
+
+Before that question is asked at all, the gate consults the single build/no-build
+authority (``extension_base.should_execute_build``, the ``manage-config
+build-decision`` verb) COMMAND-FREE. A ``not_necessary`` verdict means no
+``kind=build`` entry could ever legally exist for this footprint, so the gate
+short-circuits to ``fresh`` carrying the verdict's OWN ``reason`` verbatim. The
+gate derives no build-necessity signal of its own — it neither reads the
+manifest's step shapes nor owns an exemption vocabulary. See ADR-004 §
+"Amendment: ``build-decision`` is the sole build/no-build authority".
+
+The freshness primitive is the change-ledger lookup, NOT a file-mtime heuristic.
+Tests stub the three module-level boundary functions the command uses:
+
+- ``compute_worktree_sha`` — the working-tree currency hash. Stubbed to a
+  deterministic literal so the lookup match is exercised without standing up a
+  real git worktree. Returning ``None`` exercises the ``head_unresolvable``
+  fail-closed path.
+- ``resolve_ledger_path`` — the tracked-config-dir ledger location. Stubbed to a
+  temp JSONL file so the test controls the ledger entries directly.
+- ``_build_necessity_verdict`` — the command-free consult of the sole authority.
+  An autouse fixture pins it to ``build`` so every ledger-scan case reaches the
+  scan; the build-necessity cases override it explicitly.
+
+Together they make the gate's three-way decision (``fresh`` / ``stale`` /
+``undecidable``) deterministic and isolated from git, the real ledger, and the
+live project footprint.
 """
 
 

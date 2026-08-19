@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``manage status read`` test modules.
+"""Tests for manage-status.py read + phase verbs + worktree-path resolution.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+Split from test_manage_status.py: covers cmd_read, cmd_set_phase,
+cmd_update_phase, cmd_progress, cmd_get_worktree_path (incl.
+pre-materialization edge cases), and CLI plumbing/regression entry points.
 """
+
+
+
+
+
+
 
 
 from conftest import get_script_path, load_script_module

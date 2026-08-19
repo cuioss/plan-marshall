@@ -1,17 +1,41 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Shared preamble for the ``manage lessons main dispatch`` test modules.
+"""In-process ``main()`` dispatch tests for manage-lessons.py.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+The existing per-subcommand suites drive the ``cmd_*`` handlers directly and
+pin the CLI plumbing via ``run_script`` subprocesses. Subprocess execution
+does NOT contribute to in-process coverage, so the ~210-line argparse
+``main()`` body (subparser wiring, flag declarations, ``func`` dispatch,
+``output_toon`` emission, and the ``parse_args_with_toon_errors`` integration)
+was structurally uncovered.
+
+These tests close that gap by invoking the real ``main()`` IN PROCESS with a
+patched ``sys.argv`` so coverage counts the argparse construction and every
+``set_defaults(func=...)`` dispatch edge. ``main()`` is wrapped by
+``file_ops.safe_main`` — it calls ``sys.exit(rc)`` rather than returning — so
+every invocation is asserted inside ``pytest.raises(SystemExit)``. The emitted
+TOON (captured via ``capsys``) is parsed and asserted on real return fields,
+not merely on exit code.
+
+Lesson-ids use the canonical ``YYYY-MM-DD-HH-NNN`` shape (hyphenated, so
+``parse_toon`` never int-coerces them) and assertions target round-tripped
+titles / status fields rather than coerced numeric values.
 """
 
 
 import sys
+
+
 from pathlib import Path
+
+
 import pytest
+
+
 from conftest import load_script_module
+
+
 from toon_parser import parse_toon
 
 

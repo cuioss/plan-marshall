@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``recall read intent denominator`` test modules.
+"""Shared preamble for the ``recall read intent denominator`` test module.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+Holds the module-level loads, constants and helpers it uses, so
+the module itself carries the import and not the preamble.
 """
 
 

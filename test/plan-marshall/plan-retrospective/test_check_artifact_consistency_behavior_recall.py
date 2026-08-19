@@ -1,16 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""In-process behavioral tests for ``check-artifact-consistency.py``.
-
-The existing ``test_check_artifact_consistency.py`` drives the script through
-the ``run_script`` subprocess harness (which exercises the real argparse path
-but does not count for in-process coverage) plus a handful of direct
-``_resolve_footprint`` unit calls. This module complements it by calling
-``cmd_run`` and the individual ``check_*`` analyzers IN-PROCESS against crafted
-``tmp_path`` plan directories, asserting the structural verdicts each branch
-produces — including the manifest-aware downgrade branch, the task/recall/
-exact-match edge cases, and the ``resolve_plan_dir`` error paths that the
-subprocess suite never reaches in-process.
-"""
+"""In-process behavioral tests for ``check-artifact-consistency.py``."""
 
 
 from __future__ import annotations

@@ -1,10 +1,29 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``tasks cost`` test modules.
+"""Tests for deterministic task cost-sizing (_tasks_cost.py).
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+The pure deriver in ``_tasks_cost.py`` IMPLEMENTS the rubric defined in
+``marketplace/bundles/plan-marshall/skills/phase-4-plan/standards/cost-sizing.md``.
+These tests pin the four-signal weighted score, the score→size band mapping,
+the size→token table, the public ``derive_cost_size`` entry point, and the
+``derive-cost-size`` CLI subcommand integration via ``manage-tasks``.
+
+Per the task contract, the canonical thresholds are NOT inline-copied as bare
+magic numbers into assertions: each boundary test references the rubric weights
+imported from the module under test (``W_STEP`` / ``W_PROFILE`` / ``W_SKILLS`` /
+``W_TARGET_FILES`` / ``_XS_MAX`` / ``_S_MAX`` / ``_M_MAX`` / ``_L_MAX`` /
+``_XL_MAX``), so the assertions track the single source of truth in
+``cost-sizing.md`` rather than duplicating it. The rubric's six-size band
+semantics (XS ``< 30``, S ``[30,60)``, M ``[60,150)``, L ``[150,300)``,
+XL ``[300,700)``, XXL ``>= 700``) are exercised at and around each band
+boundary. The four original boundaries (60/150/300) and magnitudes are unchanged;
+XS and XXL widen the scale at both ends.
+
+Tier 2 (direct import) tests for the pure functions, plus Tier 3 subprocess
+tests for the ``derive-cost-size`` CLI plumbing.
 """
+
+
 
 
 from conftest import get_script_path, load_script_module

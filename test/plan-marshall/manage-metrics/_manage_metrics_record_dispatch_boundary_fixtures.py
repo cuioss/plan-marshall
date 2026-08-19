@@ -1,9 +1,21 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Shared preamble for the ``manage metrics record dispatch boundary`` test modules.
+"""Tests for the `record-dispatch-boundary` subcommand of manage_metrics.
 
-Holds the module-level loads, constants and helpers those modules
-share, so each of them carries the import and not the preamble.
+phase-5-execute loses log coverage on agent-initiated re-dispatch without a
+per-dispatch audit trail. That trail is captured by this subcommand.
+
+A leading block pins the boundary MEASURE: the reader returns its row count
+beside its token sum, because a sum cannot state its own coverage. The lettered
+sections below pin the subcommand's own contract:
+
+  (a) first invocation creates the artifact file with one row,
+  (b) subsequent invocations append rows in order with monotonic timestamps,
+  (c) every documented --termination-cause value is accepted (parametrized over
+      the live DISPATCH_TERMINATION_CAUSES tuple, including budget_yield),
+  (d) any other value rejected with non-zero exit before any file write,
+  (e) missing required flags cause non-zero exit before any file write,
+  (f) the artifact's TOON layout is parseable by the parse_toon helper.
 """
 
 

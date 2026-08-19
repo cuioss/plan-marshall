@@ -1,24 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the deterministic envelope bin-packer (_tasks_envelope.py).
-
-The pure packer in ``_tasks_envelope.py`` groups already-sized tasks into
-budget-bounded execution *envelope groups* using Next-Fit in task order. It is a
-pure, deterministic, total function — no LLM judgement, no I/O, no globals — so
-these tests pin its behaviour by direct import:
-
-* the private ``_task_cost`` extractor (presence / type / sign validation);
-* ``pack_envelopes`` over the full envelope-packing surface: single-task
-  envelopes, multi-task packing within budget, overflow into a second envelope,
-  the over-budget-task-lands-alone rule, contiguity / order preservation, the
-  per-envelope summary shape, and determinism (same input → same grouping);
-* the empty-list and single-oversized-task edge cases the task contract calls
-  out.
-
-Tier 2 (direct import) tests cover the pure functions; Tier 3 subprocess tests
-exercise the ``pack-envelopes`` CLI plumbing in ``manage-tasks`` against
-on-disk task files seeded into the plan's ``tasks/`` directory.
-"""
+"""Tests for the deterministic envelope bin-packer (_tasks_envelope.py)."""
 
 
 import pytest
