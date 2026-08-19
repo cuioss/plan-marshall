@@ -145,25 +145,44 @@ the server never answers is reported as `state: ok, error_count: 0` — a clean 
     `test_real_adversarial_defect_fails_and_rolls_back`, `test_edit_verdict_fails_on_worsened`
     (`3 failed, 33 passed`). The adversarial control is genuine, not positive-only.
   - Live repro of the post-edit read path — **against real `pyright-langserver`**, not a fake server.
-    The sequence mirrors `_run_edit` exactly (`open` → `diagnostics` → write the broken content to
-    disk → `change_to_disk` → `diagnostics` → `edit_verdict`), over a generated 12,003-line module
+    The sequence follows `_run_edit`'s reads (`open` → `diagnostics` → write the broken content to
+    disk → `change_to_disk` → `diagnostics` → `edit_verdict`), over a generated ~12,000-line module
     whose analysis pyright cannot finish inside the 2 s settle window:
 
     ```
-    diagnostics() #1 returned in 11349 ms -> 0 entries      [uri_in_cache=True diag_seq=1]
+    diagnostics() #1 returned in 10658 ms -> 0 entries      [uri_in_cache=True diag_seq=1]
     <broken content written to disk; change_to_disk sent>
-    diagnostics() #2 returned in  2017 ms -> 0 entries      [uri_in_cache=True diag_seq=1]
+    diagnostics() #2 returned in  2004 ms -> 0 entries      [uri_in_cache=True diag_seq=1]
     errors_before=0 errors_after=0 verdict=success
     MECHANISM: diag_seq unchanged since the pre-edit read -> the PRE-EDIT entry was returned
-    TRUTH after extra wait: 1 error(s)
+    TRUTH after extra wait (1 new publish frame): 1 error(s)
     ```
 
     The instrumented `diag_seq` is the proof, not an inference: it is the transport's own count of
     `publishDiagnostics` frames received, and it is **identical** before and after — no new publish
     arrived, so `wait_for_diagnostics` returned the entry cached before the edit, at the 2 s floor.
-    Reproduced a second time at 24,003 lines with the same outcome. A smaller module (483 lines)
-    verdicts `failed` correctly, so the guard works exactly until the server is slower than the
-    settle window and then fails **open**, not closed.
+    ⚠ This probe is *not* a byte-exact replay of `_run_edit` (an earlier reading claimed it "mirrors
+    `_run_edit` exactly"): the verb also re-opens the rename target before the pre-edit read — the
+    duplicate `didOpen` filed as G14 — so the two flip at different module sizes.
+  - **The same failure driven through the shipped verb**, which is the load-bearing evidence and what
+    establishes that a broken edit *lands*. Real `StdioTransport`, real pyright, real
+    `capture_footprint` / `apply_workspace_edit` / `edit_verdict`; the only interposition is on the
+    `textDocument/rename` **response**, replaced by a `WorkspaceEdit` carrying a deliberate defect —
+    exactly the control the plan's Verification section mandates for D2. On a 36,002-line module,
+    reproduced twice:
+
+    ```
+    [wait_for_diagnostics 8049 ms  diag_seq 0 -> 2  entries=0]   <- errors_before
+    [wait_for_diagnostics 2006 ms  diag_seq 2 -> 2  entries=0]   <- errors_after (seq unchanged: stale)
+    payload: status=success applied=true errors_before=0 errors_after=0 verdict=success
+    defect left on disk: True
+    ```
+
+    Controls in the same harness: at ~480 lines the identical defect returns `status: failed`,
+    `reason: diagnostics_worsened`, `rolled_back: true`, `new_diagnostics: ["undefined_symbol_xyz" is
+    not defined]` and the file is restored; at ~12,000 lines the verb-level run still held. The
+    threshold is machine- and load-dependent — the guard works exactly until the server is slower than
+    the settle window and then fails **open**, not closed.
   - Multi-file coverage: `test_real_clean_rename_edit` asserts `file_count == 1`
     (`test_lsp_integration.py:102`); `test_edit_clean_applies_and_captures_footprint` uses a
     single-file edit (`test_lsp_client.py:186-197`). The only two-file exercise
@@ -177,17 +196,32 @@ the server never answers is reported as `state: ok, error_count: 0` — a clean 
     - pre-edit `[Error A]`, post-edit `[Error B]` (a *different* error, same count) →
       `status: success, applied: True`, and `bar = 1` is left on disk. An edit that swapped one error
       for another is not a worsened **set** by `edit_verdict`'s bare count comparison.
+    - **Cross-file netting, on the multi-file path the deliverable exists for.** Footprint
+      `[a.py, b.py]`; pre-edit 1 error in `a.py` and 0 in `b.py`; post-edit 0 in `a.py` and 1 in
+      `b.py` → `errors_before=1, errors_after=1`, `status: success, applied: True`, both files left
+      rewritten with `b.py` newly broken. `errors_before` / `errors_after` are single integers summed
+      across the whole footprint (`lsp_client.py:230-247`), so the guard cannot see breakage that
+      merely *moved*. This is the realistic form of the count-vs-set defect and it was not recorded by
+      the first reading of this audit.
     - pre-edit `[Error A]`, post-edit `[Error A, Error B]` → the failure payload's `new_diagnostics[]`
       lists **both**, including the pre-existing one. The field name overstates what it holds
-      (`lsp_client.py:237-245` appends every post-edit Error and never diffs against the pre-edit set,
+      (`lsp_client.py:238-245` appends every post-edit Error and never diffs against the pre-edit set,
       which is only counted, never retained). See G15.
+  - A **declined rename** returns `status: success`. When the server sends no `WorkspaceEdit` —
+    ordinary when the coordinate is not on a renameable symbol — `_run_edit` returns
+    `status: success, applied: False, reason: no_workspace_edit` (`lsp_client.py:217-227`, pinned by
+    `test_edit_no_workspace_edit`). The documented consumer wiring routes on `failed` and `degraded`
+    only (`execute-task/SKILL.md:244`), so a leaf following it reads a rename that never happened as
+    one that landed. G16.
 - **Verdict:** PARTIAL. The recorded design rule is genuinely shipped and its central guard is
   non-vacuous. Against the literal *Done when* it falls short in four ways — the worsened-set guard
-  fails open when the server is slower than the settle window (G2, reproduced against real pyright),
-  the guard compares error **counts** rather than sets so a swapped error passes (G15), the footprint
-  is not honest for an edit carrying resource operations (G3), and the *multi-file* half of the
-  done-condition has no test (G6). A mid-apply exception additionally leaves a half-applied edit with
-  no rollback (G4), and every `edit` call sends a duplicate `didOpen` for the rename target (G14).
+  fails open when the server is slower than the settle window (G2, reproduced through the shipped verb
+  against real pyright), the guard compares an aggregate error **count** rather than per-file sets so
+  a swapped *or relocated* error passes (G15), the footprint is not honest for an edit carrying
+  resource operations (G3), and the *multi-file* half of the done-condition has no test (G6). A
+  mid-apply exception additionally leaves a half-applied edit with no rollback (G4), every `edit` call
+  sends a duplicate `didOpen` for the rename target (G14), and a declined rename is reported as a
+  success the consumer wiring has no branch for (G16).
 
 ### D3 — diagnostics as a pre-build correctness signal
 
@@ -256,8 +290,10 @@ Defects found by reading the shipped code, each proved by execution where the br
    can wait for the **next** push"*). `_run_edit` (`lsp_client.py:239-247`) therefore compares
    `errors_after` computed from pre-edit data, `edit_verdict` returns `'success'`, and a broken edit
    lands with `status: success, applied: true`. Reproduced above **against live
-   `pyright-langserver`** on a 12,003-line module, with the transport's own `publishDiagnostics`
-   counter proving no new publish arrived between the two reads.
+   `pyright-langserver`** — both on the read path (~12,000-line module) and, decisively, **through the
+   shipped `edit` verb end to end** (36,002-line module, twice), where the payload reads
+   `status: success, applied: true` and the defect is left in the tree. The transport's own
+   `publishDiagnostics` counter proves no new publish arrived between the two reads.
 2. **`workspace-symbol` results are unaddressable.** `lsp_client.py:147-162` (`_symbol_rows`) drops the
    URI entirely, even though pyright returns `SymbolInformation` objects carrying `location.uri` — the
    code reads `location` only to take its `range` (`:152-154`). Confirmed by dumping the raw server
@@ -279,11 +315,17 @@ Defects found by reading the shipped code, each proved by execution where the br
    guard cannot fire in the shipped path.
 5. **A mid-apply failure leaves the tree half-edited.** `apply_workspace_edit`
    (`_lsp_workspace_edit.py:141-158`) writes file-by-file with no `try`/`except`. An error on the
-   second of three files (permissions, a path the server named but that no longer exists, an encoding
-   error) propagates out of `_run_edit`; `_with_session` catches only spawn failures
+   second of three files propagates out of `_run_edit`; `_with_session` catches only spawn failures
    (`lsp_client.py:356-358`), so `safe_main` turns it into a `status: error` TOON and exit 1
    (`tools-file-ops/scripts/file_ops.py:1664-1700`, the `except Exception` arm at `:1696-1698`) — with
-   file one modified, no rollback, and no footprint reported.
+   file one modified, no rollback, and no footprint reported. Reproduced through `_run_edit` over a
+   three-file footprint whose middle file carries a malformed `TextEdit`: `KeyError: 'range'` escapes
+   and `a.py` is left rewritten while `b.py` / `c.py` are untouched. ⚠ The trigger set is narrower
+   than an earlier reading of this item claimed: a **missing path** and an **encoding error** both
+   raise in `_run_edit`'s *pre-edit* `session.open()` / `errors_before` loop (`:231-233`), which reads
+   every footprint file before any write — verified, with no file modified. The genuine mid-apply
+   triggers are a malformed `TextEdit`, a write-side `OSError`, and a file removed between the
+   pre-edit read and the apply. G4.
 6. **An unanswered diagnostics query is reported as a clean file.** `wait_for_diagnostics` returns
    `list(self._diagnostics.get(uri, []))` when its deadline expires (`_lsp_jsonrpc.py:223`), so "the
    server never told us anything about this file" and "the server told us the file is clean" reach
@@ -293,13 +335,18 @@ Defects found by reading the shipped code, each proved by execution where the br
    driving the shipped `_run_diagnose` over a real `StdioTransport` against a server that answers
    `initialize` and never pushes diagnostics (the pull-diagnostics server class): returned in 15001 ms
    with `error_count: 0`. G13.
-7. **The worsened-set guard is a count comparison, and `new_diagnostics[]` is misnamed.**
+7. **The worsened-set guard is an aggregate count comparison, and `new_diagnostics[]` is misnamed.**
    `edit_verdict` (`_lsp_workspace_edit.py:172-179`) returns `'failed'` only when
-   `errors_after > errors_before`, so an edit that removes one error and introduces a different one
-   passes and lands (proved: pre `[Error A]` / post `[Error B]` → `status: success, applied: True`,
-   `bar = 1` left on disk). Separately, `_run_edit` builds `new_diagnostics[]` from *every* post-edit
-   Error without diffing the pre-edit set (`lsp_client.py:243-245`), so a pre-existing error is
-   reported as new (proved: pre `[A]` / post `[A, B]` → the payload lists both). G15.
+   `errors_after > errors_before`, and those two operands are single integers summed **across the
+   whole footprint** (`lsp_client.py:230-247`). Two proved consequences: an edit that removes one
+   error and introduces a different one in the same file passes and lands (pre `[Error A]` / post
+   `[Error B]` → `status: success, applied: True`, `bar = 1` left on disk); and an edit that moves
+   breakage between footprint files passes and lands (pre 1 error in `a.py` + 0 in `b.py` / post 0 +
+   1 → `errors_before=1, errors_after=1`, `status: success, applied: True`, `b.py` newly broken) —
+   the cross-file case strikes exactly on the multi-file rename D2 exists for. Separately, `_run_edit`
+   builds `new_diagnostics[]` from *every* post-edit Error without diffing the pre-edit set
+   (`lsp_client.py:243-245`), so a pre-existing error is reported as new (proved: pre `[A]` / post
+   `[A, B]` → the payload lists both). G15.
 8. **Every `edit` call sends a duplicate `didOpen`.** `_run_edit` opens the rename target at
    `lsp_client.py:214`, then re-opens each footprint file — including that same target — at `:232`.
    Counted through an instrumented transport: `didOpen` twice for one URI with no `didClose` between,
@@ -307,15 +354,26 @@ Defects found by reading the shipped code, each proved by execution where the br
    `LspSession.open` resets `_doc_versions[abs] = 1` each time, so the version sequence a strict
    server sees is 1, 1, 2. pyright tolerates it; a different server need not, and the plan asked for a
    client a second consumer can reuse (`lsp_harvest.py` already does). G14.
-9. **Bounded, in-spec limitations worth recording** (no gap raised for the mechanism, only for the
-   documentation): the re-diagnose covers only the footprint files, and only severity `Error`
-   (`_lsp_workspace_edit.py:167-169`); `diagnosticMode` is `openFilesOnly`
-   (`_lsp_jsonrpc.py:57-68`), so breakage outside the edited set is invisible. `wait_until_idle`
-   (`:225-243`) imposes a ≥1.5 s floor on every `workspace-symbol` call and `wait_for_diagnostics` a
-   ≥2 s floor on every `diagnose` — re-measured independently at 2163.0 ms and 2000.3 ms respectively.
+9. **A declined rename is reported as a success the consumer wiring cannot route.** When the server
+   returns no `WorkspaceEdit`, `_run_edit` returns `status: success, applied: False,
+   reason: no_workspace_edit, file_count: 0` (`lsp_client.py:217-227`), pinned by
+   `test_edit_no_workspace_edit` (`test_lsp_client.py:217-225`). The documented consumer wiring names
+   exactly two returns to route on — *"Treat a `failed` return as a rejected edit … and a `degraded`
+   return as 'unavailable' (fall back to `Edit`)"* (`execute-task/SKILL.md:244`) — and
+   `lsp-client/SKILL.md` § "The write side" (`:71-86`) does not mention the outcome at all. A leaf
+   following the wiring therefore reads a rename that never happened as one that landed and does not
+   fall back. The discriminator exists in the payload, so this is a wiring gap, not a missing signal.
+   G16.
+10. **Bounded, in-spec limitations worth recording** (no gap raised for the mechanism, only for the
+    documentation): the re-diagnose covers only the footprint files, and only severity `Error`
+    (`_lsp_workspace_edit.py:167-169`); `diagnosticMode` is `openFilesOnly`
+    (`_lsp_jsonrpc.py:57-68`), so breakage outside the edited set is invisible. `wait_until_idle`
+    (`:225-243`) imposes a ≥1.5 s floor on every `workspace-symbol` call and `wait_for_diagnostics` a
+    ≥2 s floor on every `diagnose` — re-measured across readings at 2163.0 / 2105.1 ms and
+    2000.3 / 2302.1 ms respectively (a floor, not a constant).
 
-What I read to conclude the rest is sound: all three shipped scripts end to end (`lsp_client.py` 457
-lines, `_lsp_jsonrpc.py` 379, `_lsp_workspace_edit.py` 180). The transport's reader-thread resilience
+What I read to conclude the rest is sound: all three shipped scripts end to end (`wc -l`:
+`lsp_client.py` 456, `_lsp_jsonrpc.py` 378, `_lsp_workspace_edit.py` 179). The transport's reader-thread resilience
 (the reviewer's Finding 2) is correctly per-message: `_read_loop` (`_lsp_jsonrpc.py:115-153`) skips a
 length-0 or malformed frame and returns only on EOF or `OSError`. `apply_text_edits` (`:119-138`)
 applies highest-offset-first against offsets computed once, and the order-independence is asserted
@@ -331,7 +389,10 @@ Re-derived at audit time: `uv run python -m pytest test/plan-marshall/lsp-client
 so the 5 real-server tests actually ran (they are `skipif`-guarded at
 `test_lsp_integration.py:43-44`). Re-derived again independently in the adversarial pass:
 **36 passed in 23.74 s** with pyright on `PATH`, and **31 passed, 5 skipped** with pyright hidden —
-the latter is the CI shape, and it is the shape the mutation rows below are read against.
+the latter is the CI shape, and it is the shape the mutation rows below are read against. Re-derived
+a third time by the adversarial review: **36 passed in 20.55 s** with pyright, **31 passed, 5 skipped**
+with it hidden. Test-function count re-derived by reading all four files: 16 + 5 + 14 + 1 = **36**,
+of which the 5 in `test_lsp_integration.py` are the `skipif`-guarded real-server set.
 
 | Deliverable | Covering tests | Adequacy |
 |---|---|---|
@@ -341,24 +402,26 @@ the latter is the CI shape, and it is the shape the mutation rows below are read
 | D2 verdict + rollback | `test_edit_worsened_fails_and_rolls_back`, `test_real_adversarial_defect_fails_and_rolls_back`, `test_edit_verdict_fails_on_worsened` | **Non-vacuous** — proved by mutation M1 (all three go red) |
 | D2 footprint | `test_capture_footprint_from_edit`, `test_apply_and_restore_round_trip` | Adequate for the pure helpers; **no test drives a multi-file edit through `_run_edit`/`cmd_edit`**, which is the literal done-condition (G6) |
 | D2 resource ops | `test_normalize_reports_resource_operation` | **Vacuous with respect to the shipped path** — it asserts a value that no caller consumes (G3) |
-| D2 verdict semantics | `test_edit_verdict_passes_on_equal_or_improved` | **Locks in the defect**: it asserts `edit_verdict(3, 3) == 'success'`, which is exactly the same-count-different-error case that lets a worsened set land (G15). A test can be non-vacuous and still assert the wrong contract |
+| D2 verdict semantics | `test_edit_verdict_passes_on_equal_or_improved` (`test_lsp_workspace_edit.py:139-143`) | **Locks in the defect**: it asserts `edit_verdict(3, 3) == 'success'` (`:141`), which is exactly the same-count case that lets a swapped or relocated error land (G15). A test can be non-vacuous and still assert the wrong contract |
+| D2 declined rename | `test_edit_no_workspace_edit` (`test_lsp_client.py:217-225`) | Adequate as a code test — it asserts `status: success`, `applied: False`, `reason: no_workspace_edit`. **Inadequate as a contract test**: no consumer document names that outcome, so nothing binds the assertion to the wiring a leaf follows (G16) |
 | D3 | `test_diagnose_carries_boundary_note` | Adequate for the success path; the degraded path's missing note is unasserted, and no test asserts that a *timed-out* diagnose is distinguishable from a clean one (G13) |
 | D4 | `test_preflight_not_configured`, `test_preflight_unreachable`, `test_real_preflight_ready`, `test_edit_degraded_when_not_configured`, `test_run_config_language_server.py` | Adequate — both directions asserted |
 | Transport | `test_reader_survives_length_zero_junk_frame` | Adequate and CI-portable (fake server subprocess, no pyright) |
 | `wait_for_diagnostics` freshness | *none in CI* | **Missing** — proved by mutation M3 (below). No test asserts staleness or freshness semantics; the settle *duration* is exercised only incidentally, by the one `skipif`-guarded real-server test (G2) |
 
-**Mutation evidence.** Three mutations, each re-run independently in the adversarial pass. Snapshots
-of all three scripts were taken to `$TMPDIR/…/adv-010-…-mutsweep/` before any edit and restored by
-byte copy afterwards; `md5sum` matches the pre-mutation digests (`lsp_client.py` `665eee6b…`,
-`_lsp_jsonrpc.py` `0856b4f0…`, `_lsp_workspace_edit.py` `2b815b14…`) and `git status --porcelain`
-lists no file under `marketplace/bundles/plan-marshall/skills/lsp-client/`. No `git checkout` /
-`restore` / `stash` was used.
+**Mutation evidence.** Three mutations, each re-run independently in the adversarial pass and a
+**third** time by the adversarial review, whose results are the ones tabulated. Snapshots of all three
+scripts were taken to `$TMPDIR/…/adv-010-…-mutsweep/` before any edit and restored by byte copy
+afterwards; `md5sum` matches the pre-mutation digests (`lsp_client.py` `665eee6b…`, `_lsp_jsonrpc.py`
+`0856b4f0…`, `_lsp_workspace_edit.py` `2b815b14…`) and `git status --porcelain` lists no file under
+`marketplace/bundles/plan-marshall/skills/lsp-client/`. No `git checkout` / `restore` / `stash` was
+used. Baseline before mutation: **36 passed in 20.55 s** with pyright present.
 
 | Mutation | Change | Result |
 |---|---|---|
-| **M1** | `edit_verdict` forced to always return `'success'` | `3 failed, 33 passed` — `test_edit_worsened_fails_and_rolls_back`, `test_real_adversarial_defect_fails_and_rolls_back`, `test_edit_verdict_fails_on_worsened`. Reproduced verbatim, twice |
-| **M2** | the unreachable branch (`lsp_client.py:358`) returns `STATE_NOT_CONFIGURED` | `1 failed, 35 passed` — `test_three_states_are_distinguishable`, failing on `assert 2 == 3` with `{('degraded','not_configured',0),('success','ok',1)}`. Reproduced verbatim |
-| **M3** (new) | `wait_for_diagnostics` body replaced by `return list(self._diagnostics.get(uri, []))` — the settle window, the freshness loop and the timeout all deleted | With pyright installed: `1 failed, 35 passed` — only `test_real_adversarial_defect_fails_and_rolls_back`. **With pyright hidden (the CI condition): `31 passed, 5 skipped` — fully green.** The whole diagnostics-wait mechanism can be deleted and CI does not notice; the fake transport (`test_lsp_client.py:45-46`) pops a queue and never calls it |
+| **M1** | `edit_verdict` forced to always return `'success'` | `3 failed, 33 passed` — `test_edit_worsened_fails_and_rolls_back`, `test_real_adversarial_defect_fails_and_rolls_back`, `test_edit_verdict_fails_on_worsened`. Reproduced verbatim, three times |
+| **M2** | the unreachable branch (`lsp_client.py:358`) returns `STATE_NOT_CONFIGURED` | `1 failed, 35 passed` — `test_three_states_are_distinguishable`, failing on `assert 2 == 3` with `{('degraded','not_configured',0),('success','ok',1)}`. Reproduced verbatim, twice |
+| **M3** | `wait_for_diagnostics` body replaced by `return list(self._diagnostics.get(uri, []))` — the settle window, the freshness loop and the timeout all deleted | With pyright installed: `1 failed, 35 passed` — only `test_real_adversarial_defect_fails_and_rolls_back`. **With pyright hidden (the CI condition): `31 passed, 5 skipped` — fully green.** Reproduced verbatim, twice. The whole diagnostics-wait mechanism can be deleted and CI does not notice; the fake transport (`test_lsp_client.py:45-46`) pops a queue and never calls it |
 
 ## Report accuracy
 
@@ -377,7 +440,7 @@ Most claims in `report-01.md` hold against the tree now. The exceptions:
   `workspace-symbol` **plus** a fixed settle floor that no amount of warmth removes.
 - **"⚠ Sync owed"** (`report-01.md:61`, `:127`) — stale against the current lane contract. `CLAUDE.md`
   § Standalone Plan Lane now states that a lane plan editing `marketplace/bundles/` *"neither performs
-  a sync nor records one as owed"*. Harmless, confined to the report.
+  a sync nor records one as owed"*. Harmless, confined to the report — G11.
 - **"`35 passed` in the lsp-client suite"** (`report-01.md:78`) and **"the 4 lsp-client real-pyright
   integration tests"** (`:67`) — both were true of their moment; the current counts are **36** total
   and **5** real-server tests (`test_real_preflight_ready` was the fix commit's addition, and a later
@@ -386,11 +449,13 @@ Most claims in `report-01.md` hold against the tree now. The exceptions:
 - **Unverifiable from this clone:** the whole-tree `./pw verify` figures (`18714 passed, 14 skipped`,
   `mypy … 385 files`), the individual commit SHAs (`6a96ab0`, `f5ae40f`, `e4154aa`, `d46769e`,
   `9dc172d`) and the wall-clock figure. The clone is shallow — a `.git/shallow` graft is present, and
-  each of those five SHAs still returns `fatal: Not a valid object name`. (The history has since been
-  deepened: `git rev-list --count HEAD` reads **284** at `f49542c`, not the 50 recorded at the first
-  reading; the plan's own commits remain absent either way.) The PR record is consistent with them and
-  was re-read independently: PR #1140 reports 9 commits, 17 changed files, +2335/−3, opened
-  2026-08-10T15:20:50Z.
+  each of those five SHAs still returns `fatal: Not a valid object name` at every reading. (The
+  history has been deepened since the first reading, and `git rev-list --count HEAD` keeps moving as
+  other agents commit to this branch — 50, then 284, then 299; the plan's own commits are absent at
+  all of them, which is the only part of that figure that carries information.) The PR record is
+  consistent with them and was re-read independently twice: PR #1140 reports 9 commits, 17 changed
+  files, +2335/−3, opened 2026-08-10T15:20:50Z, head ref `claude/lsp-execute-lookup-write-43d0ar`,
+  merged 2026-08-10T18:06:34Z by `cuioss-oliver` into `main`.
 
 Verified true: the shipped symbol and file names (`_run_lookup`, `_run_edit`, `capture_footprint`,
 `apply_workspace_edit`, `edit_verdict`, `restore_files`, `STATE_READY`, `DIAGNOSTICS_BOUNDARY_NOTE`,
@@ -448,21 +513,80 @@ default folder scan and would double-load (`marketplace/targets/claude/plugin_js
 - Read in full: `plan.md`, `report-01.md`, all three shipped scripts, all four test files,
   `lsp-client/SKILL.md`, `doc/user/lsp-code-intelligence.adoc`, the `language_servers` half of
   `run_config.py` and `run-config-standard.md`, and the three `execute-task/SKILL.md` seams.
-- Executed: the lsp-client suite three times (baseline 36 passed; under mutation M1 3 failed/33 passed;
-  after restore 36 passed), two mutations with byte-snapshot restore, a live-server payload-shape probe,
-  a live-server latency re-measurement (twice, under different machine load), and a fail-open repro
-  driving the real `StdioTransport` against a purpose-built slow fake server.
-- Queried GitHub read-only for PR #1140's merge state and reviews.
+- Executed: the lsp-client suite at baseline and under each of three mutations with byte-snapshot
+  restore (M1/M2/M3, each re-run to a verbatim repeat), with and without pyright on `PATH`; a
+  live-server payload-shape probe; a live-server latency re-measurement (four readings across three
+  sessions, under different machine load); a fail-open repro on the read path against real pyright;
+  a fail-open repro **through the shipped `edit` verb** against real pyright at three module sizes;
+  a `_run_diagnose` repro against a purpose-built never-publishing server over the real
+  `StdioTransport`; a notification-sequence count through an instrumented transport; and four
+  `_run_edit` probes with a fake transport covering the verdict semantics (same-file swap, cross-file
+  netting, `new_diagnostics[]` contents, mid-apply failure).
+- Queried GitHub read-only for PR #1140's merge state and reviews (twice, independently).
 - **Not checked, and why:** the whole-tree `./pw verify` numbers (out of scope per the brief — the run
-  is many minutes); the plan's individual commits and their per-commit gates (shallow clone, 50
-  commits, graft present); the *original* Step-6 cold reads (a past sub-agent judgement — I read the
-  current text instead and state what reading it admits); token/wall-clock cost figures (the report
-  itself declines to state tokens).
+  is many minutes); the plan's individual commits and their per-commit gates (shallow clone, graft
+  present, the five SHAs unreachable); the *original* Step-6 cold reads (a past sub-agent judgement —
+  I read the current text instead and state what reading it admits); token/wall-clock cost figures
+  (the report itself declines to state tokens).
 - **False-negative discipline:** every "grep found nothing" result was paired with a control that finds
   the same pattern where it is known to exist (e.g. `notes` → 0 hits in `lsp_client.py`/SKILL/user page,
   8 hits in `_lsp_workspace_edit.py`).
 - **Tree left unchanged.** `git status --porcelain` for
-  `marketplace/bundles/plan-marshall/skills/lsp-client/` is empty and both mutated files match their
-  pre-mutation `md5sum`. Other modified paths in the working tree
-  (`manage-architecture`, `manage-findings`, `manage-metrics`, `manage-status`, `phase-6-finalize`,
-  and two `test_zz_*` files) predate this audit and belong to other agents; I did not touch them.
+  `marketplace/bundles/plan-marshall/skills/lsp-client/` is empty and all three mutated files match
+  their pre-mutation `md5sum` (`665eee6be4d405b18393f368b8db31b7`,
+  `0856b4f003199a82e81d915cf3d6989f`, `2b815b14d1b58e106f3609ac02c7db26`). Restoration was by byte
+  copy from the snapshot directory; no `git checkout` / `restore` / `stash` was used at any point.
+  Other modified paths in the working tree are other agents' `doc/plans/` edits under this same epic;
+  I did not touch them.
+
+## Adversarial review
+
+Independent review of this document and `gaps.md`. Attacks run: A1 false positives, A2 false
+negatives, A3 vacuous evidence, A4 counts and quotes, A5 actionability, A6 severity/topic,
+A7 coverage, A8 internal consistency.
+
+⚠ **Starting condition.** A previous adversarial reviewer was interrupted mid-edit and its partial
+corrections were committed, so both documents were re-derived from scratch rather than trusted. The
+largest defect found was a direct consequence: `verification.md` cited G13, G14 and G15, and
+`gaps.md` referenced G13 in its grouping paragraph and claimed a total of "fifteen", while the file
+actually stopped at G12. Three gaps the audit had *proved* existed nowhere in the deliverable a later
+fix run would read.
+
+| # | Attack | What was found | Correction applied |
+|---|---|---|---|
+| 1 | **A8** internal consistency | **G13, G14 and G15 were missing from `gaps.md` entirely** — cited by name in `verification.md` (D2 verdict, D3 verdict, correctness-review items 6–8) and by the grouping paragraph in `gaps.md` itself, but the file ended at G12. The half-applied edit from the interrupted reviewer | Authored all three as full entries, each re-proved by execution first: G13 (unanswered diagnose reads as a clean file — high), G14 (duplicate `didOpen` — medium), G15 (aggregate-count verdict + misnamed `new_diagnostics[]` — high) |
+| 2 | **A8** internal consistency | `gaps.md`'s intro said "fifteen concrete defects" but its own breakdown summed to 14 (3+1+4+1+5), and the file listed 12. Grouping paragraph named four gaps sharing a fix window, of six that do | Intro re-derived: **sixteen** defects, breakdown 4+1+4+1+6, plus an explicit severity census (high G1/G2/G13/G15; medium G3/G4/G5/G6/G7/G14/G16; low G8–G12). Grouping paragraph corrected to the six `lsp-client/scripts/` gaps |
+| 3 | **A2** false negatives — **the most consequential finding** | The audit's own G2 repro was a *hand-replayed* read sequence, not the shipped verb, and its text claimed the probe "mirrors `_run_edit` exactly" — it does not (the verb re-opens the rename target first, which the audit files separately as G14). Re-running the audit's own construction at 12,002 lines through `_run_edit`, **the guard held**, so the audit's headline claim ("a broken edit lands as success") was not actually established by its evidence | Built a stronger repro: the **shipped `_run_edit`** driven end to end against real pyright, real transport, real footprint/apply/verdict, interposing only on the `textDocument/rename` response to carry a deliberate defect (the control the plan mandates). At 36,002 lines, twice: `status: success, applied: true, errors_after: 0`, defect left on disk, with `diag_seq 2 -> 2` proving the stale read. Controls at ~480 lines (fails and rolls back correctly) and ~12,000 lines (still held). G2 and the D2 detail rewritten to lead with this; the "mirrors exactly" claim retracted in both documents |
+| 4 | **A2** false negatives | **Cross-file netting, unrecorded.** `errors_before` / `errors_after` are single integers summed across the *whole footprint* (`lsp_client.py:230-247`), so an edit that moves breakage from one footprint file to another nets zero and lands. Proved: pre 1 error in `a.py` + 0 in `b.py`, post 0 + 1 → `status: success, applied: True`, `b.py` newly broken. This is the *realistic* form of the count-vs-set defect and it strikes exactly on the multi-file rename D2 exists for; the audit had recorded only the contrived same-file swap | Folded into G15 as proved case 2, and into correctness-review item 7 and the D2 detail. It is why G15 is filed **high** rather than medium |
+| 5 | **A2** false negatives | **A declined rename returns `status: success`.** When the server sends no `WorkspaceEdit` (ordinary — the coordinate is not on a renameable symbol) the verb returns `status: success, applied: False, reason: no_workspace_edit`, while the documented consumer wiring routes on `failed` and `degraded` only (`execute-task/SKILL.md:244`). A leaf following the wiring reads a rename that never happened as one that landed. Not recorded anywhere in the audit | New gap **G16** (medium, `bundle-docs`), plus correctness-review item 9 and a test-adequacy row noting `test_edit_no_workspace_edit` is adequate as a code test but binds to no consumer contract |
+| 6 | **A1** false positives | **G4's evidence named two triggers that cannot fire.** "A path the server named but that no longer exists" and "an encoding error" both raise inside `_run_edit`'s *pre-edit* `session.open()` / `errors_before` loop (`:231-233`), before any write — verified with `b.py` absent: exception fires, **no file modified**. So the cited mechanism did not produce the cited outcome | G4's evidence replaced with a repro that does: a malformed `TextEdit` (no `range`) on the middle file of a three-file footprint → `KeyError: 'range'` escapes with `a.py` rewritten and `b.py`/`c.py` untouched. Trigger set narrowed to the three that genuinely strike mid-apply. Correctness-review item 5 corrected the same way. **The gap itself is real** — only its evidence was wrong |
+| 7 | **A5** actionability | G4's *Done when* prescribed `chmod 0444` to make a file unwritable. Verified this **does not work**: the suite runs as `root`, the mode bit is ignored, and the whole three-file edit applied cleanly — a fixing run would have written a test that passes against the unfixed code | *Done when* rewritten with a ⛔ against `chmod`, naming the malformed-`TextEdit` and patched-`write_text` triggers that actually fail |
+| 8 | **A4** counts and quotes | G7 claimed the `diagnose` re-measurement "returned in **exactly** 2000 ms" and the D0 table called two floors "deterministic". Re-measured: 2302.1 ms for the same call. The wait restarts on every inbound publish, so the settle value is a **lower bound**, not a constant | Both documents re-worded to "floor-bounded, not constant", with the earlier claim explicitly retracted; D0 table gained a fourth measurement column and a `documentSymbol`-after-warmup row that isolates the ordering effect |
+| 9 | **A4** counts and quotes | G8 attributed *"carried in every diagnose payload"* to "the module docstring". It is a `#` code comment above the constant (`lsp_client.py:60-61`); the module docstring says something different | Attribution corrected |
+| 10 | **A4** counts and quotes | Header pinned `git rev-list --count HEAD` at **284**; it reads **299** now. Other agents commit to this branch continuously, so the figure is not a property of the audit | Header and Report-accuracy re-worded: the audited *surfaces* are what was pinned (`git diff 61a43e5..HEAD` over all of them is empty at `61a43e5`, `f49542c` and `c5511dd`); the rev count is reported as a moving number whose only informative part is that the plan's five SHAs are absent at all of them |
+| 11 | **A4** counts and quotes | Script line counts stated as 457 / 379 / 180; `wc -l` gives 456 / 378 / 179 (trailing-newline convention) | Restated with the measurement basis named |
+| 12 | **A1/A4** — clean results, stated so an empty row is distinguishable | Every `path:line` in both documents was opened and checked. **All correct**, including the non-obvious ones: `file_ops.py:1664-1700` / `:1696-1698` (`safe_main`'s `except Exception` arm), `plugin_json_gen.py:12-19` / `:134-150`, `_lsp_jsonrpc.py:220`/`:223`/`:225`/`:290`, `lsp_harvest.py:138-147`/`:272-277`, `cloud-plan-lane/SKILL.md:55`, and every `report-01.md` line reference. Quotes verified verbatim against their source files | None needed |
+| 13 | **A4** counts | Re-derived every stated number at check time: **36** tests (16+5+14+1 by reading, 36 passed in 20.55 s by running); **5** real-server tests; **76** manifest entries vs **78** skill directories, the two absent being `lsp-client` and `recipe-surgical-fix`; **43** raw symbols vs **1** shipped row on `architecture.py` (**576** lines); `notes` grep 0/0/0 with control 8. PR #1140: 9 commits, 17 files, +2335/−3, merged 2026-08-10T18:06:34Z; `get_reviews` returns exactly one review, Sourcery's rate-limit notice, verbatim as quoted | All confirmed; none needed correction |
+| 14 | **A3** vacuous evidence | Re-ran the audit's whole mutation sweep independently — M1 (`3 failed, 33 passed`, same three tests), M2 (`1 failed, 35 passed`, `assert 2 == 3` with the same triple set), M3 (`1 failed, 35 passed` with pyright; **`31 passed, 5 skipped` — fully green — with pyright hidden**). All three reproduce **verbatim**. The M3 result is real: the entire diagnostics-wait mechanism can be deleted and CI does not notice | Mutation block updated to record the third independent run and the baseline; no claim needed correcting |
+| 15 | **A3** vacuous evidence | Independently re-proved every gap the audit claimed to have proved by execution — G1 (row keys `['character','kind','line','name']`, raw server row carries `location.uri`, `references` control carries `path`), G5 (`['Widget','top_level']` vs 4 raw; 1 vs 43 on `architecture.py`), G13 (15064 ms, `state: ok, error_count: 0`, `boundary_note` present), G14 (didOpen ×2, didClose ×0, versions 1/1/2), G15 (all three cases). No claimed reproduction failed to reproduce | Evidence blocks annotated with the independent re-take where the numbers differ |
+| 16 | **A6** severity/topic | G15 had no filed severity (it did not exist as an entry). Given two proved cases in which a genuinely worsened diagnostic set lands as `status: success, applied: true` — one of them on the multi-file path — the calibration's "a guard cannot fire" applies | Filed **high**, with the reasoning stated inside the entry so a later reviewer can disagree explicitly. G13 filed **high** (documented coverage contract unimplemented); G14 **medium** (real protocol violation, no observed misbehaviour with the shipped server, but the plan required a reusable client and a second consumer exists); G16 **medium**, topic `bundle-docs` because the fix lands in two SKILL.md files. Every pre-existing severity and topic was re-checked against the calibration and none needed changing |
+| 17 | **A7** coverage | `verification.md` covers all five deliverables, out-of-scope compliance, report accuracy, declared residue, collateral and method. No deliverable is silently unmentioned. D3's CONFIRMED verdict correctly rests on its *literal* done-condition (a condition on the text) while recording two verb defects outside it — that separation is right, not a dodge | None needed |
+| 18 | **A8** internal consistency | With G13–G16 added, every finding in `verification.md` that warrants action now appears in `gaps.md`, and every `gaps.md` entry traces to a `verification.md` finding. The overall CONFIRMED WITH GAPS verdict follows from its rows (2 PARTIAL, 3 CONFIRMED) | Verified after the additions; the opening summary updated from "four correctness holes" to five |
+
+**Residual doubt:** the thing a further round would most likely find is another instance of the defect
+class this round twice caught the audit in — *evidence that does not exercise the shipped path*. G2's
+original repro replayed a sequence rather than calling the verb, and G4's cited triggers fired in a
+different function than claimed. Both G3 and G5 are currently proved only at the helper/probe level;
+neither has been driven through `cmd_edit` / `cmd_lookup` as a subprocess with argparse and TOON
+output, so a defect in the CLI seam (argument plumbing, `output_toon` rendering of `locations[]` /
+`files[]`) would be invisible to everything here. Second, all latency and fail-open thresholds are
+from one machine with one server (`pyright-langserver` 1.1.408); the *mechanisms* are established by
+code reading and are server-independent, but every module-size threshold quoted is a local
+observation, not a constant. Third, D3's cold-read half is still taken on the run's own sub-agent's
+word — it cannot be re-run, and no reading of the current text substitutes for it.
+
+**Verdict on the audit:** SOUND AFTER CORRECTION — every defect it named is real and reproduces, but
+three of its gaps were missing from the deliverable entirely, its headline G2 evidence did not
+exercise the shipped path, and G4's cited trigger fires in a different function than claimed; with
+those fixed, four gaps added or re-proved and two overstated measurements retracted, both documents
+now match the tree.

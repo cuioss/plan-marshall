@@ -2,13 +2,16 @@
 
 The `lsp` resolver is registered, honest about its failure modes, and correctly refuses to guess an
 owner — all mutation-proven. What it does not do is produce edges: driven over this repository with a
-real enabled binding, the shipped engine harvests 1 920 file references and derives **zero** module
-edges, because the marketplace's cross-bundle imports are bare imports resolved by the generated
-executor's `sys.path`, which pyright at the workspace root cannot follow. Alongside that, D2's stated
-mechanism (the Axis-D path-attribution seam) was silently replaced by a bundle-local prefix table
-while three shipped documents still claim the seam is used, D3's fourth failure mode is actively
-misreported as a timeout, and two claims in the run report's findings table are not true of the tree.
-Eleven gaps follow.
+real enabled binding, the shipped engine harvests **1 501 repository file references** (1 920 when
+pyright also resolves into the project's own `.venv`) and derives **zero** module edges, because
+**not one cross-bundle reference resolves** — the marketplace's cross-bundle imports are bare imports
+resolved by the generated executor's `sys.path`, which pyright at the workspace root cannot follow.
+The zero-edge result reproduced on four whole-tree runs across two interpreter environments.
+Alongside that, D2's stated mechanism (the Axis-D path-attribution seam) was silently replaced by a
+bundle-local prefix table while three shipped documents still claim the seam is used, D3's fourth
+failure mode is actively misreported as a timeout, the test that is supposed to catch such a collapse
+cannot, and two claims in the run report's findings table are not true of the tree. Thirteen gaps
+follow.
 
 ## G1 — Make the harvest resolve cross-bundle imports so the resolver derives non-zero edges
 
@@ -16,16 +19,17 @@ Eleven gaps follow.
 - **Severity:** high
 - **Topic:** lsp/resolvers
 - **Where:** `marketplace/bundles/pm-plugin-development/skills/plan-marshall-plugin/scripts/lsp_harvest.py:221-365` (`harvest_workspace`, server initialization); the resolver consuming it at `marketplace/bundles/pm-code-intelligence/skills/plan-marshall-plugin/extension.py:106`
-- **Evidence:** `build_lsp_component_refs` over the repository root with `binding={'command': ['pyright-langserver','--stdio']}` and the real discovered module set:
-  `elapsed=60.4s ran=True files=1387 refcount=1920` / `modules with lsp refs: 0` /
-  `unattributable-endpoint: 1372 suppressed` / `self-edge: 548 suppressed` / `unresolved-symbol: 5321 position(s)`.
-  Direct probe of the one cross-bundle import in `pm-dev-python/skills/plan-marshall-plugin/extension.py:19`:
-  `'from extension_base import DerivationResolverBase, ExtensionBase' @col 5 -> UNRESOLVED` (all three positions).
-- **Why it matters:** the plan's Goal is "the module graph carries edges derived from actual symbol references for at least one language", and D1's *Done when* is "its edges appear in the store". On the only project where the harvest is materialized, the edge set is empty and always will be: every reference pyright can resolve is intra-directory (hence a self-edge), and every cross-bundle reference is unresolvable. Enabling the binding today buys ≈ 60 s of crawl cost per run for nothing.
+- **Evidence:** `build_lsp_component_refs` over the repository root with `binding={'command': ['pyright-langserver','--stdio']}` and the real discovered module set, run three times in two interpreter environments:
+  - with the project `.venv/bin` first on `PATH`: `ran=True files=1387 refcount=1920` / `modules with lsp refs: 0` / `unattributable-endpoint: 1372` / `self-edge: 548` / `unresolved-symbol: 5321` / `out-of-workspace: 12740`, in 56.0 s;
+  - without it, twice, byte-identical results: `refcount=1501` / `modules with lsp refs: 0` / `unattributable-endpoint: 953` / `self-edge: 548` / `unresolved-symbol: 5731` / `out-of-workspace: 12764`, in 70.9 s and 83.8 s.
+  The 419-reference difference is entirely references targeting `.venv/lib/python3.12/site-packages/**` (see G13). **`files_scanned=1387`, `self-edge=548` and `module edges = 0` are invariant across both.**
+  Cross-bundle resolution measured directly: of the 1 920 resolved references, **0 have both endpoints in different bundles**. Direct probe of the cross-bundle import in `pm-dev-python/skills/plan-marshall-plugin/extension.py:19`:
+  `'from extension_base import DerivationResolverBase, ExtensionBase' @col 5 -> UNRESOLVED` (all three positions: cols 27, 51, 5).
+- **Why it matters:** the plan's Goal is "the module graph carries edges derived from actual symbol references for at least one language", and D1's *Done when* is "its edges appear in the store". On the only project where the harvest is materialized, the edge set is empty and always will be: no cross-bundle reference resolves, and every reference with both ends inside `marketplace/bundles/**` is intra-bundle (541 intra-directory + 7 cross-directory = the 548 self-edges). Enabling the binding today buys ≈ 60–85 s of crawl cost per run for nothing.
 - **Action:** give the server the module search path the executor synthesizes. Either pass `python.analysis.extraPaths` (the set of every bundle skill `scripts/` directory) through the `workspace/configuration` reply the harvest can supply, or generate a transient `pyrightconfig.json` for the harvest root, or narrow the harvest's workspace root to a per-bundle subtree with that bundle's own path set. Whichever is chosen, keep the drop-and-note rule intact.
 - **Done when:** a full-tree `build_lsp_component_refs` with an enabled binding returns at least one module in `refs` whose `target_bundle` differs from its own name, and a real-server test asserts a named cross-bundle edge (e.g. `pm-dev-python -> plan-marshall`) rather than a synthetic fixture edge.
 - **Effort:** M
-- **Risk if fixed:** a wider resolution surface means more resolved references, so `unattributable-endpoint` volume and harvest wall-clock both rise; the ≈ 60 s full-tree cost could grow. Wrongly-scoped `extraPaths` could resolve a name to the wrong bundle's copy of a same-named module and produce a confidently wrong edge — the exact outcome D2 exists to prevent, so pair this with a spot-check of the resulting edge set.
+- **Risk if fixed:** a wider resolution surface means more resolved references, so `unattributable-endpoint` volume and harvest wall-clock both rise; the ≈ 60–85 s full-tree cost could grow. Wrongly-scoped `extraPaths` could resolve a name to the wrong bundle's copy of a same-named module and produce a confidently wrong edge — the exact outcome D2 exists to prevent, so pair this with a spot-check of the resulting edge set. Fix G13 first or alongside: a wider search path resolves *more* third-party imports, so the vendor-tree inflation grows with this change.
 
 ## G2 — Report a JSON-RPC error reply as its own failure mode, not as a timeout
 
@@ -37,7 +41,7 @@ Eleven gaps follow.
   `ran=False reason="server-timeout: …python3 did not respond within 10s (initialize failed: {'code': -32603, 'message': 'workspace not supported by this server'})"` after 5.03 s — the server responded immediately.
 - **Why it matters:** D3 requires that "each failure mode produces a distinct stated reason". A server-side workspace rejection — D3's own fourth mode — is delivered under the third mode's reason string, telling the operator the binary is unresponsive when it explicitly refused. This is the "stated-but-wrong reason … worse than a silent one because it looks considered" class the run itself flagged twice (findings 3 and 15) and then shipped a third instance of.
 - **Action:** split the `LspError` arm. A JSON-RPC error response (the transport raises `LspError(f'{method} failed: …')` from `_lsp_jsonrpc.py:197`) is a server refusal, not a timeout; give it `REASON_WORKSPACE_UNSUPPORTED` when it arrives from `initialize`, or a new `server-rejected:` reason. Reserve `REASON_SERVER_TIMEOUT` for the wait-expiry path (`_lsp_jsonrpc.py:193`).
-- **Done when:** a negative control driving a stub server that answers `initialize` with a JSON-RPC error yields a reason distinct from all four existing ones, and `test_every_failure_mode_states_a_distinct_reason` requires five distinct reasons.
+- **Done when:** a negative control driving a stub server that answers `initialize` with a JSON-RPC error yields a reason whose **prefix** (the text before the first `:`) differs from all four existing prefixes, and `test_every_failure_mode_states_a_distinct_reason` asserts five distinct *prefixes*. ⚠ Asserting five distinct whole strings is not enough — see G12: the current four-string assertion stays green when two modes are collapsed onto one prefix, because the strings still differ by interpolated binary name. Fix G12 first or this *Done when* is satisfiable by a test that cannot fail.
 - **Effort:** S
 - **Risk if fixed:** the two `LspError` shapes are distinguished only by message text unless the transport is taught to carry a discriminator; a text match is brittle. Prefer adding a typed field to `LspError` in `lsp-client` — but that is another bundle's surface, so coordinate rather than reach across.
 
