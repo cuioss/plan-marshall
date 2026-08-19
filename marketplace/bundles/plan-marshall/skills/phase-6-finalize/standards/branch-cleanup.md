@@ -1391,7 +1391,7 @@ Also honour the `merge_hold_budget_seconds` bound from § "Merge-Mutex Hold Wind
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-     work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup queue-landing gate: PR #{pr_number} enqueued but not merged after {wait_budget}s (terminal observation: {state_or_error}) — skipping the post-merge tail; the head branch and its remote-tracking ref are left intact for the queue. Re-enter finalize once the queue merge lands."
+     work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup queue-landing gate: PR #{pr_number} enqueued but not merged after {wait_budget}s (terminal observation: {state_or_error}) — skipping the post-merge tail; the head branch and its remote-tracking ref are left intact for the queue. Recovery depends on the terminal observation — see the F1/F2/F3 split under Mark Step Complete."
    ```
 
 2. **Release the merge mutex** if held (`merge_lock release --plan-id {plan_id}`; idempotent + foreign-safe) per § "Merge-Mutex Hold Window" invariant 4. The plan is no longer inside the merge-to-main critical section — the platform owns the merge from here — so holding the lock would block every other plan for a wait this plan cannot shorten:

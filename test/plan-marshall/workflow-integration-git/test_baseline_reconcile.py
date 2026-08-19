@@ -1235,16 +1235,24 @@ def test_reader_is_fail_soft_on_every_unavailability_path(monkeypatch):
     """
     import _references_core
 
-    def _raises(plan_id):
-        raise FileNotFoundError(plan_id)
-
     # `read_references` is imported INSIDE the function, so the patch must land on
     # `_references_core` -- patching `_mod.read_references` sets a module attribute
     # nothing reads, and every assertion below would pass without exercising the
     # bodies at all. That vacuous form shipped once and was caught in review; the
     # sibling config test carries the same warning for the same reason.
-    monkeypatch.setattr(_references_core, 'read_references', _raises)
-    assert _mod._read_references_base_branch('absent-plan') is None
+    #
+    # Every exception the guard catches is raised here, not just the first. A test
+    # named "every unavailability path" that exercises one of three is the same
+    # over-claim in a different shape: a narrowed `except FileNotFoundError` would
+    # let the other two escape as hard failures and this test would stay green.
+    for exc in (FileNotFoundError, OSError, ValueError):
+        def _raises(plan_id, e=exc):
+            raise e(plan_id)
+
+        monkeypatch.setattr(_references_core, 'read_references', _raises)
+        assert _mod._read_references_base_branch('absent-plan') is None, (
+            f'{exc.__name__} must be caught and yield None, not propagate'
+        )
 
     for body in ({}, {'base_branch': ''}, {'base_branch': '   '}, {'base_branch': 42}, []):
         monkeypatch.setattr(_references_core, 'read_references', lambda plan_id, b=body: b)
