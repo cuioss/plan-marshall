@@ -1,7 +1,10 @@
 # Verification — 220-resolver-configuration
 
 **Audited:** `plan.md`, `report-01.md`
-**Tree state:** `62e3807` on `claude/code-intelligence-substrate-analysis-kah884` (plan landed as `c0b4f3e`, PR #1252)
+**Tree state:** audited at `62e3807` on `claude/code-intelligence-substrate-analysis-kah884`; adversarially
+re-checked at `a90adeb` on the same branch, which is byte-identical to `62e3807` across `marketplace/`,
+`test/`, `.gitignore` and `doc/{user,concepts,adr}` (the intervening commits touch `doc/plans/` only), so
+every citation below was re-derived against the same code the audit read. Plan landed as `c0b4f3e`, PR #1252.
 **Overall verdict:** CONFIRMED WITH GAPS
 
 The five deliverables are present, wired, and covered by non-vacuous tests (mutation-proven twice).
@@ -163,7 +166,7 @@ counter (`_cmd_client_query.py:930-1122`), the four `resolver_count` assignment 
 (`extension_api.py:92-183`), the ABC method (`extension_base.py:1549-1580`), and the seven resolver
 implementations.
 
-**One defect found.**
+**One behavioural defect found, plus three smaller surviving inconsistencies.**
 
 - **`_cmd_client_handlers.py:196-235` — `capabilities` reports `module_edges: not_derivable` for an
   envelope whose `graph` verb returns edges.** `status` is `'derivable' if resolver_count else

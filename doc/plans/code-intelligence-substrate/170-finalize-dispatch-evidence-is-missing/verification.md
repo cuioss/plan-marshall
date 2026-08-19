@@ -292,7 +292,7 @@ and 10 above; the original audit's clean bill for the function as a whole is cor
 | Deliverable | Covering tests | Non-vacuity evidence |
 |---|---|---|
 | D1 | `test_check_dispatch_audit.py:108`, `:127`, `:146` | Mutation `if population == 0:` → `if False:` turned 2 tests red. Guard is load-bearing. |
-| D2 | `:168`, `:199`, `:222`, `:242` | Positive-fire test asserts a specific finding category and count; the "conditional inline" test asserts `_categories(data) == []` against a populated fixture. Both are behavioural. |
+| D2 | `:168`, `:199`, `:222`, `:242` | Positive-fire test asserts a specific finding category and count; the "conditional inline" test asserts `_categories(data) == []` against a populated fixture. Both are behavioural. **But all four supply an integer `total_tokens`**, so the `else: value = 0` coercion at `:278-279` is untested: mutating it to `value = 999999` left 13/13 green. The `dispatched`/`ran_inline` boundary is pinned only where the input is already unambiguous. |
 | D3 | `:271` (`none`), `:296` (`nominal`), `:320` (`low`) | All three exercise real fixtures. **But the fourth path — `ratio < _SPARSE_RATIO` at `:441` — is untested**: disabling it with `elif False and …` left 13/13 green (two independent runs). |
 | D4 | `test_analyze_logs.py:1791`, `:1810`, `:1825` | Partial-case test asserts the floor is satisfied (`artifact_entries >= 1`) *and* the population finding fires — the exact defect. Behavioural. |
 | Preserved checks | `:355`, `:370` | Both fire on a divergent fixture. Clean counterparts are implicit in the `_categories(data) == []` assertions of other tests. |

@@ -70,8 +70,10 @@ appeared — did not fire when exactly that happened, because it watches `reads`
 - **Evidence:** `load_diff_files` re-derives `git diff {base_ref}...HEAD --name-only` in the process cwd
   and never imports `resolve_footprint` (only `resolve_diff_file_path` is imported, at `:42`). The
   documented aspect-12 command passes neither `--diff-file` nor `--base-ref`, so `base_ref` is falsy →
-  `return [], 'unknown', False` (`:207-208`) → `_withhold_on_absent_evidence` (`:581-605`) downgrades every
-  diff-fed check to `indeterminate`.
+  `return [], 'unknown', False` (`:207-208`) → `_withhold_on_absent_evidence` (`:581-605`) downgrades
+  every diff-fed check **that would otherwise report a clean `pass`** to `indeterminate`. A `fail` and a
+  `skip` are deliberately left untouched (`:589-590`), so the effect is "no diff-fed rule can be
+  substantiated as passing", not "every rule reads `indeterminate`".
 - **Why it matters:** The manifest cross-check is the third consumer of the realized footprint and the one
   the retrospective forwards `affected_files_exact_match` warnings to
   (`check-artifact-consistency.py:857-877`). Post-merge it is permanently blind, so the aspect it defers to

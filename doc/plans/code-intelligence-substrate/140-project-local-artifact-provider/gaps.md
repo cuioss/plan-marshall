@@ -369,10 +369,13 @@ audit and this review (`git diff` over the audited surface is empty), so the del
   factual premise, so a future reader is told the risk did not exist rather than that it was accepted.
   ⚠ **Scope check performed, so a later run need not redo it:** this is a documentation defect only, not
   a behaviour one. `derive-verification` for `.claude/skills/**/*.py` was executed live and yields
-  `compile pm-plugin-development` where it previously yielded `compile plan-marshall` — but `.claude` is
-  in **no** module's source paths (`grep '.claude' .plan/project-architecture/_project.json` → empty),
-  so the derived command failed to cover the changed file under both owners, and the `compile`
-  build_class derives no test command either way. Nothing regressed; only the record is wrong.
+  `compile pm-plugin-development` where it previously yielded `compile plan-marshall` — but no module's
+  `sources`/`tests` paths cover `.claude` (`architecture module --module pm-plugin-development` →
+  `sources: [marketplace/bundles/pm-plugin-development/skills]`, `tests: [test/pm-plugin-development]`;
+  `--module plan-marshall` → its own bundle dirs plus `test/plan-marshall`; `--module default` →
+  `sources: null`). So the derived command failed to cover the changed file under **both** owners, and
+  the `compile` build_class derives no test command either way. Nothing regressed; only the record is
+  wrong.
 - **Action:** replace the paragraph's factual premise with the measured one — for the three skills whose
   tests live under `test/plan-marshall/`, this claim **does** newly split artifact from tests, and that
   is accepted because ownership tracks who understands the artifact's content — and keep the existing

@@ -6,6 +6,9 @@
 Axis-D (#1208)"; `git branch --contains cc923b6` lists `main`). HEAD advanced from `61a43e5` to `62e3807`
 during the audit because sibling audit sessions commit on this branch; nothing in the audited surface
 changed under me — every citation below was re-read at the state reported here.
+**Adversarial review state:** `a90adeb` on the same branch. `git diff` over `marketplace/`,
+`doc/concepts/`, `test/` and `.claude/` between `62e3807` and `a90adeb` is empty, so every citation
+below still resolves; the corrections applied at review are marked in § Adversarial review.
 **Overall verdict:** CONFIRMED WITH GAPS
 
 ## Deliverable verdicts

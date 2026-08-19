@@ -1,46 +1,68 @@
 # Gaps — 260-chat-signal-provenance-filter-under-inclusive
 
 The plan's four deliverables shipped and its tests are non-vacuous on every load-bearing line probed
-(10 of 10 mutants killed, snapshot-restored). What remains is one reachable hole in the positive
-predicate — an envelope whose body quotes its own tag name escapes stripping and scores as operator
-signal, the plan's headline failure direction — together with the shipped contract sentence that
-guarantee falsifies and the missing regression for it; one classification blur between the two
-counters D3 created; one payload-size opportunity the new residue makes free; and two stale records in
-the run report, one of them the build gate.
+(10 of 10 mutants killed, snapshot-restored, re-run independently). What remains is one hole in the
+positive predicate — an envelope whose body carries an unbalanced token of its **own outermost tag
+name** escapes stripping and scores as operator signal, the plan's headline failure direction —
+together with the shipped contract sentence that guarantee falsifies and the missing regression for it;
+one classification blur between the two counters D3 created; one payload-size opportunity the new
+residue makes free; and two stale records in the run report, one of them the build gate. The predicate
+hole is **latent**: it does not occur anywhere in the reachable 81-transcript corpus.
 
-## G1 — Close the same-name unmatched-open hole in envelope pairing
+## G1 — Close the same-name unbalanced-token hole in envelope pairing
 
 - **Kind:** bug
 - **Severity:** high
 - **Topic:** measurement/metrics
-- **Where:** `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/_chat_provenance.py:125-132`
-  (the close-tag branch of `partition_turn`, `depth = positions[-1]`)
-- **Evidence:** the close tag pairs with the *innermost* open of its name, so an envelope whose body
-  contains an unmatched same-name open token leaves the real outer open unpaired and its text in the
-  residue. Measured on a realistic claudeMd-style reminder whose body quotes `<system-reminder>`:
-  `is_operator_authored` → `True`, residue `"<system-reminder>\nAs you answer the user's questions…"`.
-  End-to-end over 30 identical such turns the reducer reports `raw 30  kept 30  operator 30
-  no_signal False`. No test covers the shape: `test_chat_provenance.py:63` and `:73` cover balanced
-  same-name nesting only.
-- **Why it matters:** a transcript of pure harness instruction text renders as a clean verdict and is
-  fed to the Tier-1 LLM prompt as operator signal — the exact compounding failure this plan exists to
-  remove, reachable through the mechanism the plan shipped. The trigger is any injected body that
-  quotes its own wrapper name, which in this repository includes CLAUDE.md excerpts and sub-agent
-  result text that discuss harness block shapes.
+- **Where:** `marketplace/bundles/plan-marshall/skills/plan-retrospective/scripts/_chat_provenance.py:123-137`
+  (the tokenizer loop of `partition_turn`; the close-tag branch at `:125-132`, `depth = positions[-1]`
+  and `_drop_above(depth)`)
+- **Evidence:** two variants, both verified end-to-end at 30 turns → `raw 30  kept 30  operator 30
+  no_signal False`:
+  - **(a) quoted unmatched open.** The close tag pairs with the *innermost* open of its name, so a
+    quoted `<tag>` in the body takes the pairing and the real outer open is never matched.
+    `is_operator_authored('<system-reminder>a<system-reminder>b</system-reminder>')` → `True`.
+  - **(b) quoted close.** A quoted `</tag>` pairs with the outer open and ends the envelope early;
+    `_drop_above(0)` clears the stack, so the real trailing close becomes ordinary text and the whole
+    tail is residue. `is_operator_authored('<sr>a</sr>b</sr>')` → `True`, residue `'b</sr>'`.
+
+  No test covers either shape: `test_chat_provenance.py:63` and `:73` cover balanced same-name nesting,
+  and `:159` (`test_unmatched_close_tag_is_ordinary_text`) covers a close with no open of that name —
+  the opposite configuration.
+- **Why it matters:** a transcript of pure harness instruction text renders as a clean verdict, and the
+  escaping text is additionally rendered into `reduced_transcript` under the `user:` label and fed to
+  the Tier-1 LLM prompt as operator signal — the exact compounding failure this plan exists to remove,
+  reachable through the mechanism the plan shipped.
+- **Reachability (measured, and asymmetric between the variants):** the trigger is content — an
+  injected body quoting its **own outermost** wrapper name. Quoting a *nested* name is harmless
+  (verified). Variant (a) additionally requires the quoted open to sit outside every nested pair,
+  because the `_drop_above` unwind at a nested close restores the outer tag's stack entry; it therefore
+  fires on a flat `<system-reminder>` but **not** inside a `<task-notification>`'s `<result>` body
+  (verified: that case still reports `no_signal: true`). Variant (b) fires from anywhere in the body.
+  On the harness surface represented by the reachable corpus, `<system-reminder>` never arrives as an
+  inline `user` text block (0 of 6,190 `user` turns); the only enveloped inline turns are 36
+  `<task-notification>` blocks. **So (b) is the variant reachable on the real block shape**, and its
+  plausible source is agent-authored prose inside `<result>` discussing harness block shapes. Neither
+  variant occurs in the corpus today (0 same-name quotes, 0 operator-classified turns carrying markup),
+  so this is latent rather than active — but it is content-reachable, not fixture-only.
 - **Action:** make the classification fail toward *synthetic* when **any** pairing interpretation
-  leaves no prose residue — e.g. after the linear walk, if unmatched opens remain and at least one
-  pair was found, re-pair greedily (each close against the outermost still-open same-name tag) and
-  take the emptier residue. Do not change the innermost-first primary pass, which
-  `test_nested_same_name_envelope_is_fully_stripped` pins for the balanced case.
-- **Done when:** `is_operator_authored('<system-reminder>a<system-reminder>b</system-reminder>')` is
-  `False`, a 30-turn transcript of that shape reports `no_signal: true` with `operator_turn_count: 0`,
-  and `test_unmatched_open_tag_does_not_swallow_operator_prose`,
-  `test_unmatched_close_tag_is_ordinary_text` and the two same-name nesting tests still pass unchanged.
+  leaves no prose residue, covering both variants. A greedy re-pair (each close against the outermost
+  still-open same-name tag, taking the emptier residue) closes (a) but **not** (b) — under greedy
+  pairing the quoted close still pairs with the outer open and yields the same tail. Cover (b) as well:
+  e.g. when the turn's first token is an open `<T>` and its last token is a close `</T>`, treat the
+  whole span as one envelope and take that residue if it is emptier. Do not change the innermost-first
+  primary pass, which `test_nested_same_name_envelope_is_fully_stripped` pins for the balanced case.
+- **Done when:** all three of `is_operator_authored('<system-reminder>a<system-reminder>b</system-reminder>')`,
+  `is_operator_authored('<sr>a</sr>b</sr>')` and the `<task-notification>`-with-quoted-`</task-notification>`
+  shape are `False`; a 30-turn transcript of each shape reports `no_signal: true` with
+  `operator_turn_count: 0`; and `test_unmatched_open_tag_does_not_swallow_operator_prose`,
+  `test_unmatched_close_tag_is_ordinary_text`, `test_prose_after_a_trailing_envelope_survives` and the
+  two same-name nesting tests still pass unchanged.
 - **Effort:** M
-- **Risk if fixed:** a greedy fallback that is too eager could swallow genuine operator prose that
-  merely opens with markup — the mirror false-positive this plan warns about. The three
-  prose-preserving tests above are the guard, and any new fallback must be mutation-probed in both
-  directions.
+- **Risk if fixed:** a fallback that is too eager could swallow genuine operator prose that merely
+  opens with markup, or prose that both begins and ends with the same tag — the mirror false-positive
+  this plan warns about. The four prose-preserving tests named above are the guard, and any new
+  fallback must be mutation-probed in both directions.
 
 ## G2 — Correct the published failure-direction guarantee, which G1 falsifies
 
