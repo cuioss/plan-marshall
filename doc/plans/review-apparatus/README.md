@@ -32,6 +32,50 @@ surfaced them, so one seam is repaired once:
 | `560` | The instruments that measure our own gates |
 | `570` | The epic's records, which carry the defect the epic is named after |
 
-`500` and `510` contend on one seam and MUST NOT run concurrently. Both carry the boundary — `500`
-in its Notes, `510` in its Notes and in the ⛔ on the deliverable that sweeps the shared document —
-and both resolve ownership by gap id rather than by describing each other.
+`500` and `510` contend on one seam and MUST NOT run concurrently.
+
+### The shared-document split
+
+Both plans edit
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md`.
+**This table is the single authority for who writes what.** Each plan references it and restates
+none of it — a split described in two documents is a split that goes stale in one of them, which is
+exactly how this boundary was stated wrongly four times in succession.
+
+| Passage | Gap id | Written by |
+|---|---|---|
+| The currency-rule scope sentence, and the "today, only PR-Agent" statements that qualify it | `010 G2` | `500` |
+| The "by definition an observation at the merge candidate" claim in § "Evidence for a bot that edits one comment in place" | `010 G3` | `500` |
+| The § "Consumers" rows for fields `500` adds | — | `500` |
+| The new bounded-gap section | — | `500` |
+| The "stored finding, or … the noise sidecar" two-source arm | `010 G4` | `510` |
+| The "edited in place (`updated_at` differs from `created_at`)" arm | `010 G4` | `510` |
+| The "union of the stored-finding SHAs and the recorded sidecar SHAs" paragraphs, **including the "observation sidecar" naming inside them** | `010 G4` | `510` |
+| The advance-disclosure sentence | `120 G6` | `510` |
+| The § "Consumers" row for fields `510` adds | — | `510` |
+
+**The one overlap, resolved here rather than in either plan.** `010 G4` § Where names
+`bot-participation-contract.md:491-498` and `010 G11` § Where names `:493-500` — the same paragraphs.
+The **paragraphs are `510`'s** (`G4` deletes the union claim that is their subject); `500` renames the
+*code* artifact those paragraphs describe (`G11`) and does **not** edit them. Whichever plan runs
+second finds the other half done: `510` describes the ledger under whatever name the code then
+carries, and `500` reports the prose dependency instead of editing it.
+
+Line numbers here are **leads** — re-derive each passage by its quoted text, not by its line.
+
+A passage this table does not name is settled by neither plan: **report it, do not choose.**
+
+**Two checks keep this from drifting, and both can fail.** Run them against `500` and `510` before
+either is handed to a session:
+
+1. **Every contract passage either plan names appears in this table.** Grep each plan for its quoted
+   passage phrases and confirm each occurs here. A passage named in a plan and absent from the table
+   is a passage owned by nobody — the defect that took four rounds to find.
+2. **Neither plan assigns ownership.** Grep both for `owns` / `owned by` / `belongs to` within a
+   sentence that also names a contract passage. The only permitted hit is a pointer *to this table*
+   that names no passage. Any other hit is a second copy of the split, and a second copy is what goes
+   stale.
+
+The same rule is why no count of passages or sites appears in either plan: every falsehood this
+boundary produced was a stale numeral. Counts are re-derived from `010 gaps.md` § Where at the moment
+of the claim, never written down here or there.

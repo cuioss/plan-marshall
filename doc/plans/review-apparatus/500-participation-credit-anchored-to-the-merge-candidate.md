@@ -274,8 +274,10 @@ corroboration, not required reading, and the run is not blocked if it chooses no
      every consumer project whose `required_bots` includes an append-per-review bot, which this run
      can neither observe nor obtain sign-off for.
 
-   *Done when:* no identifier or prose in the participation path calls the currency ledger a
-   noise-dropped-comment record; a ledger written under the old filename is still read after the
+   *Done when:* no identifier, filename or docstring **in the code this plan changes** calls the
+   currency ledger a noise-dropped-comment record — the contract's "observation sidecar" paragraphs
+   are the sibling plan's per the README table, so their wording neither satisfies nor blocks this
+   clause, and the run reports their state instead; a ledger written under the old filename is still read after the
    rename, pinned by a test; the contract's scope sentence and the `_requires_update` guard at
    `github_pr.py:955` agree; a test asserts the documented (still-credited) behaviour for a
    `participation_requires_update: false` bot after a HEAD advance; and the run report carries the
@@ -286,9 +288,11 @@ corroboration, not required reading, and the run is not blocked if it chooses no
 Every entry states why, because with no operator watching mid-run the written boundary is the only
 thing holding it.
 
-- **The eight-site stale-prose sweep** (`010 G4`) — restatements of the deleted two-arm predicate and
-  its abandoned two-source anchor across `workflow-integration-github/SKILL.md`,
-  `automatic-review/SKILL.md`, `pr-agent.md`, `bot_registry.py` and two contract paragraphs.
+- **The stale-prose sweep** (`010 G4`) — restatements of the deleted two-arm predicate and its
+  abandoned two-source anchor across `workflow-integration-github/SKILL.md`,
+  `automatic-review/SKILL.md`, `pr-agent.md`, `bot_registry.py` and the contract passages the README
+  table assigns to the sibling plan. Re-derive the site set from `010 G4` § Where; it is not counted
+  here, because a count in this position goes stale the moment either plan is edited.
   Excluded because a documentation sweep across two skills would dwarf the behaviour change in the
   diff and make the currency fix unreviewable by the PR's reviewers. D2 and D5 rewrite **only** the
   specific sentences they name and open no sweep, even where an adjacent line is also stale.
@@ -325,9 +329,12 @@ thing holding it.
   `github_pr fetch_findings` step body: the two new return fields (D3) and the widened dedup identity
   (D4).
 - `marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md`
-  — the currency-rule scope sentence and the bounded-gap § (D5), the first-observation arm's wording
-  (D2), the ledger-naming prose (D5), the § "Consumers" rows (D3), and the NEW-INFORMATION site
-  classification (D0).
+  — exactly the rows the README table (§ "The shared-document split") assigns to `500`, and nothing
+  else: the currency-rule scope sentence and the bounded-gap § (D5), the first-observation arm's
+  wording (D2), the § "Consumers" rows (D3), and the NEW-INFORMATION site classification (D0).
+  **The "observation sidecar" paragraphs are NOT in this plan's surface** — the table assigns them to
+  the sibling plan, and D5 defers them. If the branch diff touches them, that is collateral to
+  report, not scope.
 - `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/branch-cleanup.md` —
   § "UNKNOWN — the re-fetch itself failed" gains the unresolved-head shape (D3).
 - `test/plan-marshall/workflow-integration-github/test_github_pr.py` — the new currency tests (D1,
@@ -426,18 +433,13 @@ Beyond each deliverable's *Done when*:
   concurrently.** The boundary: this plan owns the **currency mechanics** — the per-comment ledger,
   the SHA anchor, the dedup identity — and `510` owns **refusal and decline accounting**: the refusal
   `cause`/`cap` producers, wording drift, the registry, and the decline consumers.
-  **`bot-participation-contract.md` is shared, and ownership inside it is decided by GAP ID, not by
-  section and not by any claim either plan makes about the other.** A gap id is stable; a description
-  of a sibling document goes stale the moment that document is edited, which is exactly how an
-  earlier revision of this paragraph became false. So: **this plan writes the passages its own
-  deliverables name** — those discharging `010 G2`, `010 G3` and `010 G11`, plus the recorded wait-
-  predicate answer (D0) and the new bounded-gap section (D5). **The passages `010 G4` names are the
-  other plan's**, including the "union of the stored-finding SHAs and the recorded sidecar SHAs"
-  paragraphs and the "observation sidecar" naming that `010 G4` § Where lists at
-  `bot-participation-contract.md:491-498`; D5 defers them explicitly. Read `010 G4`'s own § Where to
-  settle any passage this paragraph does not name — that list is the authority, not this plan and not
-  the other one. Where a passage is settled by neither, **report it** rather than choosing, and never
-  revert or rewrite a passage the other plan has already written.
+  **`bot-participation-contract.md` is shared.** Do not resolve ownership from this plan: read
+  the table in [`doc/plans/review-apparatus/README.md`](../README.md) § "The shared-document
+  split", which is the **single authority** for who writes which passage. This plan deliberately
+  restates none of it, because a split written down twice goes
+  stale in one copy — the failure this pointer exists to prevent. Read the table, write only the rows
+  it assigns to `500`, **report** any passage it does not name rather than choosing, and never revert
+  or rewrite a passage the other plan has already written.
 
 - **Corroborating evidence lives in git**, in the two `gaps.md` files named under § Deliverables and
   the `verification.md` beside each. They carry the original reproduction notes, including an

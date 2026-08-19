@@ -241,7 +241,8 @@ test.
   § D5 carries the same gap from the other side (as `040/G9`) and names this plan as the owner of the
   edit, keeping only its own test extension. If the line already carries the flag when this run
   reaches it, `520` landed first: **make no edit, record it as already discharged, and do not revert
-  or reformat it.** Either way the surviving requirement is the *Done when* below. `_add_bot_observation_flags` declares it on both subcommands and
+  or reformat it.** Either way the surviving requirement is the *Done when* below.
+  `_add_bot_observation_flags` declares it on both subcommands and
   `automatic-review/SKILL.md`'s canonical `deficit` block documents it; only the module's own usage
   line disagrees, which makes the cap-only cause recovery unreachable from documented usage.
 - Also state, at the barrier's `review_completeness check` invocation in
@@ -335,7 +336,7 @@ for the taxonomy's cardinality remains in the test module.
 Every site below is prose whose only value is what a later reader does with it, so D6's verification
 is a **cold read** (see § Verification), not "the text was changed".
 
-- **The abandoned two-arm predicate and the two-source anchor.** Eight prose sites still describe a
+- **The abandoned two-arm predicate and the two-source anchor.** The sites `010 G4` § Where names still describe a
   currency predicate the code replaced, or a two-source SHA anchor that never shipped. Rewrite each to
   the predicate the code actually implements **as read at the time of the run** — not from a
   remembered description, and not from this plan. The sites: `workflow-integration-github/SKILL.md`
@@ -344,15 +345,15 @@ is a **cold read** (see § Verification), not "the text was changed".
   edits one comment in place" (the "stored finding, or … the noise sidecar" two-source arm; and the
   "edited in place (`updated_at` differs from `created_at`)" arm, which the code does not compute);
   `bot-participation-contract.md` § the "union of the stored-finding SHAs and the recorded sidecar
-  SHAs" paragraphs and its "observation sidecar" naming — **`010 G4` names this site explicitly, and
-  the deletion of the union claim is this deliverable's**, so do not defer it (the sibling plan
-  renames the artifact those paragraphs describe and depends on this rewrite landing, in either
-  order); `automatic-review/SKILL.md`'s restatement of the same predicate in a workflow body;
-  ⛔ **One sentence in that document is NOT this plan's:** the **"by definition an observation at the
-  merge candidate"** claim in § "Evidence for a bot that edits one comment in place", which is
-  rewritten as a bounded assumption by the plan discharging **`010 G3`** — the plan that changes the
-  behaviour the sentence describes. Read it; if it still states the pre-fix claim, **report it as
-  owned there and leave it** — do not rewrite it here, and do not count it a survivor.
+  SHAs" paragraphs, **including the "observation sidecar" naming inside them** (the sibling plan
+  renames the *code* artifact they describe and does not edit them, in either landing order — the
+  table settles this); `automatic-review/SKILL.md`'s restatement of the same predicate in a workflow
+  body;
+  ⛔ **Ownership of that document's passages is not settled here.** Do not resolve it from this
+  deliverable: read the table in [`doc/plans/review-apparatus/README.md`](../README.md) § "The
+  shared-document split", which is the **single authority** for who writes which passage. A
+  passage the table assigns elsewhere is **reported and left alone** —
+  not rewritten here, and not counted a survivor — even when a survivor search returns it.
   `automatic-review/standards/pr-agent.md` at two sites; and `bot_registry.py`'s
   `participation_requires_update` docstring. Sweep for survivors with **two** different searches, not
   one — "first presence / first-present / `updated_at` movement / `updated_at` vs `created_at`" finds
@@ -383,7 +384,8 @@ is a **cold read** (see § Verification), not "the text was changed".
   over-long neighbour. Cosmetic, and included because it is the visible trace of an edit made without
   re-reading the surrounding paragraph.
 
-*Done when:* both survivor searches return no hit that describes the currency test other than the two passages this deliverable excludes as `500`'s, each of which is reported rather than fixed, and each
+*Done when:* both survivor searches return no hit that describes the currency test, except for
+passages the README table assigns elsewhere — each of those reported rather than fixed, and each
 rewritten site names the single ledger as the sole source; neither pr-agent sentence contradicts
 `automatic-review/SKILL.md` § "Rate-limit refusal recovery" or `bot-participation-contract.md`
 § "The three per-bot marker lists"; no shipped document claims the size exclusion is decidable in
@@ -558,14 +560,12 @@ prose**. Where they touch, this plan cites rather than duplicates:
   and writers, or the `(bot_kind, comment_id)` dedup. If a conflict arises anyway, **report it and
   leave `500`'s side alone** rather than resolving both — a merge resolution written by the plan that
   does not own the mechanism is how a fix gets silently reverted.
-- **`bot-participation-contract.md` is a shared file, and the split inside it is by passage, not by
-  section.** The passages `500` owns are the ones whose behaviour `500` changes; **D6 names them in
-  its own ⛔ exclusion, and that list is authoritative** — do not re-derive the split from this
-  paragraph or count the passages here, because a count in this position goes stale the moment either
-  plan is edited. **D6's sweep covers every other stale passage in the document, including the rest of
-  the section those passages sit in, and leaves the excluded ones alone.** If an excluded passage
-  still states the pre-`500` claim when this run reaches it, `500` has not landed: report it as owned
-  elsewhere rather than fixing it here, so the two runs cannot write conflicting rewrites of one
+- **`bot-participation-contract.md` is a shared file.** Do not resolve ownership from this plan:
+  read the table in [`doc/plans/review-apparatus/README.md`](../README.md) § "The shared-document
+  split", which is the **single authority** for who writes which passage. This plan restates none
+  of it, and neither does D6 — both point at the table, so
+  there is one copy to keep true. A passage the table assigns to `500` is **reported and left alone**
+  when it still carries a pre-fix claim; the two runs must never write conflicting rewrites of one
   passage. D6 rewrites the *prose* describing the
   currency predicate, but the predicate it must describe is **whatever the code does at the time of
   the run**. Read the code, not this plan and not a landed report; if `500` has already changed the
