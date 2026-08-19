@@ -697,8 +697,9 @@ trusting it. The method, precisely enough to re-run:
 
 - **Every `path:line` citation in both documents resolves to the text quoted beside it**, machine-checked
   by reading each cited line and asserting the quoted fragment appears in it — 76 citations across
-  `review_completeness.py`, `review_retrospective.py`, the contract, both SKILL.md files, the three
-  registry docs, the four `phase-6-finalize` standards, and six test files. Drift of one to four lines was
+  `review_completeness.py`, `review_retrospective.py`, `bot_registry.py`, `_github_pr.py`, the contract,
+  the three SKILL.md files, the three registry docs, the `phase-6-finalize` standards, and five test
+  files. Drift of one to four lines was
   the common failure and every instance is now pinned to the current tree; two citations were not drift but
   error, and neither survives: the contract's `clean` definition sits at `:556-557`, and the contract
   carries no restatement of `min_deficit` at all (`grep -rn "min_deficit\|min-deficit"` over it returns
@@ -708,12 +709,13 @@ trusting it. The method, precisely enough to re-run:
   nine occurrences of `comment(s) found`, five of `unified triage pending`, fifteen `refused_awaitable`
   mentions, eight corrected drift sites, four `deficit`-mentioning source files, eleven display buckets over
   eleven taxonomy members, three registry `rate_limit_class` declarations — all upheld by re-running the
-  searches. Two counts were wrong and are corrected: the taxonomy-count sweep returns **seven** statements,
-  not six — the first sweep's pattern missed `pr-review-operations.md:248`, a site the same document's own
-  report-claim audit cites — so **six** rather than five restatements sit outside the guard's reach. The
-  "98 characters" figure is reproducible for the three *longest* bucket labels; the genuinely unbounded
-  worst case over the full nine-bucket vocabulary is 161, which is what makes relabelling an insufficient
-  remedy.
+  searches. Two required a wider net than the obvious one. The taxonomy-count sweep needs a second pattern
+  to reach **seven** statements: a `(word)[ -]member` regex alone misses `pr-review-operations.md:248`
+  ("That taxonomy has **ten** non-participation members"), a site the report-claim audit below cites, so
+  the guard's reach is one statement of seven and the unguarded remainder is **six**. And the 98-character
+  `display_detail` figure is a three-*bucket* worst case, not the template's worst case: the rendering is
+  unbounded, reaching 161 over the full nine-bucket vocabulary, which is what makes relabelling an
+  insufficient remedy.
 - **Executable claims were executed, twice and independently.** `assess_deficit` and `_emit_deficit_toon`
   over the `clean`, `unassessable`, and `0 : 0` payloads; `compose_review_state_summary` with an unbucketed
   state and with an empty roster; `_refusal_state` over all three declared classes plus a malformed and an
