@@ -6,6 +6,8 @@ name: default:create-pr
 description: Create pull request
 order: 20
 mutates_source: false
+records_facts:
+  - pr_number
 default_on: true
 presets:
   - standard
@@ -306,6 +308,7 @@ Pass a `--display-detail` value alongside `--outcome done` so the output-templat
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step create-pr --outcome done \
+  --fact pr_number={pr_number} \
   --display-detail "#{pr_number}"
 ```
 
@@ -314,8 +317,11 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step create-pr --outcome done \
+  --fact pr_number={pr_number} \
   --display-detail "existing PR #{pr_number}"
 ```
+
+Both branches record `pr_number` as a typed fact. It is declared in `records_facts` because a consumer — the terminal `default:emit-landing` step, whose `landing-facts` block carries a required `pr` key — otherwise has to re-parse it out of the `display_detail` prose, and the two branches word that prose differently (`#{pr_number}` vs `existing PR #{pr_number}`). The consumer question the key earns: *"which PR did this run open or reuse?"*
 
 Note: there is no "skipped" branch — when the manifest excludes `create-pr`, the dispatcher does not run this document at all, so no step record is written. The renderer treats absent records as "not configured" rather than "skipped".
 

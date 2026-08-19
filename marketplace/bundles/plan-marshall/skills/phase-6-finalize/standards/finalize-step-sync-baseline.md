@@ -7,6 +7,8 @@ description: Early baseline rebase — rebase the worktree feature branch onto o
 order: 3
 mutates_source: true
 advances_main_via_rebase: true
+reads:
+  - worktree
 records_facts:
   - action
   - upstream_commit_count

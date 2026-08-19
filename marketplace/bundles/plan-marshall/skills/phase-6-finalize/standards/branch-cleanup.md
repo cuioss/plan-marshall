@@ -13,6 +13,7 @@ records_facts:
   - action
   - upstream_commit_count
   - merge_mechanism
+  - merge_state
   - work_performed
 default_on: true
 presets:
@@ -1703,13 +1704,14 @@ Pass a `--display-detail` value alongside `--outcome done` so the output-templat
 
 ### Structured facts recorded here
 
-This step declares the `records_facts` union `action`, `upstream_commit_count`, `merge_mechanism`, `work_performed`. The union is a step-level declaration, NOT a per-branch mandate — each of the six `--outcome done` call sites below (**Branches A through F**) records only the **honest subset** its own path produced, per [ext-point-finalize-step.md](../../extension-api/standards/ext-point-finalize-step.md) § "Structured step facts". The path conditions:
+This step declares the `records_facts` union `action`, `upstream_commit_count`, `merge_mechanism`, `merge_state`, `work_performed`. The union is a step-level declaration, NOT a per-branch mandate — each of the six `--outcome done` call sites below (**Branches A through F**) records only the **honest subset** its own path produced, per [ext-point-finalize-step.md](../../extension-api/standards/ext-point-finalize-step.md) § "Structured step facts". The path conditions:
 
 | Fact | Recorded iff |
 |------|--------------|
 | `action` | The executing path reached **Rebase Branch onto Base** and parsed its `worktree-rebase-to` TOON. The value is that TOON's `action` — `noop` when the rebase replayed nothing, `rebased` when it moved HEAD. A path that never rebased records NO `action`; its absence is the honest signal, not a gap to fill. |
 | `upstream_commit_count` | Same condition as `action` — it is read from the same rebase-path payload. |
 | `merge_mechanism` | The merge actually **landed** and was corroborated (`{merge_landed} == true`). Value is `pr_safe_merge` when `ci pr safe-merge` returned a corroborated `merged: true`, or `merge_queue` when § "Wait for the Queue Merge to Land (bounded)" observed the platform queue merge the enqueued PR. A path that enqueued but whose merge never landed (**Branch F**) records NO `merge_mechanism` — dispatching a merge-shaped verb is not the same fact as a merge, and that branch reports the enqueue in its `display_detail` instead. A path that never merged at all likewise records none. |
+| `merge_state` | **Every** `--outcome done` call site below. Unlike `merge_mechanism` — which records HOW a merge landed and is therefore absent wherever none did — `merge_state` records WHAT STATE the PR is in, and every branch determines that: `merged` on the two branches that landed a merge (A, E), `open` on the branches that leave a live PR unmerged (C declined, F enqueued-but-not-landed), and `n/a` on the branches where no PR exists at all (B local-only, D no-PR-found). Recording it everywhere is the honest subset, not an exception: no branch lacks the value. Its consumer is the terminal `default:emit-landing` step, whose `landing-facts` block carries a required `merge_state` key. |
 | `work_performed` | **Every** `--outcome done` call site below, `true` or `false`, never omitted — the one declared exception to the honest-subset rule. |
 
 `--display-detail` on every branch is a **rendering of the facts that branch recorded**. In particular it MUST NOT assert a rebase or a merge the recorded facts do not support — a fixed literal claiming a rebase unconditionally is exactly what the per-branch facts exist to prevent. It MUST equally not render an *enqueue* as a merge, nor a queue merge as a merge this step performed: `merge_mechanism == merge_queue` records that the PLATFORM merged the PR and this step corroborated the landing, so its rendering says so rather than reusing the direct-merge phrasing.
@@ -1731,6 +1733,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   {--fact action={action} (if use_merge_queue == false)} \
   {--fact upstream_commit_count={rebase_upstream_commit_count} (if use_merge_queue == false)} \
   --fact merge_mechanism={merge_mechanism} \
+  --fact merge_state=merged \
   --fact work_performed=true \
   --display-detail "{rendered_detail}"
 ```
@@ -1759,6 +1762,7 @@ The `merge_queue` clause is deliberately not the word "merged" alone: the platfo
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
+  --fact merge_state=n/a \
   --fact work_performed=true \
   --display-detail "local-only: switched to {base_branch}"
 ```
@@ -1768,6 +1772,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
+  --fact merge_state=open \
   --fact work_performed=false \
   --display-detail "declined by user"
 ```
@@ -1777,6 +1782,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
+  --fact merge_state=n/a \
   --fact work_performed=false \
   --display-detail "no PR, nothing to clean up"
 ```
@@ -1793,6 +1799,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   {--fact action={action} (if use_merge_queue == false)} \
   {--fact upstream_commit_count={rebase_upstream_commit_count} (if use_merge_queue == false)} \
   --fact merge_mechanism={merge_mechanism} \
+  --fact merge_state=merged \
   --fact work_performed=true \
   --display-detail "merged under {kind}, gap recorded"
 ```
@@ -1804,6 +1811,7 @@ This branch is reached only on `use_merge_queue == true`, and that is exactly th
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
+  --fact merge_state=open \
   --fact work_performed=true \
   --display-detail "enqueued to merge queue, merge not landed, cleanup deferred"
 ```

@@ -7,6 +7,8 @@ description: Run quality-gate per affected bundle then one whole-tree quality-ga
 order: 5
 mutates_source: false
 head_dependent: true
+reads:
+  - worktree
 default_on: true
 presets:
   - full

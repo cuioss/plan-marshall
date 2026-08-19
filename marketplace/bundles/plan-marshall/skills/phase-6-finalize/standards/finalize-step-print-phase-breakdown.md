@@ -7,6 +7,8 @@ description: Optional finalize-summary supplement that captures the Phase Breakd
 order: 999
 mutates_source: false
 post_run_review: true
+reads:
+  - metrics
 default_on: true
 presets: []
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step

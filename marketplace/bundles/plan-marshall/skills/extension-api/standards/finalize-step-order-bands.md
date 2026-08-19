@@ -91,12 +91,30 @@ numbered after a `destroys` step still reads a destroyed input). The declaration
 step declares only the artifacts it genuinely reads or destroys, and absence means "no declared
 dependency", not "obligation unwritten".
 
-Two canonical declarations anchor the vocabulary:
+Two canonical `destroys` declarations anchor the vocabulary, and both sides are live:
 
 - `default:archive-plan` declares `destroys: [plan-directory]` — it moves the plan directory, which is
   why it is the terminus and why every plan-file reader must precede it.
 - `default:branch-cleanup` declares `destroys: [worktree]` — the merge gate removes the linked worktree,
-  so a step that `reads: [worktree]` is mis-ordered if it runs after the gate.
+  so a step that `reads: [worktree]` is mis-ordered if it runs after the gate. Its readers today are
+  `default:finalize-step-sync-baseline` (3), `default:pre-push-quality-gate` (5) and
+  `project:finalize-step-plugin-doctor` (6) — each inspects the worktree's state as an input to its own
+  verdict, and each is ordered well below the gate.
+- On the `metrics` side, `default:finalize-step-print-phase-breakdown` (999) and `default:emit-landing`
+  (1000) declare `reads: [metrics]` — both consume what `default:record-metrics` (998) produces.
+
+**Declare `reads` where the step INSPECTS the artifact as an input to its own verdict or output — not
+merely where it executes.** Every pre-merge step runs *in* the worktree; a blanket declaration would
+say nothing. The three above read worktree state and branch on it (a rebase classification, a live
+footprint, a worktree-bound executor regeneration), so ordering one after the gate would genuinely
+break it. `default:push` executes in the worktree without reading its state for a verdict, and declares
+nothing.
+
+**The read-after-destroy direction is checkable; read-before-produce is not.** Pairing a `reads` token
+with the matching `destroys` token derives an ordering edge a test asserts
+(`test/plan-marshall/phase-6-finalize/test_finalize_edge_ordering.py`). There is no `produces` marker,
+so `reads: [metrics]` is paired against `record-metrics` by a human reading this paragraph, not by a
+derivation — that half remains a documented convention rather than a checked fact.
 
 ## Renumbering is a consequence, not the deliverable
 

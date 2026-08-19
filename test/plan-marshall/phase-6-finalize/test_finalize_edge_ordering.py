@@ -14,13 +14,18 @@ makes its coverage honest:
 - A ``post_run_review: true`` step must run AFTER the merge gate (its evidence is only
   produced at/after that gate) — a derived edge ``gate → step``.
 
-These two are the gate-relative producer→consumer edges the CURRENT frontmatter
-vocabulary expresses. The CONSUMER side of an artifact-level *data* edge — WHICH
-artifact a step READS — has **no** frontmatter marker at all, so a data dependency like
-R1 (``lessons-housekeeping`` reads the retrospective's report) or R2 (the retrospective
-reads the closed metrics accumulator) is **below this floor** and invisible to any
-frontmatter derivation. That undeclared-edge gap is the defect the plan addresses; this
-module measures the floor honestly rather than asserting a coverage it does not have.
+These two are the gate-relative edges. A SECOND family is artifact-level: a step declares
+``reads: [X]`` for the run artifacts it consumes and ``destroys: [X]`` for those it
+renders unavailable to later steps, and pairing the two derives a **read-before-destroy**
+edge — the defect a bare integer cannot express, since a step legally numbered after a
+``destroys`` step still reads a destroyed input.
+
+That family used to be empty, and this module asserted its emptiness as the honest
+statement of the floor. It is no longer empty, so the assertion has been re-measured into
+the derivation itself. One half of it remains below the floor and is still stated as such:
+there is **no** producer-side marker, so read-BEFORE-produce is not derivable —
+``reads: [metrics]`` is paired against ``record-metrics`` only by a human reading the
+prose.
 
 A THIRD, non-gate-relative edge family is derived at the end of this module: a
 **named-step adjacency** that no marker expresses, because its producer→consumer relation
@@ -36,7 +41,7 @@ covered automatically — and this module deliberately asserts **no cardinality 
 a hardcoded count is precisely the drift shape this plan removes. The cardinality is
 instead pinned to its own derivation (edges == the marker-carrying step count), and the
 coverage is asserted to be a strict FLOOR (marker-carrying steps are a proper subset of
-all finalize steps, and the consumer-side vocabulary is empty).
+all finalize steps, and the producer-side vocabulary is empty).
 
 D5 note: this test IS the derivation-level observation the plan requires — it runs
 inside the normal ``./pw verify`` gate, so it is observable from inside a run even
@@ -60,11 +65,19 @@ _MERGE_GATE = 'default:branch-cleanup'
 _BEFORE_GATE_MARKER = 'mutates_source'  # true ⇒ step must run BEFORE the gate
 _AFTER_GATE_MARKER = 'post_run_review'  # true ⇒ step must run AFTER the gate
 
-#: Consumer-side artifact-read markers that DO NOT exist in the vocabulary. The floor
-#: assertion proves the derivation cannot see an artifact-level data edge because no
-#: step declares which artifact it reads. If a future plan introduces one of these, the
-#: floor widens and this list is what a maintainer updates.
-_ABSENT_CONSUMER_MARKERS = ('reads', 'consumes', 'reads_artifacts', 'consumes_artifacts')
+#: The artifact-level data-edge vocabulary. ``reads`` names the artifacts a step
+#: consumes; ``destroys`` names the artifacts it renders unavailable to every later
+#: step. Contract: extension-api/standards/finalize-step-order-bands.md
+#: § "`reads` and `destroys`".
+_READS_MARKER = 'reads'
+_DESTROYS_MARKER = 'destroys'
+
+#: Consumer-side markers that still do NOT exist in the vocabulary. ``reads`` was
+#: removed from this list when the first steps declared it — the honest widening the
+#: floor assertion was written to force. The remaining names are the spellings a
+#: future plan might introduce; if one lands, the floor widens again and this list is
+#: what a maintainer updates.
+_ABSENT_CONSUMER_MARKERS = ('consumes', 'reads_artifacts', 'consumes_artifacts')
 
 
 def _declares_true(doc_path: Path, key: str) -> bool:
@@ -207,14 +220,15 @@ def test_coverage_is_a_floor_marker_carrying_steps_are_a_proper_subset():
     )
 
 
-def test_consumer_side_data_edges_are_undeclared_below_the_floor():
-    """No finalize step declares WHICH artifact it reads — the consumer side is undeclared.
+def test_no_other_consumer_side_marker_spelling_has_appeared():
+    """The consumer side is spelled ``reads`` and nothing else.
 
-    This is the mechanical statement of the plan's root defect: the derivation can only
-    see gate-relative edges because the artifact-level *consumer* vocabulary is empty. A
-    data dependency like R1/R2 therefore sits BELOW this floor. If a future plan adds a
-    ``reads``/``consumes`` marker, this test fails and the floor is re-measured — the
-    honest way to widen coverage.
+    ``reads`` used to be on this list, and the floor this module measured was
+    gate-relative BECAUSE the artifact-level consumer vocabulary was empty. Steps now
+    declare it, so the floor has widened and the artifact-edge assertions below are what
+    measure the widened part. What this test still guards is that a SECOND spelling has
+    not appeared alongside it — two names for the consumer side would split the
+    derivation, and the half spelled the other way would be silently unchecked.
     """
     declarers = []
     for record in _finalize_records():
@@ -224,9 +238,133 @@ def test_consumer_side_data_edges_are_undeclared_below_the_floor():
         if present:
             declarers.append(f"{record.get('name')}: {present}")
     assert not declarers, (
-        'A finalize step declared a consumer-side artifact-read marker, which would widen '
-        'the derivation past the gate-relative floor this test measures. Re-measure the '
-        f'floor and update _ABSENT_CONSUMER_MARKERS: {declarers}'
+        'A finalize step declared a consumer-side marker under a spelling other than '
+        f'`{_READS_MARKER}`. Two names for one concept split the derivation below, so '
+        'either rename the declaration or fold the new spelling into the artifact-edge '
+        f'derivation: {declarers}'
+    )
+
+
+def _artifact_lists(doc_path: Path, key: str) -> list[str]:
+    """One step's declared artifact tokens for ``key``, normalized to a list."""
+    fields = extension_discovery._read_frontmatter_fields(doc_path, (key,))
+    value = fields.get(key)
+    if not value:
+        return []
+    return [str(item) for item in (value if isinstance(value, list) else [value])]
+
+
+def derive_artifact_edges() -> list[dict]:
+    """Derive read-before-destroy edges from the ``reads`` / ``destroys`` vocabulary.
+
+    For every artifact token a step declares under ``reads``, pair it with each step
+    that declares the same token under ``destroys``. The edge asserts the reader runs
+    strictly BEFORE the destroyer: a step legally numbered after a ``destroys`` step
+    still reads a destroyed input, which is precisely the defect a bare integer cannot
+    express.
+
+    This is the artifact-level data edge the gate-relative derivation above cannot see —
+    it is not a marker on the merge gate, it is a dependency between two named steps
+    mediated by a shared artifact token.
+    """
+    reads: list[tuple[str, int, str]] = []
+    destroys: list[tuple[str, int, str]] = []
+    for record in _finalize_records():
+        name, order = record.get('name'), record.get('order')
+        if not isinstance(order, int):
+            continue
+        doc_path = Path(record['path'])
+        for artifact in _artifact_lists(doc_path, _READS_MARKER):
+            reads.append((str(name), order, artifact))
+        for artifact in _artifact_lists(doc_path, _DESTROYS_MARKER):
+            destroys.append((str(name), order, artifact))
+
+    return [
+        {
+            'reader': r_name,
+            'reader_order': r_order,
+            'destroyer': d_name,
+            'destroyer_order': d_order,
+            'artifact': artifact,
+        }
+        for r_name, r_order, artifact in reads
+        for d_name, d_order, d_artifact in destroys
+        if d_artifact == artifact
+    ]
+
+
+def test_artifact_edge_set_is_derived_and_non_empty():
+    """The artifact-edge derivation resolves something, so the gate below is not vacuous."""
+    assert derive_artifact_edges(), (
+        f'No finalize step pairs a `{_READS_MARKER}` token with a matching '
+        f'`{_DESTROYS_MARKER}` token, so the read-before-destroy assertion below has '
+        f'nothing to check. Either no step declares an artifact dependency, or every '
+        f'declared `{_READS_MARKER}` token names an artifact nothing destroys.'
+    )
+
+
+def test_every_reader_runs_before_the_step_that_destroys_what_it_reads():
+    """GATE: a step never reads an artifact a lower-ordered step has destroyed."""
+    offenders = [
+        f"{e['reader']} (order {e['reader_order']}) reads {e['artifact']!r}, which "
+        f"{e['destroyer']} (order {e['destroyer_order']}) destroys"
+        for e in derive_artifact_edges()
+        if e['reader_order'] >= e['destroyer_order']
+    ]
+    assert not offenders, (
+        'These steps are ordered at or after the step that destroys an artifact they '
+        f'declare they read, so the input is gone by the time they run: {offenders}'
+    )
+
+
+def test_every_declared_read_token_is_a_known_artifact():
+    """A `reads` token must name an artifact the vocabulary knows.
+
+    The vocabulary is small and shared on purpose: a producer's output and a consumer's
+    ``reads`` have to refer to the SAME token or the pairing above silently finds no
+    edge — a typo would make the read-before-destroy gate vacuous for that step while
+    every assertion stayed green.
+    """
+    known = {artifact for _n, _o, artifact in [
+        (r.get('name'), r.get('order'), a)
+        for r in _finalize_records()
+        for a in _artifact_lists(Path(r['path']), _DESTROYS_MARKER)
+    ]} | {'metrics'}
+
+    offenders = []
+    for record in _finalize_records():
+        for artifact in _artifact_lists(Path(record['path']), _READS_MARKER):
+            if artifact not in known:
+                offenders.append(f"{record.get('name')}: {artifact!r}")
+
+    assert not offenders, (
+        f'These steps declare a `{_READS_MARKER}` token that matches no `'
+        f'{_DESTROYS_MARKER}` declaration and is not a known produced artifact, so the '
+        f'read-before-destroy pairing finds no edge for them and the gate is vacuous '
+        f'there. Known tokens: {sorted(known)}. Offenders: {offenders}'
+    )
+
+
+def test_the_producer_side_is_still_undeclared_below_the_floor():
+    """No step declares which artifact it PRODUCES — that half stays below the floor.
+
+    ``reads`` and ``destroys`` make read-after-destroy checkable. Read-BEFORE-produce is
+    not: there is no ``produces`` marker, so ``reads: [metrics]`` is paired against
+    ``record-metrics`` only by a human reading the prose. Stating that plainly is what
+    keeps this module's coverage claim honest rather than implying the artifact-level
+    derivation is now complete.
+    """
+    declarers = []
+    for record in _finalize_records():
+        fields = extension_discovery._read_frontmatter_fields(
+            Path(record['path']), ('produces', 'emits', 'produces_artifacts')
+        )
+        if fields:
+            declarers.append(f"{record.get('name')}: {sorted(fields)}")
+    assert not declarers, (
+        'A finalize step declared a producer-side artifact marker. The read-before-produce '
+        'direction is now derivable and this module should derive it rather than reporting '
+        f'it as below the floor: {declarers}'
     )
 
 

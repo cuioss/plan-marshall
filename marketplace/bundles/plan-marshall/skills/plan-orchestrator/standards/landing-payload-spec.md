@@ -80,8 +80,8 @@ the drain consumes. These keys are **required** — a landing missing any of the
 |-----|-------|--------|
 | `schema` | `landing-facts/1` — the payload-version marker, fail-closed like `envelope_version` | constant |
 | `plan_id` | The plan's id (the message `sender_id`) | run |
-| `pr` | PR reference (`#NNN`) or `n/a` | `create-pr` / CI |
-| `merge_state` | The merge/landing state the step recorded (`merged` / `open` / `n/a`) — the STEP'S claim, never a corroboration | `branch-cleanup` facts |
+| `pr` | PR reference (`#NNN`) or `n/a` | `create-pr`'s `pr_number` fact |
+| `merge_state` | The merge/landing state the step recorded (`merged` / `open` / `n/a`) — the STEP'S claim, never a corroboration | `branch-cleanup`'s `merge_state` fact |
 | `deliverables_total` | Total deliverable count from the solution outline | run |
 | `deliverables_done` | Completed deliverable count | run |
 | `total_tokens` | The run's token total (raw integer) | `record-metrics` facts |

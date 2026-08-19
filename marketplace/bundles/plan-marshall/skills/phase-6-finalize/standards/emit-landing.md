@@ -12,6 +12,10 @@ presets:
   - full
 mutates_source: false
 post_run_review: true
+reads:
+  - metrics
+records_facts:
+  - work_performed
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 ---
 
@@ -157,9 +161,15 @@ run yet). A read that fails degrades its field to `n/a` (Error Handling), never 
 
 4. **PR reference and merge state** — the STEP's own recorded claim, never a corroboration (see the
    payload spec's finding #4: a contradiction of a step's merge claim is operator narrative, not a fact
-   this step fabricates). Derive `pr` and `merge_state` from the `create-pr` and `branch-cleanup` step
-   records read in item 1 (their `facts` / `outcome` / `display_detail`); when no PR exists, both are
-   `n/a`.
+   this step fabricates). Both are **typed facts**, read from the `facts` sub-dict of the step records
+   in item 1 — do NOT re-parse either out of a `display_detail` string:
+
+   - `pr` ← `create-pr`'s `pr_number` fact, rendered as `#{pr_number}`.
+   - `merge_state` ← `branch-cleanup`'s `merge_state` fact, transcribed verbatim
+     (`merged` / `open` / `n/a`).
+
+   A fact absent because its step did not run (the manifest excluded it, or it has no record) is
+   written as `n/a`, its key still present, per the Error Handling table.
 
 ### Step 2: Assemble the machine-readable landing payload
 
@@ -223,18 +233,37 @@ trusted.
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step emit-landing --outcome done \
+  --fact work_performed=true \
   --display-detail "landing -> epic {epic}"
 ```
 
 The `display_detail` string appears in the renderer's per-step `[OK]` row.
+
+`work_performed=true` records that a landing message actually reached the inbox on this path. The
+step declares `records_facts: [work_performed]` because it has an `--outcome done` branch reachable
+WITHOUT having performed its characteristic work — the Error Handling row below marks `done` after an
+inbox write that failed — which is the contract's stated trigger for the declaration. A consumer
+asking *"did this run actually emit a landing?"* reads the fact; `outcome: done` alone cannot answer
+it.
 
 ## Error Handling
 
 | Scenario | Action |
 |----------|--------|
 | A fact read (`manage-status` / `manage-solution-outline` / `manage-execution-manifest`) returns an error | Write that field as `n/a` in the fenced block (key still present) and continue — a missing field never blocks the emission or archive |
-| `orchestrator inbox write` returns an error | Non-fatal: log the failure and mark `done` with the failure noted in `display_detail`; a failed landing write never blocks finalize |
+| `orchestrator inbox write` returns an error | Non-fatal: log the failure, then mark `done` recording `work_performed=false` (the call is spelled out below); a failed landing write never blocks finalize |
 | `epic` is empty / plan not orchestrated | Step 0's diagnosable skip fires — no landing is written and the misconfiguration is surfaced as a WARNING |
+
+The failed-write branch terminates with this call — spelled out rather than left to prose, because it
+is the one `done` branch on which no landing was emitted, and `work_performed=false` is the only signal
+that distinguishes it from the Step 4 success above:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step emit-landing --outcome done \
+  --fact work_performed=false \
+  --display-detail "landing write failed: {error}"
+```
 
 ## Related
 
