@@ -374,12 +374,20 @@ class TestPermissionFixProtectPath:
         )
         self._pin_scope_path(monkeypatch, settings_path)
 
-        claude_runtime.ClaudeRuntime().permission_fix(
-            'global', 'protect-path', [protected], False
+        result = _parse(
+            claude_runtime.ClaudeRuntime().permission_fix(
+                'global', 'protect-path', [protected], False
+            )
         )
         written = json.loads(settings_path.read_text(encoding='utf-8'))
         assert written['permissions']['deny'][0] == 'Read(~/.ssh/**)'
         assert len(written['permissions']['deny']) == self.RULE_COUNT + 1
+        # `rules_total` counts THIS protection's rules, not the settings file's
+        # deny list. The pre-existing entry above is what makes the two
+        # denominators differ — on an empty deny list they coincide, and a
+        # confusion between them would be invisible.
+        assert result['rules_total'] == self.RULE_COUNT
+        assert result['changes_applied'] == self.RULE_COUNT
 
     def test_dry_run_writes_nothing_and_reports_a_count(
         self, tmp_path: Path, monkeypatch

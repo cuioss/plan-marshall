@@ -99,6 +99,32 @@ class TestEnsureDeniedCLI:
         # unchanged by the re-run — unlike an added/existing split, which moves.
         assert f'protection_rules_total: {len(first)}' in reported
 
+    def test_protection_total_counts_the_protection_not_the_deny_list(
+        self, claude_project, capsys
+    ) -> None:
+        """`protection_rules_total` is the protection's denominator, not the file's.
+
+        An unrelated deny entry is seeded first, which is what makes the two
+        numbers differ: against an empty deny list they coincide, so a report
+        that counted the whole file would look correct.
+        """
+        from _cred_ensure_denied import run_ensure_denied
+
+        settings = claude_project / '.claude' / 'settings.local.json'
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        settings.write_text(
+            json.dumps({'permissions': {'allow': [], 'deny': ['Read(~/.ssh/**)'], 'ask': []}}),
+            encoding='utf-8',
+        )
+
+        assert run_ensure_denied(Namespace(target='project')) == 0
+
+        deny = _deny_list(claude_project)
+        reported = capsys.readouterr().out
+        assert deny[0] == 'Read(~/.ssh/**)'
+        assert f'protection_rules_total: {len(deny) - 1}' in reported
+        assert f'rules_added: {len(deny) - 1}' in reported
+
     def test_ensure_denied_reports_a_declining_target_as_no_op(
         self, claude_project, monkeypatch, capsys
     ) -> None:
