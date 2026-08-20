@@ -2013,6 +2013,32 @@ def test_committed_marshal_json_top_level_keys_already_canonical():
     )
 
 
+def test_committed_marshal_json_surfaces_every_orchestrator_knob():
+    """The committed .plan/marshal.json must surface every settable orchestrator knob.
+
+    Default-surfacing guard for the file an operator actually reads. The seed
+    materialises every key of ``ORCHESTRATOR_KNOWN_KEYS``
+    (``test_get_default_config_includes_orchestrator_block``), but this project's
+    own committed config predates that seed, so a knob can be settable in code and
+    invisible in the shipped file. The expectation is derived from the
+    authoritative key set, never transcribed, so a key added there fails this test
+    until the committed file surfaces it too.
+    """
+    assert _COMMITTED_MARSHAL_PATH.exists(), (
+        f'committed marshal.json must exist at {_COMMITTED_MARSHAL_PATH}'
+    )
+    committed = json.loads(_COMMITTED_MARSHAL_PATH.read_text(encoding='utf-8'))
+
+    assert 'orchestrator' in committed, (
+        'the committed marshal.json must carry a top-level orchestrator block'
+    )
+    known = set(_config_defaults_mod.ORCHESTRATOR_KNOWN_KEYS)
+    assert set(committed['orchestrator']) == known, (
+        f'committed orchestrator block surfaces {sorted(committed["orchestrator"])}, '
+        f'expected every settable knob {sorted(known)}'
+    )
+
+
 def test_committed_marshal_json_round_trips_through_save_config_unchanged(tmp_path, monkeypatch):
     """The committed marshal.json must round-trip through save_config unchanged.
 

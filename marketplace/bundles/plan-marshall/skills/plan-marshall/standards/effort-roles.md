@@ -85,7 +85,7 @@ The `max` key is a ceiling that clamps the resolved surface level on the ordinal
 
 Dispatch sites resolve via the two-flag or dotted `--role` form, e.g. `manage-config effort resolve-target --role orchestrator.analyze`. The **`reader` surface** is special: it resolves a LEVEL like the others, but the dispatch site composes the read-only `execution-context-reader-{level}` variant from that resolved level (untrusted-text ingestion runs under the reader variant), so the reader site reads the level via `manage-config effort read --role orchestrator.reader` and composes the variant name itself rather than calling `resolve-target`.
 
-> **Reserved extension slot (PLAN-48).** The scalar (non-effort) orchestrator knobs — `parallelization_scope` today, and the reserved `auto_emit` boolean — live in the SAME `orchestrator` block and are read/written through the `manage-config orchestrator get/set --field` verb, distinct from this effort registry. PLAN-48 folds `auto_emit` into that verb's known-field whitelist without touching the effort role group. See [`marshal-json-reference.md` § Orchestrator Configuration](../../extension-api/standards/marshal-json-reference.md).
+> **Scalar sibling knobs.** The scalar (non-effort) orchestrator knobs — `parallelization_scope` and `auto_emit` — live in the SAME `orchestrator` block and are read/written through the `manage-config orchestrator get/set --field` verb, distinct from this effort registry. Both are in that verb's known-field whitelist, and neither touches the effort role group. See [`marshal-json-reference.md` § Orchestrator Configuration](../../extension-api/standards/marshal-json-reference.md).
 
 ## Workflow → resolver-key mapping
 
