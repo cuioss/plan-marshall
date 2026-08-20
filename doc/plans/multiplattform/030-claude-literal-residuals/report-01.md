@@ -32,10 +32,17 @@ No skill was unobtainable by both routes.
 
 ## Deliverables
 
-Commits are named by subject rather than SHA throughout this report. The branch is expected to be
-rebased onto `main` before the PR (to pick up a test-restructuring PR the operator named), and a
-rebase replaces every replayed commit's object id — a quoted SHA would cite a commit on no branch
-under review.
+Commits are named by subject rather than SHA throughout this report, because the branch was rebased
+onto `main` before the PR and a rebase replaces every replayed commit's object id — a quoted SHA
+would cite a commit on no branch under review. That choice is why the rebase needed no citation
+remapping: there was no same-branch SHA anywhere to go stale.
+
+**What the rebase did and did not pick up.** The operator asked for it in order to fetch a
+test-restructuring PR (#1314, the module-budget campaign). **That PR had not merged**, so the rebase
+did not fetch it; what it fetched was three unrelated documentation commits in the `truthful-signals`
+and `review-apparatus` epics. The rebase was clean, and re-derived so: the intersection of #1314's
+281 changed files with this branch's is **empty**, and so is the intersection with the three commits
+actually taken. § Build gate records the gate re-run on the rebased tree.
 
 ### D1 — Default permissions render in the runtime
 
@@ -198,7 +205,15 @@ predated the round-1 fix commit, which is how a gate figure goes quietly stale.
 `git status --porcelain` was empty before each commit; no `uv.lock` churn reached a commit, and paths
 were staged explicitly rather than with `git add -A`.
 
-**Stale-base re-verification (§ Step 8 condition 2):** _pending — recorded at the merge gate._
+**Stale-base re-verification (§ Step 8 condition 2).** `git rev-list --count HEAD..origin/main` read
+**3** before the PR, so the base had advanced and the condition applied. Shape used: **rebased on the
+branch**, so the tested tree *is* the PR head and the PR's own CI verifies what actually lands.
+The rebase replayed 12 commits with no conflict; the gate was then re-run in full on that tree and
+is the run recorded above (quality-gate clean, test-compile clean over 784 files, 21381 passed / 14
+skipped). `git rev-list --count HEAD..origin/main` reads **0** after.
+
+If `main` advances again before the merge gate, this is re-done rather than assumed — the count is
+re-read at the gate, and a non-zero count means another merge and another full gate run.
 
 ### Mutation sweep — the new guards were shown to fail
 
