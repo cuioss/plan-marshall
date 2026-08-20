@@ -214,7 +214,7 @@ directories it names were sufficient, so the next run inherits it unchanged.
 | Distinct `Class::test` ids, slice | 3822 | 3822 | 0 | `ast`, class/function walk |
 | Comments in slice | 7967 | 8439 | +472 | `tokenize`, `COMMENT` tokens |
 | Lines in slice | 90928 | 97014 | **+6086 (+6.7%)** | `len(read_text().split('\n'))` |
-| Coverage, slice bundle paths | 89% | _pending_ | | `pytest {slice} --cov={10 skill script dirs} --cov-report=term` |
+| Coverage, slice bundle paths | 89% | 89% | 0 | `pytest {slice} --cov={10 skill script dirs} --cov-report=term` |
 
 **The line delta is an observation, not a target.** +6.7% **confirms** the plan's HYPOTHESIS that
 splitting is line-neutral to slightly positive; it is not a refutation, and nothing was deleted to
@@ -252,9 +252,48 @@ split moved byte-identical text and the defect was already there.
 | M8 | `test-docstring-historical-prose` rose 200 → 203: comment blocks *between imports* were replicated into every output, multiplying a citation | Whole-tree sweep diff, per-file | **Fixed** — outputs take import statements only; the commented block survives whole in the fixtures module |
 | M9 | `test-docstring-historical-prose` rose 200 → 201: a **non-splitting** module keeps its own full docstring, and the fixtures module copied it, duplicating the citation it carries | Whole-tree sweep diff, `manage-status` 2 → 3 | **Fixed** — the fixtures module carries the full docstring only when the outputs are compacted |
 
+| M10 | M1's fix **relocated** the over-claim rather than removing it: the inherited docstring now heads a fixtures module, which contains no tests, while still opening "Tests for ``x.py``" and enumerating a contract. The second cold read called it "the largest over-claim", listing six contract bullets whose tests are in sibling modules | Second cold read, Q2 | **Fixed** — the inherited text is *framed*, not edited: a lead-in states what the file is and whose contract the text below pins, and the original prose follows unchanged. 54 of 63 fixtures modules carry an inherited docstring; the other 9 already had a generated one |
+
 Every one of M7–M9 was found by re-measuring **all seven** rules whole-tree rather than only the one
 this plan targets. The final sweep has `test-module-line-budget` at 257 and the other six at exactly
 their pre-split values.
+
+⚠️ **M1, M9 and M10 are the same defect found three times, each time in the place the previous fix put
+it.** M1 was the docstring replicated into every output; M9 was the fixtures module copying a docstring
+the single output already had; M10 was the inherited docstring heading a file it did not describe. Each
+fix was sound where it landed and moved the claim somewhere the next round had to find it. The
+deliverables should be read as still carrying defects of that kind.
+
+### The two cold reads
+
+§ Verification requires a cold read: three split modules and their `_{domain}_fixtures.py`, given to a
+sub-agent with **no other context**, asked of ten named tests "what contract does this test pin, and
+why does it matter?" It was run twice — once on the split as first written, and again after the fixes
+above, which is what the plan means by "re-read".
+
+| | First read | Second read |
+|---|---|---|
+| RECOVERABLE | 6 of 10 | **7 of 10** |
+| UNRECOVERABLE | `test_a_re_entered_phase_is_its_own_shape`, `test_default_max_slots_is_five`, `test_missing_fragments_file_errors`, `test_session_id_default_string_when_missing` | `test_default_max_slots_is_five`, `test_missing_fragments_file_errors`, `test_session_id_default_string_when_missing` |
+
+The answers are recorded in full in the run's own working notes; the verdicts and the reasons are
+reproduced here because they are what the deliverable turns on.
+
+**The one that moved** — `test_a_re_entered_phase_is_its_own_shape` — became recoverable because the
+second reader could reach the fixtures module's docstring, which states the mechanism ("the aggregate
+is cumulative, the ledgers are not") that the first reader could not resolve. Nothing about that test
+changed.
+
+⚠️ **The second read also states a cost this run should not hide.** Asked directly whether splitting
+the docstring hurt, it answered yes for two of the three pairs: *"the mechanics stayed with the tests,
+the reasoning left."* The full contract prose is one file away from the tests it explains. That is a
+real loss of locality, accepted deliberately: the alternative is M1, where every output module states a
+contract it does not hold, and **recoverability measured over the file set the plan itself specifies
+went up, not down** (6 → 7). The trade is disclosed rather than presented as a clean win.
+
+For the third pair the reader reported the premise did not even hold: `_compile_report_fixtures.py`'s
+docstring is byte-identical to its test module's — both are the same seven-word line — so there the
+problem is not misplaced rationale but absent rationale, which is a pre-existing gap.
 
 ### Pre-existing, recorded not fixed
 
@@ -286,6 +325,8 @@ excludes `marketplace/bundles/**`, `test/conftest.py`, and prose work). Recorded
 | Two constants with byte-identical values in `_compile_report_fixtures.py` (`_COLLECT_FRAGMENTS_SCRIPT`, `_COLLECT_FRAGMENTS_SCRIPT_REGISTRY`); a dead `content` assignment in `_write_fragments_with_dispatch_boundaries`; an unused `plan_dir` local | `050` residue |
 | An undocumented autouse fixture (`_seed_guarded_plan_dirs`) that monkeypatches production `require_plan_exists` to *create* the directory it guards, with no docstring saying why | `050` residue |
 | Stale external pointers with no in-repo target (`solution_outline.md D5`, `lock-reconciliation-analysis.md §5`, `ADR-002`, `Task-4 coverage`, two bare commit hashes) | `050` residue (prose) |
+| `test_session_id_default_string_when_missing` discards `run_script`'s return and never asserts `result.success`, unlike its sibling one test above it — a script failing before the write would surface as a confusing file mismatch rather than the real error | `050` residue |
+| `test_missing_fragments_file_errors` asserts only `not result.success` — no exit code, no message, and no assertion that no report was written, which is the half that matters if a missing bundle could yield a hollow-but-plausible report | `050` residue |
 
 **Filename-versus-content drift, and it is partly this run's:** the cold read noted that
 `test_ledger_reconciliation_manifest_parsing.py` holds one manifest-parsing test out of ten, and that
@@ -300,7 +341,7 @@ module — reorders tests between files and is a larger change than this deliver
 | Condition | Before | After | Verdict |
 |---|---|---|---|
 | 1. Collected test count does not decrease (slice) | 4207 | 4207 | **holds** — identical, not merely non-decreasing |
-| 2. Coverage does not decrease (slice bundle paths) | 89% | _pending_ | _pending_ |
+| 2. Coverage does not decrease (slice bundle paths) | 89% | 89% | **holds** — bit-identical: 9986 statements, 962 missed, 3682 branches, 355 partial, both sides |
 | 3. Order-independent (default **and** reverse directory order) | — | 4207 passed both | **holds** |
 | 4. `EXEMPT_RULE_IDS` unchanged | n/a | n/a | **not applicable** — that check is stated for the `080` slice; this run is `050` and touches no plugin-doctor module |
 | 5. Suite not slower, skipped count not higher (whole tree) | 21070 passed, 14 skipped, 1958.89 s | _pending_ | _pending_ |
