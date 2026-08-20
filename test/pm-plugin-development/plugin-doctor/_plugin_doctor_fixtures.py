@@ -1333,6 +1333,29 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
             ),
         },
     )
+    # ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED: a flag declared on the ROOT parser
+    # documented AFTER the verb. The sibling unknown-flag rule cannot see this —
+    # it judges against the accept-set widened with the root's flags, so a root
+    # flag is in every subcommand's set by construction.
+    corpus['ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED'] = FixtureSpec(
+        analyzer=lambda root: _aan.scan_router_flag_placement(
+            root,
+            {
+                'b:s:x': _ScriptEntry(
+                    subcommands={'list': {'plan-id', 'status'}},
+                    root_flags={'plan-id'},
+                    subcommand_own_flags={'list': {'status'}},
+                )
+            },
+        ),
+        files={
+            'bundles/b/skills/s/SKILL.md': (
+                '# F\n\n```bash\n'
+                'python3 .plan/execute-script.py b:s:x list --plan-id p1\n'
+                '```\n'
+            ),
+        },
+    )
     corpus['ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT'] = FixtureSpec(
         analyzer=lambda root: _aan.scan_canonical_forms(root, {}),
         files={

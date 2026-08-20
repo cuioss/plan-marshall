@@ -162,9 +162,12 @@ class TestParseDispatchBoundaryFile:
     def test_malformed_appended_cell_is_unrecognised_not_unmeasured(self, tmp_path):
         """A corrupt appended cell reads as unrecognised, keeping the row.
 
-        The three-way distinction at its sharpest: a legacy row (nothing there),
-        an ``unmeasured`` token (deliberately not measured) and a corrupt cell
-        (a shape the reader failed to parse) must not collapse into one bucket.
+        Three of the reader's verdicts at their sharpest: a legacy row (nothing
+        there), an ``unmeasured`` token (deliberately not measured) and a corrupt
+        cell (a shape the reader failed to parse) must not collapse into one
+        bucket. A fourth, ``indeterminate``, exists for a literal ``0`` the
+        reader cannot date; this row carries a nonzero cell, which dates it, so
+        its zeros are measured rather than indeterminate.
         """
         artifact = tmp_path / 'b.toon'
         artifact.write_text(

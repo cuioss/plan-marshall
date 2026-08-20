@@ -111,6 +111,46 @@ class TestPositiveDetection:
         root, _ = _make_skill_file(tmp_path, content)
         assert_analyzer_findings(analyze_incident_reference_in_docs, root, [RULE_ID])
 
+    def test_reversed_term_of_art_fires(self, tmp_path: Path) -> None:
+        """``the failure mode #866`` — the noun BEFORE the reference — fires.
+
+        The shipped term-of-art family required the reference first, so the
+        ordering English prose reaches for at least as often passed a rule whose
+        own brief named it.
+        """
+        content = 'This is the failure mode #866 that closed the PR unmerged.\n'
+        root, _ = _make_skill_file(tmp_path, content)
+        findings = assert_analyzer_findings(
+            analyze_incident_reference_in_docs, root, [RULE_ID]
+        )
+        assert findings[0]['pattern_family'] == 'incident_term_of_art_reversed'
+
+    def test_reversed_term_of_art_with_hyphenated_qualifier_fires(self, tmp_path: Path) -> None:
+        """``the shape sibling-worktree #948`` keeps the optional qualifier slot."""
+        content = 'An absent plan is unknown here — the shape sibling-worktree #948.\n'
+        root, _ = _make_skill_file(tmp_path, content)
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [RULE_ID])
+
+    def test_dated_narration_fires(self, tmp_path: Path) -> None:
+        """``As of 2025-10-27:`` pins prose to a moment and fires.
+
+        Prose anchored to a date states when something WAS true rather than what
+        IS true — the same provenance-as-normative-prose defect a ``#ref``
+        carries, without a reference to carry it.
+        """
+        content = 'As of 2025-10-27:\n- universal git access is provided.\n'
+        root, _ = _make_skill_file(tmp_path, content)
+        findings = assert_analyzer_findings(
+            analyze_incident_reference_in_docs, root, [RULE_ID]
+        )
+        assert findings[0]['pattern_family'] == 'dated_narration'
+
+    def test_version_pinned_narration_fires(self, tmp_path: Path) -> None:
+        """``since 1.2.3`` pins prose to a release the same way a date does."""
+        content = 'The resolver has behaved this way since 1.2.3 was released.\n'
+        root, _ = _make_skill_file(tmp_path, content)
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [RULE_ID])
+
     def test_temporal_pre_narration_fires(self, tmp_path: Path) -> None:
         """``pre-#NNNN`` temporal narration fires."""
         content = 'The pre-#1067 defect: a resolver id appended behind a bare falsiness check with no dedup.\n'
@@ -146,6 +186,37 @@ class TestPositiveDetection:
         root, _ = _make_skill_file(tmp_path, content)
         findings = assert_analyzer_findings(analyze_incident_reference_in_docs, root, [RULE_ID])
         assert findings[0]['snippet'] == 'plan-marshall#101'
+
+    def test_legitimate_version_constraint_is_not_flagged(self, tmp_path: Path) -> None:
+        """A version REQUIREMENT is not dated narration.
+
+        The load-bearing negative for the dated-narration family: "requires
+        Python 3.12", "Node 20.1.0 or newer" and ">= 1.2.3" all state a
+        requirement that holds NOW, not a moment prose is pinned to. The
+        temporal preposition is what separates the two, and a family that fired
+        on every version number would flag most dependency documentation in the
+        tree.
+        """
+        content = (
+            'Requires Python 3.12 or newer.\n'
+            'The frontend targets Node 20.1.0.\n'
+            'Pin the resolver at >= 1.2.3 in the lockfile.\n'
+        )
+        root, _ = _make_skill_file(tmp_path, content)
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
+
+    def test_reversed_term_of_art_with_a_backticked_ref_stays_exempt(self, tmp_path: Path) -> None:
+        """The inline-code exemption applies to the REVERSED form too.
+
+        The exemption is tested at the ``#NNNN`` inside the match rather than at
+        the match's first character — which for this form is the noun, outside
+        the backticks. Testing the match start would fire on a back-ticked
+        reference, narrowing a convention published across the rule catalogue,
+        the provenance table, a named test and a sibling rule.
+        """
+        content = 'This is the failure mode `#866` that closed the PR unmerged.\n'
+        root, _ = _make_skill_file(tmp_path, content)
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
 
     def test_finding_shape(self, tmp_path: Path) -> None:
         """Finding carries the expected shape fields."""

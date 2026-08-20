@@ -762,8 +762,10 @@ Only `SKILL.md` is scanned — the numbering-discipline rule is a property of a 
 2. **Observed-on citation** — a capitalized `Observed on` clause opener followed by a `#NNNN` reference. Case-sensitive on `Observed`, so a lowercase mid-sentence "…observed on #NNNN" in an observation record (a bot data-sheet citing where a field was confirmed) is not flagged.
 3. **Temporal narration** — `post-#NNNN` / `pre-#NNNN` / `since #NNNN`.
 4. **Incident term-of-art** — a `#NNNN` (optionally `PR #NNNN`) bound to an incident noun (`failure mode` / `signature` / `shape` / `defect` / `incident` / `regression`), with an optional single hyphenated qualifier between.
+5. **Incident term-of-art, reversed** — the same noun set with the reference AFTER it ("the failure mode #NNNN"), same optional hyphenated qualifier. English prose reaches for this ordering at least as often as form 4's, and a family that matched only form 4 passed prose its own brief named.
+6. **Dated / version-pinned narration** — a temporal preposition (`as of` / `since` / `before` / `after`) followed by a `YYYY`(`-MM`(`-DD`)) date or an `N.N.N` version. The date IS the incident marker: prose pinned to a moment states when something was true rather than what is true, which is the defect a `#NNNN` carries without needing a reference to carry it.
 
-**Deliberately not flagged**: a bare `#NNNN` in prose with no incident noun (ordinary provenance, a worked-example citation, an external-tracker issue), a back-ticked `#NNNN` (a code token, exempt as inline code), and a lowercase "observed on #NNNN" in an observation record.
+**Deliberately not flagged**: a bare `#NNNN` in prose with no incident noun (ordinary provenance, a worked-example citation, an external-tracker issue), a back-ticked `#NNNN` (a code token, exempt as inline code — tested at the reference's offset inside the match, so the reversed form 5 is exempt on the same terms as form 4), a lowercase "observed on #NNNN" in an observation record, and a version CONSTRAINT with no temporal preposition ("requires Python 3.12", "Node 20.1.0 or newer", ">= 1.2.3") — those state a requirement that holds now.
 
 **Exemption posture**: Ships **unconditional** — no prefix is registered under `no-incident-references` in `config/default-suppression.yml`. The genuinely-referential contexts that exist (bot data-sheets, `rule-provenance.md` / `rule-catalog.md`) fall outside the detection family above, so none needs a permanent exemption. The shared config-suppression capability remains available (a maintainer may register a prefix) but is left carrying zero entries rather than a token unused mechanism.
 
@@ -1051,7 +1053,7 @@ The ack tag must match `^ack-[a-z0-9_-]+$`. The slug after `ack-` must be non-em
 
 ## Rule Pack: Manually-maintained-mirror drift
 
-Four rules that make a hand-maintained documentation mirror of a machine-derivable fact machine-checkable. **Activation**: build-failing — all four are registered in `doctor-marketplace.py::cmd_quality_gate`, so a drifted mirror fails the build, and they are also reported under `doctor-marketplace.py analyze`. `provides-method-table-drift` and `literal-count-drift` run as marketplace-wide passes (wired into both `cmd_quality_gate` and `cmd_analyze`); `broken-relative-link` and `fenced-code-no-language` run as the marketplace-wide `analyze_markdown_mirror_rules` pass inside `cmd_quality_gate` and also surface per-component through `cmd_analyze`'s `analyze_component` pass.
+Six rules that make a hand-maintained documentation mirror of a machine-derivable fact machine-checkable. **Activation**: build-failing — every one is registered in `doctor-marketplace.py::cmd_quality_gate` (through `_runner.RuleRunner.run_quality_gate`), so a drifted mirror fails the build, and they are also reported under `doctor-marketplace.py analyze`. `provides-method-table-drift`, `literal-count-drift`, `canonical-enum-choices-drift` and `readme-skill-registration-drift` run as marketplace-wide passes (wired into both `cmd_quality_gate` and `cmd_analyze`); `broken-relative-link` and `fenced-code-no-language` run as the marketplace-wide `analyze_markdown_mirror_rules` pass inside `cmd_quality_gate` and also surface per-component through `cmd_analyze`'s `analyze_component` pass.
 
 ### provides-method-table-drift
 
@@ -1102,6 +1104,50 @@ A mismatch emits a warning-severity finding at the offending row's line.
 **Recommended fix**: Correct the stale "Implementations" count to the enumerated implementer count (or add/remove the implementation the count was meant to mirror). On the standards-index surface, bring the prose count and both index tables into line with the `standards/` directory contents — never by hand-maintaining a second copy of the file list.
 
 **Suppression mechanism**: None — a stale count is a real drift.
+
+---
+
+### canonical-enum-choices-drift
+
+**Rule ID**: `canonical-enum-choices-drift`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_canonical_enum_drift.py`
+
+**Scope**: every `SKILL.md` `## Canonical invocations` block in the marketplace tree — each documented `--flag {a|b|c}` enum, scoped to the subcommand path of the executor invocation it sits under.
+
+**Intent**: A documented `{a|b|c}` enum is a hand-maintained mirror of the flag's live argparse `choices=`. When a choice is added or renamed in the script and the block is not edited, the mirror rots and a reader writes an invocation the parser rejects — the same failure shape the `ARGUMENT_NAMING_*` cluster catches one surface over, at the flag NAME rather than at its value set.
+
+**Detection**: Pure static analysis. Enum tokens are extracted per fenced block and attributed to the executor invocation ABOVE them — every line is searched for a notation, so a fence documenting several invocations scopes each enum to its own subcommand rather than to the block's first. The authority is resolved from the script's AST, reading `choices=` ONLY — never a `description=` hand-list — so the declared-vs-derived distinction holds. A documented set that differs from the resolved set emits a finding naming the members missing from the doc and those the doc lists but the parser does not accept.
+
+**Fail-closed conditions**: a flag with no `choices=`, a `choices=` the resolver cannot evaluate, an unresolvable notation, and an enum above the block's first invocation each emit NOTHING — there is no authority to compare against, and inventing one would manufacture a false finding. The unresolved share of the population is published on the analyzer's output (`unresolved_notation_fraction`) rather than left silent, so a clean sweep states what it could not check.
+
+**Structural discriminator**: a token is an enum only inside a fenced block, only below an executor invocation, and only when it parses into two or more members. Prose braces elsewhere in the document are out of scope.
+
+**Recommended fix**: Bring the documented enum into line with the flag's live `choices=`, or correct the `choices=` if the documentation states the intended set.
+
+**Suppression mechanism**: None — a stale enum is a real drift.
+
+---
+
+### readme-skill-registration-drift
+
+**Rule ID**: `readme-skill-registration-drift`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_readme_skill_coverage.py`
+
+**Scope**: every bundle `README.md`, checked against the skills that bundle's `plugin.json` registers.
+
+**Intent**: A bundle README's skill enumeration is a hand-maintained mirror of the registration set in `plugin.json`. A skill added to the manifest without a README edit is invisible to every reader who arrives at the bundle through its README — the same mirror-vs-derived shape as the two rules above, one surface further out.
+
+**Detection**: Pure static analysis — the registered skill set is read from the bundle's `plugin.json`, the README body is scanned for each registered name, and any registered skill the README fails to name emits a finding.
+
+**Fail-closed conditions**: a bundle with no `README.md`, or an unreadable / unparseable `plugin.json`, is out of scope rather than flagged — there is no derivable registration set to mirror.
+
+**Structural discriminator**: the derived set is the `plugin.json` registration, never the on-disk `skills/` listing, so a skill directory that is present but unregistered is not a README obligation.
+
+**Recommended fix**: Name the missing skill in the bundle README, or remove its registration if it was not meant to ship.
+
+**Suppression mechanism**: None — an unnamed registered skill is a real drift.
 
 ---
 

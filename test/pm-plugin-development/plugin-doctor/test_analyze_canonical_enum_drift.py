@@ -386,3 +386,216 @@ def test_real_tree_shared_fence_sites_resolve_to_their_own_invocation():
     documented, choices = tier_sites[('architecture-refresh', 'set-tier-1')]
     assert choices is not None
     assert documented == choices
+
+
+# ---------------------------------------------------------------------------
+# The brace-less enum form, and the shapes it must NOT read as one.
+# ---------------------------------------------------------------------------
+def _write_braceless_bundle(root: Path, doc_flag_and_members: str) -> Path:
+    """A bundle whose canonical block documents ``--kind`` in brace-less form."""
+    skill_dir = root / 'mybundle' / 'skills' / 'myskill'
+    scripts_dir = skill_dir / 'scripts'
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    (scripts_dir / 'myscript.py').write_text(_SCRIPT_LITERAL_CHOICES, encoding='utf-8')
+    (skill_dir / 'SKILL.md').write_text(
+        '# My Skill\n\n'
+        '## Canonical invocations\n\n'
+        f'{_FENCE}bash\n'
+        'python3 .plan/execute-script.py mybundle:myskill:myscript add \\\n'
+        f'  {doc_flag_and_members}\n'
+        f'{_FENCE}\n',
+        encoding='utf-8',
+    )
+    return skill_dir / 'SKILL.md'
+
+
+def test_braceless_pipe_enum_is_collected_and_compared(tmp_path):
+    """``--kind x|y`` is an enum claim and is compared, not skipped.
+
+    Requiring braces made the brace-less spelling invisible: the flag was never
+    compared and the sweep reported clean over a site it had not read.
+    """
+    _write_braceless_bundle(tmp_path, '--kind x|y')
+
+    findings = assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [RULE_ID])
+
+    assert findings[0]['details']['missing_from_doc'] == ['z']
+
+
+def test_braceless_enum_matching_choices_is_clean(tmp_path):
+    """The control: a correct brace-less enum yields nothing."""
+    _write_braceless_bundle(tmp_path, '--kind x|y|z')
+
+    assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [])
+
+
+def test_optional_argument_brackets_are_not_swallowed_into_a_member(tmp_path):
+    """``[--kind x|y|z]`` documents an OPTIONAL flag, not a member named ``z]``.
+
+    A permissive member class read the closing bracket as part of the last
+    member and manufactured a drift finding out of punctuation — observed on the
+    real tree against a correctly-documented flag.
+    """
+    _write_braceless_bundle(tmp_path, '[--kind x|y|z]')
+
+    assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [])
+
+
+def test_a_single_metavar_is_not_read_as_a_one_member_enum(tmp_path):
+    """``--kind VALUE`` carries no pipe and is not an enum claim."""
+    _write_braceless_bundle(tmp_path, '--kind VALUE')
+
+    assert derive_population(tmp_path) == []
+
+
+def test_a_mutually_exclusive_flag_list_is_not_read_as_an_enum(tmp_path):
+    """``--kind --a|--b`` is a group of FLAGS, not one flag's member set.
+
+    Reading it as an enum would compare ``--kind``'s choices against a list of
+    other flags' names.
+    """
+    _write_braceless_bundle(tmp_path, '--kind --a|--b')
+
+    assert derive_population(tmp_path) == []
+
+
+# ---------------------------------------------------------------------------
+# The declarative dict-spec parser form.
+# ---------------------------------------------------------------------------
+_SCRIPT_DICT_SPEC = '''\
+import argparse
+
+KINDS = ['x', 'y', 'z']
+
+
+def build():
+    return dict(
+        description='demo',
+        subcommands=[
+            {
+                'name': 'add',
+                'args': [
+                    {'flags': ['--kind'], 'dest': 'kind', 'choices': KINDS},
+                ],
+            },
+        ],
+    )
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.parse_args()
+
+
+if __name__ == '__main__':
+    main()
+'''
+
+
+def test_declarative_dict_spec_choices_resolve(tmp_path):
+    """A ``{'flags': [...], 'choices': [...]}`` spec is an authority.
+
+    Scripts that build their parser from a data structure have no
+    ``add_argument(..., choices=...)`` call to walk, so every documented enum on
+    them resolved to "no authority" and was silently never compared — the same
+    unread-population failure this rule exists to catch, inside the rule. The
+    spec is a same-file parse; no import hop is involved.
+    """
+    skill_dir = tmp_path / 'mybundle' / 'skills' / 'myskill'
+    scripts_dir = skill_dir / 'scripts'
+    scripts_dir.mkdir(parents=True)
+    (scripts_dir / 'myscript.py').write_text(_SCRIPT_DICT_SPEC, encoding='utf-8')
+    (skill_dir / 'SKILL.md').write_text(
+        '# My Skill\n\n'
+        '## Canonical invocations\n\n'
+        f'{_FENCE}bash\n'
+        'python3 .plan/execute-script.py mybundle:myskill:myscript add \\\n'
+        '  --kind {x|y}\n'
+        f'{_FENCE}\n',
+        encoding='utf-8',
+    )
+
+    population = derive_population(tmp_path)
+
+    assert len(population) == 1
+    assert population[0].resolved is True
+    assert population[0].choices == frozenset({'x', 'y', 'z'})
+    findings = assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [RULE_ID])
+    assert findings[0]['details']['missing_from_doc'] == ['z']
+
+
+# ---------------------------------------------------------------------------
+# Declared coverage — the share the sweep did NOT compare.
+# ---------------------------------------------------------------------------
+def test_coverage_reports_the_unresolved_share_and_its_causes(tmp_path):
+    """An unresolved site is counted and ATTRIBUTED, not silently dropped.
+
+    A finding count answers "how many enums are wrong"; it cannot answer "how
+    many were checked". Here one site resolves and one names a notation that
+    resolves to no script at all.
+    """
+    _write_bundle(tmp_path, doc_enum='x|y|z', script_body=_SCRIPT_LITERAL_CHOICES)
+    (tmp_path / 'mybundle' / 'skills' / 'myskill' / 'SKILL.md').write_text(
+        '# My Skill\n\n'
+        '## Canonical invocations\n\n'
+        f'{_FENCE}bash\n'
+        'python3 .plan/execute-script.py mybundle:myskill:myscript add \\\n'
+        '  --kind {x|y|z}\n'
+        f'{_FENCE}\n'
+        f'{_FENCE}bash\n'
+        'python3 .plan/execute-script.py mybundle:myskill:absent add \\\n'
+        '  --kind {a|b}\n'
+        f'{_FENCE}\n',
+        encoding='utf-8',
+    )
+
+    coverage = _mod.derive_coverage(derive_population(tmp_path))
+
+    assert coverage['population_size'] == 2
+    assert coverage['resolved'] == 1
+    assert coverage['unresolved'] == 1
+    assert coverage['unresolved_fraction'] == 0.5
+    assert coverage['unresolved_causes'] == {_mod.UNRESOLVED_NOTATION: 1}
+
+
+def test_coverage_over_an_empty_population_reports_zero_not_a_division_error():
+    """An empty population reports a 0.0 share rather than raising."""
+    assert _mod.derive_coverage([]) == {
+        'population_size': 0,
+        'resolved': 0,
+        'unresolved': 0,
+        'unresolved_fraction': 0.0,
+        'unresolved_causes': {},
+    }
+
+
+def test_findings_publish_the_unresolved_share(tmp_path):
+    """Every finding carries the coverage figures alongside the population size."""
+    _write_bundle(tmp_path, doc_enum='x|y', script_body=_SCRIPT_LITERAL_CHOICES)
+
+    findings = assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [RULE_ID])
+
+    details = findings[0]['details']
+    assert details['unresolved_notation_fraction'] == 0.0
+    assert details['unresolved_notation_causes'] == {}
+
+
+def test_real_tree_coverage_is_published_and_non_trivial():
+    """Over the REAL tree the declared gap is a real number, not a formality.
+
+    Asserted as a range rather than a literal: the exact share moves whenever a
+    skill documents another enum, and pinning it would make an unrelated doc
+    edit fail this test. What must hold is that the population is non-empty and
+    the unresolved share is genuinely published.
+    """
+    coverage = _mod.derive_coverage(derive_population(MARKETPLACE_ROOT))
+
+    assert coverage['population_size'] > 0
+    assert coverage['resolved'] + coverage['unresolved'] == coverage['population_size']
+    assert 0.0 < coverage['unresolved_fraction'] < 1.0
+    assert coverage['unresolved_causes']
+    assert set(coverage['unresolved_causes']) <= {
+        _mod.UNRESOLVED_NOTATION,
+        _mod.UNRESOLVED_SCRIPT_UNPARSEABLE,
+        _mod.UNRESOLVED_NO_CHOICES,
+    }

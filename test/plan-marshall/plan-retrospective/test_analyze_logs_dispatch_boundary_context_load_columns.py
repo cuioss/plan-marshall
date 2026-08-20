@@ -318,10 +318,18 @@ class TestDispatchBoundaryContextLoadColumns:
         assert row['unrecognised_columns'] == []
 
     def test_per_column_mix_of_measured_and_unmeasured(self, tmp_path):
-        """The three-way read is per COLUMN, not per row.
+        """Measured, unmeasured and unrecognised are decided per COLUMN.
 
         One measured cell does not make its neighbours measured, and one
         unmeasured cell does not discard the measured ones beside it.
+
+        These three verdicts are per-column because none of them depends on the
+        rest of the row. The reader's FOURTH verdict — ``indeterminate``, for a
+        literal ``0`` on a row carrying no post-token fingerprint — is decided
+        per ROW, since the bytes for a measured zero and an undated one are
+        identical and only the whole row can date them. This row carries a
+        nonzero cell, so its zeros are measured; the per-row half is covered by
+        the provenance tests.
         """
         plan_dir = tmp_path / 'plans' / 'ctx-column-mix'
         plan_dir.mkdir(parents=True)

@@ -127,6 +127,38 @@ _TERM_OF_ART_RE = re.compile(
     re.IGNORECASE,
 )
 
+# 5. Incident term-of-art, REVERSED: the noun first, the reference after it
+# ("the failure mode #NNNN"). The shipped form above requires the reference
+# first, so this ordering — the one English prose reaches for at least as often
+# — passed a rule whose own brief named it. Same noun set, same optional
+# hyphenated qualifier, mirrored.
+#
+# The example above spells the reference as a LITERAL ``#NNNN`` placeholder, as
+# every example in this module does: the population includes ``*.py``, so a
+# comment carrying a real digit run would make the analyzer fire on itself.
+_TERM_OF_ART_REVERSED_RE = re.compile(
+    r'(?:failure mode|signature|shape|defect|incident|regression)\s+'
+    r'(?:[A-Za-z]+-[A-Za-z]+\s+)?`?#\d{3,4}',
+    re.IGNORECASE,
+)
+
+# 6. Dated / version-pinned narration: a temporal preposition followed by a
+# YYYY(-MM(-DD)) date or an N.N.N version. The date or version is the incident
+# marker here — prose anchored to a moment states when something WAS true rather
+# than what IS true, which is the same provenance-as-normative-prose defect a
+# #ref carries.
+#
+# The temporal preposition is REQUIRED, which is what keeps an ordinary version
+# CONSTRAINT ("requires Python 3.12", "Node 20.1.0 or newer") out of scope: those
+# state a requirement that holds now, not a moment prose is pinned to.
+#
+# No example here spells a real date or version after a preposition, for the
+# self-trigger reason given above.
+_DATED_NARRATION_RE = re.compile(
+    r'\b(?:as of|since|before|after)\s+(?:20\d{2}(?:-\d{2}(?:-\d{2})?)?|\d+\.\d+\.\d+)\b',
+    re.IGNORECASE,
+)
+
 # All narration forms as (name, compiled_regex) pairs. A single finding family
 # ('incident_reference') is emitted regardless of which form matched.
 _PATTERNS: list[tuple[str, re.Pattern]] = [
@@ -134,7 +166,12 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
     ('observed_on', _OBSERVED_ON_RE),
     ('temporal_narration', _TEMPORAL_RE),
     ('incident_term_of_art', _TERM_OF_ART_RE),
+    ('incident_term_of_art_reversed', _TERM_OF_ART_REVERSED_RE),
+    ('dated_narration', _DATED_NARRATION_RE),
 ]
+
+# Locates the ``#NNNN`` reference inside a matched narration span.
+_REF_IN_MATCH_RE = re.compile(r'#\d+')
 
 # Inline-code span detection (matches `...`).
 _INLINE_CODE_RE = re.compile(r'`([^`]+)`')
@@ -213,6 +250,25 @@ def _offset_in_inline_code(offset: int, spans: list[tuple[int, int]]) -> bool:
     return any(start <= offset < end for start, end in spans)
 
 
+def _exemption_offset(match: re.Match) -> int:
+    """The offset the inline-code exemption is tested at, for any narration form.
+
+    The exemption is about the REFERENCE being a code token, so it is tested at
+    the ``#NNNN`` inside the match rather than at the match's first character.
+    For every form whose match BEGINS with the reference the two are the same
+    offset; they differ for the reversed term-of-art form, where the match begins
+    at the noun and a back-ticked reference sits further along. Testing the match
+    start there would fire on a back-ticked reference — narrowing a convention
+    published across the rule catalogue, the provenance table, a named test and a
+    sibling rule, which is an amendment no detector change may make on its own.
+
+    A match carrying no ``#NNNN`` at all (the dated-narration form) has no
+    reference to exempt, so the match start is used.
+    """
+    ref = _REF_IN_MATCH_RE.search(match.group(0))
+    return match.start() + ref.start() if ref else match.start()
+
+
 # ---------------------------------------------------------------------------
 # File-level scanner
 # ---------------------------------------------------------------------------
@@ -277,7 +333,7 @@ def _scan_file(path: Path, rel_to_bundles: str, default_cfg: dict[str, list[str]
             for m in pattern.finditer(line):
                 # Skip matches whose start offset is fully inside an inline-code
                 # span — those are code-token references, not narration.
-                if _offset_in_inline_code(m.start(), spans):
+                if _offset_in_inline_code(_exemption_offset(m), spans):
                     continue
                 findings.append(
                     Finding(

@@ -89,14 +89,47 @@ Findings have the shape::
             'missing_from_doc': [...],
             'not_in_choices': [...],
             'population_size': <int>,  # enum sites examined in this sweep
+            'unresolved_notation_fraction': <float>,  # share NOT compared
+            'unresolved_notation_causes': {<cause>: <int>},
         },
     }
+
+Declared coverage — what a clean sweep does NOT check
+-----------------------------------------------------
+A finding count answers "how many documented enums are wrong". It does not
+answer "how many were CHECKED", and here the two are far apart: a documented
+enum is compared only when the flag's live ``choices=`` resolves to a concrete
+set, and roughly HALF the population resolves to nothing. Those sites are
+examined-but-skipped — neither a pass nor a failure — so a clean result means
+*"every enum I could resolve matches"*, never *"every documented enum matches"*.
+
+The gap is DECLARED rather than silent: every finding publishes
+``unresolved_notation_fraction`` and ``unresolved_notation_causes``, and
+:func:`derive_coverage` over :func:`derive_population` is the same figure on a
+clean run (the only state a passing gate is ever in).
+
+The fail-closed conditions that leave a site unresolved, each a deliberate
+refusal to invent an authority:
+
+* ``notation_unresolved`` — the documented notation resolves to no script path
+  in this tree (an unregistered or renamed notation).
+* ``script_unparseable`` — the script was found but its AST could not be read.
+* ``no_choices_or_unresolvable_choices`` — the script parsed and either declares
+  no ``choices=`` for that ``(subcommand, flag)``, or declares one this resolver
+  cannot reduce to a concrete member set. The dominant structural case is a
+  ``choices=`` naming a constant defined in ANOTHER module: resolving it would
+  need a cross-module parser walk (an import hop), which is deliberately out of
+  scope — the resolver follows same-file constants, same-file aliases, sequence
+  wrappers, and the declarative dict-spec form, and stops there. A conflicting
+  re-declaration of the same ``(path, flag)`` also lands here, by design.
 
 Public API
 ----------
 - ``analyze_canonical_enum_drift(marketplace_root, cache=None)``: entry point.
 - ``derive_population(marketplace_root, cache=None)``: every examined enum site
   (the positive-population surface).
+- ``derive_coverage(population)``: the resolved / unresolved split of that
+  population, with a count per fail-closed cause.
 - ``RULE_ID``: the canonical rule key.
 """
 
@@ -151,6 +184,29 @@ _ENUM_TOKEN_RE = re.compile(
     r'(?<![A-Za-z0-9])--(?P<flag>[A-Za-z][A-Za-z0-9\-]*)\s+\{(?P<members>[^{}]+)\}'
 )
 
+# The BRACE-LESS enum form, ``--flag a|b|c``. At least one pipe is required, so a
+# lone metavar (``--flag VALUE``) is not read as a one-member enum. Members carry
+# no whitespace, braces or pipes, which also keeps the braced form above out of
+# this pattern's reach (its members begin with ``{``).
+#
+# Members are restricted to identifier characters rather than to "anything but a
+# pipe". The usage convention wraps an optional flag in SQUARE BRACKETS —
+# ``[--mode local_and_remote|local_only]`` — and a permissive member class
+# swallows the closing bracket into the last member, manufacturing a drift
+# finding out of punctuation. A brace-less enum whose members fall outside this
+# class simply does not match, which is the fail-closed direction.
+#
+# A member list in which ANY member starts with ``--`` is rejected in code rather
+# than in the pattern: that shape is a mutually-exclusive GROUP (``--flag --a|--b``
+# or a documented either/or), not an enum over one flag's values, and reading it as
+# one would compare a flag's choices against a list of other flags' names.
+_BRACELESS_ENUM_TOKEN_RE = re.compile(
+    r'(?<![A-Za-z0-9])--(?P<flag>[A-Za-z][A-Za-z0-9\-]*)'
+    r'\s+(?P<members>[A-Za-z0-9_.\-]+(?:\|[A-Za-z0-9_.\-]+)+)'
+)
+
+_ENUM_TOKEN_PATTERNS = (_ENUM_TOKEN_RE, _BRACELESS_ENUM_TOKEN_RE)
+
 # Builtins that wrap a single sequence without changing its member set, so a
 # ``choices=list(FOO)`` / ``choices=sorted(FOO)`` resolves to ``FOO``'s members.
 _SEQUENCE_WRAPPERS = frozenset({'list', 'tuple', 'set', 'frozenset', 'sorted'})
@@ -158,6 +214,14 @@ _SEQUENCE_WRAPPERS = frozenset({'list', 'tuple', 'set', 'frozenset', 'sorted'})
 # Recursion bound for constant/alias/import following — a defensive cap against a
 # pathological alias cycle, well above any real ``choices=`` reference chain.
 _MAX_RESOLVE_DEPTH = 8
+
+
+# Why a site was examined but not compared. Published per site and aggregated by
+# :func:`derive_coverage`, so a clean sweep states the share of its population it
+# could not check AND what stopped it.
+UNRESOLVED_NOTATION = 'notation_unresolved'
+UNRESOLVED_SCRIPT_UNPARSEABLE = 'script_unparseable'
+UNRESOLVED_NO_CHOICES = 'no_choices_or_unresolvable_choices'
 
 
 @dataclass(frozen=True)
@@ -169,6 +233,11 @@ class EnumSite:
     member set differs from the live choices. An unresolved site is neither a
     pass nor a failure — it is examined-but-skipped, and is counted in the
     population so a clean sweep can never be confused with an empty one.
+
+    ``unresolved_cause`` names WHICH fail-closed condition skipped the site
+    (``None`` when it resolved), so the unexamined share of a clean sweep is
+    attributable rather than a single opaque number. The causes are the
+    ``UNRESOLVED_*`` constants.
     """
 
     skill_md: Path
@@ -180,6 +249,7 @@ class EnumSite:
     choices: frozenset[str] | None
     resolved: bool
     diverged: bool
+    unresolved_cause: str | None = None
 
 
 # =============================================================================
@@ -270,9 +340,11 @@ def _enum_sites_in_skill(
             # An enum ABOVE the block's first invocation line has no invocation
             # to attribute it to, so there is no script to compare it against.
             continue
-        for match in _ENUM_TOKEN_RE.finditer(raw):
-            members = _split_enum_members(match.group('members'))
-            if members:
+        for pattern in _ENUM_TOKEN_PATTERNS:
+            for match in pattern.finditer(raw):
+                members = _split_enum_members(match.group('members'))
+                if not members or any(m.startswith('--') for m in members):
+                    continue
                 sites.append(
                     (line, block_notation, block_path, match.group('flag'), members)
                 )
@@ -547,7 +619,12 @@ def _authority_by_subcommand_flag(
     ``None``.
     """
     parser_paths = _build_parser_path_sets(tree)
-    resolved: dict[tuple[tuple[str, ...], str], frozenset[str] | None] = {}
+    # The declarative dict-spec form is resolved FIRST so an explicit
+    # ``add_argument(..., choices=...)`` for the same (path, flag) — a script
+    # that mixes both forms — is the one that wins.
+    resolved: dict[tuple[tuple[str, ...], str], frozenset[str] | None] = dict(
+        _declarative_authority(tree, resolver)
+    )
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or not _is_add_argument(node):
             continue
@@ -567,6 +644,85 @@ def _authority_by_subcommand_flag(
                 resolved[key] = None
             else:
                 resolved[key] = members
+    return resolved
+
+
+def _dict_key(node: ast.Dict, key: str) -> ast.expr | None:
+    """Return the value node for a literal string ``key`` in a dict display."""
+    for key_node, value_node in zip(node.keys, node.values, strict=False):
+        if isinstance(key_node, ast.Constant) and key_node.value == key:
+            return value_node
+    return None
+
+
+def _dict_spec_string(node: ast.Dict, key: str) -> str | None:
+    value = _dict_key(node, key)
+    return value.value if isinstance(value, ast.Constant) and isinstance(value.value, str) else None
+
+
+def _declarative_authority(
+    tree: ast.Module, resolver: _Resolver
+) -> dict[tuple[tuple[str, ...], str], frozenset[str] | None]:
+    """Resolve ``choices`` declared in the DECLARATIVE dict-spec parser form.
+
+    Several scripts build their parser from a data structure rather than from
+    ``add_parser`` / ``add_argument`` calls::
+
+        subcommands=[
+            {'name': 'append', 'args': [
+                {'flags': ['--kind'], 'choices': [KIND_BUILD, KIND_CHANGE]},
+            ]},
+        ]
+
+    The AST walk that reads ``add_argument(..., choices=...)`` cannot see any of
+    it — there is no call to walk — so every documented enum on such a script
+    resolved to "no authority" and was silently never compared. That is the same
+    unread-population failure this rule exists to catch, inside the rule.
+
+    The spec is a SAME-FILE parse: the dicts are literals in the module under
+    analysis, so no import hop is involved and the members go through the same
+    ``_Resolver`` the call form uses. Nesting composes through a ``subcommands``
+    key, so a nested verb path resolves exactly as ``add_parser`` nesting does.
+    """
+    resolved: dict[tuple[tuple[str, ...], str], frozenset[str] | None] = {}
+
+    def visit(spec: ast.Dict, path: tuple[str, ...]) -> None:
+        name = _dict_spec_string(spec, 'name')
+        here = path + (name,) if name else path
+        args = _dict_key(spec, 'args')
+        if isinstance(args, (ast.List, ast.Tuple)):
+            for arg in args.elts:
+                if not isinstance(arg, ast.Dict):
+                    continue
+                choices_node = _dict_key(arg, 'choices')
+                if choices_node is None:
+                    continue
+                flags_node = _dict_key(arg, 'flags')
+                if not isinstance(flags_node, (ast.List, ast.Tuple)):
+                    continue
+                members = resolver.resolve_expr(choices_node, tree, 0)
+                for flag_node in flags_node.elts:
+                    if not isinstance(flag_node, ast.Constant) or not isinstance(flag_node.value, str):
+                        continue
+                    if not flag_node.value.startswith('--'):
+                        continue
+                    key = (here, flag_node.value[2:])
+                    if key in resolved and resolved[key] != members:
+                        resolved[key] = None
+                    else:
+                        resolved[key] = members
+        nested = _dict_key(spec, 'subcommands')
+        if isinstance(nested, (ast.List, ast.Tuple)):
+            for child in nested.elts:
+                if isinstance(child, ast.Dict):
+                    visit(child, here)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.keyword) and node.arg == 'subcommands':
+            if isinstance(node.value, (ast.List, ast.Tuple)):
+                for child in node.value.elts:
+                    if isinstance(child, ast.Dict):
+                        visit(child, ())
     return resolved
 
 
@@ -617,15 +773,21 @@ def derive_population(marketplace_root: Path, cache=None) -> list[EnumSite]:
     authority_cache: dict[
         str, dict[tuple[tuple[str, ...], str], frozenset[str] | None]
     ] = {}
+    # Whether each notation's script parsed at all — the discriminator between
+    # "the script could not be read" and "the script was read and declares no
+    # resolvable choices for this flag". Both leave ``choices`` at ``None``.
+    parsed_cache: dict[str, bool] = {}
     population: list[EnumSite] = []
 
     for skill_md in _skill_md_files(marketplace_root):
         for line, notation, subcommand, flag, documented in _enum_sites_in_skill(skill_md):
             script_path = _script_path_for_notation(notation, marketplace_root)
             choices: frozenset[str] | None = None
+            cause: str | None = UNRESOLVED_NOTATION
             if script_path is not None:
                 if notation not in authority_cache:
                     tree = get_tree(script_path)
+                    parsed_cache[notation] = tree is not None
                     authority_cache[notation] = (
                         _authority_by_subcommand_flag(tree, resolver)
                         if tree is not None
@@ -634,6 +796,11 @@ def derive_population(marketplace_root: Path, cache=None) -> list[EnumSite]:
                 # ``.get`` returns None for both "no choices on this parser" and
                 # "choices present but unresolvable" — both are fail-closed skips.
                 choices = authority_cache[notation].get((subcommand, flag))
+                cause = (
+                    UNRESOLVED_NO_CHOICES
+                    if parsed_cache[notation]
+                    else UNRESOLVED_SCRIPT_UNPARSEABLE
+                )
             resolved = choices is not None
             diverged = resolved and documented != choices
             population.append(
@@ -647,6 +814,7 @@ def derive_population(marketplace_root: Path, cache=None) -> list[EnumSite]:
                     choices=choices,
                     resolved=resolved,
                     diverged=diverged,
+                    unresolved_cause=None if resolved else cause,
                 )
             )
     return population
@@ -671,6 +839,36 @@ def _fallback_get_tree():
     return get_tree
 
 
+def derive_coverage(population: list[EnumSite]) -> dict:
+    """Summarise what a sweep over ``population`` actually compared.
+
+    A finding count answers "how many enums were wrong". It cannot answer "how
+    many were CHECKED", and for this rule the two are far apart: roughly half the
+    documented enum sites resolve to no authority and are examined-but-skipped.
+    Without this, a clean sweep reads as "every documented enum matches" when it
+    means "every enum I could resolve matches, and I could not resolve half of
+    them".
+
+    Returns ``population_size``, ``resolved``, ``unresolved``,
+    ``unresolved_fraction`` (rounded to three places, ``0.0`` over an empty
+    population) and ``unresolved_causes`` — a count per ``UNRESOLVED_*`` cause,
+    so the gap is attributable rather than a single opaque number.
+    """
+    total = len(population)
+    unresolved_sites = [site for site in population if not site.resolved]
+    causes: dict[str, int] = {}
+    for site in unresolved_sites:
+        cause = site.unresolved_cause or UNRESOLVED_NO_CHOICES
+        causes[cause] = causes.get(cause, 0) + 1
+    return {
+        'population_size': total,
+        'resolved': total - len(unresolved_sites),
+        'unresolved': len(unresolved_sites),
+        'unresolved_fraction': round(len(unresolved_sites) / total, 3) if total else 0.0,
+        'unresolved_causes': dict(sorted(causes.items())),
+    }
+
+
 def analyze_canonical_enum_drift(marketplace_root: Path, cache=None) -> list[dict]:
     """Scan every canonical block for a documented enum diverging from live choices.
 
@@ -687,10 +885,15 @@ def analyze_canonical_enum_drift(marketplace_root: Path, cache=None) -> list[dic
     list[dict]
         One finding dict per diverging enum site (see module docstring shape).
         Every finding publishes ``population_size`` — the count of enum sites the
-        sweep examined — so a clean-but-nonzero result proves coverage.
+        sweep examined — plus ``unresolved_notation_fraction`` and
+        ``unresolved_notation_causes``, the share of that population the sweep
+        could not resolve an authority for and what stopped it. A clean run
+        carries no findings and therefore no figures; :func:`derive_coverage`
+        over :func:`derive_population` is the clean-run surface for both.
     """
     population = derive_population(marketplace_root, cache=cache)
     population_size = len(population)
+    coverage = derive_coverage(population)
     findings: list[Finding] = []
     for site in population:
         if not site.diverged or site.choices is None:
@@ -725,6 +928,8 @@ def analyze_canonical_enum_drift(marketplace_root: Path, cache=None) -> list[dic
                     'missing_from_doc': missing_from_doc,
                     'not_in_choices': not_in_choices,
                     'population_size': population_size,
+                    'unresolved_notation_fraction': coverage['unresolved_fraction'],
+                    'unresolved_notation_causes': coverage['unresolved_causes'],
                 },
                 extra={'rule': RULE_NAME},
             )
