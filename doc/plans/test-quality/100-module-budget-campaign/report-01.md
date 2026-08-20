@@ -485,7 +485,61 @@ the final tree, and the discarded ones are named as discarded.
 
 ## What have we learned (Step 9)
 
-_pending_
+Three proposals, each resting on something that happened in this run rather than on a preference.
+**None is self-approved**; per the lane they are put to the operator and, if accepted, ship as a
+separate `chore/` PR touching only the skill.
+
+### 1. A refactor that MOVES text proves fidelity by a multiset diff, not by a green suite
+
+**Evidence.** Seven tests vanished from this branch and every signal stayed green: the suite passed,
+the target rule's count fell, ruff and mypy were clean, and the doctor sweep reported progress. Two
+output bins had resolved to the same filename and the second write replaced the first. The only
+instrument that saw it was a multiset diff of `Class::test` against the pre-split sources. The same
+instrument, applied to comments, is what confirms the epic's own recorded disaster — plan `050` losing
+162 column-0 comments — did not recur.
+
+**Why the contract needs it.** § Step 6 tells a run to sweep for stale claims and to mutation-test a
+new guard. It says nothing about the class of change where the *content is supposed to be identical*
+and only its location moves — a split, an extraction, a rename, a file merge. For that class a green
+suite is not evidence, because a test that no longer exists cannot fail.
+
+**Proposed edit**, into § Step 6 as its own paragraph: *"When the change is a MOVE — a split, an
+extraction, a merge, a rename — the deliverable's fidelity is measured as a multiset diff against the
+pre-change sources, not asserted from a green suite. Compare comments, non-blank non-comment lines, and
+test identities as counted multisets, so a text that vanished cannot be masked by one that was
+duplicated. A green suite cannot see a test that no longer exists."*
+
+### 2. A long measurement is invalidated by any edit to its subject
+
+**Evidence.** This run started the whole-tree suite three times and discarded two of them: the first
+because a later finding changed the emitter, the second because prose fixes landed mid-run and a
+second pytest session ran concurrently, which corrupts a wall-clock comparison. Roughly an hour of
+compute was spent on measurements that could not be reported.
+
+**Proposed edit**, into § Step 5: *"A measurement that takes longer than the work is invalidated by any
+edit to its subject. Take it last, after the tree is final, and re-take it if anything changes — a
+figure measured against a tree that no longer exists is not a figure. Do not run a second heavy job
+alongside a wall-clock measurement."*
+
+### 3. A plan whose deliverable produces an unreviewable PR forfeits its review, and should say so
+
+**Evidence.** Two of this repository's three automated reviewers refused this PR outright — CodeRabbit
+at 317 files against a 100-file limit, Sourcery at 317 against 300. Neither is a clock, so neither the
+lane's retry schedule nor its budget applies. Review coverage was **1 of 3**, and the shape of the
+campaign guarantees the same outcome for runs 2 through 7.
+
+**Why this is authoring, not execution.** No run can fix it from inside itself: by the time the PR
+exists the diff is already the size the deliverable made it. The decision — carve a slice into several
+PRs, or accept the forfeit — belongs to whoever shapes the deliverable.
+
+**Proposed edit**, into `author-cloud-plan`: *"A deliverable that produces a pull request larger than
+the reviewers' ceilings forfeits most automated review, and no run can recover it. Before writing a
+deliverable that touches hundreds of files, either shape it so one run's PR stays inside those ceilings,
+or state in the plan that the forfeit is accepted and why. The ceilings are properties of the reviewers,
+not of the diff's quality, so a run cannot argue its way past them."*
+
+**Operator decision: pending.** Recorded here so the next run inherits the proposals whether or not
+this one gets an answer.
 
 ## Residue
 
