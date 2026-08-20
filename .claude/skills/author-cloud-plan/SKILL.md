@@ -157,7 +157,11 @@ is the authoring choice to *aim it at interpretation*, which the default "verify
 pass does not do.
 
 *Grounding.* Plan `010`'s D2 changed the merge gate to **disclose** a review-coverage shortfall rather
-than **block** on it — a distinction a later reader must not collapse. Its Verification had a sub-agent
+than **block** on it — a distinction a later reader must not collapse. (That remains the rule for every
+reviewer but one: `cloud-plan-lane` § Step 8 condition 6 gates the merge on CodeRabbit's review where
+the PR carries no `skip-bot-review` label, bounded by a retry budget so it delays rather than strands.
+Read the contract for the current gate; this paragraph is here for the cold-read lesson, not as a
+statement of it.) Its Verification had a sub-agent
 read the new text cold and state which it was; the cold read returned **DISCLOSE**, which is the only
 check that tests the thing that actually matters. Note the trap this skill's own author must avoid: a
 skill *is* a text-that-drives-a-reader deliverable, so authoring it without a cold read is this rule

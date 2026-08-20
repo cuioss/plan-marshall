@@ -96,7 +96,7 @@ Sub-documents are `standards/*.md`, `references/*.md`, `workflow/*.md`, `recipes
 
 ### Argument-naming rules (rule pack)
 
-Activated unconditionally per lesson `2026-04-29-23-002`. Cross-checks marketplace prose against the actual argparse declarations of the scripts that prose references. All four rules emit `severity: error` and `fixable: false`.
+Activated unconditionally per lesson `2026-04-29-23-002`. Cross-checks marketplace prose against the actual argparse declarations of the scripts that prose references. All four rules emit `severity: error` and `fixable: false`. **Build-failing**: `analyze_argument_naming` is registered in `doctor-marketplace.py::cmd_quality_gate` (via `RuleRunner.run_quality_gate`), so any of the four findings fails the build. Note the asymmetry with `cmd_analyze`, where the same cluster is **opt-in** behind the `argument_naming` `--rules` token: the gate does not share that gating and always runs it.
 
 | Rule ID | Class | Emitter | Source |
 |---------|-------|---------|--------|

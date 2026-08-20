@@ -89,11 +89,17 @@ from about 9 to 27 minutes — so the step is what to compare.
 What is missing is the instrument, and the risk it would catch is immediately ahead rather than
 behind. `test/conftest.py`'s `parse_ns` docstring states its own cost plainly: *"this re-executes the
 script module on every call … A test that builds many namespaces should hoist the call into a fixture
-or a module-level constant rather than calling it per assertion."* Plans `070` and `080` carry
-roughly 502 and 222 hand-built `argparse.Namespace` constructions between them and one `parse_ns` call
-in total, so the epic's largest remaining **B6** conversion is still to come; plan `100` will add
-several hundred modules, each re-running its own import preamble at collection. Those are exactly the
-changes that could move the number, and no plan measures it.
+or a module-level constant rather than calling it per assertion."* Plan `070` carries
+**494** hand-built `argparse.Namespace` constructions against a single `parse_ns` call, so the epic's
+one remaining large **B6** conversion is still to come; plan `100` will add several hundred modules,
+each re-running its own import preamble at collection. Those are exactly the changes that could move
+the number, and no plan measures it.
+
+Plan `080`'s slice has since been converted and is the useful precedent: it went from ~211 hand-built
+namespaces and zero `parse_ns` calls to **zero** hand-built and **39** `parse_ns` calls, and **every
+one of the 39 is at module scope**, which is exactly the hoisting the docstring above prescribes. So a
+full-slice B6 conversion does not have to pay the per-call cost — but that is one slice's evidence, and
+`070`'s conversion is roughly 2.3× the size by namespace count.
 
 ## Goal
 
@@ -244,7 +250,7 @@ there before starting, confirm no open PR and no in-flight branch exists for any
 | `.plan/execute-script.py` is generated and git-ignored, so it is absent in a fresh clone | OBSERVED | `.gitignore`; `CLAUDE.md` § "Standalone Plan Lane", which states that `.plan/` state exists only on the machine that created it |
 | The `Run verification` step on `main` took 781 s / 786 s / 788 s at `7de3084` / `24271bc` / `7cadb98`, so the epic's executed half cost ~2 s | HYPOTHESIS — **it is this plan's reason for building an instrument rather than hunting a regression** | ⚠️ **This artifact is NOT git-reachable**, which every other claim in this table is: it lives in the GitHub Actions API (job steps of the `verify / verify` job of the `Python Verify` workflow, at those three commits on `main`). The three commits themselves are in your clone and can be confirmed in the stated order; the timings need the API. The figures are also restated in `doc/plans/test-quality/report-authoring-02.md`, which **is** git-tracked — read that as the recorded measurement, and the API as the way to re-derive it. If the API is unreachable, report the re-derivation **unavailable** rather than substituting a local run, whose population is not comparable. Either way the deliverable set is unchanged: D7 reports a regression or its absence, whichever the measurement says |
 | `parse_ns` re-executes the script module on every call | OBSERVED | `test/conftest.py` — `parse_ns`, its docstring's "Cost:" paragraph |
-| Slices `070` and `080` carry ~502 and ~222 hand-built `Namespace(` constructions and 1 and 0 `parse_ns` uses | HYPOTHESIS | `grep -c 'Namespace('` and `grep -c 'parse_ns('` over each plan's Expected surface. Leads — re-derive |
+| Slice `070` carries 494 hand-built `Namespace(` constructions against 1 `parse_ns` use; slice `080`, converted, carries 0 against 39 | OBSERVED | `grep` over each plan's Expected surface. ⚠️ Two exclusions the raw pattern gets wrong: `Namespace(` also matches **`SimpleNamespace(`** (12 in `070`, 11 in `080`), and in `080` it additionally matches the 13 `_ns` overlay helpers — one per converted module, each `Namespace(**{**vars(template), **overrides})` over a parser-produced template, which is the *result* of a B6 conversion rather than a hand-built namespace. A plain `grep -c 'Namespace('` returns 13 for `080`, not 0 |
 | No party the epic's collision matrix names against this plan is in flight | HYPOTHESIS — **gating and halting; check before D2** | `doc/plans/test-quality/README.md` § "The collision matrix", read there rather than restated here. An open PR or an in-flight branch for any party it names → treat as a collision and halt |
 
 ## Verification
