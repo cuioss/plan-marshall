@@ -666,27 +666,47 @@ real constraint**, and each constraint is now a rule the pass enforces:
 **Measured against `origin/main` rather than against the split's own worst moment, which is the
 comparison that answers "is this tree better or worse":**
 
-| Duplicated top-level definitions in the slice | names | redundant lines |
-|---|---:|---:|
-| `origin/main` | 103 | 597 |
-| HEAD | **27** | **215** |
-| delta | **−76** | **−382** |
+⛔ **M45 — an earlier draft of this table compared two different measures and drew a conclusion from the
+gap.** It reported `origin/main` at 103 names / 597 lines against HEAD at 27 / 215, and concluded "the
+slice now carries materially less duplicated code than it did before the split". Round 7 re-measured
+both sides with one definition, read the same way from git at each ref, and the conclusion does not
+survive. The `origin/main` figure counted duplicated module-level **assignments** as well as
+definitions; the HEAD figure did not. Neither number was wrong for what it measured — the *comparison*
+was, and it flattered this run.
 
-**The slice now carries materially less duplicated code than it did before the split**, not merely less
-than the split briefly introduced.
+| Duplicated top-level definitions in the slice directories | `origin/main` | the split as first written | HEAD |
+|---|---:|---:|---:|
+| `def` / `class` only — names | 22 | 41 | **23** |
+| `def` / `class` only — redundant lines | 240 | 1629 | **307** |
+| including module-level assignments — names | 102 | 135 | **101** |
+| including module-level assignments — redundant lines | 525 | 1955 | **582** |
+| files in those directories | 224 | 420 | **426** |
 
-**Result: 27 names / 215 redundant lines remain, of which 74 lines are locked by module identity** —
-the rules above, not a shortfall of effort. Slice growth ends at **+5,184 lines (+5.7%)** against
-`origin/main`, from +7.2% before any of this.
+**The honest claim is flatness, not reduction.** Under either definition the slice ends within a name or
+two of where `origin/main` had it, while the file count nearly doubles — and splitting a module is an
+operation that replicates whatever more than one output needs, so holding duplication level across a
+224 → 426 file expansion is the result. What the dedup work removed is the split's own overshoot: **1,322
+redundant lines under the strict measure, 1,373 under the wide one.** It did not leave the tree with
+less duplication than it found.
 
-⚠️ **What the remaining 215 lines are, so the number is not read as unfinished work.** 74 lines are
-module-identity bindings the rules above forbid moving. Most of the rest is duplicated **across
-different units** — `_write_status` sits in `test_aggregate_confidence.py`,
-`test_change_type_heuristic.py` and `test_sibling_collision.py`, three separate subjects — so the only
-home that would serve them is a new directory-wide helper, and building one to save nineteen lines
-trades a real cross-unit dependency for a small count. Several of those carriers are modules this run
-never created. A last group is impure in a way that cannot travel at all: `_PLAN_HANDSHAKE_SCRIPTS_DIR`
-reads `__file__`, which resolves relative to the file it sits in.
+**Result: 307 redundant lines remain under the strict measure, of which 66 are locked by module
+identity** — the rules above, not a shortfall of effort. Slice growth ends at **+5,184 lines (+5.7%)**
+against `origin/main`, from +7.2% before any of this.
+
+⚠️ **What the remaining 307 lines are, so the number is not read as unfinished work.** 66 lines are
+module-identity bindings the rules above forbid moving. A further group is impure in a way that cannot
+travel at all: `_PLAN_HANDSHAKE_SCRIPTS_DIR` reads `__file__`, which resolves relative to the file it
+sits in. Several of the carriers are modules this run never created.
+
+⭐ **The "across different units, so leave it" argument was made here and then abandoned, correctly.**
+An earlier draft named `_write_status` — in `test_aggregate_confidence.py`, `test_change_type_heuristic.py`
+and `test_sibling_collision.py`, three separate subjects — as duplication worth keeping, on the grounds
+that the only home serving all three is a new directory-wide helper and building one "to save nineteen
+lines trades a real cross-unit dependency for a small count". The operator's answer was to build it.
+`_manage_status_fixtures.py` and `_manage_locks_merge_lock_fixtures.py` now hold exactly the definitions
+that cross units in their directory, and the argument reads in hindsight as a cost estimate offered in
+place of doing the work. **That example is no longer duplicated**, which is why it no longer appears in
+the paragraph above.
 
 ⛔ **And one measurement in this section was itself unsafe, which is worth recording because it nearly
 drove a change.** An intermediate sweep labelled 95 of those lines "movable", including
@@ -899,6 +919,19 @@ prose true of the *shared* copy: the pre-split text said "so `--persist` write p
 described the one module it came from — and none of the three modules that share it now use `--persist`
 at all. Restoring it verbatim would have planted a false statement in a file three modules read.
 
+⭐ **M45 — this report's own duplication table compared two different measures, and the headline it
+supported was false.** It read `origin/main` at 103 names / 597 lines against HEAD at 27 / 215 and
+concluded the slice "now carries materially less duplicated code than it did before the split". The
+`origin/main` side counted duplicated module-level **assignments**; the HEAD side counted only `def` and
+`class`. Re-measured with one definition at each ref, duplication ends **flat**, not reduced. The full
+correction, with both definitions and all three refs, is in § D5 above.
+
+This is the M12 shape a third time, and the most consequential instance: not a rationale this run wrote
+and never checked, but a **figure** — the kind of claim a reader is least likely to re-derive and most
+likely to quote. It survived six rounds of adversarial review because every round checked the arithmetic
+of each number and none checked that the two numbers were the same measurement. **A before/after pair is
+one claim, not two, and the thing to verify is that both sides were measured the same way.**
+
 #### Renames, for a reader following an older reference
 
 The finding rows above name modules as they stood when each round observed them, which is what a dated
@@ -988,7 +1021,9 @@ files is exactly what "split by behaviour cluster" means. The regrouping is now 
 | Condition | Before | After | Verdict |
 |---|---|---|---|
 | 1. Collected test count does not decrease (slice) | 4207 | 4207 | **holds** — identical, not merely non-decreasing |
-| — `test-module-line-budget`, slice | 66 | **4** | 62 modules brought inside the budget |
+| — `test-module-line-budget`, slice | 66 | **3** | 63 modules brought inside the budget; the three that remain are each a single class over the budget alone (495, 424, 422 lines) |
+| — `test-module-line-budget`, whole tree | 321 | **258** | the run's whole effect on this rule |
+| — the other six rules of the sweep | 15 / 0 / 0 / 104 / 200 / 0 | identical | the run moved exactly one rule's count |
 | 2. Coverage does not decrease (slice bundle paths) | 89% | 89% | **holds** — bit-identical: 9986 statements, 962 missed, 3682 branches, 355 partial, both sides |
 | 3. Order-independent (default **and** reverse directory order) | — | 4207 passed both | **holds** |
 | 4. `EXEMPT_RULE_IDS` unchanged | n/a | n/a | **not applicable** — that check is stated for the `080` slice; this run is `050` and touches no plugin-doctor module |
@@ -1096,6 +1131,16 @@ its replacement re-cloned. Nothing was lost, because every commit had been pushe
 came back clean with `HEAD` identical to `origin`. That is the durability rule paying for itself.
 **Plugin cache sync:** not owed. It is a machine-local build step a cloud run never performs.
 
+**One deliberate reading of D2's class rule, recorded rather than passed over.** D2 says "a class larger
+than the budget is a stated exception, not a licence to split a class", and round 7 nevertheless split
+`TestPhase5LoggingGapExtractors` into five classes. That class is **399 lines — inside the budget**; its
+module was 417 because of eighteen lines of header, imports and a banner. The exception D2 grants is for
+a class that "exceeds the budget alone", which this one does not, and D2's *Done when* admits a module
+only if it is within the budget **or** is named as a single-class exception. This module could be
+neither without splitting the class, so the split is what the Done-when requires and the prohibition is
+read as scoped to over-budget classes. A reader who disagrees should read it as one module split against
+D2's letter; the three genuine single-class exceptions (495, 424, 422) were left alone as D2 directs.
+
 | Step | Verdict |
 |---|---|
 | 1 Skills loaded | **done** — named in § Skills loaded, all read by bundle path |
@@ -1173,6 +1218,26 @@ deliverable that touches hundreds of files, either shape it so one run's PR stay
 or state in the plan that the forfeit is accepted and why. The ceilings are properties of the reviewers,
 not of the diff's quality, so a run cannot argue its way past them."*
 
+### 4. A before/after pair is ONE claim, and the thing to verify is that both sides were measured the same way
+
+**Evidence.** This report claimed the slice "now carries materially less duplicated code than it did
+before the split", on 103 names / 597 lines against 27 / 215. Both numbers were correct for what they
+counted, and they counted different things: the `origin/main` side included duplicated module-level
+assignments and the HEAD side did not. Re-measured with one definition, duplication ends flat. **Six
+rounds of adversarial review passed over it**, because every round checked whether each number was
+right and none checked whether the two were commensurable.
+
+**Why the contract needs it.** § Step 6's sweep is aimed at stale claims — a figure that was true and
+has since drifted. This is a different defect: a figure that was *never* true, assembled from two
+correct measurements taken with different instruments. Nothing in a re-derivation of either side
+detects it, because each side re-derives correctly. And a delta is the most quotable thing a report
+produces, so it is the claim least likely to be re-checked downstream and the most costly to get wrong.
+
+**Proposed edit**, into § Step 6: *"A before/after figure is a single claim about a difference. Verify
+it by re-deriving BOTH sides with one script, one definition and one reader, in the same pass — never
+by checking each side against the note that produced it. If the two sides cannot be produced by the
+same command, the delta is not reportable and the two measurements are reported separately."*
+
 **Operator decision: pending.** Recorded here so the next run inherits the proposals whether or not
 this one gets an answer.
 
@@ -1181,11 +1246,18 @@ this one gets an answer.
 ### The slice is not finished
 
 By the plan's own § Notes — *"a slice is done when its `test-module-line-budget` count is zero"* —
-**run 1 did not finish slice `050`**. Four modules remain, three of them single classes over the budget
-and the fourth a 399-line class in a 417-line module whose 18 non-class lines are header, imports and a
-banner. Closing them requires splitting a class, which this plan forbids. **A follow-up run cannot fix
-them under this plan as written**; the campaign's goal — the rule reaching zero — needs either a
-decision to split a class or a stated exemption for a class over the budget. That decision belongs to
+**run 1 did not finish slice `050`**. **Three** modules remain, each a single class over the budget
+alone — 495, 424 and 422 lines — which is exactly the exception D2 states and directs the run to leave.
+
+A fourth module was closed in round 7 and is worth separating from those three, because it was never the
+same case: a 399-line class, *inside* the budget, in a 417-line module whose 18 non-class lines are
+header, imports and a banner. It was split into five classes by extractor — see § Contract check for
+why D2's "not a licence to split a class" is read as scoped to classes that exceed the budget alone.
+
+So closing the last three still requires splitting a class that genuinely exceeds the budget, which this
+plan forbids without qualification. **A follow-up run cannot fix them under this plan as written**; the
+campaign's goal — the rule reaching zero — needs either a decision to split such a class or a stated
+exemption for one. That decision belongs to
 whoever owns the flip to `severity: error` (plan `090` § D7's ladder), and is recorded here rather than
 taken.
 
