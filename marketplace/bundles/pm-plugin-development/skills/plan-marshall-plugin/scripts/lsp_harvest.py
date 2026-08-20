@@ -293,12 +293,21 @@ def bare_import_roots(files: Iterable[Path], root: Path) -> list[str]:
     synthesizes, and it is computed from the tree rather than from any knowledge
     of this repository's shape.
 
-    ⚠ Under PEP 420 such a directory is still an implicit **namespace-package
-    portion**, so "not a package" would be too strong: what it is not is a
-    directory whose modules are importable as ``{dir}.{module}`` from the parent.
-    The distinction does not change the derivation — a portion is importable only
-    under its dotted path, never as the bare module name these imports use — but
-    the reason is namespace semantics, not the absence of packagehood.
+    ⚠ ``__init__.py`` is a **convention** discriminator here, not a semantic one,
+    and the honest statement is narrower than "is not a package". Under PEP 420 a
+    directory without ``__init__.py`` is an implicit namespace-package portion,
+    and its modules ARE importable as ``{dir}.{module}`` with the *parent* on the
+    path — exactly as a regular package's are. What separates the two is how each
+    is conventionally imported: a package's modules by their dotted path, a
+    loose ``scripts/`` directory's by bare name. Only the bare form needs the
+    directory itself on the search path, so ``__init__.py``'s absence is the
+    signal that bare imports are what this directory's files use.
+
+    The consequence to keep in view: a directory whose modules really are
+    imported dotted, and which happens to lack ``__init__.py``, contributes a
+    search path nothing needs. That is inert — an unused ``extraPaths`` entry
+    resolves nothing — but it is why the ambiguity guard below matters, since a
+    wider path is what makes two same-named modules reachable at once.
 
     Args:
         files: The candidate files the harvest will query.
@@ -584,8 +593,12 @@ def lift_to_modules(
       ``ext-point-path-attribution.md`` explicitly forbids. Not reachable today,
       because bundle directory names are unique.
     * **Vendored-tree exclusion.** The table attributes whatever it is asked
-      about; excluding third-party trees is the harvest's job, done at
-      :func:`harvest_workspace` before a target ever reaches this function.
+      about — including a site-packages path, which a root-scoped module would
+      then own. So this function performs that exclusion **itself**, before
+      consulting the table (see the ``vendor-tree`` suppression below);
+      :func:`harvest_workspace` also drops such targets upstream, and the
+      redundancy is deliberate — this function is public and its contract must
+      hold for a caller that did not filter.
 
     An endpoint the lookup cannot attribute produces **no edge and a note**,
     never a guessed module. That is the rule the whole substrate turns on: a

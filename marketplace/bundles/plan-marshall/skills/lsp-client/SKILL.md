@@ -68,9 +68,11 @@ so a reader can tell "the parser examined this file and found nothing" from "the
 parser said nothing about this file" — payloads that used to be identical in
 every field.
 
-`preflight` reports the same three situations but names the healthy one `ready`
-(configured **and** reachable) rather than `ok` — `ready` is a *precondition*
-check, `ok` is the outcome of a run verb that actually executed. A consumer that
+`preflight` reports the configuration situations but names the healthy one
+`ready` (configured **and** reachable) rather than `ok` — `ready` is a
+*precondition* check, `ok` is the outcome of a run verb that actually executed.
+It never returns `unknown`, which is a statement about one file's diagnostics
+rather than about the server. A consumer that
 gates before calling a run verb checks `preflight` for `state: ready`.
 
 ## The write side (`edit`) — an edit nobody read, re-checked by the parser

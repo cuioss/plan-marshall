@@ -168,12 +168,23 @@ flag, and is the surface on which an unconfirmed site is legible as unconfirmed.
 ## Diagnostics are deliberately absent
 
 ⛔ No diagnostic provider is advertised. Live broken-reference diagnostics are
-deliverable D3 of the `240-skill-lsp-server` plan, **hard-gated** on the
-validator-precision work: the validator's current unresolved set is
-not all real (documentation placeholders, foreign namespaces
-such as build-command and Maven coordinates, and verb-suffixed notations whose
-skill exists). Advertising a diagnostic provider before that precision work lands
-would ship confident-wrong squiggles at the corpus's most visible surface.
+deliverable D3 of the `240-skill-lsp-server` plan, deferred because advertising a
+diagnostic provider binds this surface permanently to the validator's precision,
+and the validator's unresolved set is not all real: some entries are
+documentation placeholders, foreign namespaces such as build-command and Maven
+coordinates, or verb-suffixed notations whose skill exists.
+
+⚠ **The figures that deferral was argued on no longer hold, and the gate has
+not been re-decided.** It rested on an unresolved set that was overwhelmingly
+false positives — roughly 380 of about 5,300, near 97 %. Re-measured: **61 of
+5,083** dependencies over 308 components, of which about **43 %** are
+non-notations and **57 %** are well-formed notations whose target does not
+exist. That reverses the ratio. Whether it is now grounds to advertise
+diagnostics is an **open question, recorded rather than settled** — see the
+proposal in `doc/plans/code-intelligence-substrate/500-lsp-and-derivation-resolver-correctness/proposals.md`
+§ P6, which states the argument on both sides and the criterion that would
+settle it. ⛔ Re-derive the figures before acting on them; they move with every
+commit.
 
 ## How `serve` is launched
 
