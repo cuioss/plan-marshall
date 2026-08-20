@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
+# ruff: noqa: F811 — tests take the imported fixture as a parameter
 """Tests for the ``merge_lock.py`` ``rate-window`` verbs — the cross-plan claim on
 ONE review bot's rate window, co-tenanting the merge-lock store.
 """
@@ -10,39 +11,21 @@ from __future__ import annotations
 import json
 import time
 from argparse import Namespace
-from pathlib import Path
 
 import pytest
-from _merge_lock_rate_window_fixtures import (
+from _merge_lock_rate_window_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
     _check,
     _claim,
     _make_live_plan,
     _read_store,
     _release,
+    isolated_base,
     merge_lock,
 )
 
 # =============================================================================
 # Fixtures and helpers
 # =============================================================================
-
-
-@pytest.fixture
-def isolated_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
-    """Stage an isolated PLAN_BASE_DIR under tmp_path.
-
-    Mirrors ``test_manage_locks_merge_lock*.py``'s fixture: the rate-window state
-    lives in the SAME main-anchored store the FIFO admission queue uses, so both
-    resolve to ``<base>/merge-queue.json``.
-    """
-    base = tmp_path / 'main' / '.plan' / 'local'
-    (base / 'plans').mkdir(parents=True)
-    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
-    return {
-        'base': base,
-        'lock_path': base / 'merge.lock',
-        'queue_path': base / 'merge-queue.json',
-    }
 
 
 # =============================================================================

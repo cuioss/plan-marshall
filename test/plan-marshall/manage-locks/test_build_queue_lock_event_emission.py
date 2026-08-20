@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
+# ruff: noqa: F811 — tests take the imported fixture as a parameter
 """Tests for ``manage-locks/build_queue.py`` — the bounded-``k``-slot build-queue
 concurrency limiter with a FIFO waiting queue.
 """
@@ -11,7 +12,7 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
-from _build_queue_fixtures import (
+from _build_queue_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
     SCRIPT_PATH,
     _init_git_repo,
     _locks_core,
@@ -20,53 +21,10 @@ from _build_queue_fixtures import (
     _read_queue,
     _set_max_slots,
     build_queue,
+    isolated_base,
 )
 
 from conftest import run_script
-
-
-@pytest.fixture
-def isolated_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
-    """Stage an isolated machine-global home + PLAN_BASE_DIR under tmp_path.
-
-    Layout::
-
-        tmp_path/main/                              (a real git repo → project_root)
-        tmp_path/main/.plan/local/                  (PLAN_BASE_DIR — holder liveness)
-        tmp_path/main/.plan/local/plans/            (holder plan dirs resolve here)
-        tmp_path/main/.plan/local/marshal.json      (max_slots config resolves here)
-        tmp_path/home/                              (PLAN_MARSHALL_HOME — home root)
-        tmp_path/home/build-queue.json              (queue resolves here)
-
-    ``main`` is a real git repo so a spawned subprocess's ``main_checkout_root()``
-    resolves to it (run subprocesses with ``cwd=main_repo`` +
-    ``env_overrides``); in-process, ``build_queue.main_checkout_root`` is pinned
-    to ``main`` so the stamped ``project_root`` liveness resolves under
-    ``main/.plan/local`` (== ``PLAN_BASE_DIR``).
-    """
-    main_repo = tmp_path / 'main'
-    main_repo.mkdir()
-    _init_git_repo(main_repo)
-    base = main_repo / '.plan' / 'local'
-    (base / 'plans').mkdir(parents=True)
-    home = tmp_path / 'home'
-    home.mkdir()
-
-    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
-    monkeypatch.setenv('PLAN_MARSHALL_HOME', str(home))
-    # In-process: pin the project_root stamp at main_repo so the machine-global
-    # prune judges liveness under main_repo/.plan/local (== base). Subprocess
-    # tests instead pass cwd=main_repo so the real git resolver lands there.
-    monkeypatch.setattr(build_queue, 'main_checkout_root', lambda: main_repo)
-
-    return {
-        'base': base,
-        'main_repo': main_repo,
-        'home': home,
-        'queue_path': home / 'build-queue.json',
-        'env_overrides': {'PLAN_BASE_DIR': str(base), 'PLAN_MARSHALL_HOME': str(home)},
-    }
-
 
 # =============================================================================
 # CLI argparse plumbing

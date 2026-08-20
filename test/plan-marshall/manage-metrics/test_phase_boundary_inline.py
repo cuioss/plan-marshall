@@ -32,19 +32,19 @@ The negative control (an unclosed phase still flips
 """
 
 
-import pytest
 from _manage_metrics_fixtures import (
     ns_generate,
     ns_phase_boundary,
     ns_start_phase,
 )
-from _phase_boundary_inline_fixtures import (
+from _phase_boundary_inline_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
     _INIT_CACHE_READ,
     _INIT_INLINE_TOTAL,
     _drive_full_six_phase_plan,
     _field,
     _phase_block,
     _run_inline_enrich,
+    _seed_guarded_plan_dirs,
     cmd_generate,
     cmd_phase_boundary,
     cmd_start_phase,
@@ -61,23 +61,6 @@ from _phase_boundary_inline_fixtures import (
 # without that sentinel, so the positive tests below would otherwise trip the
 # guard. This autouse fixture patches the guard chokepoint to auto-materialise
 # the sentinel for any plan whose dir exists.
-
-
-@pytest.fixture(autouse=True)
-def _seed_guarded_plan_dirs(plan_context, monkeypatch):
-    real_require = manage_metrics.require_plan_exists
-    real_get_plan_dir = manage_metrics.get_plan_dir
-
-    def _seeding_require(plan_id):
-        plan_dir = real_get_plan_dir(plan_id)
-        plan_dir.mkdir(parents=True, exist_ok=True)
-        sentinel = plan_dir / 'status.json'
-        if not sentinel.is_file():
-            sentinel.write_text('{}', encoding='utf-8')
-        return real_require(plan_id)
-
-    monkeypatch.setattr(manage_metrics, 'require_plan_exists', _seeding_require)
-    return plan_context
 
 
 # =============================================================================

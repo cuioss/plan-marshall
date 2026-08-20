@@ -52,6 +52,8 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
+
 from conftest import load_script_module
 
 merge_lock = load_script_module(
@@ -99,3 +101,21 @@ def _release(plan_id: str, bot_kind: str = 'coderabbit') -> dict:
         Namespace(action='release', plan_id=plan_id, bot_kind=bot_kind)
     )
     return result
+
+
+@pytest.fixture
+def isolated_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
+    """Stage an isolated PLAN_BASE_DIR under tmp_path.
+
+    Mirrors ``test_manage_locks_merge_lock*.py``'s fixture: the rate-window state
+    lives in the SAME main-anchored store the FIFO admission queue uses, so both
+    resolve to ``<base>/merge-queue.json``.
+    """
+    base = tmp_path / 'main' / '.plan' / 'local'
+    (base / 'plans').mkdir(parents=True)
+    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
+    return {
+        'base': base,
+        'lock_path': base / 'merge.lock',
+        'queue_path': base / 'merge-queue.json',
+    }

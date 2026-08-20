@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
+# ruff: noqa: F811 — tests take the imported fixture as a parameter
 """Tests for manage-adr.py script."""
 
 
 from argparse import Namespace
 from pathlib import Path
 
-import pytest
-from _manage_adr_fixtures import (
+from _manage_adr_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
     METADATA_BLOCK_END,
     METADATA_BLOCK_START,
     SCRIPT_PATH,
@@ -15,6 +15,7 @@ from _manage_adr_fixtures import (
     _detect_corpus_width,
     _touch_adr,
     _write_adr,
+    adr_dir,
     cmd_create,
     cmd_scan,
     find_adr_by_number,
@@ -25,15 +26,6 @@ from _manage_adr_fixtures import (
 )
 
 from conftest import run_script
-
-
-@pytest.fixture
-def adr_dir(tmp_path, monkeypatch):
-    """Provide a clean doc/adr directory and chdir into the temp project root."""
-    directory = tmp_path / 'doc' / 'adr'
-    directory.mkdir(parents=True)
-    monkeypatch.chdir(tmp_path)
-    return directory
 
 
 def test_filename_sanitization(adr_dir):

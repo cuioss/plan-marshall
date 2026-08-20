@@ -11,46 +11,17 @@ from _manage_metrics_fixtures import (
     ns_start_phase,
     raw_ns,
 )
-from _manage_metrics_module_fixtures import (
+from _manage_metrics_module_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
     _UNSEEDED_PLAN_IDS,
     _phase_breakdown_header,
     _pin_start_time_to_past,
+    _seed_guarded_plan_dirs,
     cmd_accumulate_agent_usage,
     cmd_end_phase,
     cmd_generate,
     cmd_start_phase,
     manage_metrics,
 )
-
-
-@pytest.fixture(autouse=True)
-def _seed_guarded_plan_dirs(plan_context, monkeypatch):
-    """Auto-seed ``status.json`` at the require_plan_exists chokepoint.
-
-    The patched guard resolves the plan dir via the real ``get_plan_dir`` and, for
-    any plan_id NOT registered as unseeded, writes the ``status.json`` sentinel
-    before delegating to the genuine ``require_plan_exists``. This keeps every
-    positive test's happy path intact without per-test seeding. A
-    module whose tests need the real ``plan_not_found`` failure registers the
-    plan id via ``_register_unseeded`` first; no test in this module does, so
-    the guard here always seeds and the registry stays empty.
-    """
-    _UNSEEDED_PLAN_IDS.clear()
-    real_require = manage_metrics.require_plan_exists
-    real_get_plan_dir = manage_metrics.get_plan_dir
-
-    def _seeding_require(plan_id):
-        if plan_id not in _UNSEEDED_PLAN_IDS:
-            plan_dir = real_get_plan_dir(plan_id)
-            plan_dir.mkdir(parents=True, exist_ok=True)
-            sentinel = plan_dir / 'status.json'
-            if not sentinel.is_file():
-                sentinel.write_text('{}', encoding='utf-8')
-        return real_require(plan_id)
-
-    monkeypatch.setattr(manage_metrics, 'require_plan_exists', _seeding_require)
-    return plan_context
-
 
 # =============================================================================
 # Test: start-phase (Tier 2 - direct import)

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
+# ruff: noqa: F811 — tests take the imported fixture as a parameter
 """Tests for manage-status.py transition: loop-back targets and the finalize-boundary findings gate."""
 
 
@@ -9,7 +10,7 @@ from argparse import Namespace
 import _handshake_commands as _cmds  # noqa: E402
 import _invariants as _inv  # noqa: E402
 import pytest
-from _manage_status_transition_fixtures import (
+from _manage_status_transition_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
     SCRIPT_PATH,
     _core,
     _lifecycle,
@@ -18,6 +19,7 @@ from _manage_status_transition_fixtures import (
     _seed_plan_with_5_execute_capture,
     _setup_plan,
     _stub_finding_queries,
+    _stub_metadata,
     cmd_mark_step_done,
     cmd_transition,
 )
@@ -67,16 +69,6 @@ def _stubbed_invariants(monkeypatch):
     monkeypatch.setattr(_inv, 'INVARIANTS', stubbed)
     monkeypatch.setattr(_cmds, 'INVARIANTS', stubbed)
     return state
-
-
-@pytest.fixture
-def _stub_metadata(monkeypatch):
-    """Replace _load_status_metadata so cmd_verify sees a metadata dict free
-    of worktree fields (avoids the worktree-resolution assertion).
-    """
-    md: dict = {}
-    monkeypatch.setattr(_cmds, '_load_status_metadata', lambda _pid: md)
-    return md
 
 
 # =============================================================================

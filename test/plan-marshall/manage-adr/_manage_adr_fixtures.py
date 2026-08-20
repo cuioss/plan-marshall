@@ -13,6 +13,8 @@ Tier 2 (direct import) tests with 2 subprocess CLI plumbing tests retained.
 
 import re
 
+import pytest
+
 from conftest import get_script_path, load_script_module
 
 # Script path for remaining subprocess (CLI plumbing) tests
@@ -102,3 +104,12 @@ def _touch_adr(adr_dir, filename, *, title='Decision', status='Proposed'):
     """
     number = re.match(r'^(\d+)-', filename).group(1)
     (adr_dir / filename).write_text(f'= ADR-{number}: {title}\n\n== Status\n\n{status}\n\n')
+
+
+@pytest.fixture
+def adr_dir(tmp_path, monkeypatch):
+    """Provide a clean doc/adr directory and chdir into the temp project root."""
+    directory = tmp_path / 'doc' / 'adr'
+    directory.mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+    return directory

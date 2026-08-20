@@ -54,6 +54,7 @@ from argparse import Namespace
 from pathlib import Path
 
 import _freshness_crosscheck as crosscheck
+import pytest
 
 from conftest import PROJECT_ROOT
 
@@ -195,3 +196,9 @@ class _FakeQueryModule:
         if isinstance(self._outcome, Exception):
             raise self._outcome
         return self._outcome
+
+
+@pytest.fixture(autouse=True)
+def _build_is_necessary(monkeypatch):
+    """Reach the ledger scan on every case; the short-circuit has its own file."""
+    monkeypatch.setattr(_freshness_mod, '_build_necessity_verdict', lambda _plan_id: {'decision': 'build'})

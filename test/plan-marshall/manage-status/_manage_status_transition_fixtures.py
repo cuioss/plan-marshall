@@ -23,6 +23,8 @@ import sys as _sys
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
+
 from conftest import get_script_path, load_script_module
 
 # Script path for CLI plumbing / subprocess tests
@@ -317,3 +319,13 @@ def _stub_finding_queries(monkeypatch, per_type: dict[str, int], qgate: int = 0)
 # absent no-op guard) are pinned directly on _status_core.
 
 _core = load_script_module('plan-marshall', 'manage-status', '_status_core.py', '_status_core_drive')
+
+
+@pytest.fixture
+def _stub_metadata(monkeypatch):
+    """Replace _load_status_metadata so cmd_verify sees a metadata dict free
+    of worktree fields (avoids the worktree-resolution assertion).
+    """
+    md: dict = {}
+    monkeypatch.setattr(_cmds, '_load_status_metadata', lambda _pid: md)
+    return md

@@ -5,17 +5,17 @@
 
 from datetime import UTC, datetime, timedelta
 
-import pytest
 from _manage_metrics_fixtures import (
     ns_end_phase,
     ns_generate,
     ns_start_phase,
 )
-from _persisted_aggregate_round_trip_fixtures import (
+from _persisted_aggregate_round_trip_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
     _TOTAL_COLUMNS,
     _drive_two_dispatched_phases,
     _phase_field,
     _report,
+    _seed_guarded_plan_dirs,
     _store,
     _top_level_field,
     _total_row_cells,
@@ -24,24 +24,6 @@ from _persisted_aggregate_round_trip_fixtures import (
     cmd_start_phase,
     manage_metrics,
 )
-
-
-@pytest.fixture(autouse=True)
-def _seed_guarded_plan_dirs(plan_context, monkeypatch):
-    """Materialise the `status.json` sentinel every plan-scoped writer guards on."""
-    real_require = manage_metrics.require_plan_exists
-    real_get_plan_dir = manage_metrics.get_plan_dir
-
-    def _seeding_require(plan_id):
-        plan_dir = real_get_plan_dir(plan_id)
-        plan_dir.mkdir(parents=True, exist_ok=True)
-        sentinel = plan_dir / 'status.json'
-        if not sentinel.is_file():
-            sentinel.write_text('{}', encoding='utf-8')
-        return real_require(plan_id)
-
-    monkeypatch.setattr(manage_metrics, 'require_plan_exists', _seeding_require)
-    return plan_context
 
 
 class TestPersistedAggregate:

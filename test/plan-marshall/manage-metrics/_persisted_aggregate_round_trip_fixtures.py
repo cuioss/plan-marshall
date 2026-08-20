@@ -30,6 +30,7 @@ honestly supply a wall-clock the close never stamped.
 import importlib.util
 from pathlib import Path
 
+import pytest
 from _manage_metrics_fixtures import (
     ns_end_phase,
     ns_start_phase,
@@ -122,3 +123,21 @@ def _drive_two_dispatched_phases(plan_id: str) -> None:
     cmd_end_phase(ns_end_phase(plan_id, '4-plan', total_tokens=30000, tool_uses=12, duration_ms=45000))
     cmd_start_phase(ns_start_phase(plan_id, '5-execute'))
     cmd_end_phase(ns_end_phase(plan_id, '5-execute', total_tokens=70000, tool_uses=25, duration_ms=90000))
+
+
+@pytest.fixture(autouse=True)
+def _seed_guarded_plan_dirs(plan_context, monkeypatch):
+    """Materialise the `status.json` sentinel every plan-scoped writer guards on."""
+    real_require = manage_metrics.require_plan_exists
+    real_get_plan_dir = manage_metrics.get_plan_dir
+
+    def _seeding_require(plan_id):
+        plan_dir = real_get_plan_dir(plan_id)
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        sentinel = plan_dir / 'status.json'
+        if not sentinel.is_file():
+            sentinel.write_text('{}', encoding='utf-8')
+        return real_require(plan_id)
+
+    monkeypatch.setattr(manage_metrics, 'require_plan_exists', _seeding_require)
+    return plan_context

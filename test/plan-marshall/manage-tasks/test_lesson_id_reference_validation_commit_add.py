@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
+# ruff: noqa: F811 — a test takes the imported fixture as a parameter
 """Tests for at-write-time lesson-ID reference validation in manage-tasks."""
 
 
-import pytest
-from _lesson_id_reference_validation_fixtures import (
+from _lesson_id_reference_validation_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
     PHANTOM_IDS,
     REAL_LESSON_IDS,
     _commit_ns,
@@ -15,45 +15,9 @@ from _lesson_id_reference_validation_fixtures import (
     _seed_plan_dir_lesson,
     _toon_task_body,
     cmd_commit_add,
+    patch_inventory,
+    short_circuit_anchor,  # noqa: F401 — a fixture is used by NAME, not by reference
 )
-
-
-@pytest.fixture(autouse=True)
-def short_circuit_anchor(monkeypatch):
-    """Bypass the runtime regex anchor for every test in this module.
-
-    ``scan_lesson_id_tokens`` triggers ``verify_lesson_id_regex_against_inventory``
-    on first use per process, which subprocesses ``manage-lessons list``. In the
-    test environment this is non-deterministic (depends on cwd and live inventory
-    state). Tests in this file exercise the regex+membership wiring; the anchor's
-    integration behavior is covered by ``test_lesson_id_scanner.py`` directly.
-    """
-    monkeypatch.setattr(_iv, '_lesson_anchor_checked', True)
-    monkeypatch.setattr(_iv, 'verify_lesson_id_regex_against_inventory', lambda: None)
-
-
-@pytest.fixture
-def patch_inventory(monkeypatch):
-    """Patch the module-level ``verify_lesson_ids_exist`` binding in
-    ``_tasks_crud`` so tests are deterministic. Also short-circuit the
-    runtime regex anchor in ``input_validation`` so ``scan_lesson_id_tokens``
-    does NOT subprocess ``manage-lessons list`` from the test environment.
-    The real regex behavior in ``scan_lesson_id_tokens`` is preserved — only
-    the anchor's first-use subprocess call is bypassed."""
-
-    def _apply(present_ids):
-        # 1. Stub the inventory verifier in _tasks_crud's namespace.
-        monkeypatch.setattr(_crud, 'verify_lesson_ids_exist', _make_inventory_stub(present_ids))
-        # 2. Mark the runtime anchor as already-checked so scan_lesson_id_tokens
-        #    skips its first-use subprocess call. Reset by monkeypatch teardown.
-        monkeypatch.setattr(_iv, '_lesson_anchor_checked', True)
-        # 3. Stub the anchor function itself as a defensive no-op in case the
-        #    module-level flag is bypassed (e.g., a future refactor recomputes
-        #    on every call).
-        monkeypatch.setattr(_iv, 'verify_lesson_id_regex_against_inventory', lambda: None)
-
-    return _apply
-
 
 # =============================================================================
 # Case (a) — no lesson-ID tokens → success (and inventory is NOT consulted)

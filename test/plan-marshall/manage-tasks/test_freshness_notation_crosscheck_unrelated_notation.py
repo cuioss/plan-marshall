@@ -10,12 +10,13 @@ from pathlib import Path
 import _freshness_crosscheck as crosscheck
 import file_ops
 import pytest
-from _freshness_notation_crosscheck_fixtures import (
+from _freshness_notation_crosscheck_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
     _GRADLE,
     _MAVEN,
     _NPM,
     _PYPROJECT,
     _build_entry,
+    _build_is_necessary,
     _freshness_mod,
     _run,
     _stub_expected,
@@ -28,12 +29,6 @@ def _stub_resolver_seam(monkeypatch):
     monkeypatch.setattr(
         file_ops, '_query_worktree_path', lambda _plan_id: (True, str(Path.cwd()))
     )
-
-
-@pytest.fixture(autouse=True)
-def _build_is_necessary(monkeypatch):
-    """Reach the ledger scan on every case; the short-circuit has its own file."""
-    monkeypatch.setattr(_freshness_mod, '_build_necessity_verdict', lambda _plan_id: {'decision': 'build'})
 
 
 # =============================================================================

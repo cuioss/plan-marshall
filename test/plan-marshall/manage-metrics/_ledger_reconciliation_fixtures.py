@@ -25,6 +25,7 @@ reconciliation that fires on agreement is worse than none.
 import importlib.util
 from datetime import datetime
 
+import pytest
 from _manage_metrics_fixtures import (
     ns,
 )
@@ -119,3 +120,20 @@ def _parse_stamp(raw: str) -> datetime:
 
 def _findings_of(result: dict, kind: str) -> list[dict]:
     return [finding for finding in result['findings'] if finding['finding'] == kind]
+
+
+@pytest.fixture(autouse=True)
+def _seed_guarded_plan_dirs(plan_context, monkeypatch):
+    real_require = manage_metrics.require_plan_exists
+    real_get_plan_dir = manage_metrics.get_plan_dir
+
+    def _seeding_require(plan_id):
+        plan_dir = real_get_plan_dir(plan_id)
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        sentinel = plan_dir / 'status.json'
+        if not sentinel.is_file():
+            sentinel.write_text('{}', encoding='utf-8')
+        return real_require(plan_id)
+
+    monkeypatch.setattr(manage_metrics, 'require_plan_exists', _seeding_require)
+    return plan_context

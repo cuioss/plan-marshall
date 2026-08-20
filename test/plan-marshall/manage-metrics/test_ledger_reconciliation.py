@@ -5,11 +5,11 @@
 
 from datetime import UTC, datetime, timedelta
 
-import pytest
-from _ledger_reconciliation_fixtures import (
+from _ledger_reconciliation_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
     _findings_of,
     _ledger,
     _ns_reconcile,
+    _seed_guarded_plan_dirs,
     _write_execution_log,
     cmd_end_phase,
     cmd_reconcile_ledgers,
@@ -24,23 +24,6 @@ from _manage_metrics_fixtures import (
 )
 
 from conftest import load_script_module
-
-
-@pytest.fixture(autouse=True)
-def _seed_guarded_plan_dirs(plan_context, monkeypatch):
-    real_require = manage_metrics.require_plan_exists
-    real_get_plan_dir = manage_metrics.get_plan_dir
-
-    def _seeding_require(plan_id):
-        plan_dir = real_get_plan_dir(plan_id)
-        plan_dir.mkdir(parents=True, exist_ok=True)
-        sentinel = plan_dir / 'status.json'
-        if not sentinel.is_file():
-            sentinel.write_text('{}', encoding='utf-8')
-        return real_require(plan_id)
-
-    monkeypatch.setattr(manage_metrics, 'require_plan_exists', _seeding_require)
-    return plan_context
 
 
 class TestDeclaredAndUndecidableStates:

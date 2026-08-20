@@ -53,6 +53,7 @@ import json
 from pathlib import Path
 
 import _freshness_crosscheck as _crosscheck_mod
+import pytest
 from toon_parser import serialize_toon
 
 from conftest import PROJECT_ROOT
@@ -277,3 +278,28 @@ def _capture_worktree_root(monkeypatch) -> list[Path]:
 
     monkeypatch.setattr(_freshness_mod, 'compute_worktree_sha', _record)
     return seen
+
+
+@pytest.fixture(autouse=True)
+def _build_is_necessary(monkeypatch):
+    """Default every case to a ``build`` verdict so the ledger scan is reached.
+
+    A ``build`` verdict is the pass-through: the gate falls straight to the ledger
+    scan, which is what the bulk of this file exercises. Cases that exercise the
+    short-circuit override this with an explicit ``_stub_verdict`` call.
+    """
+    _stub_verdict(monkeypatch, {'decision': 'build'})
+
+
+@pytest.fixture(autouse=True)
+def _expected_notations_resolve(monkeypatch):
+    """Pin the notation cross-check's resolved set for every case in this file.
+
+    The real resolver runs the live architecture crawl against the checkout,
+    which would make every case here depend on the working tree AND pay for a
+    crawl per test. Pinning the set to the notations this file's fixtures use
+    isolates the gate's own logic from the resolver's; the resolver's own
+    behaviour — including what it does when resolution fails — is covered in
+    ``test_freshness_notation_crosscheck*.py``.
+    """
+    _stub_expected_notations(monkeypatch, _RESOLVED_NOTATIONS)

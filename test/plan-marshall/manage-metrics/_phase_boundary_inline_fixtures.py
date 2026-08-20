@@ -9,6 +9,7 @@ the module itself carries the import and not the preamble.
 
 import importlib.util
 
+import pytest
 from _manage_metrics_fixtures import (
     ns_end_phase,
     ns_enrich,
@@ -153,3 +154,20 @@ def _drive_full_six_phase_plan(plan_id: str) -> None:
         ns_phase_boundary(plan_id, prev_phase='5-execute', next_phase='6-finalize', total_tokens=88000, tool_uses=30)
     )
     cmd_end_phase(ns_end_phase(plan_id, phase='6-finalize', total_tokens=31000, tool_uses=12))
+
+
+@pytest.fixture(autouse=True)
+def _seed_guarded_plan_dirs(plan_context, monkeypatch):
+    real_require = manage_metrics.require_plan_exists
+    real_get_plan_dir = manage_metrics.get_plan_dir
+
+    def _seeding_require(plan_id):
+        plan_dir = real_get_plan_dir(plan_id)
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        sentinel = plan_dir / 'status.json'
+        if not sentinel.is_file():
+            sentinel.write_text('{}', encoding='utf-8')
+        return real_require(plan_id)
+
+    monkeypatch.setattr(manage_metrics, 'require_plan_exists', _seeding_require)
+    return plan_context

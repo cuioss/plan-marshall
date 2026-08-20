@@ -10,13 +10,15 @@ from pathlib import Path
 
 import file_ops
 import pytest
-from _pre_commit_verify_freshness_fixtures import (
+from _pre_commit_verify_freshness_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
     _CURRENT_SHA,
     _OTHER_SHA,
     _REAL_BUILD_NECESSITY_VERDICT,
     _RESOLVED_NOTATIONS,
     _build_entry,
+    _build_is_necessary,
     _capture_worktree_root,
+    _expected_notations_resolve,  # noqa: F401 — a fixture is used by NAME, not by reference
     _freshness_mod,
     _stub_expected_notations,
     _stub_ledger_path,
@@ -51,31 +53,6 @@ def _stub_resolver_seam(monkeypatch):
         '_query_worktree_path',
         lambda _plan_id: worktree_query_result(True, str(Path.cwd())),
     )
-
-
-@pytest.fixture(autouse=True)
-def _build_is_necessary(monkeypatch):
-    """Default every case to a ``build`` verdict so the ledger scan is reached.
-
-    A ``build`` verdict is the pass-through: the gate falls straight to the ledger
-    scan, which is what the bulk of this file exercises. Cases that exercise the
-    short-circuit override this with an explicit ``_stub_verdict`` call.
-    """
-    _stub_verdict(monkeypatch, {'decision': 'build'})
-
-
-@pytest.fixture(autouse=True)
-def _expected_notations_resolve(monkeypatch):
-    """Pin the notation cross-check's resolved set for every case in this file.
-
-    The real resolver runs the live architecture crawl against the checkout,
-    which would make every case here depend on the working tree AND pay for a
-    crawl per test. Pinning the set to the notations this file's fixtures use
-    isolates the gate's own logic from the resolver's; the resolver's own
-    behaviour — including what it does when resolution fails — is covered in
-    ``test_freshness_notation_crosscheck*.py``.
-    """
-    _stub_expected_notations(monkeypatch, _RESOLVED_NOTATIONS)
 
 
 def test_short_circuit_forwards_the_verdict_reason_verbatim(

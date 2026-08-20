@@ -606,20 +606,61 @@ new defects, and a section this run re-staled after M31 closed that exact class.
 | M37 | **The lead-in M10 added over-promises.** It reads "Holds the module-level loads, constants and helpers those modules **share**. The contract they pin, **in full**:" — over prose that in **51 of 55** helpers opens by declaring the file to be tests, in files holding none; that in several cases is three words under a completeness claim; and where **12 helpers share nothing at all** (every exported name used by exactly one consumer) | Round-6 maintainer lens, findings 1 and 7 | **Fixed** — the lead-in now says what the text *is* rather than what it guarantees: "Holds the module-level loads, constants and helpers the modules beside it import. Below, verbatim, is the docstring of the module they were split from." Rewritten in all **55** |
 | M38 | Five surviving locatives — three "here"s in a file that pins nothing and a "below" pointing into two sibling modules — plus 56 blank lines of mechanical over-padding, one helper spending 35 lines on 8 imports | Round-6 maintainer lens, findings 6, 12, 13 | **Fixed** — locatives rewritten; blank runs collapsed to PEP 8's two across 15 files |
 
-⛔ **M39 — the split tripled the duplication the helper layer exists to absorb, and this run is not
-fixing it.** Round 6's hardest number: `_seed_guarded_plan_dirs` goes from **8 files pre-split to 28**,
-and `manage-locks/_manage_locks_merge_lock_fixtures.py` *defines* `isolated_base` and
-`_stub_title_tokens` while **nine of its ten consumers carry byte-identical local copies** — 333 lines
-sitting on top of a file that already holds the original. Across the ten directories: **1,389 lines of
-byte-identical duplicated top-level definitions**, roughly a quarter of the slice's growth. The helper
-layer captured the constants and the module loads — the cheap part — and left the pytest fixture
-surface, which is the part that costs a reader.
+⛔ **M39 — the split tripled the duplication the helper layer exists to absorb. Fixed on operator
+instruction, after this report had recorded it as out of scope.**
 
-**Why it is recorded rather than fixed, and the reason is the plan's, not this run's convenience.**
-§ Out of scope excludes "**hoisting fixtures**" in as many words, assigning it to the slice's own
-reduction plan. The single module that does hoist is licensed only because keeping the fixture inline
-left it over budget. Fixing 28 modules at this point would also be a structural change to files whose
-every other property is now measured.
+Round 6's hardest number: `_seed_guarded_plan_dirs` went from **8 files pre-split to 28**, and
+`manage-locks/_manage_locks_merge_lock_fixtures.py` *defined* `isolated_base` and `_stub_title_tokens`
+while **nine of its ten consumers carried byte-identical local copies**. Across the ten directories:
+**12 fixture names duplicated over 1,183 redundant lines**, roughly a quarter of the slice's growth.
+The helper layer had captured the constants and the module loads — the cheap part — and left the pytest
+fixture surface, which is the part that costs a reader.
+
+**This report first declined to fix it**, on the ground that § Out of scope excludes "hoisting fixtures"
+in as many words. The operator's instruction overrode that reading. The result:
+
+| | before | after |
+|---|---:|---:|
+| Fixture names carrying a duplicated dominant body | 12 | **4** |
+| Redundant lines | 1,183 | **100** |
+| Local copies replaced by an import | — | **49** |
+| Slice line growth over `origin/main` | +6,548 (+7.2%) | **+5,213 (+5.7%)** |
+
+**Three rules kept it a move rather than a rewrite.** Only the **dominant body** of each name moves —
+several of these names carry more than one, and `_seed_guarded_plan_dirs`'s second body seeds
+unconditionally where the first honours a registry, so hoisting across that difference would change
+behaviour; every non-dominant copy stays exactly where it is. The home must be a helper the carrier
+**already imports**, so no module gains a dependency edge. And the fixture only moves when every free
+name it reads is already bound at that home — which is why `_seed_guarded_plan_dirs` landed in **six**
+different helpers rather than one, each already binding the `_UNSEEDED_PLAN_IDS` and `manage_metrics`
+its body reads.
+
+**The four that remain are blocked, and by what is stated rather than left as a count**: `_stubbed_invariants`
+(29 lines, needs `_cmds`/`_inv`), `_stub_resolver_seam` (28, needs `file_ops`/`worktree_query_result`),
+`env` (27, needs `Env`/`_init_repo`/`_run`) and `_stub_metadata` (16, needs `_cmds`). Each reads a name
+bound in the carrier and in no helper, so moving the fixture means moving that too — a larger change
+than a hoist.
+
+⚠️ **The cost is real and is a widened lint blind spot, not a line count.** A fixture reached by import
+is unused *as a name*, so `ruff --fix` deletes the import and the fixture silently stops existing —
+which is exactly what happened on the first attempt: **22 "fixture not found" errors** from imports the
+autofix had removed. Every hoisted import therefore carries `# noqa: F401`. And where a test takes the
+fixture as a **parameter**, `F811` fires at the parameter, so only a module-level directive reaches it:
+**19 modules** now carry `# ruff: noqa: F811`, up from the 1 this report previously reported. Those 19
+lose redefinition checking — the guard against two `def test_x` in one namespace, where Python keeps the
+last and the first silently stops existing.
+
+**That risk is bounded rather than asserted away:** all 19 were checked for a duplicate definition in
+every namespace, module level and class body alike, and the count today is **0**. The blind spot is
+real, currently empty, and named here so a follow-up can close it with a tree-wide guard rather than
+per-module lint.
+
+⭐ **And the empirical answer to the question this report flagged as open.** § D2 said hoisting "costs
+two suppressions" and round 6 recorded that whether a *strictly autouse* fixture costs `F811` was not
+established. Measured: **`_stub_title_tokens` is autouse and still costs it**, because two modules take
+it as a parameter to inspect the recorder. The cost is **per module, on whether any test in it names the
+fixture as a parameter** — not a property of the fixture's kind. 19 of the 49 hoisted call sites pay it;
+30 do not.
 
 ⚠️ **One correction a follow-up needs, and one uncertainty it must not inherit as fact.** § D2 states
 that hoisting a fixture "costs two suppressions: `F401` on the import … and a module-level
