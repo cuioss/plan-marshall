@@ -52,11 +52,35 @@ backticks and the gate stays green. The narrowing the gap describes: suspend the
 inline-code skip when an incident noun stands within a short window on either
 side of the match, or when the line is a heading.
 
-*The two live sites the narrowing would newly surface* — re-derived at HEAD by
-running the current matcher with the inline-code skip disabled and subtracting
-the sites that fire with it enabled: **pending re-derivation before the merge
-gate** (the figure is not carried forward from the gap document, whose tree has
-moved).
+*The live sites the narrowing would newly surface* — re-derived at HEAD by
+running the matcher with the inline-code skip disabled and subtracting the sites
+that fire with it enabled. The gap document says **two**; the measured figure at
+HEAD is **six**, and the difference is this run's own doing: D8 added two
+narration families, so the exempt population grew. This is exactly why the plan
+said to re-derive rather than carry the recorded figure forward.
+
+The six do not weigh the same, and the split is the argument:
+
+| # | Site | Snippet | Genuine narration? |
+|---|---|---|---|
+| 1 | `plan-marshall/skills/phase-6-finalize/standards/finalize-step-preference-emitter.md:100` | ``the failure mode `#990` closed cannot recur`` | **YES** — incident narration in a normative standard, exempt only because the reference is quoted. This is 130/G2's real subject. |
+| 2 | `pm-dev-frontend/skills/javascript/standards/jsdoc-essentials.md:109` | ``` `@since 1.2.0` ``` | No — a JSDoc **tag documentation example**, not prose pinned to a moment. |
+| 3 | `pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py:92` | ``` ``plan-marshall#123`` ``` | No — that analyzer's own **specification prose**, documenting the shape it matches. |
+| 4 | `…/_analyze_test_conventions.py:99` | ``` ``plan-marshall#123`` ``` | No — same specification, second occurrence. |
+| 5 | `…/_analyze_test_conventions.py:101` | ``` ``pre-#812`` ``` | No — and the surrounding sentence says so outright: *"a schema-state literal the corpus asserts on, not a citation of 812"*. |
+| 6 | `pm-plugin-development/skills/plugin-doctor/scripts/_analyze_incident_reference_in_docs.py:41` | ``` ``#948 sibling-worktree shape`` ``` | No — the incident rule's **own module docstring**, documenting its own pattern. |
+
+**One of six is a real finding; five are false positives, and four of those are
+the detectors' own specification prose.** The narrowing as the gap describes it
+would make `no-incident-references` fire on the document that specifies it, and
+on a sibling analyzer's specification of the shapes IT matches — a rule flagging
+its own definition. That is a stronger argument against the narrowing than the
+convention-amendment reason alone, and it was not available to the gap author,
+whose two-site measurement predated these families.
+
+If an operator still wants site 1 addressed, the cheap remedy is to fix that one
+sentence (the mechanism is already stated beside it), not to narrow a
+project-wide exemption whose false-positive rate on this corpus is 5-in-6.
 
 A suppression entry is the wrong remedy here: the rule ships **unconditional**
 by explicit design — no prefix is registered under `no-incident-references` in
