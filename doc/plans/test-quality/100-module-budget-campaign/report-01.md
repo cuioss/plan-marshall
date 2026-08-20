@@ -131,6 +131,8 @@ above, restated here uncorrected because the figure re-derivation checked claims
 never read a paragraph against its neighbour. Of the 199, **142 sit at a path that did not exist before** and **57 carry
 the name of the source they came from**. The `.py` file count goes 215 → 412.
 
+⚠️ **Every count in this paragraph is the round-6 state, and round 7 moved all of them.** At HEAD the 66 sources have become **202 test modules plus 66 `_{domain}_fixtures.py` modules** — round 7 split `TestPhase5LoggingGapExtractors` out of one module and two more along their section boundaries, and added two directory-level helpers for definitions crossing units. The `.py` file count in the slice's directories is **224 → 426** measured from git at each ref. The paragraph is kept as the record of what D2 produced; the numbers that describe HEAD are these.
+
 **The 57 are the shape round 2 corrected, and they are the report's largest single change.** Ten of
 them never lost their name; of those ten, **eight** were brought inside the budget by hoisting alone and
 two — `test_list_stalled.py` and `test_restore_from_plan.py` — keep their name because a single class
@@ -543,7 +545,7 @@ split moved byte-identical text and the defect was already there.
 
 | # | Finding | Evidence | Disposition |
 |---|---|---|---|
-| M16 | ⭐ **M14's fix left 65 of 189 names still false, and this report had argued no true name existed.** It read: *"a module whose clusters share no theme has no true name short of listing them, and the standard asks for a name rather than a list."* The premise generalised one labeller's failure into an impossibility. A bin whose clusters share no theme is *the rest of unit X*, and `test_{unit}.py` names exactly that while claiming no cluster at all — and every one of the 47 units was **free**, because the split had renamed its source away | Round-2 contract lens, finding 6; verified by testing all 47 candidate names for collision | **Fixed** — the bin whose label is most false in each unit gets the source's name back. Measured over the 199 modules the 66 became: **58 now carry the unit name and make no cluster claim**; of the 141 that carry a label, **18 are true of under half their tests, down from 65**. ⚠️ An earlier draft said 47 / 57 / 142: the run's own next commit (`2e2b7d0`) restored a 48th source name, and the disposition was not re-derived after it — the same "a later commit re-staled it" shape as M26 |
+| M16 | ⭐ **M14's fix left 65 of 189 names still false, and this report had argued no true name existed.** It read: *"a module whose clusters share no theme has no true name short of listing them, and the standard asks for a name rather than a list."* The premise generalised one labeller's failure into an impossibility. A bin whose clusters share no theme is *the rest of unit X*, and `test_{unit}.py` names exactly that while claiming no cluster at all — and every one of the 47 units was **free**, because the split had renamed its source away | Round-2 contract lens, finding 6; verified by testing all 47 candidate names for collision | **Fixed** — the bin whose label is most false in each unit gets the source's name back. Measured over the 199 modules the 66 became: **58 now carry the unit name and make no cluster claim**; of the 141 that carry a label, **18 are true of under half their tests, down from 65**. ⭐ **Superseded by M42**, which renamed 20 of those modules for what they hold rather than for their first test. ⚠️ An earlier draft said 47 / 57 / 142: the run's own next commit (`2e2b7d0`) restored a 48th source name, and the disposition was not re-derived after it — the same "a later commit re-staled it" shape as M26 |
 | M17 | Four `test_add_*` modules each claim to cover "the ``_allocate_and_write_scaffold`` helper that both subcommands share". None of the four touches it; the tests that do are in a fifth module. In two of the four that false bullet was the **whole** `Covers:` list, so the docstring described none of the file's content. The splitter had deleted the line naming the class it moved away and fused the two halves, leaving a sentence with no subject | Round-2 prose lens, finding 3 | **Fixed by rule, not by hand** — a `Covers:` bullet naming a **test class** absent from the file is dropped whole; where nothing true remains the heading goes too. The sweep over all 206 created modules found exactly four. ⚠️ An earlier draft stated the criterion as "a symbol absent from the file's **code**", which is not what ran: under that reading `test_add_collision_safe_allocation.py:11` also names `_allocate_and_write_scaffold`, which appears in that file only inside comments. The bullet is true there, so the outcome stands — but the stated rule was not the applied rule |
 | M18 | `test_planning_lane_request_body.py:63` states *"the helpers below are local to this module"* while importing all nine of them from `_planning_lane_request_body_fixtures.py`; `:23` and `:37` say "the fixtures below" of fixtures no longer below | Round-2 prose lens, findings 1–2 | **Fixed** — the sentence now says where the helpers are and that nothing is shared |
 | M19 | `_lessons_crud_fixtures.py:11` says *"This module absorbs the four single-verb suites whose bodies were each small enough that a dedicated file cost more navigation than it bought"* — in a preamble holding no tests, about suites that now have dedicated files, written by the run that gave them those files | Round-2 prose lens, finding 4 | **Fixed** — the subject is the four modules the preamble serves, and the load-once mechanism sentence (which still holds) keeps its claim |
@@ -571,7 +573,7 @@ I would merge a near neighbour of it."*
 
 | # | Finding | Evidence | Disposition |
 |---|---|---|---|
-| M29 | ⛔ **M1's fix claim is false, and the metric that certified the split is the same fact as the defect.** M1 says the fix made "each output's docstring **true of that output**". It did not: it truncated the inherited docstring to its summary *paragraph*, and that paragraph is often the sentence enumerating the whole original contract. **Three summary lines enumerate several subjects and are shared by 12 modules that each hold one of them** — `test_manage_status_transition_archive.py` and its five siblings all opened "Tests for manage-status.py transition + archive + delete + orphans + loop-back". ⭐ The insight no earlier round could reach: *"0 unexplained comment diffs" and this defect are the same fact.* A split that creates 199 modules and rewrites no module docstring cannot have produced 199 self-describing modules — the invariance metric rewarded exactly the behaviour that hollowed out the prose | Round-5 lens, finding 1 | **Fixed for the 12** — each now carries a summary line naming what that module holds, written from its own clusters and re-parsed to confirm. **Not fixed, and stated instead:** 53 further summary lines are shared by 177 modules. Those are *unspecific* rather than false — "Tests for manage-metrics.py CLI script." is true of all 15 that carry it — so nothing false is left, but M1's "true of that output" is corrected to **"true of that output, and in 177 cases no more specific than of its siblings"** |
+| M29 | ⛔ **M1's fix claim is false, and the metric that certified the split is the same fact as the defect.** M1 says the fix made "each output's docstring **true of that output**". It did not: it truncated the inherited docstring to its summary *paragraph*, and that paragraph is often the sentence enumerating the whole original contract. **Three summary lines enumerate several subjects and are shared by 12 modules that each hold one of them** — `test_manage_status_transition_archive.py` and its five siblings all opened "Tests for manage-status.py transition + archive + delete + orphans + loop-back". ⭐ The insight no earlier round could reach: *"0 unexplained comment diffs" and this defect are the same fact.* A split that creates 199 modules and rewrites no module docstring cannot have produced 199 self-describing modules — the invariance metric rewarded exactly the behaviour that hollowed out the prose | Round-5 lens, finding 1 | **Fixed for the 12** — each now carries a summary line naming what that module holds, written from its own clusters and re-parsed to confirm. **Not fixed, and stated instead:** 53 further summary lines are shared by 177 modules. Those are *unspecific* rather than false — "Tests for manage-metrics.py CLI script." is true of all 15 that carry it — so nothing false is left, but M1's "true of that output" is corrected to **"true of that output, and in 177 cases no more specific than of its siblings"**. ⭐ **Superseded by M41**, which closed exactly that shortfall: every such module now carries either its own section headings or a hand-written scope line, and the count of modules sharing a docstring with a sibling is back to the two `origin/main` already had |
 | M30 | A one-test module carries three autouse fixtures, of which `_stub_resolver_seam` is **dead** — the single test re-patches the same seam itself at `:87` — while the other two describe "the bulk of this file" and "cases that exercise the short-circuit", in a file with one case and no such cases | Round-5 lens, finding 5 | **Fixed** — the dead fixture and its now-unused import are gone; the two docstrings describe one case |
 | M31 | The report cross-referenced "the three files named under M26" and M26 named none of them: 28 mis-attributed banners, disclosed in a form no reader could act on. Two more of the same shape: a false clause corrected in § D2 and restated verbatim five paragraphs later, and a helper-module line count stale in the table while the prose four lines below carried the right one | Round-5 lens, findings 2–4 | **Fixed** — the three files are named, the clause is corrected where it recurred, and the table reads 730 |
 
@@ -629,7 +631,14 @@ in as many words. The operator's instruction overrode that reading. The result:
 | Fixture names carrying a duplicated dominant body | 12 | **4** |
 | Redundant lines | 1,183 | **100** |
 | Local copies replaced by an import | — | **49** |
-| Slice line growth over `origin/main` | +6,548 (+7.2%) | **+5,213 (+5.7%)** |
+| Slice line growth over `origin/main` | +6,548 (+7.2%) | **+5,213 (+5.7%)** at the end of round 6 |
+
+⚠️ **That row is the state after round 6, and round 7 moved it.** Re-measured at HEAD the same way —
+`splitlines()` over every `.py` file in the slice's directories, read from git at each ref —
+`origin/main` is 93,960 lines in 224 files and HEAD is **99,814 in 426**, so growth is
+**+5,854 (+6.2%)**. Round 7 spent roughly 640 lines putting section headings back, giving 124 modules a
+docstring that distinguishes them from their siblings, and splitting three modules that then needed
+their own preambles. That is the trade it made, and it is stated rather than left reading as +5.7%.
 
 **Three rules kept it a move rather than a rewrite.** Only the **dominant body** of each name moves —
 several of these names carry more than one, and `_seed_guarded_plan_dirs`'s second body seeds
@@ -695,8 +704,13 @@ redundant lines under the strict measure, 1,373 under the wide one.** It did not
 less duplication than it found.
 
 **Result: 307 redundant lines remain under the strict measure, of which 66 are locked by module
-identity** — the rules above, not a shortfall of effort. Slice growth ends at **+5,184 lines (+5.7%)**
-against `origin/main`, from +7.2% before any of this.
+identity** — the rules above, not a shortfall of effort. Slice growth ends at **+5,854 lines (+6.2%)**
+against `origin/main`, from +7.2% at the split.
+
+⚠️ An earlier draft of this sentence said +5,184 while the D5 table three sections above said +5,213 —
+**two growth figures for one tree, differing by 29 lines, both in this report.** Neither is now quoted:
+the number above is a single re-measurement at HEAD, and the D5 row is labelled as the round-6 state it
+describes.
 
 ⚠️ **What the remaining 307 lines are, so the number is not read as unfinished work.** 66 lines are
 module-identity bindings the rules above forbid moving. A further group is impure in a way that cannot
@@ -839,8 +853,12 @@ three words. The conclusion holds; that evidence for it did not.
 ### Round 7 — the residue the earlier rounds named but left
 
 Rounds 2–6 each named residue and deferred it. Round 7 was told to stop deferring: *"fix all findings.
-reduce all duplications, fix all smells / structures."* Four classes were open. All four are now closed,
-and the closing of the first is the one worth reading, because the fix this run had planned was wrong.
+reduce all duplications, fix all smells / structures."* Four classes were open — mis-attributed section
+headings, duplicated definitions and docstrings, the naming residue, and one finding deferred to plan
+`090` as "prose, or a real production defect". **All four are closed, and closing them surfaced three
+further defects that were not among them** (M44–M46), one of which is in this report's own figures.
+
+The closing of the first class is the one worth reading, because the fix this run had planned was wrong.
 
 **M40 — a banner in the wrong place is not a banner that can be moved.** 28 constructs across three
 modules sat under a section heading that introduces a *different* section. Round 6 recorded these as
