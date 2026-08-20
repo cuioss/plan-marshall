@@ -21,9 +21,10 @@ things the drained inbox never saw.
 
 The payload specification is the **set difference** between what the report render schema exposes and
 what the inbox envelope carried — derived below, classified item by item into MECHANISABLE (routable as
-a typed fact) or NARRATIVE-ONLY (irreducibly prose). The mechanisable set IS the required-fact set the
-landing must carry; the narrative-only set is what the landing carries as prose residue and what
-correctly keeps a manual channel.
+a typed fact) or NARRATIVE-ONLY (irreducibly prose). The mechanisable set is what the landing routes as
+typed `key=value` facts — a proper superset of the REQUIRED set, since some of those facts ride optional
+keys (see the note under the delta table); the narrative-only set is what the landing carries as prose
+residue and what correctly keeps a manual channel.
 
 > **Scope of the derivation.** The archived plans, run reports, and drained messages that would let this
 > delta be measured empirically "over three archived plans" live under `.plan/` and are **absent from a
@@ -40,10 +41,18 @@ of each:
 |---|---|---|---|
 | PR number + merge/landing state (headline token `MERGED`/`OPEN`/…) | narrative "the PR reference" | MECHANISABLE | `pr`, `merge_state` |
 | Deliverables `N_done/N_total` + titles | narrative "what shipped" | MECHANISABLE | `deliverables_total`, `deliverables_done` |
-| Per-step outcome + `display_detail` for every finalize step, in composed order | absent | MECHANISABLE | `steps` (per-step `{step,outcome}` + typed `facts`) |
-| Token totals + wall-clock (`record-metrics`) | absent | MECHANISABLE | `total_tokens`, `total_wall_seconds` |
-| Repository end-state (main up-to-date, worktree removed, tree clean) | absent | MECHANISABLE | folds into `steps` (`branch-cleanup` facts) |
+| Per-step outcome + `display_detail` for every finalize step, in composed order | absent | MECHANISABLE | **required** `steps`, which carries the per-step `{step}:{outcome}` pairs ONLY; each step's typed `facts` ride the **optional** `step.{name}.{fact_key}` keys |
+| Token totals + wall-clock (`record-metrics`) | absent | MECHANISABLE | **required** `total_tokens`; the wall-clock rides the **optional** `total_wall_seconds` |
+| Repository end-state (main up-to-date, worktree removed, tree clean) | absent | MECHANISABLE | the **optional** `step.branch-cleanup.{fact_key}` typed-fact keys; `steps` carries that step's outcome alone, not its end-state facts |
 | Anomaly the operator noticed but no step recorded (a false-merge claim, a bot withdrawal) | narrative | NARRATIVE-ONLY | prose `## Residue` section |
+
+> **MECHANISABLE does not mean required.** Every row above is routable as a typed fact, but the routing
+> target may be an OPTIONAL key: the required set is exactly the table in § "Required machine-readable
+> fact keys", which is what `check_landing_completeness` enforces. So a landing can be COMPLETE while
+> carrying no per-step typed facts, no wall-clock, and no repository end-state — those rows are
+> mechanisable and optional, and a landing that omits them has still satisfied the check. Promoting them
+> to required would change what a conforming producer must emit and make every landing written before the
+> change incomplete; the spec deliberately does not do that.
 
 The reverse direction — what the inbox carries that the report does not — is the landing narrative
 headline itself ("what landed"), which the operator report never emits because it addresses a different
@@ -89,6 +98,15 @@ the drain consumes. These keys are **required** — a landing missing any of the
 
 Optional keys a landing MAY carry (not required, so their absence is not incompleteness): `epic`,
 `total_wall_seconds`, and any per-step typed fact transcribed as `step.{name}.{fact_key}={value}`.
+
+**A degraded value is not a fact.** `emit-landing.md` sanctions writing `n/a` for a field the producer
+could not read. For `pr` and `merge_state` that IS an answer — "no PR exists" is a real end state, which
+is why both rows above name `n/a` as a legal value. For the remaining required keys — `plan_id`,
+`deliverables_total`, `deliverables_done`, `total_tokens`, `steps` — it is not: each names something a
+landed plan always has, so `n/a` there records a read that failed. `check_landing_completeness` treats
+those as MISSING and names them, so a landing whose token total, step list and deliverable counts all
+degraded is INCOMPLETE rather than silently accepted. `schema` needs no such rule: any value other than
+`landing-facts/1` is already fail-closed by the stricter check below.
 
 The block is **schema-versioned and fail-closed**: a block whose `schema` is not `landing-facts/1` is
 treated as INCOMPLETE, mirroring the envelope's `unknown_envelope_version` posture — a forward-compatible

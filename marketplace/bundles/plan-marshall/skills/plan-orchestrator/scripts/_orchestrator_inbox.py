@@ -804,15 +804,21 @@ LANDING_FACTS_SCHEMA = 'landing-facts/1'
 #: The required machine-readable fact keys a COMPLETE landing carries — the
 #: mechanisable half of the report<->inbox delta the payload spec derives. A
 #: landing missing any one is INCOMPLETE, and the drain records the gap rather
-#: than reconciling as if the inbox had drained everything material. The set is
-#: the single source of truth the producer (``emit-landing.md``) and this
-#: validator share. Two documents DO re-list it — ``landing-payload-spec.md``'s
-#: key table and ``emit-landing.md``'s prose enumeration — so each is bound back
-#: to this tuple by a test (``test_landing_completeness.py``
+#: than reconciling as if the inbox had drained everything material.
+#:
+#: This tuple is the EXECUTABLE AUTHORITY: it is what
+#: :func:`check_landing_completeness` actually enforces, so a key's presence here
+#: is what makes it required in fact. Two documents restate the same set for
+#: their own readers — ``landing-payload-spec.md`` § "Required machine-readable
+#: fact keys" (the consumer-side contract) and ``emit-landing.md`` Step 2 (the
+#: producer-side instruction) — and each is bound back to this tuple by a test
+#: (``test_landing_completeness.py``
 #: ``test_payload_spec_table_names_exactly_the_required_keys`` and
 #: ``test_emit_landing_enumeration_names_exactly_the_required_keys``). Adding a
 #: key here without updating both surfaces turns those tests red; that is the
-#: intended failure, not a reason to relax them.
+#: intended failure, not a reason to relax them. Which document wins a prose
+#: disagreement is settled by ``landing-payload-spec.md``'s own tie-break
+#: sentence, which this comment does not restate or override.
 LANDING_REQUIRED_KEYS: tuple[str, ...] = (
     'schema',
     'plan_id',
@@ -823,6 +829,50 @@ LANDING_REQUIRED_KEYS: tuple[str, ...] = (
     'total_tokens',
     'steps',
 )
+
+#: Values a producer is SANCTIONED to write in place of a fact it could not read
+#: (``phase-6-finalize/standards/emit-landing.md``). Compared case-insensitively
+#: after stripping. Each is a truthy string, which is why a presence-only check
+#: accepts them silently — the very defect :data:`LANDING_SENTINEL_REJECTING_KEYS`
+#: exists to close.
+LANDING_DEGRADED_SENTINELS: frozenset[str] = frozenset({'n/a'})
+
+#: The required keys for which a sanctioned degraded value is NOT an answer. Each
+#: names something a landed plan always has, so ``n/a`` there records a producer
+#: that could not read it — a gap the drain must report, never a fact it may
+#: reconcile against.
+#:
+#: The set is deliberately a SUBSET of :data:`LANDING_REQUIRED_KEYS`, and the
+#: asymmetry is the point: ``pr`` and ``merge_state`` stay allowed to be ``n/a``
+#: because "no PR exists" is a real end state the payload spec names, so a
+#: degraded value there is an answer rather than a gap. ``schema`` needs no entry
+#: — :func:`check_landing_completeness` fail-closes on any value other than
+#: :data:`LANDING_FACTS_SCHEMA` before the required-key sweep runs, so a sentinel
+#: is already rejected there by the stricter check.
+LANDING_SENTINEL_REJECTING_KEYS: frozenset[str] = frozenset({
+    'plan_id',
+    'deliverables_total',
+    'deliverables_done',
+    'total_tokens',
+    'steps',
+})
+
+
+def _is_unsupplied(key: str, facts: dict[str, str]) -> bool:
+    """Return whether ``key`` carries no usable value in ``facts``.
+
+    A key is unsupplied when it is absent or empty, and — for a key in
+    :data:`LANDING_SENTINEL_REJECTING_KEYS` — when its value is a sanctioned
+    degraded sentinel. The sentinel comparison is exact after stripping and
+    case-folding, so a real value that merely contains the sentinel's letters is
+    unaffected.
+    """
+    value = facts.get(key, '')
+    if not value:
+        return True
+    if key not in LANDING_SENTINEL_REJECTING_KEYS:
+        return False
+    return value.strip().lower() in LANDING_DEGRADED_SENTINELS
 
 #: Matches the first ``landing-facts`` fenced block in a payload body. DOTALL so
 #: the body spans lines; non-greedy so it stops at the first closing fence.
@@ -878,6 +928,15 @@ def check_landing_completeness(payload_body: str) -> tuple[bool, list[str]]:
       payload version is never best-effort-accepted.
     - Block present with the right schema but missing (or empty) required keys ->
       exactly those keys.
+    - Block present with the right schema but a SANCTIONED DEGRADED VALUE (``n/a``,
+      per :data:`LANDING_DEGRADED_SENTINELS`) where a fact belongs -> that key too.
+      The producer is allowed to write ``n/a`` for a fact it could not read, and
+      ``n/a`` is truthy, so a presence-only check would accept a landing whose
+      token total, step list and deliverable counts all failed to read. This
+      applies only to :data:`LANDING_SENTINEL_REJECTING_KEYS`: ``pr`` and
+      ``merge_state`` stay allowed to be ``n/a``, because "no PR exists" is a real
+      end state the payload spec names and a degraded value there is an answer
+      rather than a gap.
 
     A check that PASSED on a prose-only landing would be the vacuous guard this one
     exists to replace; the no-block branch is what keeps it non-vacuous, and it is
@@ -888,7 +947,7 @@ def check_landing_completeness(payload_body: str) -> tuple[bool, list[str]]:
         return False, list(LANDING_REQUIRED_KEYS)
     if facts.get('schema') != LANDING_FACTS_SCHEMA:
         return False, ['schema']
-    missing = [key for key in LANDING_REQUIRED_KEYS if not facts.get(key)]
+    missing = [key for key in LANDING_REQUIRED_KEYS if _is_unsupplied(key, facts)]
     return (not missing), missing
 
 
