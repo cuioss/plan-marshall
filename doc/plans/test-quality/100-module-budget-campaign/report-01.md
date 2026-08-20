@@ -365,3 +365,89 @@ _pending_
 ## Residue
 
 _pending_
+
+## Appendix — the cold read, verbatim
+
+§ Verification requires the answers recorded verbatim, not just the verdicts. This is the **second**
+read, taken against the tree as shipped. The first read's subject tree was superseded by the fixes in
+§ Findings; its verdicts and the findings it produced are recorded there.
+
+The reader was given six files and nothing else — three split modules and their
+`_{domain}_fixtures.py` — and asked of ten named tests: what contract does this test pin, and why does
+it matter?
+
+**A. `TestManifestParsing::test_execution_log_rows_are_read_from_the_manifest` — RECOVERABLE.**
+*(a)* `_ledger.load_execution_log(plan_dir)` returns `(rows, reason)`; on a well-formed `execution.toon`
+it returns a non-`None` row list with `reason == ''`, and `_ledger.execution_rows_for_phase(rows, phase)`
+filters those rows by phase preserving `step_id`. The pin is really that the *reader* parses the tabular
+`execution_log[N]{cols}:` bytes the *production writer* (`serialize_toon`) emits.
+*(b)* "A hand-written shape would let these tests pass against a form nothing emits — and the first
+draft of this helper did exactly that, guessing a dotted `execution_log.0.step_id` layout the writer
+never emits." If the reader/writer formats drift, `load_execution_log` returns zero rows against a
+manifest that is full, and the reconciliation compares the boundary ledger against an empty side.
+*Caveat: every word of that rationale is in `_ledger_reconciliation_fixtures.py`, not the test module.*
+
+**B. `TestDivergentRowsProduceFindings::test_a_boundary_row_with_no_execution_log_row_is_a_finding` — RECOVERABLE.**
+*(a)* A dispatch-boundary row with no partner row in a readable execution log produces exactly one
+finding of kind `row_absent_from_execution_log`, carrying `phase` and the row's `total_tokens`.
+*(b)* "Spend recorded at the dispatch boundary that no execution_log sum sees." The two ledgers are
+"written by independent call sites with no shared transaction and no shared key". If this stops
+holding, 90k tokens of real spend is invisible to any total derived from `execution_log`.
+
+**C. `TestTheTwoPartialityShapes::test_a_never_closed_phase_is_labelled_distinctly_from_an_absent_row` — RECOVERABLE.**
+*(a)* A phase started but never ended, holding boundary rows, produces one `boundary_never_closed`
+finding naming `end_time` — *and, separately, simultaneously* — the orphan row finding. Neither absorbs
+the other.
+*(b)* "Collapsing them would report a whole unclosed phase as a pile of orphan rows, hiding that the
+ROWS are present and that what no close recorded is the phase's own summary of them."
+
+**D. `TestTheTwoPartialityShapes::test_a_re_entered_phase_is_its_own_shape` — RECOVERABLE.**
+*(a)* A phase closed twice produces exactly one `phase_re_entered` finding whose `detail` contains
+`'cumulative across closes'` — a third kind, not folded into the other two.
+*(b)* "The aggregate is cumulative, the ledgers are not." Two closes at 1000 and 2000 leave a phase
+aggregate of 3000 against a single 1000-token boundary row; without the distinct shape that structural
+2000 gap reads as a genuine divergence, so every re-entered phase manufactures a false finding.
+*Thin spot: nothing explains why `detail` must carry that exact literal rather than a structured field.*
+
+**E. `TestAdmission::test_default_max_slots_is_five` — UNRECOVERABLE.**
+*(a)* With no `marshal.json`, `run_acquire` admits five holders and blocks the sixth, each result
+echoing `max_slots: 5`.
+*(b)* Not recoverable. Nothing says why the bound is five or what five is a property of; the
+justification is outsourced to `solution_outline.md D5`, `lock-reconciliation-analysis.md §5` and
+`ADR-002`, none of whose content is present. "A reader cannot tell what breaks if the default drifts to
+2 or 20 — one direction serializes a cluster, the other thrashes a host."
+
+**F. `TestIdempotentAcquire::test_re_acquire_blocked_plan_keeps_fifo_position` — RECOVERABLE.**
+*(a)* A blocked plan re-acquiring gets its existing id back, stays `blocked`, adds no second waiting
+entry, and the persisted order is unchanged.
+*(b)* The waiter must not be "shuffled to the back of the queue on each poll." Since `blocked` is a
+polling signal rather than an error, re-enqueueing on each poll starves the head of the queue.
+
+**G. `TestRelease::test_run_log_is_pruned_to_most_recent_100_entries` — RECOVERABLE.**
+*(a)* After each real release the `run_log` is truncated to its most recent 100 entries; across 150
+cycles it holds exactly the last 100 ids in append order.
+*(b)* "A bounded audit tail … so a long-lived cluster cannot let build-queue.json grow indefinitely."
+That file is machine-global and rewritten under a serialized read-modify-write on every operation.
+*Minor gap: why 100 rather than another bound is unstated, but the purpose of the bound is stated.*
+
+**H. `TestFaultPaths::test_missing_fragments_file_errors` — UNRECOVERABLE.**
+*(a)* Only partly: the body pins `not result.success` and nothing else — no exit code, no message, no
+assertion that no report was written.
+*(b)* Not recoverable. `TestFaultPaths` has no docstring and both module docstrings in the pair are the
+same seven-word line. "Presumably a missing bundle must not yield a hollow-but-plausible
+`quality-verification-report.md` … But that is my reconstruction, not anything the files say."
+
+**I. `TestSessionIdPassthrough::test_session_id_default_string_when_missing` — UNRECOVERABLE.**
+*(a)* With `--session-id` omitted, the report contains the literal `session_id: not provided`.
+*(b)* Not recoverable. Nothing says what the header `session_id` is for, who reads it, or why absence
+needs a sentinel rather than an omitted line. *Additional defect: unlike its sibling, this test discards
+`run_script`'s return and never asserts `result.success`.*
+
+**J. `TestRegistryConsistencyGuard::test_render_set_and_accept_set_are_identical` — RECOVERABLE.**
+*(a)* The consumer-render key set — every non-`_` `fragment_key` in `retro_sections.SECTION_SPEC` — is
+exactly the producer-accept set `valid_aspect_keys()`, in both directions.
+*(b)* "The silent-section-drop hole." If they drift, either an aspect a producer may submit renders no
+section, or a section the report expects can never be populated. "Both fail quietly at runtime."
+
+**Verdict: 7 of 10 RECOVERABLE.** Unrecoverable: **E**, **H**, **I** — each established in § Findings as
+a pre-existing gap, by comparing the test's source byte for byte across the move.
