@@ -314,20 +314,37 @@ first two commits (`a1b11b4` the plan directory, `28669af` D1's populations) tou
 which is why the per-commit gates below ran ahead of every *Python-touching* commit rather than every
 commit.
 
-The figures below are **exact for commit `db2f61d`** — the last commit that changes implementation
-files — and stale for any other, so they name that commit rather than standing bare:
+The figures below are **exact between the PR's base and commit `db2f61d`** — the last commit that
+changes implementation files — and stale for any other pair, so they name **both endpoints** rather
+than standing bare:
 
 ```bash
-git diff --name-only db2f61d origin/main -- '*.py' | wc -l   # 28  (9 production, 19 test)
-git diff --name-only db2f61d origin/main | wc -l             # 61
+# Both endpoints fixed. `db2f61d` is reachable from refs/pull/1309/head, NOT from main —
+# git fetch origin refs/pull/1309/head  if this clone does not have it.
+git diff --name-only 32c13fa...db2f61d -- '*.py' | wc -l   # 28  (9 production, 19 test)
+git diff --name-only 32c13fa...db2f61d | wc -l             # 61
 ```
 
-Anchoring them to `db2f61d` rather than to `HEAD` is deliberate, and it is what makes them stay true:
-the only commit after it is the one recording this report, which touches no file outside
-`doc/plans/`, so neither count moves. Round 5 flagged that this rationale holds only until the next
-implementation commit — and the very next one, `db2f61d` itself, falsified the previous anchor and
-moved 27/60 to 28/61. That is the fourth time these figures have moved. The anchoring does not stop
-them moving; it makes each set checkable against a commit that exists, which the bare form never was.
+**Two corrections, both found after the merge and both of the kind this plan exists to catch.**
+
+*Anchoring one endpoint was not enough.* These commands originally read
+`git diff --name-only db2f61d origin/main`, which pins the left side and lets the right side move with
+`main`. That was true when written and false as soon as anything else landed: run today it returns
+**146 / 274**, not 28 / 61. A two-endpoint diff needs two fixed endpoints, and `origin/main` is not
+one. The form above uses the PR's recorded base sha (`32c13fa`) and the three-dot merge-base
+comparison, which is what the original figures were actually measuring.
+
+*The shas are not reachable from `main`.* The merge queue **rebased** rather than creating a merge
+commit, so `f07f0ea`, `db2f61d` and every other sha this report cites are absent from `main`'s
+history — `git merge-base --is-ancestor db2f61d origin/main` is false. They survive on
+`refs/pull/1309/head`, which is why the command block says to fetch it. The choice of a merge commit
+at the merge step was made specifically to keep these citations checkable, and the queue's own merge
+strategy overrode it; recording that is more useful than restating the intent.
+
+Round 5 had flagged that the old rationale held only until the next implementation commit, and the
+very next one falsified it — 27/60 became 28/61. Counting the two corrections above, **these figures
+moved six times**. The lesson is not that anchoring failed but that it was applied to one side of a
+two-sided measurement.
 
 This is the third figure set recorded here, and the churn is the point rather than an embarrassment:
 A7 caught the first set (19/48) stale, the re-derived set (23/56) went stale again the moment the
