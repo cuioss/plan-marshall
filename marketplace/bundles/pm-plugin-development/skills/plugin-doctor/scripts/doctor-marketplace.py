@@ -604,6 +604,37 @@ def _finding_in_scope(finding: dict, scope_dirs: list[Path]) -> bool:
     )
 
 
+def _finding_is_tree_wide(finding: dict, marketplace_root: Path) -> bool:
+    """True when the finding is anchored at the marketplace root itself.
+
+    A finding whose ``file`` IS the bundles root — rather than a file inside the
+    tree — is a statement about the whole tree, not about any path within it.
+    The anti-vacuity guards are the population that anchors this way: each
+    reports that a rule's derived population was EMPTY, which is a property of
+    the derivation, not of a file.
+
+    :func:`_finding_in_scope` can never keep such a finding, because the root is
+    a strict PARENT of every possible ``--paths`` scope dir and the scope test
+    only admits a path that is the scope dir or below it. Left to that filter, a
+    scoped run silently drops the very guard that exists to stop a rule
+    reporting clean over an unread population — the defect the guard was written
+    to catch, reintroduced by the scoping. So a root-anchored finding is kept
+    unconditionally, for the same reason ``validate_extension_contracts``'
+    errors are appended unfiltered: a whole-tree finding has no per-path subset.
+
+    The test is on the finding's ANCHOR, never on a list of finding types, so a
+    rule that starts anchoring this way is covered without anyone remembering to
+    register it.
+    """
+    file_value = finding.get('file')
+    if not file_value:
+        return False
+    try:
+        return Path(file_value).resolve() == marketplace_root.resolve()
+    except (OSError, ValueError):
+        return False
+
+
 def _scoped_manage_invocation(
     marketplace_root: Path, scope_dirs: list[Path]
 ) -> list[dict]:
@@ -782,6 +813,11 @@ def cmd_quality_gate(args) -> dict:
         are included UNFILTERED — extension-contract compliance has no
         meaningful per-path subset, and a scoped finalize gate should still
         catch a broken extension contract the change introduced.
+      - a finding anchored at the marketplace ROOT is likewise kept unfiltered
+        (:func:`_finding_is_tree_wide`). The root is a parent of every scope
+        dir, so the scope test can never admit one; the anti-vacuity guards
+        anchor that way, and dropping them would let a scoped run report clean
+        over a population no rule read.
       - the manage-invocation cluster runs via a referenced-notation index
         (``derive_script_tree`` per distinct referenced notation), never the
         eager ``build_script_index`` — keeping the scoped manage-invocation
@@ -806,10 +842,17 @@ def cmd_quality_gate(args) -> dict:
     # File-scopeable rules: each emits file-anchored findings, so running them
     # marketplace-wide and filtering by `file` produces a strict subset under
     # --paths. The filter is the identity when `scope_dirs` is empty.
+    # Root-anchored findings are the exception and are kept unconditionally —
+    # see _finding_is_tree_wide for why the scope test can never admit one.
     def _scoped(findings: list[dict]) -> list[dict]:
         if not scope_dirs:
             return findings
-        return [f for f in findings if _finding_in_scope(f, scope_dirs)]
+        return [
+            f
+            for f in findings
+            if _finding_in_scope(f, scope_dirs)
+            or _finding_is_tree_wide(f, marketplace_root)
+        ]
 
     # Granularity-2 driver integration: load the suppression configs once, then
     # drop suppressed findings from the suppressible content scanners. `_scoped`
