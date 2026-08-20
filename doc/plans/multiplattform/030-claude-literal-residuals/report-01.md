@@ -2,7 +2,7 @@
 
 **Date (UTC):** 2026-08-20    **Branch:** `claude/claude-literal-residuals-tcyauu`    **PR:** _pending_    **Outcome:** _in progress_
 
-> **Verification loop exit:** _pending_
+> **Verification loop exit:** `verifier-clear`
 
 ## Skills loaded
 
@@ -467,7 +467,7 @@ sentence *about* the artifact. Worse, the same shape was then found in a claim w
 | R4-01 | round 4 | R3-01 withdrew the `bootstrap_plugin.py` row from the inventory, but the report section asserting that registration was not updated: it still read "three live sites … all three are registered in the coupling inventory §B", and F23's row inherited the over-count | **fixed** — the section is restructured by *what became of each site* rather than by a count, and names the withdrawn one explicitly. A site the sweep examined and correctly dismissed is different evidence from one it never looked at, so it is named rather than deleted |
 | R4-02 | round 4 | a **shipped code comment** in `permission_fix.py` — written by round 1's F3 fix — claimed its residual DSL knowledge was "registered open in the multiplattform epic's coupling inventory". No row named it: the one row mentioning that file registers a different coupling entirely | **fixed by registering it.** The claim named real open work, so the honest close is the row, not a retraction: §B now carries a row naming `EXECUTOR_PERMISSION`, `OVERLY_BROAD_PYTHON`, the `Skill(…)`/`SlashCommand(…)` generators and the timestamp patterns, as the same grammar-in-a-general-script class `workflow-permission-web` already holds. The comment now points at that row |
 | R4-03 | round 4 | `contract.md` documented `protect-path`'s response as `paths_protected` and `rules_total`, omitting `proposed_count` — and its only dry-run example shows `proposed_additions`, which this operation never returns. The plan required the schema addition be made "not silently" | **fixed** — the op-schema document names `proposed_count`, and says why this operation substitutes a count for the additions list |
-| R4-04 | round 4 | the `tools-permission-doctor` row this run rewrote asserts the skill "never writes itself"; its `scripts/permission_common.py` exposes `save_settings` and now `ensure_default_permissions` | **fixed** — the row describes what the `detect-*` subcommands do instead of asserting an absolute about the directory. No doctor entry point writes, so the original claim was true of the CLI and false of the skill; the weaker sentence is the one that is true of both |
+| R4-04 | round 4 | the `tools-permission-doctor` row this run rewrote asserts the skill "never writes itself"; its `scripts/permission_common.py` exposes `save_settings` and now `ensure_default_permissions` | **fixed twice.** The first attempt replaced the false absolute with "its `detect-*` subcommands inspect what the protection wrote" — also false, and the closure pass caught it: `permission_doctor.py` contains no occurrence of `deny` at all, and all three `detect-*` subcommands read only `permissions.allow`. The row now says what the doctor does audit, and states plainly that it does **not** read the deny rules `ensure-denied` writes — which is the fact a reader of this skill actually needs |
 | R4-05 | round 4 | the newly-corrected § "Resolution Priority" framed its bullets as "the preferences the `tools-permission-*` selectors apply", under which the pre-existing "Global settings always apply as baseline" bullet is false — no selector applies a global baseline | **fixed** — global scope is described as a separate scope addressed by `--scope global`, outside either project preference |
 
 **Round 4's closure checklist, re-derived rather than asserted.** Its recommendation was that a
@@ -503,13 +503,90 @@ lost: `protect-path` does not normalize its path argument, so `"$HOME/"` yields 
 caller passes one absolute path, so this is a pre-existing shape reachable only by CLI misuse.
 `_tilde_form` is path-lexical, so a symlink into the home directory renders absolute.
 
+### When the loop stopped, and on whose answer
+
+**Budget.** The lane's default is five rounds. Four general rounds ran; at the fourth, the verifier
+argued that a fifth *general* round would not terminate — each round's primary surface is the prose
+the previous round wrote, so it keeps yielding roughly one new instance indefinitely — and
+recommended a **targeted closure pass over an enumerable population** instead. The operator, who was
+reachable throughout, had already granted up to five further rounds. The grant was therefore spent
+on **one** pass, scoped as round 4 advised rather than as a fifth of the same thing. That is
+recorded because it is a discretionary use of an extension: the remaining rounds were declined on a
+verifier's reasoning, not exhausted.
+
+**The exit is `verifier-clear`, and the answer is the closure verifier's, not this run's.** Asked
+directly whether any defect remained that a reader should know about and the report did not
+disclose, it answered **yes** — two prose statements — and said explicitly that once those landed
+and were re-checked mechanically it saw *"no basis for another round: every other assertion in the
+round-4 commit and in round 4's checklist was re-derived and holds."* Both were fixed, and both were
+re-derived after fixing: the inventory row's cross-reference no longer states a direction, and
+`permission_doctor.py`'s zero occurrences of `deny` is the evidence the corrected SKILL.md row now
+states rather than contradicts.
+
+**The evidence the answer rests on is stronger than another read.** Across the five passes: both the
+retired and the current deny-rule builders were **executed** against all three input classes and
+diffed; the `no-op` degrade, the unregistered-target error path and the absent-`marshal.json`
+default were **run** end to end; every settings-path case was **run** against `origin/main`'s
+retired body; and an 18-mutation sweep was run four times, the last with no survivor. The
+home-directory guard was mutation-tested specifically and fails all four of its assertions against
+the reverted implementation.
+
+**Were the late rounds narrower, or merely fewer?** Narrower, measurably. Round 1's thirty were
+spread across the shipped change; round 3 returned ten of which **none** changed a test's verdict;
+the closure pass returned two, both single-clause prose, neither behavioural. But narrower is not
+the same as exhausted — see the residue.
+
+**Survivors left open, each characterised.**
+
+| Survivor | Kind | Bound |
+|---|---|---|
+| **F25** — D1 does not route through the `Runtime` op surface; `permission_common` imports `claude_runtime` directly, so the default set is Claude's whatever `runtime.target` says | (b) bounded | Behaviour is identical to `origin/main`, verified by reading its `permission_common`, which imported the same helpers the same way. The runtime registry holds `claude` and `opencode`; the build registry's third target has no `Runtime` at all. Closing it needs a new `Runtime` operation — which this plan's Out of scope forbids — or the `permission_common` restructure now registered in the inventory. Re-put to the verifier in the stopping pass and re-confirmed |
+| **F4-residue** — the Claude-shaped settings mapping crosses into `ensure_default_permissions` as an argument, which principles §1 forbids | (b) bounded | Pre-existing and verified so: `origin/main`'s `save_settings` already passed the same mapping into `claude_runtime._save_settings`. This adds one more site of an existing crossing, not a new kind. Closing it means restructuring every `permission_fix` subcommand. Re-put to the verifier in the stopping pass and re-confirmed |
+| **`protect-path` does not normalize its path argument** — `"$HOME/"` yields a double-slash rule, `"./creds"` an unanchored one, `"/"` yields `Bash(python3 -c */*)` | (b) bounded | All three **run**, not reasoned about. The retired builder used the raw string identically, so this is a pre-existing shape; the only shipped caller passes one absolute path, so it is reachable solely by CLI misuse. `_tilde_form` is path-lexical, so a symlink into home renders absolute |
+
+**What residue to assume remains.** The deliverables should be read as still carrying defects of the
+kind the last passes found: **false or imprecise sentences**, in prose written to explain a fix.
+That class did not decay across five passes — every round found at least one, including the closure
+pass, and twice the defect was inside a sentence a previous round had just rewritten. It is not
+claimed to be exhausted. What *is* claimed, and was tested by execution rather than reading, is that
+no behavioural defect is open: the last change to executing code was round 3's, and the two passes
+since found none.
+
 ## Reviewer participation
 
-_pending_
+_Recorded at the merge gate, from the comment bodies on all three surfaces._
+
+**Expected population, derived from configuration** — the `author_login` of each registry doc under
+`marketplace/bundles/plan-marshall/skills/automatic-review/standards/`, read at the moment of this
+claim rather than transcribed from anywhere: `coderabbitai` (`coderabbit.md`, `honors_skip_label:
+true`), `cuioss-review-bot` (`pr-agent.md`, `honors_skip_label: true`), `sourcery-ai`
+(`sourcery.md`, `honors_skip_label: false`). M = 3.
+
+**Label decision (§ Step 7's table), taken at creation and disclosed to the operator first.** The
+changed-path set carries R1 (`*.py`), R2 (`marketplace/**`) and R3 (`doc/plans/**`) paths, so **row
+1** fires: **no `skip-bot-review` label**, arm `reviewable`. Every reviewer is invited.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
+|---|---|---|---|
+| … | … | … | … |
 
 ## Cost
 
-_pending_
+- **Tokens:** not available to the agent in this session — no harness surface exposes a running
+  total, and a figure derived by any other means would be a guess.
+- **Wall-clock:** _recorded at the merge gate._
+- **Population:** whatever is recorded here counts **this single interactive Claude Code cloud
+  session**, orchestrator and every dispatched verification sub-agent together, as the harness bills
+  it. ⛔ That is **not** comparable to a plan-marshall `metrics.toon` total, which counts a dispatch
+  tree under plan-marshall's own per-task billing boundary — a boundary this lane does not have. The
+  two figures answer different questions and must not be put side by side.
+
+**What the run cost in verification effort, which is the figure that matters here.** Five
+verification passes ran: four general rounds and one targeted closure pass. They returned 30, 15,
+10, 5 and 2 findings — 62 in total, of which **two changed code behaviour** (the conditional write,
+and round 3's two boundary defects counted as one behavioural change each) and the rest were
+statements, guards, scope declaration, and this report. The mutation sweep ran four times, ending at
+18 mutations with none surviving.
 
 ## Contract check (Step 9)
 

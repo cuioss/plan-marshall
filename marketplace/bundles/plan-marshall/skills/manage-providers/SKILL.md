@@ -264,4 +264,4 @@ python3 .plan/execute-script.py plan-marshall:manage-providers:credentials migra
 | `plan-marshall:marshall-steward` | Invokes credential management via wizard and menu |
 | `plan-marshall:workflow-integration-sonar` | First consumer of credential extension API |
 | `plan-marshall:extension-api` | Discovery pattern reference |
-| `plan-marshall:tools-permission-doctor` | Permission audit — its `detect-*` subcommands inspect what the protection wrote |
+| `plan-marshall:tools-permission-doctor` | Allow-list audit (redundancy, security anti-patterns, missing step permissions). It does **not** read the deny rules `ensure-denied` writes, so it will not tell you whether the credentials directory is protected |
