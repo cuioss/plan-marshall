@@ -461,7 +461,7 @@ moved three commits during the run and the whole-tree figures move with it.
 | `.py` files in slice | 215 | 412 | +197 | same, all `.py` |
 | Helper-module files in slice | 6 | 70 | +64 | same, non-`test_*` only — **not measured by the rule** |
 | Helper-module lines in slice | 1572 | 12217 | +10645 | the same population on both sides |
-| Collected items, slice | 4207 | 4207 | 0 | `uv run python -m pytest {slice} -o addopts= --collect-only -q` |
+| Collected items, slice | 4207 | 4207 | 0 | `uv run python -m pytest {slice} -o addopts= --collect-only -q` — ⚠️ a stale ABSOLUTE, see below |
 | Distinct `Class::test` ids, slice | 3822 | 3822 | 0 | `ast`, class/function walk |
 | `@pytest.fixture` definitions, slice | 40 | 101 | +61 | `ast`, decorator walk — **all** fixtures, not only module-level; strictly module-level it is 38 → 99, and the +61 delta is identical either way |
 | Comments in slice | 7967 | 8750 | +783 | `tokenize`, `COMMENT` tokens |
@@ -986,6 +986,36 @@ tree returned 23 candidate lines of which 20 are ordinary mid-sentence uses of "
 "wait", so the instance is close to isolated and was fixed rather than made into a campaign. The removed
 lines are captured from that file's own diff for the absence classifier, the way round 2's were.
 
+⛔ **M47 — the run's headline collected-count, "4207 → 4207", was a stale absolute, and condition 5's
+baseline was not a baseline at all.** Both were caught by re-deriving every figure at both ends rather
+than quoting the round that produced it, which is lesson 4 finding its third and fourth instances.
+
+**The collected count.** 4207 was true of the ten slice directories when it was measured. It is **4146**
+on both sides today — `origin/main` has advanced since, and its own commits moved the population of
+those directories. The *equality* the condition asserts was never in doubt; the number was. Re-measured
+at three scopes, one instrument, both ends:
+
+| Scope | `origin/main` | HEAD |
+|---|---:|---:|
+| the 66 sources vs their 202 successors | 2633 | **2633** |
+| the ten slice directories | 4146 | **4146** |
+| the whole tree, run rather than collected | 21334 passed, 14 skipped | **21334 passed, 14 skipped** |
+
+The tree-wide row is the strongest fidelity evidence this report has, and it arrived by accident: an
+identical whole-tree count on both sides means the split neither lost nor gained a test **anywhere**,
+which the slice-scoped multiset diff could not establish on its own.
+
+**Condition 5's baseline.** The recorded "21070 passed, 14 skipped, 1958.89 s" was measured on a tree
+that no longer exists — 264 tests before `origin/main` merged in — and under unknown load. Comparing a
+HEAD run against it would have reported the run as **20% slower** and that would have been an artefact.
+Measured properly, both sides on this machine, back to back, nothing else running: `origin/main` takes
+**2441.99 s** and HEAD **2357.20 s**. The condition holds with 84.79 s to spare, and the HEAD run is the
+one that had the report's own doctor sweeps competing with it.
+
+⚠️ **Note what nearly happened.** The stale baseline would have produced a false alarm; the stale
+collected count would have produced a false reassurance. The same defect points either way, which is why
+lesson 4 asks for both sides to be re-derived rather than for the number to look plausible.
+
 #### Renames, for a reader following an older reference
 
 The finding rows above name modules as they stood when each round observed them, which is what a dated
@@ -1112,14 +1142,17 @@ judgement in this report should be read as unverified by an independent pass.
 
 | Condition | Before | After | Verdict |
 |---|---|---|---|
-| 1. Collected test count does not decrease (slice) | 4207 | 4207 | **holds** — identical, not merely non-decreasing |
+| 1. Collected test count does not decrease | see the three scopes below | | **holds at every scope** — identical, not merely non-decreasing |
+| — the 66 sources vs their 202 successors | 2633 | **2633** | the tightest scope: exactly what this run rewrote |
+| — the ten slice directories | 4146 | **4146** | the scope § D4 used |
+| — whole tree, run rather than collected | 21334 passed, 14 skipped | **21334 passed, 14 skipped** | |
 | — `test-module-line-budget`, slice | 66 | **3** | 63 modules brought inside the budget; the three that remain are each a single class over the budget alone (495, 424, 422 lines) |
 | — `test-module-line-budget`, whole tree | 321 | **258** | the run's whole effect on this rule |
 | — the other six rules of the sweep | 15 / 0 / 0 / 104 / 200 / 0 | identical | the run moved exactly one rule's count |
 | 2. Coverage does not decrease (slice bundle paths) | 89% | 89% | **holds** — bit-identical: 9986 statements, 962 missed, 3682 branches, 355 partial, both sides |
-| 3. Order-independent (default **and** reverse directory order) | — | 4207 passed both | **holds** |
+| 3. Order-independent (default **and** reverse directory order) | — | 2633 passed both, 136.98 s and 134.74 s | **holds** — re-run at HEAD, because round 7 REORDERED tests inside three modules and the earlier run predates that |
 | 4. `EXEMPT_RULE_IDS` unchanged | n/a | n/a | **not applicable** — that check is stated for the `080` slice; this run is `050` and touches no plugin-doctor module |
-| 5. Suite not slower, skipped count not higher (whole tree) | 21070 passed, 14 skipped, 1958.89 s | _pending_ | _pending_ |
+| 5. Suite not slower, skipped count not higher (whole tree) | **21334 passed, 14 skipped, 2441.99 s** | **21334 passed, 14 skipped, 2357.20 s** | **holds** — 84.79 s FASTER, and the skipped count is unchanged |
 
 ## Reviewer participation
 
