@@ -499,3 +499,34 @@ def test_analyzer_is_registered_in_runner() -> None:
         'pm-plugin-development', 'plugin-doctor', '_runner.py'
     ).read_text(encoding='utf-8')
     assert 'analyze_incident_reference_in_docs' in runner_source
+
+
+class TestBacktickExemptionAppliesToEveryFamily:
+    """The inline-code exemption is tested at the REFERENCE, not the match start.
+
+    Two families have a match that begins before the reference — ``observed_on``
+    (up to 80 characters of clause before the ref) and the reversed term-of-art
+    form. Under a match-start test a back-ticked reference still fired in those,
+    making them the exceptions to a convention published project-wide.
+    """
+
+    def test_observed_on_with_a_backticked_ref_is_exempt(self, tmp_path: Path) -> None:
+        """``Observed on … `#812` `` is a code token like every other quoted ref.
+
+        This WIDENED ``observed_on``'s exemption: before the offset change the
+        same line fired, making it the one family in which the back-tick
+        convention did not hold. Bounded — over the whole derived population
+        zero ``observed_on`` lines have a verdict the change flips.
+        """
+        content = 'Observed on the run log: `#812` was the culprit.\n'
+        root, _ = _make_skill_file(tmp_path, content)
+        assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
+
+    def test_observed_on_with_a_bare_ref_still_fires(self, tmp_path: Path) -> None:
+        """The control: the exemption widened, it did not disable the family."""
+        content = 'Observed on the run log: #812 was the culprit.\n'
+        root, _ = _make_skill_file(tmp_path, content)
+        findings = assert_analyzer_findings(
+            analyze_incident_reference_in_docs, root, [RULE_ID]
+        )
+        assert findings[0]['pattern_family'] == 'observed_on'

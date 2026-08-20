@@ -30,7 +30,7 @@ D1 is the plan's GATE. Its derivation succeeded, so D2–D8 were attempted.
 
 | # | What was done | Commit | Verification state |
 |---|---|---|---|
-| D1 | Root-anchored anti-vacuity findings survive a scoped run. The population was **re-derived** from `_runner.py` rather than taken from the plan's trio: every rule routed through `scoped(...)` or `suppressed(...)` was enumerated, and each routed analyzer read for a finding anchored at the marketplace root. The derived set is exactly the three the plan named. The fix keys on the finding's **anchor** (`_finding_is_tree_wide`), not on a finding-type list, so a fourth such rule is covered without registration. | `1e66475` | 7 tests; mutation-confirmed (below) |
+| D1 | Root-anchored anti-vacuity findings survive a scoped run. The population was **re-derived** from `_runner.py` rather than taken from the plan's trio: every rule routed through `scoped(...)` or `suppressed(...)` was enumerated, and each routed analyzer read for a finding anchored at the marketplace root. The derived set is exactly the three the plan named. The fix keys on the finding's **anchor** (`_finding_is_tree_wide`), not on a finding-type list, so a fourth such rule is covered without registration. | `1e66475` | 7 tests; mutation-confirmed (§ Mutation register) |
 | D2 | Pin-trap oracle: empty content comparison unrepresentable as a pass; union denominator so a pin superset is a divergence; content counts in the volatile signature; `partial` reachable from the adapter; four-state executor anchor. | `4bab9f8` | 5 guards mutation-confirmed; `partial` seen RED first |
 | D3 | Enum notation latch replaced with a per-line search; router-flag placement rule added against each subcommand's OWN flags; leading router flags skipped when locating the verb. | `8889526` | 4 mutants, each killed by the test that names it |
 | D4 | Two vacuous tests replaced, each seen RED against the defect it names. | `decd27b` | red observed, both directions |
@@ -39,6 +39,50 @@ D1 is the plan's GATE. Its derivation succeeded, so D2–D8 were attempted.
 | D7 | `loader_selected_version` reduced to the line it always evaluated, with an eligibility parameter; saturation re-ranked; shape-3 constant renamed and the literal tree pinned; remedy names invocable surfaces; paired observer added. | `f879130` | 57 tests |
 | D8 | Brace-less enum form + declarative dict-spec authority + declared coverage; two new incident-reference narration families; mirror rule-pack completed; two retrospective docstrings; one report count. | `e4e3515` | see § Findings |
 | — | Round-1 fixes from the cold read and the plan's own coverage check. | `b3786f6` | see § Findings |
+
+### Mutation register
+
+Every new or changed guard, the mutation applied to it, and the observed red.
+D4's *Done when* requires the run to name the mutation used to see each guard
+red; D2's 320/G2 additionally requires the red to have been observed **before**
+the adapter change landed. Each mutation snapshotted the target's exact bytes to
+`$TMPDIR/author-*-mutsweep/` and restored them in a `finally`, with
+`git status --porcelain` re-checked clean afterwards. No `git checkout`,
+`git restore` or `git stash` was used to undo a mutation — each of those rewrites
+the working tree from the index and would have discarded the run's own uncommitted
+work along with the mutant.
+
+| Guard | Mutation applied | Observed |
+|---|---|---|
+| D1 — root-anchor bypass | drop `or _finding_is_tree_wide(f, marketplace_root)` from `_scoped` | 3 failed / 4 passed — all three empty-population guards red |
+| D2 — 320/G2 partial scan | **none — red observed FIRST**, against the unmodified adapter | `assert cc.partial is True` → `False`, on `ContentComparison(matched=1, total=2, diverged=1, scanned=2)`: the adapter counted the unreadable source file into `scanned`, so `partial` was unreachable |
+| D2 — 320/G1 usable gate | delete the `elif not content.usable:` arm | `test_zero_file_content_comparison_is_indeterminate_not_pass` |
+| D2 — 320/G8 union denominator | `union = sorted(source_rels)` (source side only) | `test_pin_superset_of_source_is_a_divergence` |
+| D2 — 320/G3 volatile signature | replace the content signature with `None` | `test_samples_differing_only_in_content_are_indeterminate` |
+| D2 — 320/G7 split divergence | delete the `EXECUTOR_SPLIT` divergence append | `test_version_split_executor_fails_naming_the_conflicting_versions` |
+| D2 — 320/G2 unscanned accounting | `scanned=total` instead of `total - unscanned` | `test_compare_pin_content_partial_scan_when_a_source_file_is_unreadable` |
+| D3 — 100/G10 notation latch | restore `if block_notation is None:` | all four shared-fence tests, **including the real-tree one** |
+| D3 — 060/G6 placement scope | judge against `entry.subcommands` (the widened union) | `test_router_flag_after_the_verb_is_reported_as_misplaced` |
+| D3 — 060/G6 post-verb scan | scan `inv.all_flag_text` instead of `inv.rest` | 2 tests, incl. the correct-spelling control |
+| D3 — 060/G7 leading-flag skip | `r'(?P<leading>)'` (empty group) | 2 tests, incl. the same-verb equivalence |
+| D4 — 130/G5 backtick exemption | delete the `_offset_in_inline_code` skip | `test_backticked_inline_code_ref_is_exempt` (+3 others) |
+
+**Independently reproduced.** The round-1 verifier re-ran the D4 and D3 mutations
+from its own snapshot directory and confirmed both reds, so these are not this
+run's own unchecked claim.
+
+### Collateral outside the plan's Expected surface
+
+The plan's claim-labels row makes recording this the run's obligation: *"a file
+touched and not listed is collateral change to be justified in the report"*.
+
+| File | Why | Justification |
+|---|---|---|
+| `plan-marshall/skills/workflow-integration-github/scripts/github_ops.py` | D6 / 060/G3 | The parse call had to move from `parse_args_with_toon_errors` to `parse_ci_args` for the router-flag note to reach the CI surface at all. The plan's Expected surface names `ci_base.py` as the D6 hand-off point but not the two front-ends that call it; the change is one line plus its import. |
+| `plan-marshall/skills/workflow-integration-gitlab/scripts/gitlab_ops.py` | D6 / 060/G3 | Same, for the other provider. Leaving it would have made the note fire on GitHub and not GitLab — a per-provider inconsistency in a shared contract. |
+| `doc/plans/truthful-signals/320-…/report-01.md` | 320/G5 | See CC-2: the gap names this surface, and its claim was false. Condition A admits no deferral. |
+| `test/…/plugin-doctor/_plugin_doctor_fixtures.py` | RF-6 | The zero-match coverage guard requires a firing fixture for every registered rule; the new rule had none. Inside the directory the plan calls "a lead". |
+| `test/…/plugin-doctor/test_quality_gate_root_anchored_findings.py` | D1 | New file, inside the same lead directory. |
 
 ### Proposals recorded, not decided
 
@@ -143,12 +187,23 @@ documents.
 | RF-3 | self-review, D6 | `_after_verb` re-derived the leading-router-flag split by re-running the pattern over `leading + rest`, which greedily swallows the POST-verb flags too — a misplaced flag would have been invisible to the rule written to find it. | Fixed: the split is carried explicitly on `_Invocation` (`leading` / `rest`) rather than re-derived. |
 | RF-4 | self-review, D8 | The brace-less enum member class `[^\s{}\|]+` swallowed the optional-argument closing bracket, reading `[--mode local_and_remote\|local_only]` as a member named `local_only]` and manufacturing **two drift findings on the real tree** out of punctuation, against correctly-documented flags. | Fixed: members restricted to identifier characters. Both false findings gone; real-tree findings back to 0. |
 | RF-5 | self-review, D8 | The two new narration families made the analyzer **fire on its own comments** — the module's existing examples use a literal `#NNNN` placeholder for exactly this reason and the new ones did not. | Fixed: placeholders throughout, with the reason stated in the comment so the next editor keeps it. |
+| RV-1 | round-1 verifier (F1–F4) | **The CR-2 fix moved the falsehood instead of removing it.** The split keyed on authority-key presence, and an absent key covers TWO states, not one: "the modelled parser declares no `choices=`" AND "no parser was modelled at all". A script whose parser is built by an **imported** helper (`script-shared`'s build-CLI factory) has no `ArgumentParser()` in the file the notation names, so **44 of the 68** sites filed as `no_choices_declared` — "NOT a blind spot" — were sites whose `choices=` exist and sit unread in another module. Verified independently: `build-gradle/SKILL.md:68` documents `run --mode {actionable,structured,errors}`, and `script-shared/scripts/build/_build_cli.py:179` declares exactly that `choices=`. The claim was restated in three places and in this report's own CR-2 row. | Fixed: a third cause, `parser_surface_not_derived`, keyed on whether the subcommand path was modelled at all; `blind_spots` published directly so a reader need not know which causes count. Re-derived: **51 blind spots of 75 unresolved**, 44 of them underived parsers — not 7. All four restatements corrected. Two tests pin the split and its control. |
+| RV-2 | round-1 verifier (F11) | `_exemption_offset` also widened the `observed_on` family's exemption — its pattern begins at `Observed` and may carry 80 characters before the reference, so a back-ticked reference there fired before and is exempt now — while the docstring asserted only the reversed form was affected. Verified by execution: on `` Observed on the run log: `#812` was the culprit. `` the match start is 0 (outside the span) and the reference offset is 26 (inside it). | Widening **kept and disclosed**, not reverted: it makes `observed_on` consistent with the project-wide convention it was the sole exception to. Bounded — **zero** `observed_on` lines in the derived population have a verdict the change flips — and pinned by a test plus its bare-reference control. Docstring and catalogue corrected. |
+| RV-3 | round-1 verifier (F5) | `rule-catalog.md` still asserted the false argparse claim D3/060/G6 exists to retire — corrected in `_entry_from_surface`'s docstring and left standing one file away. | Fixed. |
+| RV-4 | round-1 verifier (F6) | `persona-plan-marshall-agent/SKILL.md` — the always-loaded floor — said "four" signatures and enumerated four, so the floor never mentioned the signature D6 added. The same enumeration-lead-in defect D6 corrected one file away. | Fixed: five, with the mirror named. |
+| RV-5 | round-1 verifier (F7) | plugin-doctor `SKILL.md` enumerated four mirror-drift rules; the pack is six. | Fixed. |
+| RV-6 | round-1 verifier (F8, F9) | The incident analyzer's own module docstring documented 4 of 6 families and omitted the version-constraint carve-out the catalogue had gained. | Fixed. |
+| RV-7 | round-1 verifier (F10) | `_analyze_argument_naming.py`'s "Rule IDs registered" list and Public-API scan list both omitted the rule this run added. | Fixed. |
+| RV-8 | round-1 verifier (F12) | The catalogue scoped the offset change to form 5, omitting form 2. | Fixed with RV-2. |
+| RV-9 | round-1 verifier (F14) | A test docstring named the live fence's invocations in a way that reads as making `set-tier-0` the first; it is `get-tier-0`, which is *why* the latch left those sites unresolved. | Fixed. |
+| RV-10 | round-1 verifier (F21) | `--paths` was described on the command's own doc as having one whole-tree exception; D1 added a second. Not false in itself, but the sentence reads as exhaustive and is the surface an operator consults. | Fixed: both classes named. |
+| RV-11 | round-1 verifier (F22) | `ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED` had provenance and a firing fixture but **no `rule-catalog.md` entry**, unlike every sibling. No guard covers the catalogue, so nothing failed. | Fixed: entry added. |
 | RF-6 | full verify, D6 | The new `ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED` rule had no provenance row and no firing positive fixture; two whole-tree guards failed. | Fixed: provenance row added; firing fixture added to `build_fixture_corpus`. |
 | CC-1 | coverage check vs 360/G3 | That gap's *Done when* is a literal `grep -n -i 'retention.pin\|degraded fallback'` returning nothing. The rewritten docstring USED both phrases while explaining they were fiction, so the stated condition was not met. | Fixed: the paragraph describes what the body once computed without the two banned phrases. Condition now met (`grep` exits 1). |
 | CC-2 | coverage check vs 320/G5 | That gap requires that **no surface** still claims the backward-resolution divergence is "practically unreachable". `320-.../report-01.md` still did. | Fixed: replaced with what the mechanism actually is. **Collateral, justified**: the file is outside this plan's Expected surface, but it is a location the gap itself names, and the claim is false — condition A admits no deferral. |
 | CC-3 | coverage check vs 320/G5 | `320-.../verification.md` also matches "practically unreachable". | **Rejected — not a defect.** The match is inside that document's `**Contradicted:**` section, which QUOTES the claim in order to refute it. That surface already corrects the claim; editing it would delete the correction. |
 | CR-1 | cold read, item 3 | **The operator remedy named a command that does nothing.** Step (2) gave `plan-marshall:marshall-steward:cache_retention sweep` as the command that prunes superseded version dirs. `sweep` is a read-only **dry run** unless `--apply` is passed (`cache_retention.py`: *"Perform the unlink. Without this flag the sweep is a read-only dry run."*). An operator following the remedy literally gets a report of what would be removed, sees no error, and moves to step (3) believing the prune happened — the false-clean shape this module exists to prevent, committed by its own remedy text. | Fixed: the step gives the full invocation including `--apply` and states what the flag's absence means. The remedy test asserts the `--apply` form. |
-| CR-2 | cold read, item 4a | **The declared-coverage figure was published but not actionable.** All 75 unresolved sites landed in one bucket, `no_choices_or_unresolvable_choices`, merging two things of opposite risk: a flag declaring no `choices=` (no enum claim to contradict — not a blind spot) and a `choices=` the resolver could not reduce (a real claim left unverified — a blind spot). The module docstring separated them in prose while the published field merged them. Causes with zero occurrences were also omitted, so an absent cause was indistinguishable from one folded into a neighbour. | Fixed: split into `no_choices_declared` / `choices_unresolvable`, and the census is complete (zeroes reported). Re-derived on the real tree: **68 sites with nothing to check, 7 genuine blind spots** — not 75 undifferentiated ones. |
+| CR-2 | cold read, item 4a | **The declared-coverage figure was published but not actionable.** All 75 unresolved sites landed in one bucket, `no_choices_or_unresolvable_choices`, merging two things of opposite risk: a flag declaring no `choices=` (no enum claim to contradict — not a blind spot) and a `choices=` the resolver could not reduce (a real claim left unverified — a blind spot). The module docstring separated them in prose while the published field merged them. Causes with zero occurrences were also omitted, so an absent cause was indistinguishable from one folded into a neighbour. | Fixed **in two steps, and the first fix was wrong** — see RV-1. |
 
 ### Cold reads (plan § Verification)
 

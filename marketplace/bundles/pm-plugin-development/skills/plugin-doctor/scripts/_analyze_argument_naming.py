@@ -54,13 +54,15 @@ enforcement rather than a gated transitional period.
 Public API
 ----------
 - ``analyze_argument_naming(marketplace_root)``: entry point — returns
-  findings for the four rule IDs combined.
+  findings for every rule ID in the cluster, combined.
 - ``scan_notation(marketplace_root, registered_notations)``: detects
   ``ARGUMENT_NAMING_NOTATION_INVALID``.
 - ``scan_subcommand(marketplace_root, script_index)``: detects
   ``ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN``.
 - ``scan_flag(marketplace_root, script_index)``: detects
   ``ARGUMENT_NAMING_FLAG_UNKNOWN``.
+- ``scan_router_flag_placement(marketplace_root, script_index)``: detects
+  ``ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED``.
 - ``scan_canonical_forms(marketplace_root, script_index)``: detects
   ``ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT``.
 - ``load_registered_notations(executor_path)``: regex-parses the executor's
@@ -77,6 +79,7 @@ Rule IDs registered
 - ``ARGUMENT_NAMING_NOTATION_INVALID``
 - ``ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN``
 - ``ARGUMENT_NAMING_FLAG_UNKNOWN``
+- ``ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED``
 - ``ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT``
 """
 

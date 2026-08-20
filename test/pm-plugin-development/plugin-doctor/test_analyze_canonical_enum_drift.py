@@ -366,10 +366,12 @@ def test_real_tree_shared_fence_sites_resolve_to_their_own_invocation():
     """Over the REAL tree, a site below a second invocation names that invocation.
 
     The live subject is ``plan-marshall:manage-run-config``'s canonical block,
-    whose fence documents ``architecture-refresh set-tier-0`` and
-    ``set-tier-1`` in sequence. Under the latch both enums were attributed to the
-    fence's first invocation, whose flag has no ``choices=`` — so both sites
-    resolved to ``choices is None`` and were never compared at all.
+    whose fence documents four ``architecture-refresh`` invocations in sequence,
+    beginning with ``get-tier-0`` and including ``set-tier-0`` and
+    ``set-tier-1``. Under the latch every enum in that fence was attributed to
+    its FIRST invocation — ``get-tier-0``, whose flag has no ``choices=`` — so
+    the ``set-tier-*`` sites resolved to ``choices is None`` and were never
+    compared at all.
 
     Asserted by property (a site exists whose documented members equal its
     resolved choices under its own subcommand) rather than by line number, which
@@ -558,9 +560,12 @@ def test_coverage_reports_the_unresolved_share_and_its_causes(tmp_path):
     assert coverage['unresolved_causes'] == {
         _mod.UNRESOLVED_NOTATION: 1,
         _mod.UNRESOLVED_SCRIPT_UNPARSEABLE: 0,
+        _mod.UNRESOLVED_PARSER_NOT_DERIVED: 0,
         _mod.UNRESOLVED_NO_CHOICES_DECLARED: 0,
         _mod.UNRESOLVED_CHOICES_UNRESOLVABLE: 0,
     }
+    # An unresolvable notation is a real gap, so it counts as a blind spot.
+    assert coverage['blind_spots'] == 1
 
 
 def test_coverage_over_an_empty_population_reports_zero_not_a_division_error():
@@ -575,6 +580,7 @@ def test_coverage_over_an_empty_population_reports_zero_not_a_division_error():
         'resolved': 0,
         'unresolved': 0,
         'unresolved_fraction': 0.0,
+        'blind_spots': 0,
         'unresolved_causes': dict.fromkeys(_mod.UNRESOLVED_CAUSES, 0),
     }
 
@@ -650,3 +656,66 @@ def test_real_tree_coverage_is_published_and_non_trivial():
     assert 0.0 < coverage['unresolved_fraction'] < 1.0
     assert set(coverage['unresolved_causes']) == set(_mod.UNRESOLVED_CAUSES)
     assert sum(coverage['unresolved_causes'].values()) == coverage['unresolved']
+
+
+def test_a_parser_built_by_an_imported_helper_is_a_blind_spot_not_nothing_to_check(tmp_path):
+    """The largest gap must not be filed as "this flag declares no choices".
+
+    A script whose parser is built by an IMPORTED helper has no
+    ``ArgumentParser()`` in the file the notation names, so the walk models no
+    parser at all and the authority key is absent — indistinguishable, on key
+    presence alone, from a flag that genuinely declares nothing. Reading the
+    first as the second reports the largest coverage gap as reassurance, which
+    is the failure this rule exists to catch, committed by its own figure.
+    """
+    skill_dir = tmp_path / 'mybundle' / 'skills' / 'myskill'
+    (skill_dir / 'scripts').mkdir(parents=True)
+    (skill_dir / 'scripts' / 'myscript.py').write_text(
+        'from build_cli import build\n\n\ndef main():\n    build().parse_args()\n',
+        encoding='utf-8',
+    )
+    (skill_dir / 'SKILL.md').write_text(
+        '# My Skill\n\n'
+        '## Canonical invocations\n\n'
+        f'{_FENCE}bash\n'
+        'python3 .plan/execute-script.py mybundle:myskill:myscript run \\\n'
+        '  --mode {a|b}\n'
+        f'{_FENCE}\n',
+        encoding='utf-8',
+    )
+
+    coverage = _mod.derive_coverage(derive_population(tmp_path))
+
+    assert coverage['unresolved_causes'][_mod.UNRESOLVED_PARSER_NOT_DERIVED] == 1
+    assert coverage['unresolved_causes'][_mod.UNRESOLVED_NO_CHOICES_DECLARED] == 0
+    assert coverage['blind_spots'] == 1
+
+
+def test_a_modelled_parser_with_no_choices_is_not_a_blind_spot(tmp_path):
+    """The control: a flag the modelled parser declares free-form has nothing to check.
+
+    Without this the split above would be indistinguishable from calling every
+    unresolved site a blind spot.
+    """
+    _write_bundle(tmp_path, doc_enum='x|y|z', script_body=_SCRIPT_LITERAL_CHOICES, flag='freeform')
+
+    coverage = _mod.derive_coverage(derive_population(tmp_path))
+
+    assert coverage['unresolved_causes'][_mod.UNRESOLVED_NO_CHOICES_DECLARED] == 1
+    assert coverage['unresolved_causes'][_mod.UNRESOLVED_PARSER_NOT_DERIVED] == 0
+    assert coverage['blind_spots'] == 0
+
+
+def test_real_tree_blind_spot_count_is_published_and_dominated_by_underived_parsers():
+    """Over the REAL tree the blind-spot figure is the actionable one.
+
+    Asserted as an invariant rather than a literal, since both counts move when
+    a skill documents another enum: blind spots are the unresolved total minus
+    the sites whose parser WAS modelled and declares nothing.
+    """
+    coverage = _mod.derive_coverage(derive_population(MARKETPLACE_ROOT))
+    causes = coverage['unresolved_causes']
+
+    assert coverage['blind_spots'] == coverage['unresolved'] - causes[_mod.UNRESOLVED_NO_CHOICES_DECLARED]
+    assert coverage['blind_spots'] > causes[_mod.UNRESOLVED_NO_CHOICES_DECLARED]
+    assert causes[_mod.UNRESOLVED_PARSER_NOT_DERIVED] > 0

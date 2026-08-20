@@ -39,12 +39,23 @@ above):
    incident noun: ``failure mode`` / ``signature`` / ``shape`` / ``defect`` /
    ``incident`` / ``regression`` (an optional single hyphenated qualifier may
    sit between, e.g. ``#948 sibling-worktree shape``).
+5. **Incident term-of-art, REVERSED** — the same noun set with the reference
+   AFTER it ("the failure mode #NNNN"), same optional hyphenated qualifier.
+   English prose reaches for this ordering at least as often as form 4's.
+6. **Dated / version-pinned narration** — a temporal preposition (``as of`` /
+   ``since`` / ``before`` / ``after``) followed by a ``YYYY``(``-MM``(``-DD``))
+   date or an ``N.N.N`` version. The date is the incident marker: prose pinned
+   to a moment states when something WAS true rather than what IS true.
 
 Deliberately NOT flagged, because the reference is not incident narration the
 reader cannot act without: a bare ``#NNNN`` in prose with no incident noun
 (ordinary provenance / worked-example / external-tracker citation), a
-back-ticked ``#NNNN`` (a code token, exempt as inline code), and a lowercase
-"observed on #NNNN" in an observation record.
+back-ticked ``#NNNN`` (a code token, exempt as inline code — tested at the
+reference's offset inside the match, so forms 2 and 5, whose matches begin
+before the reference, are exempt on the same terms as the rest), a lowercase
+"observed on #NNNN" in an observation record, and a version CONSTRAINT carrying
+no temporal preposition ("requires Python 3.12", "Node 20.1.0 or newer",
+">= 1.2.3"), which states a requirement holding NOW rather than a moment.
 
 Exemption posture
 -----------------
@@ -255,12 +266,24 @@ def _exemption_offset(match: re.Match) -> int:
 
     The exemption is about the REFERENCE being a code token, so it is tested at
     the ``#NNNN`` inside the match rather than at the match's first character.
-    For every form whose match BEGINS with the reference the two are the same
-    offset; they differ for the reversed term-of-art form, where the match begins
-    at the noun and a back-ticked reference sits further along. Testing the match
-    start there would fire on a back-ticked reference — narrowing a convention
-    published across the rule catalogue, the provenance table, a named test and a
-    sibling rule, which is an amendment no detector change may make on its own.
+
+    TWO families have a match that begins BEFORE the reference, and both are
+    affected — not just the new one:
+
+    * ``incident_term_of_art_reversed``, where the match begins at the noun; and
+    * ``observed_on``, whose pattern begins at ``Observed`` and can carry up to
+      80 characters before the reference. Under the match-start test a
+      back-ticked reference there still fired, making ``observed_on`` the ONE
+      family in which the project-wide "a back-ticked reference is a code token"
+      convention did not hold. Testing at the reference offset makes it hold
+      everywhere, which WIDENS that family's exemption.
+
+    That widening is deliberate and is disclosed rather than silent: it aligns
+    the family with the convention published across the rule catalogue, the
+    provenance table, a named test, and a sibling rule. It is bounded — over the
+    whole derived population, zero ``observed_on`` lines have a verdict the
+    change flips — and pinned by
+    ``test_observed_on_with_a_backticked_ref_is_exempt``.
 
     A match carrying no ``#NNNN`` at all (the dated-narration form) has no
     reference to exempt, so the match start is used.

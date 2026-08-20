@@ -114,18 +114,32 @@ refusal to invent an authority:
 * ``notation_unresolved`` — the documented notation resolves to no script path
   in this tree (an unregistered or renamed notation).
 * ``script_unparseable`` — the script was found but its AST could not be read.
-* ``no_choices_declared`` — the script parsed and declares no ``choices=`` for
-  that ``(subcommand, flag)``. The documented ``{a|b|c}`` describes a free-form
-  value, so there is no enum claim to contradict. This is NOT a blind spot, and
-  it is reported apart from the next cause for exactly that reason.
-* ``choices_unresolvable`` — the script declares a ``choices=`` this resolver
-  cannot reduce to a concrete member set. This IS a blind spot: a real enum
-  claim went unverified. The dominant structural case is a ``choices=`` naming a
-  constant IMPORTED from another module — resolving it would need a cross-module
-  parser walk (an import hop), deliberately out of scope; the resolver follows
-  same-file constants, same-file aliases, sequence wrappers, and the declarative
-  dict-spec form, and stops there. A conflicting re-declaration of the same
-  ``(path, flag)`` also lands here, by design.
+* ``parser_surface_not_derived`` — the script parsed, but the documented
+  subcommand's parser was never MODELLED here. The dominant case is a script
+  whose parser is built by an IMPORTED helper (``script-shared``'s build-CLI
+  factory, and the declarative front-ends around it): there is no
+  ``ArgumentParser()`` assignment in the file the notation names, so the walk
+  finds no parser tree at all. A real blind spot, and the LARGEST one — the
+  flag's ``choices=`` exist and sit unread in another module.
+* ``no_choices_declared`` — the subcommand's parser WAS modelled and declares no
+  ``choices=`` for this flag. The documented ``{a|b|c}`` describes a free-form
+  value, so there is genuinely no enum claim to contradict. This is the ONLY
+  non-blind-spot cause, which is why it is kept apart from the one above:
+  reading "the parser was never seen" as "the flag declares nothing" turns the
+  largest gap into reassurance, and that is the failure this whole rule exists
+  to catch, committed by the rule's own coverage figure.
+* ``choices_unresolvable`` — the parser was modelled and declares a ``choices=``
+  this resolver cannot reduce to a concrete member set. A blind spot: a real enum
+  claim went unverified. The structural case is a ``choices=`` naming a constant
+  IMPORTED from another module — resolving it would need a cross-module parser
+  walk (an import hop), deliberately out of scope; the resolver follows same-file
+  constants, same-file aliases, sequence wrappers, and the declarative dict-spec
+  form, and stops there. A conflicting re-declaration of the same ``(path, flag)``
+  also lands here, by design.
+
+``blind_spots`` is published alongside the raw census so the actionable number
+does not have to be re-derived by a reader who would have to know which causes
+count. It is the sum over :data:`UNRESOLVED_BLIND_SPOT_CAUSES`.
 
 Public API
 ----------
@@ -231,6 +245,7 @@ UNRESOLVED_SCRIPT_UNPARSEABLE = 'script_unparseable'
 # ``choices=`` the resolver could not reduce to a concrete set IS a real enum
 # claim that went unverified. Merged into one bucket, a reader cannot tell
 # whether a large unresolved share is mostly harmless or mostly blind.
+UNRESOLVED_PARSER_NOT_DERIVED = 'parser_surface_not_derived'
 UNRESOLVED_NO_CHOICES_DECLARED = 'no_choices_declared'
 UNRESOLVED_CHOICES_UNRESOLVABLE = 'choices_unresolvable'
 
@@ -241,8 +256,23 @@ UNRESOLVED_CHOICES_UNRESOLVABLE = 'choices_unresolvable'
 UNRESOLVED_CAUSES = (
     UNRESOLVED_NOTATION,
     UNRESOLVED_SCRIPT_UNPARSEABLE,
+    UNRESOLVED_PARSER_NOT_DERIVED,
     UNRESOLVED_NO_CHOICES_DECLARED,
     UNRESOLVED_CHOICES_UNRESOLVABLE,
+)
+
+# The causes that are genuine BLIND SPOTS — a real enum claim the sweep could not
+# check. ``no_choices_declared`` is deliberately NOT among them: there the parser
+# WAS modelled and simply declares no ``choices=``, so there is nothing to
+# contradict. Getting that partition wrong is worse than not publishing it, since
+# a coverage figure that mislabels its own gap reads as reassurance.
+UNRESOLVED_BLIND_SPOT_CAUSES = frozenset(
+    {
+        UNRESOLVED_NOTATION,
+        UNRESOLVED_SCRIPT_UNPARSEABLE,
+        UNRESOLVED_PARSER_NOT_DERIVED,
+        UNRESOLVED_CHOICES_UNRESOLVABLE,
+    }
 )
 
 
@@ -748,6 +778,25 @@ def _declarative_authority(
     return resolved
 
 
+def _derived_subcommand_paths(
+    tree: ast.Module, declarative: dict[tuple[tuple[str, ...], str], frozenset[str] | None]
+) -> set[tuple[str, ...]]:
+    """Every subcommand path this module's parser surface was actually MODELLED at.
+
+    The discriminator between "this flag declares no ``choices=``" and "this
+    module's parser was never seen". Both leave the authority key absent, and
+    conflating them is the worse direction: a script whose parser is built by an
+    IMPORTED helper yields no ``ArgumentParser()`` assignment here, so every one
+    of its documented enums looks like a flag with nothing to check while its
+    ``choices=`` sit unread in another module.
+    """
+    paths: set[tuple[str, ...]] = set()
+    for path_set in _build_parser_path_sets(tree).values():
+        paths |= path_set
+    paths |= {path for path, _flag in declarative}
+    return paths
+
+
 def _is_add_argument(node: ast.Call) -> bool:
     func = node.func
     return isinstance(func, ast.Attribute) and func.attr == 'add_argument'
@@ -799,6 +848,9 @@ def derive_population(marketplace_root: Path, cache=None) -> list[EnumSite]:
     # "the script could not be read" and "the script was read and declares no
     # resolvable choices for this flag". Both leave ``choices`` at ``None``.
     parsed_cache: dict[str, bool] = {}
+    # The subcommand paths each notation's parser surface was modelled at — the
+    # discriminator between "no choices declared" and "parser never seen".
+    paths_cache: dict[str, set[tuple[str, ...]]] = {}
     population: list[EnumSite] = []
 
     for skill_md in _skill_md_files(marketplace_root):
@@ -810,21 +862,34 @@ def derive_population(marketplace_root: Path, cache=None) -> list[EnumSite]:
                 if notation not in authority_cache:
                     tree = get_tree(script_path)
                     parsed_cache[notation] = tree is not None
-                    authority_cache[notation] = (
-                        _authority_by_subcommand_flag(tree, resolver)
-                        if tree is not None
-                        else {}
-                    )
+                    if tree is not None:
+                        authority_cache[notation] = _authority_by_subcommand_flag(tree, resolver)
+                        paths_cache[notation] = _derived_subcommand_paths(
+                            tree, _declarative_authority(tree, resolver)
+                        )
+                    else:
+                        authority_cache[notation] = {}
+                        paths_cache[notation] = set()
                 authority = authority_cache[notation]
                 key = (subcommand, flag)
-                # Both fail-closed skips leave ``choices`` at None, but they are
-                # told apart by KEY PRESENCE: an absent key means the parser
-                # declares no ``choices=`` for this flag, while a present key
-                # holding None means it declares one this resolver could not
-                # reduce to a concrete set.
+                # Three fail-closed skips all leave ``choices`` at None, and they
+                # are told apart in this order:
+                #   * the script did not parse at all;
+                #   * it parsed but this subcommand's parser was never MODELLED
+                #     — the dominant case being a parser built by an imported
+                #     helper, which yields no ``ArgumentParser()`` here. A real
+                #     blind spot: the flag's ``choices=`` live somewhere this
+                #     resolver never looked;
+                #   * the parser WAS modelled and the key is simply absent, which
+                #     is the only one of the three that means "this flag declares
+                #     no choices, so there is nothing to contradict".
+                # Reading the second as the third is the failure this rule exists
+                # to catch, committed by the rule's own coverage figure.
                 choices = authority.get(key)
                 if not parsed_cache[notation]:
                     cause = UNRESOLVED_SCRIPT_UNPARSEABLE
+                elif subcommand not in paths_cache[notation]:
+                    cause = UNRESOLVED_PARSER_NOT_DERIVED
                 elif key not in authority:
                     cause = UNRESOLVED_NO_CHOICES_DECLARED
                 else:
@@ -884,11 +949,12 @@ def derive_coverage(population: list[EnumSite]) -> dict:
     opaque number and a cause with no occurrences reads as ``0`` rather than as
     an absence a reader must interpret.
 
-    The split between ``no_choices_declared`` and ``choices_unresolvable`` is the
-    load-bearing part: the first is a site with no enum claim to check, the
-    second is a claim that went unverified. Reported as one figure they are
-    indistinguishable, and a large unresolved share says nothing about whether
-    the sweep is mostly complete or mostly blind.
+    ``blind_spots`` is the sum over :data:`UNRESOLVED_BLIND_SPOT_CAUSES` — every
+    cause EXCEPT ``no_choices_declared``, which is the only one where the parser
+    was modelled and genuinely declares nothing to contradict. That partition is
+    the load-bearing part, and getting it wrong is worse than not publishing it:
+    a coverage figure that files "the parser was never seen" under "nothing to
+    check" reports its largest gap as reassurance.
     """
     total = len(population)
     unresolved_sites = [site for site in population if not site.resolved]
@@ -901,6 +967,9 @@ def derive_coverage(population: list[EnumSite]) -> dict:
         'resolved': total - len(unresolved_sites),
         'unresolved': len(unresolved_sites),
         'unresolved_fraction': round(len(unresolved_sites) / total, 3) if total else 0.0,
+        'blind_spots': sum(
+            count for cause, count in causes.items() if cause in UNRESOLVED_BLIND_SPOT_CAUSES
+        ),
         'unresolved_causes': causes,
     }
 

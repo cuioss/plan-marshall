@@ -445,7 +445,7 @@ python3 .plan/execute-script.py pm-plugin-development:plugin-doctor:doctor-marke
   [--paths PATHS [PATHS ...]] [--marketplace-root MARKETPLACE_ROOT]
 ```
 
-`--paths` scopes the file-anchored findings to the supplied component paths (the same invariant rule set runs). No flag = marketplace-wide. `validate_extension_contracts` always runs whole-tree even under `--paths`. The manually-maintained-mirror rules (`provides-method-table-drift`, `literal-count-drift`, `broken-relative-link`, `fenced-code-no-language`) are part of this build-failing gate — they are registered in `cmd_quality_gate` (the markdown-mirror pair via the marketplace-wide `analyze_markdown_mirror_rules` pass) and also surface under `analyze`. Their findings carry absolute file paths, so `--paths` scoping applies to them uniformly.
+`--paths` scopes the file-anchored findings to the supplied component paths (the same invariant rule set runs). No flag = marketplace-wide. TWO classes are always reported unfiltered even under `--paths`: `validate_extension_contracts`, and any finding anchored at the marketplace ROOT — the anti-vacuity guards anchor that way, and the root is a parent of every scope dir, so the scope test could never admit one. The manually-maintained-mirror rules (`provides-method-table-drift`, `literal-count-drift`, `canonical-enum-choices-drift`, `readme-skill-registration-drift`, `broken-relative-link`, `fenced-code-no-language`) are part of this build-failing gate — they are registered in `cmd_quality_gate` (the markdown-mirror pair via the marketplace-wide `analyze_markdown_mirror_rules` pass) and also surface under `analyze`. Their findings carry absolute file paths, so `--paths` scoping applies to them uniformly.
 
 ### test-conventions
 
