@@ -878,7 +878,44 @@ the last round still did. The open items there are decisions, not defects.
 
 ## Reviewer participation
 
-_(filled in after the PR is opened)_
+**PR #1313** — `claude/target-scoped-components-k3qt57` → `main`. The cloud-assigned branch name was
+kept, per the lane's branch rule.
+
+**Round A — CodeRabbit on `6579baf`.** Merge Risk: Moderate. **9 actionable** (2 Major, 7 Minor)
+and 6 nitpicks. Coverage: 12 files selected for processing, which is every file the PR touches that
+carries reviewable content.
+
+| # | Severity | Finding | Disposition |
+|---|---|---|---|
+| 1 | Major | `read_target_scope()` degrades to "no scope" on a `UnicodeDecodeError`, so `emits_to()` then returns true for every target — a declaration that cannot be decoded bypasses the filter | **Accepted.** The remedy taken is narrower than the one proposed: a lossy re-read applies the same mention test unparseable YAML already gets. Bytes that appear to declare a scope raise `TargetScopeError`; bytes that never mention the field still degrade, because there is no declaration to misread there. Converting *every* decode error would have made target scoping the repository's UTF-8 linter, which is the same over-reach the unparseable-YAML rule already declines |
+| 2 | Major | `frontmatter-standards.md` says a key with an owning contract stays top-level; `ext-point-verify.md` requires `verification_profile` under `metadata:`. An author following the first writes the profile where the verify stage will not find it | **Accepted, and it was a real contradiction.** The standards now state that the owning contract fixes the field's *location* as well as its meaning — top-level for most, nested under `metadata:` where the contract says so — and name `ext-point-verify` as the example. `ext-point-verify.md` no longer says "no contract declares it" |
+| 3 | Minor | "Field absent ⇒ every target" is wrong where a target emits no component tree | **Accepted.** Qualified with the `emits_bundle_tree` condition, in both the standards and `marketplace-build.adoc` |
+| 4 | Minor | `rule-catalog.md` and `rule-provenance.md` say the build rejects "a value that is not a list of names", but a bare or quoted scalar is accepted and a comma-bearing scalar is split | **Accepted.** Both now say "neither a list of names nor a single name" and state the scalar form explicitly |
+| 5 | Minor | Historical narrative in `marketplace/targets/README.md` and `rule-catalog.md` — replaced code, verification-round counts — violates "No version history" / "Current state only" | **Accepted, and widened.** Also removed from the `component_targets.py` module docstring and a `_strip_comment` docstring, which the review did not reach |
+| 6 | Minor | `marketplace-build.adoc` restates the optional-field list that `frontmatter-standards.md` owns | **Accepted, and widened.** The provenance row was duplicating `rule-catalog.md` the same way; it now cross-references |
+| 7 | Minor | `coupling-inventory.md` says a file inside a skill "still ships to every target" — but a skill's declaration governs its whole directory | **Accepted.** Corrected to: such a file cannot be scoped INDEPENDENTLY and ships wherever its parent skill ships |
+| 8 | Minor | Raw U+FEFF in `_analyze_target_scope.py` where the sibling uses an escape | **Accepted** |
+| 9 | Minor | `_soundness_corpus` derives from three sibling names and then appends hardcoded rows; if a derived source empties or is renamed, the hardcoded rows keep the sweep green while it covers less | **Accepted — and it names a real vacuity hole.** A non-vacuity guard now asserts each derived source contributes. A second differential was added alongside it: the rule's `component_files()` walk is compared against the build's `iter_component_manifests()`, so a component kind added to one and not the other fails the suite |
+
+**Beyond the 9, one ordering defect was found while acting on them** and is not CodeRabbit's: the
+Claude emitter resolved its scoped-out roots *after* `safe_rmtree` wiped the output directory, so an
+invalid declaration would have deleted the previous output and then aborted. Validation now precedes
+the wipe.
+
+**Declined, 2 of the 6 nitpicks:**
+
+- *Cache `read_target_scope()` results.* The population is bounded and known — 160 components, read
+  once per target, inside a build that already does more I/O per component than one `read_text`. A
+  cache adds an invalidation surface to a path that is not hot, and the correctness question it
+  raises (can a stale entry outlive an edit?) is one the current code never has to answer.
+- *Record a plugin-cache sync as owed.* Inert in this lane: `/sync-plugin-cache` reads the
+  git-ignored `target/` tree and writes `~/.claude/`, neither of which a fresh clone has. `CLAUDE.md`
+  § Standalone Plan Lane states that such a run neither performs a sync nor records one as owed.
+
+The remaining 4 nitpicks were absorbed into the fixes above rather than tracked separately.
+
+Both dispositions and the applied set were posted to the PR, so the decline is on the record rather
+than silent.
 
 ## Cost
 
