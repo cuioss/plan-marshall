@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the phase-4-plan mechanical Q-Gate's CLOSURE checks."""
+"""Tests for the phase-4-plan mechanical Q-Gate's CLOSURE checks.
+
+Scope: how the closure check discloses what it could not measure and bounds what it
+reports — a truncated enumeration or scanned-path list disclosed rather than silent,
+and a hit list that names its remainder.
+"""
 
 
 from __future__ import annotations

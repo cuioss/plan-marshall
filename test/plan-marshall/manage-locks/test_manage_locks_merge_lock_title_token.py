@@ -3,6 +3,14 @@
 # ruff: noqa: F811 — a test takes the imported fixture as a parameter
 """Tests for the unified ``manage-locks/merge_lock.py`` — the single main-anchored
 merge-to-main serializer fronted by a FIFO admission queue.
+
+Its sections, in order:
+
+* Fixtures
+* Shared-core delegation guard — no re-implemented liveness / resolution / rmw
+* Title-token surface (best-effort, OUTSIDE the O_EXCL window)
+* Live-worktree reclaim guard — orphaned shell auto-reclaims, genuine
+* Title-token suppression contract (set_title_token=False)
 """
 
 

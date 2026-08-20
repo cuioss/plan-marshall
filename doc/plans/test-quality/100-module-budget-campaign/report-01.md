@@ -811,6 +811,127 @@ docstrings were "byte-identical … the same seven-word line". They are not:
 `_compile_report_fixtures.py:2-7` opens with M10's framing lead-in, and `test_compile_report.py:2` is
 three words. The conclusion holds; that evidence for it did not.
 
+### Round 7 — the residue the earlier rounds named but left
+
+Rounds 2–6 each named residue and deferred it. Round 7 was told to stop deferring: *"fix all findings.
+reduce all duplications, fix all smells / structures."* Four classes were open. All four are now closed,
+and the closing of the first is the one worth reading, because the fix this run had planned was wrong.
+
+**M40 — a banner in the wrong place is not a banner that can be moved.** 28 constructs across three
+modules sat under a section heading that introduces a *different* section. Round 6 recorded these as
+unfixable within budget, since re-inserting the missing headings would push all three past 400 lines.
+Round 7's first idea was better and still wrong: *a heading that governs the wrong constructs is not a
+MISSING heading, it is a heading in the wrong PLACE — moving it costs zero lines.* That was implemented,
+run, and measured: **still 28.** The measurement is what corrected the reasoning. These files do not
+hold one misplaced heading; they hold constructs drawn from four, five and eight distinct source
+sections while carrying one or two of the headings, so relocating a heading only changes which
+constructs it misdescribes.
+
+The fix that works rebuilds the structure. Each file's sections are made contiguous so every heading
+can be emitted once above exactly the constructs the pre-split source gave it. Two files still cross
+400 lines once their headings are back — and both cross it because they genuinely hold more than one
+subject, so each is split along its own section boundaries:
+
+| Module | Lines |
+|---|---|
+| `test_manage_status_transition_loop_back.py` | 424 → 300 |
+| `test_manage_status_transition_finalize_boundary.py` | new, 141 |
+| `test_title_token.py` | 402 → 146 |
+| `test_title_token_lifecycle.py` | new, 271 |
+
+**Constructs under a wrong banner: 167 at the split → 28 after round 3 → 0, across 199 modules.**
+
+Making the sections contiguous means reordering, and reordering changes the order pytest runs a
+module's tests in. `pytest-randomly` is **not** installed here, so nothing in the harness independently
+guarantees order-independence; the evidence is a direct before/after comparison of all 53 tests in the
+three files — **53 of 53 identical outcomes, and the same 53 test identities.**
+
+**M41 — 165 modules shared a module docstring with a sibling; 124 were this run's own outputs.** Fifteen
+`manage-metrics` modules all opened "Tests for manage-metrics.py CLI script."; `test_lessons_crud_cmd_set_title.py`
+carried the same sentence as the `test_lessons_crud_cmd.py` it narrows, which over-claims as well as
+failing to distinguish. This is the M1 defect at the scale of the whole slice, and no doctor rule
+catches it — `test-module-preamble-boilerplate` scans *import* preambles, not docstrings.
+
+86 were fixed by promoting each module's own section headings, which by then were verified to govern
+exactly the constructs the source gave them, so the added text is the source author's words rather than
+this run's. The enumeration is deliberately unfiltered and phrased "Its sections, in order" rather than
+"covers": a filtered list makes a coverage claim wrong in both directions, since it drops real sections
+and a construct under no heading appears in neither list. The remaining 38 have no headings to promote
+and were written by hand, one at a time, from their tests.
+
+**165 modules sharing a docstring → 2, and neither of those two is a module this run created.**
+
+⚠️ Promoting a heading verbatim added a `test-docstring-historical-prose` finding the first time it ran:
+one heading carries "(deliverable 3)", which is history and which that rule rightly flags in a preamble.
+The promoted copy now drops such a citation; the heading keeps it.
+
+**M42 — the splitter named 20 modules after their first test.** `test_manage_adr_next_number.py` held
+fifteen tests, twelve of them ADR create/list/read/update/delete; `test_qgate_closure_directory_only.py`
+held one directory-only test and eleven about how a hit list is disclosed and bounded. Measured on the
+old names' own distinguishing phrase — what is left after the prefix shared with their siblings —
+**14 of 17 made a claim true of at most a third of their own tests**, and three were true of none.
+
+The new names are a judgement, not a metric, and the attempt to gate them on one is worth recording:
+a token-overlap gate rejected `..._crud_and_numbering` (40%) in favour of `..._next_number` (47%),
+because "adr" recurs in every test name and "crud" in none. **Lexical overlap measures similarity, not
+truth, and a good summary word is precisely one the tests do not repeat.** The gate was replaced by a
+check of the defect being fixed, and each new name is justified per module in the pass itself.
+
+Three further renames dissolved a collision the emitter had papered over with an ordinal:
+`test_denominator_sampling_point.py` and `test_denominator_sampling_point_two.py` became
+`test_denominator_absence_versus_zero.py` and `test_denominator_sampling_point_persistence.py`, which is
+the distinction their tests actually draw — and each got the true docstring it had been sharing.
+
+⚠️ A `git checkout -- test/plan-marshall/` intended to revert one pass **resurrected all 20 pre-rename
+files while their renamed counterparts remained**, silently duplicating every test in them. It was
+caught by a doctor sweep reading 3 higher than HEAD, traced to the duplicate pair, and removed. The
+lesson is narrow and real: *after a `git mv`, a path-scoped `checkout` restores the old path rather than
+undoing the move.*
+
+**M43 — the deferred `build_queue.max_slots` finding was prose, not a production defect.**
+`_build_queue_fixtures.py`'s docstring named `build_queue.max_slots` while its fixture writes
+`build.queue.max_slots`. `build_queue.py:191` reads `build.queue.max_slots`, so the fixture is right and
+the docstring was wrong. Fixed here rather than deferred to `090`. (`test_config_defaults.py:2080` uses
+the same spelling for the `DEFAULT_BUILD_QUEUE` **dict**, where it is correct, and is untouched.)
+
+**M44 — `_write_status`, hoisted into the `manage-status` helper, lost its docstring.** It is restored as
+prose true of the *shared* copy: the pre-split text said "so `--persist` write paths can read it", which
+described the one module it came from — and none of the three modules that share it now use `--persist`
+at all. Restoring it verbatim would have planted a false statement in a file three modules read.
+
+#### Renames, for a reader following an older reference
+
+The finding rows above name modules as they stood when each round observed them, which is what a dated
+record should do. This table is the mapping.
+
+| Named in an earlier round | Now |
+|---|---|
+| `test_manage_adr_next_number.py` | `test_manage_adr_crud_and_numbering.py` |
+| `test_manage_metrics_absent_unrecognised.py` | `test_manage_metrics_population_annotation.py` |
+| `test_mark_step_done_mark_step_failed_then.py` | `test_mark_step_done_completion_head_and_keys.py` |
+| `test_mark_step_done_mark_step_facts_only.py` | `test_mark_step_done_facts_only.py` |
+| `test_qgate_closure_directory_only.py` | `test_qgate_closure_disclosure_and_bounds.py` |
+| `test_qgate_closure_unexpandable_glob.py` | `test_qgate_closure_globs_and_population.py` |
+| `test_check_artifact_consistency_behavior_resolve_plan.py` | `test_check_artifact_consistency_behavior_readers.py` |
+| `test_merge_authorization_grant_persists.py` | `test_merge_authorization_grant_record.py` |
+| `test_plan_retrospective_manifest_no_manifest.py` | `test_plan_retrospective_manifest_verdicts.py` |
+| `test_consult_component_filtering.py` | `test_consult_filtering_and_caps.py` |
+| `test_build_queue_admission.py` | `test_build_queue_admission_and_release.py` |
+| `test_planning_lane_all_light.py` | `test_planning_lane_signal_resolution.py` |
+| `test_manage_metrics_subagent_total.py` | `test_manage_metrics_measure_reconciliation.py` |
+| `test_classification_validation_gate_class_two.py` | `test_classification_validation_gate_mismatches.py` |
+| `test_manage_findings_cli_pr_comment.py` | `test_manage_findings_cli_roundtrips.py` |
+| `test_manage_status_transition_5_execute.py` | `test_manage_status_transition_5_execute_and_finalize.py` |
+| `test_locks_core_rmw_json.py` | `test_locks_core_rmw_and_lock_log.py` |
+| `test_denominator_sampling_point.py` | `test_denominator_absence_versus_zero.py` |
+| `test_denominator_sampling_point_two.py` | `test_denominator_sampling_point_persistence.py` |
+| `test_pre_commit_verify_freshness_stale_when.py` | `test_pre_commit_verify_freshness_verdict_and_reason.py` |
+
+One in-tree cross-reference broke: `test_manage_metrics_generate_partiality_fields.py:208` pointed at
+`test_denominator_sampling_point*.py`, a glob that after the rename matched only one of the two
+successors. It now names both. It was found by the absence classifier, not by review — a rename sweep
+that runs before a later `git mv` cannot see it.
+
 ### Pre-existing, recorded not fixed
 
 The **first** cold read (§ Verification, "By reading") found 6 of 10 tests recoverable; the second, taken

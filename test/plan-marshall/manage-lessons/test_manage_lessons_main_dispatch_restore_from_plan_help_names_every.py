@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""In-process ``main()`` dispatch tests for manage-lessons.py."""
+"""In-process ``main()`` dispatch tests for manage-lessons.py.
+
+Scope: that ``restore-from-plan --help`` names every restore action.
+"""
 
 
 import sys

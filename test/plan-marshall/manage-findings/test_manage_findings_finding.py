@@ -1,6 +1,16 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-findings.py script."""
+"""Tests for manage-findings.py script.
+
+Its sections, in order:
+
+* Finding Add Command
+* Finding Query Command
+* pr-comment author / kind first-class fields (CLI layer)
+* Finding Resolve Command
+* Finding Promote Command
+* Finding Resolve with taken_into_account (extended)
+"""
 
 
 from _manage_findings_fixtures import (

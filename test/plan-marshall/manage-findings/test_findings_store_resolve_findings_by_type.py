@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Unit tests for _findings_core.py - the storage engine for findings and Q-Gate findings."""
+"""Unit tests for _findings_core.py - the storage engine for findings and Q-Gate findings.
+
+Its sections, in order:
+
+* resolve_findings_by_type (bulk resolve)
+* responded-marker lifecycle (the RESPOND idempotency key)
+"""
 
 
 from _findings_store_fixtures import (

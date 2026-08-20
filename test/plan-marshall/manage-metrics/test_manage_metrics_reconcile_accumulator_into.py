@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-metrics.py CLI script."""
+"""Tests for manage-metrics.py CLI script.
+
+Its sections, in order:
+
+* _reconcile_accumulator_into_phase (Tier 2 - direct call)
+* cmd_generate reconciles each phase against its accumulator
+* dispatch-boundary reconciliation (D1) — _read_dispatch_boundary_totals
+* first-class partiality fields (Tier 2 - direct import)
+"""
 
 
 from _manage_metrics_fixtures import (

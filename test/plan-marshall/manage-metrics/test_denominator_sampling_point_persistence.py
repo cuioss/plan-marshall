@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the persisted denominators and their sampling-point discriminator."""
+"""Tests that each denominator is persisted TOGETHER WITH its sampling point.
+
+The pair is what ``generate`` echoes back, and it is what makes two generations
+of the same plan tell themselves apart. A fourth test pins that the two
+deliverable extractors read one heading pattern rather than two, since a
+disagreement there would move the denominator without moving its sampling point.
+"""
 
 
 import re

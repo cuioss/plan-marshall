@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: F811 — tests take the imported fixture as a parameter
-"""Tests for manage-status.py transition: the 5-execute phase and the final-phase complete transition."""
+"""Tests for manage-status.py transition: the 5-execute phase and the final-phase complete transition.
+
+Its one section: D2 — Finalize completion boundary asserts the blocking-findings STATE.
+"""
 
 
 import json

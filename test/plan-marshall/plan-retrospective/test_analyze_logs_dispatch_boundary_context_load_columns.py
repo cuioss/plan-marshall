@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``analyze-logs.py``."""
+"""Tests for ``analyze-logs.py``.
+
+Scope: reading the four context-load columns off a dispatch-boundary row, holding
+absent, unmeasured, unrecognised and measured-zero apart across both the legacy
+five-column and the widened nine-column shapes.
+"""
 
 
 from __future__ import annotations

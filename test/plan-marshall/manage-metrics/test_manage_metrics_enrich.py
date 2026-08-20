@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-metrics.py CLI script."""
+"""Tests for manage-metrics.py CLI script.
+
+Its sections, in order:
+
+* enrich (Tier 2 - direct import)
+* enrich delegates to the platform-runtime normalized-tokens op
+* total_tokens population labelling
+* format_duration (via generate output) (Tier 2 - direct import)
+* CLI Plumbing Tests (Tier 3 - subprocess, retained for end-to-end coverage)
+"""
 
 
 from _manage_metrics_fixtures import (

@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the notation cross-check on ``pre-commit-verify-freshness``."""
+"""Tests for the notation cross-check on ``pre-commit-verify-freshness``.
+
+Its sections, in order:
+
+* Refusal direction — unrelated evidence no longer passes
+* Acceptance direction — legitimate evidence is not refused
+"""
 
 
 from __future__ import annotations

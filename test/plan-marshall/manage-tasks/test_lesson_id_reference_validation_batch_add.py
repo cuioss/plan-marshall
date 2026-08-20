@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: F811 — a test takes the imported fixture as a parameter
-"""Tests for at-write-time lesson-ID reference validation in manage-tasks."""
+"""Tests for at-write-time lesson-ID reference validation in manage-tasks.
+
+Its sections, in order:
+
+* Case (d) — batch with one valid + one phantom rejects the entire batch
+* Case (e) — lesson IDs cited in the TITLE only are still scanned
+* Case (f) — plan-dir converted-lesson artifact is the tier-2 exemption.
+"""
 
 
 import json

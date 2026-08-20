@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-metrics.py CLI script."""
+"""Tests for manage-metrics.py CLI script.
+
+Its one section: require_plan_exists guard on plan-scoped writers (orphan-plan-dir guard).
+"""
 
 
 import pytest

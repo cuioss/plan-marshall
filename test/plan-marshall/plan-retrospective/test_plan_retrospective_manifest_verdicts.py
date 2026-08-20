@@ -1,6 +1,13 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Tests for ``check-manifest-consistency.py`` and the manifest-aware
 forward in ``check-artifact-consistency.py``.
+
+Its sections, in order:
+
+* Skipped path: no manifest present
+* Rule M5: manifest version recognition
+* Rule M1: docs-only manifest
+* Rule M2: early_terminate
 """
 
 

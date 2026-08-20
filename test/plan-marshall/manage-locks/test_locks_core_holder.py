@@ -1,6 +1,16 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-locks ``_locks_core.py`` shared coordination primitives."""
+"""Tests for manage-locks ``_locks_core.py`` shared coordination primitives.
+
+Its sections, in order:
+
+* holder_is_dead — empty / malformed holder
+* holder_is_dead — liveness via main checkout
+* holder_is_dead — liveness via the holder's worktree
+* holder_is_dead — project-qualified liveness (project_root=, machine-global lock)
+* holder_has_live_worktree — genuine live/mid-recovery worktree marker
+* holder_staleness — main-anchored three-valued verdict
+"""
 
 
 from __future__ import annotations

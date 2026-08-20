@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``script-failure-analysis.py``."""
+"""Tests for ``script-failure-analysis.py``.
+
+Scope: record-prefix drift reported as unrecognised rather than a clean zero, and
+the deduplication around it — recurring subtypes collapsed, distinct ones kept, and
+a mirrored work failure dropped.
+"""
 
 
 from __future__ import annotations

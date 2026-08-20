@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-metrics.py CLI script."""
+"""Tests for manage-metrics.py CLI script.
+
+Scope: which population a rendered row declares — when a total is marked because an
+inline row fed it, when an inline measure is excluded from the dispatched maximum,
+and when a report carries no annotation at all.
+"""
 
 
 import pytest

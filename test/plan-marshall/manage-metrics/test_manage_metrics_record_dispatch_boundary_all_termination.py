@@ -1,6 +1,16 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the `record-dispatch-boundary` subcommand of manage_metrics."""
+"""Tests for the `record-dispatch-boundary` subcommand of manage_metrics.
+
+Its sections, in order:
+
+* (c) Every documented --termination-cause value is accepted
+* (d) Any other --termination-cause value is rejected with non-zero exit
+* (f) The artifact's TOON layout is parseable by the parse_toon helper
+* (g) DISPATCH_TERMINATION_CAUSES schema migration — clean_exit_queue_empty
+* (i) budget_yield — the phase-5 budget-bounded dispatch loop's yield signal
+* (j) returned_with_findings — the productive-loop-back dispatch-ledger member
+"""
 
 
 from __future__ import annotations

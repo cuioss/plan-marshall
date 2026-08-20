@@ -1,5 +1,12 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the oracle-backed footprint classification shared by the two checks."""
+"""Tests for the oracle-backed footprint classification shared by the two checks.
+
+Its sections, in order:
+
+* D5c — rule M3 fires on the composer's real step-list shape
+* D5d — the documented relative invocation equals the absolute one
+* The reduction report's membership is derived, not mirrored
+"""
 
 
 from __future__ import annotations

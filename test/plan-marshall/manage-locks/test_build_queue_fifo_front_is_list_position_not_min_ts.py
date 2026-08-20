@@ -3,6 +3,8 @@
 # ruff: noqa: F811 — tests take the imported fixture as a parameter
 """Tests for ``manage-locks/build_queue.py`` — the bounded-``k``-slot build-queue
 concurrency limiter with a FIFO waiting queue.
+
+Its one section: FIFO front is list position, NOT admit-ts (inverted-ts regression).
 """
 
 

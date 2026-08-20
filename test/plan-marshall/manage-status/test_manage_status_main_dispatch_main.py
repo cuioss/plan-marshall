@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""In-process tests for the manage-status.py CLI dispatcher (``main``)."""
+"""In-process tests for the manage-status.py CLI dispatcher (``main``).
+
+Its sections, in order:
+
+* create -> read roundtrip through the dispatcher
+* route / self-test (no plan required)
+* metadata / title-token / update-phase / progress
+"""
 
 
 import json

@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-findings.py script."""
+"""Tests for manage-findings.py script.
+
+Its sections, in order:
+
+* Q-Gate Add Command
+* Q-Gate Deduplication
+* Q-Gate Query Command
+"""
 
 
 from _manage_findings_fixtures import (

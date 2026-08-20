@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: F811 — a test takes the imported fixture as a parameter
-"""Tests for at-write-time lesson-ID reference validation in manage-tasks."""
+"""Tests for at-write-time lesson-ID reference validation in manage-tasks.
+
+Its sections, in order:
+
+* Case (a) — no lesson-ID tokens → success (and inventory is NOT consulted)
+* Case (b) — task cites a real lesson ID that resolves → success
+* Case (c) — phantom ID hard-fails; no TASK file written; payload contract held
+* Case (e) — lesson IDs cited in the TITLE only are still scanned
+* Case (f) — plan-dir converted-lesson artifact is the tier-2 exemption.
+"""
 
 
 from _lesson_id_reference_validation_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference

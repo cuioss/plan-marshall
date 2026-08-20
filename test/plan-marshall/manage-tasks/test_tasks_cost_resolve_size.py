@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for deterministic task cost-sizing (_tasks_cost.py)."""
+"""Tests for deterministic task cost-sizing (_tasks_cost.py).
+
+Its sections, in order:
+
+* resolve_size_table
+* derive_cost_size — public entry point
+* Worked examples (rubric § 4) — canonical cases the deriver MUST agree with
+* Subcommand integration via manage-tasks (Tier 3 — CLI plumbing)
+"""
 
 
 import pytest

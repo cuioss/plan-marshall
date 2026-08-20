@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the deterministic classification-validation gate."""
+"""Tests for the deterministic classification-validation gate.
+
+Its sections, in order:
+
+* Folded into planning-lane route — pre-route pass, never blocks the lane
+* Both mismatches together
+* Dedup on re-run
+* Subcommand wrapper + missing-plan handling
+"""
 
 
 from __future__ import annotations

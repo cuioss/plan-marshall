@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for the ``add`` subcommand of manage-lessons.py."""
+"""Tests for the ``add`` subcommand of manage-lessons.py.
+
+Its one section: cross-repo wrong-store refusal guard.
+"""
 
 
 import _lessons_io

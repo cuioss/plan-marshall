@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the oracle-backed footprint classification shared by the two checks."""
+"""Tests for the oracle-backed footprint classification shared by the two checks.
+
+Its one section: A verdict over no evidence is not a clean result.
+"""
 
 
 from __future__ import annotations

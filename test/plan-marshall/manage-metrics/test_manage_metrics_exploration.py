@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-metrics.py CLI script."""
+"""Tests for manage-metrics.py CLI script.
+
+Scope: the exploration buckets, counters and subsource fields — that each matches
+the platform-runtime contract, that an absent counter is not persisted as zero while
+a measured zero is, and that the source reaches no transcript-engine symbol.
+"""
 
 
 from pathlib import Path

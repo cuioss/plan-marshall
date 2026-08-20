@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for the trivial getter/setter CRUD subcommands of manage-lessons.py."""
+"""Tests for the trivial getter/setter CRUD subcommands of manage-lessons.py.
+
+Its sections, in order:
+
+* cmd_set_title — only first H1 rewritten (case f)
+* cmd_set_title — malformed lesson (no H1)
+"""
 
 
 from argparse import Namespace

@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-metrics.py CLI script."""
+"""Tests for manage-metrics.py CLI script.
+
+Scope: cache-read attribution — the fields against the platform-runtime contract,
+the render map's coverage of every residual, and absent versus measured zero on both
+the persisted and the rendered side.
+"""
 
 
 from _manage_metrics_fixtures import (

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the field-only ``title-token`` verb of manage-status.py."""
+"""Tests for the field-only ``title-token`` verb of manage-status.py.
+
+Its one section: drive seam: the archive-time teardown seam is GONE.
+"""
 
 
 from argparse import Namespace

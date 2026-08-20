@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the `phase-boundary` subcommand of manage_metrics."""
+"""Tests for the `phase-boundary` subcommand of manage_metrics.
+
+Its sections, in order:
+
+* Boundary monotonicity detector (D3): a finalize loop-back re-enters an earlier
+* Rule A + Rule B — two explicit-flag closes accumulate every field
+"""
 
 
 from _manage_metrics_fixtures import (

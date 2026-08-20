@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``analyze-logs.py``."""
+"""Tests for ``analyze-logs.py``.
+
+Scope: the log-entry counts, phases seen, script-duration percentiles and
+slowest-script ordering, and the finding raised when modified files carry no
+artifacts.
+"""
 
 
 from __future__ import annotations

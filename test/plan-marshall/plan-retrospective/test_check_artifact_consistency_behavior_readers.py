@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""In-process behavioral tests for ``check-artifact-consistency.py``."""
+"""In-process behavioral tests for ``check-artifact-consistency.py``.
+
+Scope: the readers underneath the checks — plan-path resolution per mode, the status
+reader's behaviour on a missing, malformed or non-dict file, and the section and
+deliverable-count checks built on them.
+"""
 
 
 from __future__ import annotations

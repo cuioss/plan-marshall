@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for the trivial getter/setter CRUD subcommands of manage-lessons.py."""
+"""Tests for the trivial getter/setter CRUD subcommands of manage-lessons.py.
+
+Its sections, in order:
+
+* cmd_set_title — happy paths
+* cmd_set_title — superseded lifecycle (case b)
+* cmd_set_title — error path (case c)
+* cmd_set_title — idempotency (case d)
+* cmd_set_title — frontmatter preservation (case e)
+"""
 
 
 from argparse import Namespace

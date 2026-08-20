@@ -1,6 +1,17 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the field-only ``title-token`` verb of manage-status.py."""
+"""Tests for the field-only ``title-token`` verb of manage-status.py.
+
+Its sections, in order:
+
+* Guard: the state and owner vocabularies are exactly the documented sets
+* staleness: read-side, age-based, clearable by ANY owner
+* set: each of the two states writes status.title_token
+* arbitration: open SET (last writer wins), owner-scoped CLEAR
+* argparse: invalid --state / --owner is rejected with exit code 2
+* no rendering: the verb writes no title-body.txt artifact
+* phase writers: NO title-token sweep — staleness is resolved read-side
+"""
 
 
 from argparse import Namespace

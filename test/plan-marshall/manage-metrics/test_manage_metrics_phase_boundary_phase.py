@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the `phase-boundary` subcommand of manage_metrics."""
+"""Tests for the `phase-boundary` subcommand of manage_metrics.
+
+Its sections, in order:
+
+* Successful boundary semantics
+* Invalid input rejection
+* 1-init start_time backfill
+"""
 
 
 from _manage_metrics_fixtures import (

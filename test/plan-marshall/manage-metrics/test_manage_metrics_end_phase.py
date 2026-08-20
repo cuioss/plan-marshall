@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-metrics.py CLI script."""
+"""Tests for manage-metrics.py CLI script.
+
+Its sections, in order:
+
+* start-phase (Tier 2 - direct import)
+* end-phase (Tier 2 - direct import)
+* end-phase accumulator fallback (Tier 2 - direct import)
+* generate (Tier 2 - direct import)
+"""
 
 
 import pytest

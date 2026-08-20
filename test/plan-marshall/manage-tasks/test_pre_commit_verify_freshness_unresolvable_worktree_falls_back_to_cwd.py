@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the ``pre-commit-verify-freshness`` subcommand of manage-tasks."""
+"""Tests for the ``pre-commit-verify-freshness`` subcommand of manage-tasks.
+
+Scope: that an unresolvable worktree falls back to the current directory.
+"""
 
 
 from __future__ import annotations

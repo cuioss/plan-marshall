@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``summarize-invariants.py``."""
+"""Tests for ``summarize-invariants.py``.
+
+Scope: which invariants are expected of a phase — required steps only where they are
+declared, and the worktree invariant only for a plan actually routed to one, never
+for a main-checkout plan.
+"""
 
 
 from __future__ import annotations

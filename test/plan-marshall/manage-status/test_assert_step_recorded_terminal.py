@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the assert-step-recorded subcommand of manage-status."""
+"""Tests for the assert-step-recorded subcommand of manage-status.
+
+Its sections, in order:
+
+* Step recorded and terminal -> success
+* Step recorded but non-terminal value -> not recorded
+* Legacy-vs-canonical duplicate: the fresher canonical write must win over a
+* Canonical step-key round-trip: a bare↔default: / promoted-alias variant
+* Step not recorded -> not recorded / error under --require-terminal
+"""
 
 
 import pytest

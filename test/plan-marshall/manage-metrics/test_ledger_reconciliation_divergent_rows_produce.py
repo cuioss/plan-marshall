@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Cross-ledger reconciliation: a disagreement becomes a finding, not a silent choice."""
+"""Cross-ledger reconciliation: a disagreement becomes a finding, not a silent choice.
+
+Scope: one finding per divergent row rather than per phase, the window bounding the
+comparison in both directions, and the distinct shapes a never-closed and a
+re-entered phase each take.
+"""
 
 
 from datetime import timedelta

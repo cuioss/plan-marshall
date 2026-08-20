@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the merge-authorization subcommand of manage-status."""
+"""Tests for the merge-authorization subcommand of manage-status.
+
+Its sections, in order:
+
+* grant — persistence and the overwrite-is-the-re-seek contract
+* check — the single-question contract, pinned at the CLI boundary
+* check — admissibility: the gap class, not just the HEAD
+* check — the lapse rule (D5a) and the re-seek (D5b)
+"""
 
 
 from _merge_authorization_fixtures import (

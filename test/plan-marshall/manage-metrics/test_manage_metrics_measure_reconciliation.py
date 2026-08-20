@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-metrics.py CLI script."""
+"""Tests for manage-metrics.py CLI script.
+
+Its sections, in order:
+
+* Symmetric reconciliation across the competing dispatched-population measures
+* billing_weighted_total as a first-class cost figure
+"""
 
 
 from _manage_metrics_fixtures import (

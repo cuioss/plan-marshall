@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Unit tests for _findings_core.py - the storage engine for findings and Q-Gate findings."""
+"""Unit tests for _findings_core.py - the storage engine for findings and Q-Gate findings.
+
+Its sections, in order:
+
+* add_finding
+* pr-comment author / kind first-class fields
+* pr-comment reviewed_commit_sha / bot_kind first-class fields
+* Q-Gate findings
+* add_qgate_finding_checked — the centralized persist+partition helper
+"""
 
 
 from _findings_store_fixtures import (

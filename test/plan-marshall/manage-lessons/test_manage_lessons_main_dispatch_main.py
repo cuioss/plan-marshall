@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""In-process ``main()`` dispatch tests for manage-lessons.py."""
+"""In-process ``main()`` dispatch tests for manage-lessons.py.
+
+Scope: the ``main()`` dispatch for every subcommand — what each emits on success,
+the aliases that reach the same handler, and the error each reports for a missing
+lesson, a malformed payload or an absent root.
+"""
 
 
 from pathlib import Path

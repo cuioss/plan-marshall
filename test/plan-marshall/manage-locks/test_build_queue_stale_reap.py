@@ -3,6 +3,10 @@
 # ruff: noqa: F811 — tests take the imported fixture as a parameter
 """Tests for ``manage-locks/build_queue.py`` — the bounded-``k``-slot build-queue
 concurrency limiter with a FIFO waiting queue.
+
+Scope: reaping a stale active entry on the next acquire or release, the
+``active_since`` stamp every admission path must leave, and the staleness limit that
+grows with a long hold between its floor and its ceiling.
 """
 
 

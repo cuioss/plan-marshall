@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the ``planning-lane`` subcommand of manage-status."""
+"""Tests for the ``planning-lane`` subcommand of manage-status.
+
+Its sections, in order:
+
+* cmd_scope_estimate_heuristic — persistence to references.json
+* Dispatch wiring — scope-estimate-heuristic
+"""
 
 
 from __future__ import annotations

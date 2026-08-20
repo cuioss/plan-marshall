@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-locks ``_locks_core.py`` shared coordination primitives."""
+"""Tests for manage-locks ``_locks_core.py`` shared coordination primitives.
+
+Its sections, in order:
+
+* rmw_json — missing pre-state / existing pre-state / mutate semantics
+* rmw_json — serialization under concurrency (TOCTOU correctness)
+* [LOCK] event emission — log_lock_event + _resolve_lock_log_path
+"""
 
 
 from __future__ import annotations

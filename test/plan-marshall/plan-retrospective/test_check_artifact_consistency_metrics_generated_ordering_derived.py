@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``check-artifact-consistency.py``."""
+"""Tests for ``check-artifact-consistency.py``.
+
+Scope: the step ordering that decides whether absent metrics are a failure or merely
+inconclusive — read from real discovery, and inconclusive rather than fail whenever
+the ordering cannot be resolved.
+"""
 
 
 from __future__ import annotations

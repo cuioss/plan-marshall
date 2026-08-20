@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""The suspect-zero census — the class guard."""
+"""The suspect-zero census — the class guard.
+
+Scope: the zero streak and the population it is measured over — an unread count is
+no count, a check that examined no plans is starved rather than disciplinary, and a
+partial exclusion is still disciplinary.
+"""
 
 
 import re

@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``collect-fragments.py``."""
+"""Tests for ``collect-fragments.py``.
+
+Scope: the ``add`` command — the bundle and parent directories it creates, the
+overwrite flag's two outcomes, and the aspects it refuses: unregistered,
+reserved-underscore, and a bundle missing its meta mode.
+"""
 
 
 from __future__ import annotations

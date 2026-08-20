@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the persisted denominators and their sampling-point discriminator."""
+"""Tests for when a persisted denominator is ABSENT rather than zero.
+
+An unreadable, malformed or only partly determinable source must leave the
+denominator absent, and a stale pair must be removed once its source stops being
+readable — none of which may be reported as a zero. A real but empty population
+is the opposite case and must count as zero. Two further tests hold the
+deliverable count against its sibling producer and the sampling point against
+the module's single discriminator vocabulary.
+"""
 
 
 import json

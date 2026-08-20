@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``script-failure-analysis.py``."""
+"""Tests for ``script-failure-analysis.py``.
+
+Its one section: Unit tests (pure helpers).
+"""
 
 
 from __future__ import annotations

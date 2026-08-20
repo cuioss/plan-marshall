@@ -3,6 +3,11 @@
 # ruff: noqa: F811 — tests take the imported fixture as a parameter
 """Tests for ``manage-locks/build_queue.py`` — the bounded-``k``-slot build-queue
 concurrency limiter with a FIFO waiting queue.
+
+Its sections, in order:
+
+* CLI argparse plumbing
+* [LOCK] event emission (best-effort, AFTER rmw_json commits)
 """
 
 

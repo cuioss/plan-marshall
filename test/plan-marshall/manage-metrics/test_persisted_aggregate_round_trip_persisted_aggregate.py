@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""The rendered report and the store agree about what exists."""
+"""The rendered report and the store agree about what exists.
+
+Scope: that every rendered total has a persisted counterpart carrying its
+population, exclusions and span marker, that durations persist as milliseconds, and
+that a later write invalidates rather than strands it.
+"""
 
 
 from datetime import UTC, datetime, timedelta

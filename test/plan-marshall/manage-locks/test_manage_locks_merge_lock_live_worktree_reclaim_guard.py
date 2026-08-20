@@ -3,6 +3,8 @@
 # ruff: noqa: F811
 """Tests for the unified ``manage-locks/merge_lock.py`` — the single main-anchored
 merge-to-main serializer fronted by a FIFO admission queue.
+
+Its one section: Live-worktree reclaim guard — orphaned shell auto-reclaims, genuine.
 """
 
 

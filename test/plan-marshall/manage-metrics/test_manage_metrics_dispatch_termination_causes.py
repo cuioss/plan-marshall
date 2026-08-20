@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-metrics.py CLI script."""
+"""Tests for manage-metrics.py CLI script.
+
+Scope: the termination-cause enum's exact membership, and how a phase closing a
+second time declares the split on its own row.
+"""
 
 
 from _manage_metrics_fixtures import (

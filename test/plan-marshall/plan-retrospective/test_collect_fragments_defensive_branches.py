@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``collect-fragments.py``."""
+"""Tests for ``collect-fragments.py``.
+
+Its sections, in order:
+
+* Defensive branches — parse exception + non-dict top level
+* main() entry point — exercises argparse configuration
+"""
 
 
 from __future__ import annotations

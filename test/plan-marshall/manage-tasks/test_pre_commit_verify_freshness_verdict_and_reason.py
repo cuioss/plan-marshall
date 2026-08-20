@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the ``pre-commit-verify-freshness`` subcommand of manage-tasks."""
+"""Tests for the verdict ``pre-commit-verify-freshness`` returns, and its reason.
+
+Fresh requires a matching build entry for the current sha, across resolved
+notations and among unrelated entries. Everything else is stale: an empty or
+absent ledger, an entry for a different sha, and a build for THIS sha that
+failed, timed out, was killed, or carries no status at all. The last three tests
+hold the stated reason to the row it was actually read from.
+"""
 
 
 from __future__ import annotations

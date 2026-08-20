@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Storage-layout tests for the per-type findings JSONL split."""
+"""Storage-layout tests for the per-type findings JSONL split.
+
+Its sections, in order:
+
+* Query merging: query_findings concatenates every per-type file
+* Filter-after-merge: type, resolution, promoted, file_pattern
+* Hash-id-only operations: locate the owning per-type file
+"""
 
 
 from _findings_storage_fixtures import (

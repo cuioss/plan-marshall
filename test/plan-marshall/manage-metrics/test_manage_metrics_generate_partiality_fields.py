@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-metrics.py CLI script."""
+"""Tests for manage-metrics.py CLI script.
+
+Scope: the missing-end-time partiality pair — what ``generate`` returns, what
+reaches metrics.toon, and the marker the report renders.
+"""
 
 
 from _manage_metrics_fixtures import (
@@ -201,7 +205,8 @@ class TestGeneratePartialityFields:
 class TestGenerateDenominatorFields:
     """`generate` returns each persisted denominator with its sampling point.
 
-    The dedicated behaviour suite lives in `test_denominator_sampling_point*.py`;
+    The dedicated behaviour suites live in `test_denominator_absence_versus_zero.py`
+    and `test_denominator_sampling_point_persistence.py`;
     these two cases pin the `generate` OUTPUT surface itself — that the pair
     reaches the return, and that an undeterminable denominator is omitted from
     it rather than defaulted, exactly as it is from the record.

@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``compile-report.py``."""
+"""Tests for ``compile-report.py``.
+
+Scope: when a section is dropped loudly rather than omitted benignly — a fragment
+with no present phase, a non-success status carrying findings — and the catch-all
+that still renders an unregistered aspect.
+"""
 
 
 from __future__ import annotations

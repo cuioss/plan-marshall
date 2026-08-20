@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the deterministic classification-validation gate."""
+"""Tests for the deterministic classification-validation gate.
+
+Its sections, in order:
+
+* Mismatch class 3 — a narrow persisted band over a multi-module-sized body
+* Class 3 — scan_incomplete propagation (the detector's own scale-blind spot)
+* Class 3 — fan_out_marker propagation (the sibling of the scan_incomplete row)
+"""
 
 
 from __future__ import annotations

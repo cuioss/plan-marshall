@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the `record-dispatch-boundary` subcommand of manage_metrics."""
+"""Tests for the `record-dispatch-boundary` subcommand of manage_metrics.
+
+Its one section: (h) Script-side require_plan_exists guard.
+"""
 
 
 from __future__ import annotations

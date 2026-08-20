@@ -3,6 +3,12 @@
 # ruff: noqa: F811 — a test takes the imported fixture as a parameter
 """Tests for the unified ``manage-locks/merge_lock.py`` — the single main-anchored
 merge-to-main serializer fronted by a FIFO admission queue.
+
+Its sections, in order:
+
+* Fixtures
+* No double-merge — concurrent serialization (one wins, the others block)
+* Reentrant per plan-id — a same-plan-id re-acquire is granted without blocking
 """
 
 

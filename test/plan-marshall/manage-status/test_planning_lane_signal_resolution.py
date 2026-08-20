@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the ``planning-lane`` subcommand of manage-status."""
+"""Tests for the ``planning-lane`` subcommand of manage-status.
+
+Its sections, in order:
+
+* All-light default
+* Each signal firing deep in isolation
+* S5 regex constants + _request_is_concrete importability (downstream consumers)
+* plan.phase-1-init.deep_lane short-circuit
+* project_profile_pure — execution-profile posture projection
+"""
 
 
 from __future__ import annotations

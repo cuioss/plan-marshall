@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the mark-step-done subcommand of manage-status."""
+"""Tests for the mark-step-done subcommand of manage-status.
+
+Its sections, in order:
+
+* head_at_completion field
+* Step-key canonicalization
+* Stale legacy-key duplicate migration
+"""
 
 
 import pytest

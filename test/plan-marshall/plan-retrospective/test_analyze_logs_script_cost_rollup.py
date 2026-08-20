@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``analyze-logs.py``."""
+"""Tests for ``analyze-logs.py``.
+
+Scope: the per-script cost rollup — which durations are summed, which rows are
+excluded from the sum, how the population is published even with no per-task
+emission, and the ranking that results.
+"""
 
 
 from __future__ import annotations

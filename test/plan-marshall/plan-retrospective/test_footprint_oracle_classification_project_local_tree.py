@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the oracle-backed footprint classification shared by the two checks."""
+"""Tests for the oracle-backed footprint classification shared by the two checks.
+
+Its sections, in order:
+
+* D5a — the project-local production tree survives the filter
+* D5b — a reduced input set reports the reduction
+"""
 
 
 from __future__ import annotations

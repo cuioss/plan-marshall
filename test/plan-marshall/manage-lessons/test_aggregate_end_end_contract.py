@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""
-Tests for the ``aggregate`` subcommand of manage-lessons.py.
+"""Tests for the ``aggregate`` subcommand of manage-lessons.py.
+
+Its sections, in order:
+
+* Case (g) — merged-body composition (preview)
+* Case (h) — end-to-end fixture matching the orchestrator consumption contract
 """
 
 

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the ``planning-lane`` subcommand of manage-status."""
+"""Tests for the ``planning-lane`` subcommand of manage-status.
+
+Its one section: _read_request_body — the whole-body, heading-blind read.
+"""
 
 
 from __future__ import annotations

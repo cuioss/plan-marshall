@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the `batch-add` subcommand of manage-tasks."""
+"""Tests for the `batch-add` subcommand of manage-tasks.
+
+Its sections, in order:
+
+* Successful batch insertion
+* Validation rejection
+* Required per-step intent (JSON batch object-step contract)
+* --tasks-file PATH input (parity with --tasks-json)
+"""
 
 
 import json

@@ -1,5 +1,12 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``analyze-logs.py``."""
+"""Tests for ``analyze-logs.py``.
+
+Its sections, in order:
+
+* Phase-5 logging-gap fact extractors
+* read_dispatch_boundaries_per_phase
+* Integration: cmd_run end-to-end
+"""
 
 
 from __future__ import annotations

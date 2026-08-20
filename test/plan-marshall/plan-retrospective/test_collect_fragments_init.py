@@ -1,5 +1,13 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``collect-fragments.py``."""
+"""Tests for ``collect-fragments.py``.
+
+Its sections, in order:
+
+* init — live mode
+* init — archived mode
+* add — happy path
+* add — fault paths
+"""
 
 
 from __future__ import annotations

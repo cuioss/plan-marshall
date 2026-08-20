@@ -1,6 +1,17 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the deterministic envelope bin-packer (_tasks_envelope.py)."""
+"""Tests for the deterministic envelope bin-packer (_tasks_envelope.py).
+
+Its sections, in order:
+
+* _task_cost — cost extraction & validation
+* pack_envelopes — edge cases (empty list, budget validation)
+* pack_envelopes — single-task envelopes
+* pack_envelopes — multi-task packing within budget
+* pack_envelopes — overflow into a second envelope
+* pack_envelopes — contiguity, order preservation, invariants
+* pack_envelopes — determinism
+"""
 
 
 from itertools import pairwise

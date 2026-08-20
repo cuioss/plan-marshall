@@ -1,5 +1,13 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``collect-fragments.py``."""
+"""Tests for ``collect-fragments.py``.
+
+Its sections, in order:
+
+* add — aspect-key validation guard
+* add — overwrite semantics
+* add — --fragment-file path resolution
+* add → finalize integration: --archived-plan-path agreement
+"""
 
 
 from __future__ import annotations

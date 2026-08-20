@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``analyze-logs.py``."""
+"""Tests for ``analyze-logs.py``.
+
+Scope: the per-phase context-position rate — holding a recording gap apart from an
+undefined ratio and from a measured zero — and the slow-call ceiling that fires
+independently of it.
+"""
 
 
 from __future__ import annotations

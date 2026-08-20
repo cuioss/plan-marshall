@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001, E402
-"""End-to-end regression over a re-entered, multiply-fired, partly-unmeasured, denominated plan."""
+"""End-to-end regression over a re-entered, multiply-fired, partly-unmeasured, denominated plan.
+
+Its sections, in order:
+
+* The composed record: no field asserts an unearned value
+* Fixtures: one file carrying both representations, and the legacy floor
+"""
 
 
 from __future__ import annotations

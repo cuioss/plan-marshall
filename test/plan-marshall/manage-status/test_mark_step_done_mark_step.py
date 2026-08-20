@@ -1,6 +1,16 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the mark-step-done subcommand of manage-status."""
+"""Tests for the mark-step-done subcommand of manage-status.
+
+Its sections, in order:
+
+* Happy path
+* Idempotency
+* Conflict handling
+* Legacy bare-string rejection (unforced) and migration (forced)
+* Multi-phase / multi-step coexistence
+* Error paths
+"""
 
 
 from _mark_step_done_fixtures import _args, _make_plan, cmd_mark_step_done, read_status, write_status

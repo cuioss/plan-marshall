@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``check-artifact-consistency.py``."""
+"""Tests for ``check-artifact-consistency.py``.
+
+Scope: what an unresolvable footprint makes of each verdict — inconclusive rather
+than a zero percent or a set mismatch — and that the summary reconciles across pass,
+warn, inconclusive and failing plans alike.
+"""
 
 
 from __future__ import annotations

@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the ``consult`` subcommand of manage-lessons.py."""
+"""Tests for the ``consult`` subcommand of manage-lessons.py.
+
+Scope: which lessons a component query surfaces and in what order, and how the
+per-component cap bounds them — what a binding cap reports, what it keeps, and the
+rejection a negative cap earns.
+"""
 
 
 from _consult_fixtures import (

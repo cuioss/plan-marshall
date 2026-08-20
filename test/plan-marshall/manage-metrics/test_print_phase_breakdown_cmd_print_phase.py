@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-metrics.py `print-phase-breakdown` subcommand."""
+"""Tests for manage-metrics.py `print-phase-breakdown` subcommand.
+
+Scope: extracting the phase-breakdown section — its billing column and population
+header, where the section ends, and the artifact the command writes, including the
+rejection of an absolute output path.
+"""
 
 
 import io

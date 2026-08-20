@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-findings.py script."""
+"""Tests for manage-findings.py script.
+
+Its one section: CLI Plumbing Tests (subprocess).
+"""
 
 
 from _manage_findings_fixtures import SCRIPT_PATH

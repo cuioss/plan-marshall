@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``check-artifact-consistency.py``."""
+"""Tests for ``check-artifact-consistency.py``.
+
+Scope: the five affected-files agreement cases (exact, either superset, disjoint,
+both empty) and the bullet extraction that feeds them, including what a deliverable
+that will not parse does to recall.
+"""
 
 
 from __future__ import annotations

@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the phase-4-plan mechanical Q-Gate's CLOSURE checks."""
+"""Tests for the phase-4-plan mechanical Q-Gate's CLOSURE checks.
+
+Its sections, in order:
+
+* Population — the positive-population guard (D3)
+* End-to-end through the mechanical Q-Gate
+"""
 
 
 from __future__ import annotations

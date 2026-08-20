@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the oracle-backed footprint classification shared by the two checks."""
+"""Tests for the oracle-backed footprint classification shared by the two checks.
+
+Its sections, in order:
+
+* The oracle can be silent about test files, and silence must not read as production
+* The summary must be total over what was emitted
+"""
 
 
 from __future__ import annotations

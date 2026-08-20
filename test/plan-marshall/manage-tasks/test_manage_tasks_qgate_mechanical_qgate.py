@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the ``qgate-mechanical-checks`` subcommand of manage-tasks."""
+"""Tests for the ``qgate-mechanical-checks`` subcommand of manage-tasks.
+
+Its sections, in order:
+
+* Smoke / happy-path
+* Coverage check
+* Skill resolution check
+"""
 
 
 from __future__ import annotations

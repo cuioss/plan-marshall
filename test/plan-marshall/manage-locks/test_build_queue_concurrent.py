@@ -3,6 +3,11 @@
 # ruff: noqa: F811 — tests take the imported fixture as a parameter
 """Tests for ``manage-locks/build_queue.py`` — the bounded-``k``-slot build-queue
 concurrency limiter with a FIFO waiting queue.
+
+Its sections, in order:
+
+* §5 (i) — no over-admit at the slot boundary, under REAL spawned-process
+* §5 (iii) — concurrent release + FIFO promote never double-promotes or loses a
 """
 
 

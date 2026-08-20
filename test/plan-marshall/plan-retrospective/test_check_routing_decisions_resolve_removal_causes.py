@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""In-process behavioral tests for ``check-routing-decisions.py``."""
+"""In-process behavioral tests for ``check-routing-decisions.py``.
+
+Scope: resolving the diff a removal is read from — the capture fallback and the
+precedence between them — and recording each drop against the gate that caused it,
+with prefixed step keys normalised to bare.
+"""
 
 
 from __future__ import annotations

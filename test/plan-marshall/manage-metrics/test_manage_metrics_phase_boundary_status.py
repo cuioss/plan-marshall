@@ -1,6 +1,16 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the `phase-boundary` subcommand of manage_metrics."""
+"""Tests for the `phase-boundary` subcommand of manage_metrics.
+
+Its sections, in order:
+
+* D5/D6 — worked <= wall clamp invariant
+* D8 — retrospective_tokens attribution write
+* missing: half-stamped boundary (the case the verb exists to detect)
+* stamped: complete boundary left unchanged
+* not_applicable: prev phase never started — nothing to reconcile
+* invalid input rejection
+"""
 
 
 from _manage_metrics_fixtures import (

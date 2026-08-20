@@ -1,5 +1,14 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``analyze-logs.py``."""
+"""Tests for ``analyze-logs.py``.
+
+Its sections, in order:
+
+* Precondition gate
+* Genuine background-poll signals
+* Regression: bare keywords no longer trigger (false-positive class)
+* CI-wait exemptions
+* Window boundary + multi-attempt counting
+"""
 
 
 from __future__ import annotations

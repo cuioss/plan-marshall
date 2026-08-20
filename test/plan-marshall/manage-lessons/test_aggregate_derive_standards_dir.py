@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""
-Tests for the ``aggregate`` subcommand of manage-lessons.py.
+"""Tests for the ``aggregate`` subcommand of manage-lessons.py.
+
+Its sections, in order:
+
+* Case (a) — grouping by shared component
+* Case (b) — grouping by shared standards directory
+* Case (c) — grouping by cross-reference
 """
 
 

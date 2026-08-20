@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: F811 — tests take the imported fixture as a parameter
-"""Tests for manage-adr.py script."""
+"""Tests for manage-adr.py script.
+
+Its sections, in order:
+
+* Direct import tests
+* scan subcommand
+* Width-agnostic numeric-prefix parsing and numbering
+"""
 
 
 from argparse import Namespace

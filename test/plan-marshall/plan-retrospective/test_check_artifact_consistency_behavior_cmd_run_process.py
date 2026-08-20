@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""In-process behavioral tests for ``check-artifact-consistency.py``."""
+"""In-process behavioral tests for ``check-artifact-consistency.py``.
+
+Scope: the whole-command run — which verdicts reach findings, at what severity, and
+how the presence of a manifest downgrades a warning without forwarding an
+inconclusive one.
+"""
 
 
 from __future__ import annotations

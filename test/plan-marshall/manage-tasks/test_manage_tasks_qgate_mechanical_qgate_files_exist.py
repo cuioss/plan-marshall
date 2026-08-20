@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the ``qgate-mechanical-checks`` subcommand of manage-tasks."""
+"""Tests for the ``qgate-mechanical-checks`` subcommand of manage-tasks.
+
+Scope: the files-exist check across every operation — read, write-new, write-replace
+and delete — and which combination of operation and on-disk presence is a flag
+rather than a pass.
+"""
 
 
 from __future__ import annotations

@@ -3,6 +3,13 @@
 # ruff: noqa: F811 — tests take the imported fixture as a parameter
 """Tests for the ``merge_lock.py`` ``rate-window`` verbs — the cross-plan claim on
 ONE review bot's rate window, co-tenanting the merge-lock store.
+
+Its sections, in order:
+
+* Fixtures and helpers
+* Claim
+* Check (non-mutating) — the observable the recovery sequence polls
+* Release
 """
 
 

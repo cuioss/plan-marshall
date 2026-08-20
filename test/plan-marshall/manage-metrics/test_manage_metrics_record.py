@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-metrics.py CLI script."""
+"""Tests for manage-metrics.py CLI script.
+
+Scope: recording a termination cause into its per-phase artifact — the phase-4-plan,
+phase-5 and phase-6-finalize paths, and the rejection an invalid cause earns.
+"""
 
 
 import pytest

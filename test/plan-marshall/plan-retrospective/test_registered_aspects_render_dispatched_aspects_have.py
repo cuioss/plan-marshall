@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Registered ⇒ rendered completeness guard for the retrospective report pipeline."""
+"""Registered ⇒ rendered completeness guard for the retrospective report pipeline.
+
+Scope: that every registerable aspect has a render path and every dispatched aspect
+is registerable with a section-spec row, that the scanner reaches both dispatch
+shapes, and that the guard bites when a row is missing.
+"""
 
 
 from __future__ import annotations

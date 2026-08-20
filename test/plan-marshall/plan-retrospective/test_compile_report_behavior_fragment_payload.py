@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""In-process behavioral tests for ``compile-report.py``."""
+"""In-process behavioral tests for ``compile-report.py``.
+
+Scope: what counts as fragment payload — a bare skipped fragment against one naming
+its reason, envelope-only values, and numeric zero — plus the archived run that
+writes its audit report and deletes the bundle.
+"""
 
 
 from __future__ import annotations

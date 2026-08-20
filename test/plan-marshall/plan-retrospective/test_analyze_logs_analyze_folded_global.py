@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``analyze-logs.py``."""
+"""Tests for ``analyze-logs.py``.
+
+Scope: the signals read from folded global logs — line counts, error and slow-call
+flags, the fixture-leak signature — and the tier-1 live diff, which runs only when a
+worktree resolves.
+"""
 
 
 from __future__ import annotations

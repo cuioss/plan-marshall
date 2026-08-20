@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""In-process behavioral tests for ``compile-report.py``."""
+"""In-process behavioral tests for ``compile-report.py``.
+
+Scope: which sections are written and which are omitted — a placeholder summary, an
+empty bundle, an empty or payload-free fragment, and the registry rows that always
+emit — with written implying payload throughout.
+"""
 
 
 from __future__ import annotations
