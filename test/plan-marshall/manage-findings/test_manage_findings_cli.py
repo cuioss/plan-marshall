@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """In-process ``main()`` dispatcher tests for ``manage-findings.py``.
 
-The existing ``test_manage_findings.py`` exercises the ``cmd_*`` handlers
+The existing ``test_manage_findings_*.py`` exercises the ``cmd_*`` handlers
 directly and drives the CLI plumbing through subprocess (``run_script``).
 Subprocess runs do not contribute to coverage, so the entire ``main()``
 argparse-builder + dispatch surface (every subparser, ``set_defaults(func=...)``

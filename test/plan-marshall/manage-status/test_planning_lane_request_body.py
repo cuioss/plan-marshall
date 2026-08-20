@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """End-to-end regression coverage: an orchestrated plan spec routes on its WHOLE body.
 
-This module is deliberately distinct from ``test_planning_lane.py``. That module
+This module is deliberately distinct from ``test_planning_lane_*.py``. That module
 unit-tests the pure helpers (``scope_estimate_from_request_pure``,
 ``_read_request_body``, ``_distinct_paths``). This one drives the **command entry
 points** — ``cmd_scope_estimate_heuristic`` and ``cmd_planning_lane_route`` —
@@ -60,7 +60,7 @@ Scenarios
    — the bare-filename exclusion is a counter decision, asserted as intended.
 
 No ``conftest.py`` is introduced and no fixture code is shared with
-``test_planning_lane.py``; the helpers below are local to this module.
+``test_planning_lane_*.py``; the helpers below are local to this module.
 """
 
 

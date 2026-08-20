@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """In-process behavioral tests for ``summarize-invariants.py``.
 
-The sibling ``test_summarize_invariants.py`` drives ``cmd_run`` through the
+The sibling ``test_summarize_invariants_*.py`` drives ``cmd_run`` through the
 ``run_script`` subprocess harness and covers ``expected_invariants`` with
 direct calls. This module adds IN-PROCESS coverage for the orchestration
 ``cmd_run`` (missing-invariant findings, drift findings, the no-handshakes

@@ -51,7 +51,7 @@ read_metrics_raw = manage_metrics.read_metrics_raw
 
 
 # =============================================================================
-# require_plan_exists guard seeder (mirrors test_print_phase_breakdown.py)
+# require_plan_exists guard seeder (mirrors test_print_phase_breakdown_*.py)
 # =============================================================================
 
 _UNSEEDED_PLAN_IDS: set[str] = set()

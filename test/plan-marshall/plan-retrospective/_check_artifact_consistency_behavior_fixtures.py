@@ -6,7 +6,7 @@ share. The contract they pin, in full:
 
 In-process behavioral tests for ``check-artifact-consistency.py``.
 
-The existing ``test_check_artifact_consistency.py`` drives the script through
+The existing ``test_check_artifact_consistency_*.py`` drives the script through
 the ``run_script`` subprocess harness (which exercises the real argparse path
 but does not count for in-process coverage) plus a handful of direct
 ``_resolve_footprint`` unit calls. This module complements it by calling

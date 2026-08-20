@@ -15,7 +15,7 @@ modification. The check names this file asserts against are enumerated once, in
 
 The CLOSURE checks (``declared_set_closure``,
 ``declared_scope_reconciliation``) have their own suite in
-``test_qgate_closure.py``; here they are exercised only as members of the full
+``test_qgate_closure_*.py``; here they are exercised only as members of the full
 result — a fixture in this file must be a well-formed plan except for the one
 fault the test injects.
 """

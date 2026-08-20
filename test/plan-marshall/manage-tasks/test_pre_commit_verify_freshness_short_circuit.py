@@ -70,7 +70,7 @@ def _expected_notations_resolve(monkeypatch):
     crawl per test. Pinning the set to the notations this file's fixtures use
     isolates the gate's own logic from the resolver's; the resolver's own
     behaviour — including what it does when resolution fails — is covered in
-    ``test_freshness_notation_crosscheck.py``.
+    ``test_freshness_notation_crosscheck_*.py``.
     """
     _stub_expected_notations(monkeypatch, _RESOLVED_NOTATIONS)
 

@@ -40,7 +40,7 @@ from conftest import load_script_module
 # =============================================================================
 # Module loading — load _tasks_crud directly via importlib so we can patch
 # the module-level scan/verify bindings rather than the source bindings in
-# input_validation. Mirrors the pattern in test_manage_tasks_batch_add.py.
+# input_validation. Mirrors the pattern in test_manage_tasks_batch_add_*.py.
 # =============================================================================
 
 

@@ -36,7 +36,7 @@ check,release}``):
   ``waiting`` FIFO list and ``merge.lock`` untouched, and a merge acquire/release
   round-trip leaves ``rate_windows`` intact (the sibling-key-preservation
   invariant; its merge-side half lives in
-  ``test_manage_locks_merge_lock.py``).
+  ``test_manage_locks_merge_lock_*.py``).
 * **Degraded-state tolerance** — a corrupt or absent ``rate_windows`` value
   degrades to an empty mapping and is rebuilt rather than crashing.
 

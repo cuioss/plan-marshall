@@ -66,7 +66,7 @@ def _expected_notations_resolve(monkeypatch):
     crawl per test. Pinning the set to the notations this file's fixtures use
     isolates the gate's own logic from the resolver's; the resolver's own
     behaviour — including what it does when resolution fails — is covered in
-    ``test_freshness_notation_crosscheck.py``.
+    ``test_freshness_notation_crosscheck_*.py``.
     """
     _stub_expected_notations(monkeypatch, _RESOLVED_NOTATIONS)
 
@@ -198,7 +198,7 @@ def test_fresh_match_is_tier_agnostic_across_resolved_notations(
     It is NOT notation-agnosticism: the row passes because Maven is in the
     architecture-resolved notation set (the pinned fixture), not because the
     gate ignores notations. A notation OUTSIDE that set is refused —
-    ``test_freshness_notation_crosscheck.py`` pins that half.
+    ``test_freshness_notation_crosscheck_*.py`` pins that half.
     """
     plan_dir = plan_context.plan_dir_for('freshness-agnostic')
     _write_status(plan_dir)

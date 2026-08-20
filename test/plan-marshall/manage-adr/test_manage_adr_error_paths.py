@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Error-path and parser-edge tests for manage-adr.py.
 
-The sibling ``test_manage_adr.py`` covers the happy paths (create/list/read/
+The sibling ``test_manage_adr_*.py`` covers the happy paths (create/list/read/
 update/delete/scan/metadata). This module fills the uncovered error branches:
 missing-directory rejections, not-found rejections, invalid-status rejection on
 the direct ``cmd_create`` / ``cmd_update`` paths, the ``status``-omitted update

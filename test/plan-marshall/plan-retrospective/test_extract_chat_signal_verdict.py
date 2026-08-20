@@ -9,7 +9,7 @@ verdict reports more health as the signal it measures degrades.
 
 The provenance predicate these counters rest on is covered by
 ``test_chat_provenance.py``; the parsing and output contract by
-``test_extract_chat_signal.py``. This module owns only the counters, the
+``test_extract_chat_signal_*.py``. This module owns only the counters, the
 gated-decision channel, and the routing verdict they produce.
 """
 

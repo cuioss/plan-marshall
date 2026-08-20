@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Unit tests for the pure computation helpers in manage-metrics.py.
 
-The integration suites (``test_manage_metrics.py``, ``..._phase_boundary.py``)
+The integration suites (``test_manage_metrics_*.py``, ``..._phase_boundary.py``)
 exercise these helpers indirectly through ``generate`` / ``end-phase`` with
 phases whose ``duration_seconds`` is already persisted. This module pins the
 helpers directly, covering the branches the integration paths skip:

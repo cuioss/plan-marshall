@@ -31,7 +31,7 @@ from _merge_lock_rate_window_fixtures import (
 def isolated_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
     """Stage an isolated PLAN_BASE_DIR under tmp_path.
 
-    Mirrors ``test_manage_locks_merge_lock.py``'s fixture: the rate-window state
+    Mirrors ``test_manage_locks_merge_lock_*.py``'s fixture: the rate-window state
     lives in the SAME main-anchored store the FIFO admission queue uses, so both
     resolve to ``<base>/merge-queue.json``.
     """

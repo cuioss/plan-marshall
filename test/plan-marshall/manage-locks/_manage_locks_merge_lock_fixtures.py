@@ -63,9 +63,10 @@ real ``.plan/merge.lock`` / ``.plan/merge-queue.json`` under ``-n auto``. Under
 to ``<PLAN_BASE_DIR>/merge-queue.json``, and holder plan dirs to
 ``<PLAN_BASE_DIR>/plans/{holder}``.
 
-Filename note: this file is named ``test_manage_locks_merge_lock.py`` rather than
-``test_merge_lock.py`` because pytest's default ``prepend`` import mode requires
-unique test-module basenames across the suite.
+Filename note: the modules sharing this preamble are named
+``test_manage_locks_merge_lock_*.py`` rather than ``test_merge_lock_*.py`` because
+pytest's default ``prepend`` import mode requires unique test-module basenames
+across the suite.
 """
 
 
@@ -174,7 +175,7 @@ class _TokenRecorder:
 
     Installed over the three module-level seams ``_set_title_token`` /
     ``_clear_title_token`` / ``_push_title_token`` — the same seam-mock approach
-    used by ``test_build_queue.py`` for the D6 wrapper.
+    used by ``test_build_queue_*.py`` for the D6 wrapper.
     """
 
     def __init__(self) -> None:

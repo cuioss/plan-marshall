@@ -51,7 +51,7 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
 class TestGenerateDenominatorFields:
     """`generate` returns each persisted denominator with its sampling point.
 
-    The dedicated behaviour suite lives in `test_denominator_sampling_point.py`;
+    The dedicated behaviour suite lives in `test_denominator_sampling_point_*.py`;
     these two cases pin the `generate` OUTPUT surface itself — that the pair
     reaches the return, and that an undeterminable denominator is omitted from
     it rather than defaulted, exactly as it is from the record.

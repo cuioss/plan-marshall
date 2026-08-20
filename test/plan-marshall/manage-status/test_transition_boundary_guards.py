@@ -44,7 +44,7 @@ cmd_transition = _lifecycle.cmd_transition
 
 # Standard imports for the handshake modules so the invariant stubs hit the
 # same module instance ``_cmd_lifecycle.cmd_verify`` reads at runtime
-# (mirrors test_manage_status_transition.py).
+# (mirrors test_manage_status_transition_*.py).
 _PLAN_HANDSHAKE_SCRIPTS_DIR = str(
     Path(__file__).parent.parent.parent.parent
     / 'marketplace'
