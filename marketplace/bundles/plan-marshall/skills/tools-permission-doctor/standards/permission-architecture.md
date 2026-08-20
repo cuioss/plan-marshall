@@ -10,13 +10,15 @@ Claude Code uses a three-level settings hierarchy:
 
 ### Resolution Priority
 
+The two directions resolve in opposite orders, and that is deliberate rather than an oversight.
+
 **For reading/discovery:**
-- Project settings (`.claude/settings.json`) takes precedence over local settings
-- If `.claude/settings.json` exists, it is used; otherwise `.claude/settings.local.json` is used
+- Local settings (`.claude/settings.local.json`) take precedence over project settings — they are the entries that actually apply for this operator, so an audit that skipped them would report a configuration nobody is running
+- If `.claude/settings.local.json` exists, it is read; otherwise `.claude/settings.json` is
 - Global settings always apply as baseline
 
 **For writing:**
-- If `.claude/settings.json` exists, write to it (version-controlled)
+- If `.claude/settings.json` exists, write to it (version-controlled) — a project that has chosen a shared file gets the change shared
 - Otherwise, write to `.claude/settings.local.json` (personal)
 
 ### When to Use Each File

@@ -37,6 +37,7 @@ The common permission mutations are platform-neutral: they flow through the `pla
 | Remove a permission | `platform_runtime permission fix --scope project --operation remove --permissions "Bash(docker:*)" [--dry-run]` |
 | Ensure permissions exist | `platform_runtime permission fix --scope global --operation ensure --permissions "Bash(git:*)" "Bash(npm:*)" [--dry-run]` |
 | Consolidate enumerated entries into wildcards | `platform_runtime permission fix --scope project --operation consolidate [--dry-run]` |
+| Protect a directory from being read | `platform_runtime permission fix --scope global --operation protect-path --permissions "$HOME/.plan-marshall/credentials" [--dry-run]` |
 | Set the full permission list | `platform_runtime permission configure --scope project --permissions "Read(**)" "Write(.plan/**)"` |
 | Ensure marketplace bundle wildcards | `platform_runtime permission ensure-wildcards --scope project --marketplace-dir marketplace [--dry-run]` |
 | Ensure `project:{skill}` step permissions | `platform_runtime permission ensure-steps --marshal .plan/marshal.json --scope project [--dry-run]` |
