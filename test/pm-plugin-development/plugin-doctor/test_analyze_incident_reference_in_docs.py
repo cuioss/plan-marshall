@@ -319,10 +319,33 @@ class TestSkipContextExemption:
         assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
 
     def test_backticked_inline_code_ref_is_exempt(self, tmp_path: Path) -> None:
-        """A back-ticked ``#NNNN`` reference is a code token, not narration."""
-        content = 'The `#812` end_time-presence check stays distinguishable.\n'
+        """A back-ticked ``#NNNN`` reference is a code token, not narration.
+
+        The WHOLE narration phrase is quoted, so the family's match starts
+        inside the code span and is skipped. Two earlier framings of this
+        fixture were vacuous for different reasons, and both are worth naming:
+        "the `#812` end_time-presence check" matched no family at all, and
+        "the `#812` failure mode" puts a backtick between the reference and the
+        noun, which breaks the pattern before the exemption is ever consulted.
+        The paired positive below is the control.
+        """
+        content = 'The `#812 failure mode` is documented elsewhere.\n'
         root, _ = _make_skill_file(tmp_path, content)
         assert_analyzer_findings(analyze_incident_reference_in_docs, root, [])
+
+    def test_the_same_sentence_unquoted_is_flagged(self, tmp_path: Path) -> None:
+        """The control for the exemption: without the backticks the rule fires.
+
+        This pair is what makes the exemption test evidence — one sentence, one
+        difference, opposite verdicts.
+        """
+        content = 'The #812 failure mode is documented elsewhere.\n'
+        root, _ = _make_skill_file(tmp_path, content)
+        findings = assert_analyzer_findings(
+            analyze_incident_reference_in_docs, root, [RULE_ID]
+        )
+        assert findings[0]['pattern_family'] == 'incident_term_of_art'
+        assert findings[0]['snippet'] == '#812 failure mode'
 
 
 # ===========================================================================
