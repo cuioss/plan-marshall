@@ -857,6 +857,32 @@ def derive_landing_state(pr_states: list[str], pushed: bool) -> str:
 # ---------------------------------------------------------------------------
 
 
+# The executor notation the CI surface is reached through, and the router flags
+# ``ci.py`` consumes with ``extract_routing_args`` BEFORE the provider parser is
+# built. Both are handed to ``parse_args_with_toon_errors`` by
+# :func:`parse_ci_args`: without the flag names the misplaced-router-flag note
+# could never fire on this surface (the provider's root parser declares
+# neither), and without the notation its worked example would be built from
+# ``parser.prog`` — a bare script filename the script-execution convention
+# forbids.
+CI_NOTATION = 'plan-marshall:tools-integration-ci:ci'
+CI_ROUTER_FLAGS = ('--plan-id', '--project-dir')
+
+
+def parse_ci_args(parser: argparse.ArgumentParser) -> argparse.Namespace:
+    """Parse a CI provider's argv, with the router flags known to the error path.
+
+    Every provider front-end parses through here rather than calling
+    ``parse_args_with_toon_errors`` directly, so a router flag written after the
+    verb gets the placement note on every provider rather than on whichever one
+    remembered to ask for it.
+    """
+    args: argparse.Namespace = parse_args_with_toon_errors(
+        parser, notation=CI_NOTATION, extra_router_flags=CI_ROUTER_FLAGS
+    )
+    return args
+
+
 def build_parser(
     description: str,
 ) -> tuple[
