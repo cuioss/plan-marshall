@@ -37,7 +37,7 @@ the set of follow-up plans and documentation updates authored from them, not the
 | 0.1 | `which opencode` | Returns a path; otherwise BLOCKED — install OpenCode first |
 | 0.2 | `opencode --version` | Version string captured for the log |
 | 0.3 | `ls ~/.config/opencode/` | Config dir exists (or an alternate config path works) |
-| 0.4 | `python3 marketplace/targets/generate.py --help` | `--target` choices include `opencode` (registry-derived) |
+| 0.4 | `uv run python marketplace/targets/generate.py --help` | `--target` choices include `opencode` (registry-derived) |
 
 Plans `010` (runtime seam neutrality) and `040` (`sync-opencode` inner loop) should land first:
 `010` removes the fixed dispatch level the runtime currently returns (check 2.2d exercises the
@@ -51,7 +51,7 @@ Neither is a hard prerequisite — § 1.2 documents the manual fallback.
 ### 1.1 Generate the OpenCode target tree
 
 ```bash
-python3 marketplace/targets/generate.py --target opencode --output target/opencode
+uv run python marketplace/targets/generate.py --target opencode --output target/opencode
 ```
 
 | Check | What to observe | Pass |

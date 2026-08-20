@@ -101,18 +101,22 @@ later plan to scope.
 ## D. Target-specific component candidates (the `targets:` filter's consumers)
 
 Whole capabilities that exist only on the Claude target and pass the admission test in
-[principles §6](principles.md). Until the `targets:` frontmatter mechanism exists, they ship to
-every target:
+[principles §6](principles.md). The `targets:` frontmatter mechanism now exists (plan `020`), so a
+candidate carrying its own frontmatter is scoped by declaring it. A candidate that is a file INSIDE a
+skill cannot be scoped INDEPENDENTLY: the mechanism is frontmatter-level, a reference file carries no
+frontmatter, and the skill's own `SKILL.md` declaration governs the whole directory — so such a file
+ships wherever its parent skill ships, all-or-nothing, and scoping it alone needs a file-level
+mechanism that does not exist. The `Scoped` column records which candidates have been taken.
 
-| Candidate | Why target-specific | Drawn by |
-|---|---|---|
-| `plan-marshall/commands/tools-fix-intellij-diagnostics.md` | IDE-MCP-bound (`mcp__ide__getDiagnostics`) + Java/Maven toolchain; the whole workflow is N/A without an IDE-MCP host | `020` |
-| `plan-marshall/references/hook-authoring-guide.md` | Wholly a how-to for Claude's hook-delivery channel (JSON `terminalSequence` envelope, `/dev/tty`, `$CLAUDE_CODE_SESSION_ID`); needs a file-level scoping mechanism, since references carry no frontmatter | — |
-| `plan-retrospective/references/permission-prompt-analysis.md` | The whole retrospective aspect is the Claude settings/permission model (`~/.claude/settings.json`, allow/deny/ask, `defaultMode`); same file-level mechanism need | — |
-| `marshall-steward` terminal-title wizard surfaces (`references/menu-terminal-title.md`, the healthcheck twin, the configuration branch, the session-restart prose) | An interactive Claude hook/statusline setup workflow naming every Claude hook event and `CLAUDE_CODE_*` env var. Requires a **split** — only these surfaces scope to Claude; the rest of the steward stays agnostic. The underlying install op stays in `platform-runtime` | — |
-| `pm-plugin-development/skills/plan-marshall-plugin/scripts/wrapper-tangle-scan.py` + `references/wrapper-tangle.md` | Hardcodes plan-marshall's own CI-wrapper source paths; meaningful only in this meta-repository (a repo-scoping concern rather than a target-scoping one, recorded here so the `targets:` mechanism's design accounts for it or explicitly declines it) | — |
-| `pm-plugin-development/skills/plugin-architecture/references/askuserquestion-patterns.md` | A whole-file knowledge body about the Claude `AskUserQuestion` schema (interfaces, UI behaviours, caps); passes the §6 admission test; needs the file-level mechanism like the reference candidates above ([audit](marketplace-audit.md) §M11) | — |
-| `marshall-steward` enforcement-hook wizard surfaces (`references/menu-enforcement-hook.md` + configuration row + SKILL prose) | A second interactive Claude hook-install workflow, parallel to the terminal-title wizard split above ([audit](marketplace-audit.md) §M6) | — |
+| Candidate | Why target-specific | Drawn by | Scoped |
+|---|---|---|---|
+| `plan-marshall/commands/tools-fix-intellij-diagnostics.md` | IDE-MCP-bound (`mcp__ide__getDiagnostics`) + Java/Maven toolchain; the whole workflow is N/A without an IDE-MCP host | `020` | yes — declares `targets: [claude]` |
+| `plan-marshall/references/hook-authoring-guide.md` | Wholly a how-to for Claude's hook-delivery channel (JSON `terminalSequence` envelope, `/dev/tty`, `$CLAUDE_CODE_SESSION_ID`); needs a file-level scoping mechanism, since references carry no frontmatter | — | no — a file inside a skill; it ships wherever its parent skill ships, and scoping it alone needs the file-level mechanism |
+| `plan-retrospective/references/permission-prompt-analysis.md` | The whole retrospective aspect is the Claude settings/permission model (`~/.claude/settings.json`, allow/deny/ask, `defaultMode`); same file-level mechanism need | — | no — a file inside a skill; it ships wherever its parent skill ships, and scoping it alone needs the file-level mechanism |
+| `marshall-steward` terminal-title wizard surfaces (`references/menu-terminal-title.md`, the healthcheck twin, the configuration branch, the session-restart prose) | An interactive Claude hook/statusline setup workflow naming every Claude hook event and `CLAUDE_CODE_*` env var. Requires a **split** — only these surfaces scope to Claude; the rest of the steward stays agnostic. The underlying install op stays in `platform-runtime` | — | no — needs the steward skill split, which plan `020` left out of scope |
+| `pm-plugin-development/skills/plan-marshall-plugin/scripts/wrapper-tangle-scan.py` + `references/wrapper-tangle.md` | Hardcodes plan-marshall's own CI-wrapper source paths; meaningful only in this meta-repository (a repo-scoping concern rather than a target-scoping one, recorded here so the `targets:` mechanism's design accounts for it or explicitly declines it) | — | no — a repo-scoping concern, not a target-scoping one |
+| `pm-plugin-development/skills/plugin-architecture/references/askuserquestion-patterns.md` | A whole-file knowledge body about the Claude `AskUserQuestion` schema (interfaces, UI behaviours, caps); passes the §6 admission test; needs the file-level mechanism like the reference candidates above ([audit](marketplace-audit.md) §M11) | — | no — a file inside a skill; it ships wherever its parent skill ships, and scoping it alone needs the file-level mechanism |
+| `marshall-steward` enforcement-hook wizard surfaces (`references/menu-enforcement-hook.md` + configuration row + SKILL prose) | A second interactive Claude hook-install workflow, parallel to the terminal-title wizard split above ([audit](marketplace-audit.md) §M6) | — | no — needs the steward skill split, which plan `020` left out of scope |
 
 Rejected candidates, recorded so they are not re-proposed:
 

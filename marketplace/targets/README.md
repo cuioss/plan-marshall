@@ -80,26 +80,33 @@ registered target, so the gate is not optional.
 
 ## CLI Usage
 
+The generator runs inside the project environment because it reads component
+frontmatter with `yaml.safe_load` — `PyYAML` is a declared project dependency,
+so `uv run` (or `./pw`) is the invocation, not a bare `python3`. See
+`component_targets.py` for the frontmatter extraction and the shape rules that
+module owns on top of the YAML load.
+
+
 ```bash
 # Verbatim Claude mirror + plugin.json regeneration
-python3 marketplace/targets/generate.py --target claude --output target/claude
+uv run python marketplace/targets/generate.py --target claude --output target/claude
 
 # Equality check only (no emit) — exits 2 if committed plugin.json drifts
-python3 marketplace/targets/generate.py --target claude
+uv run python marketplace/targets/generate.py --target claude
 
 # OpenCode emit
-python3 marketplace/targets/generate.py --target opencode --output target/opencode
+uv run python marketplace/targets/generate.py --target opencode --output target/opencode
 
 # PR-Agent reviewer pack → ./.pr_agent.toml at the repository root
 # --packs composes one pack from several derived domains; omit it for the default
-python3 marketplace/targets/generate.py --target pr-agent --output . --packs python,plugin
+uv run python marketplace/targets/generate.py --target pr-agent --output . --packs python,plugin
 
 # Every target at once (claude → target/claude/, opencode → target/opencode/,
 # pr-agent → target/pr-agent/.pr_agent.toml)
-python3 marketplace/targets/generate.py --target all --output target
+uv run python marketplace/targets/generate.py --target all --output target
 
 # Scope to specific bundles
-python3 marketplace/targets/generate.py --target opencode --output target/opencode \
+uv run python marketplace/targets/generate.py --target opencode --output target/opencode \
     --bundles plan-marshall,pm-dev-java
 ```
 
@@ -124,6 +131,22 @@ missing flag, generator error, plugin.json drift, unmapped tool, etc.).
    fires.
 5. Add config files under `marketplace/targets/{name}/` and tests under
    `test/marketplace/targets/{name}/`.
+6. **If the target emits a component tree, honour the per-component
+   `targets:` scope.** Call
+   `marketplace.targets.component_targets.emits_to(component_path, self.name)`
+   (or `excluded_emission_roots(bundle_dir, self.name)` for a
+   whole-bundle walk) from the emit path, and skip a component whose
+   declaration omits this target — a skill's declaration takes its whole
+   directory with it. A target whose output is not a component tree
+   declares `emits_bundle_tree = False` and has nothing to filter.
+
+   Step 6 is not optional and not self-enforcing: no shared code can apply
+   the filter for a target, because only the target knows which paths it
+   emits. `test/marketplace/targets/test_target_scoped_emission.py`
+   generates through **every** registered component-tree target and asserts
+   a scoped-out component is absent from its output, so a target that skips
+   this step fails the suite rather than shipping components it was told
+   not to.
 
 ## Output directories
 

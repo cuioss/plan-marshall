@@ -18,7 +18,7 @@ marketplace/bundles/  →  target/claude/  →  ~/.claude/plugins/cache/plan-mar
 
 The middle hop (`target/claude/`) is produced by the
 `project:finalize-step-deploy-target` finalize step or by an explicit
-`python3 marketplace/targets/generate.py --target claude --output target/claude`
+`uv run python marketplace/targets/generate.py --target claude --output target/claude`
 invocation. This skill consumes that output as its source of truth — it
 does **NOT** rsync directly from `marketplace/bundles/`.
 

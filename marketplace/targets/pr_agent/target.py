@@ -568,7 +568,7 @@ def render_config(selection: Sequence[str], pack: str) -> str:
         '# Repository-local PR-Agent configuration — GENERATED, do not edit by hand.\n'
         '#\n'
         f'# Pack: {joined}. Regenerate with:\n'
-        f'#   python3 marketplace/targets/generate.py --target pr-agent --output . --packs {joined}\n'
+        f'#   uv run python marketplace/targets/generate.py --target pr-agent --output . --packs {joined}\n'
         '#\n'
         '# Merged ABOVE the organisation-wide cuioss/pr-agent-settings configuration, so this\n'
         '# file carries the per-domain reviewer pack ONLY and inherits every other key — model,\n'

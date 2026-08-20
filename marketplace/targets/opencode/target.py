@@ -17,7 +17,7 @@ from marketplace.targets.body_transform_engine import (
     load_transform_rules,
     make_body_transformer,
 )
-from marketplace.targets.opencode.emitter import emit_bundles
+from marketplace.targets.opencode.emitter import OPENCODE_TARGET_NAME, emit_bundles
 
 
 class OpenCodeTarget(TargetBase):
@@ -25,7 +25,7 @@ class OpenCodeTarget(TargetBase):
 
     @property
     def name(self) -> str:
-        return 'opencode'
+        return OPENCODE_TARGET_NAME
 
     @property
     def config_dir(self) -> Path:
@@ -58,6 +58,7 @@ class OpenCodeTarget(TargetBase):
             self.config_dir,
             bundles=bundles,
             body_transformer=transformer,
+            target_name=self.name,
         )
 
 

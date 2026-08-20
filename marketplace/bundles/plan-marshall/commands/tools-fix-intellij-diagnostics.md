@@ -2,6 +2,7 @@
 name: tools-fix-intellij-diagnostics
 description: Retrieve and fix IDE diagnostics automatically, suppressing only when no reasonable fix is available
 tools: Read, Edit, Task, mcp__ide__getDiagnostics
+targets: [claude]
 ---
 
 # Fix IntelliJ Diagnostics Command
