@@ -571,6 +571,7 @@ def test_coverage_reports_the_unresolved_share_and_its_causes(tmp_path):
         _mod.UNRESOLVED_AUTHORITY_INCOMPLETE: 0,
         _mod.UNRESOLVED_NO_CHOICES_DECLARED: 0,
         _mod.UNRESOLVED_CHOICES_UNRESOLVABLE: 0,
+        _mod.UNRESOLVED_SINGLE_MEMBER: 0,
     }
     # An unresolvable notation is a real gap, so it counts as a blind spot.
     assert coverage['blind_spots'] == 1
@@ -952,14 +953,22 @@ if __name__ == '__main__':
     assert _mod._paths_with_incomplete_authority(tree) == {('add',)}
 
 
-def test_argparse_construction_calls_do_not_make_a_path_incomplete(tmp_path):
-    """Passing a parser to argparse's OWN surface is not handing it to a callee.
+def test_a_parser_in_receiver_position_does_not_make_a_path_incomplete(tmp_path):
+    """Only ARGUMENTS are inspected, so argparse's own surface needs no exclusion.
 
-    ``sub.add_parser(...)``, ``parser.add_argument(...)``,
-    ``parser.parse_args()`` and the group factories all take or return parsers.
-    If those counted as unmodelled callees every path in every script would read
-    ``authority_incomplete`` and the census would go blind — the exact failure
-    this rule exists to catch, committed by the fix for it.
+    ``sub.add_parser(...)``, ``p.add_argument(...)`` and ``parser.parse_args()``
+    all carry the parser as the RECEIVER. If a receiver counted as handing the
+    parser to an unmodelled callee, every path in every script would read
+    ``authority_incomplete`` and the census would go blind — the failure this
+    rule exists to catch, committed by the fix for it.
+
+    A name-based skip list for those calls shipped here for one round and was
+    INERT: no argparse call ever reaches the argument scan with a parser in an
+    argument position, so deleting the skip left the whole-tree census
+    byte-identical and its own control test green. This test is written against
+    the structural reason instead — a fixture whose parser appears ONLY as a
+    receiver must yield no incomplete path, and that assertion cannot be
+    satisfied by a skip list.
     """
     script = '''\
 import argparse
@@ -971,6 +980,8 @@ def main():
     p_add = sub.add_parser('add')
     p_add.add_argument('--mode', choices=['live', 'archived'])
     p_add.set_defaults(func=None)
+    group = p_add.add_argument_group('extra')
+    group.add_argument('--verbose', action='store_true')
     parser.parse_args()
 
 
@@ -978,14 +989,22 @@ if __name__ == '__main__':
     main()
 '''
     _write_bundle(tmp_path, doc_enum='live|archived', script_body=script, flag='mode')
-
-    population = derive_population(tmp_path)
     script_path = tmp_path / 'mybundle' / 'skills' / 'myskill' / 'scripts' / 'myscript.py'
     tree = ast.parse(script_path.read_text(encoding='utf-8'))
+    population = derive_population(tmp_path)
 
     assert _mod._paths_with_incomplete_authority(tree) == set()
     assert population[0].resolved is True
     assert population[0].choices == frozenset({'live', 'archived'})
+
+    # The discriminator, stated directly: the SAME parser moved into an argument
+    # position DOES mark its path. Without this the assertions above would also
+    # hold for a scan that inspects nothing at all.
+    handed_off = script.replace("    parser.parse_args()", "    _configure(p_add)")
+    _write_bundle(tmp_path, doc_enum='live|archived', script_body=handed_off, flag='mode')
+    handed_tree = ast.parse(script_path.read_text(encoding='utf-8'))
+
+    assert _mod._paths_with_incomplete_authority(handed_tree) == {('add',)}
 
 
 def test_a_group_built_off_a_shadowed_parser_is_not_attributed_to_the_root(tmp_path):
@@ -1072,28 +1091,119 @@ if __name__ == '__main__':
     assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [])
 
 
-def test_a_one_member_brace_group_is_a_template_slot_not_an_enum(tmp_path):
-    """The two-member minimum the rule catalog states, applied to BOTH notations.
+def test_a_one_member_group_is_counted_as_ambiguous_not_dropped(tmp_path):
+    """A one-member group is examined, not compared, and COUNTED.
 
-    ``--scope {phase}.{role}|plan|orchestrator[...]`` — live at
-    ``manage-config/SKILL.md`` — yields the brace token ``{phase}``, a template
-    slot for a phase NAME. Read as a one-member enum it entered the population
-    and was compared against a live ``choices=``. The braced pattern carried no
-    member minimum while its brace-less sibling required a pipe, so the catalog's
-    "parses into two or more members" was false of half the collector.
+    The notation cannot tell a template slot from a truncated enum:
+    ``--scope {phase}.{role}|plan|orchestrator[...]`` (live at
+    ``manage-config/SKILL.md``) yields ``{phase}``, a slot for a phase NAME,
+    while ``{bug}`` against a live ``choices=['bug','improvement']`` is this
+    rule's own headline drift shape. Neither is compared.
 
-    The duplicate-collapsing case is asserted too: the minimum is tested on the
-    parsed member SET, so ``{a|a}`` is one member however it is spelled.
+    The load-bearing half is that it stays IN the population under its own
+    cause. Dropping it at collection — which is what shipped for one round —
+    made the sweep examine a token, decline to judge it, and publish no figure
+    saying so: this analyzer's subject committed by the analyzer. The cause is
+    a BLIND SPOT, because the token may be a real claim.
+
+    The duplicate-collapsing case is asserted too: the test is on the parsed
+    member SET, so ``{a|a}`` is one member however it is spelled.
     """
     _write_bundle(tmp_path, doc_enum='phase', script_body=_SCRIPT_LITERAL_CHOICES)
+    population = derive_population(tmp_path)
+    coverage = _mod.derive_coverage(population)
 
-    assert derive_population(tmp_path) == []
+    assert len(population) == 1
+    assert population[0].resolved is False
+    assert population[0].unresolved_cause == _mod.UNRESOLVED_SINGLE_MEMBER
+    assert coverage['unresolved_causes'][_mod.UNRESOLVED_SINGLE_MEMBER] == 1
+    assert coverage['blind_spots'] == 1
+    assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [])
 
     _write_bundle(tmp_path, doc_enum='x|x', script_body=_SCRIPT_LITERAL_CHOICES)
+    collapsed = derive_population(tmp_path)
 
-    assert derive_population(tmp_path) == []
+    assert len(collapsed) == 1
+    assert collapsed[0].unresolved_cause == _mod.UNRESOLVED_SINGLE_MEMBER
 
-    # The control: two distinct members over the same fixture DO enter.
+    # The control: two distinct members over the same fixture ARE compared, so
+    # the cause above is the one-member rule and not a broken fixture.
     _write_bundle(tmp_path, doc_enum='x|y', script_body=_SCRIPT_LITERAL_CHOICES)
+    compared = derive_population(tmp_path)
 
-    assert len(derive_population(tmp_path)) == 1
+    assert len(compared) == 1
+    assert compared[0].resolved is True
+
+
+def test_a_truncated_one_member_enum_is_a_declared_gap_not_a_clean_pass(tmp_path):
+    """The cost of not comparing a one-member group is PUBLISHED, not zero.
+
+    ``--kind {bug}`` against a live ``choices=['bug','improvement']`` is a real
+    drift this rule does not report. That exclusion was once defended in a
+    comment saying a one-member group "carries no drift signal anyway", which
+    this fixture refutes. It is admissible only because the census names it, so
+    what is pinned here is the census entry, not the silence.
+    """
+    script = '''\
+import argparse
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest='cmd')
+    add = sub.add_parser('add')
+    add.add_argument('--kind', choices=['bug', 'improvement'])
+
+
+if __name__ == '__main__':
+    main()
+'''
+    _write_bundle(tmp_path, doc_enum='bug', script_body=script)
+
+    coverage = _mod.derive_coverage(derive_population(tmp_path))
+
+    assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [])
+    assert coverage['unresolved_causes'][_mod.UNRESOLVED_SINGLE_MEMBER] == 1
+    assert coverage['blind_spots'] == 1
+    assert coverage['unresolved_fraction'] == 1.0
+
+
+def test_a_laundered_group_name_does_not_poison_the_same_name_elsewhere(tmp_path):
+    """Shadowing is scoped, so the laundering derived from it must be too.
+
+    ``_group_vars_off_shadowed_owner`` returned bare group NAMES for one round,
+    and the caller unioned them into every ``add_argument``'s shadowed set. One
+    helper binding ``grp`` therefore marked the name ``grp`` shadowed at every
+    ``add_argument`` in the file — discarding the resolved authority of a
+    correctly-attributed module-level ``grp = p_add.add_argument_group('g')``,
+    which is a false negative manufactured by the guard against false positives.
+
+    The pair is carried instead, and a group is laundered only where its OWNER
+    is shadowed too. Both directions are asserted: the honest group resolves,
+    and the laundered one still fails closed.
+    """
+    script = '''\
+import argparse
+
+parser = argparse.ArgumentParser()
+sub = parser.add_subparsers(dest='cmd')
+p_add = sub.add_parser('add')
+grp = p_add.add_argument_group('g')
+grp.add_argument('--kind', choices=['x', 'y', 'z'])
+
+
+def _extra(parser):
+    grp = parser.add_mutually_exclusive_group()
+    grp.add_argument('--other')
+'''
+    _write_bundle(tmp_path, doc_enum='x|y|z', script_body=script)
+    script_path = tmp_path / 'mybundle' / 'skills' / 'myskill' / 'scripts' / 'myscript.py'
+    tree = ast.parse(script_path.read_text(encoding='utf-8'))
+    population = derive_population(tmp_path)
+
+    assert _mod._group_vars_off_shadowed_owner(tree, _mod._enclosing_params(tree)) == {
+        ('grp', 'parser')
+    }
+    assert _mod._has_unattributed_choices(tree) is False
+    assert population[0].resolved is True
+    assert population[0].choices == frozenset({'x', 'y', 'z'})

@@ -40,8 +40,13 @@ finding — never to a guessed comparison:
 - the documented flag is never declared with ``choices=`` (a free-form flag such
   as ``--promoted`` documented as ``{true|false}`` has no ``choices=`` authority
   to compare against);
-- the flag resolves to MORE THAN ONE distinct ``choices=`` set across the script
-  (ambiguous — which subcommand's set is the doc mirroring?);
+- the same ``(subcommand_path, flag)`` is declared TWICE with conflicting sets
+  (ambiguous — there is no single authority to compare against). Note the scope:
+  two SUBCOMMANDS declaring different sets for the same flag name is not this
+  case and is not skipped. The authority is keyed by path, so ``add --kind`` and
+  ``remove --kind`` resolve independently and are each compared. This entry read
+  "more than one distinct set across the script" until round 6, which was true
+  before the authority was path-scoped and false after;
 - a ``choices=`` constant cannot be resolved to a concrete string set
   (cross-module reference whose defining module is absent or ambiguous).
 
@@ -133,9 +138,15 @@ refusal to invent an authority:
   Both are live in this tree. A parser merely PASSED INTO a helper is NOT one of
   them, and was wrongly listed here once: the caller's own ``add_parser`` models
   the PATH, so the surface IS derived and only the authority is missing. Such a
-  site lands in ``authority_incomplete`` — the live instances are the three
-  ``plan-marshall:plan-marshall:phase_handshake`` ``--phase`` sites, whose flag
-  is declared by an imported ``add_phase_arg(parser)``.
+  site lands in ``authority_incomplete``, which holds 18 sites across six
+  notations — ``manage-execution-manifest`` (9), ``manage-tasks`` (2),
+  ``phase_handshake`` (3), and one each on ``manage-findings``,
+  ``manage-references``, ``manage-status`` and ``collect-fragments``. The
+  ``phase_handshake --phase`` sites are the worked example (an imported
+  ``add_phase_arg(parser)`` declares their ``choices=``), not the whole set: this
+  sentence named them as the only three instances for one round, having been
+  written from the three sites that MOTIVATED the fix rather than from the census
+  the fix produced.
 
   What the cause asserts is only that the surface was not modelled. Do not
   restate it as "the choices are in another module": that is true of some of
@@ -160,19 +171,37 @@ refusal to invent an authority:
   established as ABSENT rather than merely unestablished, and there is nothing
   for the rule to compare the documented enum against.
 
-  ⛔ That is a statement about this rule's authority, NOT about the flag. Several
-  sites in this bucket ARE constrained — by a membership test in the handler
-  (``manage-tasks update --status``), by a lookup that rejects an unknown key
-  (``untrusted-ingestion validate --schema``), or against a ``VALID_*`` constant
-  (``manage-execution-manifest record-step --phase``). Their documented enums are
-  real claims; they are simply enforced somewhere this rule does not read, by
-  design. Do not describe this bucket as "free-form values" or as "no enum claim
-  to contradict" — both were written here once and both are false of it.
+  ⛔ That is a statement about this rule's authority, NOT about the flag. The
+  bucket holds 2 sites, and BOTH are constrained somewhere this rule does not
+  read: ``untrusted-ingestion validate --schema`` by a lookup that rejects an
+  unknown key, and ``manage-config finalize-steps set-lane --lane`` by a handler
+  that validates and names the route for a rejected value (its ``add_argument``
+  says so outright — the omission of ``choices=`` there is deliberate). Their
+  documented enums are real claims, simply enforced elsewhere by design. Do not
+  describe this bucket as "free-form values" or as "no enum claim to contradict"
+  — both were written here once and both are false of it.
+
+  ⛔ Re-derive these examples whenever the census changes. This list named
+  ``manage-tasks update --status`` and ``manage-execution-manifest record-step
+  --phase`` for one round AFTER the commit that moved both of them into
+  ``authority_incomplete`` — worked examples pointing at sites the same change
+  had just relocated.
 
   It is kept apart from ``parser_surface_not_derived`` because the two differ in
   KIND: authority established-absent versus authority not established. Reading
   the second as the first turns the largest gap into reassurance, which is the
   failure this whole rule exists to catch, committed by the rule's own figure.
+* ``single_member_ambiguous`` — the documented group parses to ONE member, which
+  the notation cannot distinguish between a template slot (``--scope
+  {phase}.{role}|plan|...`` yields ``{phase}``) and a truncated enum (``{bug}``
+  against a live ``choices=['bug','improvement']`` — this rule's own headline
+  drift shape). Not compared, and COUNTED as a blind spot because it may be a
+  real claim. One live site, the template slot above.
+
+  This was a silent drop at collection for one round, defended by a comment
+  saying a one-member group "carries no drift signal anyway". The truncated-enum
+  case refutes that, and a sweep that examines a token, declines to judge it, and
+  publishes no figure for it is the exact failure this census exists to prevent.
 * ``choices_unresolvable`` — the parser was modelled and declares a ``choices=``
   this resolver cannot reduce to a concrete member set. A blind spot: a real enum
   claim went unverified. The structural case is a ``choices=`` naming a constant
@@ -288,12 +317,6 @@ _MAX_RESOLVE_DEPTH = 8
 # — so the returned variable inherits the parser's subcommand paths.
 _PARSER_GROUP_FACTORIES = frozenset({'add_mutually_exclusive_group', 'add_argument_group'})
 
-# Argparse's own construction surface. Passing a parser to one of these is not
-# handing it to an unknown callee, so it does not make the authority incomplete.
-_ARGPARSE_CONSTRUCTION_CALLS = frozenset(
-    {'add_argument', 'add_parser', 'add_subparsers', 'parse_args', 'set_defaults'}
-) | _PARSER_GROUP_FACTORIES
-
 
 # Why a site was examined but not compared. Published per site and aggregated by
 # :func:`derive_coverage`, so a clean sweep states the share of its population it
@@ -312,6 +335,11 @@ UNRESOLVED_PARSER_NOT_DERIVED = 'parser_surface_not_derived'
 UNRESOLVED_AUTHORITY_INCOMPLETE = 'authority_incomplete'
 UNRESOLVED_NO_CHOICES_DECLARED = 'no_choices_declared'
 UNRESOLVED_CHOICES_UNRESOLVABLE = 'choices_unresolvable'
+# A one-member brace group: a template slot or a truncated enum, and the notation
+# does not say which. Examined, deliberately not compared, and COUNTED — dropping
+# it at collection was a silent narrowing of the very figure this census exists
+# to publish.
+UNRESOLVED_SINGLE_MEMBER = 'single_member_ambiguous'
 
 # Every cause, in report order. ``derive_coverage`` emits a COMPLETE census over
 # this tuple — a cause with no occurrences is reported as ``0`` rather than
@@ -324,6 +352,7 @@ UNRESOLVED_CAUSES = (
     UNRESOLVED_AUTHORITY_INCOMPLETE,
     UNRESOLVED_NO_CHOICES_DECLARED,
     UNRESOLVED_CHOICES_UNRESOLVABLE,
+    UNRESOLVED_SINGLE_MEMBER,
 )
 
 # The causes where the rule's authority could not be ESTABLISHED — a documented
@@ -344,6 +373,7 @@ UNRESOLVED_BLIND_SPOT_CAUSES = frozenset(
         UNRESOLVED_PARSER_NOT_DERIVED,
         UNRESOLVED_AUTHORITY_INCOMPLETE,
         UNRESOLVED_CHOICES_UNRESOLVABLE,
+        UNRESOLVED_SINGLE_MEMBER,
     }
 )
 
@@ -467,16 +497,7 @@ def _enum_sites_in_skill(
         for pattern in _ENUM_TOKEN_PATTERNS:
             for match in pattern.finditer(raw):
                 members = _split_enum_members(match.group('members'))
-                # TWO members minimum, tested after parsing rather than in the
-                # pattern, so it holds for BOTH notations and also rejects a
-                # body whose members collapse to one (``{a|a}``). A one-member
-                # brace group is indistinguishable from a placeholder metavar
-                # — ``--scope {phase}.{role}|plan|...`` yields ``{phase}``,
-                # which is a template slot, not an enum with one legal value —
-                # and reading it as an enum claim compares a live ``choices=``
-                # against a variable name. Fail-closed: the only cost is a
-                # missed one-member enum, which carries no drift signal anyway.
-                if len(members) < 2 or any(m.startswith('--') for m in members):
+                if not members or any(m.startswith('--') for m in members):
                     continue
                 sites.append(
                     (line, block_notation, block_path, match.group('flag'), members)
@@ -488,9 +509,12 @@ def _split_enum_members(raw_members: str) -> frozenset[str]:
     """Split a ``{a|b|c}`` (or comma-separated) metavar body into a member set.
 
     Pipes are the canonical-block convention; a comma-separated body is accepted
-    too. Each member is stripped of whitespace and backticks. An empty result
-    (e.g. a placeholder metavar body) yields the empty set, which the caller
-    treats as "no enum claim here".
+    too. Each member is stripped of whitespace and backticks.
+
+    This function does NOT decide what is an enum claim — it only splits. A
+    metavar body yields its own text as one member (``'TYPE'`` →
+    ``{'TYPE'}``), not the empty set; the caller's two-member minimum is what
+    rejects it. Both halves of that were stated backwards here once.
     """
     body = raw_members.strip()
     parts = body.split('|') if '|' in body else body.split(',')
@@ -955,15 +979,27 @@ def _paths_with_incomplete_authority(tree: ast.Module) -> set[tuple[str, ...]]:
     choices", while ``input_validation.add_phase_arg`` declares
     ``choices=PHASES`` matching the documented set exactly.
 
-    Argparse's own construction methods are excluded — passing a parser to
-    ``add_argument`` or a group factory is not handing it to an unknown callee.
+    Argparse's own construction surface needs no exclusion, and carried a
+    useless one once. ``parser.add_argument(...)``, ``sub.add_parser('v')`` and
+    ``parser.parse_args()`` all take the parser as the RECEIVER, and only
+    ARGUMENTS are inspected here — so no argparse call ever reaches this scan
+    with a parser in an argument position. A name-based skip for them was
+    therefore inert: deleting it left the whole-tree census byte-identical, and
+    the test written to pin it passed with the guard gone, because no fixture
+    could contain a call the skip would suppress. Removed rather than kept as
+    reassurance.
+
+    The one argparse shape that DOES pass a parser by argument is
+    ``parents=[base]``, where the parser sits inside a list rather than at
+    argument position, so it does not reach here either. That is a separate,
+    unclosed gap: a child parser built with ``parents=`` inherits the parent's
+    actions, and this walk attributes the parent's ``choices=`` to the PARENT's
+    paths only. No live site uses it, and the census does not currently name it.
     """
     parser_paths = _build_parser_path_sets(tree)
     incomplete: set[tuple[str, ...]] = set()
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
-            continue
-        if _call_name(node) in _ARGPARSE_CONSTRUCTION_CALLS:
             continue
         for arg in (*node.args, *(kw.value for kw in node.keywords)):
             if isinstance(arg, ast.Name) and arg.id in parser_paths:
@@ -1024,7 +1060,8 @@ def _shadowed_receivers(tree: ast.Module) -> dict[int, set[str]]:
     scope_params = _enclosing_params(tree)
     laundering = _group_vars_off_shadowed_owner(tree, scope_params)
     return {
-        id(node): set(scope_params[id(node)]) | laundering
+        id(node): set(scope_params[id(node)])
+        | {group for group, owner in laundering if owner in scope_params[id(node)]}
         for node in ast.walk(tree)
         if isinstance(node, ast.Call) and _is_add_argument(node)
     }
@@ -1035,7 +1072,14 @@ def _enclosing_params(tree: ast.Module) -> dict[int, frozenset[str]]:
 
     One walk serves both the direct shadowing test and the scope gate on group
     inheritance, so the two cannot drift apart on what "shadowed here" means.
-    Defaults to the empty set for a node the walk did not reach.
+
+    Every key is present: this walk recurses with ``ast.iter_child_nodes``, which
+    reaches exactly the nodes ``ast.walk`` reaches, and every caller keys off a
+    node from an ``ast.walk`` of the same tree. A ``dict`` subclass defaulting
+    unseen ids to the empty set was written here once; it described a state that
+    cannot arise, ``__missing__`` fired zero times over the whole marketplace,
+    and deleting it left the suite green. Plain ``dict`` — a missing key is a
+    real bug and should raise, not be papered over with a permissive default.
     """
     params_at: dict[int, frozenset[str]] = {}
 
@@ -1053,20 +1097,21 @@ def _enclosing_params(tree: ast.Module) -> dict[int, frozenset[str]]:
             walk(child, names)
 
     walk(tree, frozenset())
-    return _DefaultingParams(params_at)
-
-
-class _DefaultingParams(dict):
-    """``dict[int, frozenset[str]]`` returning the empty set for an unseen id."""
-
-    def __missing__(self, key: int) -> frozenset[str]:
-        return frozenset()
+    return params_at
 
 
 def _group_vars_off_shadowed_owner(
     tree: ast.Module, scope_params: dict[int, frozenset[str]]
-) -> set[str]:
-    """Names bound to a group whose OWNER is shadowed where the group is built.
+) -> set[tuple[str, str]]:
+    """``(group_name, owner_name)`` for each group built off a SHADOWED owner.
+
+    The owner is carried alongside the group name so the caller can scope the
+    result. Returning bare group names made the finding module-wide: one helper
+    binding ``grp`` marked the name ``grp`` shadowed at EVERY ``add_argument`` in
+    the file, including a correctly-attributed module-level
+    ``grp = p_add.add_argument_group('g')``, whose resolved authority was then
+    discarded. A group name is laundered only where its OWNER is shadowed too,
+    which is the scope the shadowing itself has.
 
     ``grp = parser.add_mutually_exclusive_group()`` inside
     ``def _extra(parser): ...`` binds ``grp`` to a group of whatever parser the
@@ -1076,7 +1121,7 @@ def _group_vars_off_shadowed_owner(
     defeated by one indirection. Treating ``grp`` as shadowed keeps the module's
     authority INCOMPLETE, which is the fail-closed reading.
     """
-    laundered: set[str] = set()
+    laundered: set[tuple[str, str]] = set()
     for stmt in ast.walk(tree):
         if not isinstance(stmt, ast.Assign) or not isinstance(stmt.value, ast.Call):
             continue
@@ -1085,7 +1130,9 @@ def _group_vars_off_shadowed_owner(
         owner = _receiver_name(stmt.value)
         if owner is None or owner not in scope_params[id(stmt)]:
             continue
-        laundered.update(t.id for t in stmt.targets if isinstance(t, ast.Name))
+        laundered.update(
+            (t.id, owner) for t in stmt.targets if isinstance(t, ast.Name)
+        )
     return laundered
 
 
@@ -1157,7 +1204,24 @@ def derive_population(marketplace_root: Path, cache=None) -> list[EnumSite]:
             script_path = _script_path_for_notation(notation, marketplace_root)
             choices: frozenset[str] | None = None
             cause: str | None = UNRESOLVED_NOTATION
-            if script_path is not None:
+            if len(documented) < 2:
+                # A one-member group is genuinely AMBIGUOUS — a template slot
+                # (``--scope {phase}.{role}|plan|...`` yields ``{phase}``, a slot
+                # for a phase NAME) or a truncated enum (``{bug}`` against a live
+                # ``choices=['bug','improvement']``, which is this rule's own
+                # headline drift shape). Nothing in the notation tells them
+                # apart, so it is not compared.
+                #
+                # It stays IN the population under its own cause rather than
+                # being dropped at collection. Dropping it was a SILENT
+                # narrowing — the token was examined, the sweep declined to
+                # judge it, and no published figure said so. That is this
+                # analyzer's own subject committed by the analyzer, and it was
+                # defended in a comment claiming a one-member group "carries no
+                # drift signal anyway", which the truncated-enum case refutes.
+                # Counted as a blind spot, because it may be a real claim.
+                cause = UNRESOLVED_SINGLE_MEMBER
+            elif script_path is not None:
                 if notation not in authority_cache:
                     tree = get_tree(script_path)
                     parsed_cache[notation] = tree is not None
