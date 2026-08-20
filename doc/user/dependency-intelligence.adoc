@@ -60,8 +60,8 @@ Nothing here is opt-in. If your project is one of the ecosystems below, the grap
 | The same coordinate join — Gradle publishes the same pair. See <<gradle-limit>> for the one form it misses.
 
 | Python
-| The PEP 621 `[project] name`
-| Each module's `pyproject.toml` name against every module's `dependencies` and its `optional-dependencies.dev` extra.
+| The declared distribution name
+| Each module's declared name — PEP 621 `[project]`, else `[tool.poetry]`, else `setup.cfg` — against every module's runtime and `dev` dependency lists.
 
 | npm / yarn / pnpm
 | The `package.json` `name`
@@ -81,17 +81,17 @@ A zero row is usually not a defect and not a sign that something is misconfigure
 
 Names are matched the way Python packaging matches them: case-insensitively, with any run of `-`, `_` or `.` treated as equivalent. A module publishing `sample-api` is therefore reached by a dependency spelling it `Sample_API`.
 
-Two scopes are read: `[project] dependencies`, and the `dev` extra under `[project.optional-dependencies]`. A `dev` entry is a real edge, because changing the module you depend on can break your tests.
+Two scopes are read from each descriptor form: the runtime dependency list, and the `dev` group — `[project] dependencies` plus the `dev` extra under `[project.optional-dependencies]`; `[tool.poetry.dependencies]` plus `[tool.poetry.group.dev.dependencies]`; `[options] install_requires` (runtime only). A `dev` entry is a real edge, because changing the module you depend on can break your tests.
 
 Other extras are *not* read. A sibling named only under a `test`, `docs` or `all` extra produces no edge — move it to `dev` (or to `dependencies`) if you need it in the graph.
 
-A directory with no `[project] name` publishes no distribution, so nothing can depend on it. It still appears as a module and its own dependencies still produce edges — it simply cannot be the *target* of one.
+A directory that names no distribution in any of the descriptor forms below publishes nothing, so nothing can depend on it. It still appears as a module and its own dependencies still produce edges — it simply cannot be the *target* of one.
 
 Three descriptor forms are read, in this order: PEP 621 `[project]`; then `[tool.poetry]` in the same `pyproject.toml`, when `[project]` is absent or names nothing; then `setup.cfg` (`[metadata]` for the name, `[options] install_requires` for runtime dependencies). The later forms are strict fallbacks — neither overrides a name PEP 621 already supplied.
 
 `setup.py` is *not* read, and cannot be: it is executable Python rather than a declaration, so no static reader can tell what it will pass to `setup()`. A module whose only descriptor is `setup.py` therefore publishes no name and no dependencies — it appears as a module, but nothing can depend on it and it declares nothing. Add a `[project]` table or a `setup.cfg` to bring it into the graph.
 
-A `pyproject.toml` that does not parse — an unbalanced bracket, a bad encoding — publishes nothing, and a *warning naming that file* is written to the run log. That warning is the difference between the module declaring nothing and its descriptor being broken, and the second case also silently costs you every edge pointing *at* that module, because the name those edges match on was never published.
+A `pyproject.toml` that does not parse — an unbalanced bracket, a bad encoding — publishes nothing *from that file*, and a *warning naming it* is written to the run log. The `setup.cfg` fallback still applies, so a module with both may still publish a name; a module with only the broken `pyproject.toml` publishes none. That warning is the difference between the module declaring nothing and its descriptor being broken, and the second case also silently costs you every edge pointing *at* that module, because the name those edges match on was never published.
 
 === npm specifics
 

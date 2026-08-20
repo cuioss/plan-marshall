@@ -65,9 +65,16 @@ def _session(workspace_edit: dict[str, Any], diagnostics: list[Any]) -> tuple[Ls
     return LspSession(transport, '/tmp'), transport
 
 
-def _configure_fake_server(plan_base: Path, workspace_edit: dict[str, Any]) -> None:
+def _configure_fake_server(
+    plan_base: Path,
+    workspace_edit: dict[str, Any],
+    workspace_symbols: list[dict[str, Any]] | None = None,
+) -> None:
     """Write a run-configuration pointing `python` at the fake server subprocess."""
-    command = write_fake_server(plan_base, {'rename_edit': workspace_edit, 'files': {}})
+    command = write_fake_server(
+        plan_base,
+        {'rename_edit': workspace_edit, 'workspace_symbols': workspace_symbols, 'files': {}},
+    )
     (plan_base / 'run-configuration.json').write_text(
         json.dumps({'language_servers': {'python': {'enabled': True, 'command': command, 'language_id': 'python'}}}),
         encoding='utf-8',
@@ -194,27 +201,37 @@ def test_reopening_an_open_document_does_not_reset_its_version(tmp_path):
 
 
 def test_workspace_symbol_rows_carry_path_through_the_cli_seam(plan_context, tmp_path):
-    """A workspace-symbol row without `path` is the Grep round-trip this verb removes."""
+    """A workspace-symbol row without `path` is the Grep round-trip this verb removes.
+
+    Driven end to end: the fake server returns a real ``SymbolInformation``, so
+    the assertion lands on what ``output_toon`` actually RENDERED. Asserting on a
+    direct ``_symbol_rows`` call instead would leave a defect in argument
+    plumbing or in the rendering of the new ``path`` / ``container`` / ``depth``
+    keys entirely unseen — which is the hiding place this drive-through exists
+    to close.
+    """
     plan_base = Path(plan_context.fixture_dir)
     defining = _module(tmp_path, 'defines.py')
-    _configure_fake_server(plan_base, {})
-    # The fake answers workspace/symbol with `null`, so drive the row builder
-    # directly for content and use the subprocess only to prove the payload
-    # renders `locations[]` at all.
-    rows = client._symbol_rows([
-        {'name': 'Thing', 'kind': 5, 'containerName': '',
-         'location': {'uri': path_to_uri(defining), 'range': {'start': {'line': 7, 'character': 4}}}},
+    _configure_fake_server(plan_base, {}, workspace_symbols=[
+        {'name': 'Thing', 'kind': 5, 'containerName': 'Enclosing',
+         'location': {'uri': path_to_uri(defining),
+                      'range': {'start': {'line': 7, 'character': 4}, 'end': {'line': 7, 'character': 9}}}},
     ])
-    assert rows[0]['path'] == str(defining.resolve())
 
     result = run_script(
         SCRIPT_PATH, 'lookup', '--language', 'python', '--project-path', str(tmp_path),
         '--kind', 'workspace-symbol', '--symbol', 'Thing',
         env_overrides={'PLAN_BASE_DIR': str(plan_base)}, timeout=60,
     )
-    assert result.returncode == 0
+
+    assert result.returncode == 0, result.stderr
     assert 'state: ok' in result.stdout
-    assert 'location_count' in result.stdout
+    assert 'location_count: 1' in result.stdout
+    # The row's own file, as rendered — not as a helper returned it.
+    assert str(defining.resolve()) in result.stdout
+    # The other two new keys must survive rendering as well.
+    assert 'container' in result.stdout and 'Enclosing' in result.stdout
+    assert 'depth' in result.stdout
 
 
 def test_document_symbol_and_workspace_symbol_emit_the_same_key_set(tmp_path):

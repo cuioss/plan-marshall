@@ -211,7 +211,11 @@ For the life of the session, that means:
 
 *It does not flag broken references.* Live diagnostics — red squiggles on a reference that does not resolve — are not part of this surface, and no diagnostic capability is advertised.
 
-The reason is precision. The underlying validator reports roughly 380 unresolved references across a corpus of about 5,300, and close to 97% of them are not broken references at all: documentation placeholders like `bundle:skill:script`, build-command names like `default:verify:compile`, Maven coordinates, and notations whose third segment is a subcommand rather than a script. Turning that into editor diagnostics would put hundreds of confident, wrong warnings in front of you. It waits until the validator can tell those apart.
+The reason is precision. Not every unresolved reference the underlying validator reports is a broken reference: some are documentation placeholders like `bundle:skill:script`, build-command names like `default:verify:compile`, Maven coordinates, or notations whose third segment is a subcommand rather than a script. Turning those into editor diagnostics would put confident, wrong warnings in front of you.
+
+The deferral was argued on figures that no longer hold — roughly 380 unresolved across about 5,300, with close to 97% of them not broken references. Re-measured: *61* unresolved across *5,083* dependencies over 308 components, of which about *43%* are non-notations and about *57%* are well-formed notations whose target genuinely does not exist. The ratio has reversed, and the absolute count has fallen by roughly a factor of six. Whether that is now grounds to turn diagnostics on is an open question rather than a settled one, and it is recorded as such rather than decided here.
+
+⛔ These figures move with every commit and were measured once. Re-derive them before acting on them: `resolve-dependencies validate --scope marketplace`.
 
 == Related
 

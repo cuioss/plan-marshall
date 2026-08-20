@@ -96,9 +96,10 @@ def active_capabilities() -> dict[str, Any]:
     """The capability set advertised when the server IS enabled.
 
     ⚠ Diagnostics are absent on purpose. Live broken-reference diagnostics are
-    plan 240's D3, hard-gated on the validator-precision work: the validator's
-    current unresolved set is overwhelmingly false positives, so advertising a
-    diagnostic provider would ship confident-wrong squiggles.
+    plan 240's D3, gated on validator precision: advertising a diagnostic
+    provider binds this surface to it. ⛔ The ~97 % false-positive figure the gate
+    was argued on no longer holds; see :mod:`corpus_lsp`'s module docstring and
+    the recorded proposal.
     """
     return {
         'definitionProvider': True,

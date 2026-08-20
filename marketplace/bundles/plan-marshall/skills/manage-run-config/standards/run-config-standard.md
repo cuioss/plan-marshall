@@ -340,7 +340,7 @@ returns, and the value that appears in an edge's `producers[]`.
 
 | Subcommand | Purpose |
 |------------|---------|
-| `derivation-resolver get --resolver <id>` | Read the effective state (`configured` reports whether an entry exists; `enabled` reports the effective answer) |
+| `derivation-resolver get --resolver <id>` | Read the effective state (`configured` reports whether a **well-formed (dict) entry** exists — a non-dict entry counts as unconfigured, the same definition `extension-api`'s resolver roster applies, so the two readers of this store cannot disagree; `enabled` reports the effective answer, and fails **open** on a malformed entry) |
 | `derivation-resolver set --resolver <id> (--enabled \| --disabled)` | Persist the binding (exactly one of the two flags) |
 | `derivation-resolver list` | List the configured entries — an empty list means every discovered resolver is active |
 | `derivation-resolver remove --resolver <id>` | Drop the entry, returning the resolver to default-active |

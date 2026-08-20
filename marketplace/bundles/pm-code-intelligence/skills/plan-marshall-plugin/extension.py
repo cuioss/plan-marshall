@@ -121,10 +121,10 @@ class Extension(ExtensionBase, DerivationResolverBase):
         about ``lsp_harvest.lift_to_modules`` rather than about the code below.
         The harvest uses a caller-supplied path-to-module lookup — a
         longest-prefix table it builds from the discovered module set. That is
-        necessary rather
-        than incidental: the live seam claims only ``.claude`` and ``.plan``, so
-        it attributes no ``marketplace/bundles/**`` path at all and routing
-        through it would guarantee zero edges. The substitute does **not** carry
+        necessary rather than incidental: no attributor on that seam claims a
+        ``marketplace/bundles/**`` path — the live claim set is ``.claude``,
+        ``.plan`` and three documentation paths — so routing through it would
+        guarantee zero edges. The substitute does **not** carry
         the seam's ambiguous-ownership obligation (its equal-length tie-break is
         iteration order, which the seam's contract forbids; unreachable today
         because bundle directory names are unique), and vendored-tree exclusion

@@ -41,7 +41,10 @@ Building the index costs about **1.9 s**, and that cost is paid **per process**.
 A warm index then answers cheaply — though not uniformly, so it is worth stating precisely: `definition` and `hover` answer in microseconds. `references` pays a one-off directory walk the first time a citing component is seen (up to ~20 ms on the most-referenced component measured, 443 inbound edges) and answers in under 5 ms thereafter, because that walk is cached for the life of the server. A surface that forks a process
 per request is therefore a ~2 s-per-request surface no matter which protocol it
 speaks, and a resident server is the only shape in which this substrate is
-interactive at all — it pays the build once at `initialize`.
+interactive at all — it pays the build **once per process**, on the first request
+that actually needs the index. Not at `initialize`: the index is a lazy property,
+so the handshake itself builds nothing and the cost lands on the first
+`definition` / `references` / `hover`.
 
 This is the measured reason the surface is a server rather than a one-shot verb.
 The `query` verb exists for scripted and one-shot use and *does* pay the full
@@ -167,7 +170,7 @@ flag, and is the surface on which an unconfirmed site is legible as unconfirmed.
 ⛔ No diagnostic provider is advertised. Live broken-reference diagnostics are
 deliverable D3 of the `240-skill-lsp-server` plan, **hard-gated** on the
 validator-precision work: the validator's current unresolved set is
-overwhelmingly false positives (documentation placeholders, foreign namespaces
+not all real (documentation placeholders, foreign namespaces
 such as build-command and Maven coordinates, and verb-suffixed notations whose
 skill exists). Advertising a diagnostic provider before that precision work lands
 would ship confident-wrong squiggles at the corpus's most visible surface.
@@ -249,8 +252,17 @@ trade-off is real and is stated rather than hidden — without the declaration t
 automatic consumer, and the `query` verb below is the reachable path until an operator wires one.
 
 Two details in the block are load-bearing. `--project-path ${CLAUDE_PROJECT_DIR}` pins the workspace
-explicitly: without it the server resolves its project from the client's working directory, and a cwd
-outside the project yields empty capabilities that are indistinguishable from a deliberate opt-out.
+explicitly, and an explicit value always **wins** over anything the client declares — so the block's
+behaviour does not depend on what your editor sends.
+
+⭐ **Omitting the flag is no longer silent.** When `--project-path` is *not* passed, the `initialize`
+handler adopts the workspace root the client declares — `rootUri`, then the deprecated `rootPath`,
+then the first entry of `workspaceFolders` — and rebuilds config and corpus resolution from it before
+advertising capabilities. Previously the root came only from the CLI, defaulting to whatever directory
+the client happened to launch the server in, so a cwd outside the project yielded empty capabilities
+indistinguishable from a deliberate opt-out. A client that declares no root at all still falls back to
+the launch directory, which is why the flag remains the recommendation rather than an optional extra.
+
 `diagnostics: false` is set rather than left to the default (`true`), because the server advertises no
 diagnostic provider while D3 is gated.
 

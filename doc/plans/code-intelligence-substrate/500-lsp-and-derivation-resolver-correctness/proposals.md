@@ -8,9 +8,11 @@ Two kinds of entry appear below, and they differ in who has to act next:
 - **Proposals** (`P1`–`P6`) — a change the run identified but is **not authorised to make**. Each names
   what would change, the blast radius, and the observation that would settle it. **Each needs an
   operator's approval before anyone acts on it.**
-- **Decision records** (`D1`) — a state the run measured and is deliberately **leaving as it is**. No
-  approval is needed to leave something alone, so a decision record is a decision the run *did* take;
-  what it records is the reasoning and the **trigger that should reopen it**.
+- **Decision records** (`D1`) — a state the run measured and **left exactly as it found it**. Nothing
+  was changed and nothing needs approving, because doing nothing is what already happens; what the
+  entry records is the *reasoning* for the status quo and the **trigger that should reopen it**.
+  ⚠ Read it as "here is why this is the way it is, and what would change that" — not as the run
+  having settled the question.
 
 ---
 
@@ -20,10 +22,15 @@ Two kinds of entry appear below, and they differ in who has to act next:
 
 **What would change.** The `lsp` harvest lifts file references to module granularity through a
 caller-supplied longest-prefix table (`make_prefix_attributor`), not through the Axis-D
-path-attribution seam. That substitution is currently *necessary*: the live seam claims only
-`.claude` and `.plan`, so `lookup_claim('marketplace/bundles/…/scripts/y.py', …)` returns `None` and
-routing through it would derive zero edges. The proposal is to make the seam claim what the table
-claims — publishing `(marketplace/bundles/{bundle}, {bundle})` through `claim_paths()`.
+path-attribution seam. That substitution is currently *necessary*: no attributor on that seam claims
+a `marketplace/bundles/**` path. Re-derived on this clone —
+`merge_path_claims(discover_path_attributors(), ['plan-marshall', 'pm-plugin-development',
+'documentation'])` returns **five** claims from **three** attributors: `.claude` →
+`pm-plugin-development`, `.plan` → `plan-marshall`, and `doc` / `README.md` / `CONTRIBUTING.md` →
+`documentation`. None covers `marketplace/bundles/**`, so
+`lookup_claim('marketplace/bundles/…/scripts/y.py', …)` returns `None` and routing through it would
+derive zero edges. The proposal is to make the seam claim what the table claims — publishing
+`(marketplace/bundles/{bundle}, {bundle})` through `claim_paths()`.
 
 **Blast radius — wider than the resolver.** Axis-D claims are not scoped to this harvest. They decide
 what `which-module` answers, and what the change-footprint classifiers attribute, **for every
@@ -60,8 +67,12 @@ is consumed at four sites that must move in lock-step, or a module will publish 
 drop silently:
 
 1. `_npm_cmd_discover.py::_extract_dependencies` — the producer.
-2. The npm derivation resolver's join (`build-npm/extension.py`), which reads the first segment and
-   must not start treating a new scope as an edge before the decision is taken.
+2. The npm derivation resolver's join (`build-npm/scripts/extension.py`, via the shared
+   `derive_name_edges`), which reads the **name** — `dependency.split(':', 1)[0]` — and, in its own
+   words, *deliberately ignores* the scope segment. ⚠ That makes the coupling **tighter**, not looser,
+   than "must not start treating a new scope as an edge": the join already treats every scope as an
+   edge, so widening the producer **alone** would immediately create edges for both new kinds, with
+   no separate decision made anywhere. There is no second gate to fall back on.
 3. `build-npm/SKILL.md` § Axis-C, which states which kinds contribute.
 4. `doc/user/dependency-intelligence.adoc` § npm specifics, which states the same limit to an
    operator.
@@ -190,9 +201,15 @@ unresolved of about 5,300 with close to **97 %** of them not broken references a
 **Re-derived on this clone.** Command:
 
 ```bash
-python3 marketplace/bundles/pm-plugin-development/skills/tools-marketplace-inventory/scripts/resolve-dependencies.py \
+python3 .plan/execute-script.py pm-plugin-development:tools-marketplace-inventory:resolve-dependencies \
   validate --scope marketplace --format json --direct-result
 ```
+
+⚠ Through the generated executor, not by direct path: the script imports sibling-skill modules
+(`marketplace_bundles`, `_dep_index`) that only the executor's injected `PYTHONPATH` supplies, so
+running the file directly fails with `ModuleNotFoundError: No module named 'marketplace_bundles'`.
+The figures below were taken with that import path supplied by hand, which is equivalent; the
+executor form above is the one to reproduce them with.
 
 | Figure | Value |
 |---|---|

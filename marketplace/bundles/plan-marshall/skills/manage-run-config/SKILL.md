@@ -258,7 +258,7 @@ Manage the machine-local `derivation_resolvers` binding deciding **which derivat
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config derivation-resolver set \
   --resolver lsp --disabled
 
-# Read the effective state (configured: false when no entry exists)
+# Read the effective state (configured: false when no well-formed dict entry exists)
 python3 .plan/execute-script.py plan-marshall:manage-run-config:run_config derivation-resolver get \
   --resolver markdown
 ```

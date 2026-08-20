@@ -41,7 +41,7 @@ import shutil
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 DEP_TYPE_LSP = 'lsp'
@@ -252,6 +252,16 @@ def _candidate_files(project_root: Path, suffix: str, file_budget: int | None) -
     return found
 
 
+def is_vendored_path(relative_path: str) -> bool:
+    """Report whether a repo-relative path lies inside a vendored tree.
+
+    The string form, for callers that already hold repo-relative paths (the
+    lift). :func:`_in_vendored_tree` is the ``Path`` form for callers that hold
+    absolute ones (the harvest).
+    """
+    return bool(VENDORED_TREE_DIRS.intersection(PurePosixPath(relative_path).parts))
+
+
 def _in_vendored_tree(path: Path, root: Path) -> bool:
     """Report whether ``path`` lies inside a vendored tree under ``root``.
 
@@ -260,10 +270,10 @@ def _in_vendored_tree(path: Path, root: Path) -> bool:
     the root's own location veto the whole workspace.
     """
     try:
-        parts = path.relative_to(root).parts
+        relative = path.relative_to(root)
     except ValueError:
         return False
-    return bool(VENDORED_TREE_DIRS.intersection(parts))
+    return is_vendored_path(relative.as_posix())
 
 
 def bare_import_roots(files: Iterable[Path], root: Path) -> list[str]:
@@ -277,11 +287,18 @@ def bare_import_roots(files: Iterable[Path], root: Path) -> list[str]:
     cross-component edge at all.
 
     The derivation is structural rather than layout-specific: a directory holding
-    Python files but **no** ``__init__.py`` is not a package, so the only way an
-    import of one of its files can resolve is with that directory itself on the
-    search path. That is exactly the set a launcher synthesizes, and it is
-    computed from the tree rather than from any knowledge of this repository's
-    shape.
+    Python files but **no** ``__init__.py`` is not a *regular* package, so an
+    import of one of its files by bare module name can only resolve with that
+    directory itself on the search path. That is exactly the set a launcher
+    synthesizes, and it is computed from the tree rather than from any knowledge
+    of this repository's shape.
+
+    ⚠ Under PEP 420 such a directory is still an implicit **namespace-package
+    portion**, so "not a package" would be too strong: what it is not is a
+    directory whose modules are importable as ``{dir}.{module}`` from the parent.
+    The distinction does not change the derivation — a portion is importable only
+    under its dotted path, never as the bare module name these imports use — but
+    the reason is namespace semantics, not the absence of packagehood.
 
     Args:
         files: The candidate files the harvest will query.
@@ -553,7 +570,9 @@ def lift_to_modules(
     :func:`make_prefix_attributor` builds from the module set
     (:func:`build_lsp_component_refs` supplies it). It is **not** the Axis-D
     path-attribution seam, and this is a substitution rather than a shortcut:
-    the live seam claims only ``.claude`` and ``.plan``, so
+    no attributor on that seam claims a ``marketplace/bundles/**`` path at all —
+    the live claim set is ``.claude``, ``.plan`` and three documentation paths
+    (``doc``, ``README.md``, ``CONTRIBUTING.md``) — so
     ``lookup_claim('marketplace/bundles/…/scripts/y.py', …)`` returns ``None``
     and routing through it would guarantee zero edges.
 
@@ -587,12 +606,26 @@ def lift_to_modules(
     known = set(known_modules)
     edges: set[tuple[str, str]] = set()
     suppressed: dict[str, list[str]] = {
+        'vendor-tree': [],
         'unattributable-endpoint': [],
         'unknown-endpoint': [],
         'self-edge': [],
     }
 
     for from_file, to_file in file_references:
+        # Refused HERE as well as at the harvest, and the redundancy is the
+        # point: a root-scoped module (``paths.module`` of ``.``, a value the
+        # Python discoverer really emits) owns whatever nothing else claims, so
+        # the attributor below would hand a site-packages file a real module name
+        # and this function would emit a confidently wrong edge with no note.
+        # The harvest never passes one in, but this function is public and its
+        # contract must hold for any caller, not only for the one that filters
+        # upstream.
+        vendored = [path for path in (from_file, to_file) if is_vendored_path(path)]
+        if vendored:
+            suppressed['vendor-tree'].append(f'{from_file} -> {to_file} ({vendored[0]} is in a vendored tree)')
+            continue
+
         from_module = attribute(from_file)
         to_module = attribute(to_file)
 

@@ -23,6 +23,7 @@ import json
 import shutil
 import sys
 
+import lsp_harvest
 import pytest
 from lsp_harvest import (
     VENDORED_TREE_DIRS,
@@ -242,34 +243,86 @@ def test_a_vendored_target_is_counted_apart_from_an_out_of_workspace_one(tmp_pat
     assert not any(note.startswith('out-of-workspace:') for note in outcome.notes)
 
 
-def test_the_skip_set_is_one_constant_used_for_sources_and_targets():
-    """Two lists would drift; the source-side list had already missed .pyprojectx."""
+def test_the_skip_set_names_the_trees_a_whole_tree_baseline_found_reached():
+    """A membership check only — the one-constant coupling is asserted separately."""
     assert {'.venv', 'node_modules', '.pyprojectx', 'site-packages'} <= VENDORED_TREE_DIRS
 
 
-def test_a_vendored_target_is_never_attributed_to_a_root_scoped_module():
-    """make_prefix_attributor's root-scoped fallback would claim it with NO note.
+def test_the_attributor_alone_would_claim_a_vendored_target_for_a_root_scoped_module():
+    """The reachable defect the exclusions exist to prevent, pinned on its own.
 
     ``paths.module`` of ``'.'`` is a value the Python discoverer really emits, so
-    a root-scoped module in the table owns whatever nothing else claims —
-    including a site-packages file — producing a silent wrong edge. The harvest
-    drops such a target before the lift can be asked, so no reference carrying one
-    ever reaches this function.
+    a root-scoped module owns whatever nothing else claims — including a
+    site-packages file. This pins the ATTRIBUTOR's behaviour unchanged, so a
+    later narrowing of its root-scoped fallback cannot silently retire the
+    exclusions that actually prevent the wrong edge.
     """
-    module_paths = {'alpha': 'alpha', 'rootmod': '.'}
-    attribute = make_prefix_attributor(module_paths)
+    attribute = make_prefix_attributor({'alpha': 'alpha', 'rootmod': '.'})
 
-    # The attributor WOULD claim it — this is the reachable defect, pinned so a
-    # later narrowing of the fallback does not silently retire the harvest-side
-    # exclusion that actually prevents it.
     assert attribute('.venv/lib/python3.12/site-packages/pkg/__init__.py') == 'rootmod'
 
-    edges, _notes = lift_to_modules(
+
+def test_the_lift_refuses_a_vendored_target_under_a_root_scoped_module():
+    """`lift_to_modules` must produce NO edge, on its own contract.
+
+    Refused at the lift as well as at the harvest. The harvest already drops such
+    a target, but this function is public: its contract has to hold for a caller
+    that did not filter upstream, or the guarantee is only as good as the one
+    call site that happens to filter.
+    """
+    module_paths = {'alpha': 'alpha', 'rootmod': '.'}
+
+    edges, notes = lift_to_modules(
         [('alpha/x.py', '.venv/lib/python3.12/site-packages/pkg/__init__.py')],
-        attribute,
+        make_prefix_attributor(module_paths),
         list(module_paths),
     )
-    assert edges == [('alpha', 'rootmod')]  # ...which is why the harvest never asks
+
+    assert edges == []
+    assert any(note.startswith('vendor-tree:') for note in notes), notes
+
+
+def test_the_lift_still_produces_an_edge_between_two_real_modules():
+    """The control: the lift-side exclusion must not suppress ordinary references."""
+    module_paths = {'alpha': 'alpha', 'rootmod': '.'}
+
+    edges, _notes = lift_to_modules(
+        [('alpha/x.py', 'beta/y.py')],
+        make_prefix_attributor(module_paths),
+        list(module_paths),
+    )
+
+    assert edges == [('alpha', 'rootmod')]  # beta/ is claimed by the root-scoped module
+
+
+def test_the_same_constant_governs_both_the_source_sweep_and_the_target_refusal(tmp_path, monkeypatch):
+    """One constant, both directions — asserted by MOVING it and watching both follow.
+
+    Two independently-maintained lists would drift, which is how the source-side
+    list came to omit `.pyprojectx` while the audit found it reached as both. A
+    membership assertion cannot see that; changing the constant can.
+    """
+    monkeypatch.setattr(lsp_harvest, 'VENDORED_TREE_DIRS', frozenset({'quarantined'}))
+    root = _workspace(tmp_path)
+    quarantined = root / 'quarantined' / 'pkg'
+    quarantined.mkdir(parents=True)
+    (quarantined / 'mod.py').write_text('import os\n', encoding='utf-8')
+    source = root / 'alpha'
+    source.mkdir()
+    (source / 'caller.py').write_text('import mod\n', encoding='utf-8')
+    server_cmd, _record = _fake_server(tmp_path / 'server', definition={'uri': _uri(quarantined / 'mod.py'), 'range': {}})
+
+    outcome = harvest_workspace(root, server_cmd=server_cmd, timeout_s=20.0, request_timeout_s=5.0)
+
+    assert outcome.ran is True
+    # Source side: the quarantined file was not queried, so only alpha/caller.py was.
+    assert outcome.files_scanned == 1
+    # Target side: the definition resolving into it produced no reference.
+    assert outcome.references == []
+    # And the lift refuses it too, under the same moved constant.
+    edges, notes = lift_to_modules([('alpha/caller.py', 'quarantined/pkg/mod.py')], lambda p: 'alpha', ['alpha'])
+    assert edges == []
+    assert any(note.startswith('vendor-tree:') for note in notes)
 
 
 def test_the_harvest_never_hands_the_lift_a_vendored_target(tmp_path):
@@ -325,6 +378,9 @@ def test_every_vendored_component_is_excluded_as_a_target(tmp_path):
 
         outcome = harvest_workspace(root, server_cmd=server_cmd, timeout_s=20.0, request_timeout_s=5.0)
 
+        # Without this the guard is satisfied by a fake server that never
+        # started: `ran=False` also yields an empty reference list.
+        assert outcome.ran is True, f'{component}: the harvest did not run ({outcome.reason})'
         assert outcome.references == [], f'{component} was admitted as a target'
 
 

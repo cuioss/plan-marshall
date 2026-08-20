@@ -258,7 +258,8 @@ opened for it.
   > **code-facing client** — one that spawns a third-party language server over source files. A
   > **corpus-facing resident server** has shipped since, over the marketplace document corpus, and it
   > already solves the three problems D2 would otherwise re-solve: the index, the resident cost model
-  > (~1.9 s build paid once at `initialize` rather than per call), and the opt-in switch.
+  > (a ~1.9 s build paid once per process — on the first request needing the index — rather than per
+  > call), and the opt-in switch.
   >
   > **It does not satisfy D2, and the limit is granularity.** Its index is **component-granular**:
   > `_corpus_index.py` records no intra-file position, `definition` returns the owning component's

@@ -22,13 +22,16 @@ answer:
   — the configuration most likely to omit ``--project-path`` — silently resolved
   the project to the client's cwd and looked exactly like a deliberate opt-out.
 
-The first and fourth are driven through a **running server subprocess**, because
-the protocol projection is thinner than the index beneath it and an in-process
-call cannot see the framing or the process exit at all.
+The first, second and fourth are driven through a **running server subprocess**,
+because the protocol projection is thinner than the index beneath it and an
+in-process call cannot see the framing, the process exit, or whether a withheld
+count survived serialisation. The third is an index-level property and is
+asserted there.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import subprocess
@@ -295,6 +298,19 @@ def test_two_equally_ranked_candidates_are_reported_unverified(tmp_path):
 # =============================================================================
 
 
+def _project_with_corpus(tmp_path: Path) -> Path:
+    """A real enabled project whose corpus yields at least one UNVERIFIED site."""
+    project = tmp_path / 'project'
+    base = _unverified_corpus(project)
+    _write(
+        project / '.plan' / 'marshal.json',
+        json.dumps({'code_intelligence': {'corpus_language_server': {
+            'enabled': True, 'corpus_path': str(base.relative_to(project)),
+        }}}),
+    )
+    return project
+
+
 def _server_over(corpus_base: Path, project_root: Path):
     """A CorpusLanguageServer pointed at ``corpus_base``, with notify captured."""
     config = {'enabled': True, 'corpus_path': str(corpus_base.relative_to(project_root))}
@@ -371,12 +387,69 @@ def test_a_confirmed_site_is_returned_and_carries_the_omitted_count(tmp_path):
 
 
 def test_the_query_verb_still_emits_every_site_with_its_flag(tmp_path):
-    """The filter is the LSP projection's, not the index's — query stays complete."""
-    base = _unverified_corpus(tmp_path)
-    references = corpus_index.CorpusIndex(base).references(_UNVERIFIED_NOTATION)
-    assert references
-    assert any(not ref.verified for ref in references)
-    assert all(isinstance(ref.as_dict()['verified'], bool) for ref in references)
+    """The filter is the LSP projection's, not the index's — `query` stays complete.
+
+    Driven through `cmd_query` itself, not through `CorpusIndex`: the constraint
+    the plan attaches to omitting sites is about what the **verb** publishes, and
+    a test that called the index directly would pass even if `cmd_query` had
+    picked up the same filter.
+    """
+    project = _project_with_corpus(tmp_path)
+
+    payload = corpus_lsp.cmd_query(argparse.Namespace(
+        project_path=str(project), kind='references', notation=_UNVERIFIED_NOTATION,
+    ))
+
+    assert payload['status'] == 'success'
+    assert payload['reference_count'] >= 1
+    assert len(payload['references']) == payload['reference_count']
+    # Every site is present, each carrying its flag — and at least one is the
+    # unverified kind `textDocument/references` withholds.
+    assert all('verified' in row for row in payload['references'])
+    assert any(row['verified'] is False for row in payload['references'])
+    assert payload['verified_count'] < payload['reference_count']
+
+
+def test_the_running_server_withholds_the_unverified_site_and_says_how_many(tmp_path):
+    """D5's clause (b), on the wire — the protocol projection is the thin layer.
+
+    An in-process call cannot see this: the omitted count and the
+    `window/logMessage` both have to survive serialisation and framing, and
+    `notation_at_position` reads the document map keyed by the client's RAW URI
+    while `_lsp_location` emits a resolved one — an assumption only a real
+    request exercises.
+    """
+    project = _project_with_corpus(tmp_path)
+    document = _write(project / 'doc.md', 'Run `alpha:target-skill:target_script` here.\n')
+    frames = (
+        _framed({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}})
+        + _framed({
+            'jsonrpc': '2.0', 'id': 2, 'method': 'textDocument/references',
+            'params': {
+                'textDocument': {'uri': document.resolve().as_uri()},
+                'position': {'line': 0, 'character': 8},
+                'context': {'includeDeclaration': True},
+            },
+        })
+        + _framed({'jsonrpc': '2.0', 'method': 'exit'})
+    )
+
+    result = _serve(project, frames)
+
+    assert result.returncode == 0, result.stderr.decode()
+    messages = _messages(result.stdout)
+    responses = {message['id']: message for message in messages if 'id' in message}
+    assert responses[2]['result'] == [], f'an unverified site reached the client: {responses[2]}'
+
+    logs = [
+        message for message in messages
+        if message.get('method') == 'window/logMessage'
+    ]
+    assert logs, f'every site was withheld with no report on the wire: {messages}'
+    assert 'could not be confirmed' in logs[0]['params']['message']
+    # The COUNT, not just the fact — an empty list plus a bare notice would still
+    # leave the reader unable to tell how much was withheld.
+    assert any(character.isdigit() for character in logs[0]['params']['message'])
 
 
 # =============================================================================

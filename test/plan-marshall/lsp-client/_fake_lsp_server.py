@@ -12,9 +12,10 @@ depends on. So the fake is a **subprocess driven over the real**
 :class:`StdioTransport`, which keeps the whole read loop under test while making
 the server's behaviour a fixture.
 
-The server is driven by a JSON config (see :func:`spawn_session`) keyed by file
-**basename**, so a test writes ``{'a.py': {'open': [...], 'change': [...]}}``
-without having to reproduce URI encoding.
+The server is driven by a JSON config keyed by file **basename**, so a test
+writes ``{'a.py': {'open': [...], 'change': [...]}}`` without having to reproduce
+URI encoding. ``rename_edit`` and ``workspace_symbols`` supply the canned results
+for the two request kinds that carry one.
 """
 
 from __future__ import annotations
@@ -72,6 +73,8 @@ while True:
         break
     elif method == "textDocument/rename":
         write_frame({"jsonrpc": "2.0", "id": message["id"], "result": CONFIG.get("rename_edit")})
+    elif method == "workspace/symbol":
+        write_frame({"jsonrpc": "2.0", "id": message["id"], "result": CONFIG.get("workspace_symbols")})
     elif method in ("textDocument/didOpen", "textDocument/didChange"):
         uri = message["params"]["textDocument"]["uri"]
         phase = "open" if method.endswith("didOpen") else "change"

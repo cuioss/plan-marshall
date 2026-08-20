@@ -11,8 +11,10 @@ edited.
 ~1.9 s and is paid per process; a warm index answers `definition` and `hover` in
 microseconds and `references` in under 5 ms once its per-component file lists are
 cached.
-A resident server pays that cost once at ``initialize``, which is the only shape
-in which this substrate is interactive at all.
+A resident server pays that cost **once per process** — on the first request that
+needs the index, not at ``initialize``, since :attr:`CorpusLanguageServer.index`
+is a lazy property and the handshake builds nothing. Either way it is paid once,
+which is the only shape in which this substrate is interactive at all.
 
 ⚠ **The staleness bound that buys.** The index is built once and is **never
 rebuilt or invalidated** for the life of the process; the ``didOpen`` /
@@ -34,10 +36,14 @@ an empty result for every request — the documented no-op path. An unconfigured
 project's behaviour is unchanged.
 
 ⚠ **No diagnostics are advertised.** Live broken-reference diagnostics are
-deliverable D3 of the ``240-skill-lsp-server`` plan, hard-gated on the
-validator-precision work: the validator's current unresolved set is
-overwhelmingly false positives, so a diagnostic provider would ship
-confident-wrong squiggles at the corpus's most visible surface.
+deliverable D3 of the ``240-skill-lsp-server`` plan, gated on validator
+precision: a diagnostic provider inherits that precision, so shipping one while
+the unresolved set carries a substantial false-positive share would put
+confident-wrong squiggles at the corpus's most visible surface. ⛔ The ~97 %
+false-positive figure the gate was originally argued on **no longer holds** —
+re-measured, a minority of the remaining unresolved set is false positives.
+Whether the gate should therefore come down is an open question recorded as a
+proposal, not one this docstring settles.
 
 Output: TOON to stdout for the CLI verbs; JSON-RPC on stdio for ``serve``.
 Stdlib only.
