@@ -50,7 +50,10 @@ from _analyze_bash_chain_shapes_in_skills import analyze_bash_chain_shapes_in_sk
 from _analyze_bash_fence_inline_code_exemption import (
     analyze_bash_fence_inline_code_exemption,
 )
-from _analyze_canonical_enum_drift import analyze_canonical_enum_drift
+from _analyze_canonical_enum_drift import (
+    analyze_canonical_enum_drift,
+    analyze_canonical_enum_drift_with_population,
+)
 from _analyze_declared_vs_disk import analyze_declared_vs_disk
 from _analyze_fail_closed_gate_reads import analyze_fail_closed_gate_reads
 from _analyze_finalize_step_token import scan_finalize_step_token
@@ -282,9 +285,13 @@ class RuleRunner:
         # argparse ``choices=`` (the same mirror-vs-derived shape as the two rules
         # above, one surface over from the flag-name check the argument-naming
         # cluster performs).
+        enum_findings, enum_population = analyze_canonical_enum_drift_with_population(
+            root, cache=cache
+        )
         emit(
             'canonical-enum-choices-drift',
-            scoped(analyze_canonical_enum_drift(root, cache=cache)),
+            scoped(enum_findings),
+            enum_population,
         )
         # readme-skill-registration-drift — a bundle README that fails to name a
         # skill its plugin.json registers (the same mirror-vs-derived shape, one

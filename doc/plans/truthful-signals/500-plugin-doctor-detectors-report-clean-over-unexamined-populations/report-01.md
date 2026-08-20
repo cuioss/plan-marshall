@@ -55,8 +55,8 @@ discarded on exactly that ground.
 guard whose row could not be written, because no mutation of it reddened
 anything — the guard was inert (RZ-9). A guard with no row is therefore the
 signal to check, and the completeness claim above is checked against the round's
-new tests rather than asserted: rounds 5 and 6 added seven tests between them and
-all seven appear below.
+new tests rather than asserted: rounds 5, 6 and 7 added ten tests between them and
+every one that pins a guard appears below.
 D4's *Done when* requires the run to name the mutation used to see each guard
 red; D2's 320/G2 additionally requires the red to have been observed **before**
 the adapter change landed. Each mutation snapshotted the target's exact bytes to
@@ -90,12 +90,15 @@ work along with the mutant.
 | D3 — R5 argument-group inheritance | drop `add_argument_group` from `_PARSER_GROUP_FACTORIES` | `test_choices_on_an_argument_group_resolve` |
 | D3 — R5 scope gate on group inheritance | drop `and owner not in scope_params[id(stmt)]` | `test_a_group_built_off_a_shadowed_parser_is_not_attributed_to_the_root` |
 | D3 — R5 laundered group vars | drop `\| laundering` from `_shadowed_receivers`'s returned sets | `test_a_group_built_off_a_shadowed_parser_is_not_attributed_to_the_root` |
-| D3 — R5 two-member minimum | restore `if not members` in place of `if len(members) < 2` | `test_a_one_member_brace_group_is_a_template_slot_not_an_enum` |
+| D3 — R5 two-member minimum *(superseded)* | restore `if not members` in place of `if len(members) < 2` | `test_a_one_member_brace_group_is_a_template_slot_not_an_enum` — **neither the mutation target nor this test exists at HEAD.** Round 6 (RZ-10) replaced the collection-time drop with the `single_member_ambiguous` cause and renamed the test; the row is kept, marked, because the register is a record of reds observed, and silently deleting it would hide that a guard was replaced rather than removed. The live guard is the R6 row below. |
 | D3 — R5 incomplete-authority paths | `return set()` at the head of `_paths_with_incomplete_authority` | `test_a_parser_handed_to_an_unmodelled_call_makes_that_path_incomplete` |
 | D3 — R6 single-member cause | `if False:` in place of `if len(documented) < 2:` (drop at collection again) | `test_a_one_member_group_is_counted_as_ambiguous_not_dropped`, `test_a_truncated_one_member_enum_is_a_declared_gap_not_a_clean_pass` |
 | D3 — R6 single-member counted as a blind spot | drop `UNRESOLVED_SINGLE_MEMBER` from `UNRESOLVED_BLIND_SPOT_CAUSES` | the two above, plus `test_real_tree_blind_spot_count_is_published_and_dominated_by_underived_parsers` |
 | D3 — R6 laundering scope | return bare group names (`{group for group, _owner in laundering}`) | `test_a_laundered_group_name_does_not_poison_the_same_name_elsewhere` |
 | D3 — R6 receiver-position control | `return set()` at the head of `_paths_with_incomplete_authority` | `test_a_parser_in_receiver_position_does_not_make_a_path_incomplete` — the replacement for the inert control of RZ-9, which this same mutation did NOT redden |
+| D3 — R7 laundering scope (binding) | key laundering by name only (`{group for group, _func in laundering}`) | `test_a_laundered_group_name_does_not_poison_the_same_name_elsewhere` |
+| D3 — R7 mixed-form conflict | delete the conflict branch so a re-declaration overwrites | `test_a_script_mixing_both_declaration_forms_with_different_sets_fails_closed` |
+| D5 — R7 clean-run population | drop `enum_population` from the runner's `emit` for this rule | `test_population_publishing_rules_report_their_size_on_a_clean_tree` |
 
 **Independently reproduced.** The round-1 verifier re-ran the D4 and D3 mutations
 from its own snapshot directory and confirmed both reds, so these are not this
@@ -127,6 +130,11 @@ condition.
 The plan's claim-labels row makes recording this the run's obligation: *"a file
 touched and not listed is collateral change to be justified in the report"*.
 
+Derived from `git diff --name-only origin/main...HEAD` against the plan's
+Expected surface, not from the round record. Two files were missing for five
+rounds because the table was maintained finding-by-finding, which records what a
+round NOTICED rather than what the branch TOUCHED.
+
 | File | Why | Justification |
 |---|---|---|
 | `plan-marshall/skills/workflow-integration-github/scripts/github_ops.py` | D6 / 060/G3 | The parse call had to move from `parse_args_with_toon_errors` to `parse_ci_args` for the router-flag note to reach the CI surface at all. The plan's Expected surface names `ci_base.py` as the D6 hand-off point but not the two front-ends that call it; the change is one line plus its import. |
@@ -143,6 +151,10 @@ touched and not listed is collateral change to be justified in the report"*.
 | `test/plan-marshall/tools-script-executor/test_dispatch_boundary_error.py` | RX-4 / 060/G6 | Same claim in a test docstring. Not in the Expected surface. |
 | `plan-marshall/skills/tools-script-executor/templates/execute-script.py.template` | RY-4 / 060/G6 | The SOURCE template that generates every executor — the claim's fourth surviving site, found in round 4. Not in the Expected surface, and the plan could not have anticipated it: the claim's reach was only established by sweeping for it four times. |
 | `pm-plugin-development/skills/recipe-fix-argparse-rejection/SKILL.md` | RY-5 / 060/G2 | Two further restatements of the signature list, contradicting that file's own rule. |
+| `test/…/plugin-doctor/test_analyze_manage_invocation.py` | RÅ-8 / 060/G6 | The retired argparse claim in a test docstring, in the same lead directory as two files already listed here. Missed by this table for five rounds while its own directory's siblings were recorded — found by round 7 diffing the branch against `origin/main` rather than reading the rounds. |
+| `doc/plans/truthful-signals/060-…/report-01.md` | RÅ-8 / 060/G2 | Edited for the coverage check (§ Coverage check records why): that report claimed signature #2 already named the new shape, which is the opposite shape. Same justification as the `320-…` row above, and it should have been added at the same time. |
+| `pm-plugin-development/skills/plugin-doctor/scripts/_runner.py` | RÅ-3 / 040-G1 | The gate published no `population_size` for `canonical-enum-choices-drift`, so a clean run reported a bare `findings: 0` while two reference docs claimed the opposite. Wiring it needed the runner, which the plan's D5 item names for two rules and not this one. |
+
 
 ### Proposals recorded, not decided
 
@@ -227,7 +239,8 @@ change edits Python under `marketplace/bundles/` and `test/` — so the full
   accurate when written and never re-derived. It is derived from
   `git log e4e3515..HEAD` at each update now.
 - **`./pw verify` green** at the round-6 commit: `21422 passed, 14 skipped` in
-  437.59s, all six dimensions clean.
+  437.59s, and at the round-7 commit: `21424 passed, 14 skipped` in 438.59s —
+  both with all six dimensions clean.
 - **Owed on the merged tree** once the base moves — the full run is re-taken
   after the rebase onto PR #1314. Stated rather than left implicit: a green recorded against an
   earlier commit is not evidence about this one, and commit `570c6ca`'s own
@@ -309,6 +322,14 @@ documents.
 | RZ-15 | round-6 verifier (V6-5, V6-9, V6-17) | Three smaller false statements: `rule-provenance.md` still listed the placeholder-metavar case as a fail-closed SKIP (round 5 removed it from the module for the reason that it never enters the population at all — half-application #8); `_split_enum_members`' worked example had both halves backwards; and RY-1 cited a finding id that does not exist. | All three fixed. |
 | RZ-16 | round-6 verifier (V6-10) | `_DefaultingParams.__missing__` was unreachable — the walk recurses with `ast.iter_child_nodes`, reaching exactly what `ast.walk` reaches; `__missing__` fired **zero** times over the whole marketplace, and deleting the subclass left the suite green. A defensive branch describing a state that cannot arise, whose declared return type also hid the defaulting from a caller annotated for a plain `dict`. | Removed. A missing key is a real bug and now raises. |
 | RZ-17 | round-6 verifier (V6-11..V6-13, V6-15, V6-16) | Five report defects: "eleven rows added" was twelve; the register's completeness claim was false again at HEAD; RZ-1's "both mutation-confirmed" was false (see RZ-9); § Build gate named the wrong commit set; and **three of round 5's eleven items (R5-4, R5-7, R5-8) had no recorded disposition at all**. | All fixed. The three undisposed items were characterised survivors in the round-5 verifier's own verdict and are now recorded as such below, which is what condition B requires of a survivor. |
+| RÅ-1 | round-7 verifier (V7-6) | **Round 6's fix for round 5's laundering leaked in the same shape.** Keying by `(group, owner_name)` narrowed the scope to "any function with a parameter of that name", not to the binding. With `grp` laundered inside `def _b(parser)`, an unrelated `def _c(parser)` calling the honest module-level `grp.add_argument(..., choices=...)` had its authority discarded and every site on the script downgraded. Third attempt at the same guard; the previous two were module-wide and name-pair. | **Fixed by keying on the binding's own enclosing FUNCTION**, which is the scope a local binding actually has. Three shapes asserted, including the cross-function read the name-pair keying got wrong. Mutation-confirmed. ⚠️ The verifier's stated reproduction (two fixtures differing only in `_b`'s parameter name) does **not** reproduce; the defect needs the honest group's `add_argument` to sit inside another function. The finding is real, its published mechanism was not, and it was confirmed by constructing the shape rather than by trusting either. |
+| RÅ-2 | round-7 verifier (V7-5) | *"an explicit `add_argument(..., choices=...)` for the same (path, flag) is the one that wins"* — false. A differing re-declaration takes the conflict branch and resolves the key to `None`; the explicit call does not win, it destroys the resolution. Vacuous when the two agree, so false in the only case where it is testable. | Fixed, with both arms pinned by a new test. Two of my own first fixtures failed to set up the conflict at all (a spec passed by NAME, and a parser not built from `ArgumentParser()`), and each looked like a refutation of the verifier — the claim was only settled by a fixture where both forms demonstrably reach the same key. |
+| RÅ-3 | round-7 verifier (V7-7) | **This plan's own D5 defect, uncorrected for a third rule, with two reference docs asserting the remedy.** `canonical-enum-choices-drift`'s coverage keys ride on FINDINGS, so on a clean tree — the only state a passing gate is ever in — the gate emitted `{'rule': …, 'findings': 0}`: a clean result over a population the reader is told nothing about. Meanwhile `rule-catalog.md` said *"a clean sweep states what it could not check"* and `rule-provenance.md` said a clean result *"cannot read as coverage over an unread population"*. | Fixed by wiring the runner, as D5 did for the other two: `analyze_canonical_enum_drift_with_population` returns findings and size from ONE derivation, and the rule joins `POPULATION_PUBLISHING_LABELS`. Both reference sentences now say what the two surfaces actually carry. Mutation-confirmed against the clean-tree publication test. |
+| RÅ-4 | round-7 verifier (V7-8) | The normative fail-closed list opened *"Every path that cannot reach a confident authority resolves to SKIP:"* over **four** bullets, while the census names **seven** causes — the three omitted being the largest (`parser_surface_not_derived` 43, `authority_incomplete` 18, `single_member_ambiguous` 1), i.e. 62 of 71 unresolved sites. | Fixed: the list states the count, points at the full enumeration, and names the three it does not repeat, with an instruction not to shorten it back. Separately disclosed in `rule-catalog.md`: an enum above its block's first invocation is dropped at collection and counted by no cause — zero live sites, but the same shape as the one-member drop RZ-10 corrected. |
+| RÅ-5 | round-7 verifier (V7-1, V7-2) | **Half-application #9, both inside the file round 6 had just rewritten.** Round 6 stopped filtering one-member groups at collection but left three sentences saying it still did: the fail-closed preamble ("both filtered at collection"), the pattern comment ("applied to the parsed member set in `_enum_sites_in_skill`"), and `_split_enum_members`' docstring ("the caller's two-member minimum is what rejects it"). The module contradicted itself in three places, and `rule-catalog.md` had it right. | All three fixed against the code. |
+| RÅ-6 | round-7 verifier (V7-3) | **Half-application #10.** Round 6 deleted `_ARGPARSE_CONSTRUCTION_CALLS` and left two prose sites gating on it — one of them a TEST docstring, which states a test's meaning and is therefore not eligible as a survivor on any terms. Both described a name-list discriminator the code does not have; the real one is the parser's POSITION in the call. | Both fixed. The test docstring now states the structural reason its body actually checks. |
+| RÅ-7 | round-7 verifier (V7-4) | *"18 sites across six notations"* — the sentence's own enumeration lists **seven** and sums correctly to 18. My correction of RZ-14 got the site count right and the notation count wrong, and copied it into two report rows. | Fixed at all three sites. |
+| RÅ-8 | round-7 verifier (V7-9..V7-13) | Five report defects: a budget line still saying "0 of the grant. A sixth round is warranted" after round 6 had landed and was recorded above it; **V6-14, V4-9 and V4-10 with no id recorded** (the arithmetic RZ-17 introduced, failing on rounds 4 and 6); a mutation-register row naming a test and a target that no longer exist; and **two touched files missing from § Collateral for five rounds**. | All fixed. § Item accounting now tabulates every round's ids so the check is a table rather than a claim, § Collateral is derived from `git diff` against `origin/main` rather than from the round record, and the superseded register row is marked rather than deleted. |
 | RF-6 | full verify, D6 | The new `ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED` rule had no provenance row and no firing positive fixture; two whole-tree guards failed. | Fixed: provenance row added; firing fixture added to `build_fixture_corpus`. |
 | CC-1 | coverage check vs 360/G3 | That gap's *Done when* is a literal `grep -n -i 'retention.pin\|degraded fallback'` returning nothing. The rewritten docstring USED both phrases while explaining they were fiction, so the stated condition was not met. | Fixed: the paragraph describes what the body once computed without the two banned phrases. Condition now met (`grep` exits 1). |
 | CC-2 | coverage check vs 320/G5 | That gap requires that **no surface** still claims the backward-resolution divergence is "practically unreachable". `320-.../report-01.md` still did. | Fixed: replaced with what the mechanism actually is. **Collateral, justified**: the file is outside this plan's Expected surface, but it is a location the gap itself names, and the claim is false — condition A admits no deferral. |
@@ -368,6 +389,20 @@ DO with each. Readings taken:
 - **Findings are still not narrowing**, and the rate is flat: round 4 was 11
   items, 7 on the shipped surface (64%), against round 3's 13 items with 9
   shipped (69%).
+- **Round 7** — one verifier. Returned 13 items, **8 on the shipped surface
+  (62%)**. The absolute count fell (17 → 13); the shipped share did not. The
+  headline was again a structural defect in the previous round's own fix, in the
+  same shape as the defect it replaced: **three attempts at the laundering scope,
+  each leaking differently** (module-wide → name-pair → binding). Round 7 also
+  found this plan's own subject uncorrected for a third rule — the gate published
+  no population for `canonical-enum-choices-drift`, while two reference documents
+  asserted that it did. Half-application recurred for the ninth and tenth time,
+  both inside files commit `6ab55a1` had itself edited.
+- **One round-7 finding did not survive checking.** V7-6's published mechanism
+  did not reproduce as written; the underlying defect was real and was confirmed
+  by constructing the shape it actually needs. Recorded because a verifier's
+  reasoning is evidence to test, not to adopt — the same standard this run
+  applies to its own.
 - **Round 6** — one verifier, the first of the operator's granted rounds.
   Returned 17 items, **10 on the shipped surface (59%)**. The share fell; the
   absolute shipped count rose (10 against round 5's 8). Three were structural
@@ -390,10 +425,26 @@ DO with each. Readings taken:
   8 of 11 items on the shipped surface (73%), against round 4's 7 of 11 (64%)
   and round 3's 9 of 13 (69%). Half-application recurred for the **sixth** time.
 - **Budget:** five rounds (the contract default), then an operator grant of up to
-  five more — *"continue with up to 5 rounds if sensible"*. Rounds used: 5 of the
-  default, 0 of the grant. A sixth round is warranted on the evidence: round 5's
-  items were not narrowing, and every round so far has found real defects in the
-  previous round's corrections.
+  five more — *"continue with up to 5 rounds if sensible"*. **Rounds used: 5 of
+  the default and 2 of the grant (rounds 6 and 7); 3 of the grant remain.** This
+  line said "0 of the grant. A sixth round is warranted" for a round after round
+  6 had landed as commit `6ab55a1` and was recorded above it — a prospective
+  sentence left standing as a record of the past. Re-derive it from the round
+  bullets above whenever a round closes.
+
+#### Item accounting
+
+Every round's item count, and where each id is dispositioned. Round 6 introduced
+this check (RZ-17) after finding three round-5 items with no row; round 7 ran the
+same arithmetic over rounds 4 and 6 and found three more, so it is tabulated
+rather than asserted.
+
+| Round | Items | Ids | Unaccounted |
+|---|---:|---|---|
+| 4 | 11 | V4-1..V4-11 | none — **V4-9 and V4-10 had no id in this report until round 7 (V7-11)**. Both were report-text defects and both were in fact fixed: V4-9 (the RW-7 row's "enumerates the three mechanisms", which RX-2 had reduced to two) and V4-10 ("nine of round 3's twelve items", which is thirteen). Fixed in the text, unrecorded as findings. |
+| 5 | 11 | R5-1..R5-11 | none — R5-4, R5-7, R5-8 are in § Characterised survivors (added by RZ-17) |
+| 6 | 17 | V6-1..V6-17 | none — **V6-14 had no id until round 7 (V7-10)**. It is the stale-figure finding, dispositioned inside RZ-1's correction rather than given a row of its own. |
+| 7 | 13 | V7-1..V7-13 | none — RÅ-1..RÅ-8 below |
 
 ## Reviewer participation
 

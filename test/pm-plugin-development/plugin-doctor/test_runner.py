@@ -296,6 +296,11 @@ def test_ast_cache_parses_each_file_once():
 POPULATION_PUBLISHING_LABELS = [
     'analyze_thinking_directive_in_workflow_docs',
     'analyze_shim_marker',
+    # A clean tree is the only state a passing gate is ever in, so a rule whose
+    # coverage figures ride on its FINDINGS publishes nothing exactly when it
+    # matters. This rule carried the figures per-finding only, while two
+    # reference documents claimed a clean sweep states what it could not check.
+    'canonical-enum-choices-drift',
 ]
 
 

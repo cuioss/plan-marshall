@@ -34,31 +34,51 @@ script; reading ``choices=`` only is what settles it.
 Fail-closed on uncertainty (normative)
 --------------------------------------
 Every path that cannot reach a confident authority resolves to SKIP — no
-finding — never to a guessed comparison:
+finding — never to a guessed comparison. There are SEVEN such paths, one per
+member of :data:`UNRESOLVED_CAUSES`, and each is counted by
+:func:`derive_coverage`. They are listed in full under § *Declared coverage*
+below; the four that most often need stating up front are:
 
-- the owning script file is missing or unparseable;
+- the owning script file is missing or unparseable
+  (``notation_unresolved`` / ``script_unparseable``);
 - the documented flag is never declared with ``choices=`` (a free-form flag such
   as ``--promoted`` documented as ``{true|false}`` has no ``choices=`` authority
-  to compare against);
+  to compare against) — ``no_choices_declared``;
 - the same ``(subcommand_path, flag)`` is declared TWICE with conflicting sets
-  (ambiguous — there is no single authority to compare against). Note the scope:
-  two SUBCOMMANDS declaring different sets for the same flag name is not this
-  case and is not skipped. The authority is keyed by path, so ``add --kind`` and
-  ``remove --kind`` resolve independently and are each compared. This entry read
-  "more than one distinct set across the script" until round 6, which was true
-  before the authority was path-scoped and false after;
+  (ambiguous — there is no single authority to compare against), which includes
+  a script mixing the declarative dict-spec and an explicit ``add_argument``
+  with different sets. Note the scope: two SUBCOMMANDS declaring different sets
+  for the same flag name is not this case and is not skipped. The authority is
+  keyed by path, so ``add --kind`` and ``remove --kind`` resolve independently
+  and are each compared. This entry read "more than one distinct set across the
+  script" until round 6, which was true before the authority was path-scoped and
+  false after;
 - a ``choices=`` constant cannot be resolved to a concrete string set
-  (cross-module reference whose defining module is absent or ambiguous).
+  (cross-module reference whose defining module is absent or ambiguous) — these
+  last two are both ``choices_unresolvable``.
+
+⛔ The three NOT listed here are the largest ones:
+``parser_surface_not_derived`` (43 sites), ``authority_incomplete`` (18) and
+``single_member_ambiguous`` (1) — 62 of the 71 unresolved sites. This list said
+"Every path … :" over four bullets for several rounds, which told a reader of the
+normative section that the skip set was four items when most skips were not in
+it. Do not shorten it back: an incomplete list under an exhaustive lead-in is
+the same defect this analyzer reports.
 
 A skip can never produce a false positive. The only cost is a false negative on
 an unresolvable site, which the asymmetric-error rule accepts: over-rejecting a
 valid, correctly-documented call is the failure this project keeps hitting, and
 this guard refuses it by construction.
 
-A placeholder metavar is not in this list because it never enters the
-population at all: a token is read as an enum only when it parses into TWO OR
-MORE members, so ``--type TYPE`` and the braced template slot ``{phase}`` in
-``--scope {phase}.{role}|plan|...`` are both filtered at collection.
+Two shapes are commonly mistaken for entries in this list and are not:
+
+* ``--type TYPE`` — a bare metavar with no braces and no pipe matches neither
+  enum pattern, so it never enters the population and reaches no skip;
+* the braced template slot ``{phase}`` in ``--scope {phase}.{role}|plan|...`` —
+  this one IS collected and IS in the population, under
+  ``single_member_ambiguous`` below. It was filtered at collection for one
+  round; that was a silent narrowing and this sentence went on describing it
+  for a round after it stopped.
 
 Positive-population assertion
 -----------------------------
@@ -138,7 +158,7 @@ refusal to invent an authority:
   Both are live in this tree. A parser merely PASSED INTO a helper is NOT one of
   them, and was wrongly listed here once: the caller's own ``add_parser`` models
   the PATH, so the surface IS derived and only the authority is missing. Such a
-  site lands in ``authority_incomplete``, which holds 18 sites across six
+  site lands in ``authority_incomplete``, which holds 18 sites across seven
   notations — ``manage-execution-manifest`` (9), ``manage-tasks`` (2),
   ``phase_handshake`` (3), and one each on ``manage-findings``,
   ``manage-references``, ``manage-status`` and ``collect-fragments``. The
@@ -158,10 +178,11 @@ refusal to invent an authority:
 
   - a ``choices=`` declared on a receiver that cannot be attributed to a parser
     path, because an enclosing function parameter of the same name shadows it;
-  - a parser handed to a call this module does not model — anything outside
-    :data:`_ARGPARSE_CONSTRUCTION_CALLS`, typically an imported helper that
-    declares the flag. The path it marks incomplete is that parser's, so only
-    sites on that path are affected.
+  - a parser handed to a call in ARGUMENT position — typically an imported
+    helper that declares the flag. There is no exclusion list: argparse's own
+    calls take the parser as the RECEIVER and so never reach this test, which is
+    a structural property rather than a set of names to maintain. The path it
+    marks incomplete is that parser's, so only sites on that path are affected.
 
   Declining to attribute an authority is NOT establishing its absence, so no
   site in this bucket can support the reading below. A blind spot.
@@ -274,9 +295,10 @@ _VERB_TOKEN_RE = re.compile(r'^[a-z][a-z0-9\-]*$')
 # preceded by a flag (or a ``(--a | --b)`` mutually-exclusive group) never
 # matches, so only genuine per-flag enum claims are collected.
 #
-# The two-member minimum is NOT in this pattern — it is applied to the parsed
-# member set in :func:`_enum_sites_in_skill`, which is where it also covers the
-# brace-less form and bodies whose members collapse to one.
+# Neither pattern carries a member minimum. A one-member body is collected like
+# any other and is separated in :func:`derive_population`, which files it under
+# ``single_member_ambiguous`` rather than comparing it. This comment named
+# :func:`_enum_sites_in_skill` for one round after the test moved out of it.
 _ENUM_TOKEN_RE = re.compile(
     r'(?<![A-Za-z0-9])--(?P<flag>[A-Za-z][A-Za-z0-9\-]*)\s+\{(?P<members>[^{}]+)\}'
 )
@@ -512,9 +534,11 @@ def _split_enum_members(raw_members: str) -> frozenset[str]:
     too. Each member is stripped of whitespace and backticks.
 
     This function does NOT decide what is an enum claim — it only splits. A
-    metavar body yields its own text as one member (``'TYPE'`` →
-    ``{'TYPE'}``), not the empty set; the caller's two-member minimum is what
-    rejects it. Both halves of that were stated backwards here once.
+    metavar body yields its own text as one member (``'TYPE'`` → ``{'TYPE'}``),
+    not the empty set, and nothing REJECTS it: a one-member result is collected
+    and filed under ``single_member_ambiguous`` by :func:`derive_population`.
+    Every clause of that has been stated wrongly here at some point — first the
+    empty set, then a rejection that had already moved elsewhere.
     """
     body = raw_members.strip()
     parts = body.split('|') if '|' in body else body.split(',')
@@ -800,9 +824,14 @@ def _authority_by_subcommand_flag(
     ``None``.
     """
     parser_paths = _build_parser_path_sets(tree)
-    # The declarative dict-spec form is resolved FIRST so an explicit
-    # ``add_argument(..., choices=...)`` for the same (path, flag) — a script
-    # that mixes both forms — is the one that wins.
+    # The declarative dict-spec form is resolved FIRST, so a later
+    # ``add_argument(..., choices=...)`` for the same (path, flag) meets an
+    # occupied key. It does NOT win: an AGREEING re-declaration is a no-op, and a
+    # DIFFERING one takes the conflict branch below and resolves the key to
+    # ``None`` — ``choices_unresolvable``, the fail-closed reading, since a
+    # script that mixes the two forms with different sets gives this walk no
+    # single authority. "Is the one that wins" stood here for several rounds and
+    # is false in the only case where it is testable.
     resolved: dict[tuple[tuple[str, ...], str], frozenset[str] | None] = dict(
         _declarative_authority(tree, resolver)
     )
@@ -1058,10 +1087,11 @@ def _shadowed_receivers(tree: ast.Module) -> dict[int, set[str]]:
     hypothetical: both halves of :data:`_PARSER_GROUP_FACTORIES` reach it.
     """
     scope_params = _enclosing_params(tree)
-    laundering = _group_vars_off_shadowed_owner(tree, scope_params)
+    scope_funcs = _enclosing_functions(tree)
+    laundering = _group_vars_off_shadowed_owner(tree, scope_params, scope_funcs)
     return {
         id(node): set(scope_params[id(node)])
-        | {group for group, owner in laundering if owner in scope_params[id(node)]}
+        | {group for group, func in laundering if func in scope_funcs[id(node)]}
         for node in ast.walk(tree)
         if isinstance(node, ast.Call) and _is_add_argument(node)
     }
@@ -1100,18 +1130,53 @@ def _enclosing_params(tree: ast.Module) -> dict[int, frozenset[str]]:
     return params_at
 
 
-def _group_vars_off_shadowed_owner(
-    tree: ast.Module, scope_params: dict[int, frozenset[str]]
-) -> set[tuple[str, str]]:
-    """``(group_name, owner_name)`` for each group built off a SHADOWED owner.
+def _enclosing_functions(tree: ast.Module) -> dict[int, tuple[int, ...]]:
+    """Map every node's id to the ids of the functions ENCLOSING it, outermost first.
 
-    The owner is carried alongside the group name so the caller can scope the
-    result. Returning bare group names made the finding module-wide: one helper
-    binding ``grp`` marked the name ``grp`` shadowed at EVERY ``add_argument`` in
-    the file, including a correctly-attributed module-level
-    ``grp = p_add.add_argument_group('g')``, whose resolved authority was then
-    discarded. A group name is laundered only where its OWNER is shadowed too,
-    which is the scope the shadowing itself has.
+    A local binding is visible only inside the function that makes it, so this is
+    the scope a laundered group name has. Keying laundering by name alone made it
+    module-wide; keying it by ``(name, owner_name)`` narrowed it to "any function
+    with a parameter of that name", which is still not the binding's scope —
+    a second helper binding the same group name off a shadowed parser discarded a
+    correctly-attributed group's authority in an unrelated function.
+    """
+    chains: dict[int, tuple[int, ...]] = {}
+
+    def walk(node: ast.AST, chain: tuple[int, ...]) -> None:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            chain = chain + (id(node),)
+        chains[id(node)] = chain
+        for child in ast.iter_child_nodes(node):
+            walk(child, chain)
+
+    walk(tree, ())
+    return chains
+
+
+def _group_vars_off_shadowed_owner(
+    tree: ast.Module,
+    scope_params: dict[int, frozenset[str]],
+    scope_funcs: dict[int, tuple[int, ...]],
+) -> set[tuple[str, int]]:
+    """``(group_name, enclosing_function_id)`` per group built off a SHADOWED owner.
+
+    The FUNCTION is carried, not the owner name, because the binding it describes
+    is function-local and that is the only scope in which the name means this
+    group. Two narrower keyings shipped before this one and both leaked:
+
+    * bare group NAMES — module-wide. One helper binding ``grp`` marked the name
+      shadowed at every ``add_argument`` in the file, discarding the resolved
+      authority of a correctly-attributed module-level
+      ``grp = p_add.add_argument_group('g')``.
+    * ``(group_name, owner_name)`` — narrowed to "any function with a parameter
+      of that name", which is not the binding's scope either. With ``grp``
+      laundered in ``def _b(parser)``, an unrelated ``def _c(parser)`` calling
+      the module-level ``grp.add_argument(..., choices=...)`` had its authority
+      discarded, because the pair matched on the NAME ``parser`` rather than on
+      the binding.
+
+    Both are the same failure: a guard against false positives manufacturing a
+    false negative. Keying on the binding's own function ends the family.
 
     ``grp = parser.add_mutually_exclusive_group()`` inside
     ``def _extra(parser): ...`` binds ``grp`` to a group of whatever parser the
@@ -1121,7 +1186,7 @@ def _group_vars_off_shadowed_owner(
     defeated by one indirection. Treating ``grp`` as shadowed keeps the module's
     authority INCOMPLETE, which is the fail-closed reading.
     """
-    laundered: set[tuple[str, str]] = set()
+    laundered: set[tuple[str, int]] = set()
     for stmt in ast.walk(tree):
         if not isinstance(stmt, ast.Assign) or not isinstance(stmt.value, ast.Call):
             continue
@@ -1130,8 +1195,13 @@ def _group_vars_off_shadowed_owner(
         owner = _receiver_name(stmt.value)
         if owner is None or owner not in scope_params[id(stmt)]:
             continue
+        enclosing = scope_funcs[id(stmt)]
+        if not enclosing:
+            # An owner that is a parameter implies an enclosing function, so this
+            # is unreachable; a module-level binding cannot be laundered.
+            continue
         laundered.update(
-            (t.id, owner) for t in stmt.targets if isinstance(t, ast.Name)
+            (t.id, enclosing[-1]) for t in stmt.targets if isinstance(t, ast.Name)
         )
     return laundered
 
@@ -1369,10 +1439,23 @@ def analyze_canonical_enum_drift(marketplace_root: Path, cache=None) -> list[dic
         ``unresolved_notation_blind_spots`` and ``unresolved_notation_causes``:
         the share of that population the sweep could not resolve an authority
         for, how much of that share is a real gap, and what stopped it. A clean run
-        carries no findings and therefore no figures; :func:`derive_coverage`
-        over :func:`derive_population` is the clean-run surface for both.
+        carries no findings and therefore no figures, which is why the RUNNER
+        publishes the population size on the rule summary — see
+        :func:`analyze_canonical_enum_drift_with_population`. Reference prose
+        claimed the per-finding keys made a clean sweep state its coverage; on a
+        clean tree there are no findings to carry them, so that was exactly
+        backwards until the runner was wired.
     """
-    population = derive_population(marketplace_root, cache=cache)
+    return _findings_from_population(derive_population(marketplace_root, cache=cache))
+
+
+def _findings_from_population(population: list[EnumSite]) -> list[dict]:
+    """Build the finding list for an already-derived population.
+
+    Shared by :func:`analyze_canonical_enum_drift` and its
+    ``_with_population`` sibling so the two cannot produce different findings
+    from the same tree.
+    """
     population_size = len(population)
     coverage = derive_coverage(population)
     findings: list[Finding] = []
@@ -1417,3 +1500,23 @@ def analyze_canonical_enum_drift(marketplace_root: Path, cache=None) -> list[dic
             )
         )
     return [f.to_dict() for f in findings]
+
+
+def analyze_canonical_enum_drift_with_population(
+    marketplace_root: Path, cache=None
+) -> tuple[list[dict], int]:
+    """Return ``(findings, population_size)`` from a SINGLE derivation.
+
+    The runner publishes the examined population on its rule summaries, and a
+    clean tree is the only state a passing gate is ever in — so without this the
+    rule's summary on a green run is ``{'rule': ..., 'findings': 0}``, a clean
+    result over a population the reader is told nothing about. That is this
+    analyzer's own subject, and two reference documents asserted the opposite
+    ("a clean sweep states what it could not check") while the gate said nothing.
+
+    One derivation, not two: re-deriving the roster to get the number is a second
+    chance to disagree with the one the findings came from. Mirrors
+    ``analyze_shim_marker_with_population``.
+    """
+    population = derive_population(marketplace_root, cache=cache)
+    return _findings_from_population(population), len(population)

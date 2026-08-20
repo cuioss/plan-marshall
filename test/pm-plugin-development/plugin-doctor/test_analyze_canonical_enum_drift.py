@@ -914,10 +914,12 @@ def test_a_parser_handed_to_an_unmodelled_call_makes_that_path_incomplete(tmp_pa
     as ABSENT", and here it is simply unread. Three live sites were filed that
     way.
 
-    The gate is the CALL, not the import: only a call outside
-    ``_ARGPARSE_CONSTRUCTION_CALLS`` marks the path, so an ordinary
-    ``sub.add_parser('verb')`` does not make every path incomplete. The sibling
-    test below pins that half.
+    The gate is the parser's POSITION in the call, not the callee's name: only a
+    parser passed as an ARGUMENT marks the path, so an ordinary
+    ``sub.add_parser('verb')`` — which takes the parser as its receiver — does
+    not make every path incomplete. The sibling test below pins that half. An
+    exclusion list of argparse call names stood here instead for one round; it
+    was inert, and naming it described a discriminator the code did not have.
     """
     script = '''\
 import argparse
@@ -1178,9 +1180,16 @@ def test_a_laundered_group_name_does_not_poison_the_same_name_elsewhere(tmp_path
     correctly-attributed module-level ``grp = p_add.add_argument_group('g')``,
     which is a false negative manufactured by the guard against false positives.
 
-    The pair is carried instead, and a group is laundered only where its OWNER
-    is shadowed too. Both directions are asserted: the honest group resolves,
-    and the laundered one still fails closed.
+    Keying on ``(group, owner_name)`` was the second attempt and leaked too: it
+    narrowed the scope to "any function with a parameter of that name", so an
+    unrelated ``def _c(parser)`` calling the honest module-level ``grp`` still
+    had its authority discarded. The key is the binding's own ENCLOSING
+    FUNCTION, which is the scope a local binding actually has.
+
+    Three shapes are asserted: the honest module-level group resolves, the
+    honest group resolves even when READ from inside another function that has a
+    parameter of the laundered owner's name, and the laundered group itself
+    still fails closed.
     """
     script = '''\
 import argparse
@@ -1201,9 +1210,98 @@ def _extra(parser):
     tree = ast.parse(script_path.read_text(encoding='utf-8'))
     population = derive_population(tmp_path)
 
-    assert _mod._group_vars_off_shadowed_owner(tree, _mod._enclosing_params(tree)) == {
-        ('grp', 'parser')
-    }
+    laundered = _mod._group_vars_off_shadowed_owner(
+        tree, _mod._enclosing_params(tree), _mod._enclosing_functions(tree)
+    )
+
+    assert [name for name, _func in laundered] == ['grp']
     assert _mod._has_unattributed_choices(tree) is False
     assert population[0].resolved is True
     assert population[0].choices == frozenset({'x', 'y', 'z'})
+
+    # The cross-FUNCTION read, which the owner-name keying got wrong: the honest
+    # ``grp`` is used inside a function whose parameter happens to be spelled
+    # like the laundered binding's owner. Nothing about that changes which group
+    # ``grp`` names here.
+    cross = script.replace(
+        "grp.add_argument('--kind', choices=['x', 'y', 'z'])\n",
+        '',
+    ).rstrip() + '''
+
+
+def _read(parser):
+    grp.add_argument('--kind', choices=['x', 'y', 'z'])
+'''
+    _write_bundle(tmp_path, doc_enum='x|y|z', script_body=cross)
+    cross_tree = ast.parse(script_path.read_text(encoding='utf-8'))
+    cross_population = derive_population(tmp_path)
+
+    assert _mod._has_unattributed_choices(cross_tree) is False
+    assert cross_population[0].resolved is True
+    assert cross_population[0].choices == frozenset({'x', 'y', 'z'})
+
+
+def test_a_script_mixing_both_declaration_forms_with_different_sets_fails_closed(tmp_path):
+    """A conflict between the dict-spec and ``add_argument`` resolves to NOTHING.
+
+    The resolver seeds the declarative spec first, so a later
+    ``add_argument(..., choices=...)`` for the same ``(path, flag)`` meets an
+    occupied key. A comment said the explicit call "is the one that wins"; it
+    does not — an agreeing re-declaration is a no-op and a differing one takes
+    the conflict branch, resolving the key to ``None``. Both arms are asserted,
+    because the claim is vacuous in the agreeing case and only testable here.
+    """
+    spec = '''\
+import argparse
+
+from script_shared import create_workflow_cli
+
+cli = create_workflow_cli(
+    description='d',
+    subcommands=[
+        {'name': 'add', 'help': 'h', 'args': [
+            {'flags': ['--kind'], 'choices': ['a', 'b']},
+        ]},
+    ],
+)
+
+parser = argparse.ArgumentParser()
+sub = parser.add_subparsers(dest='cmd')
+p = sub.add_parser('add')
+p.add_argument('--kind', choices=%s)
+'''
+    resolver = _mod._Resolver(tmp_path, lambda path: ast.parse(path.read_text(encoding='utf-8')))
+
+    agreeing = _mod._authority_by_subcommand_flag(ast.parse(spec % "['a', 'b']"), resolver)
+    differing = _mod._authority_by_subcommand_flag(
+        ast.parse(spec % "['a', 'b', 'c']"), resolver
+    )
+
+    assert agreeing[(('add',), 'kind')] == frozenset({'a', 'b'})
+    assert differing[(('add',), 'kind')] is None
+
+    # And the fail-closed reading reaches the census: no finding, counted as
+    # unresolvable rather than compared against either set.
+    _write_bundle(tmp_path, doc_enum='a|b', script_body=spec % "['a', 'b', 'c']")
+    population = derive_population(tmp_path)
+
+    assert population[0].resolved is False
+    assert population[0].unresolved_cause == _mod.UNRESOLVED_CHOICES_UNRESOLVABLE
+    assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [])
+
+
+def test_the_two_entry_points_agree_on_findings_over_the_real_tree():
+    """``_with_population`` must not be a second, divergent derivation.
+
+    The runner publishes the examined population from the sibling entry point;
+    if it re-derived the roster, its number and its findings could disagree with
+    the ones the gate reports. One derivation feeds both.
+    """
+    plain = analyze_canonical_enum_drift(MARKETPLACE_ROOT)
+    paired, population_size = _mod.analyze_canonical_enum_drift_with_population(
+        MARKETPLACE_ROOT
+    )
+
+    assert paired == plain
+    assert population_size == len(derive_population(MARKETPLACE_ROOT))
+    assert population_size > 0
