@@ -81,8 +81,17 @@ store.
 The `default` bucket is the sink a finding collapses into when it carries no
 concrete `module` and no `component`. It is NOT a genuine cross-cutting
 judgement: the aggregation keys on a single module value and cannot detect a
-recurrence that genuinely spans several modules, so `default` only ever means
-*unattributed*, never *cross-cutting*. Promoting an unattributed recurrence would
+recurrence that genuinely spans several modules, so **on this disposition→hint
+routing path** `default` means *unattributed*, never *cross-cutting*.
+
+That scoping is load-bearing rather than pedantic: the `default` bucket has a
+second, still-live producer, and the claim is false of it. The cross-cutting
+lessons-capture route in
+[`../workflow/lessons-capture.md`](../workflow/lessons-capture.md) deliberately
+routes a genuinely cross-cutting fact to `default` — there, `default` DOES mean
+cross-cutting, and that route is retained, not retired. A reader who takes the
+unscoped form and applies it to a `default` entry from that producer will
+misclassify a deliberate cross-cutting record as unattributed noise. Promoting an unattributed recurrence would
 route an unverified hint to the widest possible blast radius — the least
 attributable evidence landing in the most general slot.
 
@@ -104,10 +113,24 @@ A finding contributes to a preference recurrence only when it is not the
 pipeline's own control traffic. A `pr-comment` finding is admissible ONLY when it
 is positively attributed to a recognized external reviewer bot — i.e. it carries a
 `bot_kind` that is a **recognized reviewer identity**, validated against the
-registry-derived set (the ingest verb stamps `bot_kind` from the comment author
-login and `add_finding` validates it at write time; the auditor re-validates
-archived records against the live registry, since it reads JSONL directly rather
-than through that write-time check). A `pr-comment` with no `bot_kind` — or one
+registry-derived set.
+
+⚠ **The write-time check does not enforce this, and must not be mistaken for it.**
+The ingest verb stamps `bot_kind` from the comment author login, and
+`add_finding` rejects a value that is non-empty and unrecognized — but its
+predicate is `if bot_kind and bot_kind not in BOT_KINDS`, so a finding with the
+field **absent** passes untouched. That is deliberate, not a hole to close at the
+write: an absent `bot_kind` is the correct recorded state for an unattributed
+human comment and for the pipeline's own posted comments, both of which must
+still be ingestible as findings. Rejecting them at write time would discard
+legitimate `pr-comment` records entirely.
+
+The admissibility gate is therefore **load-bearing at aggregation, not
+redundant with the write**: it is the only place that distinguishes "attributed
+to a recognized reviewer" from "present in the store". Both consuming surfaces
+apply it — the auditor structurally in `_preference_admissible`, re-validating
+archived records against the live registry because it reads JSONL directly; the
+emitter per the paragraph below. A `pr-comment` with no `bot_kind` — or one
 whose `bot_kind` is not a recognized reviewer identity — cannot be told apart from
 the pipeline's own posted comments: the ingest verb records the pipeline's own PR
 comments (a review-trigger comment, a description-restore) with `bot_kind` absent,
@@ -123,8 +146,13 @@ no author and are never pipeline-authored PR chatter — they are unaffected, an
 their tool-disposition recurrences remain the primary preference signal.
 
 Both surfaces apply this before a recurrence is counted: the cross-plan auditor
-structurally in `cross_preference_pattern`; the per-plan emitter by excluding
-`pr-comment` findings without a `bot_kind` when it aggregates dispositions.
+structurally in `cross_preference_pattern`; the per-plan emitter by admitting a
+`pr-comment` finding only when its `bot_kind` is a **recognized reviewer identity**
+in the registry-derived set, and excluding every other one when it aggregates
+dispositions. Presence of the field is not the test: an unrecognized `bot_kind`
+passes a presence check and fails the admissibility this section opens with, so the
+two must not be conflated — the emitter is an LLM-executed prose contract, and this
+paragraph IS its implementation.
 
 ## Threshold gate is surface-owned
 

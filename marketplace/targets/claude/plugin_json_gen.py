@@ -24,6 +24,13 @@ expand into multiple entries in the ``agents`` array — one per emitted
 level plus the canonical no-suffix entry that serves the ``inherit``
 resolution case. Non-eligible agents emit a single entry as before.
 
+A component declaring a ``targets:`` frontmatter scope that omits the
+generating target contributes NO entry — the same filter the verbatim
+emitter applies to the file itself (see ``component_targets.py``).
+Dropping the entry and the file in lock-step is what lets the equality
+check read a scoped-out component as deliberately absent rather than as
+drift.
+
 The output is deterministic — file paths within each component array are
 sorted alphabetically — so the equality check in
 ``equality_check.py`` produces stable diffs across runs.
@@ -34,6 +41,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from marketplace.targets.claude.emitter import CLAUDE_TARGET_NAME
 from marketplace.targets.claude.variant_emitter import (
     ALIAS_GATED_EFFORTS,
     LEVEL_TABLE,
@@ -42,6 +50,7 @@ from marketplace.targets.claude.variant_emitter import (
     selected_levels,
     supports_effort,
 )
+from marketplace.targets.component_targets import emits_to
 
 # Top-level fields that are preserved verbatim from the committed plugin.json.
 #
@@ -80,16 +89,29 @@ def _read_committed(bundle_dir: Path) -> dict:
 _OPENCODE_MAPPING = Path(__file__).resolve().parent.parent / 'opencode' / 'mapping.json'
 
 
-def _list_md_files(directory: Path) -> list[str]:
+def _list_md_files(directory: Path, target_name: str) -> list[str]:
     if not directory.exists():
         return []
-    return sorted(p.name for p in directory.iterdir() if p.is_file() and p.suffix == '.md' and not p.name.startswith('.'))
+    return sorted(
+        p.name
+        for p in directory.iterdir()
+        if p.is_file()
+        and p.suffix == '.md'
+        and not p.name.startswith('.')
+        and emits_to(p, target_name)
+    )
 
 
-def _expanded_agent_entries(agents_dir: Path, mapping_path: Path = _OPENCODE_MAPPING) -> list[str]:
+def _expanded_agent_entries(
+    agents_dir: Path,
+    target_name: str,
+    mapping_path: Path = _OPENCODE_MAPPING,
+) -> list[str]:
     """Return the agents array for ``plugin.json`` with variant expansion.
 
     For each agent file:
+    - An agent whose ``targets:`` scope omits ``target_name`` contributes
+      no entry at all — neither canonical nor variant.
     - If the file declares the dynamic-level-executor extension point,
       emit one entry per selected level plus the canonical no-suffix
       entry. A level whose effort is alias-capability-gated (any effort
@@ -106,6 +128,8 @@ def _expanded_agent_entries(agents_dir: Path, mapping_path: Path = _OPENCODE_MAP
     entries: list[str] = []
     for path in sorted(agents_dir.iterdir()):
         if not (path.is_file() and path.suffix == '.md' and not path.name.startswith('.')):
+            continue
+        if not emits_to(path, target_name):
             continue
         text = path.read_text(encoding='utf-8')
         frontmatter, _body = parse_frontmatter(text)
@@ -131,18 +155,27 @@ def _expanded_agent_entries(agents_dir: Path, mapping_path: Path = _OPENCODE_MAP
     return sorted(entries)
 
 
-def discover_components(bundle_dir: Path) -> dict[str, list[str]]:
+def discover_components(
+    bundle_dir: Path,
+    *,
+    target_name: str = CLAUDE_TARGET_NAME,
+) -> dict[str, list[str]]:
     """Discover the agents and commands entries for ``bundle_dir``.
 
     Returns a dict with ``agents``, ``commands``, and ``skills`` keys.
     ``agents`` and ``commands`` are sorted lists of paths relative to the
-    bundle root. ``skills`` is always an empty list — the runtime scans the
-    default ``skills/`` folder and adding to that scan via plugin.json
-    causes every skill to load twice. See the module docstring for the
-    spec citation.
+    bundle root, each filtered by the component's ``targets:`` scope.
+    ``skills`` is always an empty list — the runtime scans the default
+    ``skills/`` folder and adding to that scan via plugin.json causes
+    every skill to load twice. See the module docstring for the spec
+    citation. A skill scoped away from this target is therefore excluded
+    by the emitter's directory-level skip alone; there is no manifest
+    entry to drop.
     """
-    agents = _expanded_agent_entries(bundle_dir / 'agents')
-    commands = [f'./commands/{name}' for name in _list_md_files(bundle_dir / 'commands')]
+    agents = _expanded_agent_entries(bundle_dir / 'agents', target_name)
+    commands = [
+        f'./commands/{name}' for name in _list_md_files(bundle_dir / 'commands', target_name)
+    ]
     return {
         'agents': sorted(agents),
         'commands': sorted(commands),
@@ -150,10 +183,10 @@ def discover_components(bundle_dir: Path) -> dict[str, list[str]]:
     }
 
 
-def build_plugin_json(bundle_dir: Path) -> dict:
+def build_plugin_json(bundle_dir: Path, *, target_name: str = CLAUDE_TARGET_NAME) -> dict:
     """Compose the regenerated ``plugin.json`` document for ``bundle_dir``."""
     committed = _read_committed(bundle_dir)
-    discovered = discover_components(bundle_dir)
+    discovered = discover_components(bundle_dir, target_name=target_name)
 
     output: dict = {}
     for field in PASSTHROUGH_FIELDS:
@@ -167,12 +200,12 @@ def build_plugin_json(bundle_dir: Path) -> dict:
     return output
 
 
-def generate_plugin_json(bundle_dir: Path) -> str:
+def generate_plugin_json(bundle_dir: Path, *, target_name: str = CLAUDE_TARGET_NAME) -> str:
     """Return the regenerated ``plugin.json`` as a deterministic JSON string.
 
     The output uses two-space indentation, sorts component arrays, and
     preserves the top-level field order documented in
     ``PASSTHROUGH_FIELDS``.
     """
-    document = build_plugin_json(bundle_dir)
+    document = build_plugin_json(bundle_dir, target_name=target_name)
     return json.dumps(document, indent=2, ensure_ascii=False) + '\n'

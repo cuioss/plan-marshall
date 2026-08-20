@@ -7,6 +7,8 @@ description: Run quality-gate per affected bundle then one whole-tree quality-ga
 order: 5
 mutates_source: false
 head_dependent: true
+reads:
+  - worktree
 default_on: true
 presets:
   - full
@@ -68,10 +70,15 @@ keep it honest, both enforced in `build.py` and its pure `_gate_coverage` seam
   degraded detail variant under **Mark Step Complete** below, which never reports an un-run arm as
   green.
 
-The local-gate-vs-CI parity population these properties defend is **derived, not hand-listed**
-(`_gate_coverage.parity_population`), so a test can assert it is non-empty — a parity table computed
-over an empty population is indistinguishable from perfect parity, which is the confident-but-empty
-signal this gate exists to prevent.
+The local-gate-vs-CI parity population these properties defend is **recorded, not derived**
+(`_gate_coverage.parity_population`): each cell's verdict and note was established by reading both
+sides by hand at plan 160 and re-verified against `origin/main` at `61a43e5`, and nothing recomputes
+them. A test asserts the population is non-empty — a parity table computed over an empty population is
+indistinguishable from perfect parity, which is the confident-but-empty signal this gate exists to
+prevent — but non-emptiness over a hand-written tuple is a weak guarantee: every cell can be stale and
+still pass. One cell (`spdx-paths`) is therefore bound to the substrate it describes, so a note that
+drifts from `build.py`'s actual SPDX scope fails the build. The rest stay recorded-only, and that
+asymmetry is stated rather than implied away.
 
 ## A gate states what its green does not evaluate
 
@@ -280,6 +287,10 @@ The guards above run mypy + ruff over production sources and mypy over `test/` �
      --message "[WARNING] (plan-marshall:pre-push-quality-gate) Whole-tree module-tests unavailable for footprint modules {scoped_modules} — the scoped-green / whole-tree-red divergence class (PLAN-08) is UN-GATED at finalize for this push. Proceeding on honest degradation."
    ```
 
+   On reaching Mark Step Complete (Success) from here, use the **module-tests un-gated** detail variant
+   below rather than Branch A's default string — the default ends `module-tests green`, which this path
+   did not earn.
+
 4. **`divergence_possible == true` and `whole_tree_available == true`** → run whole-tree `module-tests` (no module arg — the whole tree is the authority):
 
    ```bash
@@ -351,7 +362,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 --display-detail "{N} bundles + whole-tree gates green, module-tests skipped (no module)"
 ```
 
-The variant is deliberately shorter than the default one. Against the `display_detail` length ceiling owned by [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) (do not restate the number here — read it there), the default string already reaches 75 characters before `{N}` expands, leaving room for only a small bundle count; the skip variant reaches 67 before expansion and therefore stays inside the ceiling for any count this gate can produce. Size any further variant the same way — against its **worst-case placeholder expansion**, never against its literal form. A placeholder-bearing string that fits as written is not evidence that it fits once the placeholder expands.
+The variant is deliberately shorter than the default one. Against the `display_detail` length ceiling owned by [`external-step-contract.md`](external-step-contract.md) § "Required termination" (do not restate the number here — read it there), the default string already reaches 75 characters before `{N}` expands, leaving room for only a small bundle count; the skip variant reaches 67 before expansion and therefore stays inside the ceiling for any count this gate can produce. Size any further variant the same way — against its **worst-case placeholder expansion**, never against its literal form. A placeholder-bearing string that fits as written is not evidence that it fits once the placeholder expands.
 
 **Detail variant — whole-tree quality-gate degraded (honest degradation).** When Branch A is reached
 via the whole-tree `quality-gate` **honest-degradation path** (the whole-tree invocation could not run,
@@ -367,6 +378,25 @@ earn (`test-compile` and `module-tests` still ran on this path, so "tests green"
 
 Size it the same way as the module-tests variant — against its worst-case placeholder expansion, not
 its literal form — and it stays inside the same `display_detail` ceiling.
+
+**Detail variant — module-tests un-gated (`whole_tree_available == false`).** The module-tests gate's
+branch 3 routes to **Mark Step Complete (Success)** without running pytest at all, having emitted the
+PLAN-08 un-gated WARNING. Branch A's default detail ends `test-compile + module-tests green`, which on
+that path asserts a dimension that never ran — the same misreport the degraded variant above exists to
+prevent, on the other arm. **Branch A's default string is inapplicable on this path**; use the variant
+below, which contains the word "green" for no dimension it did not gate:
+
+```text
+--display-detail "{N} bundles + whole-tree gates green, module-tests UN-GATED (PLAN-08)"
+```
+
+Its worst-case expansion is 67 characters at `{N}` = one digit and 68 at two — measured from the
+expanded string, not from the literal — so it stays inside the ceiling for any bundle count this gate
+can produce, exactly as the two variants above do.
+
+The two degradations are independent: a run can reach Branch A with the whole-tree `quality-gate`
+degraded, with module-tests un-gated, or with both. When both fire, neither single-arm variant is
+honest — compose one naming both un-gated arms, and size it the same way.
 
 The persisted `head_at_completion` field is consumed by phase-6-finalize Step 3's resumable re-entry check: when the worktree HEAD has advanced past `{sha}` (typically because `automated-review` or `sonar-roundtrip` opened a loop-back fix-task that produced a new commit), the dispatcher re-fires this gate against the newer HEAD. See § "Verdict-input surface — deliberately undeclared" above for why the verdict-currency classifier never narrows that re-fire for THIS gate.
 

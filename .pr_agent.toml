@@ -1,7 +1,7 @@
 # Repository-local PR-Agent configuration — GENERATED, do not edit by hand.
 #
 # Pack: python,plugin. Regenerate with:
-#   python3 marketplace/targets/generate.py --target pr-agent --output . --packs python,plugin
+#   uv run python marketplace/targets/generate.py --target pr-agent --output . --packs python,plugin
 #
 # Merged ABOVE the organisation-wide cuioss/pr-agent-settings configuration, so this
 # file carries the per-domain reviewer pack ONLY and inherits every other key — model,

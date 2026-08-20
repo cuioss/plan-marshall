@@ -175,13 +175,13 @@ pushed: true
 | `force-push-with-lease` | `(--plan-id \| --project-dir --branch)` | Force-push feature branch to origin with `--force-with-lease` guard (post-rebase). Resolves branch and worktree path from plan metadata when `--plan-id` is used. |
 | `switch-and-pull` | `(--plan-id \| --project-dir) --base` | Checkout `--base` on the main checkout and pull from origin. Resolves main checkout root from plan metadata when `--plan-id` is used. |
 | `prune-local-and-remote-ref` | `(--plan-id \| --project-dir --head) [--mode local_and_remote\|local_only]` | Delete local feature branch and optionally prune the remote-tracking ref after merge. Internal `show-ref` guard skips ref deletion when already absent. Default mode `local_and_remote`; use `local_only` in local-only plans. |
-| `branch-sync-state` | `--plan-id` | Report push parity of the plan's feature branch vs its `origin/{branch}` tracking ref: `ahead` \| `synced` \| `remote_absent_landed` \| `remote_absent_unverified` (a missing ref is disambiguated so a merged-and-deleted branch is never re-pushed). Pure read-only comparison (`git rev-parse HEAD` vs `git rev-parse origin/{branch}`), no fetch. Resolves branch from `metadata.worktree_branch` and the tree via the canonical worktree-resolution channel. |
+| `branch-sync-state` | `--plan-id` | Report push parity of the plan's feature branch vs its `origin/{branch}` tracking ref: `ahead` \| `synced` \| `remote_absent_landed` \| `remote_absent_unverified` (a missing ref is disambiguated so a merged-and-deleted branch is never re-pushed), plus the `barrier_action` (`re-fire` \| `skip`) the push barrier's consumer branches on. Pure read-only comparison (`git rev-parse HEAD` vs `git rev-parse origin/{branch}`), no fetch. Resolves branch from `metadata.worktree_branch` and the tree via the canonical worktree-resolution channel. |
 | `worktree-path` | `--plan-id` | Resolve the persisted worktree path via `manage-status get-worktree-path` |
 | `worktree-create` | `--plan-id --branch [--base]` | Run `git worktree add` plus project-state bookkeeping (`metadata.use_worktree`/`worktree_path`/`worktree_branch`) |
 | `worktree-remove` | `--plan-id [--force]` | Remove the worktree first, then delete the branch ref |
 | `worktree-list` | _(none)_ | List plans whose `status.metadata.use_worktree == true` |
 | `locate-plan-checkout` | `--plan-id` | Report where a plan's directory currently lives (`current` \| `worktree` \| `not_found`). The `worktree` probe resolves by two paths: the canonical `_resolve_worktree_path_for_plan` (manage-status) channel for not-yet-moved plans, then a structural `get_worktree_root() / {plan_id}` filesystem probe for the moved-in-from-main case (phase-5+, ADR-002). Reuses the uniform cwd walk-up for the current-checkout probe — no inline `git worktree list --porcelain` re-parsing. Used by the cross-session re-entry preflight at the `/plan-marshall` entry sites. |
-| `baseline-reconcile` | `--plan-id [--base-branch] [--skip-fetch] [--no-emit]` | Mechanical baseline reconciliation for phase-2-refine Step 3d. Resolves the worktree path (from `status.metadata.worktree_path`), fetches `origin/{base_branch}`, lists upstream commits since the captured `worktree_sha`, and runs `git merge-tree` to detect potential conflicts — no working-tree mutation. Each conflicted file becomes a Q-Gate finding under `--source qgate` so the phase-2-refine iterate-to-confidence loop addresses the drift. The LLM-judgement classification step (which upstream commit warrants scope adjustment) stays bundled in the existing phase-2-refine dispatch. `--skip-fetch` bypasses the network round-trip for tests / replay scenarios. |
+| `baseline-reconcile` | `--plan-id [--base-branch] [--skip-fetch] [--no-emit]` | Mechanical baseline reconciliation for phase-2-refine Step 3d. Resolves the worktree path (from `status.metadata.worktree_path`), fetches `origin/{base_branch}`, lists upstream commits since `merge-base(HEAD, origin/{base_branch})` (recomputed per call, never read from a stored SHA), and runs `git merge-tree` to detect potential conflicts — no working-tree mutation. Each conflicted file becomes a Q-Gate finding under `--source qgate` so the phase-2-refine iterate-to-confidence loop addresses the drift. The LLM-judgement classification step (which upstream commit warrants scope adjustment) stays bundled in the existing phase-2-refine dispatch. `--skip-fetch` bypasses the network round-trip for tests / replay scenarios. |
 
 **Script**: `plan-marshall:workflow-integration-git:prepare_execute`
 
@@ -446,12 +446,22 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 - `remote_absent_landed` — `origin/{branch}` does not resolve AND HEAD is an ancestor of `origin/{base_branch}` (the branch's work already landed; it merged and the remote branch was deleted). `remote_sha` is omitted; `base_branch` names the ref used to prove containment. The push barrier must NOT re-fire — re-pushing would resurrect a landed branch.
 - `remote_absent_unverified` — `origin/{branch}` does not resolve AND containment could not be proven (no resolvable base ref, or HEAD is not an ancestor — which a squash merge also produces). Never-pushed and squash-merged-and-deleted are indistinguishable from local state alone, so the verb DECLINES to assert "safe to re-push". `remote_sha` is omitted; `base_branch` carries the base checked (or `null`). The push barrier declines to re-fire on this state.
 
+**Barrier action**: every **successful** payload also carries `barrier_action` — `re-fire` on `ahead`,
+`skip` on every other state, including one this verb learns to emit later. The push barrier's consumer
+branches on **this field**, not on the `state` token, so the state→action mapping lives in one place
+(`push_barrier_action`) with a test over it instead of being re-derived in each consumer's prose. An
+**error** payload carries no `barrier_action`: an unresolvable state is not a verdict to map, and the
+consumer's own `status: error` branch (fail toward pushing) governs it. The asymmetry — only `ahead`
+re-fires — is deliberate, because re-firing is a PUSH: an over-broad re-fire resurrects a landed
+branch, while an over-broad skip leaves a genuinely-unpushed branch for the operator to notice.
+
 **Output** (TOON, remote ref present):
 ```toon
 status: success
 plan_id: EXAMPLE-PLAN
 branch: feature/EXAMPLE-PLAN
 state: ahead
+barrier_action: re-fire
 head_sha: abc123def456
 remote_sha: 789fed654cba
 ```
@@ -462,6 +472,7 @@ status: success
 plan_id: EXAMPLE-PLAN
 branch: feature/EXAMPLE-PLAN
 state: remote_absent_unverified
+barrier_action: skip
 head_sha: abc123def456
 base_branch: main
 ```
@@ -867,6 +878,57 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
   [--base-branch BRANCH] \
   [--skip-fetch] [--no-emit]
 ```
+
+Mechanical baseline reconciliation: resolves the worktree, fetches `origin/{base_branch}`, lists the
+upstream commits since `merge-base(HEAD, origin/{base_branch})` — recomputed per call, never read
+from a stored SHA — and runs `git merge-tree` to detect potential conflicts.
+
+**Return**. Every consumer MUST branch on `status` **before** reading `classification`: the wrapper
+prints the payload through a helper that always exits 0, so an "if the script exits non-zero" test
+never fires, and only the `success` payload carries a `classification` field at all.
+
+`status: success` — the classification fields:
+
+| Field | Meaning |
+|-------|---------|
+| `classification` | `no_overlap` \| `overlap_no_content_conflict` \| `overlap_with_content_conflict` |
+| `auto_reconcilable` | **Derived**, not measured: it is exactly `classification == overlap_no_content_conflict`, so it never downgrades an auto-resolvable overlap. A consumer already inside an `overlap_no_content_conflict` branch has no information left to gain from it |
+| `worktree_path`, `base_branch`, `base_branch_source` | The resolved target and where the base branch came from. `base_branch_source` is one of `cli` \| `plan_references` \| `plan_config` \| `default`, in that precedence order: an explicit `--base-branch`; then the plan's own persisted `references.json` value; then `marshal.json`'s project-wide `plan.phase-2-refine.base_branch`; then the `main` fallback. **The reference outranks the config deliberately** — the stale-base auto-update below writes there, so a resolver that preferred the config would re-resolve the stale branch on the next call, re-detect it, and rewrite the same correction indefinitely, leaving the update authoritative for nothing |
+| `base_branch_updated`, `original_base_branch` | The stale-base auto-update below. `original_base_branch` is present only when the update fired — and **both fields ride the `success` payload only**. The write happens before the fetch, so a run that updates `references.json` and then exits `skipped` (`fetch_failed`, `head_unresolved`, `merge_base_unresolved`) reports the update **nowhere**: those payloads carry `base_branch` alone. A consumer that reads these fields to learn whether the persisted base moved must therefore treat their absence on a skip as *unknown*, not as *no update* |
+| `merge_base_sha`, `merge_base_source` | The anchor every range below is computed against, recomputed per call |
+| `upstream_commit_count`, `upstream_commits` | Commits on the base since the merge base |
+| `conflict_count`, `conflicts`, `merge_tree_error` | The `git merge-tree` probe's result |
+| `in_flight_files` | Files the branch itself changed since the merge base |
+| `findings_emitted`, `emit` | Q-Gate findings written, and whether emission was enabled |
+
+`status: skipped` — the probe **declined to classify**; no `classification` field is present. A skip is
+never evidence that a rebase is safe, so a consumer forces its own conservative decision and logs
+`reason`. An unconfigured base branch is NOT among them: it falls back to `main`
+(`base_branch_source: default`) and the probe proceeds.
+
+| `reason` | Cause |
+|----------|-------|
+| `main_checkout_flow` | The plan's worktree state is `disabled` — it runs against the main checkout |
+| `worktree_not_materialized` | The plan is bound to a worktree in state `pending` — declared, not yet created |
+| `status_not_found` / `status_module_unavailable` / `worktree_path_missing` / `worktree_path_not_a_directory` | The worktree could not be resolved: status unreadable, the resolver unavailable, or the declared path absent or not a directory |
+| `worktree_unresolved` | Fallback, used only when the resolver returns no path AND names no reason of its own |
+| `no_remote` | The repository has no remote to fetch from |
+| `fetch_failed` | `git fetch origin {base_branch}` failed (network, auth, missing ref) |
+| `head_unresolved` | `git rev-parse HEAD` does not resolve in the worktree — nothing to anchor the comparison on |
+| `merge_base_unresolved` | `merge-base(HEAD, origin/{base_branch})` does not resolve — unrelated histories or an absent upstream ref leave no anchor for the commit range or the conflict probe |
+
+`status: error` — typed failures:
+
+| `error` | Cause |
+|---------|-------|
+| `probe_mutated_head` | HEAD changed during the probe. The classifier moves no refs, so a moved ref means it cannot be trusted to have classified the state it reported; it refuses to return a verdict derived from a mutated tree. This takes precedence over every other outcome, including a persist failure |
+| `finding_persist_failed` | A conflict finding could not be written to the store. The finding is that path's primary output, so the caller sees an error carrying the rejected content (`qgate_persist_failures`) rather than a clean result with `findings_emitted: 0` |
+
+**Side effects.** The probe never moves the branch ref and never touches the working tree. Its one
+persisted write is a **stale-`base_branch` auto-update**: when the configured base branch no longer
+resolves on origin and a remote default is detectable, it rewrites `base_branch` in `references.json`
+and emits a decision-log entry. That write runs **before** the fetch and is **not** gated by
+`--no-emit` — `--no-emit` suppresses Q-Gate findings only.
 
 ### prepare_execute — prepare
 

@@ -1242,6 +1242,34 @@ Five rules that catch gaps between what the marketplace *declares* and what is *
 
 ---
 
+## Rule: targets-scope-invalid
+
+Kept out of the reference-resolution pack above deliberately: every member of that pack catches a
+gap that resolves to a **dead reference at runtime**, and every member is analyze-only. An invalid
+`targets:` declaration is neither — it is a build-time authoring error, and this rule is
+build-failing under `quality-gate`.
+
+**Activation**: build-failing under `quality-gate` (via `RuleRunner.run_quality_gate`, routed
+through the `scoped(...)` wrapper) and also active in `doctor-marketplace.py analyze`.
+
+**Rule ID**: `targets-scope-invalid`
+
+**Analyzer**: `marketplace/bundles/pm-plugin-development/skills/plugin-doctor/scripts/_analyze_target_scope.py`
+
+**Scope**: every component that may carry the field — `marketplace/bundles/*/agents/*.md`, `marketplace/bundles/*/commands/*.md`, and `marketplace/bundles/*/skills/*/SKILL.md`.
+
+**Intent**: A component may declare the build-time `targets:` frontmatter field naming the build targets it ships to (absent ⇒ every target). The multi-target generator reads it with `yaml.safe_load` and rejects an unknown target name, an empty declaration, a declaration naming only targets that emit no component tree, a value resolving to neither a list of names nor a single name (a mapping, a number, a boolean), a list holding an item that is not a name (`targets: [true]`), and unparseable frontmatter that mentions the field. A single name is accepted — a bare or quoted scalar is a valid declaration, and a scalar containing commas is split on them. This rule surfaces what a stdlib-only scanner can see of that while the author is still looking at the file. An absent field is correct and is the state of nearly every component — it is never flagged.
+
+**Detection**: Pure static analysis — the leading `---`-fenced frontmatter is line-scanned for a column-zero `targets:` key. `details.reason` distinguishes `targets_unknown` (with `details.unknown_targets` and `details.registered_targets`) and `targets_empty`. Valid names are derived from the targets' own `register_target('{name}', …)` registrations under `marketplace/targets/*/__init__.py`, never transcribed into the analyzer.
+
+**Coverage boundary**: This rule is an **approximation of the build, not a mirror of it**, and the asymmetry is deliberate. A plugin-doctor script is stdlib-only — a consumer project installs the bundles without `marketplace/` and without this repository's dependencies — so it cannot parse YAML, while the build does. It therefore reads only the shapes it is certain of and stays **silent** on every other: a block scalar, a quoted or plain value spanning lines, a flow sequence opening below the key or spanning them, an indented frontmatter block, a value carrying a nested structure, a flow sequence any of whose ITEMS is quoted, tagged or anchored, since nothing here resolves those; and a `targets:` line sitting inside a construct opened on an earlier line, which only looks like a key. Each of those is legal YAML the build reads correctly, so silence is the accurate answer rather than a gap to close by guessing. What this rule promises is **soundness**: anything it reports is a real build failure. A test runs a shared corpus through both the rule and the build and fails if the rule ever flags something the build accepts. Two further checks stay in the build outright: the ships-nowhere case asks each target class for its `emits_bundle_tree` capability, which would need importing the target classes; and `marketplace/targets/` is a meta-project tree absent from a consumer install, so when it cannot be located the unknown-name check is skipped (nothing to check names against) while the empty-declaration check, which needs no registry, still runs.
+
+**Recommended fix**: correct the target name to one the registry declares, or remove the `targets:` field entirely if the component should ship to every target. The build's error message names the registered set.
+
+**Suppression mechanism**: None — a declaration the build rejects is a hard breakage.
+
+---
+
 ## Rule Pack: Agentfile-hygiene backstop
 
 Two deterministic rules that are the fast backstop for the cognitive `plan-marshall:recipe-agentfile-hygiene` sweep. Both embody the single normative rubric in `plan-marshall:ref-agentfile-hygiene` `standards/rubric.md`; shared detection helpers (agentfile discovery, fenced-block spans, tree-glyph detection) live in `_analyze_agentfile_shared.py`. **Activation**: build-failing under `quality-gate` (via `RuleRunner.run_quality_gate`, routed through the `scoped(...)` wrapper) and also active in `doctor-marketplace.py analyze`. An always-on agentfile that drifts over the line budget or draws a directory tree regresses the build. Discovery anchors at the **repo root** (every `CLAUDE.md` at any nesting level plus `AGENTS.md`), pruning `.plan/`, `.git/`, `node_modules/`, and `target/`.

@@ -14,11 +14,18 @@ target-shared ``body_transform_engine`` (data-driven from
 ``mapping.json``). The emitter wires through any caller-supplied
 ``body_transformer`` so the engine plugs in without editing this module.
 
+A component declaring a ``targets:`` frontmatter scope that omits this
+target is not emitted at all — see ``component_targets.py``. A skill's
+declaration governs its whole directory, including the command wrapper a
+user-invocable skill would otherwise dual-emit.
+
 Validation contract (silent exclusion is prohibited):
   * Missing required frontmatter field → ``UnmappedFrontmatterError``
     propagates to the CLI (exit code 2).
   * Unknown agent tool → ``UnmappedToolError`` propagates to the CLI
     (exit code 2).
+  * Invalid ``targets:`` scope → ``TargetScopeError`` propagates to the
+    CLI (exit code 2).
 """
 
 from __future__ import annotations
@@ -28,6 +35,7 @@ import shutil
 from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 
+from marketplace.targets.component_targets import emits_to
 from marketplace.targets.fs_safety import safe_rmtree
 from marketplace.targets.opencode.frontmatter import (
     OPENCODE_MODEL_PREFIX,
@@ -45,6 +53,13 @@ from marketplace.targets.opencode.variant_emitter import emit_agent_variants
 # Path to the wrapper template used by user-invocable dual-emit.
 _TEMPLATES_DIR = Path(__file__).resolve().parent / 'templates'
 _USER_INVOCABLE_TEMPLATE = _TEMPLATES_DIR / 'user-invocable-command.md'
+
+#: This target's registry name — the value a component's ``targets:``
+#: declaration must contain for the OpenCode target to emit it. Defined
+#: here rather than on the target class because the emitter is the first
+#: module that needs it, and importing the class from ``target.py`` (which
+#: imports this module) would close a cycle.
+OPENCODE_TARGET_NAME = 'opencode'
 
 EXCLUDED_DIR_NAMES = frozenset({'__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache'})
 
@@ -442,6 +457,7 @@ def emit_bundles(
     *,
     bundles: Iterable[str] | None = None,
     body_transformer: BodyTransformer | None = None,
+    target_name: str = OPENCODE_TARGET_NAME,
 ) -> list[Path]:
     """Walk source bundles and emit OpenCode output.
 
@@ -455,6 +471,8 @@ def emit_bundles(
             with a ``.claude-plugin/plugin.json``.
         body_transformer: Optional callable applied to every emitted body
             before it is written. Defaults to identity (verbatim body).
+        target_name: Registry name this emit runs as. A component whose
+            ``targets:`` frontmatter scope omits it is not emitted.
 
     Returns:
         List of generated paths (``SKILL.md`` files, agent / command files,
@@ -465,6 +483,8 @@ def emit_bundles(
         UnmappedToolError: An agent declares a tool with no key in
             ``tool_permissions``; a key present with ``null`` is the
             target-absent sentinel and does not raise.
+        TargetScopeError: A component declares an invalid ``targets:``
+            scope.
     """
     mapping = load_mapping(config_dir)
     rules = load_rules(config_dir)
@@ -482,9 +502,17 @@ def emit_bundles(
         bundle_name = plugin_config.get('name', bundle_dir.name)
 
         for skill_dir in _resolve_skill_dirs(bundle_dir, plugin_config):
+            # A skill's scope is declared on its manifest and governs the whole
+            # directory — the verbatim sub-directories and the user-invocable
+            # command wrapper included, since both are emitted from inside
+            # ``_emit_skill``.
+            if not emits_to(skill_dir / 'SKILL.md', target_name):
+                continue
             _emit_skill(bundle_name, skill_dir, output_dir, mapping, rules, transform_body, written)
 
         for agent_md in _resolve_md_components(bundle_dir, plugin_config, 'agents', 'agents'):
+            if not emits_to(agent_md, target_name):
+                continue
             _emit_agent(
                 bundle_name,
                 agent_md,
@@ -498,6 +526,8 @@ def emit_bundles(
             )
 
         for command_md in _resolve_md_components(bundle_dir, plugin_config, 'commands', 'commands'):
+            if not emits_to(command_md, target_name):
+                continue
             _emit_command(bundle_name, command_md, output_dir, rules, transform_body, written)
 
     # Prune stale outputs so a component removed from source leaves no emitted
@@ -512,6 +542,7 @@ def emit_bundles(
 __all__ = [
     'BodyTransformer',
     'EXCLUDED_DIR_NAMES',
+    'OPENCODE_TARGET_NAME',
     'VERBATIM_SKILL_SUBDIRS',
     'UnmappedFrontmatterError',
     'UnmappedToolError',

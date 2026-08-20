@@ -746,10 +746,14 @@ def main() -> int:
     finalize_steps_set_lane.add_argument(
         '--lane',
         required=True,
-        choices=list(_RESOLVED_ASK_LANE_VALUES),
-        help='Resolved lane override: off (no bots/Sonar) or standard/full (has them). These are the '
-        'resolved answers an operator dialogue produces; the reader enum additionally accepts the '
-        'seed values minimal/ask, which only shipped frontmatter and marshal seeding emit',
+        help=f'Resolved lane override, one of {list(_RESOLVED_ASK_LANE_VALUES)}: off (no '
+        'bots/Sonar) or standard/full (has them). These are the resolved answers an operator '
+        'dialogue produces; the reader enum additionally accepts the seed values minimal/ask, '
+        'which only shipped frontmatter and marshal seeding emit. No argparse choices= is '
+        'declared here on purpose: an argparse rejection is a bare "invalid choice" with no '
+        'route, and a seed value IS writable through the generic `step set --step-id <id> '
+        '--param lane --value <value>` verb. The handler validates instead, and names that '
+        'route',
     )
     finalize_steps_set_lane.add_argument(
         '--plan-id',

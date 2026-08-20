@@ -47,6 +47,7 @@ import re
 from pathlib import Path
 
 import _manifest_core
+import extension_discovery
 from conftest import MARKETPLACE_ROOT, PROJECT_ROOT, load_script_module
 from extension_discovery import find_implementors
 
@@ -898,3 +899,73 @@ class TestNoTwoFinalizeStepsShareAnOrder:
             f'gaps. Colliding orders: {collisions}. See '
             'extension-api/standards/finalize-step-order-bands.md § "The collision rule".'
         )
+
+
+class TestCanonicalDestroysDeclarationsExist:
+    """The two `destroys` declarations both normative documents anchor the vocabulary on.
+
+    `finalize-step-order-bands.md` § "`reads` and `destroys`" and
+    `ext-point-finalize-step.md`'s `destroys` row each introduce the vocabulary by naming
+    the same two declarations as its worked anchors. Both documents therefore assert a fact
+    about frontmatter, and until this class existed nothing checked either one: deleting a
+    `destroys:` block left both standards describing a capability with no instance, and the
+    ordering obligation each anchor encodes — do not order a reader of X after the step that
+    destroys X — would have been silently unenforceable.
+
+    The declarations are read straight off each step's own discovered doc, so the assertion
+    tracks the frontmatter rather than a second transcription of it.
+    """
+
+    #: step id → (artifact it destroys, the ordering obligation the declaration serves).
+    _ANCHORS = {
+        'default:archive-plan': (
+            'plan-directory',
+            'archive-plan moves the plan directory, so every step that reads plan state '
+            'must be ordered before it',
+        ),
+        'default:branch-cleanup': (
+            'worktree',
+            'the merge gate removes the linked worktree, so every step that reads the '
+            'worktree must be ordered before it',
+        ),
+    }
+
+    def _destroys_by_name(self) -> dict[str, list[str]]:
+        """Every discovered step's `destroys:` declaration, read off its own frontmatter."""
+        out: dict[str, list[str]] = {}
+        for record in find_implementors(_EXT_POINT):
+            fields = extension_discovery._read_frontmatter_fields(
+                Path(str(record.get('path', ''))), ('destroys',)
+            )
+            declared = fields.get('destroys')
+            if declared is None:
+                continue
+            out[str(record.get('name', ''))] = (
+                list(declared) if isinstance(declared, list) else [declared]
+            )
+        return out
+
+    def test_discovery_is_non_empty(self):
+        """Anti-vacuity: an empty discovery would make every assertion below trivial."""
+        assert find_implementors(_EXT_POINT), (
+            f'find_implementors({_EXT_POINT!r}) resolved no finalize steps, so the '
+            '`destroys` anchor assertions would have nothing to read.'
+        )
+
+    def test_each_canonical_anchor_declares_its_artifact(self):
+        declared = self._destroys_by_name()
+
+        for step, (artifact, obligation) in self._ANCHORS.items():
+            assert step in declared, (
+                f'{step} declares no `destroys:` frontmatter. Two normative documents — '
+                'extension-api/standards/finalize-step-order-bands.md § "`reads` and '
+                '`destroys`" and ext-point-finalize-step.md\'s `destroys` row — introduce '
+                f'the vocabulary by naming this declaration as an anchor, and it serves a '
+                f'real ordering obligation: {obligation}. Removing it leaves both standards '
+                'describing a capability with no instance.'
+            )
+            assert artifact in declared[step], (
+                f'{step} declares `destroys: {declared[step]}`, which does not name '
+                f'{artifact!r}. Both standards anchor the vocabulary on exactly that token, '
+                f'and the obligation it encodes is: {obligation}.'
+            )

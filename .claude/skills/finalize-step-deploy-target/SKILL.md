@@ -80,7 +80,7 @@ generator is a fast, deterministic Python script.
 ### 1. Invoke the generator
 
 ```bash
-python3 marketplace/targets/generate.py --target claude --output target/claude
+uv run python marketplace/targets/generate.py --target claude --output target/claude
 ```
 
 The script returns a TOON document on stdout describing the run.

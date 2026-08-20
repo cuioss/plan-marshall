@@ -71,7 +71,7 @@ This copies to `~/.claude/plugins/cache/plan-marshall/` via rsync `--delete`.
 
 ## Multi-Target Distribution
 
-`marketplace/targets/` is the authoritative multi-target generator framework. Run `python3 marketplace/targets/generate.py --target {name} --output {dir}` to emit per-target output trees. Valid `{name}` values are **every target registered in `TARGET_REGISTRY`** (`marketplace/targets/__init__.py`), plus `all`, which runs every registered target sequentially. The generator derives its `--target` choices from that registry, so `generate.py --help` always prints the live set — read it there rather than trusting an enumeration copied into prose. Open multi-target workstreams are planned under `doc/plans/multiplattform/`; its `README.md` carries the architecture baseline and the plan queue.
+`marketplace/targets/` is the authoritative multi-target generator framework. Run `uv run python marketplace/targets/generate.py --target {name} --output {dir}` to emit per-target output trees. Valid `{name}` values are **every target registered in `TARGET_REGISTRY`** (`marketplace/targets/__init__.py`), plus `all`, which runs every registered target sequentially. The generator derives its `--target` choices from that registry, so `generate.py --help` always prints the live set — read it there rather than trusting an enumeration copied into prose. Open multi-target workstreams are planned under `doc/plans/multiplattform/`; its `README.md` carries the architecture baseline and the plan queue.
 
 ## Key Files for Context
 

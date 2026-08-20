@@ -40,7 +40,8 @@ Two gates run over the derived tuples, both owned by the shared contract
   evidence about the pipeline's own preferences. Non-comment findings are
   unaffected.
 - **Attribution gate (post-count).** A tuple whose module resolves to the
-  `default` fallback bucket is UNATTRIBUTED, not a cross-cutting judgement, and is
+  `default` fallback bucket is UNATTRIBUTED **on this preference-aggregation path** —
+  not a cross-cutting judgement here — and is
   **never surfaced as a candidate** — promoting it would route an unverified hint
   to the widest blast radius. Such tuples are tallied in
   `unattributed_excluded_count` so the decision is visible rather than silent.

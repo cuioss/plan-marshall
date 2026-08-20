@@ -5,10 +5,13 @@ The Claude target operates in two modes selected by whether the caller
 provides ``--output``:
 
 * **Emit mode (`--output` provided)** — walk every bundle under
-  ``marketplace/bundles/`` and copy its content byte-for-byte into
-  ``{output}/{bundle}/`` *except* for ``.claude-plugin/plugin.json``,
-  which is regenerated deterministically from the bundle's source
-  frontmatter. Immediately after emit, the regenerated content is
+  ``marketplace/bundles/`` and copy its content into ``{output}/{bundle}/``.
+  Most files are copied byte-for-byte; ``emitter.py``'s module docstring is
+  the authoritative list of what is not (the regenerated
+  ``.claude-plugin/plugin.json``, the role-eligible agents routed through
+  variant emission, the excluded cache directories, and any component whose
+  ``targets:`` frontmatter scope omits this target). Immediately after
+  emit, the regenerated content is
   diffed against the just-written ``{output}/{bundle}/.claude-plugin/plugin.json``
   so callers see drift as part of the same TOON return. Equality
   failure raises ``RuntimeError`` so the CLI surfaces a non-zero exit.
@@ -17,7 +20,11 @@ provides ``--output``:
   The engine reads ``target/claude/{bundle}/.claude-plugin/plugin.json``
   (relative to the project root) and diffs it against a fresh in-memory
   regeneration. When ``target/claude/`` is absent, the result includes
-  a structured "run emit mode first" diagnostic.
+  a structured "run emit mode first" diagnostic. This mode also re-walks
+  each bundle's components to validate their ``targets:`` declarations:
+  the equality path regenerates only the manifest, which never opens a
+  ``SKILL.md``, so without that walk a skill's invalid declaration would
+  pass a validate-only run that an emit rejects.
 
 The TOON return contains ``status``, ``emitted_count``,
 ``plugin_json_diff_count``, and ``equality_check_result``.
@@ -30,7 +37,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from marketplace.targets.base import TargetBase
-from marketplace.targets.claude.emitter import emit_bundle_verbatim, iter_bundle_dirs
+from marketplace.targets.claude.emitter import (
+    CLAUDE_TARGET_NAME,
+    emit_bundle_verbatim,
+    iter_bundle_dirs,
+)
 from marketplace.targets.claude.equality_check import run_equality_check
 from marketplace.targets.claude.marketplace_json_gen import generate_marketplace_json
 from marketplace.targets.claude.plugin_json_gen import generate_plugin_json
@@ -39,6 +50,7 @@ from marketplace.targets.claude.source_fingerprint import (
     compute_source_tree_fingerprint,
     hash_objects,
 )
+from marketplace.targets.component_targets import validate_component_scopes
 
 # Sentinel file written at the end of every successful emit. The
 # project-local ``sync-plugin-cache`` skill reads it to decide whether
@@ -99,7 +111,7 @@ class ClaudeTarget(TargetBase):
 
     @property
     def name(self) -> str:
-        return 'claude'
+        return CLAUDE_TARGET_NAME
 
     def supports_agents(self) -> bool:
         return True
@@ -123,7 +135,15 @@ class ClaudeTarget(TargetBase):
         # Validate mode: equality check only. Read from the canonical
         # ``target/claude/`` location relative to the project root.
         if output_dir is None:
-            equality = run_equality_check(DEFAULT_VALIDATE_TARGET_DIR, bundle_dirs)
+            # Validate every component's ``targets:`` declaration first. The
+            # equality path regenerates the manifest only, and the manifest
+            # never lists skills, so a skill's invalid declaration would slip
+            # through a validate-only run that an emit rejects.
+            for bundle_dir in bundle_dirs:
+                validate_component_scopes(bundle_dir)
+            equality = run_equality_check(
+                DEFAULT_VALIDATE_TARGET_DIR, bundle_dirs, target_name=self.name
+            )
             self._last_run = {
                 'status': 'success' if equality.passed else 'error',
                 'emitted_count': 0,
@@ -139,10 +159,10 @@ class ClaudeTarget(TargetBase):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         for bundle_dir in bundle_dirs:
-            mirrored = emit_bundle_verbatim(bundle_dir, output_dir)
+            mirrored = emit_bundle_verbatim(bundle_dir, output_dir, target_name=self.name)
             emitted.extend(mirrored)
 
-            generated = generate_plugin_json(bundle_dir)
+            generated = generate_plugin_json(bundle_dir, target_name=self.name)
             target_plugin_json = output_dir / bundle_dir.name / '.claude-plugin' / 'plugin.json'
             target_plugin_json.parent.mkdir(parents=True, exist_ok=True)
             target_plugin_json.write_text(generated, encoding='utf-8')
@@ -161,7 +181,7 @@ class ClaudeTarget(TargetBase):
 
         # Run equality check after emit so emit_count reflects bytes written
         # AND so the equality engine has fresh artifacts to compare against.
-        equality = run_equality_check(output_dir, bundle_dirs)
+        equality = run_equality_check(output_dir, bundle_dirs, target_name=self.name)
 
         self._last_run = {
             'status': 'success' if equality.passed else 'error',

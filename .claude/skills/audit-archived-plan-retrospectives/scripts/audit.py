@@ -2212,10 +2212,17 @@ def _preference_disposition(obj: dict[str, Any]) -> str | None:
 
 
 # The literal module bucket a finding with no concrete `module`/`component`
-# attribution collapses into. It is the UNATTRIBUTED sink — and, per D2 of the
-# `truthful-signals` "pipeline-echo" plan, NOT a promotable preference bucket (see
-# `cross_preference_pattern` and disposition-to-hint-routing.md § (d), which
-# retires the former `--module default` cross-cutting routing target).
+# attribution collapses into. **On THIS preference-aggregation path** it is the
+# UNATTRIBUTED sink — and, per D2 of the `truthful-signals` "pipeline-echo" plan,
+# NOT a promotable preference bucket (see `cross_preference_pattern` and
+# disposition-to-hint-routing.md § (d), which retires the former `--module default`
+# cross-cutting routing target for the disposition→hint route).
+#
+# The scoping is deliberate: `default` has a SECOND, still-live producer. The
+# cross-cutting lessons-capture route (phase-6-finalize/workflow/lessons-capture.md)
+# routes a genuinely cross-cutting fact to `default`, where the bucket means exactly
+# that — so "default means unattributed" is true of what this module aggregates and
+# false as a claim about the bucket in general.
 _UNATTRIBUTED_MODULE = "default"
 
 
@@ -2224,8 +2231,11 @@ def _preference_module(obj: dict[str, Any]) -> str:
 
     Prefers the explicit `module` field, falls back to `component`, then to the
     `default` UNATTRIBUTED bucket. Per D2 (see `cross_preference_pattern`), a tuple
-    landing in the `default` bucket is counted but never promoted — it is not a
-    cross-cutting judgement and no longer routes anywhere.
+    landing in the `default` bucket **on this path** is counted but never promoted —
+    it is not a cross-cutting judgement here and no longer routes anywhere. The
+    qualifier matters: the lessons-capture route still uses `default` to mean
+    genuinely cross-cutting, so this is a statement about preference aggregation,
+    not about the bucket everywhere.
     """
     for key in ("module", "component"):
         value = obj.get(key)

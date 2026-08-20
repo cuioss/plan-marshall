@@ -308,7 +308,7 @@ class TestArrayAuthorityContract:
 
         deploy-target sits at order 81 and sync-plugin-cache at 85. The
         consumer-shipped built-in default:finalize-step-preference-emitter now
-        sits pre-merge at order 61 (the settle band), so the former
+        sits post-merge at order 992 (the post-run-review band), so the former
         deploy-target-vs-preference-emitter deconfliction that once explained the
         81 value no longer applies — the two steps no longer share a
         neighbourhood in the order space."""

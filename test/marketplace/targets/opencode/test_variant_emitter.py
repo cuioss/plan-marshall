@@ -41,7 +41,9 @@ def _role_agent_source(*, levels: str | None = None) -> str:
     lines = [
         '---',
         'name: execution-context',
-        'description: Generic dispatcher for every plan-marshall Task: invocation.',
+        # Quoted: an unquoted `: ` makes this frontmatter invalid YAML, which
+        # the real agent avoids with a `|` block scalar.
+        "description: 'Generic dispatcher for every plan-marshall Task: invocation.'",
         'tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion, Skill',
         'forwards_tool_capabilities: true',
         f'implements: {EXTENSION_POINT}',

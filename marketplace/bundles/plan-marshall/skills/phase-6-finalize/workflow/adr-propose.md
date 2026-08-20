@@ -39,17 +39,7 @@ If a plan signal is "we chose this shape and rejected these concrete alternative
 
 **Dispatcher-level Signal Gate precondition**: This body does NOT carry its own decision-shape gate. The deterministic decision-shape precondition is owned by `phase-6-finalize/SKILL.md` Step 3 § "Adr-propose Signal Gate" (the dispatch loop). When the dispatcher observes no decision-shape signal, it records `mark-step-done --outcome skipped --display-detail "no decision-shape signals"` directly and this workflow body is NOT dispatched. Reaching this body therefore PROVES at least one decision-shape signal was present — the body proceeds straight into ADR proposal without re-evaluating the gate.
 
-This step runs as a Task dispatch under the `post-run-review` sub-key (resolved via `manage-config effort resolve-target --phase phase-6-finalize --role post-run-review`) with a 5-minute (300 s) per-agent timeout budget enforced by the SKILL.md Step 3 dispatch loop. The dispatcher emits the standardized `[DISPATCH]` work-log line at the call site — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) for the canonical emission contract. The `post-run-review` sub-key bundles adr-propose with lessons-capture and retrospective — all three look back at the full plan history and ride the same level. On timeout the dispatcher records `outcome=failed` with `display_detail="timed out after 300s"` and continues — ADR proposal is advisory and never blocks the rest of the pipeline.
-
-### `[DISPATCH]` log line (emitted by the dispatcher)
-
-The phase-6-finalize SKILL.md dispatcher emits the line below immediately before invoking this workflow:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO \
-  --message "[DISPATCH] (plan-marshall:phase-6-finalize) target={target} level={level} role=post-run-review workflow=plan-marshall:phase-6-finalize/workflow/adr-propose.md plan_id={plan_id}"
-```
+This step runs as a Task dispatch under the `post-run-review` sub-key (resolved via `manage-config effort resolve-target --phase phase-6-finalize --role post-run-review`) with a 5-minute (300 s) per-agent timeout budget enforced by the SKILL.md Step 3 dispatch loop. The dispatcher passes the dispatch context to its `effort resolve-target`, so the resolve seam emits the `[DISPATCH]` work-log line and the paired decision-log record, per firing — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) for the canonical emission contract. The `post-run-review` sub-key bundles adr-propose with lessons-capture and retrospective — all three look back at the full plan history and ride the same level. On timeout the dispatcher records `outcome=failed` with `display_detail="timed out after 300s"` and continues — ADR proposal is advisory and never blocks the rest of the pipeline.
 
 ## Execution
 

@@ -88,7 +88,7 @@ bundle sources.
 repo's first finalize):
 
 ```bash
-python3 marketplace/targets/generate.py --target claude --output target/claude
+uv run python marketplace/targets/generate.py --target claude --output target/claude
 rsync -av --delete target/claude/plan-marshall/ ~/.claude/plugins/cache/plan-marshall/{version}/
 ```
 

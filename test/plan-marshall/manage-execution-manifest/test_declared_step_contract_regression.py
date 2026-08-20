@@ -427,7 +427,7 @@ class TestPreviewAgreesWithCompose:
         'default:create-pr': None,        # order 20
         'default:ci-verify': None,        # order 22
         'default:lessons-capture': None,
-        _EMITTER: None,                   # order 61
+        _EMITTER: None,                   # order 992
     }
 
     def test_preview_membership_equals_compose_membership(self, plan_context):

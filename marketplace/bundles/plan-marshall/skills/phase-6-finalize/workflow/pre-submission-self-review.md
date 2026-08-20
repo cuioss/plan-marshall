@@ -50,7 +50,7 @@ The deterministic surfacer is pluggable via the `plan-marshall:extension-api/sta
 | `WORKTREE` | Yes | Repo-relative working-directory path. |
 | `candidates` | Yes | TOON envelope from the resolved `ext-self-review-{domain}` surface helper — carries the candidate sub-lists and the emitted `counts` block. The orchestrator runs the surface helper in Step 1 and forwards its output verbatim; the workflow body does NOT re-invoke the surface helper. |
 
-`candidates` is this step's one **step-specific required prompt-body field** — a field beyond the generic dispatch contract (`name`/`plan_id`/`skills[]`/`workflow`/`WORKTREE`). It is declared machine-readably in this step's `requires_prompt_fields` frontmatter and carried in the Step 2 dispatch body below. A both-direction guard, `test/plan-marshall/phase-6-finalize/test_step_prompt_fields_contract.py`, fails the build if the declaration and the carriage disagree — the generic template cannot carry a step-specific field, so a step declaring one MUST carry it in its own dispatch body. See [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md) § "Step-specific prompt-body fields".
+`candidates` is this step's one **step-specific required prompt-body field** — a field beyond the exempt set (the generic dispatch contract, the `caller_phase` extension, and the dispatcher-supplied runtime inputs). It is declared machine-readably in this step's `requires_prompt_fields` frontmatter, marked `Required` in the table above, and carried in the Step 2 dispatch body below. A three-scope guard, `test/plan-marshall/phase-6-finalize/test_step_prompt_fields_contract.py`, fails the build if those surfaces disagree. This step keeps its **own** dispatch body, so it is responsible for carrying every field it declares there; a step dispatched through the generic template instead lets the template's declared-field slot carry them, which is equally supported. See [`../../extension-api/standards/ext-point-finalize-step.md`](../../extension-api/standards/ext-point-finalize-step.md) § "Step-specific prompt-body fields".
 
 **The candidate sub-list vocabulary is NOT restated here.** Each sub-list's key, entry schema, and the check that consumes it are declared once, authoritatively, in [`../../extension-api/standards/ext-point-self-review-surfacing.md`](../../extension-api/standards/ext-point-self-review-surfacing.md) § Output Schema and § Required Candidate Sub-Lists — derived in turn from the implementor's `CANDIDATE_LISTS` registry, which is the single code-side source of the emitted key set. Read the emitted `counts` block for what this round actually surfaced, and that document for what each key means.
 
@@ -191,18 +191,14 @@ Compute the variant target via the role resolver:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --phase phase-6-finalize
+  effort resolve-target --phase phase-6-finalize \
+  --workflow plan-marshall:phase-6-finalize/workflow/pre-submission-self-review.md \
+  --plan-id {plan_id} --caller plan-marshall:phase-6-finalize
 ```
 
-Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
+The resolve carries the dispatch context (`--workflow`/`--plan-id`/`--caller`), so the seam emits the standardized `[DISPATCH]` work-log line and its paired decision-log record itself — see [`dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. Do NOT hand-write a separate `[DISPATCH]` line; every firing re-runs the resolve, so the record is re-emitted per firing. This resolve passes no `--role`, so the seam emits the phase key it did resolve against (`role=phase-6-finalize`). The hand-written line this replaced claimed `role=default`, which no resolve here ever passed.
 
-Emit the standardized post-resolve dispatch log line — see [`../../ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract:
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO \
-  --message "[DISPATCH] (plan-marshall:phase-6-finalize) target={target} level={level} role=default workflow=plan-marshall:phase-6-finalize/workflow/pre-submission-self-review.md plan_id={plan_id}"
-```
+Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch below.
 
 Dispatch the LLM workflow with the candidate envelope:
 
