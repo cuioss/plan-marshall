@@ -194,9 +194,14 @@ declare the deferral upheld.** Advertising a diagnostic provider binds the surfa
 precision, which is a scope and risk decision.
 
 **The deferral, and what it rested on.** The corpus server advertises no `diagnosticProvider`. The
-stated reason — in `SKILL.md`, in the module docstring, and in the user page — is that the validator's
-unresolved set is *"overwhelmingly false positives"*, quantified in the user page as roughly 380
-unresolved of about 5,300 with close to **97 %** of them not broken references at all.
+stated reason — in `SKILL.md`, in the module docstring, and in the user page — **was** that the
+validator's unresolved set is *"overwhelmingly false positives"*, quantified in the user page as
+roughly 380 unresolved of about 5,300 with close to **97 %** of them not broken references at all.
+
+⚠ **Past tense: those three surfaces have since been corrected**, in the same run that wrote this
+item, and none of them now carries the 97 % claim. Do not go looking for it there. What the run
+corrected is the *stated reason*; what remains open — and is the subject of this proposal — is
+whether the **gate itself** should come down.
 
 **Re-derived on this clone.** Command:
 

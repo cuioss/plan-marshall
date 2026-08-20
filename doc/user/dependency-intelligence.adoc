@@ -61,7 +61,7 @@ Nothing here is opt-in. If your project is one of the ecosystems below, the grap
 
 | Python
 | The declared distribution name
-| Each module's declared name — PEP 621 `[project]`, else `[tool.poetry]`, else `setup.cfg` — against every module's runtime and `dev` dependency lists.
+| Each module's declared name — PEP 621 `[project]`, else `[tool.poetry]`, else `setup.cfg` — against every module's dependency lists (runtime, plus `dev` where the descriptor form has one).
 
 | npm / yarn / pnpm
 | The `package.json` `name`
@@ -81,13 +81,22 @@ A zero row is usually not a defect and not a sign that something is misconfigure
 
 Names are matched the way Python packaging matches them: case-insensitively, with any run of `-`, `_` or `.` treated as equivalent. A module publishing `sample-api` is therefore reached by a dependency spelling it `Sample_API`.
 
-Two scopes are read from each descriptor form: the runtime dependency list, and the `dev` group — `[project] dependencies` plus the `dev` extra under `[project.optional-dependencies]`; `[tool.poetry.dependencies]` plus `[tool.poetry.group.dev.dependencies]`; `[options] install_requires` (runtime only). A `dev` entry is a real edge, because changing the module you depend on can break your tests.
+Up to two scopes are read, depending on which descriptor form supplied the name: a runtime dependency list, and a `dev` group. PEP 621 gives both (`[project] dependencies` and the `dev` extra under `[project.optional-dependencies]`); Poetry gives both (`[tool.poetry.dependencies]` and `[tool.poetry.group.dev.dependencies]`); `setup.cfg` gives runtime only (`[options] install_requires`), because it has no `dev` equivalent. A `dev` entry is a real edge, because changing the module you depend on can break your tests.
 
 Other extras are *not* read. A sibling named only under a `test`, `docs` or `all` extra produces no edge — move it to `dev` (or to `dependencies`) if you need it in the graph.
 
 A directory that names no distribution in any of the descriptor forms below publishes nothing, so nothing can depend on it. It still appears as a module and its own dependencies still produce edges — it simply cannot be the *target* of one.
 
 Three descriptor forms are read, in this order: PEP 621 `[project]`; then `[tool.poetry]` in the same `pyproject.toml`, when `[project]` is absent or names nothing; then `setup.cfg` (`[metadata]` for the name, `[options] install_requires` for runtime dependencies). The later forms are strict fallbacks — neither overrides a name PEP 621 already supplied.
+
+[WARNING]
+====
+*The fallback is all-or-nothing per file, and one hybrid layout loses its edges because of it.* If `[project]` supplies a `name`, `[tool.poetry]` is not consulted at all — including its dependency lists. So a `pyproject.toml` with a `[project]` table carrying the name and its dependencies under `[tool.poetry.dependencies]` publishes the name and *no dependencies*: the module becomes a valid edge target and contributes no outbound edges, with nothing in the output saying why.
+
+It is all-or-nothing on purpose — `metadata` and `dependencies` are read by consumers beyond edge derivation, and a per-field merge would let one form silently override the other's answer. If your project is in this shape, move the dependencies under `[project] dependencies`, or remove the `name` from `[project]` so the Poetry table is read whole.
+====
+
+`setup.cfg` behaves the same way for the same reason: it is consulted only when neither table in `pyproject.toml` supplied a name.
 
 `setup.py` is *not* read, and cannot be: it is executable Python rather than a declaration, so no static reader can tell what it will pass to `setup()`. A module whose only descriptor is `setup.py` therefore publishes no name and no dependencies — it appears as a module, but nothing can depend on it and it declares nothing. Add a `[project]` table or a `setup.cfg` to bring it into the graph.
 

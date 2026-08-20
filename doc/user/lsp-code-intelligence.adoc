@@ -82,13 +82,15 @@ The client never returns a bare empty result. Every response makes these situati
 
 The `unreachable` state is why a broken configuration is a reported degradation rather than a silent one: you can tell "I never configured a server" from "the server I configured is broken", and act on each differently.
 
+NOTE: The `preflight` verb reports the same situations but names the healthy one `ready` — configured *and* reachable — rather than `ok`. `ready` is a *precondition* check; `ok` is the outcome of a verb that actually ran. Check `preflight` for `state: ready` before calling a run verb, and expect `ready` rather than `ok` in its answer.
+
 == The write side, and why it is safe
 
 A `WorkspaceEdit` touching twenty files is a mutation nothing read. The rename path is built so that an edit nobody read is at minimum an edit the parser re-checked:
 
 * the touched-file list is captured *from the edit*, never inferred from a later `git diff`;
 * the edit is applied, then diagnostics are re-run over exactly those files — each wait requiring a *newer* verdict than the one cached before the change, so the check cannot settle for the server's opinion of the pre-edit content;
-* if *any* file gained an error diagnostic, the step *fails* and the whole change is *rolled back*. A per-file set rather than a footprint-wide count, because a count cannot see one error swapped for a different one, or an error moving between two files in the same edit: both net to zero;
+* if *any* file gained an error diagnostic, the step *fails* with `reason: diagnostics_worsened` — the one reason code that means your edit was wrong — and the whole change is *rolled back*. A per-file set rather than a footprint-wide count, because a count cannot see one error swapped for a different one, or an error moving between two files in the same edit: both net to zero;
 * an edit carrying a file create/rename/delete is *refused whole* rather than applied minus the part the client cannot perform, and a failure part-way through the apply restores every file already written.
 
 So a rename that lands is one the language server produced and the parser re-verified; a rename that would have broken the parse never survives in the tree.

@@ -193,10 +193,47 @@ python3 .plan/execute-script.py pm-plugin-development:tools-corpus-language-serv
 
 That verb lists every site with its `verified` flag.
 
+[[empty-references]]
+=== If find-references comes back empty
+
+An empty result in your editor has five possible causes, and *the editor cannot tell you which* — an off server advertises no capabilities, the completeness note rides in a payload field no editor renders, and the withheld-site count arrives as an LSP log message many clients hide by default.
+
+So do not read an empty editor result as "nothing references this". Step out of the editor and ask directly:
+
+[source,bash]
+----
+python3 .plan/execute-script.py pm-plugin-development:tools-corpus-language-server:corpus_lsp preflight
+python3 .plan/execute-script.py pm-plugin-development:tools-corpus-language-server:corpus_lsp query \
+  --kind references --notation bundle:skill
+----
+
+`preflight` separates the first cause from the rest; `query` separates the other four, because it is unfiltered, builds a fresh index every call, and shows every site with its `verified` flag.
+
+[cols="1,3", options="header"]
+|===
+| Cause | How you tell
+
+| The server is off, or `corpus_path` does not exist
+| `preflight` reports `not_configured`. Invisible in the editor — no capabilities are advertised, so your client simply never asks.
+
+| The index genuinely found no inbound edge
+| `query` reports `state: ok` with an empty `references[]` and a `reference_count` of 0. This is the real zero.
+
+| The reference exists but no detector recognises its form
+| Not separately signalled. `query`'s `completeness_note` states the bound: an empty result means *the index* found none, never that the corpus contains none.
+
+| Every site was withheld as unverified
+| `query` shows them, with `verified: false`. In the editor the only signal is a `window/logMessage` carrying the withheld count — see <<unverified>>.
+
+| Your edit is newer than the server's index
+| Not signalled at all. Restart the server, or use `query`, which is always current — see <<staleness>>.
+|===
+
+[[unverified]]
 [[staleness]]
 === Answers may be stale after an edit
 
-The server builds its index once, when the first request arrives, and *does not rebuild it* while it runs. That is the same decision that makes it fast: the ~2 second build is paid once instead of per request. The cost is that everything it tells you describes the corpus *as it was when the server started*.
+The server builds its index once, when the first *lookup* arrives — not during the handshake, which builds nothing — and *does not rebuild it* while it runs. That is the same decision that makes it fast: the ~2 second build is paid once instead of per request. The cost is that everything it tells you describes the corpus *as it was when the server started*.
 
 For the life of the session, that means:
 

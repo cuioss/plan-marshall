@@ -75,6 +75,36 @@ def test_the_poetry_python_constraint_is_not_a_dependency():
     assert all(not dep.startswith('python:') for dep in modules['core_lib']['dependencies'])
 
 
+def test_a_pep621_name_suppresses_the_poetry_table_whole_including_its_dependencies(tmp_path):
+    """The all-or-nothing cost of the strict fallback, pinned rather than left latent.
+
+    A hybrid `pyproject.toml` — `[project]` carrying the name, dependencies still
+    under `[tool.poetry.dependencies]` — publishes the name and **no**
+    dependencies. The module becomes a valid edge target and contributes no
+    outbound edges, with nothing in the output saying why.
+
+    That is deliberate: a per-field merge would let one descriptor form silently
+    override the other's answer, and `metadata` / `dependencies` are read by
+    consumers beyond edge derivation. But it is exactly the silent-empty shape
+    this deliverable exists to remove, so it is a **stated** limit — see
+    `doc/user/dependency-intelligence.adoc` § Python specifics — and this pins
+    it, so a later reader finds a documented contract rather than an accident.
+    """
+    module = tmp_path / 'hybrid'
+    (module / 'tests').mkdir(parents=True)
+    (module / 'pyproject.toml').write_text(
+        '[project]\nname = "hybrid-dist"\nversion = "1.0.0"\n\n'
+        '[tool.poetry]\nname = "hybrid-dist"\n\n'
+        '[tool.poetry.dependencies]\npython = "^3.11"\nsibling-core = "^1.0"\n',
+        encoding='utf-8',
+    )
+
+    modules = {m['name']: m for m in discover_python_modules(str(tmp_path))}
+
+    assert modules['hybrid']['metadata']['name'] == 'hybrid-dist'  # a valid edge TARGET
+    assert modules['hybrid']['dependencies'] == []  # ...and no outbound edges at all
+
+
 def test_the_poetry_fallback_never_overrides_a_pep621_name(tmp_path):
     """A strict fallback: consumers beyond edge derivation read these fields."""
     module = tmp_path / 'both'
