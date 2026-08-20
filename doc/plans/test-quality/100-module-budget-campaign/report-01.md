@@ -1144,10 +1144,14 @@ row (M32 in round 5, M39 in round 6) and round 7's six, which are prose througho
 | 3 and 4 | 5 | M24–M28 — including the banner attribution, invisible to a suite and a linter alike |
 | 5 | 4 | M29–M32 — first round to ask whether the result is any *good* rather than whether it is faithful |
 | 6 | 7 | M33–M39 — five overstated dispositions from round 5, and two fixes that introduced new defects |
-| 7 | 6 | M40–M45 — including **a false headline figure that had stood since round 5** |
+| 7 | 8 | M40–M47 — including **a false headline figure that had stood since round 5**, and three further incommensurable pairs found by applying that finding's own lesson to the rest of the report |
 
 **Round 7 found the single most consequential defect of the run**, which is the strongest available
-evidence that an eighth round would have found more. M45 was not a subtle one: the report's duplication
+evidence that an eighth round would have found more. It is not a close call: applying M45's own lesson
+to the rest of the report immediately produced **three more instances** (M45's banner delta, M47's
+collected count, and M47's suite baseline), the last of which would have reported this branch as 20%
+slower than a tree it was never measured against. A defect class that yields four instances the first
+time anyone looks for it has not been exhausted by looking once. M45 was not a subtle one: the report's duplication
 table claimed the slice "now carries materially less duplicated code than it did before the split", and
 it did not. That claim had been read by six adversarial rounds and by two cold reads.
 
