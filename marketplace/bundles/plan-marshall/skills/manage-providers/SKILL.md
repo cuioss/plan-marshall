@@ -51,7 +51,7 @@ Stale prefixed `credentials_config` keys written before this normalization are c
 | `verify` | HTTP connectivity test, writes `verified_at` timestamp into the credential file |
 | `list` | List configured skills by scanning `~/.plan-marshall/credentials/` (no secrets in output) |
 | `remove` | Remove credential file |
-| `ensure-denied` | Add deny rules to the host platform's settings |
+| `ensure-denied` | Protect the credentials directory in the active target's settings (`no-op` on a target with no permission backend) |
 | `migrate-home` | Explicitly run the lazy legacy-path migration (`~/.plan-marshall-credentials/` → `~/.plan-marshall/credentials/`); reports `migrated`, `already_migrated`, or `conflict` |
 
 ## Script Notation
@@ -160,11 +160,13 @@ python3 .plan/execute-script.py plan-marshall:manage-providers:credentials verif
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials remove [--skill <name>] [--scope global|project]
 ```
 
-### Add Deny Rules
+### Protect the Credentials Directory
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials ensure-denied [--target global|project]
 ```
+
+The command states the goal; the active target's runtime decides what expresses it and writes it. A target with no permission backend returns `no-op` with a reason, and the directory's `0700` mode — the primary boundary — is re-asserted either way.
 
 ## Security Model
 

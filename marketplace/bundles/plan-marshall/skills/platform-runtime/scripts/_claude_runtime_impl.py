@@ -285,9 +285,10 @@ class ClaudeRuntime(Runtime):
         """Return the Claude deployed-bundle cache root.
 
         ``~/.claude/plugins/cache/plan-marshall`` — the single flat cache root
-        under which installed marketplace bundles live on Claude. The segments
-        live in ``claude_runtime._claude_bundle_cache_root``, which the
-        default-permission renderer reads too, so this layout is spelled once.
+        under which installed marketplace bundles live on Claude. The path is
+        composed in ``claude_runtime._claude_bundle_cache_root``, which shares
+        its cache segments with the default-permission renderer, so the layout
+        is spelled once.
         """
         return toon_success(
             "layout bundle-cache-root",
@@ -1168,7 +1169,12 @@ class ClaudeRuntime(Runtime):
                     else:
                         deny.append(rule)
                         changes_applied += 1
-            if not dry_run:
+            # Write only when a rule was actually added. The sibling branches
+            # above save unconditionally, but this one replaces a caller that
+            # did not, and a settings file re-serialized on every idempotent
+            # re-run is a change an operator can see (mtime, key order, keys the
+            # load skeleton supplies) for no effect.
+            if not dry_run and changes_applied:
                 settings["permissions"]["deny"] = deny
                 claude_runtime._save_settings(settings_path, settings)
 

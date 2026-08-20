@@ -216,8 +216,12 @@ class TestProtectPathDenyRules:
         """``relative_to``, not ``startswith`` — a sibling of home is not under it.
 
         With home ``/home/user``, a plain prefix test also matches
-        ``/home/user2/...`` and renders the nonsensical ``~2/...``. The two
-        spellings then collapse to one string, so the rule list is shorter.
+        ``/home/user2/...`` and would render the nonsensical ``~2/...``.
+        ``relative_to`` raises instead, so the path keeps its absolute spelling
+        — and because the tilde form is then the SAME string as the absolute
+        one, the two collapse and the rule list is shorter. That collapse is a
+        property of this implementation, not of the prefix-test alternative,
+        which would have produced two distinct (and one nonsensical) rules.
         """
         fake_home = tmp_path / 'user'
         monkeypatch.setattr(claude_runtime, 'resolve_home', lambda: fake_home)
@@ -300,6 +304,9 @@ class TestPermissionFixProtectPath:
         raw = claude_runtime.ClaudeRuntime().permission_fix(
             'global', 'protect-path', [str(protected)], False
         )
+        # Assert the operation SUCCEEDED first: an error TOON also contains no
+        # rule text, so without this the test passes against a broken op.
+        assert _parse(raw)['status'] == 'success'
         assert 'Read(' not in raw
         assert 'Bash(' not in raw
 
@@ -316,6 +323,26 @@ class TestPermissionFixProtectPath:
         assert second['rules_total'] == self.RULE_COUNT
         written = json.loads(settings_path.read_text(encoding='utf-8'))
         assert len(written['permissions']['deny']) == self.RULE_COUNT
+
+    def test_a_no_change_rerun_does_not_rewrite_the_file(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Adding nothing writes nothing — the retired caller behaved this way too.
+
+        Byte equality is the assertion, not mtime: a re-serialization that
+        reordered keys or seeded empty ``allow``/``ask`` lists would be a
+        visible change to an operator's file for no effect.
+        """
+        protected = str(self._protected(monkeypatch, tmp_path))
+        settings_path = tmp_path / 'settings.json'
+        self._pin_scope_path(monkeypatch, settings_path)
+        runtime = claude_runtime.ClaudeRuntime()
+
+        runtime.permission_fix('global', 'protect-path', [protected], False)
+        before = settings_path.read_bytes()
+        runtime.permission_fix('global', 'protect-path', [protected], False)
+
+        assert settings_path.read_bytes() == before
 
     def test_preserves_unrelated_deny_entries(self, tmp_path: Path, monkeypatch) -> None:
         protected = str(self._protected(monkeypatch, tmp_path))
@@ -369,14 +396,30 @@ class TestPermissionFixProtectPath:
         assert result['alternative']
         assert 'changes_applied' not in result
 
-    def test_the_two_runtimes_accept_the_same_operation_set(self) -> None:
+    def test_the_two_runtimes_accept_the_same_operation_set(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
         """A value one runtime accepts and the other rejects is a silent gap.
 
-        OpenCode rejecting ``protect-path`` as ``invalid_operation`` would turn
-        the honest no-op above into an error the caller must special-case.
+        Both runtimes are driven, because the claim is a COMPARISON: OpenCode
+        rejecting ``protect-path`` as ``invalid_operation`` would turn its
+        honest no-op into an error the caller must special-case, and Claude
+        rejecting one OpenCode accepts would be the same gap mirrored. The
+        operation list is spelled out rather than read from either runtime's own
+        ``valid_ops``, so a value dropped from both still fails here.
         """
-        for operation in ('normalize', 'add', 'remove', 'ensure', 'consolidate', 'protect-path'):
-            result = _parse(
-                OpenCodeRuntime().permission_fix('global', operation, ['/tmp/x'], False)
+        self._pin_scope_path(monkeypatch, tmp_path / 'settings.json')
+        operations = ('normalize', 'add', 'remove', 'ensure', 'consolidate', 'protect-path')
+
+        for operation in operations:
+            claude = _parse(
+                claude_runtime.ClaudeRuntime().permission_fix(
+                    'global', operation, [str(tmp_path / 'arg')], True
+                )
             )
-            assert result['status'] == 'no-op', operation
+            assert claude['status'] == 'success', operation
+
+            opencode = _parse(
+                OpenCodeRuntime().permission_fix('global', operation, [str(tmp_path / 'arg')], True)
+            )
+            assert opencode['status'] == 'no-op', operation

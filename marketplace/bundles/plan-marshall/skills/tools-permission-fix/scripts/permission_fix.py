@@ -69,8 +69,14 @@ OVERLY_BROAD_PYTHON = 'Bash(python3:*)'
 # The default permission set is NOT rendered here. ``apply-fixes`` states the
 # goal — ensure the defaults — via ``permission_common.ensure_default_permissions``;
 # the runtime renders the grammar from its own resolved layout, performs the
-# write, and returns semantic ids. Nothing target-shaped comes back, so this
-# script never learns one target's permission-string format.
+# write, and returns semantic ids, so no rendered default comes back.
+#
+# That is a claim about the DEFAULTS only. This module still holds plenty of
+# permission-DSL knowledge of its own — the two constants above, the
+# ``Skill(...)`` / ``SlashCommand(...)`` wildcards it generates, and the
+# timestamp patterns it parses. Relocating those is the rest of the
+# grammar-in-a-general-script class, registered open in the multiplattform
+# epic's coupling inventory and not scoped here.
 
 # Timestamp patterns for consolidation
 TIMESTAMP_PATTERN = re.compile(r'^(\w+)\((.*/)?(.+)-(\d{4}-\d{2}-\d{2}-\d{6})\.(\w+)\)$')

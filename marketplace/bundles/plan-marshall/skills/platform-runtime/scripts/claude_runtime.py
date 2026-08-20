@@ -2376,8 +2376,10 @@ def _claude_shared_settings_path(project_dir: str | None = None) -> Path:
 
     The counterpart to ``_claude_local_settings_path``: the file a team commits,
     as opposed to the operator-local one. Both the write-path selector and the
-    read-preference selector below compose from these two, so the ``.claude``
-    settings-file segments are spelled once each.
+    read-preference selector below compose from these two, so neither selector
+    spells a project settings-file segment itself. (The GLOBAL settings path is
+    anchored on the home directory rather than the project and composes its own
+    segments below.)
     """
     base = Path(project_dir) if project_dir else Path.cwd()
     return base / ".claude" / "settings.json"
@@ -2480,10 +2482,21 @@ def _save_settings(path: Path, settings: dict[str, Any]) -> bool:
 # Permission-grammar rendering
 #
 # The Claude permission DSL (``Read(...)``, ``Write(...)``, ``Bash(...)``) is a
-# target wire format, so per principles §1 it is rendered HERE and never crosses
-# the runtime boundary in either direction. General scripts state intent — "the
-# default permission set", "protect this directory" — and receive normalized
-# status back; the helpers below are what turns that intent into grammar.
+# target wire format, so per principles §1 it is rendered HERE. General scripts
+# state intent — "the default permission set", "protect this directory" — and
+# receive normalized status back; the helpers below are what turns that intent
+# into grammar.
+#
+# Stated exactly, because the general claim would be false: no rendered rule
+# crosses the boundary as an ARGUMENT to these helpers or as a RETURN value from
+# them. What still crosses is the settings MAPPING that
+# ``ensure_default_permissions`` takes — a Claude-shaped dict whose allow list
+# holds rendered rules the caller loaded. §1 names the settings-file shape as a
+# format that must not cross, so that is real residue, not a technicality; it is
+# the ``tools-permission-*`` scripts' pre-existing coupling (they load, mutate
+# and save that mapping throughout), registered in the epic's coupling
+# inventory, and closing it means restructuring every subcommand rather than one
+# call.
 # ---------------------------------------------------------------------------
 
 _CLAUDE_PLUGIN_CACHE_SEGMENTS = (".claude", "plugins", "cache")
@@ -2496,7 +2509,12 @@ _EXFILTRATION_BASH_VECTORS = ("cat", "head", "tail", "less", "more", "cp", "grep
 
 
 def _claude_plugin_cache_dir() -> Path:
-    """Return ``~/.claude/plugins/cache`` — the parent of every bundle cache."""
+    """Return ``~/.claude/plugins/cache`` — the parent of every bundle cache.
+
+    The default-permission renderer reads THIS, not the plan-marshall root
+    below: the read permission it renders covers every deployed bundle cache,
+    so it names the parent directory.
+    """
     return resolve_home().joinpath(*_CLAUDE_PLUGIN_CACHE_SEGMENTS)
 
 
@@ -2504,9 +2522,9 @@ def _claude_bundle_cache_root() -> Path:
     """Return the Claude deployed-bundle cache root for plan-marshall.
 
     ``~/.claude/plugins/cache/plan-marshall`` — the single flat cache root under
-    which installed marketplace bundles live on Claude. ``layout
-    bundle-cache-root`` and the default-permission renderer both read it here so
-    the segments are spelled once.
+    which installed marketplace bundles live on Claude. Read by ``layout
+    bundle-cache-root``; it shares the cache segments with the permission
+    renderer through ``_claude_plugin_cache_dir`` above, so the two cannot drift.
     """
     return _claude_plugin_cache_dir() / _BUNDLE_CACHE_DIR_NAME
 

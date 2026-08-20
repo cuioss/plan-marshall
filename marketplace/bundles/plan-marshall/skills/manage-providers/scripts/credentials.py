@@ -4,7 +4,7 @@
 Credential management CLI dispatcher.
 
 Routes subcommands to individual command modules for secure credential
-storage, configuration, verification, and deny rule management.
+storage, configuration, verification, and credential-directory protection.
 
 Usage:
     credentials.py configure --skill <name> [--scope global|project]

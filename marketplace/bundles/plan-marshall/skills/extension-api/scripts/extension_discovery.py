@@ -16,7 +16,12 @@ from typing import Any
 # Direct import - executor sets up PYTHONPATH for cross-skill imports
 import resolve_project_dir as _routing
 from marketplace_bundles import resolve_bundle_path, resolve_bundles_root, resolve_skills_root
-from marketplace_paths import find_marketplace_path, get_bundle_cache_roots, get_project_skill_roots
+from marketplace_paths import (
+    _resolve_skill_root,
+    find_marketplace_path,
+    get_bundle_cache_roots,
+    get_project_skill_roots,
+)
 from plan_logging import log_entry
 from toon_parser import serialize_toon
 
@@ -1286,14 +1291,14 @@ def _project_skill_trees(project_root: Path) -> list[Path]:
 
     Routes through the platform-runtime ``layout skill-roots`` op (via
     ``marketplace_paths.get_project_skill_roots``), so discovery covers whatever
-    layout the active target declares rather than one hardcoded tree. Relative
-    roots anchor on *project_root*; ``~``-anchored and absolute roots resolve
+    layout the active target declares rather than one hardcoded tree. Each root
+    is anchored by the shared ``marketplace_paths._resolve_skill_root`` — a
+    relative root under *project_root*, a ``~``-anchored or absolute one
     independently. Roots are returned in the op's own priority order.
     """
     trees: list[Path] = []
     for root in get_project_skill_roots():
-        expanded = Path(root).expanduser()
-        candidate = expanded if expanded.is_absolute() else project_root / root
+        candidate = _resolve_skill_root(root, project_root)
         if candidate.is_dir():
             trees.append(candidate)
     return trees

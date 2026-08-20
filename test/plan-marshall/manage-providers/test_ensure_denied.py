@@ -27,8 +27,12 @@ def claude_project(tmp_path, monkeypatch):
     """Make *tmp_path* a claude-target project with cwd pinned to it.
 
     The runtime resolves the settings file from the working directory, so a test
-    that does not pin cwd writes into the developer's own settings — which one
-    did, before this fixture existed.
+    that does not pin cwd writes into the checkout's own ``.claude/settings.json``.
+    That is not hypothetical: the predecessors of these tests kept themselves out
+    of the real tree by patching ``permission_common.save_settings`` with a mock,
+    and the routed call bypasses ``permission_common`` entirely — so they wrote
+    for real the first time they ran against it. Pinning cwd is the isolation
+    that does not depend on which module performs the write.
     """
     plan_dir = tmp_path / '.plan'
     plan_dir.mkdir(parents=True, exist_ok=True)
@@ -53,14 +57,21 @@ class TestEnsureDeniedCLI:
     def test_ensure_denied_writes_rules_for_the_credentials_dir(
         self, claude_project, capsys
     ) -> None:
-        from _cred_ensure_denied import run_ensure_denied
+        import _cred_ensure_denied
 
-        assert run_ensure_denied(Namespace(target='project')) == 0
+        assert _cred_ensure_denied.run_ensure_denied(Namespace(target='project')) == 0
 
         deny = _deny_list(claude_project)
         assert deny, 'ensure-denied must write deny rules'
-        # Every rule names the credentials directory — the goal that was stated.
-        assert all('credentials' in rule for rule in deny)
+        # Name the directory from the module's own bound constant rather than
+        # matching the word "credentials": the autouse sandbox chooses that
+        # directory, and its name is not this test's to assume. The absolute
+        # spelling is rendered whether or not the sandbox lies under $HOME, so
+        # these three hold on any machine.
+        protected = str(_cred_ensure_denied.CREDENTIALS_DIR)
+        assert f'Read({protected}/**)' in deny
+        assert f'Bash(cat {protected}/*)' in deny
+        assert f'Bash(base64 {protected}/*)' in deny
         # And the retired path is named by none of them.
         assert not any('.plan-marshall-credentials' in rule for rule in deny)
 

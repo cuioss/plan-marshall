@@ -8,6 +8,13 @@ JSON load/save, and the default permission set. The runtime
 segments (read preference and write preference alike) and renders no permission
 grammar; it forwards to the runtime helpers so there is a single home for that
 behaviour and no runtime->script back-import.
+
+The forwarding is to ``claude_runtime`` **by direct import**, not through the
+runtime registry, so every delegator here resolves to the Claude implementation
+whatever ``runtime.target`` says. That is this module's long-standing binding
+rather than a property of any one delegator, and it is why the module is a
+Claude-bound script rather than a target-neutral one; it is registered open in
+the multiplattform epic's coupling inventory.
 """
 
 import sys
@@ -111,13 +118,20 @@ def get_project_settings_path_for_write(project_dir: Path | None = None) -> Path
 def ensure_default_permissions(
     settings: dict[str, Any], settings_path: str | Path, dry_run: bool = False
 ) -> dict[str, Any]:
-    """Ensure the target's default permission set, and let the runtime write it.
+    """Ensure the default permission set, and let the runtime write it.
 
     Goal-based: the caller states the goal and receives normalized status —
     ``{'defaults_added': [semantic ids], 'defaults_added_count': int,
     'applied': bool}``. The permission grammar is rendered inside the runtime
     and never crosses back, so a caller cannot come to depend on one target's
     permission-string format.
+
+    Like every other delegator in this module, it resolves to ``claude_runtime``
+    by direct import rather than through the runtime registry, so the set it
+    ensures is Claude's whatever ``runtime.target`` says. That binding is the
+    module's own, not something this function introduces — see the module
+    docstring — and it is registered open in the multiplattform epic's coupling
+    inventory.
     """
     return _runtime_ensure_default_permissions(settings, Path(settings_path), dry_run)
 
