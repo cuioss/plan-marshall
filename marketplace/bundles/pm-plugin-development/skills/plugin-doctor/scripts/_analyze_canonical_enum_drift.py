@@ -37,10 +37,9 @@ Every path that cannot reach a confident authority resolves to SKIP — no
 finding — never to a guessed comparison:
 
 - the owning script file is missing or unparseable;
-- the documented flag is never declared with ``choices=`` (a placeholder metavar
-  like ``--type TYPE`` makes NO enum claim, so there is nothing to diverge, and a
-  free-form flag such as ``--promoted`` documented as ``{true|false}`` has no
-  ``choices=`` authority to compare against);
+- the documented flag is never declared with ``choices=`` (a free-form flag such
+  as ``--promoted`` documented as ``{true|false}`` has no ``choices=`` authority
+  to compare against);
 - the flag resolves to MORE THAN ONE distinct ``choices=`` set across the script
   (ambiguous — which subcommand's set is the doc mirroring?);
 - a ``choices=`` constant cannot be resolved to a concrete string set
@@ -50,6 +49,11 @@ A skip can never produce a false positive. The only cost is a false negative on
 an unresolvable site, which the asymmetric-error rule accepts: over-rejecting a
 valid, correctly-documented call is the failure this project keeps hitting, and
 this guard refuses it by construction.
+
+A placeholder metavar is not in this list because it never enters the
+population at all: a token is read as an enum only when it parses into TWO OR
+MORE members, so ``--type TYPE`` and the braced template slot ``{phase}`` in
+``--scope {phase}.{role}|plan|...`` are both filtered at collection.
 
 Positive-population assertion
 -----------------------------
@@ -128,19 +132,28 @@ refusal to invent an authority:
 
   Both are live in this tree. A parser merely PASSED INTO a helper is NOT one of
   them, and was wrongly listed here once: the caller's own ``add_parser`` models
-  the path, so only the authority key is missing and such a site lands in
-  ``no_choices_declared`` instead — verified by executing that shape rather than
-  by reading it.
+  the PATH, so the surface IS derived and only the authority is missing. Such a
+  site lands in ``authority_incomplete`` — the live instances are the three
+  ``plan-marshall:plan-marshall:phase_handshake`` ``--phase`` sites, whose flag
+  is declared by an imported ``add_phase_arg(parser)``.
 
   What the cause asserts is only that the surface was not modelled. Do not
   restate it as "the choices are in another module": that is true of some of
   these sites, false of others, and unknowable for the ones whose flag declares
   no ``choices=`` anywhere.
-* ``authority_incomplete`` — the module declares a ``choices=`` on a receiver
-  this walk could not attribute to a parser path (a parser passed into a helper
-  and re-bound to a parameter of the same name). Declining to attribute an
-  authority is NOT establishing its absence, so no site on such a module can
-  support the reading below. A blind spot.
+* ``authority_incomplete`` — this walk could not read the whole of the module's
+  ``choices=`` authority for the site, so it declines to call the authority
+  absent. Two shapes reach it:
+
+  - a ``choices=`` declared on a receiver that cannot be attributed to a parser
+    path, because an enclosing function parameter of the same name shadows it;
+  - a parser handed to a call this module does not model — anything outside
+    :data:`_ARGPARSE_CONSTRUCTION_CALLS`, typically an imported helper that
+    declares the flag. The path it marks incomplete is that parser's, so only
+    sites on that path are affected.
+
+  Declining to attribute an authority is NOT establishing its absence, so no
+  site in this bucket can support the reading below. A blind spot.
 * ``no_choices_declared`` — the subcommand's parser WAS modelled, the module's
   authority is complete, and it declares no ``choices=`` for this flag. This rule's authority is ``choices=`` and nothing
   else (see the declared-vs-derived note above), so here the authority is
@@ -231,6 +244,10 @@ _VERB_TOKEN_RE = re.compile(r'^[a-z][a-z0-9\-]*$')
 # metavar rendering of a choices-constrained option; a bare ``{a,b,c}`` not
 # preceded by a flag (or a ``(--a | --b)`` mutually-exclusive group) never
 # matches, so only genuine per-flag enum claims are collected.
+#
+# The two-member minimum is NOT in this pattern — it is applied to the parsed
+# member set in :func:`_enum_sites_in_skill`, which is where it also covers the
+# brace-less form and bodies whose members collapse to one.
 _ENUM_TOKEN_RE = re.compile(
     r'(?<![A-Za-z0-9])--(?P<flag>[A-Za-z][A-Za-z0-9\-]*)\s+\{(?P<members>[^{}]+)\}'
 )
@@ -270,6 +287,12 @@ _MAX_RESOLVE_DEPTH = 8
 # parser. A flag declared on one of these is, to argparse, declared on the parser
 # — so the returned variable inherits the parser's subcommand paths.
 _PARSER_GROUP_FACTORIES = frozenset({'add_mutually_exclusive_group', 'add_argument_group'})
+
+# Argparse's own construction surface. Passing a parser to one of these is not
+# handing it to an unknown callee, so it does not make the authority incomplete.
+_ARGPARSE_CONSTRUCTION_CALLS = frozenset(
+    {'add_argument', 'add_parser', 'add_subparsers', 'parse_args', 'set_defaults'}
+) | _PARSER_GROUP_FACTORIES
 
 
 # Why a site was examined but not compared. Published per site and aggregated by
@@ -444,7 +467,16 @@ def _enum_sites_in_skill(
         for pattern in _ENUM_TOKEN_PATTERNS:
             for match in pattern.finditer(raw):
                 members = _split_enum_members(match.group('members'))
-                if not members or any(m.startswith('--') for m in members):
+                # TWO members minimum, tested after parsing rather than in the
+                # pattern, so it holds for BOTH notations and also rejects a
+                # body whose members collapse to one (``{a|a}``). A one-member
+                # brace group is indistinguishable from a placeholder metavar
+                # — ``--scope {phase}.{role}|plan|...`` yields ``{phase}``,
+                # which is a template slot, not an enum with one legal value —
+                # and reading it as an enum claim compares a live ``choices=``
+                # against a variable name. Fail-closed: the only cost is a
+                # missed one-member enum, which carries no drift signal anyway.
+                if len(members) < 2 or any(m.startswith('--') for m in members):
                     continue
                 sites.append(
                     (line, block_notation, block_path, match.group('flag'), members)
@@ -656,6 +688,7 @@ def _build_parser_path_sets(tree: ast.Module) -> dict[str, set[tuple[str, ...]]]
     """
     parser_paths: dict[str, set[tuple[str, ...]]] = {}
     subparsers_owner: dict[str, str] = {}
+    scope_params = _enclosing_params(tree)
 
     assigns: list[ast.Assign] = [n for n in ast.walk(tree) if isinstance(n, ast.Assign)]
     assigns.sort(key=lambda a: (a.lineno, a.col_offset))
@@ -702,8 +735,17 @@ def _build_parser_path_sets(tree: ast.Module) -> dict[str, set[tuple[str, ...]]]
             # That is not a missing authority: it is one walked past, which the
             # coverage census would then report as "the parser declares no
             # choices for this flag".
+            #
+            # The inheritance is SCOPE-GATED. Where the owner name is shadowed by
+            # an enclosing function's parameter, its module-level paths are not
+            # this owner's (see :func:`_shadowed_receivers`), so passing them on
+            # would launder a shadowed receiver into a confident path — the one
+            # outcome the shadowing guard promises is impossible, reached through
+            # the group rather than directly. Fail closed: the group inherits
+            # nothing, and :func:`_shadowed_receivers` reports its name shadowed
+            # too, so the module's authority reads INCOMPLETE.
             owner = _receiver_name(call)
-            if owner is not None and owner in parser_paths:
+            if owner is not None and owner in parser_paths and owner not in scope_params[id(stmt)]:
                 for var in targets:
                     parser_paths.setdefault(var, set()).update(parser_paths[owner])
     return parser_paths
@@ -897,6 +939,38 @@ def _derived_subcommand_paths(tree: ast.Module) -> set[tuple[str, ...]]:
     return paths
 
 
+def _paths_with_incomplete_authority(tree: ast.Module) -> set[tuple[str, ...]]:
+    """Subcommand paths whose parser was handed to a call this walk cannot model.
+
+    A parser variable passed as an ARGUMENT — ``add_phase_arg(capture)``,
+    ``_add_init_args(p_init)`` — may have flags (and ``choices=``) declared on it
+    by the callee. The callee is frequently in another module, and following the
+    hop is deliberately out of scope, so the authority for that path is
+    INCOMPLETE: an absent key is not evidence that no ``choices=`` was declared.
+
+    This is the general form of a defect found three rounds running by auditing
+    only the notation's own FILE — a scope that structurally cannot see an
+    imported helper. ``plan-marshall:plan-marshall:phase_handshake`` is the live
+    subject: three ``--phase`` sites were reported as "the parser declares no
+    choices", while ``input_validation.add_phase_arg`` declares
+    ``choices=PHASES`` matching the documented set exactly.
+
+    Argparse's own construction methods are excluded — passing a parser to
+    ``add_argument`` or a group factory is not handing it to an unknown callee.
+    """
+    parser_paths = _build_parser_path_sets(tree)
+    incomplete: set[tuple[str, ...]] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if _call_name(node) in _ARGPARSE_CONSTRUCTION_CALLS:
+            continue
+        for arg in (*node.args, *(kw.value for kw in node.keywords)):
+            if isinstance(arg, ast.Name) and arg.id in parser_paths:
+                incomplete |= parser_paths[arg.id]
+    return incomplete
+
+
 def _has_unattributed_choices(tree: ast.Module) -> bool:
     """True when this module declares ``choices=`` the path walk could not attribute.
 
@@ -939,8 +1013,31 @@ def _shadowed_receivers(tree: ast.Module) -> dict[int, set[str]]:
     parameter is treated as unresolvable, so the site is reported as an
     unexamined member of the population rather than compared against the wrong
     authority.
+
+    A name bound to a GROUP built off a shadowed owner is reported shadowed too
+    (:func:`_group_vars_off_shadowed_owner`). The group is not itself a
+    parameter, so the direct test does not reach it, and without that the guard
+    is defeated by one indirection — ``grp = parser.add_mutually_exclusive_group()``
+    inside ``def _extra(parser)`` — which is a live-capable shape, not a
+    hypothetical: both halves of :data:`_PARSER_GROUP_FACTORIES` reach it.
     """
-    shadowed: dict[int, set[str]] = {}
+    scope_params = _enclosing_params(tree)
+    laundering = _group_vars_off_shadowed_owner(tree, scope_params)
+    return {
+        id(node): set(scope_params[id(node)]) | laundering
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and _is_add_argument(node)
+    }
+
+
+def _enclosing_params(tree: ast.Module) -> dict[int, frozenset[str]]:
+    """Map every node's id to the function-parameter names in scope AT that node.
+
+    One walk serves both the direct shadowing test and the scope gate on group
+    inheritance, so the two cannot drift apart on what "shadowed here" means.
+    Defaults to the empty set for a node the walk did not reach.
+    """
+    params_at: dict[int, frozenset[str]] = {}
 
     def walk(node: ast.AST, names: frozenset[str]) -> None:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -951,13 +1048,45 @@ def _shadowed_receivers(tree: ast.Module) -> dict[int, set[str]]:
             if args.kwarg:
                 params.add(args.kwarg.arg)
             names = names | params
-        if isinstance(node, ast.Call) and _is_add_argument(node):
-            shadowed[id(node)] = set(names)
+        params_at[id(node)] = names
         for child in ast.iter_child_nodes(node):
             walk(child, names)
 
     walk(tree, frozenset())
-    return shadowed
+    return _DefaultingParams(params_at)
+
+
+class _DefaultingParams(dict):
+    """``dict[int, frozenset[str]]`` returning the empty set for an unseen id."""
+
+    def __missing__(self, key: int) -> frozenset[str]:
+        return frozenset()
+
+
+def _group_vars_off_shadowed_owner(
+    tree: ast.Module, scope_params: dict[int, frozenset[str]]
+) -> set[str]:
+    """Names bound to a group whose OWNER is shadowed where the group is built.
+
+    ``grp = parser.add_mutually_exclusive_group()`` inside
+    ``def _extra(parser): ...`` binds ``grp`` to a group of whatever parser the
+    caller passed — not of the module-level ``parser``. Without this, ``grp`` is
+    an ordinary unshadowed name, so a ``grp.add_argument(..., choices=...)``
+    would be attributed to the module-level parser's path: the shadowing guard
+    defeated by one indirection. Treating ``grp`` as shadowed keeps the module's
+    authority INCOMPLETE, which is the fail-closed reading.
+    """
+    laundered: set[str] = set()
+    for stmt in ast.walk(tree):
+        if not isinstance(stmt, ast.Assign) or not isinstance(stmt.value, ast.Call):
+            continue
+        if _call_name(stmt.value) not in _PARSER_GROUP_FACTORIES:
+            continue
+        owner = _receiver_name(stmt.value)
+        if owner is None or owner not in scope_params[id(stmt)]:
+            continue
+        laundered.update(t.id for t in stmt.targets if isinstance(t, ast.Name))
+    return laundered
 
 
 def _is_add_argument(node: ast.Call) -> bool:
@@ -1018,6 +1147,9 @@ def derive_population(marketplace_root: Path, cache=None) -> list[EnumSite]:
     # attribute to a parser path — if so, an absent key is not evidence of
     # absence for any site on that script.
     incomplete_cache: dict[str, bool] = {}
+    # Per-PATH incompleteness: the parser for these subcommands was handed to a
+    # call this walk cannot model, so an absent authority key is not evidence.
+    incomplete_paths_cache: dict[str, set[tuple[str, ...]]] = {}
     population: list[EnumSite] = []
 
     for skill_md in _skill_md_files(marketplace_root):
@@ -1033,10 +1165,12 @@ def derive_population(marketplace_root: Path, cache=None) -> list[EnumSite]:
                         authority_cache[notation] = _authority_by_subcommand_flag(tree, resolver)
                         paths_cache[notation] = _derived_subcommand_paths(tree)
                         incomplete_cache[notation] = _has_unattributed_choices(tree)
+                        incomplete_paths_cache[notation] = _paths_with_incomplete_authority(tree)
                     else:
                         authority_cache[notation] = {}
                         paths_cache[notation] = set()
                         incomplete_cache[notation] = False
+                        incomplete_paths_cache[notation] = set()
                 authority = authority_cache[notation]
                 key = (subcommand, flag)
                 # Three fail-closed skips all leave ``choices`` at None, and they
@@ -1062,6 +1196,7 @@ def derive_population(marketplace_root: Path, cache=None) -> list[EnumSite]:
                     cause = (
                         UNRESOLVED_AUTHORITY_INCOMPLETE
                         if incomplete_cache[notation]
+                        or subcommand in incomplete_paths_cache[notation]
                         else UNRESOLVED_NO_CHOICES_DECLARED
                     )
                 else:

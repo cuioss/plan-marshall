@@ -354,12 +354,18 @@ def test_shared_fence_second_invocation_drift_is_still_caught(tmp_path):
 
     Without this, the fix would be indistinguishable from one that simply stopped
     examining anything below the first invocation.
+
+    The wrong enum carries TWO members (``p|z`` against a live ``p|q``) rather
+    than one. A one-member body is a template slot, not an enum claim, and never
+    enters the population — so spelling the drift that way would have tested the
+    collector's minimum instead of the attribution this control is for.
     """
-    _write_shared_fence_bundle(tmp_path, add_enum='x|y', remove_enum='p')
+    _write_shared_fence_bundle(tmp_path, add_enum='x|y', remove_enum='p|z')
 
     findings = assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [RULE_ID])
 
     assert findings[0]['details']['missing_from_doc'] == ['q']
+    assert findings[0]['details']['not_in_choices'] == ['z']
     assert findings[0]['details']['subcommand'] == 'remove'
 
 
@@ -893,3 +899,201 @@ if __name__ == '__main__':
 
     assert ((), 'mode') not in authority
     assert not [key for key in authority if key[0] == ()]
+
+
+def test_a_parser_handed_to_an_unmodelled_call_makes_that_path_incomplete(tmp_path):
+    """An IMPORTED helper that declares the flag leaves the authority unread.
+
+    ``add_phase_arg(capture)`` — the live shape at
+    ``plan-marshall:plan-marshall:phase_handshake`` — hands a modelled parser to
+    a callee this module does not walk. The path IS derived (the caller's own
+    ``add_parser`` gives it), so ``parser_surface_not_derived`` is wrong; and the
+    flag's ``choices=`` live in the imported module, so ``no_choices_declared``
+    is wrong too — its published meaning is "this rule's authority is established
+    as ABSENT", and here it is simply unread. Three live sites were filed that
+    way.
+
+    The gate is the CALL, not the import: only a call outside
+    ``_ARGPARSE_CONSTRUCTION_CALLS`` marks the path, so an ordinary
+    ``sub.add_parser('verb')`` does not make every path incomplete. The sibling
+    test below pins that half.
+    """
+    script = '''\
+import argparse
+
+from _shared_args import add_mode_arg
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest='cmd')
+    p_add = sub.add_parser('add')
+    add_mode_arg(p_add)
+
+
+if __name__ == '__main__':
+    main()
+'''
+    _write_bundle(tmp_path, doc_enum='live|archived', script_body=script, flag='mode')
+
+    population = derive_population(tmp_path)
+    coverage = _mod.derive_coverage(population)
+
+    assert population[0].resolved is False
+    assert population[0].unresolved_cause == _mod.UNRESOLVED_AUTHORITY_INCOMPLETE
+    assert coverage['unresolved_causes'][_mod.UNRESOLVED_NO_CHOICES_DECLARED] == 0
+
+    # The mechanism, reached directly: the call marks the parser's OWN path, not
+    # the whole module. Without this the cause could be produced by any
+    # module-wide flag and the assertions above would still pass.
+    script_path = tmp_path / 'mybundle' / 'skills' / 'myskill' / 'scripts' / 'myscript.py'
+    tree = ast.parse(script_path.read_text(encoding='utf-8'))
+
+    assert _mod._paths_with_incomplete_authority(tree) == {('add',)}
+
+
+def test_argparse_construction_calls_do_not_make_a_path_incomplete(tmp_path):
+    """Passing a parser to argparse's OWN surface is not handing it to a callee.
+
+    ``sub.add_parser(...)``, ``parser.add_argument(...)``,
+    ``parser.parse_args()`` and the group factories all take or return parsers.
+    If those counted as unmodelled callees every path in every script would read
+    ``authority_incomplete`` and the census would go blind — the exact failure
+    this rule exists to catch, committed by the fix for it.
+    """
+    script = '''\
+import argparse
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest='cmd')
+    p_add = sub.add_parser('add')
+    p_add.add_argument('--mode', choices=['live', 'archived'])
+    p_add.set_defaults(func=None)
+    parser.parse_args()
+
+
+if __name__ == '__main__':
+    main()
+'''
+    _write_bundle(tmp_path, doc_enum='live|archived', script_body=script, flag='mode')
+
+    population = derive_population(tmp_path)
+    script_path = tmp_path / 'mybundle' / 'skills' / 'myskill' / 'scripts' / 'myscript.py'
+    tree = ast.parse(script_path.read_text(encoding='utf-8'))
+
+    assert _mod._paths_with_incomplete_authority(tree) == set()
+    assert population[0].resolved is True
+    assert population[0].choices == frozenset({'live', 'archived'})
+
+
+def test_a_group_built_off_a_shadowed_parser_is_not_attributed_to_the_root(tmp_path):
+    """The shadowing guard must not be defeated by one indirection.
+
+    ``grp = parser.add_mutually_exclusive_group()`` inside
+    ``def _extra(parser)`` builds a group of whatever parser the CALLER passed.
+    ``grp`` is not itself a parameter, so the direct shadowing test does not
+    reach it — and the group branch handed it the module-level ``parser``'s ROOT
+    paths, so ``grp.add_argument(..., choices=...)`` was filed against the root.
+    That is the wrong-authority comparison the guard promises is impossible,
+    reached through the group rather than directly.
+
+    Both halves are asserted: ``grp`` gets NO paths, and the module's authority
+    reads incomplete. The first is the load-bearing one — the second could be
+    produced by an unrelated shadowed receiver.
+
+    The fixture builds the module-level ``parser`` BEFORE the helper on purpose.
+    ``_build_parser_path_sets`` processes assignments in source order, so a
+    ``parser = ArgumentParser()`` written BELOW the helper is not yet mapped when
+    the group assignment is read, and the group inherits nothing whatever the
+    scope gate does. Spelled that way the assertion holds for a reason that is
+    not the guard, and deleting the gate leaves the suite green — which is what
+    the first draft of this test did.
+    """
+    script = '''\
+import argparse
+
+parser = argparse.ArgumentParser()
+sub = parser.add_subparsers(dest='cmd')
+p_add = sub.add_parser('add')
+
+
+def _extra(parser):
+    grp = parser.add_mutually_exclusive_group()
+    grp.add_argument('--mode', choices=['live', 'archived'])
+
+
+_extra(p_add)
+'''
+    _write_bundle(tmp_path, doc_enum='live|archived', script_body=script, flag='mode')
+    script_path = tmp_path / 'mybundle' / 'skills' / 'myskill' / 'scripts' / 'myscript.py'
+    tree = ast.parse(script_path.read_text(encoding='utf-8'))
+
+    assert 'grp' not in _mod._build_parser_path_sets(tree)
+    assert _mod._has_unattributed_choices(tree) is True
+
+    population = derive_population(tmp_path)
+
+    assert population[0].resolved is False
+    assert population[0].unresolved_cause == _mod.UNRESOLVED_AUTHORITY_INCOMPLETE
+    assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [])
+
+
+def test_choices_on_an_argument_group_resolve(tmp_path):
+    """``add_argument_group`` inherits its parser's paths, as its sibling does.
+
+    ``_PARSER_GROUP_FACTORIES`` names two factories and only the
+    mutually-exclusive one was pinned, so deleting ``add_argument_group`` from
+    the set left the suite green while every ``choices=`` declared on a named
+    group went unread.
+    """
+    script = '''\
+import argparse
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest='cmd')
+    add = sub.add_parser('add')
+    group = add.add_argument_group('selection')
+    group.add_argument('--kind', choices=['x', 'y', 'z'])
+
+
+if __name__ == '__main__':
+    main()
+'''
+    _write_bundle(tmp_path, doc_enum='x|y|z', script_body=script)
+
+    population = derive_population(tmp_path)
+
+    assert population[0].resolved is True
+    assert population[0].choices == frozenset({'x', 'y', 'z'})
+    assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [])
+
+
+def test_a_one_member_brace_group_is_a_template_slot_not_an_enum(tmp_path):
+    """The two-member minimum the rule catalog states, applied to BOTH notations.
+
+    ``--scope {phase}.{role}|plan|orchestrator[...]`` — live at
+    ``manage-config/SKILL.md`` — yields the brace token ``{phase}``, a template
+    slot for a phase NAME. Read as a one-member enum it entered the population
+    and was compared against a live ``choices=``. The braced pattern carried no
+    member minimum while its brace-less sibling required a pipe, so the catalog's
+    "parses into two or more members" was false of half the collector.
+
+    The duplicate-collapsing case is asserted too: the minimum is tested on the
+    parsed member SET, so ``{a|a}`` is one member however it is spelled.
+    """
+    _write_bundle(tmp_path, doc_enum='phase', script_body=_SCRIPT_LITERAL_CHOICES)
+
+    assert derive_population(tmp_path) == []
+
+    _write_bundle(tmp_path, doc_enum='x|x', script_body=_SCRIPT_LITERAL_CHOICES)
+
+    assert derive_population(tmp_path) == []
+
+    # The control: two distinct members over the same fixture DO enter.
+    _write_bundle(tmp_path, doc_enum='x|y', script_body=_SCRIPT_LITERAL_CHOICES)
+
+    assert len(derive_population(tmp_path)) == 1

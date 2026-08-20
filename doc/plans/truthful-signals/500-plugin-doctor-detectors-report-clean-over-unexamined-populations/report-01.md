@@ -42,7 +42,14 @@ D1 is the plan's GATE. Its derivation succeeded, so D2–D8 were attempted.
 
 ### Mutation register
 
-Every new or changed guard, the mutation applied to it, and the observed red.
+Every new or changed guard, the mutation applied to it, and the observed red —
+including the guards added by the verification rounds, which an earlier draft of
+this table omitted while still claiming to cover every one. Rows are labelled
+`R2`–`R5` by the round that introduced the guard; unlabelled rows are the
+original deliverable pass. Each mutation is NARROW by construction: a mutation
+that reddens most of the file is not evidence that the guard is pinned, only
+that the module still has to import, and two coarse first attempts were
+discarded on exactly that ground.
 D4's *Done when* requires the run to name the mutation used to see each guard
 red; D2's 320/G2 additionally requires the red to have been observed **before**
 the adapter change landed. Each mutation snapshotted the target's exact bytes to
@@ -66,6 +73,18 @@ work along with the mutant.
 | D3 — 060/G6 post-verb scan | scan `inv.all_flag_text` instead of `inv.rest` | 2 tests, incl. the correct-spelling control |
 | D3 — 060/G7 leading-flag skip | `r'(?P<leading>)'` (empty group) | 2 tests, incl. the same-verb equivalence |
 | D4 — 130/G5 backtick exemption | delete the `_offset_in_inline_code` skip | `test_backticked_inline_code_ref_is_exempt` (+3 others) |
+| D3 — R2 declarative path derivation | derive the modelled-path set from `_declarative_authority`'s keys instead of `_walk_declarative_specs` | `test_a_dict_spec_subcommand_with_no_choices_is_not_a_blind_spot`, `test_a_nameless_dict_spec_contributes_no_modelled_path` |
+| D3 — R3 brace-less member class | admit `]` into the member class (`[A-Za-z0-9_.\-\]]+`) | `test_optional_argument_brackets_are_not_swallowed_into_a_member` |
+| D3 — R4 shadowed-receiver skip | replace `if receiver in shadowed.get(id(node), ())` with `if False` | `test_a_parser_rebound_by_a_helper_parameter_is_not_attributed_to_the_root` |
+| D3 — R4 mutually-exclusive group inheritance | drop `add_mutually_exclusive_group` from `_PARSER_GROUP_FACTORIES` | `test_choices_on_a_mutually_exclusive_group_resolve`, `test_a_group_built_off_a_shadowed_parser_is_not_attributed_to_the_root` |
+| D8 — R3 exemption offset | test the exemption at `m.start()` instead of `_exemption_offset(m)` | `test_reversed_term_of_art_with_a_backticked_ref_stays_exempt`, `test_observed_on_with_a_backticked_ref_is_exempt`, `test_real_marketplace_has_zero_findings` |
+| D8 — R3 reversed term-of-art family | delete the family from `_PATTERNS` | `test_reversed_term_of_art_fires` (+3 others, incl. both family-count tests) |
+| D8 — R3 dated-narration family | delete the family from `_PATTERNS` | `test_dated_narration_fires`, `test_version_pinned_narration_fires` |
+| D3 — R5 argument-group inheritance | drop `add_argument_group` from `_PARSER_GROUP_FACTORIES` | `test_choices_on_an_argument_group_resolve` |
+| D3 — R5 scope gate on group inheritance | drop `and owner not in scope_params[id(stmt)]` | `test_a_group_built_off_a_shadowed_parser_is_not_attributed_to_the_root` |
+| D3 — R5 laundered group vars | drop `\| laundering` from `_shadowed_receivers`'s returned sets | `test_a_group_built_off_a_shadowed_parser_is_not_attributed_to_the_root` |
+| D3 — R5 two-member minimum | restore `if not members` in place of `if len(members) < 2` | `test_a_one_member_brace_group_is_a_template_slot_not_an_enum` |
+| D3 — R5 incomplete-authority paths | `return set()` at the head of `_paths_with_incomplete_authority` | `test_a_parser_handed_to_an_unmodelled_call_makes_that_path_incomplete` |
 
 **Independently reproduced.** The round-1 verifier re-ran the D4 and D3 mutations
 from its own snapshot directory and confirmed both reds, so these are not this
@@ -226,13 +245,21 @@ documents.
 | RX-5 | round-3 verifier (V3-9) | The `--paths` docstring lead-in said "Two rules behave specially" — and the second entry is not a rule but a property of the finding. | Fixed. |
 | RX-6 | round-3 verifier (V3-11) | **`_walk_declarative_specs` injected the PARENT path for a spec whose `name` is absent or non-literal** — for a top-level entry, the root `()`. A documented root-level flag on such a script would then read `no_choices_declared`, i.e. authority-established-absent, although the parser was never reached. Round 2's change widened the aperture: before it, such a dict contributed a path only when it also declared `choices`. Zero live instances, but zero is smallness, not characterisation. | Fixed rather than characterised: a nameless spec contributes no path and is still recursed into. Pinned by `test_a_nameless_dict_spec_contributes_no_modelled_path`. |
 | RX-7 | round-3 verifier (V3-7, V3-8, V3-12, V3-13) | Four smaller false statements, including two restatements of the "choices in another module" claim inside the file whose own text forbids that restatement, and a "12 of the 43" figure that is 10 under the reading its own sentence needs. | Fixed; the figure is dropped rather than corrected, since the sentence's point does not need it. |
-| RY-1 | round-4 verifier (V4-1) | **Third consecutive round in which `no_choices_declared`'s meaning was false of its own bucket — and this time the falsifier was a real analyzer defect, not wording.** Five sites declare `choices=` in the same file on the same subcommand, matching the documented set exactly, and the resolver walked past them: four are declared on an `add_mutually_exclusive_group()` receiver the path walk never maps back to its parser, and one on a parser passed into a helper. So the rule's designated authority was PRESENT and unread, while the census reported "authority established as absent". | **Fixed in the resolver rather than in the prose.** Argument-group receivers now inherit their parser's paths — four more enums are now actually compared (resolved 77 → **81**), all matching. The helper case fails closed under a new `authority_incomplete` cause. Audited after: of the 20 remaining sites, the only one whose flag carries `choices=` elsewhere in its file is `manage-tasks update --status`, which genuinely declares none on `update` — so the cause is now true of every site in it. |
+| RY-1 | round-4 verifier (V4-1) | **Third consecutive round in which `no_choices_declared`'s meaning was false of its own bucket — and this time the falsifier was a real analyzer defect, not wording.** Five sites declare `choices=` in the same file on the same subcommand, matching the documented set exactly, and the resolver walked past them: four are declared on an `add_mutually_exclusive_group()` receiver the path walk never maps back to its parser, and one on a parser passed into a helper. So the rule's designated authority was PRESENT and unread, while the census reported "authority established as absent". | **Fixed in the resolver rather than in the prose.** Argument-group receivers now inherit their parser's paths — four more enums are now actually compared (resolved 77 → **81**), all matching. The helper case fails closed under a new `authority_incomplete` cause. Audited after: of the 20 remaining sites, the only one whose flag carries `choices=` elsewhere in its file is `manage-tasks update --status`, which genuinely declares none on `update`. ⚠️ **The audit's closing sentence — *"so the cause is now true of every site in it"* — did not follow and was false.** The audit searched each site's OWN file; three `phase_handshake --phase` sites have their `choices=` in an IMPORTED module (`input_validation.add_phase_arg`), which that search could not see. Round 5 caught it; see R5-1. The bucket is 2 sites at HEAD and both were re-checked by reading their argparse declarations directly. |
 | RY-2 | round-4 verifier (V4-7, promoted) | The passed-into-helper shape mis-filed the helper's `choices=` onto the ROOT path, because the assignment walk is module-wide and ignores scope: a `parser` parameter was conflated with a module-level `parser`. Round 4 characterised this as a bounded survivor; it is a latent false-finding source — a root-level flag of the same name would have been compared against a subcommand's authority. | **Fixed rather than characterised.** A receiver shadowed by an enclosing function's parameter is skipped fail-closed. Verified: the root-path keys for the live subject are now empty. Pinned by `test_a_parser_rebound_by_a_helper_parameter_is_not_attributed_to_the_root`. |
 | RY-3 | round-4 verifier (V4-2) | **Half-application #5, inside the very file whose new docstring forbids it.** Three siblings still said "makes no enum claim the script can contradict" / "there is nothing to contradict" / "free-form in one subcommand" — the last citing `manage-tasks update --status` as free-form, the exact site round 3 had cited as counter-evidence. | All three fixed. |
 | RY-4 | round-4 verifier (V4-3) | **Half-application #4 of the argparse claim, fourth round running** — this time in `templates/execute-script.py.template`, the SOURCE that generates every executor. Round 3 fixed two files in that same skill directory and missed the template. | Fixed. |
 | RY-5 | round-4 verifier (V4-4, V4-5) | Round 3's own new prose claimed "every example in this file" uses a placeholder; two examples spell `#103`. And two of the recipe skill's restatements of the signature list survived, contradicting that file's own rule against restating them. | Fixed. |
 | RY-6 | round-4 verifier (V4-6) | The nameless-spec test pinned only the early return: deleting the recursion branch left the suite green, while the docstring, comment and commit message all advertised that nested entries are still walked. | Fixed by adding the nested case to the test's fixture and assertion. |
 | RY-7 | round-4 verifier (V4-11) | Three files round 3 edited appear in neither the Expected surface nor § Collateral — the obligation established one round earlier. | Rows added. |
+| RZ-1 | round-5 verifier (V5-1) | **Fourth consecutive round in which `no_choices_declared` was false of its own bucket, and the second running in which the falsifier was a real analyzer defect.** Three `phase_handshake --phase` sites were filed "authority established as ABSENT" while `input_validation.add_phase_arg` declares `choices=PHASES` matching the documented enum exactly. Round 4's audit missed them because it searched each site's own file and these `choices=` are in an imported module. | **Fixed in the resolver.** A parser handed to a call outside `_ARGPARSE_CONSTRUCTION_CALLS` now marks that PARSER'S path authority-incomplete (`_paths_with_incomplete_authority`). The three sites moved to `authority_incomplete`; the bucket is 2 at HEAD, both re-checked by reading their argparse declarations. Two tests, both mutation-confirmed — including the control that argparse's own construction surface does NOT mark every path. |
+| RZ-2 | round-5 verifier (V5-2) | **Half-application #6, in the same docstring round 4 had just edited.** The `parser_surface_not_derived` bullet still said a passed-into-helper site "lands in `no_choices_declared` instead — verified by executing that shape", which RZ-1's fix made false. | Fixed at all three sites that asserted it: the module docstring, the `authority_incomplete` bullet, and `rule-catalog.md`. The corrected claim names the three live instances rather than asserting a mechanism. |
+| RZ-3 | round-5 verifier (V5-3) | **The shadowing guard was defeated by one indirection.** `grp = parser.add_mutually_exclusive_group()` inside `def _extra(parser)` gave `grp` the module-level parser's ROOT paths, so a `grp.add_argument(..., choices=...)` was filed against the root — the wrong-authority comparison `_shadowed_receivers`' docstring promises is impossible. No live instance; zero guard. | Fixed: group inheritance is scope-gated and a group off a shadowed owner is itself reported shadowed. Both branches asserted, and the fixture builds the parser BEFORE the helper on purpose — the first draft passed for a source-ORDER reason and left the gate deletable, caught by the mutation sweep. |
+| RZ-4 | round-5 verifier (V5-5) | `rule-catalog.md` claimed a token is an enum "only when it parses into two or more members" and the module claimed a placeholder metavar makes no enum claim. **Both false**: the braced pattern had no member minimum while its brace-less sibling required a pipe. Live: `manage-config/SKILL.md:1212` `--scope {phase}.{role}\|plan\|…` entered the population as the one-member enum `{phase}`. | **Fixed in the collector, not the prose** — the minimum is applied to the parsed member SET, so it covers both notations and collapsing duplicates. Population 152 → 151. One pre-existing control fixture spelled its drift with one member and was widened to two, its intent unchanged. |
+| RZ-5 | round-5 verifier (V5-6) | The `add_argument_group` half of `_PARSER_GROUP_FACTORIES` was unpinned — deleting it left the suite green while every `choices=` on a named group went unread. | Fixed: `test_choices_on_an_argument_group_resolve`, mirroring its mutually-exclusive sibling. Mutation-confirmed. |
+| RZ-6 | round-5 verifier (V5-9) | Report RY-1's closing sentence — *"so the cause is now true of every site in it"* — did not follow from the audit it cites and was false (see RZ-1). | Fixed: the row now states what the audit established, why it could not see the imported-module case, and what is true at HEAD. |
+| RZ-7 | round-5 verifier (V5-10) | § Mutation register claimed to cover "every new or changed guard" over a table holding only the original deliverable pass — the guards added in rounds 2, 3 and 4 had no rows. | Fixed: eleven rows added, each an OBSERVED red from a fresh sweep, not recollection. Two first-attempt mutations reddened most of the module and were discarded as non-evidence before the narrow replacements were run. |
+| RZ-8 | round-5 verifier (V5-11) | § Coverage check said "Twenty-nine gap ids" over a **28-row** table: **320/G5 had no verdict row.** This plan's own subject, committed in the document that checks for it. | Fixed: 320/G5 verified against its literal *Done when* (both arms) and given a row; the tally is corrected to 28 met + 1 proposal over 29 rows. |
 | RF-6 | full verify, D6 | The new `ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED` rule had no provenance row and no firing positive fixture; two whole-tree guards failed. | Fixed: provenance row added; firing fixture added to `build_fixture_corpus`. |
 | CC-1 | coverage check vs 360/G3 | That gap's *Done when* is a literal `grep -n -i 'retention.pin\|degraded fallback'` returning nothing. The rewritten docstring USED both phrases while explaining they were fiction, so the stated condition was not met. | Fixed: the paragraph describes what the body once computed without the two banned phrases. Condition now met (`grep` exits 1). |
 | CC-2 | coverage check vs 320/G5 | That gap requires that **no surface** still claims the backward-resolution divergence is "practically unreachable". `320-.../report-01.md` still did. | Fixed: replaced with what the mechanism actually is. **Collateral, justified**: the file is outside this plan's Expected surface, but it is a location the gap itself names, and the claim is false — condition A admits no deferral. |
@@ -292,8 +319,21 @@ DO with each. Readings taken:
 - **Findings are still not narrowing**, and the rate is flat: round 4 was 11
   items, 7 on the shipped surface (64%), against round 3's 13 items with 9
   shipped (69%).
-- **Budget:** five rounds (the contract default — this plan sets no other).
-  Rounds used so far: 4. One remains.
+- **Round 5** — one verifier, asking whether round 4 repeated the pattern. **It
+  did.** Returned eleven items; the strongest was again a real analyzer defect
+  (RZ-1) and again on `no_choices_declared`, false of its own bucket for the
+  FOURTH consecutive round. Two further resolver defects followed (RZ-3's
+  laundered shadowing, RZ-4's missing member minimum), and three findings were
+  against this report rather than the code (RZ-6..RZ-8), including a coverage
+  table one row short of the count above it.
+- **Findings are still not narrowing, and round 5 was the worst yet by share:**
+  8 of 11 items on the shipped surface (73%), against round 4's 7 of 11 (64%)
+  and round 3's 9 of 13 (69%). Half-application recurred for the **sixth** time.
+- **Budget:** five rounds (the contract default), then an operator grant of up to
+  five more — *"continue with up to 5 rounds if sensible"*. Rounds used: 5 of the
+  default, 0 of the grant. A sixth round is warranted on the evidence: round 5's
+  items were not narrowing, and every round so far has found real defects in the
+  previous round's corrections.
 
 ## Reviewer participation
 
@@ -342,6 +382,7 @@ and diverged in three places (060/G2, 320/G9, 320/G10, all below).
 | 320/G2 | **met** | A test drives the ADAPTER (not the constructor) into `partial is True` with `PARTIAL scan` in `render()`. Red observed first, against the unmodified adapter. |
 | 320/G3 | **met** | Two observations differing only in `content` → `indeterminate`, with an agreeing-content control. |
 | 320/G4 | **met** | The literal tree has an asserted verdict (PASS); the shape constant is renamed to the condition the code evaluates; the alternative is recorded as a proposal, not taken. |
+| 320/G5 | **met** | `loader_selected_version(dirs, frozenset({'0.1.100'}))` returns the OLDER dir; `test_loader_returns_an_older_dir_when_the_newest_is_ineligible` asserts it against a forward control, and `test_loader_is_none_when_eligibility_excludes_every_dir` pins the empty-pool arm. The gap's second arm — *no surface still claims the divergence is "practically unreachable"* — is checked by grep: the two remaining matches are `320/gaps.md` (stating the defect) and `320/verification.md`'s `**Contradicted:**` block (quoting the claim to refute it). See findings CC-2 and CC-3. |
 | 320/G6 | **met** | No docstring claims marker-aware selection; `loader_selected_version` is one expression with no marker-independent branch. The gap's literal grep for `retention.pin\|degraded fallback` exits 1. |
 | 320/G7 | **met** | Version-split → `fail` naming both versions; unreadable → `indeterminate`. |
 | 320/G8 | **met** | Pin superset → `diverged == 1`, `extra_in_pin == 1`, `evaluate` → `fail`. |
@@ -350,8 +391,15 @@ and diverged in three places (060/G2, 320/G9, 320/G10, all below).
 | 360/G3 | **met** | The gap's literal grep exits 1; the docstring names the marker-free model; saturation is out of the load-safety conjunct; the two tests are renamed for marker-insensitivity. |
 | 460/G5 | **met** | The gap's literal grep over `test/plan-marshall/plan-retrospective/*.py` returns only `test_chat_provenance.py:270`, which the gap itself declares out of family. |
 
-**27 met, 1 recorded-as-proposal (130/G2, as the plan directs), 1 met-with-a-note
-(320/G4, whose alternative is likewise a recorded proposal).**
+**28 met, 1 recorded-as-proposal (130/G2, as the plan directs)** — of the met
+set, 320/G4 carries a note (its alternative is likewise a recorded proposal).
+Twenty-nine rows, one per gap id named by the plan.
+
+⚠️ **320/G5 had no verdict row until round 5's verifier counted the table
+against its own lead-in.** The gap was met and its two findings (CC-2, CC-3) were
+recorded, so the omission was the tally's alone — twenty-eight rows under a
+sentence claiming twenty-nine, which is this plan's own subject committed in the
+document that checks for it.
 
 ⚠️ **Three gaps were not literally met until this check ran**, and all three were
 places where the plan's paraphrase omitted something its gap document required:
