@@ -129,7 +129,7 @@ Migrating only the queue leaves `resume-summary` in exactly the permanent-refusa
 
 ⛔ **Do not fabricate content.** Rule 1's markers go around what is already there; the script re-derives the contents from `status.json` on the next call. Inserting a marker pair around invented rows would make the migration itself the lossy act it exists to prevent.
 
-**The safety net, not a substitute for the move.** `cmd_compact`'s `compaction_regenerated[]` rows carry `replaced_body` — the pre-write between-marker text — for every block whose outcome is `regenerated`. So a first pass over an already-annotated ledger NAMES the content it overwrote rather than reporting only a line-count delta, and an operator can recover a line Rule 2 missed. Read it whenever a first pass reports `regenerated` on a ledger you did not just migrate.
+**The safety net, not a substitute for the move.** `cmd_compact`'s `regenerated[]` rows carry `replaced_body` — the pre-write between-marker text — for every block whose outcome is `regenerated`. So a first pass over an already-annotated ledger NAMES the content it overwrote rather than reporting only a line-count delta, and an operator can recover a line Rule 2 missed. Read it whenever a first pass reports `regenerated` on a ledger you did not just migrate.
 
 **Derivable regeneration and invariant verification (deterministic — the script).** Call the compaction script; do **not** re-implement it (two implementations of ledger compaction is a worse outcome than no verb at all). It regenerates the START-HERE resume summary and the Ordered Queue table in place, leaves every byte outside the markers untouched, verifies the invariants, and reports:
 

@@ -103,7 +103,7 @@ The drain semantics — enumeration order, the report-never-skip rule for a malf
 
 **Under inbox scan the landing narrative comes from the message payload rather than from an operator paste — and that changes the SOURCE, never the obligation.** The Step 2 verify-against-ground-truth contract applies unchanged and undiluted: the message is a **lead, not a fact**. The PR number, the merge state, and the deliverable set are corroborated against git and the read-side `plan-marshall:tools-integration-ci:ci` abstraction BEFORE `landings/PLAN-NN.md` is written, BEFORE the `queue --transition ... --status shipped` call at item 2, and BEFORE the three `queue --set-row` stamps at item 3. A claim the corroboration contradicts or cannot settle is recorded as an unverified lead (a watch), exactly as for a paste.
 
-**Under inbox scan, run the drain-completeness check on the landing message FIRST** — this is the check that lets the orchestrator establish, after a zero-drain, that nothing material is outstanding:
+**Under inbox scan, run the drain-completeness check on the landing message FIRST** — this is the check that lets the orchestrator establish, after a zero-drain, that every REQUIRED fact drained (narrower than "nothing is outstanding" — see the `complete: true` bullet below):
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox landing-check \

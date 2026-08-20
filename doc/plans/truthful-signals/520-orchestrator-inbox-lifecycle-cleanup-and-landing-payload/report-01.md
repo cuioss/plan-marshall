@@ -303,6 +303,43 @@ Round 5 targeted `635dd345` and found **15**. Its central result is a sharper di
 
 **One finding rejected, with reason.** Round 5 also noted that `orchestration-model.md` calls the zone `### Annotations` while `cleanup.md` says `### Queue annotations`, and that four rounds had missed it. It is **not a defect**: `templates/epic.md` carries **both** zones — `### Annotations` under `## START HERE` (line 29) and `### Queue annotations` under `## Ordered Queue` (line 56) — and the standard names both correctly where it enumerates them. The one site using the bare name uses it generically for the pattern. No change made.
 
+### Round 6 — independent verification sub-agent (scope narrowed to shipped text)
+
+The operator extended the budget by five rounds. On round 5's recommendation, round 6 was pointed at `marketplace/**` and `test/**` ONLY — the text consumers execute — and told to leave the run report's narrative alone, under a hard rule that any clause asserting what a function returns must be RUN.
+
+**The narrowing worked.** Round 6 found **9, all 9 in shipped marketplace text and 0 in the run report**, and its six independent spot-checks of report figures all came back correct. By its own count the distinct defect count is nearer four: A1–A3 collapse to one phrase sweep, and A4/A5 are one word and one sentence.
+
+| # | Finding | Disposition |
+|---|---|---|
+| R6-A1 | ⛔ **Production docstring.** `cmd_inbox_landing_check` still said the check lets the orchestrator establish "that nothing material is outstanding" — verbatim the overclaim D3(ii) exists to delete, surviving in code. | **fixed** |
+| R6-A2 | ⛔ **`SKILL.md` § `inbox landing-check`, two false clauses in one paragraph.** (a) "every required key **non-empty** (`complete: true`)" — executed: `total_tokens=n/a` is non-empty and returns `(False, ['total_tokens'])`, so non-empty is no longer sufficient. (b) the same "nothing material is outstanding" overclaim. | **fixed** — both |
+| R6-A3 | ⛔ **`analyze.md:106`** — the Step 4 lead-in still carried the overclaim, **twelve lines above its own correction**, in the file the run edited for exactly this. The third cold read was shown the corrected bullet and never saw this lead-in. | **fixed** |
+| R6-A4 | `cleanup.md` attributed `compaction_regenerated[]` — **this document's own** report key — to the script, whose payload key is `regenerated`. The same file uses the distinction correctly at two other sites. | **fixed** |
+| R6-A5 | `check_landing_completeness`'s docstring LEAD sentence stated a sufficient condition the function does not implement ("with a non-empty value"), corrected only by a bullet fifteen lines below. | **fixed** |
+| R6-B1 | The dispatch record is not emitted from the sites that actually resolve: `analyze.md` and `decompose.md` name the resolve command without `--workflow`, and a bare `--role` resolve writes **no log file at all**. | **survivor S2** — see below |
+| R6-B2 | A **fourth** zero the three-zero table absorbs into EMPTY: a queue holding only `superseded` messages yields `live_count 0 / closed_senders empty / invalid_count 0` with `count > 0`. | **survivor S3** — see below |
+| R6-B3 | `applied[]` has no legal row shape for a relocated `epic.md` section, and a deferred relocation has no field. | **residue** — pre-existing, items 1–2 of § Residue |
+| R6-B4 | `emit-landing.md` maps any `inbox write` error to `loop_back`, and a loop-back cannot clear `stream_closed`. **Unreachable** — no shipped step calls `close-stream`. | **residue** — recorded, not fixed |
+
+Round 6 also verified, by execution rather than reading: the whole stream-closure lifecycle through the real CLI; six `orchestrator.effort` configurations against the rewritten `orchestration-model.md` paragraph (**every clause holds**, including the shorthand's rung and the per-surface divergence); `sync-defaults`' non-destructive back-fill, which confirms the plan's ⛔ against running it; the ten-verb set derived from the live CLI; the fourteen-row rejection table's order against source order; and **four mutation tests, all of which bit**. 1747 tests green.
+
+### The fourth cold read of `cleanup.md` § Step 8
+
+Run in parallel with round 6, against the shipped text — the pass § Three cold reads records as owed. It built **seven fixture ledgers and called `cmd_compact` on each** rather than reasoning about the passage. Its verdict on whether it could execute the step correctly, unattended, on an arbitrary ledger: **NO**. Eight defects, five of them reachable states.
+
+| # | Finding | Disposition |
+|---|---|---|
+| CR4-1 | ⛔ **A CLOSED epic reached Phase B and got hand-edited.** Both judgement blocks write `epic.md` directly and both run BEFORE the script, so `cmd_compact`'s own `refused_closed` protected only the script's write. No other `cleanup` step carries a phase gate, and a closed-but-unarchived epic still has an active store tree. | **fixed** — Step 8 reads the phase FIRST and skips the whole phase; `ledger_compaction` gains `refused_closed` |
+| CR4-2 | "Mutually exclusive **by construction**" was false — Rule 1's condition was section-scoped, Rule 2's file-scoped. **Reproduced on a fixture**: the script regenerated the STALE pair, left the real queue duplicated, and reported `unreachable_count: 0` over a genuine blind spot. | **fixed** — both read at the scope `_marker_indices` uses; stated as at-most-one, not as complements, which they are not |
+| CR4-3 | `resume-summary` had **no migration rule at all**, though line 90's permanent-refusal diagnosis applies to it verbatim and `GENERATED_BLOCKS` names both. A permanent blind spot the step diagnoses and then does not remedy. | **fixed** — the migration is per block, with a table giving each block's owning section, annotation zone, and wrapped content |
+| CR4-4 | Two zone-creation bullets matched the same ledger state (pair present, no hand-written line, no zone); the tie was broken only by reading three paragraphs further. | **fixed** — keyed on the rule that fires, not on marker presence |
+| CR4-5 | "its owning section is reported `markers_absent_not_regenerated`" is false when the owning heading is absent — **fixture E: `unreachable_count 0`**, and `orchestrator.py` documents exactly this. | **fixed** — qualified |
+| CR4-6 | ⛔ **The migration had NO report field.** A correct migration and an omitted one were indistinguishable: `replaced_body` names what the SCRIPT overwrote, which after a correct migration is empty precisely because the move succeeded. | **fixed** — `compaction_migrated[]` declared, required, never omitted |
+| CR4-7 | The order was mandated with its rationale explicitly withheld, at the one point where relocation can carry away the migration's destination. | **fixed** — replaced by the invariant that makes the order genuinely not load-bearing: an annotation zone is a live working surface and is **never** a relocation candidate |
+| CR4-8 | "Three blocks follow" stood above five bold-led blocks. | **fixed** |
+
+⭐ **CR4-6 is the epic's own thesis turned on the document that states it.** `cleanup.md` says three times that a silent application is indistinguishable from a lossy one — and left its own direct structural write to `epic.md` unreported.
+
 ### Verification rounds — the record
 
 ⛔ **This section is frozen: a table of rounds and counts, and nothing else.** Its two predecessors were
@@ -317,7 +354,9 @@ no longer contains any.
 | 2 | 14 | `c077d177` |
 | 3 | 10 | `7e4c1734` |
 | 4 | 12 | `635dd345` |
-| 5 | 15 | this commit |
+| 5 | 15 | `de1eaabe` |
+| 6 (shipped text only) | 9 | this commit |
+| cold read 4 | 8 | `c843a0f6` |
 
 Cold reads of `cleanup.md` § Step 8: three passes. Pass 1 found two defects, pass 2 found three, pass 3
 took the intended reading on all four scenarios put to it and found three further defects.
@@ -332,6 +371,15 @@ checked.
 | # | Finding | Why it may be left open |
 |---|---|---|
 | S1 | The `16287` module-tests figure in the 250 report is not cleanly re-derivable. | **(b) bounded, with NO cause asserted.** ⚠ This row was itself the **third site** of the refuted `loadgroup` mechanism — R2-5 swept two sites and said "both", round 3 swept the same two, and V4-1 found this one still endorsing the cause as "now verified". Corrected here to match the notes. The bound: neither note states the figure without its command and its base; both list only a **verified difference set** (different xdist scheduler classes, `--basetemp` set versus default, `pytest` versus `python -m pytest`, `addopts` applied versus cleared); and both **decline to say which difference caused what**, including whether the one-item collected delta exists at all, since the report line states no collected total. Condition A does not reach the figure — it is an unreproducible historical observation, not a false statement — and every claim that WAS false around it has been withdrawn rather than replaced. |
+
+
+**S2 — the dispatch record is not emitted from the two sites that actually resolve** (R6-B1). `orchestration-model.md`'s canonical form now carries `--workflow`, but `analyze.md` and `decompose.md` name the resolve command without it, and a bare `--role` resolve writes no log file at all.
+
+*(b) Bounded.* It reaches **the log and nothing else** — no effort level, no dispatch target, no ledger write and no verdict changes, because `--workflow` gates only the two audit records. The promise it stays outside of: the resolved level and target are byte-identical with and without the flag, which round 6 verified by executing both spellings. D6(iv)'s Done-when is met as the plan scoped it — the plan named `orchestration-model.md` and nothing else — so closing this means editing two verb docs the plan does not list, and 280/G7's symptom persists at those two sites until a plan owning them lands. **Recorded, not fixed.**
+
+**S3 — a fourth zero the three-zero table absorbs into EMPTY** (R6-B2). A queue holding only `lifecycle: superseded` messages yields `live_count 0 / closed_senders empty / invalid_count 0` — the EMPTY triple — while `count > 0`.
+
+*(b) Bounded.* It mislabels **one report line** and changes no drain behaviour: a superseded row is correctly excluded from `live_count` by design, is correctly not a closed sender, and is correctly valid. Reachability requires a superseded row to outlive its successor in the queue — normally impossible, since `supersede` names a successor that is itself enumerated, and reachable only after an `archive_failed` strands one. The promise it stays outside of: `count` is reported alongside the three discriminators at every one of the four sites, so a reader who checks `count` is never misled. Closing it means a fourth discriminator column across four surfaces plus the code comment, which is a wider edit than the defect warrants. **Recorded, not fixed.**
 
 ### Rejected — none
 

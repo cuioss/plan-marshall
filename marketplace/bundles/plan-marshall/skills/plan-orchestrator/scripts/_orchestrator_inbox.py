@@ -921,8 +921,10 @@ def check_landing_completeness(payload_body: str) -> tuple[bool, list[str]]:
     """Return ``(complete, missing_keys)`` for a landing payload body.
 
     A landing is COMPLETE when it carries a ``landing-facts`` block whose ``schema``
-    is :data:`LANDING_FACTS_SCHEMA` and which supplies every key in
-    :data:`LANDING_REQUIRED_KEYS` with a non-empty value. Otherwise it is
+    is :data:`LANDING_FACTS_SCHEMA` and which SUPPLIES every key in
+    :data:`LANDING_REQUIRED_KEYS`. Non-empty is necessary but NOT sufficient: a
+    sanctioned degraded value counts as unsupplied for the keys
+    :data:`LANDING_SENTINEL_REJECTING_KEYS` names — see the fourth bullet below. Otherwise it is
     INCOMPLETE and ``missing_keys`` names why:
 
     - No block at all (a prose-only landing) -> every required key is missing. This
@@ -1956,8 +1958,11 @@ def cmd_inbox_landing_check(args: Any) -> dict[str, Any]:
     landing that carried only narrative — transmitting none of the mechanisable
     report<->inbox delta — is recorded as an incompleteness rather than reconciled
     as if the inbox had drained everything material. That is what lets the
-    orchestrator establish, after a drain reports zero, that nothing material is
-    outstanding.
+    orchestrator establish, after a drain reports zero, that every REQUIRED fact
+    drained — which is narrower than "nothing is outstanding". Several
+    mechanisable facts ride OPTIONAL keys this check does not require (the
+    per-step typed facts, the wall-clock, the repository end-state), so a
+    ``complete: true`` landing may carry none of them.
 
     ``complete: false`` is a VERDICT, not a fault: the verb stays ``status:
     success`` and rides the completeness on the payload, so a drain is never
