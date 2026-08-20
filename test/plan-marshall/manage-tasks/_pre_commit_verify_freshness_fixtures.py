@@ -124,7 +124,7 @@ def _write_status(plan_dir: Path, *, worktree_path: str = '') -> Path:
 
     The gate no longer READS this file for its worktree root — that resolution
     moved behind ``file_ops.resolve_plan_context`` (stubbed at the single
-    ``_query_worktree_path`` seam by the autouse fixture below). The file is
+    ``_query_worktree_path`` seam by each sibling module's autouse fixture). The file is
     still written so each case has a well-formed plan directory, and its
     ``metadata.worktree_path`` is deliberately left as a DECOY: nothing here may
     change the resolved root, which is exactly what

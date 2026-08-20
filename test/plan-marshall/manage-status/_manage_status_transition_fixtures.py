@@ -188,7 +188,8 @@ def _seed_legitimate_plan(plan_id: str) -> None:
 # =============================================================================
 
 # Use STANDARD imports for handshake modules so the monkeypatch in the
-# fixtures below hits the same module instance that ``_cmd_lifecycle.cmd_verify``
+# fixtures in the sibling modules hits the same module instance that
+# ``_cmd_lifecycle.cmd_verify``
 # reads at runtime.
 _PLAN_HANDSHAKE_SCRIPTS_DIR = str(
     Path(__file__).parent.parent.parent.parent

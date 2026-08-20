@@ -66,7 +66,8 @@ cmd_accumulate_agent_usage = manage_metrics.cmd_accumulate_agent_usage
 # ``plan_context`` fixture creates plan dirs without that sentinel, so every
 # positive test would otherwise trip the guard.
 #
-# The autouse fixture below patches ``manage_metrics.require_plan_exists`` so
+# The autouse fixture in each sibling module patches
+# ``manage_metrics.require_plan_exists`` so
 # that, during these tests, it auto-materialises the ``status.json`` sentinel for
 # any plan whose dir exists but is not explicitly registered as "unseeded". This
 # is the real guard chokepoint — it fires regardless of whether a test resolves

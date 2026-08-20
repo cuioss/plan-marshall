@@ -132,6 +132,37 @@ def _waiting_plan_ids(queue_path: Path) -> list[str]:
     return [e['plan_id'] for e in _read_queue(queue_path).get('waiting', [])]
 
 
+# =============================================================================
+# Fixtures
+# =============================================================================
+
+
+@pytest.fixture
+def isolated_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
+    """Stage an isolated PLAN_BASE_DIR under tmp_path.
+
+    Layout::
+
+        tmp_path/main/.plan/local/                  (PLAN_BASE_DIR — main stand-in)
+        tmp_path/main/.plan/local/plans/            (holder plan dirs resolve here)
+        tmp_path/main/.plan/local/merge.lock        (the O_EXCL lock resolves here)
+        tmp_path/main/.plan/local/merge-queue.json  (the FIFO queue resolves here)
+
+    Sets PLAN_BASE_DIR to the main stand-in so the lock resolves to
+    ``<base>/merge.lock``, the FIFO queue to ``<base>/merge-queue.json``, and
+    ``holder_is_dead(holder)`` resolves the holder plan dir to
+    ``<base>/plans/{holder}``.
+    """
+    base = tmp_path / 'main' / '.plan' / 'local'
+    (base / 'plans').mkdir(parents=True)
+    monkeypatch.setenv('PLAN_BASE_DIR', str(base))
+    return {
+        'base': base,
+        'lock_path': base / 'merge.lock',
+        'queue_path': base / 'merge-queue.json',
+    }
+
+
 def _make_live_plan(base: Path, plan_id: str) -> None:
     """Create a holder plan directory so the holder counts as LIVE."""
     (base / 'plans' / plan_id).mkdir(parents=True, exist_ok=True)
@@ -159,3 +190,20 @@ class _TokenRecorder:
         monkeypatch.setattr(
             merge_lock, '_push_title_token', lambda _p, icon=None: self.pushed_icons.append(icon)
         )
+
+
+@pytest.fixture(autouse=True)
+def _stub_title_tokens(monkeypatch: pytest.MonkeyPatch) -> _TokenRecorder:
+    """Autouse: stub the three best-effort title-token seams for EVERY test so the
+    direct ``run_acquire`` / ``run_release`` unit tests never spawn the real
+    executor subprocess (the token surface is best-effort and out-of-scope for the
+    lock-correctness assertions). Tests that care about the token surface request
+    this fixture by name and assert on the recorder.
+
+    The CLI-subprocess concurrency tests run in a SEPARATE spawned process where
+    this monkeypatch does not apply — there the real best-effort wrappers run and
+    swallow any executor failure, exactly as in production.
+    """
+    recorder = _TokenRecorder()
+    recorder.install(monkeypatch)
+    return recorder
