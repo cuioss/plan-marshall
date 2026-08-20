@@ -8,7 +8,7 @@ Reference document for the manage-providers skill covering threat model, securit
 
 **Primary boundary**: `chmod 700` on `~/.plan-marshall/credentials/` directory (under the machine-global home root, overridable via `PLAN_MARSHALL_HOME`). The OS prevents any process running as a different user from reading.
 
-**Defense-in-depth**: host-platform deny rules covering `Read`, `Bash(cat)`, `Bash(head)`, `Bash(tail)`, `Bash(less)`, `Bash(more)`, `Bash(cp)`, `Bash(grep)`, `Bash(python3 -c)`, `Bash(base64)` — both `~` and absolute path forms.
+**Defense-in-depth**: whatever the active target's runtime uses to deny reads of that directory — on a target with a permission model, rules covering the read tool, the file-dumping shell binaries, and inline-script invocation, in every spelling of the path that model distinguishes. The rules are not enumerated here: the set is rendered by the runtime (`platform-runtime`, `permission fix --operation protect-path`), and a second copy in prose is a copy that goes stale. A target with no permission backend reports `no-op`, leaving the primary boundary alone to do the work.
 
 **Limitation acknowledged**: Deny rules are fundamentally a blocklist. New bypass vectors (e.g., new Bash commands, scripting runtimes) are always possible. `chmod 700` is the real security control.
 

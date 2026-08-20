@@ -78,6 +78,9 @@ class TestEnsureDeniedCLI:
         reported = capsys.readouterr().out
         assert 'status: success' in reported
         assert f'rules_added: {len(deny)}' in reported
+        # The protection's own denominator, not the settings file's total deny
+        # count: every rule this command asked for, added or already present.
+        assert f'protection_rules_total: {len(deny)}' in reported
 
     def test_ensure_denied_is_idempotent(self, claude_project, capsys) -> None:
         from _cred_ensure_denied import run_ensure_denied
@@ -92,6 +95,9 @@ class TestEnsureDeniedCLI:
         reported = capsys.readouterr().out
         assert 'rules_added: 0' in reported
         assert f'rules_existing: {len(first)}' in reported
+        # `protection_rules_total` counts the protection's rules, so it is
+        # unchanged by the re-run — unlike an added/existing split, which moves.
+        assert f'protection_rules_total: {len(first)}' in reported
 
     def test_ensure_denied_reports_a_declining_target_as_no_op(
         self, claude_project, monkeypatch, capsys

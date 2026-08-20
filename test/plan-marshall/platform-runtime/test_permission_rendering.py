@@ -162,6 +162,14 @@ class TestProjectSettingsReadPath:
             claude_dir / 'settings.local.json'
         )
 
+    def test_reads_settings_local_json_when_it_is_the_only_one(self, tmp_path: Path) -> None:
+        claude_dir = tmp_path / '.claude'
+        claude_dir.mkdir()
+        (claude_dir / 'settings.local.json').write_text('{}', encoding='utf-8')
+        assert claude_runtime._claude_project_settings_read_path(str(tmp_path)) == (
+            claude_dir / 'settings.local.json'
+        )
+
     def test_falls_back_to_settings_json_when_local_absent(self, tmp_path: Path) -> None:
         claude_dir = tmp_path / '.claude'
         claude_dir.mkdir()
@@ -329,9 +337,12 @@ class TestPermissionFixProtectPath:
     ) -> None:
         """Adding nothing writes nothing — the retired caller behaved this way too.
 
-        Byte equality is the assertion, not mtime: a re-serialization that
-        reordered keys or seeded empty ``allow``/``ask`` lists would be a
-        visible change to an operator's file for no effect.
+        The file is re-serialized in a DIFFERENT formatting before the second
+        call, which is what makes this a guard rather than a tautology: the
+        runtime writes ``json.dumps(..., indent=2)``, so comparing the bytes of
+        a file the runtime itself just wrote can never detect a rewrite — the
+        two serializations are identical. Seeding a compact spelling of the same
+        content makes any write visible.
         """
         protected = str(self._protected(monkeypatch, tmp_path))
         settings_path = tmp_path / 'settings.json'
@@ -339,10 +350,20 @@ class TestPermissionFixProtectPath:
         runtime = claude_runtime.ClaudeRuntime()
 
         runtime.permission_fix('global', 'protect-path', [protected], False)
+        # Re-spell the same settings compactly. Content is taken from the file,
+        # not from the renderer, so this fixture asserts nothing about which
+        # rules were written — only that a second call leaves them alone.
+        populated = json.loads(settings_path.read_text(encoding='utf-8'))
+        settings_path.write_text(json.dumps(populated, separators=(',', ':')), encoding='utf-8')
         before = settings_path.read_bytes()
-        runtime.permission_fix('global', 'protect-path', [protected], False)
 
-        assert settings_path.read_bytes() == before
+        result = _parse(runtime.permission_fix('global', 'protect-path', [protected], False))
+
+        assert result['changes_applied'] == 0
+        assert settings_path.read_bytes() == before, (
+            'a no-change re-run re-serialized the file: an operator sees a '
+            'modified settings file for no effect'
+        )
 
     def test_preserves_unrelated_deny_entries(self, tmp_path: Path, monkeypatch) -> None:
         protected = str(self._protected(monkeypatch, tmp_path))

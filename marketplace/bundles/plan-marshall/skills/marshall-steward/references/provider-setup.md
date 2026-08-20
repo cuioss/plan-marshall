@@ -355,11 +355,15 @@ If configure returns `exists_complete`, ask user whether to reuse the existing c
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials verify --skill {skill}
 ```
 
-### Step 13k: Add deny rules
+### Step 13k: Protect the credentials directory
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-providers:credentials ensure-denied --target project
 ```
+
+The active target's runtime decides what expresses the protection and writes it; a target with no
+permission backend reports `no-op` and the step continues. The directory's `0700` mode — the
+primary boundary — is re-asserted either way.
 
 ### Step 13l: Sonar integration
 

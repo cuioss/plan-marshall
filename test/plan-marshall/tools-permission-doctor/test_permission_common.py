@@ -157,6 +157,10 @@ class TestProjectSettingsReadPreference:
         claude_dir = self._project(tmp_path, monkeypatch, 'settings.local.json', 'settings.json')
         assert get_project_settings_path() == claude_dir / 'settings.local.json'
 
+    def test_reads_settings_local_json_when_it_is_the_only_one(self, tmp_path, monkeypatch):
+        claude_dir = self._project(tmp_path, monkeypatch, 'settings.local.json')
+        assert get_project_settings_path() == claude_dir / 'settings.local.json'
+
     def test_falls_back_to_settings_json(self, tmp_path, monkeypatch):
         claude_dir = self._project(tmp_path, monkeypatch, 'settings.json')
         assert get_project_settings_path() == claude_dir / 'settings.json'

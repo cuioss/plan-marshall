@@ -908,13 +908,30 @@ def test_project_scan_ignores_a_declared_root_that_does_not_exist(
 def test_project_scan_resolves_an_absolute_declared_root(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An absolute or ``~``-anchored root resolves independently of the project root."""
+    """An absolute root resolves independently of the project root."""
     elsewhere = tmp_path / 'elsewhere' / 'steps'
     _pin_project_roots(monkeypatch, tmp_path / 'project', (str(elsewhere),))
     _write_project_step(elsewhere, 'finalize-step-abs', 'Absolute.')
 
     records = _discovery._scan_project_for_implementors(_PROJECT_EXT_POINT)
     assert [rec['name'] for rec in records] == ['project:finalize-step-abs']
+
+
+def test_project_scan_resolves_a_tilde_anchored_declared_root(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ``~``-anchored root — OpenCode's user-global form — resolves off home.
+
+    Pinned separately from the absolute case because the resolver reaches it by
+    a different branch: ``expanduser()`` runs before the ``is_absolute()`` test,
+    so a root that is relative as written becomes absolute before anchoring.
+    """
+    monkeypatch.setenv('HOME', str(tmp_path / 'home'))
+    _pin_project_roots(monkeypatch, tmp_path / 'project', ('~/global/steps',))
+    _write_project_step(tmp_path / 'home' / 'global' / 'steps', 'finalize-step-home', 'Home.')
+
+    records = _discovery._scan_project_for_implementors(_PROJECT_EXT_POINT)
+    assert [rec['name'] for rec in records] == ['project:finalize-step-home']
 
 
 # =============================================================================

@@ -287,8 +287,11 @@ class ClaudeRuntime(Runtime):
         ``~/.claude/plugins/cache/plan-marshall`` — the single flat cache root
         under which installed marketplace bundles live on Claude. The path is
         composed in ``claude_runtime._claude_bundle_cache_root``, which shares
-        its cache segments with the default-permission renderer, so the layout
-        is spelled once.
+        its cache segments with the default-permission renderer, so those two
+        cannot drift. Other live sites still compose the same segments
+        themselves (the steward's bootstrap detector, the executor generator);
+        they are registered open in the multiplattform epic's coupling
+        inventory, so this is not the only spelling in the tree.
         """
         return toon_success(
             "layout bundle-cache-root",
