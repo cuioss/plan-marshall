@@ -1,45 +1,19 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
+# ruff: noqa: F811 — tests take the imported fixture as a parameter
 """Unit tests for the ``append`` verb of the unified ``manage-change-ledger`` CLI."""
 
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
-from _manage_change_ledger_fixtures import _init_repo, _read_ledger, _run
+from _manage_change_ledger_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
+    _init_repo,
+    _read_ledger,
+    _run,
+    env,
+)
 from _resolve_project_dir_fixtures import NO_PLAN_SENTINEL
-
-
-@pytest.fixture
-def env(tmp_path: Path):
-    """A real git repo + isolated ledger root.
-
-    Returns a small namespace carrying the repo cwd, the ``PLAN_BASE_DIR``
-    override, and the resolved ledger path so tests can assert on-disk state.
-    """
-    repo = tmp_path / 'repo'
-    repo.mkdir()
-    _init_repo(repo)
-
-    base = tmp_path / 'base'
-    base.mkdir()
-    overrides = {'PLAN_BASE_DIR': str(base)}
-    ledger_path = base / 'work' / 'change-ledger.jsonl'
-
-    class Env:
-        def __init__(self) -> None:
-            self.repo = repo
-            self.base = base
-            self.overrides = overrides
-            self.ledger_path = ledger_path
-
-        def run(self, *args: str):
-            return _run(self, *args)
-
-    return Env()
-
 
 # ---------------------------------------------------------------------------
 # append --kind build

@@ -55,6 +55,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from conftest import get_script_path
 
 _SCRIPT = get_script_path('plan-marshall', 'manage-change-ledger', 'manage-change-ledger.py')
@@ -88,3 +90,32 @@ def _run(env, *args: str):
 def _read_ledger(ledger_path: Path) -> list[dict]:
     """Parse the on-disk JSONL ledger into a list of dicts."""
     return [json.loads(line) for line in ledger_path.read_text().splitlines() if line.strip()]
+
+
+@pytest.fixture
+def env(tmp_path: Path):
+    """A real git repo + isolated ledger root.
+
+    Returns a small namespace carrying the repo cwd, the ``PLAN_BASE_DIR``
+    override, and the resolved ledger path so tests can assert on-disk state.
+    """
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    _init_repo(repo)
+
+    base = tmp_path / 'base'
+    base.mkdir()
+    overrides = {'PLAN_BASE_DIR': str(base)}
+    ledger_path = base / 'work' / 'change-ledger.jsonl'
+
+    class Env:
+        def __init__(self) -> None:
+            self.repo = repo
+            self.base = base
+            self.overrides = overrides
+            self.ledger_path = ledger_path
+
+        def run(self, *args: str):
+            return _run(self, *args)
+
+    return Env()

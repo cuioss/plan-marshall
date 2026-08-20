@@ -28,18 +28,16 @@ Tier-2/Tier-3 split for the pure deriver.
 
 import pytest
 
-from conftest import get_script_path, run_script
+from conftest import run_script
 
 from _manage_tasks_fixtures import (
+    SCRIPT_PATH,
     _next_ns,
     _update_ns,
     add_basic_task,
     cmd_next,
     cmd_update,
 )
-
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-tasks', 'manage-tasks.py')
-
 
 # =============================================================================
 # Tier 2 — write-back round-trip (cmd_update -> cmd_next / cmd_read)

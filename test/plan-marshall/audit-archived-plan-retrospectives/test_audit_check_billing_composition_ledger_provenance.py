@@ -13,16 +13,10 @@ behaviour around it lives in
 from pathlib import Path
 
 import pytest
-from _audit_fixtures import _EXECUTE_PHASE, audit
+from _audit_fixtures import _EXECUTE_PHASE, _LEDGER_HEADER, audit
 
 # The canonical nine-column dispatch-boundary ledger header
 # (`data-format.md` § Per-Dispatch Context-Load Attribution).
-_LEDGER_HEADER = (
-    'rows[]{timestamp,termination_cause,total_tokens,tool_uses,duration_ms,'
-    'input_tokens,output_tokens,cache_read_input_tokens,'
-    'cache_creation_input_tokens}:'
-)
-
 # The four appended context-load columns, in canonical order. Written as a
 # literal rather than imported from the reader: the literal IS the contract
 # `data-format.md` § Per-Dispatch Context-Load Attribution states, and a test

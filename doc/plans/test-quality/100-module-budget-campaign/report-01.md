@@ -641,6 +641,32 @@ its body reads.
 bound in the carrier and in no helper, so moving the fixture means moving that too — a larger change
 than a hoist.
 
+⭐ **A second instruction widened this from fixtures to all duplicated code, and the rules that
+survived it are the interesting part.** The split had also duplicated plain helper functions, constants
+and module-load bindings — `cmd_create = _lifecycle.cmd_create` in ten modules, `_write_status` in
+three, `SCRIPT_PATH` in three directories at once: **32 names over 257 further redundant lines.**
+Generalising the hoist to every top-level definition took **three attempts, each stopped by a different
+real constraint**, and each constraint is now a rule the pass enforces:
+
+1. **A cross-unit import is worse than the duplication it removes.** The first attempt picked the
+   shortest-named helper that happened to bind the free names, and had
+   `test_analyze_logs_behavior.py` importing from `_compile_report_fixtures`. The home must belong to
+   the carrier's own unit, or be the directory's canonical helper — nothing else.
+2. **A module-load binding must not move**, because it registers a name in `sys.modules` and D3 exists
+   precisely about that. Hoisting one produced `loader for manage_metrics_helpers cannot handle
+   manage_metrics` immediately. The exclusion covers the whole `importlib` dance, not only the
+   registering call: `manage_metrics = importlib.util.module_from_spec(_spec)` names no loader but is
+   one half of a pair, and moving it away from its `exec_module` left the object bound to another
+   file's spec.
+3. **Nor may anything DERIVED from one move** — one level removed and far quieter.
+   `cmd_create = _lifecycle.cmd_create` reads a module object that is distinct per file, so hoisting it
+   made a test patch one object and call another. Seven tests failed with an empty log spy, and nothing
+   about the change looked wrong.
+
+**Result: 27 names / 215 redundant lines remain, of which 74 lines are locked by module identity** —
+the rules above, not a shortfall of effort. Slice growth ends at **+5,184 lines (+5.7%)** against
+`origin/main`, from +7.2% before any of this.
+
 ⚠️ **The cost is real and is a widened lint blind spot, not a line count.** A fixture reached by import
 is unused *as a name*, so `ruff --fix` deletes the import and the fixture silently stops existing —
 which is exactly what happened on the first attempt: **22 "fixture not found" errors** from imports the

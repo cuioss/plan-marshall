@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
+# ruff: noqa: F811 — tests take the imported fixture as a parameter
 """Unit tests for the unified ``manage-change-ledger`` CLI — the first-class
 ``worktree-sha`` + ``append`` + ``query`` API over the one append-only
 change-ledger.
@@ -10,38 +11,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-from _manage_change_ledger_fixtures import _SCRIPT, _init_repo, _read_ledger, _run
-
-
-@pytest.fixture
-def env(tmp_path: Path):
-    """A real git repo + isolated ledger root.
-
-    Returns a small namespace carrying the repo cwd, the ``PLAN_BASE_DIR``
-    override, and the resolved ledger path so tests can assert on-disk state.
-    """
-    repo = tmp_path / 'repo'
-    repo.mkdir()
-    _init_repo(repo)
-
-    base = tmp_path / 'base'
-    base.mkdir()
-    overrides = {'PLAN_BASE_DIR': str(base)}
-    ledger_path = base / 'work' / 'change-ledger.jsonl'
-
-    class Env:
-        def __init__(self) -> None:
-            self.repo = repo
-            self.base = base
-            self.overrides = overrides
-            self.ledger_path = ledger_path
-
-        def run(self, *args: str):
-            return _run(self, *args)
-
-    return Env()
-
+from _manage_change_ledger_fixtures import (  # noqa: F401 — a fixture is used by NAME, not by reference
+    _SCRIPT,
+    _init_repo,
+    _read_ledger,
+    _run,
+    env,
+)
 
 # ---------------------------------------------------------------------------
 # The three wrapper-reported build fields: command / duration_seconds / outcome
