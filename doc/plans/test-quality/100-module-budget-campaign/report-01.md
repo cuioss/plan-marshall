@@ -430,6 +430,11 @@ their names unused (`from conftest import get_script_path, load_script_module, r
 subset each module needs). Every name they bound still resolves — checked statically across all 263
 rendered modules (199 outputs + 64 fixtures modules) before writing, and again by the suite.
 
+⚠️ Round 7's further splits took the rendered set to **268** (202 test modules + 66 fixtures modules).
+The bespoke static check above was **not** re-run over the five modules it gained; what covers them is
+`ruff` clean over the whole test tree and the whole-tree suite, which is weaker evidence for this
+specific property and is stated as such rather than folded into the sentence above.
+
 ### D5 — Report the measured deltas
 
 Every figure with the command that produced it. `{DOCTOR}` is the epic README's
@@ -1127,23 +1132,27 @@ at 317 files against the head of that time, CodeRabbit's comment was last update
 ⛔ **Two of this section's load-bearing claims went stale under the run's own pushes, and a reader
 should have the current state rather than the one that was true when it was written.**
 
-**CodeRabbit's notice is live and re-renders on every push.** It now reads 281 files, not the 318 an
-earlier draft quoted — and it carries a *second* reason the earlier draft did not mention: a usage-credit
-condition that explicitly names a retry. That second reason is remediable and a retry could clear it. The
-`no-reopen` arm still holds, but on the size ceiling alone: 281 files against a limit of 100 is a refusal
-no wait or retry can change, independently of credits.
+**Both notices are live and re-render on every push, and both have now been quoted stale twice.** The
+figure has been 318, then 281, and is **309** on the head this report describes. A file count that moves
+with every push is not a fact to transcribe once; each statement below names the head it was read
+against.
 
-**Sourcery's ceiling no longer binds this PR.** Its limit is 300 files; it refused against `325f58c`,
-which was 317. The shipped head is **281 files — inside the ceiling.** The run has pushed six times
-since, which is the route the lane says an auto-review reviewer honours, and Sourcery's check run on the
-current head reports `skipped` rather than a fresh refusal or a review. So its verdict is **not**
-`unobtainable` on the ceiling any more; it is a reviewer that had the opportunity and did not take it.
-The honest arm is `could-not-re-enter`, and the honest statement is that this run does not know why.
+**CodeRabbit.** Its notice on the current head reads *"Review skipped: 309 files exceed the limit of
+100"*. It also carries a second reason an earlier draft did not mention — a usage-credit condition that
+explicitly names a retry, which is remediable. The `no-reopen` arm holds on the size ceiling alone: 309
+files against a limit of 100 is a refusal no wait or retry can change, independently of credits.
 
-⚠️ **This also weakens the structural claim below.** *"Runs 2 through 7 will each be refused by the same
-two reviewers for the same reason"* is not established, because this run's own final head fell back
-under one of the two ceilings as the diff consolidated. It remains true of CodeRabbit's 100-file limit,
-which no slice-sized PR will meet.
+⛔ **Sourcery's ceiling binds again, and an earlier draft of this very paragraph said it did not.** Its
+limit is 300 files. It refused against `325f58c` at 317; a mid-run head consolidated to **281 — inside
+the ceiling** — and this section concluded from that snapshot that the honest arm was
+`could-not-re-enter`, a reviewer that had the opportunity and declined. Round 7's own commits took the
+diff back to **309**, above the ceiling, and Sourcery's check run on the current head reports `skipped`.
+So the arm reverts to `no-reopen`, on the ceiling, for the same reason as CodeRabbit.
+
+⚠️ **The lesson is the one this section keeps re-learning.** A claim about a reviewer's ceiling is a
+claim about *a particular head*, and this run has now drawn two opposite conclusions from two heads of
+its own making. **Coverage is 1 of 3 on the head that is merged**, and that is the only head about which
+the statement means anything.
 
 ⚠️ **Neither refusal is a clock, and that is the whole point.** Both are ceilings on *this diff's size* —
 100 files for one reviewer, 300 for the other — so `Reopens? no`: no wait, no retry and no jitter
@@ -1151,8 +1160,9 @@ schedule can change them, and the lane's retry budget does not apply. Condition 
 `Reopens? no` arm rather than by spending attempts against a mechanism that cannot deliver.
 
 ⛔ **This is a structural finding about the campaign, not an incident on one PR.** A slice split
-produces a PR of roughly this size by construction — 66 sources became 263 modules here — so **runs 2
-through 7 will each be refused by the same two reviewers for the same reason**. Two thirds of this
+produces a PR of roughly this size by construction — 66 sources became 202 test modules and 66 helpers
+here, and the PR touches 309 files — so **runs 2 through 7 will each be refused by the same two
+reviewers for the same reason**. Two thirds of this
 repository's automated review capacity is unreachable for the campaign as the plan currently shapes a
 run, and no run can fix that from inside itself: the remedy is a plan-level decision about how a slice
 is carved into pull requests. It is recorded in § Residue and raised to the operator rather than
@@ -1272,10 +1282,12 @@ alongside a wall-clock measurement."*
 ### 3. A plan whose deliverable produces an unreviewable PR forfeits its review, and should say so
 
 **Evidence.** Two of this repository's three automated reviewers refused this PR outright — CodeRabbit
-at 281 files against a 100-file limit, Sourcery at 317-against-300 when it looked. Review coverage was
-**1 of 3**. The claim generalises to runs 2 through 7 **for CodeRabbit only**: its 100-file limit is
-below any slice-sized PR. Sourcery's 300 is not — this run's own head ended at 281, inside it — so the
-campaign does not guarantee that refusal, and § Reviewer participation records what happened instead.
+at **309 files** against a 100-file limit, Sourcery against its 300. Review coverage was **1 of 3**. The
+claim generalises to runs 2 through 7 for **CodeRabbit** with certainty: its 100-file limit is below any
+slice-sized PR. For Sourcery it is likely rather than certain, and this run is the reason to say so — its
+diff crossed 300 in both directions as commits landed, at one point sitting at 281 and inside the
+ceiling, before round 7 took it back to 309. A campaign run whose slice is small enough could clear
+Sourcery's ceiling; none will clear CodeRabbit's.
 
 **Why this is authoring, not execution.** No run can fix it from inside itself: by the time the PR
 exists the diff is already the size the deliverable made it. The decision — carve a slice into several
