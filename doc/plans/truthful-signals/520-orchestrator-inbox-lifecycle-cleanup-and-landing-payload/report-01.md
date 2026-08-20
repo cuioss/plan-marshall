@@ -123,7 +123,16 @@ Each figure is stated with the base or population it was derived at.
 - **Population bullet corrected.** It claimed ripgrep's `.gitignore` handling excluded `.plan/` as a whole. It does not: `.gitignore` ignores `.plan/*` and re-includes `!.plan/marshal.json` and `project-architecture/`, so **13 tracked files** at that base were *inside* the swept population. They returned zero hits, which is why their inclusion was invisible in the result.
 - **D6 rationale corrected** to name the git-ignored part precisely (`.plan/local/**`, the generated executor) and to state that the two tracked paths were searched and returned nothing — an empty result, not an exclusion.
 
-**250 report.** The duplicated tail of four unfilled `_pending_` sections (`## Cost`, `## Contract check (Step 9)`, `## What have we learned (Step 9)`, `## Residue`, each already filled earlier in the file) was deleted — 16 lines, verified before deletion to contain only those four headings and `_pending_` bodies. Every `## ` heading now appears exactly once.
+**250 report.** The duplicated tail of four unfilled `_pending_` sections (`## Cost
+
+Each figure carries its population.
+
+- **Tokens (this session):** **not available to the agent** in this Claude Code cloud session — stated plainly rather than estimated.
+- **Verification sub-agent tokens (harness-reported):** round 1 ≈ 281,258 · round 2 ≈ 232,386 · round 3 ≈ 197,259 · round 4 ≈ 157,147 · round 5 ≈ 151,512 · round 6 ≈ 255,043 · cold read 4 ≈ 101,462. Round 7's figure is not included — it was still running when this section was written. **Population:** output tokens for the dispatched verification agents only, as the harness counts them; it excludes the main session, which is the larger share and is unavailable.
+- **Wall-clock:** not separately instrumented. The two long build gates are measured: the final `./pw verify` took **535.49 s** (module-tests sub-step), and the historical re-derivation run at `51d1c9bc` took **421.71 s**.
+- ⛔ **Not comparable to a plan-marshall `metrics.toon` total.** That figure counts the orchestrator-plus-agent dispatch tree under plan-marshall's own per-task billing boundary, which a single interactive cloud session does not share. No parity is claimed, and the figures above are not offered as a substitute.
+
+## Contract check (Step 9)`, `## What have we learned (Step 9)`, `## Residue`, each already filled earlier in the file) was deleted — 16 lines, verified before deletion to contain only those four headings and `_pending_` bodies. Every `## ` heading now appears exactly once.
 
 Test counts re-derived at **this plan's own landed commit `51d1c9bc`** (the state the report describes — its tree extracted and re-run with `uv run python -m pytest -o addopts=""`). All three were one low:
 
@@ -172,21 +181,23 @@ The id set was re-derived from the seven source `gaps.md` files rather than from
 
 ## Build gate
 
-**Predicate, from git, not from recollection.** `git diff --name-only origin/main...HEAD -- '*.py'` returns **eight** files — three production (`manage-config.py`, `_orchestrator_inbox.py`, `orchestrator.py`) and five test — so the gate takes its **full** path. `git status --porcelain` was empty before the diff was taken, so no staged, unstaged or untracked file was invisible to it.
+**Python-change verdict, from git rather than recollection.** `git diff --name-only origin/main...HEAD -- '*.py'` returns **eight** files — three production (`manage-config.py`, `_orchestrator_inbox.py`, `orchestrator.py`) and five test — so the gate takes its full path. The working tree was verified clean (`git status --porcelain` empty) before the diff was read, so no uncommitted file was invisible to it.
 
-**`./pw verify` — CLEAN, read from the tool output rather than the exit code.** All three sub-steps reported clean, and each is confirmed separately because the exit code proves nothing:
+**Per-commit gate.** Every commit touching `*.py` was preceded by `./pw quality-gate`, read for the tool-level clean lines rather than the exit code: `mypy … Success: no issues found`, `ruff … All checks passed!`, `SPDX-header check passed`, and `issues[0]`.
 
-| Sub-step | Evidence |
+**Full `./pw verify` on the final head** — all three sub-steps, each confirmed separately rather than from the summary line:
+
+| Sub-step | Result |
 |---|---|
-| quality-gate | `mypy … Success: no issues found in 416 source files`; `ruff … All checks passed!`; `>>> quality-gate: SPDX-header check passed`; `issues[0]` with plugin-doctor marketplace-wide |
-| test-compile | `mypy … Success: no issues found in 783 source files` (the whole `test/` tree — the sub-step neither `quality-gate` nor `module-tests` performs) |
-| module-tests | `21353 passed, 14 skipped in 466.00s (0:07:45)` — **0 failed, 0 errors** |
+| quality-gate | `mypy` **Success: no issues found in 416 source files**; `ruff` **All checks passed!**; **SPDX-header check passed**; `issues[0]` |
+| test-compile | `mypy test` **Success: no issues found in 783 source files** |
+| module-tests | **21353 passed, 14 skipped** in 535.49s |
 
-**A second `./pw quality-gate` was run on the CURRENT tree** after the cold-read fixes landed, because the `verify` above started before those markdown commits and plugin-doctor is the sub-step they could affect. Clean again: `416 source files`, `All checks passed!`, `SPDX-header check passed`, `issues[0]`.
+`=== verify: SUCCESS ===`.
 
-**No lockfile churn.** `git diff --stat origin/main...HEAD -- uv.lock pyproject.toml` is empty, and every commit staged its deliverable paths explicitly — no `git add -A` was used.
+⛔ **`test-compile` is why the narrower calls are not a substitute.** Neither `quality-gate` nor `module-tests` type-checks the test tree, and a test-only type error is exactly what would pass locally and fail CI. It was run.
 
-**Stale base — § Step 8 condition 2.** Recorded at the merge gate below, with the `git rev-list --count HEAD..origin/main` figure, the shape used, the merge commit tested, and the gate's result on it.
+**Stale-base re-verification (§ Step 8 condition 2).** `git rev-list --count HEAD..origin/main` was **3** mid-run, so the condition applied. `origin/main` was merged **on the branch** (the default shape), and the gate re-run on the merged tree — the figures above ARE that re-run, taken after the merge. The merged content was plans and docs only: `git diff --name-only` over the merge commit, filtered to exclude `doc/plans/`, returns nothing, so the merge added no buildable footprint. The count is re-derived at the merge gate below.
 
 ## Findings
 
