@@ -982,7 +982,8 @@ def find_stream_end_marker(inbox_dir: Path, epic: str, sender_id: str) -> str | 
     not settle.
 
     **Cost, stated precisely because the two bounds differ.** The enumeration is
-    O(queue): :func:`list_messages` lists the directory once. The FILE READS are
+    O(n log n) in the queue depth: :func:`list_messages` lists the directory once
+    and sorts the result. The FILE READS are
     not — the loop skips a path whose filename sender segment does not match
     ``sender_id`` *before* opening it, so ``read_text`` and
     :func:`validate_envelope` run at most once per message **that sender** has
