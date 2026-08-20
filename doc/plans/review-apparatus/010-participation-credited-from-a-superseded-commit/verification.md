@@ -304,7 +304,7 @@ as a bounded assumption. **CONFIRMED** by reading both the code and the contract
 for the first-observation arm. Driving the real `cmd_fetch_findings` — credit the comment at a real
 `_HEAD_A`, then edit it in place while `fetch_pr_head_sha` returns `''`:
 
-```
+```text
 fetch at _HEAD_A, unchanged comment      -> participated              # ledger ('AAA…','u1')
 empty-sha fetch, comment edited to u2    -> participated              # ledger now ('', 'u2')
 empty-sha fetch again, nothing changed   -> participated_stale        # FLIP at the same HEAD

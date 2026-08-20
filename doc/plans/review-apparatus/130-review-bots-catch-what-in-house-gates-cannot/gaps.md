@@ -18,7 +18,7 @@ without re-deriving the analysis. Eighteen entries: 1 blocker, 7 major, 10 minor
   roster. Executed probe (`assess_delta` called directly, gates green, both SHAs `'a'*40`, two escapes
   both labelled `gate_structural`):
 
-  ```
+  ```text
   enabled_bots=['coderabbit','sourcery','pr-agent'] reviewed_bots=['coderabbit']
     -> verdict=measured  structural_share=None  cov=1/3  share_withheld=partial_reviewer_coverage
   enabled_bots=['coderabbit']                    reviewed_bots=['coderabbit']
@@ -220,7 +220,7 @@ without re-deriving the analysis. Eighteen entries: 1 blocker, 7 major, 10 minor
   records `degraded` only (`build.py:317`) and halts to `render_coverage_summary` at `build.py:448`.
   Executed probe on a boundary seeded with one `record_degraded` and no `record_checked`:
 
-  ```
+  ```text
   >>> coverage: PARTIAL — this pass does NOT certify the whole tree. The gate did NOT fully check:
         - mypy(production) [660 files, cache disabled]: freshness suspect — too fast
       A clean exit here is NOT a full pass — the dimensions above are un-certified, …
@@ -259,7 +259,7 @@ without re-deriving the analysis. Eighteen entries: 1 blocker, 7 major, 10 minor
   (`github_pr.py:318-338`: *"Human comments (`bot_kind is None`) are checked against the shared layer
   …"*). Executed probes at full 3/3 coverage:
 
-  ```
+  ```text
   one labelled bot escape                       -> share=100.0  withheld=None      total=1
   same + one human inline comment, unlabelled   -> share=None   withheld=unpartitioned_escapes  total=2
   one human inline comment only                 -> share=None   withheld=unpartitioned_escapes  total=1
@@ -360,7 +360,7 @@ without re-deriving the analysis. Eighteen entries: 1 blocker, 7 major, 10 minor
 - **Evidence:** `complete` is `return not self.degraded`. Executed probe on
   `render_coverage_summary(CoverageBoundary())`:
 
-  ```
+  ```text
   >>> coverage: COMPLETE over the dimensions below — checked over full scope: (nothing)
   ```
 

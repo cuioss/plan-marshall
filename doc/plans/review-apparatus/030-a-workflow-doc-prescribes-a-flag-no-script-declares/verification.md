@@ -138,7 +138,7 @@ own documented three-tier model returns **exit 0** for an expected error: `ci_ba
 (`:790-798`) prints `status: error` and returns `EXIT_SUCCESS`. Reproduced by running the real router
 from a directory with no configured provider:
 
-```
+```console
 $ ci.py checks pull-request-runs --pr-number 1
 status: error
 operation: router
@@ -152,7 +152,7 @@ The router is not the only tier that does this, and this is the part the earlier
 `return 0` — no branch on `result['status']`. So *every* `ci` verb, not just an unrouted one, reports
 failure at exit 0. Reproduced against the real provider script with an emptied `PATH`:
 
-```
+```console
 $ github_ops.py checks pull-request-runs --pr-number 1
 status: unconfigured
 operation: pull_request_runs
@@ -227,7 +227,7 @@ A stale record whose `evidence_kind` is not a declared publish shape for that bo
 `bot_kind` is not in the registry at all — is therefore **silently dropped**, and the bot falls
 through to `absent`. Confirmed by direct execution:
 
-```
+```text
 admissible pr-agent: ['issue_comment', 'inline']
 stale bogus -> {}
 stale good  -> {'pr-agent': 'issue_comment'}
@@ -313,7 +313,7 @@ and `persona-plan-marshall-agent/standards/tool-usage-patterns.md:133,261,268` s
 who follows the new envelope text and moves it left of the verb loses it: the router consumes and
 strips it before the subparser ever sees it, confirmed by executing the real function —
 
-```
+```text
 extract_routing_args(['--plan-id','NO_PLAN','pr','create','--title','T','--base','main'])
 -> ('/home/user/plan-marshall', ['pr', 'create', '--title', 'T', '--base', 'main'])
 ```

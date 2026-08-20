@@ -57,7 +57,7 @@ Searches run (each cited where it backs an absence):
 
 Tests run (not the full build):
 
-```
+```shell
 .venv/bin/pytest test/plan-marshall/phase-6-finalize/test_foreign_pr_gate.py \
   test/plan-marshall/workflow-integration-github/test_pr_landing_state.py \
   test/plan-marshall/manage-solution-outline/test_foreign_deliverable_column.py -o addopts="" -q
@@ -87,7 +87,7 @@ as claimed; at `9c679c99^` it sat at lines 277–303 exactly as the report cites
 **The single-seam claim is false.** The report states: *"`done` is written in exactly one place:
 `manage-tasks/scripts/_tasks_crud.py::cmd_update`"*. A second writer exists:
 
-```
+```text
 marketplace/bundles/plan-marshall/skills/manage-tasks/scripts/_cmd_step.py:73
         task['status'] = 'failed' if has_failed else 'done'
 ```
@@ -306,7 +306,7 @@ noted, not filed as a gap.
 truthiness, and an empty selection takes the early `clear` return (`foreign_pr_gate.py:280–288`).
 Driven directly:
 
-```
+```text
 check('p', deliverables_loader=lambda _: {'status': 'success', 'deliverables':
         [{'number': 1, 'affected_files': [{'path': '/elsewhere/other/x.py'}]}]}, ...)
 → {'status': 'clear', 'foreign_deliverable_count': 0, 'repos': []}

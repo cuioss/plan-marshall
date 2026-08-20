@@ -89,7 +89,7 @@ Pre-fix comparison: `git show fd292004^:<path>` for `review_completeness.py` (li
 
 Tests run (read-only):
 
-```
+```shell
 UV_HTTP_TIMEOUT=600 uv run python -m pytest \
   test/plan-marshall/automatic-review/test_review_completeness.py \
   test/plan-marshall/finalize-step-review-retrospective/test_review_retrospective.py \
@@ -250,7 +250,7 @@ baseline reviewer with four findings and a required reviewer that refused, `asse
 `verdict: clean`, and `_emit_deficit_toon` then omits `required_reviewed` entirely because it is empty
 (`:1145-1149`, `if required_reviewed:`):
 
-```
+```text
 status: success
 verdict: clean
 proves: reviewer_quality_only
@@ -263,7 +263,7 @@ baseline_reviewers[1]:
 The `unassessable` case is worse: `baseline_reviewers` is empty there too and its guard (`:1140-1144`,
 `if baseline:`) drops it as well, so the whole block is five lines with **no population at all**:
 
-```
+```text
 status: success
 verdict: unassessable
 proves: reviewer_quality_only

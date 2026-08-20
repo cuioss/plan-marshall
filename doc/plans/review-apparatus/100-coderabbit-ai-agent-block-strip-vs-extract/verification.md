@@ -501,7 +501,7 @@ published form.
 
 **Clean.** `git show 71dd3779 --name-status` lists exactly four paths:
 
-```
+```text
 R096  doc/plans/review-apparatus/100-…-strip-vs-extract.md → …/100-…-strip-vs-extract/plan.md
 A     doc/plans/review-apparatus/100-…-strip-vs-extract/report-01.md
 M     marketplace/bundles/plan-marshall/skills/automatic-review/standards/coderabbit.md

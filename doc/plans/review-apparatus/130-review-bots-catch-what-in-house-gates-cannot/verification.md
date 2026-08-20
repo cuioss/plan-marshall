@@ -226,7 +226,7 @@ Three defects, all confirmed by execution:
 `len(covered) < len(roster)` — a comparison against a **caller-supplied** roster. Shrink the roster
 and full coverage is restored. Two probe arms, identical in every respect except the roster:
 
-```
+```text
 roster=['coderabbit','sourcery','pr-agent'] reviewed=['coderabbit']
   -> verdict=measured  structural_share=None   reviewer_coverage=1/3  share_withheld=partial_reviewer_coverage
 roster=['coderabbit']                       reviewed=['coderabbit']
@@ -253,7 +253,7 @@ restated at four sites — `review_gate_delta.py:52-59`, `bot-participation-cont
 **2. Findings the run rejected as wrong are counted as gate escapes.** `grep -n "resolution"
 review_gate_delta.py` returns nothing. Probe:
 
-```
+```text
 one finding, resolution='rejected', partition=gate_structural
   -> escapes_total=1  structural_share=100.0
 ```

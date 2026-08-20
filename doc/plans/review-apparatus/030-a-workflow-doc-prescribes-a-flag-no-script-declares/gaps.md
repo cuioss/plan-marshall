@@ -69,7 +69,7 @@ Eleven gaps: **1 blocker, 5 major, 5 minor.**
   `result = dispatch(...)` / `print(serialize_toon(result))` / `return 0`, with no branch on
   `result['status']`. Reproduced against the real script with an emptied `PATH`:
 
-  ```
+  ```console
   $ github_ops.py pr create --title T --plan-id NO_PLAN --base main
   status: error
   operation: pr_create
@@ -111,7 +111,7 @@ Eleven gaps: **1 blocker, 5 major, 5 minor.**
 - **Evidence:** reproduced twice against the real scripts. Router tier, run from a directory with no
   configured provider:
 
-  ```
+  ```console
   $ ci.py checks pull-request-runs --pr-number 1
   status: error
   operation: router
@@ -121,7 +121,7 @@ Eleven gaps: **1 blocker, 5 major, 5 minor.**
 
   Provider tier, with an emptied `PATH`:
 
-  ```
+  ```console
   $ github_ops.py checks pull-request-runs --pr-number 1
   status: unconfigured
   operation: pull_request_runs

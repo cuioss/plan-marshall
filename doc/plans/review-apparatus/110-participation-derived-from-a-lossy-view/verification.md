@@ -80,7 +80,7 @@ Greps run (repository-relative; each reported with the count it actually returns
 
 Tests run (no repository file left modified):
 
-```
+```shell
 UV_HTTP_TIMEOUT=600 uv run python -m pytest \
   test/plan-marshall/workflow-integration-github/test_github_pr.py -o addopts="" -q \
   -k "deduped_comment_is_still_credited or second_fetch_at_the_same_head or review_predating \

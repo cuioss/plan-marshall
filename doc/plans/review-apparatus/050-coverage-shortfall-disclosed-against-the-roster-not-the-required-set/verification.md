@@ -291,7 +291,7 @@ holding only CodeRabbit's walkthrough `issue_comment` and its status-summary `re
 with **zero actionable findings** and every reviewer's `pct_resolved_as_fixed` at `None` — nothing to
 compare — and it grades `measured`. Executed:
 
-```
+```text
 aggregate([{'author':'coderabbitai','kind':'issue_comment'}], enabled_reviewers=[…], reviewed_reviewers=[])
 → comparison: measured, total_findings: 1, actionable per reviewer: [('coderabbitai',0,1), ('cuioss-review-bot',0,0)]
 ```
