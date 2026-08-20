@@ -1,8 +1,13 @@
 # Run report — 100-module-budget-campaign (run 01)
 
-**Date (UTC):** 2026-08-19    **Branch:** `claude/module-budget-campaign-test-3gbpv6`    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-19    **Branch:** `claude/module-budget-campaign-test-3gbpv6`    **PR:** [#1314](https://github.com/cuioss/plan-marshall/pull/1314)    **Outcome:** deliverables met, slice not finished
 
-> **Verification loop exit:** _pending_
+> **Verification loop exit:** `budget-exhausted, non-converging`
+
+**Outcome in one line.** D1–D5 are met and the build gate is green, but the slice is **not** finished by
+the plan's own definition — three modules remain over budget, each a single class the plan directs the
+run to leave. See § Verification loop — stop record for why `non-converging` is the honest exit, and
+§ Residue for what a follow-up run cannot do under this plan as written.
 
 **Slice taken:** run 1 — plan `050`'s slice, plan state and records.
 
@@ -514,7 +519,29 @@ and import block. That is the price of the names being true, stated rather than 
 `git diff --name-only origin/main...HEAD -- '*.py'` is non-empty — this run changes Python — so the
 full gate applies.
 
-_verify pending_
+**`./pw verify` — SUCCESS**, run against the final tree after every round-7 commit had landed.
+
+| Dimension | Scope | Result |
+|---|---|---|
+| `mypy` (production) | 416 files, cache disabled | clean |
+| `ruff` | `marketplace/bundles`, `test`, `.claude` | clean |
+| SPDX headers | `marketplace/bundles`, `test`, `.claude`, `marketplace/targets`, `build.py` | clean |
+| `plugin-doctor` | marketplace-wide | clean |
+| `mypy` (test) | 934 files, cache disabled | clean |
+| module-tests | whole-tree pytest | **21334 passed, 14 skipped** |
+
+The module-tests row is an independent reproduction of condition 5's HEAD figure: the gate collected and
+ran the same 21334 and skipped the same 14 as the standalone run, under a different harness. Its wall
+clock (465.68 s) is **not** comparable with the 2357.20 s there — the gate runs the suite in parallel and
+the condition-5 measurement was sequential on both sides — so the two numbers are reported apart rather
+than as a delta.
+
+⚠️ The gate prints its own scope limits, and they are worth quoting rather than paraphrasing: a green
+here "is evidence about the dimensions listed and is not whole-tree assurance that the change is sound".
+For a run whose deliverable is a *move*, the relevant limit is the last one — `module-tests` "executes
+the tests that exist; it cannot evaluate behaviour under inputs no test supplies". That is exactly why
+this run's fidelity claim rests on the multiset diffs and the identical whole-tree counts rather than on
+the gate being green.
 
 ## Findings
 
