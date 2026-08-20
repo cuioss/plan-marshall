@@ -879,6 +879,7 @@ def _is_unsupplied(key: str, facts: dict[str, str]) -> bool:
         return False
     return value.strip().lower() in LANDING_DEGRADED_SENTINELS
 
+
 #: Matches the first ``landing-facts`` fenced block in a payload body. DOTALL so
 #: the body spans lines; non-greedy so it stops at the first closing fence.
 _LANDING_FENCE_RE = re.compile(
@@ -979,6 +980,15 @@ def find_stream_end_marker(inbox_dir: Path, epic: str, sender_id: str) -> str | 
     the guard depend on drain history rather than on queue state. A sender that
     must stay closed across a drain is a larger design question this guard does
     not settle.
+
+    **Cost:** the scan reads and fully validates every message queued in
+    ``inbox/`` until it finds a match, so both callers pay O(queue) file reads
+    per call — a write and a close-stream each become linear in the queue depth.
+    That is accepted rather than optimised: the queue is drained between plans
+    and is small by construction, and the alternative (an index, or trusting the
+    filename) would either add a second source of truth or honour a marker the
+    validator would reject. Revisit only if a queue is ever allowed to grow
+    unbounded.
 
     Args:
         inbox_dir: The epic's ``inbox/`` directory.
@@ -1272,12 +1282,20 @@ def cmd_inbox_list(args: Any) -> dict[str, Any]:
             }
         )
     # ``live_count`` is the drainable set — VALID messages still presenting as
-    # live, so a superseded message (resolvable but retired) and a stream-end
-    # marker are both excluded. ``closed_senders`` is what lets the drain tell an
-    # empty queue from a finished one: a sender that has filed a valid stream-end
-    # marker will send no more, so live_count == 0 with a non-empty
-    # ``closed_senders`` is *finished*, while live_count == 0 with an empty one
-    # is merely *empty*.
+    # live, so a superseded message (resolvable but retired), a stream-end marker,
+    # AND an invalid message are all excluded. That last exclusion is why
+    # ``live_count`` alone does not discriminate: with ``closed_senders`` and
+    # ``invalid_count`` it separates THREE zeros, not two.
+    #
+    #   live_count 0 + closed_senders empty     + invalid_count 0  -> EMPTY
+    #   live_count 0 + closed_senders non-empty + invalid_count 0  -> FINISHED
+    #   live_count 0 + closed_senders any       + invalid_count >0 -> BLOCKED
+    #
+    # BLOCKED is the one a two-way reading absorbs into EMPTY: a queue holding
+    # nothing but malformed messages reports ``live_count: 0`` while carrying work
+    # nobody has read, so reading it as empty claims a completed drain over
+    # messages the drain declined. See ``standards/inbox-envelope.md`` § Drain
+    # semantics, which is the same table for the drain's own reader.
     live_count = sum(
         1 for row in messages if row['valid'] and row['lifecycle'] == LIFECYCLE_LIVE
     )

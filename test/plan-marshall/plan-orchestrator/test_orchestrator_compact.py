@@ -541,6 +541,24 @@ class TestMarkersAbsent:
 
         assert _abstained(result, 'Decisions')['treatment'] == 'preserved_verbatim'
 
+    def test_a_reachable_ledger_reports_no_unreachable_section(self, plan_context):
+        """With both marker pairs present nothing is unreachable, and the count says so."""
+        _live_epic(plan_context)
+
+        result = _run()
+
+        assert result['unreachable_count'] == 0
+        assert all(
+            row['treatment'] == 'preserved_verbatim' for row in result['abstained']
+        )
+
+
+# =============================================================================
+# replaced_body — a regenerated block NAMES what it overwrote
+# =============================================================================
+
+
+class TestReplacedBody:
     def test_a_regenerated_block_names_the_content_it_overwrote(self, plan_context):
         """A regenerated block reports WHAT it replaced, not merely a line-count delta.
 
@@ -570,17 +588,6 @@ class TestMarkersAbsent:
         for row in result['regenerated']:
             assert row['outcome'] == 'unchanged'
             assert row['replaced_body'] == ''
-
-    def test_a_reachable_ledger_reports_no_unreachable_section(self, plan_context):
-        """With both marker pairs present nothing is unreachable, and the count says so."""
-        _live_epic(plan_context)
-
-        result = _run()
-
-        assert result['unreachable_count'] == 0
-        assert all(
-            row['treatment'] == 'preserved_verbatim' for row in result['abstained']
-        )
 
 
 # =============================================================================

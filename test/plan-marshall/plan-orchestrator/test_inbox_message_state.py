@@ -16,8 +16,11 @@ exercised in-process against the ``_orchestrator_inbox`` handlers under
 - **validate** (D2): the revision-monotonicity and lifecycle invariants are
   enforced — a claimed amendment with no advanced revision is rejected.
 - **close-stream + drain** (D3): a sender marks its stream ended with one
-  ``lifecycle=stream-end`` marker, and ``list``'s ``live_count`` /
-  ``closed_senders`` let the drain tell an empty queue from a finished one.
+  ``lifecycle=stream-end`` marker; a closed sender's later ``write`` is refused
+  (``stream_closed``) and a second ``close-stream`` is idempotent. ``list``'s
+  ``live_count`` / ``closed_senders`` / ``invalid_count`` separate THREE zeros —
+  empty, finished, and BLOCKED (nothing drainable, messages the drain refuses to
+  consume) — not two.
 - **foldered archive** (D4): the archive is per-sender
   (``inbox/archive/{sender}/``); ``next_sequence`` sees a foldered archived twin
   so no retired sequence is re-opened (the D5(e) control), ``migrate-archive``
@@ -466,8 +469,11 @@ class TestCloseStreamAndDrain:
         assert marker == f'{SENDER}-002.md'
 
     def test_drain_tells_an_empty_queue_from_a_finished_one(self, plan_context, tmp_path):
-        # (D3) The drain distinguishes empty (live_count 0, no closed sender)
-        # from finished (live_count 0, the sender has closed its stream).
+        # (D3) Two of the three zeros: empty (live_count 0, no closed sender)
+        # versus finished (live_count 0, the sender has closed its stream). The
+        # third — BLOCKED, live_count 0 with invalid_count > 0 — is pinned by
+        # test_a_blocked_queue_zero_is_distinct_from_an_empty_queue_zero; this
+        # case holds invalid_count at 0 throughout.
         cmd_scaffold(Namespace(slug=EPIC))
         empty = cmd_inbox_list(Namespace(slug=EPIC))
         assert empty['live_count'] == 0
@@ -604,12 +610,16 @@ class TestListSurfacesState:
         cmd_scaffold(Namespace(slug=EPIC))
         empty = cmd_inbox_list(Namespace(slug=EPIC))
 
-        # A malformed message: a header-only file, rejected as empty_payload.
+        # A malformed message: a header-only file. It carries one of the six base
+        # header fields, so validate_envelope rejects it as missing_header_field
+        # (asserted below, so the code cannot drift out from under this comment).
         (_inbox_dir(plan_context) / f'{SENDER}-001.md').write_text(
             'envelope_version=1\n', encoding='utf-8'
         )
         blocked = cmd_inbox_list(Namespace(slug=EPIC))
 
+        # The rejection code is pinned, so the comment above cannot go stale.
+        assert [row['error'] for row in blocked['messages']] == ['missing_header_field']
         # The two states agree on every field the two-way reading looked at...
         assert empty['live_count'] == blocked['live_count'] == 0
         assert empty['closed_senders'] == blocked['closed_senders'] == []

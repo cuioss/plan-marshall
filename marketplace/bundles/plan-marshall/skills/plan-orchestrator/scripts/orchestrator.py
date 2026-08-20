@@ -310,6 +310,7 @@ GENERATED_BLOCK_OWNING_SECTION: dict[str, str] = {
 TREATMENT_PRESERVED = 'preserved_verbatim'
 TREATMENT_UNREACHABLE = 'markers_absent_not_regenerated'
 
+
 def _begin_marker(name: str) -> str:
     return f'<!-- BEGIN GENERATED: {name} -->'
 
@@ -2239,7 +2240,7 @@ def _invariant_pointers_reachable(epic_text: str, root: Path) -> dict[str, Any]:
 _SECTION_HEADING_RE = re.compile(r'^ {0,3}##[ \t]+(?P<title>.+?)[ \t]*#*[ \t]*$')
 
 
-def _abstained_sections(text: str, unreachable_blocks: Collection[str] = ()) -> list[dict[str, str]]:
+def _abstained_sections(text: str, unreachable_blocks: Collection[str]) -> list[dict[str, str]]:
     """Name every ``##`` section the stage did not rewrite, and WHY it did not.
 
     A silent compaction is indistinguishable from a lossy one, so the report
@@ -2267,6 +2268,12 @@ def _abstained_sections(text: str, unreachable_blocks: Collection[str] = ()) -> 
             Mapped onto their owning heading via
             :data:`GENERATED_BLOCK_OWNING_SECTION`; a name with no mapping, or a
             mapped heading absent from ``text``, contributes no row.
+            **Required, deliberately undefaulted** — an empty default would make
+            every listed section come back :data:`TREATMENT_PRESERVED`, which is
+            precisely the pre-fix behaviour this function exists to replace. A
+            caller with genuinely no unreachable block passes an empty
+            collection explicitly, so the claim is made rather than defaulted
+            into.
     """
     unreachable_titles = {
         GENERATED_BLOCK_OWNING_SECTION[name].casefold()
@@ -2626,8 +2633,9 @@ def _add_inbox_group(subparsers: Any) -> None:
     Sub-verbs, in registration order: ``write``, ``amend``, ``supersede``,
     ``close-stream``, ``validate``, ``list``, ``archive``, ``migrate-archive``,
     ``detect``, ``landing-check``. The handlers live in
-    :mod:`_orchestrator_inbox`; this function only wires argv to them. Note what the surface deliberately does NOT expose: no output
-    path, no sequence number, and no inbox directory — the write and correction
+    :mod:`_orchestrator_inbox`; this function only wires argv to them. Note what
+    the surface deliberately does NOT expose: no output path, no sequence
+    number, and no inbox directory — the write and correction
     targets are derived from ``--slug`` plus ``--sender-id`` / a bare
     ``--message`` filename alone, which is what makes the ledger write-boundary
     carve-out enforced by construction. ``archive --as-name`` does not widen
