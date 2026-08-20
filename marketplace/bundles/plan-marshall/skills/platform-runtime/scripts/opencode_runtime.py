@@ -352,7 +352,7 @@ class OpenCodeRuntime(Runtime):
                 "invalid_scope",
                 f"--scope must be 'project' or 'global'; got {scope!r}",
             )
-        valid_ops = {"normalize", "add", "remove", "ensure", "consolidate"}
+        valid_ops = {"normalize", "add", "remove", "ensure", "consolidate", "protect-path"}
         if operation not in valid_ops:
             return toon_error(
                 "permission fix",

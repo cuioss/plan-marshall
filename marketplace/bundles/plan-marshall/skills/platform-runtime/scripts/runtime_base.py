@@ -560,9 +560,12 @@ class Runtime(ABC):
         Args:
             scope: ``"project"`` or ``"global"``.
             operation: One of ``"normalize"``, ``"add"``, ``"remove"``,
-                ``"ensure"``, ``"consolidate"``.
-            permissions: Patterns for ``add``/``remove``/``ensure`` (may be
-                empty for ``normalize`` and ``consolidate``).
+                ``"ensure"``, ``"consolidate"``, ``"protect-path"``.
+            permissions: The operation's semantic arguments. Patterns for
+                ``add``/``remove``/``ensure``; directory paths to protect for
+                ``protect-path`` (the target renders the protecting rules
+                itself, so no rule text crosses this boundary in either
+                direction); empty for ``normalize`` and ``consolidate``.
             dry_run: When ``True``, preview changes without applying.
 
         Returns:

@@ -47,6 +47,7 @@ for _ancestor in Path(__file__).resolve().parents:
 
 import session_binding  # noqa: E402
 from manage_terminal_title import _compose_body, compose, title_token_state  # noqa: E402,F401
+from marketplace_paths import resolve_home  # noqa: E402
 from runtime_base import Runtime, toon_error, toon_noop, toon_success  # noqa: E402,F401
 from toon_parser import parse_toon  # noqa: E402
 
@@ -2370,6 +2371,18 @@ def _compute_normalized_tokens(
 # ---------------------------------------------------------------------------
 
 
+def _claude_shared_settings_path(project_dir: str | None = None) -> Path:
+    """Return the shared project settings file path (``.claude/settings.json``).
+
+    The counterpart to ``_claude_local_settings_path``: the file a team commits,
+    as opposed to the operator-local one. Both the write-path selector and the
+    read-preference selector below compose from these two, so the ``.claude``
+    settings-file segments are spelled once each.
+    """
+    base = Path(project_dir) if project_dir else Path.cwd()
+    return base / ".claude" / "settings.json"
+
+
 def _claude_project_settings_path(project_dir: str | None = None) -> Path:
     """Return the Claude project settings file path to write to.
 
@@ -2378,11 +2391,30 @@ def _claude_project_settings_path(project_dir: str | None = None) -> Path:
     settings-path resolution — the ``tools-permission-*`` scripts delegate here
     rather than owning the path-resolution logic themselves.
     """
-    base = Path(project_dir) if project_dir else Path.cwd()
-    settings_json = base / ".claude" / "settings.json"
+    settings_json = _claude_shared_settings_path(project_dir)
     if settings_json.exists():
         return settings_json
-    return base / ".claude" / "settings.local.json"
+    return _claude_local_settings_path(project_dir)
+
+
+def _claude_project_settings_read_path(project_dir: str | None = None) -> Path:
+    """Return the Claude project settings file path to READ from.
+
+    The read preference is the mirror image of the write preference: an
+    operator-local ``.claude/settings.local.json`` wins when it exists, because
+    it is the file whose entries actually take effect for that operator;
+    otherwise the shared ``.claude/settings.json`` is read, whether or not it
+    exists (a missing file loads as the empty-permissions skeleton).
+
+    This is the read-side twin of ``_claude_project_settings_path`` and exists
+    for the same reason: so ``tools-permission-*`` scripts delegate the whole
+    settings-path question here instead of inlining the ``.claude`` segments on
+    one path while delegating the other.
+    """
+    settings_local = _claude_local_settings_path(project_dir)
+    if settings_local.exists():
+        return settings_local
+    return _claude_shared_settings_path(project_dir)
 
 
 def _claude_local_settings_path(project_dir: str | None = None) -> Path:
@@ -2442,6 +2474,143 @@ def _save_settings(path: Path, settings: dict[str, Any]) -> bool:
         return True
     except OSError:
         return False
+
+
+# ---------------------------------------------------------------------------
+# Permission-grammar rendering
+#
+# The Claude permission DSL (``Read(...)``, ``Write(...)``, ``Bash(...)``) is a
+# target wire format, so per principles §1 it is rendered HERE and never crosses
+# the runtime boundary in either direction. General scripts state intent — "the
+# default permission set", "protect this directory" — and receive normalized
+# status back; the helpers below are what turns that intent into grammar.
+# ---------------------------------------------------------------------------
+
+_CLAUDE_PLUGIN_CACHE_SEGMENTS = (".claude", "plugins", "cache")
+_BUNDLE_CACHE_DIR_NAME = "plan-marshall"
+
+# Bash binaries that can exfiltrate a file's contents. Guarded in BOTH the tilde
+# and the absolute spelling of a protected directory, because either can appear
+# in a command line.
+_EXFILTRATION_BASH_VECTORS = ("cat", "head", "tail", "less", "more", "cp", "grep", "base64")
+
+
+def _claude_plugin_cache_dir() -> Path:
+    """Return ``~/.claude/plugins/cache`` — the parent of every bundle cache."""
+    return resolve_home().joinpath(*_CLAUDE_PLUGIN_CACHE_SEGMENTS)
+
+
+def _claude_bundle_cache_root() -> Path:
+    """Return the Claude deployed-bundle cache root for plan-marshall.
+
+    ``~/.claude/plugins/cache/plan-marshall`` — the single flat cache root under
+    which installed marketplace bundles live on Claude. ``layout
+    bundle-cache-root`` and the default-permission renderer both read it here so
+    the segments are spelled once.
+    """
+    return _claude_plugin_cache_dir() / _BUNDLE_CACHE_DIR_NAME
+
+
+def _tilde_form(path: Path) -> str:
+    """Render *path* with a leading ``~/`` when it lies under the home directory.
+
+    Anchored on ``Path.relative_to`` rather than a string prefix test: with home
+    ``/home/user``, a plain ``startswith`` also matches ``/home/user2/x`` and
+    would render it as the nonsensical ``~2/x``. A path outside home is returned
+    unchanged.
+    """
+    try:
+        return "~/" + str(path.relative_to(resolve_home()))
+    except ValueError:
+        return str(path)
+
+
+def _default_permission_rules() -> tuple[tuple[str, str], ...]:
+    """Return ``(semantic_id, rendered_rule)`` for the default allow set.
+
+    The semantic id is what crosses back to a caller; the rendered rule stays on
+    this side of the boundary. ``.plan`` is plan-marshall's own directory rather
+    than a Claude one, so it is spelled literally; the bundle-cache read
+    permission is derived from the resolved cache root instead.
+    """
+    cache_glob = f"{_tilde_form(_claude_plugin_cache_dir())}/**"
+    return (
+        ("plan-dir-edit", "Edit(.plan/**)"),
+        ("plan-dir-write", "Write(.plan/**)"),
+        # Skills reference files via relative paths, so the deployed bundle tree
+        # must be readable.
+        ("bundle-cache-read", f"Read({cache_glob})"),
+    )
+
+
+def ensure_default_permissions(
+    settings: dict[str, Any], settings_path: Path, dry_run: bool = False
+) -> dict[str, Any]:
+    """Ensure the default permission set is present in *settings*, and write it.
+
+    The goal-based entry point behind ``permission_fix.apply-fixes``: the caller
+    states the goal (ensure the defaults) and this function renders the grammar,
+    merges it into the allow list, and — unless *dry_run* — performs the write
+    itself. Nothing rendered crosses back.
+
+    Args:
+        settings: A loaded settings mapping. Mutated in place when a default is
+            missing; the allow list is re-sorted in that case, matching the
+            surrounding ``apply-fixes`` normalization.
+        settings_path: Where to write when a default was added.
+        dry_run: When ``True``, merge in memory and write nothing.
+
+    Returns:
+        ``{'defaults_added': [semantic ids], 'defaults_added_count': int,
+        'applied': bool}`` — normalized status only.
+    """
+    allow: list[str] = settings.setdefault("permissions", {}).setdefault("allow", [])
+    added_ids: list[str] = []
+    for rule_id, rule in _default_permission_rules():
+        if rule not in allow:
+            allow.append(rule)
+            added_ids.append(rule_id)
+
+    if added_ids:
+        settings["permissions"]["allow"] = sorted(allow)
+
+    applied = bool(added_ids) and not dry_run and _save_settings(settings_path, settings)
+    return {
+        "defaults_added": added_ids,
+        "defaults_added_count": len(added_ids),
+        "applied": applied,
+    }
+
+
+def _protect_path_deny_rules(protected_dir: str) -> list[str]:
+    """Render the deny rules that guard *protected_dir* against reads.
+
+    Every rule names the directory in BOTH the tilde and the absolute form,
+    because a command line may use either. The ``python3 -c`` inline-script
+    vector matches on the distinctive path tail so it catches either spelling
+    inside a one-liner.
+
+    Defense-in-depth only: a blocklist is fundamentally incomplete, and the
+    directory's own ``0700`` mode remains the primary boundary.
+
+    A directory outside the home has no distinct tilde spelling, so the two
+    forms collapse to one string; the result is de-duplicated, and the count a
+    caller receives is therefore rules it will actually get rather than rules
+    that were drafted.
+    """
+    absolute = str(protected_dir)
+    tilde = _tilde_form(Path(absolute))
+    distinctive = tilde[2:] if tilde.startswith("~/") else absolute
+
+    rules = [
+        f"Read({tilde}/**)",
+        f"Read({absolute}/**)",
+    ]
+    for vector in _EXFILTRATION_BASH_VECTORS:
+        rules.append(f"Bash({vector} {tilde}/*)")
+        rules.append(f"Bash({vector} {absolute}/*)")
+    rules.append(f"Bash(python3 -c *{distinctive}*)")
+    return list(dict.fromkeys(rules))
 
 
 def _skill_permission_covered(skill: str, allow_list: list[str]) -> str | None:

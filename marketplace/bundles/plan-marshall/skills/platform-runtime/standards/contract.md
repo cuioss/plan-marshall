@@ -415,7 +415,11 @@ message: .plan/marshal.json is malformed JSON; cannot audit missing-steps
 
 Apply hygienic fixes to permission configuration.
 
-**Arguments**: `--scope project|global` (required), `--operation normalize|add|remove|ensure|consolidate` (required), `--permissions <pattern> [...]` (for `add`, `remove`, `ensure`), `--dry-run` (optional)
+**Arguments**: `--scope project|global` (required), `--operation normalize|add|remove|ensure|consolidate|protect-path` (required), `--permissions <argument> [...]`, `--dry-run` (optional)
+
+`--permissions` carries the operation's semantic arguments, not one fixed kind of value: permission patterns for `add`, `remove` and `ensure`; **directory paths** for `protect-path`; nothing for `normalize` and `consolidate`.
+
+`protect-path` is the goal-based deny-rule operation: the caller names directories to protect, and the target renders whatever rules express that on its own permission model and writes them itself. No rule text crosses the boundary in either direction, so the response carries counts (`paths_protected`, `rules_total`) rather than rendered rules. It is the one fix operation that writes the deny list rather than the allow list.
 
 **Success**:
 ```toon
@@ -439,6 +443,19 @@ target_file: /repo/.claude/settings.local.json
 changes_applied: 0
 proposed_additions[1]:
   - Bash(python3 scripts/*.py)
+```
+
+**Success (`protect-path`)**:
+```toon
+status: success
+operation: permission fix
+scope: global
+fix_operation: protect-path
+dry_run: false
+target_file: /home/u/.claude/settings.json
+changes_applied: 19
+paths_protected: 1
+rules_total: 19
 ```
 
 **Error**:

@@ -285,14 +285,13 @@ class ClaudeRuntime(Runtime):
         """Return the Claude deployed-bundle cache root.
 
         ``~/.claude/plugins/cache/plan-marshall`` — the single flat cache root
-        under which installed marketplace bundles live on Claude.
+        under which installed marketplace bundles live on Claude. The segments
+        live in ``claude_runtime._claude_bundle_cache_root``, which the
+        default-permission renderer reads too, so this layout is spelled once.
         """
-        import pathlib
-
-        cache_root = pathlib.Path.home() / ".claude" / "plugins" / "cache" / "plan-marshall"
         return toon_success(
             "layout bundle-cache-root",
-            {"target": "claude", "roots": [str(cache_root)]},
+            {"target": "claude", "roots": [str(claude_runtime._claude_bundle_cache_root())]},
         )
 
     # ------------------------------------------------------------------
@@ -1046,12 +1045,18 @@ class ClaudeRuntime(Runtime):
                 f"--scope must be 'project' or 'global'; got {scope!r}",
             )
 
-        valid_ops = ("normalize", "add", "remove", "ensure", "consolidate")
+        valid_ops = ("normalize", "add", "remove", "ensure", "consolidate", "protect-path")
         if operation not in valid_ops:
             return toon_error(
                 "permission fix",
                 "invalid_operation",
                 f"--operation must be one of {valid_ops}; got {operation!r}",
+            )
+        if operation == "protect-path" and not permissions:
+            return toon_error(
+                "permission fix",
+                "invalid_operation",
+                "--permissions must name at least one directory path for 'protect-path'",
             )
 
         settings_path = claude_runtime._settings_path_for_scope(scope)
@@ -1062,17 +1067,19 @@ class ClaudeRuntime(Runtime):
 
         changes_applied = 0
         proposed_additions: list[str] = []
+        proposed_count = 0
+        rules_rendered = 0
 
         if operation == "normalize":
             original = list(allow)
             # Remove duplicates and sort.
             deduped = list(dict.fromkeys(allow))
             sorted_allow = sorted(deduped)
-            # Add defaults if missing.
+            # Add defaults if missing. The plan-directory and bundle-cache rules
+            # come from the single renderer in the entry module; the executor
+            # permission is normalize's own addition.
             defaults = [
-                "Edit(.plan/**)",
-                "Write(.plan/**)",
-                "Read(~/.claude/plugins/cache/**)",
+                *(rule for _rule_id, rule in claude_runtime._default_permission_rules()),
                 "Bash(python3 .plan/execute-script.py *)",
             ]
             for d in defaults:
@@ -1146,6 +1153,25 @@ class ClaudeRuntime(Runtime):
                 settings["permissions"]["allow"] = new_allow
                 claude_runtime._save_settings(settings_path, settings)
 
+        elif operation == "protect-path":
+            # Goal-based: the caller names DIRECTORIES to protect; the deny-rule
+            # grammar is rendered here and never crosses back. This is the one
+            # fix operation that writes the deny list rather than the allow list.
+            deny: list[str] = settings["permissions"]["deny"]
+            for protected_dir in permissions:
+                for rule in claude_runtime._protect_path_deny_rules(protected_dir):
+                    rules_rendered += 1
+                    if rule in deny:
+                        continue
+                    if dry_run:
+                        proposed_count += 1
+                    else:
+                        deny.append(rule)
+                        changes_applied += 1
+            if not dry_run:
+                settings["permissions"]["deny"] = deny
+                claude_runtime._save_settings(settings_path, settings)
+
         result: dict[str, Any] = {
             "scope": scope,
             "fix_operation": operation,
@@ -1153,7 +1179,13 @@ class ClaudeRuntime(Runtime):
             "target_file": str(settings_path),
             "changes_applied": 0 if dry_run else changes_applied,
         }
-        if dry_run and proposed_additions:
+        if operation == "protect-path":
+            # Counts only — a rendered deny rule must not reach the caller.
+            result["paths_protected"] = len(permissions)
+            result["rules_total"] = rules_rendered
+            if dry_run:
+                result["proposed_count"] = proposed_count
+        elif dry_run and proposed_additions:
             result["proposed_additions"] = proposed_additions
 
         return toon_success("permission fix", result)

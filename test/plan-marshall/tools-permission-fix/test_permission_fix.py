@@ -278,18 +278,72 @@ class TestApplyFixes:
         assert result['sorted']
 
     def test_adds_default_permissions(self, tmp_path):
-        """Should add default permissions if missing."""
+        """Should report the defaults it added, by semantic id.
+
+        The ids are what the runtime hands back: the permission grammar itself
+        is rendered inside the runtime and never reaches this script, so a
+        caller cannot come to depend on one target's permission-string format.
+        """
         settings_file = tmp_path / 'settings.json'
         settings_file.write_text(json.dumps({'permissions': {'allow': ['Bash(git:*)'], 'deny': [], 'ask': []}}))
 
         result = cmd_apply_fixes(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-fixes', '--settings', str(settings_file), '--dry-run'))
 
         assert result['status'] == 'success'
-        assert 'defaults_added' in result
-        defaults = result['defaults_added']
-        assert 'Edit(.plan/**)' in defaults
-        assert 'Write(.plan/**)' in defaults
-        assert 'Read(~/.claude/plugins/cache/**)' in defaults
+        assert result['defaults_added'] == ['plan-dir-edit', 'plan-dir-write', 'bundle-cache-read']
+        assert result['defaults_added_count'] == 3
+
+    def test_written_default_set_is_unchanged_by_the_relocation(self, tmp_path):
+        """The FILE apply-fixes leaves behind must carry the same three rules.
+
+        The relocation moved the rendering into the runtime; what an operator's
+        settings end up containing is the observable contract, and it is pinned
+        here against literals rather than against the renderer.
+        """
+        settings_file = tmp_path / 'settings.json'
+        settings_file.write_text(json.dumps({'permissions': {'allow': [], 'deny': [], 'ask': []}}))
+
+        result = cmd_apply_fixes(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-fixes', '--settings', str(settings_file)))
+
+        assert result['applied'] is True
+        written = json.loads(settings_file.read_text())
+        assert written['permissions']['allow'] == sorted(
+            ['Edit(.plan/**)', 'Write(.plan/**)', 'Read(~/.claude/plugins/cache/**)']
+        )
+
+    def test_normalize_only_change_still_writes(self, tmp_path):
+        """A run that adds no default must still persist the normalization.
+
+        The runtime writes when it adds a default; when it adds none, the save
+        below is the only write, and dropping it would silently discard a
+        dedupe/sort.
+        """
+        settings_file = tmp_path / 'settings.json'
+        settings_file.write_text(
+            json.dumps(
+                {
+                    'permissions': {
+                        'allow': [
+                            'Write(.plan/**)',
+                            'Edit(.plan/**)',
+                            'Read(~/.claude/plugins/cache/**)',
+                            'Bash(git:*)',
+                            'Bash(git:*)',
+                        ],
+                        'deny': [],
+                        'ask': [],
+                    }
+                }
+            )
+        )
+
+        result = cmd_apply_fixes(parse_ns('plan-marshall', 'tools-permission-fix', 'permission_fix.py', 'apply-fixes', '--settings', str(settings_file)))
+
+        assert result['defaults_added'] == []
+        assert result['duplicates_removed'] == 1
+        assert result['applied'] is True
+        written = json.loads(settings_file.read_text())
+        assert written['permissions']['allow'].count('Bash(git:*)') == 1
 
 
 # =============================================================================

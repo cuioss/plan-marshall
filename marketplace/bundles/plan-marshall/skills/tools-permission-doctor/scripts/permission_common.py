@@ -2,12 +2,12 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared utilities for permission_doctor and permission_fix scripts.
 
-Thin delegators over the platform-runtime layer for Claude settings
-path-resolution and JSON load/save. The runtime (``claude_runtime.py``) owns the
-canonical Claude settings path-resolution + load/save logic — this module no
-longer owns ``.claude/settings`` path resolution or JSON load/save; it forwards
-to the runtime helpers so there is a single home for that behaviour and no
-runtime->script back-import.
+Thin delegators over the platform-runtime layer for settings path-resolution,
+JSON load/save, and the default permission set. The runtime
+(``claude_runtime.py``) owns all of it — this module owns no settings-path
+segments (read preference and write preference alike) and renders no permission
+grammar; it forwards to the runtime helpers so there is a single home for that
+behaviour and no runtime->script back-import.
 """
 
 import sys
@@ -26,8 +26,12 @@ for _ancestor in Path(__file__).resolve().parents:
 from claude_runtime import (  # noqa: E402
     _claude_global_settings_path,
     _claude_project_settings_path,
+    _claude_project_settings_read_path,
     _load_settings,
     _save_settings,
+)
+from claude_runtime import (  # noqa: E402
+    ensure_default_permissions as _runtime_ensure_default_permissions,
 )
 
 # Exit codes
@@ -85,12 +89,14 @@ def get_global_settings_path() -> Path:
 
 
 def get_project_settings_path() -> Path:
-    """Get path to project settings file (prefers settings.local.json if exists)."""
-    project_dir = Path.cwd()
-    settings_local = project_dir / '.claude' / 'settings.local.json'
-    if settings_local.exists():
-        return settings_local
-    return project_dir / '.claude' / 'settings.json'
+    """Get path to project settings file (prefers settings.local.json if exists).
+
+    Delegates to the runtime's ``_claude_project_settings_read_path`` — the
+    read-side twin of the resolver ``get_project_settings_path_for_write``
+    already delegates to, so BOTH preferences live in the single runtime home
+    and neither is spelled out here.
+    """
+    return _claude_project_settings_read_path()
 
 
 def get_project_settings_path_for_write(project_dir: Path | None = None) -> Path:
@@ -100,6 +106,20 @@ def get_project_settings_path_for_write(project_dir: Path | None = None) -> Path
     home for Claude project settings-path resolution.
     """
     return _claude_project_settings_path(str(project_dir) if project_dir is not None else None)
+
+
+def ensure_default_permissions(
+    settings: dict[str, Any], settings_path: str | Path, dry_run: bool = False
+) -> dict[str, Any]:
+    """Ensure the target's default permission set, and let the runtime write it.
+
+    Goal-based: the caller states the goal and receives normalized status —
+    ``{'defaults_added': [semantic ids], 'defaults_added_count': int,
+    'applied': bool}``. The permission grammar is rendered inside the runtime
+    and never crosses back, so a caller cannot come to depend on one target's
+    permission-string format.
+    """
+    return _runtime_ensure_default_permissions(settings, Path(settings_path), dry_run)
 
 
 def get_settings_path(target: str) -> Path:

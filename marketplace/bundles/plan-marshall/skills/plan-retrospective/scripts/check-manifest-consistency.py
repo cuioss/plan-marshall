@@ -242,8 +242,8 @@ def filter_bookkeeping(files: list[str]) -> tuple[list[str], list[str], dict[str
 
     This replaces a private prefix tuple that declared a project-local dotfile tree
     to be bookkeeping. A build extension may route such a tree as ``production``
-    (on the Claude target the project-local skill root ``.claude/skills/*.py`` is
-    routed exactly that way), and wherever it did, the filter discarded production
+    (a project-local skill root is routed exactly that way on some targets), and
+    wherever it did, the filter discarded production
     source as bookkeeping and every downstream rule evaluated the remainder.
 
     Args:

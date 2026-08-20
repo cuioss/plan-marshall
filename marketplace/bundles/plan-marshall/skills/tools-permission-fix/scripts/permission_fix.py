@@ -46,6 +46,7 @@ for _lib in ('ref-toon-format', 'tools-file-ops', 'tools-permission-doctor'):
 
 from permission_common import (  # noqa: E402
     EXIT_SUCCESS,
+    ensure_default_permissions,
     get_project_settings_path_for_write,
     get_settings_path,
     load_settings,
@@ -65,12 +66,11 @@ from toon_parser import serialize_toon  # noqa: E402
 EXECUTOR_PERMISSION = 'Bash(python3 .plan/execute-script.py *)'
 OVERLY_BROAD_PYTHON = 'Bash(python3:*)'
 
-# Default permissions for plan directory and plugin cache
-DEFAULT_PERMISSIONS = [
-    'Edit(.plan/**)',
-    'Write(.plan/**)',
-    'Read(~/.claude/plugins/cache/**)',  # Skills reference files via relative paths
-]
+# The default permission set is NOT rendered here. ``apply-fixes`` states the
+# goal — ensure the defaults — via ``permission_common.ensure_default_permissions``;
+# the runtime renders the grammar from its own resolved layout, performs the
+# write, and returns semantic ids. Nothing target-shaped comes back, so this
+# script never learns one target's permission-string format.
 
 # Timestamp patterns for consolidation
 TIMESTAMP_PATTERN = re.compile(r'^(\w+)\((.*/)?(.+)-(\d{4}-\d{2}-\d{2}-\d{6})\.(\w+)\)$')
@@ -132,16 +132,6 @@ def process_permission_list(perm_list: list[str]) -> tuple[list[str], int, int, 
     return sorted_list, paths_fixed, dups, was_sorted
 
 
-def add_default_permissions(allow_list: list[str]) -> list[str]:
-    """Add default permissions if missing."""
-    added = []
-    for default_perm in DEFAULT_PERMISSIONS:
-        if default_perm not in allow_list:
-            allow_list.append(default_perm)
-            added.append(default_perm)
-    return added
-
-
 def resolve_settings_arg(args: argparse.Namespace) -> str:
     """Resolve settings path from --settings or --scope argument."""
     if hasattr(args, 'settings') and args.settings:
@@ -171,11 +161,13 @@ def cmd_apply_fixes(args: argparse.Namespace) -> dict:
         total_duplicates += dups
         was_sorted = was_sorted or sorted_flag
 
-    defaults_added = []
-    allow_list = settings['permissions']['allow']
-    defaults_added = add_default_permissions(allow_list)
+    # The defaults are the runtime's to render and to write. It receives the
+    # already-normalized settings, so its write persists this command's whole
+    # result in one pass; when it adds nothing, the save below still runs for a
+    # normalize-only change.
+    defaults = ensure_default_permissions(settings, settings_path, args.dry_run)
+    defaults_added = defaults['defaults_added']
     if defaults_added:
-        settings['permissions']['allow'] = sorted(allow_list)
         was_sorted = True
 
     changes_made = total_duplicates > 0 or total_paths_fixed > 0 or len(defaults_added) > 0 or was_sorted
@@ -184,6 +176,7 @@ def cmd_apply_fixes(args: argparse.Namespace) -> dict:
         'duplicates_removed': total_duplicates,
         'paths_fixed': total_paths_fixed,
         'defaults_added': defaults_added,
+        'defaults_added_count': defaults['defaults_added_count'],
         'sorted': was_sorted,
         'changes_made': changes_made,
         'dry_run': args.dry_run,
@@ -191,7 +184,7 @@ def cmd_apply_fixes(args: argparse.Namespace) -> dict:
     }
 
     if not args.dry_run and changes_made:
-        result['applied'] = save_settings(settings_path, settings)
+        result['applied'] = defaults['applied'] or save_settings(settings_path, settings)
         if not result['applied']:
             result['error'] = 'Failed to save settings'
     else:

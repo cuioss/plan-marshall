@@ -1538,3 +1538,51 @@ def test_get_base_path_auto_resolves_explicit_anchor(tmp_path, monkeypatch):
     assert result == tmp_path / 'marketplace' / 'bundles', (
         f"get_base_path('auto') should resolve the synthetic anchor, got {result}"
     )
+
+
+# =============================================================================
+# runtime_mount derives from the resolved project-local skill root
+# =============================================================================
+#
+# The ``path_formats.runtime`` display string used to be built as
+# ``./.claude/skills/{skill}/scripts/{file}``, naming one target's layout in a
+# general script. It now derives from the ``layout skill-roots`` op.
+
+
+def test_runtime_mount_prefix_defaults_to_the_claude_skill_root():
+    """On the default (Claude) target the displayed mount is unchanged."""
+    module = _scan_module()
+    assert module.runtime_mount_prefix() == './.claude/skills'
+
+
+def test_runtime_mount_prefix_follows_a_relocated_skill_root(monkeypatch):
+    """Change the target's declared root and the display string follows it."""
+    module = _scan_module()
+    monkeypatch.setattr(module, 'get_project_skill_roots', lambda: ('somewhere/skills',))
+    assert module.runtime_mount_prefix() == './somewhere/skills'
+
+
+def test_runtime_mount_prefix_leaves_an_anchored_root_alone(monkeypatch):
+    """A ``~``-anchored or absolute root is already a location — do not prepend ``./``."""
+    module = _scan_module()
+    monkeypatch.setattr(module, 'get_project_skill_roots', lambda: ('~/.config/skills',))
+    assert module.runtime_mount_prefix() == '~/.config/skills'
+    monkeypatch.setattr(module, 'get_project_skill_roots', lambda: ('/opt/skills',))
+    assert module.runtime_mount_prefix() == '/opt/skills'
+
+
+def test_discovered_scripts_carry_the_derived_runtime_mount(scan):
+    """The scan's emitted ``path_formats.runtime`` uses the derived prefix."""
+    import json
+
+    result = scan('--direct-result', '--full', '--format', 'json')
+    assert result.returncode == 0, f'Script returned error: {result.stdout}'
+
+    data = json.loads(result.stdout)
+    mounts = [
+        script['path_formats']['runtime']
+        for bundle in data.get('bundles', {}).values()
+        for script in bundle.get('scripts', [])
+    ]
+    assert mounts, 'the synthetic tree must yield at least one script'
+    assert mounts == ['./.claude/skills/plan-alpha/scripts/run-alpha.py']

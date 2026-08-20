@@ -823,12 +823,108 @@ def test_extension_discovery_plugin_cache_honours_env_override(
 
 
 # =============================================================================
+# The project-local implementor scan routes through the layout op too
+# =============================================================================
+#
+# It used to build ``project_root / '.claude' / 'skills'`` segment-wise, so a
+# target whose project-local skills live anywhere else lost every
+# ``project:finalize-step-*`` implementor silently — discovery returned an empty
+# list rather than an error.
+
+_PROJECT_EXT_POINT = 'plan-marshall:extension-api/standards/ext-point-finalize-step'
+
+
+def _write_project_step(root: pathlib.Path, name: str, description: str) -> None:
+    """Create a project-local ``finalize-step-*`` skill declaring the ext-point."""
+    skill_dir = root / name
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / 'SKILL.md').write_text(
+        '---\n'
+        f'name: {name}\n'
+        f'description: {description}\n'
+        f'implements: {_PROJECT_EXT_POINT}\n'
+        'order: 42\n'
+        '---\n\n'
+        '# Step\n',
+        encoding='utf-8',
+    )
+
+
+def _pin_project_roots(monkeypatch, tmp_path: pathlib.Path, roots: tuple[str, ...]) -> None:
+    import file_ops
+
+    monkeypatch.setattr(file_ops, '_resolve_plan_root', lambda: tmp_path)
+    monkeypatch.setattr(_discovery, 'get_project_skill_roots', lambda: roots)
+
+
+def test_project_scan_discovers_through_a_non_default_root_list(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every declared root is scanned — not one hardcoded tree.
+
+    The roots here are deliberately NOT ``.claude/skills``: a scan that still
+    built that path segment-wise would find nothing and return an empty list,
+    which is indistinguishable from "this project has no project steps" unless
+    a test supplies steps that only a routed scan can reach.
+    """
+    _pin_project_roots(monkeypatch, tmp_path, ('first/steps', 'second/steps'))
+    _write_project_step(tmp_path / 'first' / 'steps', 'finalize-step-alpha', 'Alpha.')
+    _write_project_step(tmp_path / 'second' / 'steps', 'finalize-step-beta', 'Beta.')
+
+    records = _discovery._scan_project_for_implementors(_PROJECT_EXT_POINT)
+
+    assert sorted(rec['name'] for rec in records) == [
+        'project:finalize-step-alpha',
+        'project:finalize-step-beta',
+    ]
+    assert {rec['source'] for rec in records} == {'project'}
+
+
+def test_project_scan_lets_the_highest_priority_root_win(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A step id present under two roots is recorded once, from the first root."""
+    _pin_project_roots(monkeypatch, tmp_path, ('first/steps', 'second/steps'))
+    _write_project_step(tmp_path / 'first' / 'steps', 'finalize-step-dup', 'From first.')
+    _write_project_step(tmp_path / 'second' / 'steps', 'finalize-step-dup', 'From second.')
+
+    records = _discovery._scan_project_for_implementors(_PROJECT_EXT_POINT)
+
+    assert len(records) == 1
+    assert records[0]['description'] == 'From first.'
+
+
+def test_project_scan_ignores_a_declared_root_that_does_not_exist(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A root the target declares but the project does not have is skipped, not fatal."""
+    _pin_project_roots(monkeypatch, tmp_path, ('absent/steps', 'present/steps'))
+    _write_project_step(tmp_path / 'present' / 'steps', 'finalize-step-only', 'Only.')
+
+    records = _discovery._scan_project_for_implementors(_PROJECT_EXT_POINT)
+    assert [rec['name'] for rec in records] == ['project:finalize-step-only']
+
+
+def test_project_scan_resolves_an_absolute_declared_root(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An absolute or ``~``-anchored root resolves independently of the project root."""
+    elsewhere = tmp_path / 'elsewhere' / 'steps'
+    _pin_project_roots(monkeypatch, tmp_path / 'project', (str(elsewhere),))
+    _write_project_step(elsewhere, 'finalize-step-abs', 'Absolute.')
+
+    records = _discovery._scan_project_for_implementors(_PROJECT_EXT_POINT)
+    assert [rec['name'] for rec in records] == ['project:finalize-step-abs']
+
+
+# =============================================================================
 # find_implementors — the reusable ext-point implementor discovery query
 # =============================================================================
 #
 # find_implementors(ext_point) is the SOLE finalize-step discovery path. It scans
 # three real surfaces (phase-6-finalize/{workflow,standards}/*.md, every bundle's
-# skills/*/SKILL.md, and project-local .claude/skills/finalize-step-*/SKILL.md)
+# skills/*/SKILL.md, and project-local finalize-step-*/SKILL.md under the
+# target's declared skill roots)
 # anchored on the marketplace tree, returning one record per implementor with
 # name / order / default_on / presets / description / source / path.
 

@@ -1,116 +1,110 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """
-Add deny rules to Claude Code settings for credential directory protection.
+Protect the credentials directory through the platform-runtime permission layer.
 
 Defense-in-depth: chmod 700 on the credentials directory is the primary
-security boundary. These deny rules are an additional layer that is
+security boundary. The permission rules are an additional layer that is
 fundamentally incomplete (blocklist approach).
+
+This module states the GOAL — protect the credentials directory — and the
+active target's runtime decides what rules express that on its own permission
+model, renders them, and writes them. No permission grammar is built here and
+none is received back: a target whose permission model cannot express the
+protection declines with ``no-op``, which this module reports rather than
+treating as success.
 """
 
 import argparse
 import os
 import sys
+from typing import Any
 
 from _providers_core import CREDENTIALS_DIR
 from file_ops import output_toon
-from marketplace_paths import resolve_home
-
-# Single-source every deny rule from CREDENTIALS_DIR so the deny surface follows
-# the credentials location automatically. Both the absolute path and its
-# ~-relative spelling are covered.
-CREDENTIALS_DIR_ABS = str(CREDENTIALS_DIR)
-_HOME_PREFIX = str(resolve_home())
-CREDENTIALS_DIR_TILDE = (
-    '~' + CREDENTIALS_DIR_ABS[len(_HOME_PREFIX):]
-    if CREDENTIALS_DIR_ABS.startswith(_HOME_PREFIX)
-    else CREDENTIALS_DIR_ABS
-)
-# Distinctive path tail (the segment after ``~/``) used by the ``python3 -c``
-# substring vector so it matches the credentials path in an inline script under
-# either spelling.
-_DISTINCTIVE_SEGMENT = (
-    CREDENTIALS_DIR_TILDE[2:] if CREDENTIALS_DIR_TILDE.startswith('~/') else CREDENTIALS_DIR_ABS
-)
-# Bash exfiltration binaries guarded in BOTH the tilde and absolute path forms.
-_BASH_VECTORS = ('cat', 'head', 'tail', 'less', 'more', 'cp', 'grep', 'base64')
+from marketplace_paths import _read_runtime_target
+from platform_runtime import _make_runtime
+from toon_parser import parse_toon
 
 
-def _build_deny_rules() -> list[str]:
-    """Build the deny-rule list, single-sourced from ``CREDENTIALS_DIR``.
+def _resolve_runtime() -> Any | None:
+    """Return the active target's ``Runtime``, or ``None`` for an unknown target.
 
-    Every rule names the credentials dir in BOTH the tilde and absolute forms;
-    the ``python3 -c`` vector uses the distinctive path tail so it matches either
-    spelling in an inline script. No rule names only the retired
-    ``~/.plan-marshall-credentials`` path.
+    Instantiates through the router's own registration block
+    (``platform_runtime._make_runtime``) so this module never names a runtime
+    class or enumerates targets — the same route
+    ``marketplace_paths._invoke_layout_op`` takes.
     """
-    rules = [
-        # Read tool — both tilde and absolute path forms.
-        f'Read({CREDENTIALS_DIR_TILDE}/**)',
-        f'Read({CREDENTIALS_DIR_ABS}/**)',
-    ]
-    for vec in _BASH_VECTORS:
-        rules.append(f'Bash({vec} {CREDENTIALS_DIR_TILDE}/*)')
-        rules.append(f'Bash({vec} {CREDENTIALS_DIR_ABS}/*)')
-    # python3 -c inline-script substring vector — matches either path form.
-    rules.append(f'Bash(python3 -c *{_DISTINCTIVE_SEGMENT}*)')
-    return rules
+    return _make_runtime(_read_runtime_target())
 
 
-DENY_RULES = _build_deny_rules()
+def _ensure_credentials_dir_mode() -> None:
+    """Re-assert 0700 on the credentials directory — the primary boundary."""
+    if not CREDENTIALS_DIR.exists():
+        return
+    current_mode = CREDENTIALS_DIR.stat().st_mode & 0o777
+    if current_mode != 0o700:
+        print(
+            f'WARNING: Credentials directory has permissions {oct(current_mode)}, expected 0o700. Fixing...',
+            file=sys.stderr,
+        )
+        os.chmod(str(CREDENTIALS_DIR), 0o700)
 
 
 def run_ensure_denied(args: argparse.Namespace) -> int:
     """Execute the ensure-denied subcommand."""
     target = args.target
 
-    # Import permission utilities
-    try:
-        from permission_common import (
-            get_settings_path,
-            load_settings_path,
-            save_settings,
-        )
-    except ImportError:
+    _ensure_credentials_dir_mode()
+
+    runtime = _resolve_runtime()
+    if runtime is None:
         output_toon(
             {
                 'status': 'error',
-                'message': 'permission_common not available (missing from PYTHONPATH)',
+                'target': target,
+                'message': 'No runtime is registered for the configured target',
             }
         )
         return 0
 
-    # Verify credentials directory permissions first
-    if CREDENTIALS_DIR.exists():
-        current_mode = CREDENTIALS_DIR.stat().st_mode & 0o777
-        if current_mode != 0o700:
-            print(
-                f'WARNING: Credentials directory has permissions {oct(current_mode)}, expected 0o700. Fixing...',
-                file=sys.stderr,
-            )
-            os.chmod(str(CREDENTIALS_DIR), 0o700)
+    payload = parse_toon(
+        runtime.permission_fix(target, 'protect-path', [str(CREDENTIALS_DIR)], False)
+    )
+    status = payload.get('status')
 
-    settings_path = get_settings_path(target)
-    settings = load_settings_path(settings_path)
+    if status == 'no-op':
+        # The no-op policy's caller obligation: report it and continue. The
+        # directory mode above is still in force, so the primary boundary holds
+        # on a target with no permission backend.
+        output_toon(
+            {
+                'status': 'no-op',
+                'target': target,
+                'reason': payload.get('reason', ''),
+                'alternative': payload.get('alternative', ''),
+            }
+        )
+        return 0
 
-    deny_list = settings.get('permissions', {}).get('deny', [])
-    added = []
+    if status != 'success':
+        output_toon(
+            {
+                'status': 'error',
+                'target': target,
+                'message': payload.get('message', 'permission fix protect-path failed'),
+            }
+        )
+        return 0
 
-    for rule in DENY_RULES:
-        if rule not in deny_list:
-            deny_list.append(rule)
-            added.append(rule)
-
-    if added:
-        settings.setdefault('permissions', {})['deny'] = deny_list
-        save_settings(str(settings_path), settings)
-
+    rules_added = int(payload.get('changes_applied', 0) or 0)
+    rules_total = int(payload.get('rules_total', 0) or 0)
     output_toon(
         {
             'status': 'success',
             'target': target,
-            'rules_added': len(added),
-            'rules_existing': len(DENY_RULES) - len(added),
-            'total_deny_rules': len(deny_list),
+            'rules_added': rules_added,
+            'rules_existing': rules_total - rules_added,
+            'protection_rules_total': rules_total,
         }
     )
     return 0
