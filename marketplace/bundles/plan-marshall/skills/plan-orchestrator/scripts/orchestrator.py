@@ -2074,27 +2074,36 @@ def _marker_indices(lines: list[str], name: str) -> tuple[int, int]:
     return (begin_idx, end_idx)
 
 
-def _replace_block(text: str, name: str, new_body: str) -> tuple[str, str, int, int]:
+def _replace_block(text: str, name: str, new_body: str) -> tuple[str, str, int, int, str]:
     """Replace one GENERATED block's body in place, reporting the outcome.
 
-    Returns ``(new_text, outcome, lines_before, lines_after)``. ``outcome`` is
-    one of ``regenerated`` (the body changed), ``unchanged`` (byte-identical, so
-    a second run is a no-op), or ``markers_absent`` (the block's markers are not
-    in this epic.md — reported, never fabricated, because inserting markers into
-    a hand-authored document is a structural edit this stage has no mandate for).
-    Splitting on ``\\n`` keeps a trailing newline as a trailing element, so the
-    re-joined text is byte-identical when nothing changed.
+    Returns ``(new_text, outcome, lines_before, lines_after, replaced_body)``.
+    ``outcome`` is one of ``regenerated`` (the body changed), ``unchanged``
+    (byte-identical, so a second run is a no-op), or ``markers_absent`` (the
+    block's markers are not in this epic.md — reported, never fabricated, because
+    inserting markers into a hand-authored document is a structural edit this
+    stage has no mandate for). Splitting on ``\\n`` keeps a trailing newline as a
+    trailing element, so the re-joined text is byte-identical when nothing
+    changed.
+
+    ``replaced_body`` is the PRE-WRITE between-marker text, and it is non-empty
+    only for ``regenerated``. It exists because a line-count delta does not say
+    WHAT was overwritten: a hand-written note someone left inside a generated
+    block is legitimately replaced on the first pass (the region is the
+    generator's), and reporting only ``5 -> 7 lines`` leaves the operator unable
+    to tell which bytes went. The other two outcomes overwrite nothing, so both
+    report ``''``.
     """
     lines = text.split('\n')
     begin_idx, end_idx = _marker_indices(lines, name)
     if begin_idx < 0 or end_idx < 0:
-        return text, 'markers_absent', 0, 0
+        return text, 'markers_absent', 0, 0, ''
     before = lines[begin_idx + 1 : end_idx]
     new_lines = new_body.split('\n')
     if before == new_lines:
-        return text, 'unchanged', len(before), len(new_lines)
+        return text, 'unchanged', len(before), len(new_lines), ''
     updated = lines[: begin_idx + 1] + new_lines + lines[end_idx:]
-    return '\n'.join(updated), 'regenerated', len(before), len(new_lines)
+    return '\n'.join(updated), 'regenerated', len(before), len(new_lines), '\n'.join(before)
 
 
 def _invariant(name: str, verdict: str, evidence: str, population: str) -> dict[str, Any]:
@@ -2304,7 +2313,10 @@ def cmd_compact(args: argparse.Namespace) -> dict[str, Any]:
     mutated at the active path.
 
     The report names every mutation and every abstention: ``regenerated[]`` (per
-    block: its outcome and line counts), ``invariants[]`` (bidirectional queue
+    block: its outcome, its line counts, and — for a ``regenerated`` block —
+    ``replaced_body``, the pre-write between-marker text, so a first pass over an
+    already-annotated ledger NAMES the content it overwrote rather than reporting
+    only a line-count delta), ``invariants[]`` (bidirectional queue
     reconciliation, no-terminal-in-live-queue, and pointer reachability, each
     with its verdict, evidence, and population), and ``abstained[]`` (every ``##``
     section not rewritten, each carrying the treatment that says WHY).
@@ -2348,13 +2360,16 @@ def cmd_compact(args: argparse.Namespace) -> dict[str, Any]:
     text = original
     regenerated: list[dict[str, Any]] = []
     for name in GENERATED_BLOCKS:
-        text, outcome, lines_before, lines_after = _replace_block(text, name, bodies[name])
+        text, outcome, lines_before, lines_after, replaced_body = _replace_block(
+            text, name, bodies[name]
+        )
         regenerated.append(
             {
                 'surface': name,
                 'outcome': outcome,
                 'lines_before': lines_before,
                 'lines_after': lines_after,
+                'replaced_body': replaced_body,
             }
         )
     changed = text != original

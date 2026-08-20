@@ -541,6 +541,36 @@ class TestMarkersAbsent:
 
         assert _abstained(result, 'Decisions')['treatment'] == 'preserved_verbatim'
 
+    def test_a_regenerated_block_names_the_content_it_overwrote(self, plan_context):
+        """A regenerated block reports WHAT it replaced, not merely a line-count delta.
+
+        A hand-written line inside a generated block is overwritten by the first
+        pass — legitimately, since the region is the generator's. Reporting only
+        ``lines_before``/``lines_after`` would leave the operator unable to tell
+        which bytes were lost, so the pre-write text rides ``replaced_body``.
+        """
+        hand_written = 'HAND-WRITTEN: do not re-derive, see PLAN-04'
+        _write_status(plan_context, [_row('PLAN-01')])
+        _write_spec(plan_context, 'PLAN-01-alpha.md')
+        _write_epic(plan_context, resume_body=hand_written)
+
+        result = _run()
+
+        row = _regenerated(result, 'resume-summary')
+        assert row['outcome'] == 'regenerated'
+        assert hand_written in row['replaced_body']
+
+    def test_an_unchanged_block_reports_an_empty_replaced_body(self, plan_context):
+        """Nothing was overwritten, so there is nothing to name."""
+        _live_epic(plan_context)
+        _run()
+
+        result = _run()
+
+        for row in result['regenerated']:
+            assert row['outcome'] == 'unchanged'
+            assert row['replaced_body'] == ''
+
     def test_a_reachable_ledger_reports_no_unreachable_section(self, plan_context):
         """With both marker pairs present nothing is unreachable, and the count says so."""
         _live_epic(plan_context)

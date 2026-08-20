@@ -87,6 +87,20 @@ The ledger-compaction stage. Its binding contract — the derivable-versus-narra
 
 This is inline-only: it is the judgement-heaviest and least-reversible act here and it writes the ledger, so it fails the [Dispatch Decision Rule](../../persona-plan-orchestrator/standards/orchestration-model.md#dispatch-decision-rule)'s write-freedom test. No sub-step of this phase is dispatchable.
 
+**One-time marker migration (judgement — inline, and BEFORE the script call).** The script refuses to insert markers into a hand-authored document, so an `epic.md` scaffolded before the `ordered-queue` marker pair shipped never gets its queue regenerated — the block is reported `markers_absent` every pass, and its owning section is reported `markers_absent_not_regenerated` rather than as an abstention. The remedy is a one-time structural edit the orchestrator makes itself, under the [direct-file-write carve-out](../../persona-plan-orchestrator/standards/orchestration-model.md#carve-outs), never through the script.
+
+**Condition — perform this ONLY when both hold:** `epic.md` carries a `## Ordered Queue` section, AND that section contains no `<!-- BEGIN GENERATED: ordered-queue -->` marker. When the marker pair is already present, skip this entirely; it is a migration, not a per-run step.
+
+When it applies:
+
+1. **Insert the marker pair around the existing table** — `<!-- BEGIN GENERATED: ordered-queue -->` immediately above the table's header row and `<!-- END GENERATED: ordered-queue -->` immediately below its last data row, so the next script call finds the block and regenerates it.
+2. **Move any per-row `Notes` content into the `### Queue annotations` zone** before inserting the markers. The generator owns every byte between the markers and re-derives the table from `status.json`, so a note left inside the block is overwritten on the first pass; the annotation zone sits outside the markers and survives verbatim.
+3. **Move any hand-written line found BETWEEN the markers into the adjacent annotation zone** — the same rule, applied to an `epic.md` that already has markers but has accumulated hand-written content inside them. Do this before the first compaction, for the same reason: the region is the generator's, so the content is lost on the next pass unless it is moved out first.
+
+⛔ **Do not fabricate queue rows.** The markers go around the table that is already there; the script re-derives its contents from `status.json` on the next call. Inserting a marker pair around invented rows would make the migration itself the lossy act it exists to prevent.
+
+**The safety net, not a substitute for the move.** `cmd_compact`'s `compaction_regenerated[]` rows carry `replaced_body` — the pre-write between-marker text — for every block whose outcome is `regenerated`. So a first pass over an already-annotated ledger NAMES the content it overwrote rather than reporting only a line-count delta, and an operator can recover a line step 3 missed. Read it whenever a first pass reports `regenerated` on a ledger you did not just migrate.
+
 **Derivable regeneration and invariant verification (deterministic — the script).** Call the compaction script; do **not** re-implement it (two implementations of ledger compaction is a worse outcome than no verb at all). It regenerates the START-HERE resume summary and the Ordered Queue table in place, leaves every byte outside the markers untouched, verifies the invariants, and reports:
 
 ```bash
@@ -166,8 +180,8 @@ applied[A]{spec,finding_class,source,destination}:
 declined[D]{spec,finding_class,reason}:
   PLAN-09-gamma.md,redistribution,"row is running — never re-scoped mid-execution"
 ledger_compaction: compacted
-compaction_regenerated[R]{surface,outcome,lines_before,lines_after}:
-  ordered-queue,regenerated,7,9
+compaction_regenerated[R]{surface,outcome,lines_before,lines_after,replaced_body}:
+  ordered-queue,regenerated,7,9,"| 1 | PLAN-04 | WS-01 | staged | scripts/a.py |"
 compaction_invariants[I]{invariant,verdict,evidence,population}:
   queue_spec_bidirectional,ok,"queue and specs reconcile both ways","4 queue row(s) and 4 spec file(s)"
 compaction_abstained[B]{section,treatment}:
@@ -182,4 +196,4 @@ resume_anchor: "{next action}"
 
 Every per-spec row in `regrounded[]` carries its own `claims_scanned` population, so a row of zeros states which zero it is. `applied[]` names a source and a destination for every move — a silent application is indistinguishable from a lossy one. `declined[]` is a **required field, never omitted**: a clean report that hides a skip is exactly the failure this epic files against everyone else, so a run that declined nothing emits an empty `declined[]` rather than dropping the key.
 
-The three `compaction_*` keys carry the compact stage's own `regenerated[]`, `invariants[]` and `abstained[]` through into this report unchanged, and each is **required and never omitted** for the same reason `declined[]` is — a run that regenerated nothing, hit no invariant, or abstained from nothing emits the empty array rather than dropping the key, because an absent key is indistinguishable from a check that never ran. `compaction_abstained[]`'s `treatment` distinguishes a **choice** (`preserved_verbatim` — the section carries no derivable surface) from a **blind spot** (`markers_absent_not_regenerated` — the section owns a derivable surface whose marker pair is absent, so the stage could not reach it); the stage counts them apart as `abstained_count` and `unreachable_count`, and this report must not collapse them.
+The three `compaction_*` keys carry the compact stage's own `regenerated[]`, `invariants[]` and `abstained[]` through into this report unchanged — `replaced_body` included, since dropping it at this boundary would put the line-count delta back in place of the content it names — and each is **required and never omitted** for the same reason `declined[]` is — a run that regenerated nothing, hit no invariant, or abstained from nothing emits the empty array rather than dropping the key, because an absent key is indistinguishable from a check that never ran. `compaction_abstained[]`'s `treatment` distinguishes a **choice** (`preserved_verbatim` — the section carries no derivable surface) from a **blind spot** (`markers_absent_not_regenerated` — the section owns a derivable surface whose marker pair is absent, so the stage could not reach it); the stage counts them apart as `abstained_count` and `unreachable_count`, and this report must not collapse them.
