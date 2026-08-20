@@ -22,9 +22,6 @@ from _manage_metrics_module_fixtures import (
     manage_metrics,
 )
 
-# =============================================================================
-# require_plan_exists guard fixtures
-# =============================================================================
 
 @pytest.fixture(autouse=True)
 def _seed_guarded_plan_dirs(plan_context, monkeypatch):
@@ -54,10 +51,6 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
     monkeypatch.setattr(manage_metrics, 'require_plan_exists', _seeding_require)
     return plan_context
 
-
-# =============================================================================
-# Test: enrich delegates to the platform-runtime normalized-tokens op
-# =============================================================================
 
 class TestManageMetricsHasNoTranscriptCode:
     """Regression: the Claude-transcript engine no longer lives in manage-metrics.
@@ -101,10 +94,6 @@ class TestManageMetricsHasNoTranscriptCode:
         assert 'SESSION_ID_RE' not in source
         assert 'BILLING_WEIGHT' not in source
 
-
-# =============================================================================
-# Test: first-class partiality fields (Tier 2 - direct import)
-# =============================================================================
 
 class TestExplorationCountersAbsentVsMeasuredZero:
     """An absent counter and a measured-zero counter stay distinguishable everywhere.
@@ -326,10 +315,6 @@ class TestExplorationSubsourceRoundTrip:
             in md
         )
 
-
-# =============================================================================
-# Exploration-share bucket contract drift
-# =============================================================================
 
 def test_exploration_buckets_match_platform_runtime_contract():
     """``_EXPLORATION_BUCKETS`` matches the bucket set the runtime contract declares.

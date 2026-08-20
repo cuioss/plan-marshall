@@ -19,9 +19,6 @@ from _manage_metrics_module_fixtures import (
     manage_metrics,
 )
 
-# =============================================================================
-# require_plan_exists guard fixtures
-# =============================================================================
 
 @pytest.fixture(autouse=True)
 def _seed_guarded_plan_dirs(plan_context, monkeypatch):
@@ -51,10 +48,6 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
     monkeypatch.setattr(manage_metrics, 'require_plan_exists', _seeding_require)
     return plan_context
 
-
-# =============================================================================
-# Test: first-class partiality fields (Tier 2 - direct import)
-# =============================================================================
 
 class TestGenerateReEntryMarker:
     """generate surfaces ``close_count > 1`` as a first-class re-entry marker.
@@ -195,10 +188,6 @@ class TestGenerateReEntryMarker:
         assert '- **Closes**' not in md
 
 
-# =============================================================================
-# billing_weighted_total as a first-class cost figure
-# =============================================================================
-
 def test_generate_returns_total_billing_weighted(plan_context):
     """The cost aggregate is returned as its own field, never folded into tokens."""
     plan_id = 'billing-return'
@@ -210,10 +199,6 @@ def test_generate_returns_total_billing_weighted(plan_context):
     # The dispatched work total is the tokens sum, untouched by the cost figure.
     assert result['total_tokens'] == 20000
 
-
-# =============================================================================
-# Test: generate (Tier 2 - direct import)
-# =============================================================================
 
 def test_tokens_column_header_names_a_default_not_a_single_population(plan_context):
     """The Tokens header states a DEFAULT population plus the marking convention.

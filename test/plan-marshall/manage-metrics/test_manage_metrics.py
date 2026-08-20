@@ -35,9 +35,6 @@ from _manage_metrics_module_fixtures import (
     manage_metrics,
 )
 
-# =============================================================================
-# require_plan_exists guard fixtures
-# =============================================================================
 
 @pytest.fixture(autouse=True)
 def _seed_guarded_plan_dirs(plan_context, monkeypatch):
@@ -68,10 +65,6 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
     return plan_context
 
 
-# =============================================================================
-# Test: require_plan_exists guard on plan-scoped writers (orphan-plan-dir guard)
-# =============================================================================
-
 def test_script_source_uses_canonical_local_plans_path():
     """The script source references .plan/local/plans, not the legacy form.
 
@@ -87,10 +80,6 @@ def test_script_source_uses_canonical_local_plans_path():
     legacy = re.findall(r'(?<!local/)\.plan/plans/', source)
     assert legacy == [], f'Legacy .plan/plans/ strings remain: {legacy}'
 
-
-# =============================================================================
-# Exploration-share bucket contract drift
-# =============================================================================
 
 def test_subsource_group_is_disjoint_from_the_exploration_counter_group():
     """Matched control: the sub-sources are not a sixth bucket in the counter family.
@@ -128,10 +117,6 @@ def test_attribution_group_is_disjoint_from_the_exploration_counter_group():
     assert len(manage_metrics._EXPLORATION_COUNTER_FIELDS) == 10
     assert len(counter_keys) == 10
 
-
-# =============================================================================
-# Token-field population lattice contract
-# =============================================================================
 
 def test_lattice_names_every_usage_field_the_script_writes():
     """No token/usage field written by manage-metrics.py is absent from the lattice."""
@@ -197,10 +182,6 @@ def test_lattice_carries_both_directions_with_known_populations():
     assert offenders == [], f'malformed lattice rows: {offenders}'
 
 
-# =============================================================================
-# --termination-cause documentation-site contract
-# =============================================================================
-
 def test_every_documented_termination_cause_site_matches_the_enum():
     """Every discovered SKILL.md site enumerates exactly DISPATCH_TERMINATION_CAUSES.
 
@@ -224,10 +205,6 @@ def test_every_documented_termination_cause_site_matches_the_enum():
     )
 
 
-# =============================================================================
-# total_tokens population labelling
-# =============================================================================
-
 def test_every_declared_population_has_a_bullet_note():
     """No population may render without a qualifier — derived, not hand-listed.
 
@@ -238,10 +215,6 @@ def test_every_declared_population_has_a_bullet_note():
     missing = set(manage_metrics.TOKEN_POPULATIONS) - set(manage_metrics._POPULATION_BULLET_NOTE)
     assert missing == set(), f'populations with no rendered qualifier: {sorted(missing)}'
 
-
-# =============================================================================
-# --termination-cause documentation-site contract
-# =============================================================================
 
 def test_termination_cause_sites_cover_both_documented_shapes():
     """More than one site exists, and both documented shapes are discovered.
@@ -288,10 +261,6 @@ def test_termination_cause_check_detects_a_single_stale_site():
 
     assert len(stale) == 1, f'expected exactly one stale site to be reported, got {stale}'
 
-
-# =============================================================================
-# --termination-cause value-set mirrors in sibling documents
-# =============================================================================
 
 def test_logging_gap_analysis_termination_cause_set_matches_the_enum():
     """The DISPATCH_TERMINATION_CAUSE rule's canonical value set equals the tuple.
@@ -344,10 +313,6 @@ def test_data_format_termination_cause_guard_detects_a_dropped_value():
     with pytest.raises(AssertionError, match='disagrees with DISPATCH_TERMINATION_CAUSES'):
         _assert_documented_set_matches_enum(mutated, '`termination_cause` enum**:')
 
-
-# =============================================================================
-# total_tokens population labelling
-# =============================================================================
 
 def test_repeated_enrich_keeps_an_inline_only_row_labelled_inline(plan_context, monkeypatch):
     """A second enrich run must not read its OWN fold as a dispatched total.

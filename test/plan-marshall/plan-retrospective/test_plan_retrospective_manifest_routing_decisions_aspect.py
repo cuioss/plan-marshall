@@ -16,9 +16,6 @@ from _plan_retrospective_manifest_fixtures import (
     _write_status_metadata,
 )
 
-# =============================================================================
-# Routing-decision aspect (deliverable 10)
-# =============================================================================
 
 class TestRoutingDecisionsAspect:
     """Deterministic predicate re-evaluation + the LLM-judgement boundary."""

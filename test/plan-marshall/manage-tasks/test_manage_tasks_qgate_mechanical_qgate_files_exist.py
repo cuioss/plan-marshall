@@ -7,9 +7,6 @@ from __future__ import annotations
 
 from _manage_tasks_qgate_mechanical_fixtures import _EXISTING_FILE, _MISSING_FILE, _files_exist_failed
 
-# =============================================================================
-# Files-exist check
-# =============================================================================
 
 def test_qgate_files_exist_read_missing_flags(plan_context):
     """read + missing target → 1 finding (current behaviour preserved)."""

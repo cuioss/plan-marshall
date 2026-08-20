@@ -36,10 +36,6 @@ def adr_dir(tmp_path, monkeypatch):
     return directory
 
 
-# =========================================================================
-# Tier 2: Direct import tests
-# =========================================================================
-
 def test_filename_sanitization(adr_dir):
     """Test filename sanitization for special characters."""
     result = cmd_create(Namespace(command='create', title='Use API/REST for User Service!', status='Proposed'))

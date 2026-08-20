@@ -17,9 +17,6 @@ from _locks_core_fixtures import (
     holder_is_dead,
 )
 
-# =============================================================================
-# holder_has_live_worktree — genuine live/mid-recovery worktree marker (D3, strengthened)
-# =============================================================================
 
 def test_mid_recovery_holder_is_dead_by_plan_dir_but_has_live_worktree(plan_context):
     # The guard scenario: an interrupted finalize move-back leaves the worktree on

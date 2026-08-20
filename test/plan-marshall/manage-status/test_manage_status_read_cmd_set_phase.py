@@ -8,9 +8,6 @@ from pathlib import Path
 
 from _manage_status_read_fixtures import SCRIPT_PATH, _query, cmd_create, cmd_set_phase
 
-# =============================================================================
-# Tests: get alias for read (subprocess / CLI plumbing)
-# =============================================================================
 
 def test_script_source_uses_canonical_local_plans_path():
     """The script source references .plan/local/plans, not the legacy form.

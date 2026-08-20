@@ -53,10 +53,6 @@ def _parse(out):
     return parse_toon(out)
 
 
-# =============================================================================
-# metadata / title-token / update-phase / progress
-# =============================================================================
-
 def _pin_stale_snapshot(monkeypatch, snapshot):
     """Make every ``require_status`` read return *snapshot* verbatim.
 

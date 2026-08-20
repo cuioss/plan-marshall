@@ -20,9 +20,6 @@ from _plan_retrospective_fixtures import setup_live_plan  # noqa: E402
 
 from conftest import run_script  # noqa: E402
 
-# =============================================================================
-# Voluntary-checkpoint polling detector (tightened)
-# =============================================================================
 
 class TestArtifactEmissionPopulation:
     """D4 — per-task ARTIFACT emission published as an N-of-M population.

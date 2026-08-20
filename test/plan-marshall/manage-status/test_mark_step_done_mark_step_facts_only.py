@@ -8,14 +8,6 @@ from _mark_step_done_fixtures import _args, _make_plan, cmd_mark_step_done, read
 
 from conftest import load_script_module
 
-# =============================================================================
-# Structured step facts (--fact KEY=VALUE)
-#
-# The facts dict is what makes a step record answer structured questions that
-# its display_detail prose cannot. These cases pin the persistence shape, the
-# omit-when-absent legacy guarantee, accumulation across repeated flags, the
-# malformed-token rejection, and facts-only change detection.
-# =============================================================================
 
 def test_mark_step_facts_only_change_reports_changed_true(plan_context):
     """Changing ONLY the facts is a 'changed' overwrite, echoed via previous_facts.
@@ -87,20 +79,6 @@ def test_mark_step_adding_facts_to_a_factless_record_reports_changed_true(plan_c
         'work_performed': 'true'
     }
 
-
-# =============================================================================
-# Firing history (firing_count / prior_firings)
-#
-# A finalize step can fire more than once — the ordinary shape is `loop_back`,
-# re-fire, `done`. The write is `phase_entry[step] = new_entry`, so before this
-# the earlier firings were echoed in the `previous_*` return fields and then
-# discarded: a reader of `status.metadata.phase_steps` could not tell a step
-# that succeeded first time from one that looped back twice before succeeding.
-#
-# The keys are ADDITIVE siblings — `outcome` still means the LATEST firing, the
-# entry stays a dict, nothing is nested under a history key — which is what
-# leaves the `phase_steps_complete` handshake hash unperturbed.
-# =============================================================================
 
 def test_phase_steps_complete_capture_is_unaffected_by_the_firing_keys(
     monkeypatch: pytest.MonkeyPatch,

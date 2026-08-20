@@ -8,9 +8,6 @@ from toon_parser import parse_toon  # noqa: E402
 
 from conftest import run_script
 
-# =============================================================================
-# Test: pr-comment author / kind first-class fields (CLI layer)
-# =============================================================================
 
 def test_cli_pr_comment_author_kind_roundtrip(plan_context):
     """CLI plumbing: add a pr-comment with --author/--kind and read them back."""
@@ -103,10 +100,6 @@ def test_cli_pr_comment_invalid_bot_kind_rejected(plan_context):
     )
     assert not result.success
 
-
-# =============================================================================
-# Test: Unified per-plan + Q-Gate read surface (--include-qgate)
-# =============================================================================
 
 def test_cli_unified_list_include_qgate_roundtrip(plan_context):
     """CLI plumbing: list --include-qgate merges plan + q-gate via subprocess."""

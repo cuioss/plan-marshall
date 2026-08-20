@@ -18,9 +18,6 @@ from _manage_status_transition_fixtures import (
 
 from conftest import run_script
 
-# =============================================================================
-# Regression Tests: cmd_list discovers moved-in worktree plans (ADR-002)
-# =============================================================================
 
 def test_list_discovers_moved_in_worktree_plan(plan_context):
     """Regression: cmd_list surfaces a plan whose dir moved into a worktree.
@@ -172,10 +169,6 @@ def test_list_cli_surfaces_worktree_plan(plan_context):
     )
     assert 'worktree' in result.stdout
 
-
-# =============================================================================
-# Tests: cmd_list_orphans (orphan-dir cleanup pass)
-# =============================================================================
 
 def test_list_orphans_empty_plans_dir(plan_context):
     """(a) Empty plans_dir returns total: 0 and orphans: []."""

@@ -5,14 +5,6 @@
 
 from _findings_store_fixtures import _SCRIPTS_DIR
 
-# =============================================================================
-# Test: resolve_qgate_findings_by_evidence (D3 — self-review loop-back resolution)
-#
-# A loop-back that lands a fix transitions the corresponding finding; a finding
-# with no evidenced fix is left alone. Both directions are asserted — the second
-# is the important one: a finding marked `fixed` without a landed change touching
-# its file is strictly worse than one left `pending`.
-# =============================================================================
 
 def test_script_source_uses_canonical_local_plans_path():
     """The script source references .plan/local/plans, not the legacy form.

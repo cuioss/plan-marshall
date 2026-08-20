@@ -23,9 +23,6 @@ from _qgate_closure_fixtures import (
 
 from conftest import PROJECT_ROOT
 
-# =============================================================================
-# Claim-versus-index closure — a declared glob against the enumerated list
-# =============================================================================
 
 def test_unexpandable_glob_is_reported_not_silently_zero():
     """An absolute pattern is an UNMEASURED scope, never an empty one."""

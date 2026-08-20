@@ -17,10 +17,6 @@ from _manage_status_transition_fixtures import (
 
 from conftest import run_script
 
-# =============================================================================
-# Regression Tests: cmd_archive atomically completes the active phase, and
-# cmd_transition mirrors the same end-state when the LAST phase finishes.
-# =============================================================================
 
 def test_archive_marks_final_phase_done_and_sets_complete(plan_context):
     """cmd_archive must close the active phase + set current_phase=complete BEFORE the move."""

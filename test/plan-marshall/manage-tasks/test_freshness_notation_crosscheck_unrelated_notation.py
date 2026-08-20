@@ -21,9 +21,6 @@ from _freshness_notation_crosscheck_fixtures import (
     _stub_expected,
 )
 
-# =============================================================================
-# Fixture builders
-# =============================================================================
 
 @pytest.fixture(autouse=True)
 def _stub_resolver_seam(monkeypatch):

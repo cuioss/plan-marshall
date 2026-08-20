@@ -15,10 +15,6 @@ from _lessons_helpers import (
 )
 
 
-# =============================================================================
-# Tier 2: cross-repo wrong-store refusal guard (deliverable 3)
-# =============================================================================
-
 class TestAddWrongStoreGuard:
     """``cmd_add`` / ``cmd_from_error`` refuse to file into a store that does not own the bundle."""
 

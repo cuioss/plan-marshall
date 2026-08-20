@@ -23,9 +23,6 @@ from toon_parser import parse_toon
 
 from conftest import run_script
 
-# =============================================================================
-# require_plan_exists guard fixtures
-# =============================================================================
 
 @pytest.fixture(autouse=True)
 def _seed_guarded_plan_dirs(plan_context, monkeypatch):

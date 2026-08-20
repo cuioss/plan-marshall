@@ -13,9 +13,6 @@ from pathlib import Path
 import pytest
 from _build_queue_fixtures import _init_git_repo, _make_live_plan, _read_queue, _set_max_slots, build_queue
 
-# =============================================================================
-# Fixtures
-# =============================================================================
 
 @pytest.fixture
 def isolated_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:

@@ -7,9 +7,6 @@ from __future__ import annotations
 import pytest
 from _analyze_logs_fixtures import _analyze_logs, _attempt, _plain
 
-# =============================================================================
-# Voluntary-checkpoint polling detector (tightened)
-# =============================================================================
 
 class TestDetectVoluntaryCheckpointPolling:
     """Unit + regression tests for the tightened voluntary-checkpoint detector."""

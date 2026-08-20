@@ -18,9 +18,6 @@ from _manage_metrics_module_fixtures import (
     manage_metrics,
 )
 
-# =============================================================================
-# require_plan_exists guard fixtures
-# =============================================================================
 
 @pytest.fixture(autouse=True)
 def _seed_guarded_plan_dirs(plan_context, monkeypatch):
@@ -50,10 +47,6 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
     monkeypatch.setattr(manage_metrics, 'require_plan_exists', _seeding_require)
     return plan_context
 
-
-# =============================================================================
-# Test: first-class partiality fields (Tier 2 - direct import)
-# =============================================================================
 
 class TestCloseValueScopeDiscriminator:
     """A closed row DECLARES which of its values are cumulative and which are last-close.
@@ -161,10 +154,6 @@ class TestCloseValueScopeDiscriminator:
         assert f'Cumulative across closes: {row["cumulative_fields"]}' in bullet
         assert f'Latest close only: {row["last_close_fields"]}' in bullet
 
-
-# =============================================================================
-# Test: record-dispatch-boundary (Tier 2 - direct import)
-# =============================================================================
 
 class TestDispatchTerminationCausesEnum:
     """Structural assertions on the DISPATCH_TERMINATION_CAUSES tuple."""

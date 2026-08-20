@@ -59,10 +59,6 @@ merge_lock = load_script_module(
 )
 
 
-# =============================================================================
-# Fixtures and helpers
-# =============================================================================
-
 def _make_live_plan(base: Path, plan_id: str) -> None:
     """Create a holder plan directory so the holder counts as LIVE."""
     (base / 'plans' / plan_id).mkdir(parents=True, exist_ok=True)

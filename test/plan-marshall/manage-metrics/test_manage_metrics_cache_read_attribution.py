@@ -18,9 +18,6 @@ from _manage_metrics_module_fixtures import (
     manage_metrics,
 )
 
-# =============================================================================
-# require_plan_exists guard fixtures
-# =============================================================================
 
 @pytest.fixture(autouse=True)
 def _seed_guarded_plan_dirs(plan_context, monkeypatch):
@@ -50,10 +47,6 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
     monkeypatch.setattr(manage_metrics, 'require_plan_exists', _seeding_require)
     return plan_context
 
-
-# =============================================================================
-# Test: first-class partiality fields (Tier 2 - direct import)
-# =============================================================================
 
 class TestCacheReadAttributionRoundTrip:
     """The attribution group survives enrich -> metrics.toon -> generate intact.
@@ -198,10 +191,6 @@ class TestCacheReadAttributionRoundTrip:
         )
 
 
-# =============================================================================
-# Exploration-share bucket contract drift
-# =============================================================================
-
 def test_cache_read_attribution_fields_match_platform_runtime_contract():
     """``_CACHE_READ_ATTRIBUTION_FIELDS`` equals the contract's attribution key set exactly.
 
@@ -217,10 +206,6 @@ def test_cache_read_attribution_fields_match_platform_runtime_contract():
     # would turn a partial split into an apparently complete one.
     assert 'cache_read_unattributed' in contract_keys
 
-
-# =============================================================================
-# Test: first-class partiality fields (Tier 2 - direct import)
-# =============================================================================
 
 class TestTwoUnattributedPopulationsAreDistinguishable:
     """Plan 030 D1 (GATE): the two "unattributed" quantities are separately named

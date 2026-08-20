@@ -11,9 +11,6 @@ from _manage_status_transition_fixtures import SCRIPT_PATH, _lifecycle, cmd_dele
 
 from conftest import load_script_module, run_script
 
-# =============================================================================
-# Test: Delete Plan
-# =============================================================================
 
 def test_delete_plan_destination_claim_does_not_rely_on_an_exists_probe(
     plan_context, monkeypatch
@@ -221,11 +218,6 @@ def test_cli_transition_not_found_exits_zero(plan_context):
     assert 'status: error' in result.stdout
     assert 'file_not_found' in result.stdout
 
-
-# =============================================================================
-# Regression Tests: cmd_transition(completed='5-execute') no longer seeds
-# references.modified_files
-# =============================================================================
 
 def test_collect_modified_files_helper_is_removed():
     """The ``_collect_modified_files`` producer no longer exists.

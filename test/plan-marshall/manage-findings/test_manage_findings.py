@@ -20,9 +20,6 @@ from _manage_findings_fixtures import (
     cmd_query,
 )
 
-# =============================================================================
-# Test: Q-Gate Query Command
-# =============================================================================
 
 def test_qgate_per_phase_isolation(plan_context):
     """Test that Q-Gate findings are isolated per phase."""

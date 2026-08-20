@@ -22,9 +22,6 @@ from _manage_metrics_module_fixtures import (
     manage_metrics,
 )
 
-# =============================================================================
-# require_plan_exists guard fixtures
-# =============================================================================
 
 @pytest.fixture(autouse=True)
 def _seed_guarded_plan_dirs(plan_context, monkeypatch):
@@ -54,10 +51,6 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
     monkeypatch.setattr(manage_metrics, 'require_plan_exists', _seeding_require)
     return plan_context
 
-
-# =============================================================================
-# total_tokens population labelling
-# =============================================================================
 
 @pytest.mark.parametrize(
     'raw',
@@ -249,10 +242,6 @@ def test_inline_row_carrying_a_competing_dispatched_measure_renders_both_markers
     assert '`(spans populations)`' in report
 
 
-# =============================================================================
-# Symmetric reconciliation across the competing dispatched-population measures
-# =============================================================================
-
 def test_inline_total_tokens_is_excluded_from_the_dispatched_maximum():
     """A main-context figure may not enter a dispatched-population comparison.
 
@@ -281,10 +270,6 @@ def test_inline_only_row_has_no_eligible_dispatched_measure():
 
     assert manage_metrics._reconcile_dispatched_measures(row) is None
 
-
-# =============================================================================
-# total_tokens population labelling
-# =============================================================================
 
 def test_mixed_phase_declares_its_excluded_inline_spend(plan_context, monkeypatch):
     """A mixed row is marked, and the annotation says the inline part is excluded."""

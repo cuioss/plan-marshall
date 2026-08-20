@@ -11,9 +11,6 @@ from _plan_retrospective_fixtures import setup_live_plan  # noqa: E402
 
 from conftest import run_script  # noqa: E402
 
-# =============================================================================
-# Folded-in global-log per-plan signals
-# =============================================================================
 
 class TestAnalyzeFoldedGlobalLogs:
     def test_no_logs_dir_yields_all_zero_signals(self, tmp_path):

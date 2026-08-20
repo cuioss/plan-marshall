@@ -28,9 +28,6 @@ from _resolve_project_dir_fixtures import (
     worktree_query_result,
 )
 
-# =============================================================================
-# Fixture builders
-# =============================================================================
 
 @pytest.fixture(autouse=True)
 def _stub_resolver_seam(monkeypatch):

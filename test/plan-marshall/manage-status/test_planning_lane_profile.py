@@ -26,9 +26,6 @@ from _planning_lane_fixtures import (
     scope_estimate_from_request_pure,
 )
 
-# =============================================================================
-# _read_request_body — the whole-body, heading-blind read
-# =============================================================================
 
 def test_concreteness_and_scope_consume_the_identical_body(plan_context, monkeypatch):
     """S5 concreteness and the scope band read the SAME text — asserted, not claimed.

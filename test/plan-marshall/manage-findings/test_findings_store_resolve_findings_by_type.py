@@ -12,9 +12,6 @@ from _findings_store_fixtures import (
     resolve_findings_by_type,
 )
 
-# =============================================================================
-# Test: resolve_finding
-# =============================================================================
 
 def test_resolve_findings_by_type_accepts_rejected(plan_context):
     """Bulk resolve accepts `rejected` as a valid target resolution."""

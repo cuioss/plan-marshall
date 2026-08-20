@@ -28,9 +28,6 @@ from _manage_metrics_module_fixtures import (
 
 from conftest import run_script  # noqa: I001
 
-# =============================================================================
-# require_plan_exists guard fixtures
-# =============================================================================
 
 @pytest.fixture(autouse=True)
 def _seed_guarded_plan_dirs(plan_context, monkeypatch):

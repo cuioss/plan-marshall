@@ -13,9 +13,6 @@ from _assert_step_recorded_fixtures import (
     write_status,
 )
 
-# =============================================================================
-# Step not recorded -> not recorded / error under --require-terminal
-# =============================================================================
 
 def test_phase_absent_returns_not_recorded(plan_context):
     """A phase with no recorded steps reports recorded=false."""

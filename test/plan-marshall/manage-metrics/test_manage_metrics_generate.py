@@ -20,9 +20,6 @@ from _manage_metrics_module_fixtures import (
     manage_metrics,
 )
 
-# =============================================================================
-# require_plan_exists guard fixtures
-# =============================================================================
 
 @pytest.fixture(autouse=True)
 def _seed_guarded_plan_dirs(plan_context, monkeypatch):
@@ -52,10 +49,6 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
     monkeypatch.setattr(manage_metrics, 'require_plan_exists', _seeding_require)
     return plan_context
 
-
-# =============================================================================
-# Test: generate (Tier 2 - direct import)
-# =============================================================================
 
 def test_generate_total_row_sums_three_columns_independently(plan_context):
     """The Total row sums Worked, Reported (wall), and Idle independently."""
@@ -100,11 +93,6 @@ def test_generate_all_six_phases(plan_context):
     for phase in phases:
         assert phase in md_content
 
-
-# =============================================================================
-# Test: dispatch-boundary reconciliation (D1) — _read_dispatch_boundary_totals
-# and the cmd_generate same-population max reconciliation
-# =============================================================================
 
 class TestGenerateReconcilesDispatchBoundaries:
     """cmd_generate reconciles a dispatched phase's under-counted total against the

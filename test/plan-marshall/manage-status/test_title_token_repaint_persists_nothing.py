@@ -16,9 +16,6 @@ from _title_token_fixtures import (
     cmd_transition,
 )
 
-# =============================================================================
-# drive seam: the state settle reports no delivery, because it delivers nothing
-# =============================================================================
 
 def test_repaint_persists_nothing_when_delegate_reports_no_title_state(monkeypatch):
     """``no_title_state`` is the ordinary nothing-to-settle case — no persisted entry."""

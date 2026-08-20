@@ -24,11 +24,6 @@ from _manage_status_transition_fixtures import (
 
 from conftest import run_script
 
-# =============================================================================
-# Regression Tests: cmd_transition inline strict-verify guard for guarded
-# boundaries (folded from the standalone phase_handshake verify --strict step
-# that orchestrator workflow docs used to issue separately at 5-execute -> 6-finalize).
-# =============================================================================
 
 @pytest.fixture
 def _stubbed_invariants(monkeypatch):
@@ -108,10 +103,6 @@ def _only_blocking_invariant(monkeypatch):
     monkeypatch.setattr(_inv, 'INVARIANTS', stubbed)
     monkeypatch.setattr(_cmds, 'INVARIANTS', stubbed)
 
-
-# =============================================================================
-# Test: Hybrid loopback contract — `--loop-back-target` granularity flag
-# =============================================================================
 
 class TestLoopBackTargetValidation:
     """The `--loop-back-target` flag is REQUIRED on every loop_back outcome
@@ -248,10 +239,6 @@ class TestLoopBackTargetValidation:
         assert result['error'] == 'invalid_loop_back_target'
 
 
-# =============================================================================
-# Fixed actionable-vs-knowledge rule at the 5-execute -> 6-finalize boundary
-# =============================================================================
-
 def test_finalize_boundary_pending_knowledge_finding_does_not_block(
     plan_context, _only_blocking_invariant, _stub_metadata, monkeypatch
 ):
@@ -284,10 +271,6 @@ def test_finalize_boundary_pending_actionable_finding_blocks(
     assert result['blocking_types'] == list(_inv._ACTIONABLE_FINDING_TYPES)
     assert result['per_type']['build-error'] == 1
 
-
-# =============================================================================
-# Regression Tests: persisted-title-state-write drive seam (Defects 1 & 2)
-# =============================================================================
 
 def test_cmd_transition_fires_drive_seam_after_write(plan_context, monkeypatch):
     """cmd_transition fires _surface_drive exactly once (with the plan_id) on advance."""
@@ -369,26 +352,6 @@ def test_drive_bind_and_repaint_target_correct_verbs(monkeypatch):
     ), 'repaint must push with NO --icon (plain repaint, default active icon)'
     assert '--icon' not in calls[1][1], 'the repaint seam must never pass --icon (Defect 1 plain repaint)'
 
-
-# =============================================================================
-# D2 — Finalize completion boundary asserts the blocking-findings STATE.
-#
-# The blocking-findings gate historically fired only when a
-# `phase_handshake capture --phase 6-finalize` CALL was issued during finalize;
-# a missing call left no row and raised nothing, so a plan could complete with
-# actionable findings still `pending`, and "the gate never ran" was
-# indistinguishable from "the gate passed". cmd_transition (completing
-# 6-finalize) and cmd_archive (normal completion) now assert the STATE directly,
-# armed by REACHING the completion boundary rather than by an optional call.
-#
-# These controls are the deliverable's proof. The NEGATIVE controls drive a
-# pending actionable finding through the REAL blocking-count predicate (via
-# `_stub_finding_queries`, the same seam the 5->6 boundary tests use) and assert
-# the completion is REFUSED — and refused ONLY because the gate was added, so
-# each fails against the pre-fix code. The POSITIVE controls confirm a clean plan
-# is still admitted, and the abandonment exemption confirms the gate discriminates
-# on the completion intent rather than blocking unconditionally.
-# =============================================================================
 
 def test_run_executor_skips_when_executor_absent(monkeypatch, tmp_path):
     """_run_executor is a no-op (no subprocess) when the executor is not on disk."""

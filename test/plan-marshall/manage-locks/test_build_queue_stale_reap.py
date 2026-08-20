@@ -24,9 +24,6 @@ from _build_queue_fixtures import (
     build_queue,
 )
 
-# =============================================================================
-# Fixtures
-# =============================================================================
 
 @pytest.fixture
 def isolated_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
@@ -70,12 +67,6 @@ def isolated_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
         'env_overrides': {'PLAN_BASE_DIR': str(base), 'PLAN_MARSHALL_HOME': str(home)},
     }
 
-
-# =============================================================================
-# D5 — self-healing stale-slot reclaim (active_since + validate_lock_queue +
-# adaptive build_queue_upper_limit). ADDITIVE over D4: these are new functions,
-# none of D4's [LOCK]-event tests above are modified.
-# =============================================================================
 
 class TestStaleReap:
     def test_stale_active_entry_is_reaped_on_next_acquire(self, isolated_base: dict) -> None:

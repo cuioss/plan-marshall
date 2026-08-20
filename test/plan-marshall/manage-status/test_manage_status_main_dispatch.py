@@ -8,9 +8,6 @@ import json
 import pytest
 from _manage_status_main_dispatch_fixtures import _PHASES, _ms, _parse, _pin_stale_snapshot, _run
 
-# =============================================================================
-# metadata / title-token / update-phase / progress
-# =============================================================================
 
 def test_main_phase_write_preserves_a_title_token_set_after_its_snapshot_read(
     plan_context, monkeypatch, capsys

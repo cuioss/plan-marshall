@@ -194,10 +194,6 @@ class TestFragmentBundleCleanup:
         assert str(fragments) in captured.err
 
 
-# =============================================================================
-# Registry-consistency regression guard (deliverable 2)
-# =============================================================================
-
 class TestRegistryConsistencyGuard:
     """End-to-end registry↔producer↔consumer round-trip guard.
 

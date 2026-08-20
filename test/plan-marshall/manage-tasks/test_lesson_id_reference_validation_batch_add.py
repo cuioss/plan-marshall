@@ -18,9 +18,6 @@ from _lesson_id_reference_validation_fixtures import (
     cmd_batch_add,
 )
 
-# =============================================================================
-# Helpers
-# =============================================================================
 
 @pytest.fixture(autouse=True)
 def short_circuit_anchor(monkeypatch):
