@@ -136,8 +136,13 @@ refusal to invent an authority:
   restate it as "the choices are in another module": that is true of some of
   these sites, false of others, and unknowable for the ones whose flag declares
   no ``choices=`` anywhere.
-* ``no_choices_declared`` — the subcommand's parser WAS modelled and declares no
-  ``choices=`` for this flag. This rule's authority is ``choices=`` and nothing
+* ``authority_incomplete`` — the module declares a ``choices=`` on a receiver
+  this walk could not attribute to a parser path (a parser passed into a helper
+  and re-bound to a parameter of the same name). Declining to attribute an
+  authority is NOT establishing its absence, so no site on such a module can
+  support the reading below. A blind spot.
+* ``no_choices_declared`` — the subcommand's parser WAS modelled, the module's
+  authority is complete, and it declares no ``choices=`` for this flag. This rule's authority is ``choices=`` and nothing
   else (see the declared-vs-derived note above), so here the authority is
   established as ABSENT rather than merely unestablished, and there is nothing
   for the rule to compare the documented enum against.
@@ -261,19 +266,27 @@ _SEQUENCE_WRAPPERS = frozenset({'list', 'tuple', 'set', 'frozenset', 'sorted'})
 # pathological alias cycle, well above any real ``choices=`` reference chain.
 _MAX_RESOLVE_DEPTH = 8
 
+# Factories returning an object whose ``add_argument`` declares onto the PARENT
+# parser. A flag declared on one of these is, to argparse, declared on the parser
+# — so the returned variable inherits the parser's subcommand paths.
+_PARSER_GROUP_FACTORIES = frozenset({'add_mutually_exclusive_group', 'add_argument_group'})
+
 
 # Why a site was examined but not compared. Published per site and aggregated by
 # :func:`derive_coverage`, so a clean sweep states the share of its population it
 # could not check AND what stopped it.
 UNRESOLVED_NOTATION = 'notation_unresolved'
 UNRESOLVED_SCRIPT_UNPARSEABLE = 'script_unparseable'
-# These two are kept APART because they carry opposite risk. A flag that declares
-# no ``choices=`` at all makes no enum claim the script can contradict — there is
-# nothing to check, and its share of the population is not a blind spot. A
-# ``choices=`` the resolver could not reduce to a concrete set IS a real enum
-# claim that went unverified. Merged into one bucket, a reader cannot tell
-# whether a large unresolved share is mostly harmless or mostly blind.
+# These are kept APART because they carry different risk. Where the parser was
+# modelled, its authority is complete, and no ``choices=`` is declared for the
+# flag, the rule's authority is ESTABLISHED and found absent. Every other cause
+# leaves it UNESTABLISHED. Merged into one bucket a reader cannot tell whether a
+# large unresolved share is mostly established-absent or mostly unread.
+#
+# ⛔ Established-absent is not harmless: the flag may still be constrained by a
+# check in the handler, which this rule does not read by design.
 UNRESOLVED_PARSER_NOT_DERIVED = 'parser_surface_not_derived'
+UNRESOLVED_AUTHORITY_INCOMPLETE = 'authority_incomplete'
 UNRESOLVED_NO_CHOICES_DECLARED = 'no_choices_declared'
 UNRESOLVED_CHOICES_UNRESOLVABLE = 'choices_unresolvable'
 
@@ -285,6 +298,7 @@ UNRESOLVED_CAUSES = (
     UNRESOLVED_NOTATION,
     UNRESOLVED_SCRIPT_UNPARSEABLE,
     UNRESOLVED_PARSER_NOT_DERIVED,
+    UNRESOLVED_AUTHORITY_INCOMPLETE,
     UNRESOLVED_NO_CHOICES_DECLARED,
     UNRESOLVED_CHOICES_UNRESOLVABLE,
 )
@@ -305,6 +319,7 @@ UNRESOLVED_BLIND_SPOT_CAUSES = frozenset(
         UNRESOLVED_NOTATION,
         UNRESOLVED_SCRIPT_UNPARSEABLE,
         UNRESOLVED_PARSER_NOT_DERIVED,
+        UNRESOLVED_AUTHORITY_INCOMPLETE,
         UNRESOLVED_CHOICES_UNRESOLVABLE,
     }
 )
@@ -677,6 +692,20 @@ def _build_parser_path_sets(tree: ast.Module) -> dict[str, set[tuple[str, ...]]]
             }
             for var in targets:
                 parser_paths.setdefault(var, set()).update(new_paths)
+        elif name in _PARSER_GROUP_FACTORIES:
+            # ``g = p.add_mutually_exclusive_group()`` / ``add_argument_group()``
+            # returns a GROUP that adds arguments to ``p``. Argparse treats a
+            # flag declared on the group as declared on the parser, so the group
+            # variable must inherit the parser's paths — otherwise every
+            # ``g.add_argument(..., choices=...)`` has a receiver this walk does
+            # not recognise, and the flag's authority is silently never read.
+            # That is not a missing authority: it is one walked past, which the
+            # coverage census would then report as "the parser declares no
+            # choices for this flag".
+            owner = _receiver_name(call)
+            if owner is not None and owner in parser_paths:
+                for var in targets:
+                    parser_paths.setdefault(var, set()).update(parser_paths[owner])
     return parser_paths
 
 
@@ -695,10 +724,10 @@ def _authority_by_subcommand_flag(
     """Map ``(subcommand_path, flag)`` to the resolved ``choices=`` set.
 
     The key is the subcommand path of the parser the flag is declared on, so a
-    flag whose choices differ per subcommand — or which is free-form in one
-    subcommand and constrained in another — is never conflated (the
-    ``manage-tasks`` ``--status`` case: ``list`` constrains it, ``update`` does
-    not). A value of ``None`` means the ``choices=`` could not be resolved to a
+    flag which declares ``choices=`` on one subcommand's parser and not
+    another's — is never conflated (the ``manage-tasks`` ``--status`` case:
+    ``list`` declares them, ``update`` does not and validates in its handler
+    instead, so this rule has no authority to compare against there). A value of ``None`` means the ``choices=`` could not be resolved to a
     concrete set (fail-closed); an entry is absent when the flag has no
     ``choices=`` on that parser, which the caller treats as "no enum claim to
     check". A conflicting re-declaration of the same ``(path, flag)`` resolves to
@@ -711,11 +740,16 @@ def _authority_by_subcommand_flag(
     resolved: dict[tuple[tuple[str, ...], str], frozenset[str] | None] = dict(
         _declarative_authority(tree, resolver)
     )
+    shadowed = _shadowed_receivers(tree)
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or not _is_add_argument(node):
             continue
         receiver = _receiver_name(node)
         if receiver is None or receiver not in parser_paths:
+            continue
+        # Fail closed on a receiver bound by an enclosing function's parameter —
+        # the module-level name of the same spelling is a different parser.
+        if receiver in shadowed.get(id(node), ()):
             continue
         flag = _long_flag_name(node)
         if flag is None:
@@ -863,6 +897,69 @@ def _derived_subcommand_paths(tree: ast.Module) -> set[tuple[str, ...]]:
     return paths
 
 
+def _has_unattributed_choices(tree: ast.Module) -> bool:
+    """True when this module declares ``choices=`` the path walk could not attribute.
+
+    A ``choices=`` on a receiver shadowed by an enclosing function's parameter is
+    skipped fail-closed (see :func:`_shadowed_receivers`), which leaves its key
+    absent from the authority map — indistinguishable, on key presence alone,
+    from a flag that declares no choices. Declining to attribute an authority is
+    NOT establishing its absence, so a module in this state cannot support the
+    ``no_choices_declared`` reading for any of its sites.
+    """
+    shadowed = _shadowed_receivers(tree)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not _is_add_argument(node):
+            continue
+        if _keyword_value(node, 'choices') is None:
+            continue
+        receiver = _receiver_name(node)
+        if receiver is not None and receiver in shadowed.get(id(node), ()):
+            return True
+    return False
+
+
+def _shadowed_receivers(tree: ast.Module) -> dict[int, set[str]]:
+    """Map each ``add_argument`` call's id to the names SHADOWED where it sits.
+
+    ``_build_parser_path_sets`` walks assignments module-wide and ignores scope,
+    so a module-level ``parser = ArgumentParser()`` makes the NAME ``parser``
+    resolve to the root path everywhere — including inside
+    ``def _add_init_args(parser): parser.add_argument(..., choices=...)``, where
+    the name is a PARAMETER bound to whichever subparser the caller passed.
+
+    Attributing that helper's ``choices=`` to the root is wrong twice over: the
+    real subcommand's authority is never recorded (so its documented enum reads
+    as "declares no choices"), and a root-level flag of the same name would be
+    compared against a subcommand's choices — a finding manufactured out of a
+    scope confusion, which is the one outcome this rule promises is impossible.
+
+    Resolving which parser the caller passed would need call-graph analysis. This
+    fails CLOSED instead: a receiver shadowed by an enclosing function's
+    parameter is treated as unresolvable, so the site is reported as an
+    unexamined member of the population rather than compared against the wrong
+    authority.
+    """
+    shadowed: dict[int, set[str]] = {}
+
+    def walk(node: ast.AST, names: frozenset[str]) -> None:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            args = node.args
+            params = {a.arg for a in (*args.posonlyargs, *args.args, *args.kwonlyargs)}
+            if args.vararg:
+                params.add(args.vararg.arg)
+            if args.kwarg:
+                params.add(args.kwarg.arg)
+            names = names | params
+        if isinstance(node, ast.Call) and _is_add_argument(node):
+            shadowed[id(node)] = set(names)
+        for child in ast.iter_child_nodes(node):
+            walk(child, names)
+
+    walk(tree, frozenset())
+    return shadowed
+
+
 def _is_add_argument(node: ast.Call) -> bool:
     func = node.func
     return isinstance(func, ast.Attribute) and func.attr == 'add_argument'
@@ -917,6 +1014,10 @@ def derive_population(marketplace_root: Path, cache=None) -> list[EnumSite]:
     # The subcommand paths each notation's parser surface was modelled at — the
     # discriminator between "no choices declared" and "parser never seen".
     paths_cache: dict[str, set[tuple[str, ...]]] = {}
+    # Whether each notation's script declares a ``choices=`` the walk could not
+    # attribute to a parser path — if so, an absent key is not evidence of
+    # absence for any site on that script.
+    incomplete_cache: dict[str, bool] = {}
     population: list[EnumSite] = []
 
     for skill_md in _skill_md_files(marketplace_root):
@@ -931,9 +1032,11 @@ def derive_population(marketplace_root: Path, cache=None) -> list[EnumSite]:
                     if tree is not None:
                         authority_cache[notation] = _authority_by_subcommand_flag(tree, resolver)
                         paths_cache[notation] = _derived_subcommand_paths(tree)
+                        incomplete_cache[notation] = _has_unattributed_choices(tree)
                     else:
                         authority_cache[notation] = {}
                         paths_cache[notation] = set()
+                        incomplete_cache[notation] = False
                 authority = authority_cache[notation]
                 key = (subcommand, flag)
                 # Three fail-closed skips all leave ``choices`` at None, and they
@@ -944,9 +1047,10 @@ def derive_population(marketplace_root: Path, cache=None) -> list[EnumSite]:
                 #     helper, which yields no ``ArgumentParser()`` here. A real
                 #     blind spot: the rule never reached the parser, so it
                 #     established nothing either way;
-                #   * the parser WAS modelled and the key is simply absent, which
-                #     is the only one of the three that means "this flag declares
-                #     no choices, so there is nothing to contradict".
+                #   * the parser WAS modelled, the module's authority is
+                #     complete, and the key is simply absent — the only one of
+                #     these that means the rule's authority is ESTABLISHED and
+                #     found absent.
                 # Reading the second as the third is the failure this rule exists
                 # to catch, committed by the rule's own coverage figure.
                 choices = authority.get(key)
@@ -955,7 +1059,11 @@ def derive_population(marketplace_root: Path, cache=None) -> list[EnumSite]:
                 elif subcommand not in paths_cache[notation]:
                     cause = UNRESOLVED_PARSER_NOT_DERIVED
                 elif key not in authority:
-                    cause = UNRESOLVED_NO_CHOICES_DECLARED
+                    cause = (
+                        UNRESOLVED_AUTHORITY_INCOMPLETE
+                        if incomplete_cache[notation]
+                        else UNRESOLVED_NO_CHOICES_DECLARED
+                    )
                 else:
                     cause = UNRESOLVED_CHOICES_UNRESOLVABLE
             resolved = choices is not None

@@ -562,6 +562,7 @@ def test_coverage_reports_the_unresolved_share_and_its_causes(tmp_path):
         _mod.UNRESOLVED_NOTATION: 1,
         _mod.UNRESOLVED_SCRIPT_UNPARSEABLE: 0,
         _mod.UNRESOLVED_PARSER_NOT_DERIVED: 0,
+        _mod.UNRESOLVED_AUTHORITY_INCOMPLETE: 0,
         _mod.UNRESOLVED_NO_CHOICES_DECLARED: 0,
         _mod.UNRESOLVED_CHOICES_UNRESOLVABLE: 0,
     }
@@ -784,7 +785,8 @@ def test_a_nameless_dict_spec_contributes_no_modelled_path():
     tree = ast.parse(
         'def build():\n'
         '    return helper(subcommands=[\n'
-        "        {'help': 'nameless top-level'},\n"
+        "        {'help': 'nameless top-level',\n"
+        "         'subcommands': [{'name': 'orphan', 'args': []}]},\n"
         "        {'name': 'outer', 'subcommands': [{'name': 'inner', 'args': []}]},\n"
         '    ])\n'
     )
@@ -792,4 +794,102 @@ def test_a_nameless_dict_spec_contributes_no_modelled_path():
     paths = _mod._derived_subcommand_paths(tree)
 
     assert () not in paths
-    assert paths == {('outer',), ('outer', 'inner')}
+    # ``orphan`` is the RECURSION half: a named child below a nameless parent is
+    # still walked, and takes the path its named ancestors give it — here none,
+    # so it sits at top level. Without this entry the test pins only the early
+    # return, and deleting the recursion branch leaves the suite green while the
+    # docstring, the comment and the commit message all advertise it.
+    assert paths == {('orphan',), ('outer',), ('outer', 'inner')}
+
+
+def test_choices_on_a_mutually_exclusive_group_resolve(tmp_path):
+    """A flag declared on an argument GROUP is declared on its parser.
+
+    ``g = p.add_mutually_exclusive_group()`` returns an object whose
+    ``add_argument`` adds to ``p``. The walk did not map the group variable back
+    to the parser's paths, so every ``choices=`` declared on a group was walked
+    PAST — and the site then read as "the parser declares no choices for this
+    flag", which is the census's only non-blind-spot cause. Four live sites were
+    reported that way.
+    """
+    script = '''\
+import argparse
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest='cmd')
+    add = sub.add_parser('add')
+    group = add.add_mutually_exclusive_group(required=True)
+    group.add_argument('--settings')
+    group.add_argument('--kind', choices=['x', 'y', 'z'])
+
+
+if __name__ == '__main__':
+    main()
+'''
+    _write_bundle(tmp_path, doc_enum='x|y', script_body=script)
+
+    population = derive_population(tmp_path)
+
+    assert len(population) == 1
+    assert population[0].resolved is True
+    assert population[0].choices == frozenset({'x', 'y', 'z'})
+    assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [RULE_ID])
+
+
+def test_a_parser_rebound_by_a_helper_parameter_is_not_attributed_to_the_root(tmp_path):
+    """Declining to attribute an authority is not establishing its absence.
+
+    ``def _add(parser): parser.add_argument(..., choices=...)`` re-binds the name
+    ``parser`` to a PARAMETER. The module-wide assignment walk resolved it to the
+    module-level ``parser`` — the ROOT — so the helper's choices were filed
+    against the root path. That is wrong twice: the real subcommand's authority
+    is never recorded, and a root-level flag of the same name would be compared
+    against a subcommand's choices, manufacturing a finding out of a scope
+    confusion.
+
+    It now fails closed, and the site is reported under its own cause rather than
+    as "declares no choices". The subcommand's parser IS modelled here (the
+    fixture assigns it before passing it, as the live subject does), so the cause
+    is the incomplete authority rather than an underived surface.
+    """
+    script = '''\
+import argparse
+
+
+def _add_init_args(parser):
+    parser.add_argument('--mode', choices=['live', 'archived'])
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest='cmd')
+    p_add = sub.add_parser('add')
+    _add_init_args(p_add)
+
+
+if __name__ == '__main__':
+    main()
+'''
+    _write_bundle(tmp_path, doc_enum='live|archived', script_body=script, flag='mode')
+
+    population = derive_population(tmp_path)
+    coverage = _mod.derive_coverage(population)
+
+    assert population[0].resolved is False
+    assert population[0].unresolved_cause == _mod.UNRESOLVED_AUTHORITY_INCOMPLETE
+    assert coverage['unresolved_causes'][_mod.UNRESOLVED_NO_CHOICES_DECLARED] == 0
+    assert coverage['blind_spots'] == 1
+
+    # The load-bearing half, and the one the assertions above do NOT reach: the
+    # helper's choices must not be attributed to the ROOT path. Without this the
+    # skip in the authority walk can be deleted and the suite stays green,
+    # because the cause is decided by the sibling completeness check.
+    script_path = tmp_path / 'mybundle' / 'skills' / 'myskill' / 'scripts' / 'myscript.py'
+    tree = ast.parse(script_path.read_text(encoding='utf-8'))
+    resolver = _mod._Resolver(tmp_path, lambda path: ast.parse(path.read_text(encoding='utf-8')))
+    authority = _mod._authority_by_subcommand_flag(tree, resolver)
+
+    assert ((), 'mode') not in authority
+    assert not [key for key in authority if key[0] == ()]
