@@ -273,9 +273,23 @@ G10, G25, G12 and the three handed-up proposals are recorded in
 `./pw verify` ran. Working tree confirmed clean (`git status --porcelain` empty) before the diff was
 taken, so the gate saw all the work.
 
-**Result: passed.** `21414 passed, 14 skipped` in 583.66 s, exit 0. All three sub-steps ran:
-quality-gate (`ruff … All checks passed!`, `mypy … Success: no issues found in 416 source files`,
-`SPDX-header check passed`), test-compile, and module-tests.
+**Result: passed.** All three sub-steps ran: quality-gate (`ruff … All checks passed!`,
+`mypy … Success: no issues found in 416 source files`, `SPDX-header check passed`), test-compile, and
+module-tests.
+
+⛔ **This figure moves with every commit, so it is stamped with the commit it was measured at rather
+than carried forward.** An earlier revision of this section reported `21414 passed, 14 skipped` from
+`94cd8ba` and left it standing across three later commits that changed **production** Python — the
+stale-figure defect this report warns about elsewhere, committed here.
+
+| Measured at | Result |
+|---|---|
+| `94cd8ba` | 21414 passed, 14 skipped, 583.66 s |
+| `9cf5001` (independently re-run by the round-3 verifier) | 21419 passed, 14 skipped, 507.80 s |
+| **Final, on the merged tree** | recorded at the stale-base re-verification below — and it is the one that governs |
+
+The figure that governs is the last: merge-gate condition 2 re-runs the full gate on the tree that
+actually lands, and no intermediate figure substitutes for it.
 
 ⚠ **The first `./pw verify` FAILED**, and the failure is worth recording because it is exactly the
 class the contract warns about: `test-compile` — the only sub-step that type-checks the test tree, and
@@ -343,9 +357,30 @@ not move — and are named as such rather than presented as coverage.
 
 ## Collateral check
 
-`git diff --name-only origin/main...HEAD` → 44 files. **Every one falls inside the plan's Expected
-surface.** No file outside it was touched. The plan's own directory carries `plan.md`,
-`proposals.md` and this report, as the Expected surface anticipates.
+⛔ **An earlier revision of this section said "44 files, every one inside the plan's Expected
+surface". Both halves were wrong** — the count was stale, and files outside the surface were already
+present when it was written. Verification item 5 requires every such file **accounted for**, not
+absent. Re-derived at the moment of this claim:
+
+`git diff --name-only origin/main...HEAD` → **50 files** (re-derived at `50bf05b`; `report-01.md` is
+already in that set, so committing this section does not move it). **Seven fall outside** the plan's
+Expected surface, each for a stated reason:
+
+| File | Why it was touched |
+|---|---|
+| `doc/user/lsp-code-intelligence.adoc` | D1 made its state table and its count-based write-side rule **false**. |
+| `marketplace/bundles/plan-marshall/skills/build-pyproject/SKILL.md` | D4 made four of its Axis-C statements **false**. |
+| `marketplace/bundles/plan-marshall/skills/execute-task/SKILL.md` | D1 made its instruction to the consuming leaf **false** — it told a leaf to read every `failed` return as a rejected edit. |
+| `marketplace/bundles/plan-marshall/skills/manage-run-config/SKILL.md` | D6/G9 made its `configured` comment incomplete. |
+| `.../manage-run-config/standards/run-config-standard.md` | D6/G9 made its definition of `configured` **false**. |
+| `test/plan-marshall/extension-api/test_derivation_resolver_roster.py` | D6/G9's *Done when* requires a test **on each side** of the store; this is one side. |
+| `test/plan-marshall/manage-run-config/test_run_config_derivation_resolver.py` | The other side. |
+
+The first five are the plan's own carve-in: § Out of scope states this plan changes *"the
+documentation that is **inseparable from a behaviour change it lands**"*, and a statement this run's
+change renders false is exactly that. The last two are named by a *Done when* clause. Nothing else
+lies outside; the plan's own directory carries `plan.md`, `proposals.md` and this report, as the
+Expected surface anticipates.
 
 ## Gap coverage
 
@@ -467,8 +502,47 @@ now stated rather than implied.
 
 ### Round 3 — plan verifier
 
-_In flight at the time this section was written; its findings and dispositions are appended before
-the merge gate._
+The verifier re-checked all twelve round-2 fixes site by site, re-derived every figure this run
+publishes by **executing** it, and ran the full `./pw verify` itself. **Ten findings, every one a
+false statement (condition A); one additionally resets condition B.** All fixed in `50bf05b` and this
+commit.
+
+Confirmed independently: the Axis-D claim set (5 claims / 3 attributors, `None` for a marketplace
+path); the 308 / 5083 / 5022 / **61** validator figures and their 26 / 31 / 4 split; the lazy `index`
+property and that `_on_initialize` never touches it; `derive_name_edges` taking
+`dependency.split(':', 1)[0]`; **177** search paths; exactly one ambiguous basename (`extension`, 15
+directories) with no bare import of it; **72** cross-bundle references and **10** module edges, all
+`pm-* → plan-marshall`; the PEP 621 fixture's 5-edge assertion unchanged. It found **no vacuous
+guard**.
+
+| # | Finding | Disposition |
+|---|---|---|
+| V1 | `build-pyproject/SKILL.md` still said a module whose `pyproject.toml` does not parse publishes no name — the **same claim** round 2 fixed on the user page, landed at one of two sites. Executed: such a module publishes `broken-but-cfg` via the `setup.cfg` fallback | **fixed** |
+| V2 | The PEP 420 paragraph round 2 wrote is **wrong**: a namespace portion's modules *are* importable as `{dir}.{module}` from the parent, and the paragraph contradicted itself two clauses later. Re-run here — dotted import succeeds, bare import does not | **fixed**; `__init__.py` is a *convention* discriminator, not a semantic one, and it now says so |
+| V3 | `lift_to_modules`' docstring still said vendored exclusion happens "before a target ever reaches this function" — round 2 added exactly that exclusion **inside** it, so the contract list told a reader the opposite of what the code does | **fixed** |
+| V4 | This report's Collateral check claimed "44 files, every one inside the Expected surface". **Both halves false** — stale count, and outside files were already present | **fixed** — re-derived, all seven outside files accounted for |
+| V5 | This report's Build gate carried figures measured at `94cd8ba`, unchanged across three later commits that touched production Python | **fixed** — stamped per commit, with the merged-tree run named as governing |
+| V6 | **`execute-task/SKILL.md`** — the skill that drives the leaf — still said "treat a `failed` return as a rejected edit (investigate the reported diagnostics)". After D1 that is wrong for three of four reasons, and it is the misreading D1 exists to prevent, at its **only consuming site** | **fixed** — the four reasons split, each with what to do |
+| V7 | The corpus `SKILL.md` still asserted the gate is "hard-gated on the validator-precision work" and that diagnostics would ship "before that precision work lands" — asserting work has not landed that G10 re-derived as inverted. The least-corrected of the four sites | **fixed** |
+| V8 | `[[unverified]]` was stacked above `[[staleness]]` on one section title, so the new five-causes table's xref resolved to the **wrong section** | **fixed** — anchor moved to the section it names |
+| V9 | The user page still said the withheld count means "an empty result is never mistaken for 'no references'" — contradicted fifteen lines later by the section this run added | **fixed** |
+| V10 | `lsp-client/SKILL.md` said "`preflight` reports the same **three** situations" over a table that gained a fourth row in this branch — the identical count round 2 fixed on the user page, sibling missed | **fixed** |
+
+⚠ **V6 is the finding worth carrying forward.** Every other surface this run corrected is read by a
+human; V6 is read by a **task leaf**, and it instructed that leaf to do the one thing D1's fail-closed
+direction exists to stop — treat "nobody checked" as "your edit was wrong". It lies outside the plan's
+Expected surface, which is why no diff-scoped check could have found it and only a consumer-directed
+sweep did.
+
+**Observations left open, with their bounds** (the verifier's O1–O5, none blocking):
+
+| # | Observation | Why it is left |
+|---|---|---|
+| O1 | `lsp-client/SKILL.md` tells a leaf to run `./pw verify` — this repo's wrapper, in a skill that ships to consumer projects of any ecosystem | **Pre-existing**: two sites and the module docstring predate this branch; propagated once. Owned by `560-documentation-surface-truthfulness` |
+| O2 | `_report_omitted`'s notification names the bare script rather than the executor form | Incomplete, not false |
+| O3 | `lsp_client.py`'s module docstring enumerates two outcomes; `unknown` is a third, unnamed **there** (it is named in `SKILL.md`, the user page and the code) | Incomplete, not false |
+| O4 | The ambiguity guard drops a reference whenever the **target basename** is ambiguous, even for a dotted or relative import to a uniquely-located file | **Bounded:** 0 hits on this repository, always counted under `ambiguous-module-name`, and it is the conservative direction the plan's ⚠ mandates. Cannot change this deliverable's verdict |
+| O5 | The D3 "after" figures drift at HEAD (`files_scanned` 1400 vs 1398, references 3194 vs 3189, wall-clock 86.2 s vs 83.4 s) | Explained: ~2 test files added after the measurement commit. The report frames these as measurements taken at a point, which is what they are |
 
 ## Reviewer participation
 
