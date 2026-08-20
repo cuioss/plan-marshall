@@ -12,13 +12,11 @@ import json
 from argparse import Namespace
 
 import pytest
+from _manage_status_fixtures import SCRIPT_PATH
 
-from conftest import get_script_path, load_script_module, run_script
+from conftest import load_script_module, run_script
 
 # Script path for CLI plumbing tests
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-status', 'manage-status.py')
-
-
 _lifecycle = load_script_module('plan-marshall', 'manage-status', '_cmd_lifecycle.py', '_status_cmd_lifecycle')
 
 cmd_create = _lifecycle.cmd_create

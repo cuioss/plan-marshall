@@ -16,10 +16,9 @@ silently reintroduced.
 from __future__ import annotations
 
 import pytest
+from _manage_status_fixtures import SCRIPT_PATH
 
-from conftest import get_script_path, run_script
-
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-status', 'manage-status.py')
+from conftest import run_script
 
 
 @pytest.mark.parametrize('args', [

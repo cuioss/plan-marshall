@@ -34,10 +34,7 @@ import importlib.util
 
 import pytest
 
-from conftest import get_script_path
-from _manage_metrics_fixtures import ns_generate
-
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
+from _manage_metrics_fixtures import ns_generate, SCRIPT_PATH
 
 # kebab-case filename — load via importlib under a unique module name.
 _spec = importlib.util.spec_from_file_location('manage_metrics_boundary_pop', SCRIPT_PATH)

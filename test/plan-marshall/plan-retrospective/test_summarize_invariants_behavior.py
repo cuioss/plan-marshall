@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import sys
-from argparse import Namespace
 from pathlib import Path
 
 import pytest
@@ -24,7 +23,7 @@ from conftest import load_script_module
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _plan_retrospective_fixtures import write_handshakes  # noqa: E402
+from _plan_retrospective_fixtures import _run_args, write_handshakes  # noqa: E402
 
 _si = load_script_module(
     'plan-marshall', 'plan-retrospective', 'summarize-invariants.py', 'si_behavior_mod'
@@ -52,15 +51,6 @@ def _full_row(phase: str, **overrides) -> dict:
     }
     row.update(overrides)
     return row
-
-
-def _run_args(plan_dir: Path) -> Namespace:
-    return Namespace(
-        command='run',
-        plan_id=None,
-        archived_plan_path=str(plan_dir),
-        mode='archived',
-    )
 
 
 class TestResolvePlanDir:

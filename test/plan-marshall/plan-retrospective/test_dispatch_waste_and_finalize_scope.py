@@ -29,14 +29,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from _plan_retrospective_fixtures import ANALYZE_LOGS
+
 from conftest import MARKETPLACE_ROOT, load_script_module, run_script
 
 analyze_logs = load_script_module(
     'plan-marshall', 'plan-retrospective', 'analyze-logs.py', 'analyze_logs_waste'
-)
-
-ANALYZE_LOGS = (
-    MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'analyze-logs.py'
 )
 
 # A finalize boundary file exercising every class the split cares about: two

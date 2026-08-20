@@ -48,9 +48,10 @@ from pathlib import Path
 # sys.path setup pattern used by the other retrospective tests.
 sys.path.insert(0, str(Path(__file__).parent))
 
-from conftest import MARKETPLACE_ROOT, get_script_path, run_script  # noqa: E402
+from _plan_retrospective_fixtures import ANALYZE_LOGS
 
-ANALYZE_LOGS = MARKETPLACE_ROOT / 'plan-marshall' / 'skills' / 'plan-retrospective' / 'scripts' / 'analyze-logs.py'
+from conftest import get_script_path, run_script  # noqa: E402
+
 MANAGE_TASKS = get_script_path('plan-marshall', 'manage-tasks', 'manage-tasks.py')
 
 # Canonical fixture directory for this regression. Two sub-trees:

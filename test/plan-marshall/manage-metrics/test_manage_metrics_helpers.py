@@ -21,9 +21,7 @@ helpers directly, covering the branches the integration paths skip:
 
 import importlib.util
 
-from conftest import get_script_path
-
-SCRIPT_PATH = get_script_path('plan-marshall', 'manage-metrics', 'manage-metrics.py')
+from _manage_metrics_fixtures import SCRIPT_PATH
 
 # kebab-case filename — load via importlib under a unique module name.
 _spec = importlib.util.spec_from_file_location('manage_metrics_helpers', SCRIPT_PATH)

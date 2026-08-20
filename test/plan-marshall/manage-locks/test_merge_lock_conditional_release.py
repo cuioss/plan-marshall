@@ -37,6 +37,7 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
+from _manage_locks_fixtures import _write_lock
 
 from conftest import load_script_module
 
@@ -81,11 +82,6 @@ def _stub_title_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(merge_lock, '_set_title_token', lambda _p, _state: None)
     monkeypatch.setattr(merge_lock, '_clear_title_token', lambda _p: None)
     monkeypatch.setattr(merge_lock, '_push_title_token', lambda _p, icon=None: None)
-
-
-def _write_lock(lock_path: Path, holder: str) -> None:
-    """Stage a held lock file recording ``holder`` (mirrors _try_atomic_create)."""
-    lock_path.write_text(holder + '\n', encoding='utf-8')
 
 
 def _make_live_plan(base: Path, plan_id: str) -> None:

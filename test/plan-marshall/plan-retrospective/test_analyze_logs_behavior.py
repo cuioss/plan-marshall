@@ -14,23 +14,14 @@ paths, the duration/percentile/notation extractors' skip branches, and the
 from __future__ import annotations
 
 import json
-from argparse import Namespace
 from pathlib import Path
 
 import pytest
+from _plan_retrospective_fixtures import _run_args
 
 from conftest import load_script_module
 
 _al = load_script_module('plan-marshall', 'plan-retrospective', 'analyze-logs.py', 'al_behavior_mod')
-
-
-def _run_args(plan_dir: Path) -> Namespace:
-    return Namespace(
-        command='run',
-        plan_id=None,
-        archived_plan_path=str(plan_dir),
-        mode='archived',
-    )
 
 
 def _line(ts: str, level: str, rest: str) -> str:
