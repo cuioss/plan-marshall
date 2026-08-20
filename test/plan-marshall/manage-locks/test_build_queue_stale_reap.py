@@ -252,19 +252,12 @@ class TestAdaptiveUpperLimit:
         base = isolated_base['base']
         _make_live_plan(base, 'plan-long')
         long_id = 'plan-long:long-uuid'
-        # Seed an active entry with a held duration well over the 3600 s ceiling
-        # but UNDER the 2 × 600 = 1200 s reap threshold would falsely reap it —
-        # so use an active_since just under the stale threshold? No: a long hold
-        # IS over threshold and would be reaped. To exercise the adaptive-limit
-        # recompute on a REAL release we must release a still-fresh-enough entry.
-        # Use active_since older than the ceiling (4000 s) but the reaper would
-        # reap it at 1200 s. So first grow the limit via repeated releases.
-        # Simpler: directly seed and release an entry whose held just exceeds the
-        # ceiling AFTER the limit has grown past 2000 — but the reaper uses the
-        # CURRENT (pre-grow) limit. Instead: assert the clamp directly by
-        # releasing an entry held ~4000 s when the live limit is already high
-        # enough that 2 × limit > 4000 so it is not reaped first.
-        # Set the live limit to its ceiling first so the reap threshold is 7200 s.
+        # The reaper removes an entry held longer than 2 × the LIVE limit, so a
+        # hold long enough to exercise the ceiling is also long enough to be
+        # reaped before the release can recompute anything. Raising the live
+        # limit to the ceiling first puts the reap threshold at 7200 s, which the
+        # 4000 s hold below is under — so the release exercises the clamp rather
+        # than the reaper.
         from run_config import _write_build_queue_upper_limit
 
         _write_build_queue_upper_limit(3600)  # reap threshold now 2 × 3600 = 7200 s

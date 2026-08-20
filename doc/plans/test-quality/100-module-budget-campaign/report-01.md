@@ -950,6 +950,19 @@ likely to quote. It survived six rounds of adversarial review because every roun
 of each number and none checked that the two numbers were the same measurement. **A before/after pair is
 one claim, not two, and the thing to verify is that both sides were measured the same way.**
 
+**M46 — one comment was a transcript of someone's reasoning, not an explanation.**
+`test_build_queue_stale_reap.py` carried thirteen comment lines in front of a two-line setup, three of
+them abandoned approaches ("so use an active_since just under the stale threshold? No: …", "Simpler: …
+but the reaper uses the CURRENT (pre-grow) limit. Instead: …"). It states the constraint in five lines
+now: the reaper removes an entry held longer than 2 x the live limit, so raising the limit to its
+ceiling first puts the reap threshold at 7200 s and lets a 4000 s hold reach the release.
+
+This one is scoped deliberately. The text is **pre-existing** — the split moved it verbatim — and
+rewriting inherited test prose is not this plan's deliverable. A sweep for the same shape across the
+tree returned 23 candidate lines of which 20 are ordinary mid-sentence uses of "instead", "actually" or
+"wait", so the instance is close to isolated and was fixed rather than made into a campaign. The removed
+lines are captured from that file's own diff for the absence classifier, the way round 2's were.
+
 #### Renames, for a reader following an older reference
 
 The finding rows above name modules as they stood when each round observed them, which is what a dated
