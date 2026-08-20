@@ -25,9 +25,9 @@ caller-supplied longest-prefix table (`make_prefix_attributor`), not through the
 path-attribution seam. That substitution is currently *necessary*: no attributor on that seam claims
 a `marketplace/bundles/**` path. Re-derived on this clone —
 `merge_path_claims(discover_path_attributors(), ['plan-marshall', 'pm-plugin-development',
-'documentation'])` returns **five** claims from **three** attributors: `.claude` →
-`pm-plugin-development`, `.plan` → `plan-marshall`, and `doc` / `README.md` / `CONTRIBUTING.md` →
-`documentation`. None covers `marketplace/bundles/**`, so
+'documentation'])` returns a `(claims, roster)` pair whose **claims** list holds **five** entries
+from **three** attributors: `.claude` → `pm-plugin-development`, `.plan` → `plan-marshall`, and
+`doc` / `README.md` / `CONTRIBUTING.md` → `documentation`. None covers `marketplace/bundles/**`, so
 `lookup_claim('marketplace/bundles/…/scripts/y.py', …)` returns `None` and routing through it would
 derive zero edges. The proposal is to make the seam claim what the table claims — publishing
 `(marketplace/bundles/{bundle}, {bundle})` through `claim_paths()`.

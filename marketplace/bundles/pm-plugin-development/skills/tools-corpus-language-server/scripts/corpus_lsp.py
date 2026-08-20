@@ -641,7 +641,16 @@ def _add_project_path(parser: argparse.ArgumentParser) -> None:
     # the cwd" — `serve` adopts the client's declared root only in the first
     # case. Every reader spells the fallback as `args.project_path or '.'`, so
     # the effective default is unchanged.
-    parser.add_argument('--project-path', default=None, help='Project root to resolve config from (default: cwd)')
+    parser.add_argument(
+        '--project-path',
+        default=None,
+        help=(
+            'Project root to resolve config from. An explicit value always wins. '
+            'Omitted, `serve` adopts the root the client declares at initialize '
+            '(rootUri, rootPath, then workspaceFolders[0]) and falls back to the cwd '
+            'only when the client declares none; the other verbs use the cwd.'
+        ),
+    )
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
