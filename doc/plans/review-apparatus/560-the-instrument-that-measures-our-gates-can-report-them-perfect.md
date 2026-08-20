@@ -121,11 +121,30 @@ records are git-ignored and are absent from this clone. Nothing in this plan req
      that distinction there is no baseline to anchor against and no population to filter to, and
      neither fix is implementable as written.
    - **P2 — the in-house gate roster.** Every in-house gate whose verdict a reader treats as
-     assurance. Derive it from the finalize step declarations in the tree: each step doc under
-     `marketplace/bundles/plan-marshall/skills/phase-6-finalize/{standards,workflow}/` carries an
-     `order:` in its frontmatter, and the project-local steps under `.claude/skills/finalize-step-*/`
-     carry theirs. A gate is a step whose recorded outcome is a pass/fail assurance claim about the
-     tree. Also derive the build gate's own dimension registry, `_ANALYSIS_LIMITS` in
+     assurance. This population is derived in **two mechanical stages**, because the property that
+     makes a step a gate is not yet written down anywhere a machine can read.
+
+     - **Stage 1 — the candidate set, mechanically derived.** Every registered finalize step, from the
+       `name:` frontmatter key of each step doc under
+       `marketplace/bundles/plan-marshall/skills/phase-6-finalize/{standards,workflow}/` and each
+       project-local step under `.claude/skills/finalize-step-*/`. Record the command that produces
+       this list. **HALT the P2 arm if the candidate set cannot be derived from frontmatter.**
+     - **Stage 2 — the gate subset, adjudicated once and then frozen into a marker.** ⛔ *"A step whose
+       recorded outcome is a pass/fail assurance claim about the tree"* is a **semantic judgment, not
+       a selector**: nothing in the tree carries it, so a later run re-deciding it by reading prose
+       would hand-maintain the roster — exactly the defect class this plan closes. So this run
+       adjudicates it **once, in the open, and then makes it machine-readable**: publish in the run
+       report an adjudication table with **one row per Stage-1 candidate** — in or out, and the
+       sentence of that step's own doc that decides it — and, as part of D4's G13 bullet, write the
+       verdict into an explicit frontmatter marker on each step doc (an `assurance_verdict:` boolean
+       or equivalent), so every subsequent derivation of P2 reads the marker rather than re-judging
+       prose. The marker's introduction belongs to D4 — D0 mutates nothing — but the adjudication
+       table D4 writes from is produced here.
+     - **HALT** the P2 arm if Stage 1 fails, or if the adjudication cannot be grounded per candidate in
+       a quotable sentence of that candidate's own doc. Do **not** transcribe a gate list from this
+       plan or from a prior analysis.
+
+     Also derive the build gate's own dimension registry, `_ANALYSIS_LIMITS` in
      `marketplace/bundles/plan-marshall/skills/script-shared/scripts/build/_gate_coverage.py`. Report
      both sets and, per member, whether its verdict currently carries a structural limit. ⚠ **A prior
      analysis put this at three of six carrying one — treat that as a lead and re-derive it; do not
@@ -140,7 +159,10 @@ records are git-ignored and are absent from this clone. Nothing in this plan req
 
    *Done when:* the run report states, for each of P1/P2/P3, the derived population, the file(s) it
    was derived from, and the command or script that reproduces it — or states which arm halted and
-   why. No population in this plan is asserted without one of those two.
+   why. No population in this plan is asserted without one of those two. For P2 specifically, the
+   report carries the Stage-1 candidate list with its derivation command **and** the per-candidate
+   adjudication table with its grounding sentence, so D4 can write the marker from a published record
+   rather than a re-judgement.
 
 1. **D1 — Anchor the delta's coverage denominator so a roster shrink cannot restore a share.**
    Discharges **130/G1 (blocker)**. In `review_gate_delta.py`: add a baseline-roster input (a
