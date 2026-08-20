@@ -465,4 +465,45 @@ _Pending._
 
 ## Residue
 
-_Pending._
+### Coordination with PR #1314 (the test module-budget campaign)
+
+The operator flagged [#1314](https://github.com/cuioss/plan-marshall/pull/1314) — run 1 of the
+`test-quality/100-module-budget-campaign`, which splits 66 over-budget test modules into 199 test
+modules plus 64 `_{domain}_fixtures.py` modules across **281 files**.
+
+**Checked before assuming: there is no collision.** All 281 filenames were read (three pages of the
+PR's file list) and compared against this branch's surface:
+
+| #1314 touches | Overlap with this branch |
+|---|---|
+| `test/plan-marshall/{plan-retrospective, manage-status, manage-metrics, manage-tasks, manage-lessons, manage-locks, manage-findings, manage-adr, manage-change-ledger, audit-archived-plan-retrospectives}` | **none** |
+| `doc/plans/test-quality/**`, four top-level `test/plan-marshall/*.py` | **none** |
+| `marketplace/**` | **0 files** |
+| `doc/user/**` | **0 files** |
+| The seven test directories this branch changes | **0 files** |
+
+⚠ **The interaction to watch is semantic, not textual.** #1314's own body records that
+`conftest.load_script_module` registers under the script stem, and that collapsing distinct
+registrations onto a shared one cost a sibling plan **173 order-dependent failures**. This branch
+uses `load_script_module` (`test_pyproject_descriptor_forms.py`) and reads `sys.modules` through the
+roster tests' `_live()` helper, so a registration change anywhere in the suite could surface here as
+an order-dependent failure rather than as a merge conflict. #1314 states that no registration name
+changed (117 `load_script_module` + 23 `spec_from_file_location` names, none lost, gained or
+renamed), so the hazard is stated as controlled — but the whole-tree run on the merged tree is what
+actually settles it, and that run is merge-gate condition 2's, below.
+
+**Disposition:** #1314 is fetched into this branch before the merge gate, and the full `./pw verify`
+is re-run on the merged tree — which condition 2 requires whenever the base has moved, so this adds
+no step that was not already owed. Recorded under § Build gate → stale-base re-verification with the
+merge commit that was tested.
+
+⚠ **Brought in by a merge rather than a rebase**, against the operator's phrasing and for a stated
+reason: this report and the PR description quote **ten** commit SHAs from this branch, and a rebase
+replaces every one of them, leaving both documents citing commits on no branch under review — the
+lane contract's own warning. A merge fetches the same change with no SHA churn. Say so rather than
+silently substituting one for the other; a true rebase is a one-command change if it is wanted, and
+the SHA citations would then be re-derived.
+
+### Left open
+
+_Pending the verification loop's exit._
