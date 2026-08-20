@@ -1,14 +1,16 @@
 # Recorded proposals and decision records — plan 500
 
-Everything here is **recorded, not decided**. Each item names what would change, the blast radius, and
-the observation that would settle it. None was acted on in the run that produced this document, and
-none may be acted on by reading it — each needs an operator's approval first.
+Everything here is **recorded rather than acted on**. Nothing in this document was implemented by the
+run that produced it, and nothing here may be implemented by reading it.
 
-Two kinds of entry appear below:
+Two kinds of entry appear below, and they differ in who has to act next:
 
-- **Proposals** — a change the run identified but is not authorised to make.
-- **Decision records** — a state the run measured and is deliberately leaving as it is, with the
-  trigger that should reopen it.
+- **Proposals** (`P1`–`P6`) — a change the run identified but is **not authorised to make**. Each names
+  what would change, the blast radius, and the observation that would settle it. **Each needs an
+  operator's approval before anyone acts on it.**
+- **Decision records** (`D1`) — a state the run measured and is deliberately **leaving as it is**. No
+  approval is needed to leave something alone, so a decision record is a decision the run *did* take;
+  what it records is the reasoning and the **trigger that should reopen it**.
 
 ---
 
@@ -146,9 +148,13 @@ surfaces.
 The alternative, option (b), is the opposite: keep emitting those sites and reword both pages to scope
 the "never presented as an exact location" promise to the `query` payload alone.
 
-**Why it was not taken.** It weakens a shipped guarantee, which is an operator's call rather than an
-executing run's. Option (a) is the contract-conforming direction and therefore not a contract change
-the run would be self-approving.
+**Why it was not taken — and why that is not the same as it being rejected.** Option (b) weakens a
+shipped guarantee, which is an operator's call rather than an executing run's; option (a) is the
+contract-conforming direction and therefore not a contract change the run would be self-approving.
+That reasoning is about **which one an unattended run may take**, not about which is better. ⚠ Do not
+read the fact that (a) has landed as (b) having been ruled out: the trade below is genuinely open, and
+if the measurement goes the other way, (a) is a revert plus two reworded pages — no harder to undo
+than (b) would have been to adopt.
 
 **Blast radius — a recall/precision trade, measurable.** Option (a) costs **recall**: a real reference
 site that the index cannot confirm no longer appears in an editor's find-references at all. Option (b)
@@ -168,7 +174,7 @@ notification — which is the only channel left when every site was withheld and
 
 ---
 
-## P6 — Editor diagnostics on the corpus server: the deferral's premise has inverted
+## P6 — Editor diagnostics on the corpus server: the deferral's premise, re-derived
 
 **Handed up by:** D6 (`240-skill-lsp-server/gaps.md#G10`).
 
@@ -206,10 +212,12 @@ actually exists:
 | **Roll-up: non-notations** | **26** | **43 %** |
 | **Roll-up: well-formed notations with an absent target** | **35** | **57 %** |
 
-**The premise has not drifted, it has inverted.** The gate reasoning was built on ~97 % false
-positives; the majority — 57 % — of what remains is now the class diagnostics exist to surface: a
-well-formed reference to a component that does not exist. The absolute count also fell by roughly a
-factor of six.
+**What the figures say, stated as a measurement rather than a verdict.** The gate reasoning was built
+on ~97 % false positives. On the structural classification above, 57 % of what remains is the class
+diagnostics exist to surface — a well-formed reference to a component that does not exist — and the
+absolute count has fallen by roughly a factor of six. That reverses the ratio the deferral was argued
+on. It does **not** by itself settle whether the deferral should end: the "against" case below is
+load-bearing rather than a formality, and the criterion at the foot of this item is not yet met.
 
 **The argument on both sides.**
 

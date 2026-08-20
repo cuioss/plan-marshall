@@ -179,7 +179,7 @@ So an empty result means *the index found no reference*, not *the corpus contain
 
 When a reference is cited inside a skill's sub-document, the index records it against the *owning skill* — whose own file is `SKILL.md` — while the line number belongs to the sub-document. Following that pairing naively lands you on that line number in `SKILL.md`: usually a blank line, in the wrong file.
 
-So every site is re-read before it is reported. A site whose line genuinely refers to the target is marked `verified`.
+So every site is re-read before it is reported — once per file, against the contents the server cached when it first read that file, not against the file as it stands at the moment you ask (see <<staleness>>). A site whose line genuinely refers to the target is marked `verified`.
 
 What counts as referring to the target is not the notation alone, because not every reference is written as one — a relative-path reference appears as a path and an import as a bare module name. A line qualifies when it carries the full notation *or* the target's final segment, which is the form every kind of reference has in common. A line carrying the full notation wins over one carrying only the final segment, since that segment is an ordinary word another document can happen to contain at the same line number. Where two files match equally well, neither is picked: the site is reported against the owning skill and left unconfirmed, because no file ordering makes one of them the right answer.
 

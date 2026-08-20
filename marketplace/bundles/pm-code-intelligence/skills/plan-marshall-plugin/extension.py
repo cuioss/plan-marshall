@@ -115,9 +115,13 @@ class Extension(ExtensionBase, DerivationResolverBase):
         lifted to module granularity, and this method performs no file I/O and
         runs no subprocess, as the Axis-C purity contract requires.
 
-        **The lift does not go through the Axis-D path-attribution seam.** It
-        uses a caller-supplied path-to-module lookup — a longest-prefix table the
-        harvest builds from the discovered module set. That is necessary rather
+        **That lift happens upstream, in the harvest, and it does not go through
+        the Axis-D path-attribution seam** — so do not look for an attribution
+        callable in this method; there is none, and this paragraph is a statement
+        about ``lsp_harvest.lift_to_modules`` rather than about the code below.
+        The harvest uses a caller-supplied path-to-module lookup — a
+        longest-prefix table it builds from the discovered module set. That is
+        necessary rather
         than incidental: the live seam claims only ``.claude`` and ``.plan``, so
         it attributes no ``marketplace/bundles/**`` path at all and routing
         through it would guarantee zero edges. The substitute does **not** carry

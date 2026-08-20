@@ -95,7 +95,10 @@ that answers it:
    alongside `new_diagnostics[]`, which lists the **added** diagnostics only.
    A set rather than a footprint-wide count, because a count cannot see one
    error swapped for a different one in the same file, or an error moving from
-   one footprint file to another: both net to zero.
+   one footprint file to another: both net to zero. ⚠ This is not the only way
+   `edit` fails-and-rolls-back — a **missing** verdict does too, for the
+   opposite reason, and `status: failed` alone does not tell the two apart. See
+   "not checked, not wrong" below before concluding the edit was faulty.
 4. **All-or-nothing on disk.** An edit carrying a create/rename/delete-file
    resource operation is refused whole (`reason:
    unsupported_resource_operation`, with `notes[]` naming each and
