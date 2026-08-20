@@ -166,6 +166,17 @@ _pending_
 
 _pending_
 
+## Proposals for the operator (recorded, not work done)
+
+The plan makes two decisions itself so the run needs no mid-run judgement call, and requires the alternative in each case to be recorded here rather than taken. Both are recorded; neither was implemented.
+
+1. **Promote `total_wall_seconds`, the per-step typed facts and the repository end-state to REQUIRED landing keys** (D3(ii)'s alternative). D3 keeps them optional and corrects the *claim* instead. Taking the alternative would change the producer contract in `phase-6-finalize/standards/emit-landing.md`, which this plan does not touch, and would make every landing written before the change retroactively incomplete. The operator's call, on a plan that owns the producer side.
+2. **Drain per closed sender** (D5(ii)'s alternative). `inbox list` now reports `closed_senders`, so a drain *could* retire a closed sender's consumed messages without waiting for epic-wide quiescence. D5 keeps the refusal and narrows its reason instead. Whether a per-sender drain is the right successor mechanism — versus the epic-wide signal `cleanup.md`'s deferred-mechanism block still anticipates — is a design question this plan does not settle.
+
+**One operator obligation, for a machine that holds the orchestrator store.** 250/G4 — running the physical `inbox/archive/` per-sender migration and reporting the per-sender counts — is excluded under § Out of scope because its population lives under the git-ignored `.plan/local/orchestrator/{epic}/inbox/archive/`, absent from this clone. `inbox migrate-archive` ships and is idempotent; the fold must be run where `.plan/local/` exists, and its per-sender counts read there.
+
+**One pair a follower must land together.** 302/G5 (the dispatch/inline roster row) and 302/G7 (the `plan.phase-6-finalize.steps.default:emit-landing` registration in `.plan/marshal.json`) are coupled to each other and to neither half of this plan. Landing either without the other turns the roster closure test red in one direction or the other. This plan's D2 deliberately touches only the `orchestrator` block, so it leaves both untouched.
+
 ## Reviewer participation
 
 _pending_
