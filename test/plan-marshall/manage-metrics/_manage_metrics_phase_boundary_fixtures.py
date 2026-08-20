@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the `phase-boundary` subcommand of manage_metrics.
+"""Shared preamble for the ``manage metrics phase boundary`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for the `phase-boundary` subcommand of manage_metrics.
 
 Covers:
   - end-of-prev + start-of-next persisted in a single call

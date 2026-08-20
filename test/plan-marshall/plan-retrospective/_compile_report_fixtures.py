@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``compile-report.py``."""
+"""Shared preamble for the ``compile report`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for ``compile-report.py``.
+"""
 
 
 from __future__ import annotations

@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""In-process behavioral tests for ``check-routing-decisions.py``.
+"""Shared preamble for the ``check routing decisions`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+In-process behavioral tests for ``check-routing-decisions.py``.
 
 The aspect's headline defect was inferring a removal *cause* from a removal
 *fact*: any prunable step absent from ``phase_6.steps`` was treated as proof its

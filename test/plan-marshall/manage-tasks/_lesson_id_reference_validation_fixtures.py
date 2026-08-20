@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for at-write-time lesson-ID reference validation in manage-tasks.
+"""Shared preamble for the ``lesson id reference validation`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for at-write-time lesson-ID reference validation in manage-tasks.
 
 Covers the validation surface in ``cmd_commit_add`` and ``cmd_batch_add``
 (``_tasks_crud.py``):

@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the ``qgate-mechanical-checks`` subcommand of manage-tasks.
+"""Shared preamble for the ``manage tasks qgate mechanical`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for the ``qgate-mechanical-checks`` subcommand of manage-tasks.
 
 The subcommand runs the deterministic Q-Gate checks over the tasks and parent
 deliverables of a plan, emitting one finding per failure under ``--source

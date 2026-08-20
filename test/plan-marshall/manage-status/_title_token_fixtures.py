@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the field-only ``title-token`` verb of manage-status.py.
+"""Shared preamble for the ``title token`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for the field-only ``title-token`` verb of manage-status.py.
 
 The ``title-token`` verb persists a structured ``{owner, state, set_at}``
 record into ``status.title_token`` and performs NO rendering — the composition

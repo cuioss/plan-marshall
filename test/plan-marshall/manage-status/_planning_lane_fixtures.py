@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the ``planning-lane`` subcommand of manage-status.
+"""Shared preamble for the ``planning lane`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for the ``planning-lane`` subcommand of manage-status.
 
 The router resolves ``planning_lane ∈ {light, deep}`` from the DQ1 signal set
 (S1–S7) plus a ``request.md`` regex, with zero codebase discovery. The default

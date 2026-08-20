@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``script-failure-analysis.py``.
+"""Shared preamble for the ``script failure analysis`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for ``script-failure-analysis.py``.
 
 The script classifies non-zero-exit script calls in
 ``script-execution.log`` by stderr signature (invented_subcommand,

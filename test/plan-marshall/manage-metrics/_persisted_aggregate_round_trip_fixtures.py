@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""The rendered report and the store agree about what exists.
+"""Shared preamble for the ``persisted aggregate round trip`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+The rendered report and the store agree about what exists.
 
 Three things `metrics.md` showed had no counterpart in `metrics.toon` at all:
 the headline Total row, the population qualifier that makes it safe to quote,

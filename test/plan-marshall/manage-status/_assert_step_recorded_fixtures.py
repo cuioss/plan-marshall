@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the assert-step-recorded subcommand of manage-status.
+"""Shared preamble for the ``assert step recorded`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for the assert-step-recorded subcommand of manage-status.
 
 The verb is the read-only post-dispatch guard the phase-6-finalize dispatcher
 calls after every dispatched-step return to detect the silent gap where a step

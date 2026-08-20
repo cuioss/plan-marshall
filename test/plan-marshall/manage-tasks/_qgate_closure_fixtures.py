@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the phase-4-plan mechanical Q-Gate's CLOSURE checks.
+"""Shared preamble for the ``qgate closure`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for the phase-4-plan mechanical Q-Gate's CLOSURE checks.
 
 Existence and closure are different questions, and the end-to-end fixtures are
 built so that difference is actually exercised rather than merely asserted.

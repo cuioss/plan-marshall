@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the ``pre-commit-verify-freshness`` subcommand of manage-tasks.
+"""Shared preamble for the ``pre commit verify freshness`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for the ``pre-commit-verify-freshness`` subcommand of manage-tasks.
 
 The subcommand answers a single deterministic question — "does the unified
 change-ledger contain a ``kind=build`` entry with ``status == 'success'`` whose

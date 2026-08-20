@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the notation cross-check on ``pre-commit-verify-freshness``.
+"""Shared preamble for the ``freshness notation crosscheck`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for the notation cross-check on ``pre-commit-verify-freshness``.
 
 The gate's primary predicate ("a ``kind=build`` row with ``status == 'success'``
 and a matching ``worktree_sha`` exists") asserts a row EXISTS; it never asks

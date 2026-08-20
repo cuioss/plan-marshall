@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the ``merge_lock.py`` ``rate-window`` verbs — the cross-plan claim on
+"""Shared preamble for the ``merge lock rate window`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for the ``merge_lock.py`` ``rate-window`` verbs — the cross-plan claim on
 ONE review bot's rate window, co-tenanting the merge-lock store.
 
 Contract under test (manage-locks/SKILL.md § "The rate window shares the STORE,

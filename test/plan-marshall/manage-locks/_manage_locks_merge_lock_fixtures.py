@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the unified ``manage-locks/merge_lock.py`` — the single main-anchored
+"""Shared preamble for the ``manage locks merge lock`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for the unified ``manage-locks/merge_lock.py`` — the single main-anchored
 merge-to-main serializer fronted by a FIFO admission queue.
 
 Contract under test (lock-reconciliation-analysis.md §4 behavioural-equivalence

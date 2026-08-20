@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001, E402
-"""End-to-end regression over a re-entered, multiply-fired, partly-unmeasured, denominated plan.
+"""Shared preamble for the ``record model representability`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+End-to-end regression over a re-entered, multiply-fired, partly-unmeasured, denominated plan.
 
 The three fixes this module composes were each pinned in isolation by their own
 deliverable's unit tests. What no unit test can show is whether the RECORD — the

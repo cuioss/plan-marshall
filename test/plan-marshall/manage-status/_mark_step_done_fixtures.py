@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the mark-step-done subcommand of manage-status."""
+"""Shared preamble for the ``mark step done`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for the mark-step-done subcommand of manage-status.
+"""
 
 
 from argparse import Namespace

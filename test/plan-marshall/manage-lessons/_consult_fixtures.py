@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the ``consult`` subcommand of manage-lessons.py.
+"""Shared preamble for the ``consult`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for the ``consult`` subcommand of manage-lessons.py.
 
 ``cmd_consult`` is the corpus's prospective read side: it derives the plan's
 ``{bundle}:{skill}`` component set from its ``solution_outline.md``

@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""In-process ``main()`` dispatch tests for manage-lessons.py.
+"""Shared preamble for the ``manage lessons main dispatch`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+In-process ``main()`` dispatch tests for manage-lessons.py.
 
 The existing per-subcommand suites drive the ``cmd_*`` handlers directly and
 pin the CLI plumbing via ``run_script`` subprocesses. Subprocess execution

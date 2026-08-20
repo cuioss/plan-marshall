@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Storage-layout tests for the per-type findings JSONL split.
+"""Shared preamble for the ``findings storage`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Storage-layout tests for the per-type findings JSONL split.
 
 These tests pin the contract for the per-type storage layer:
 

@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the deterministic classification-validation gate.
+"""Shared preamble for the ``classification validation gate`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for the deterministic classification-validation gate.
 
 The gate cross-checks a plan's ``change_type`` and ``scope_estimate`` against
 cheap request signals and emits a phase-1-init Q-Gate finding (recorded against

@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for the trivial getter/setter CRUD subcommands of manage-lessons.py.
+"""Shared preamble for the ``lessons crud`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for the trivial getter/setter CRUD subcommands of manage-lessons.py.
 
 This module absorbs the four single-verb suites whose bodies were each small
 enough that a dedicated file cost more navigation than it bought:

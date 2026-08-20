@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""In-process tests for the manage-status.py CLI dispatcher (``main``).
+"""Shared preamble for the ``manage status main dispatch`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+In-process tests for the manage-status.py CLI dispatcher (``main``).
 
 The existing manage-status suites drive the per-command handlers directly
 (``cmd_create``, ``cmd_metadata``, …) or invoke the script through a

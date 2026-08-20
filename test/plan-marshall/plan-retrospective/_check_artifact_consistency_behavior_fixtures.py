@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""In-process behavioral tests for ``check-artifact-consistency.py``.
+"""Shared preamble for the ``check artifact consistency behavior`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+In-process behavioral tests for ``check-artifact-consistency.py``.
 
 The existing ``test_check_artifact_consistency.py`` drives the script through
 the ``run_script`` subprocess harness (which exercises the real argparse path

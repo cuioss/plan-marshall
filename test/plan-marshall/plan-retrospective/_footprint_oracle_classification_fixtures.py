@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the oracle-backed footprint classification shared by the two checks.
+"""Shared preamble for the ``footprint oracle classification`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for the oracle-backed footprint classification shared by the two checks.
 
 Each test here pins one deliverable of the plan that introduced
 ``_footprint_classification`` and was verified to FAIL against the pre-fix code:

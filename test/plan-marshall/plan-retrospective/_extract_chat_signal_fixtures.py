@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Parsing, reduction and output-contract tests for ``extract-chat-signal.py``.
+"""Shared preamble for the ``extract chat signal`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Parsing, reduction and output-contract tests for ``extract-chat-signal.py``.
 
 The script reduces a Claude Code session JSONL transcript to its
 signal-bearing turns (Aspect 14 of ``plan-retrospective``). It keeps every

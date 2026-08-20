@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``check-manifest-consistency.py`` and the manifest-aware
+"""Shared preamble for the ``plan retrospective manifest`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for ``check-manifest-consistency.py`` and the manifest-aware
 forward in ``check-artifact-consistency.py``.
 
 The cross-check matrix being exercised is documented in

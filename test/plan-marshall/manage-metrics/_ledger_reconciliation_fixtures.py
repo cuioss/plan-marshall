@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Cross-ledger reconciliation: a disagreement becomes a finding, not a silent choice.
+"""Shared preamble for the ``ledger reconciliation`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Cross-ledger reconciliation: a disagreement becomes a finding, not a silent choice.
 
 The two row ledgers — `execution.toon`'s `execution_log[]` and each phase's
 `work/metrics-dispatch-boundaries-{phase}.toon` — are written by independent

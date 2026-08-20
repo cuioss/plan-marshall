@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""The suspect-zero census — the class guard.
+"""Shared preamble for the ``audit suspect zero census`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+The suspect-zero census — the class guard.
 
 A detector that has never produced a positive is indistinguishable, from its
 output alone, from one that CANNOT produce one. The census makes every zero

@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Registered ⇒ rendered completeness guard for the retrospective report pipeline.
+"""Shared preamble for the ``registered aspects render`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Registered ⇒ rendered completeness guard for the retrospective report pipeline.
 
 An aspect key travels through three registries that MUST agree, or the aspect
 ships dead (a producer emits a fragment that is silently dropped at render time):

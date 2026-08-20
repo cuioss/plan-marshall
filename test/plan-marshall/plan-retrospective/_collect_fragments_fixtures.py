@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``collect-fragments.py``.
+"""Shared preamble for the ``collect fragments`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for ``collect-fragments.py``.
 
 Covers the three subcommands (``init``, ``add``, ``finalize``) across live
 and archived modes, plus the fault paths documented in the script header:

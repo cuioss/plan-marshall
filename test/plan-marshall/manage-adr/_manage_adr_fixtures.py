@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-adr.py script.
+"""Shared preamble for the ``manage adr`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for manage-adr.py script.
 
 Tier 2 (direct import) tests with 2 subprocess CLI plumbing tests retained.
 """

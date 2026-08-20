@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Unit tests for the unified ``manage-change-ledger`` CLI — the first-class
+"""Shared preamble for the ``manage change ledger`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Unit tests for the unified ``manage-change-ledger`` CLI — the first-class
 ``worktree-sha`` + ``append`` + ``query`` API over the one append-only
 change-ledger.
 

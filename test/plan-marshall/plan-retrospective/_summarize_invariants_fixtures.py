@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``summarize-invariants.py``.
+"""Shared preamble for the ``summarize invariants`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for ``summarize-invariants.py``.
 
 The script reads phase-handshake captures from ``<plan_dir>/handshakes.toon``
 (canonical storage owned by ``plan-marshall:plan-marshall:phase_handshake``)

@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the `record-dispatch-boundary` subcommand of manage_metrics.
+"""Shared preamble for the ``manage metrics record dispatch boundary`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for the `record-dispatch-boundary` subcommand of manage_metrics.
 
 phase-5-execute loses log coverage on agent-initiated re-dispatch without a
 per-dispatch audit trail. That trail is captured by this subcommand.

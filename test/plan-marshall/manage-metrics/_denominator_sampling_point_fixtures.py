@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the persisted denominators and their sampling-point discriminator.
+"""Shared preamble for the ``denominator sampling point`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for the persisted denominators and their sampling-point discriminator.
 
 ``metrics.toon`` otherwise persists NUMERATORS only, so a script reading it
 supports exactly one verdict: "this got more expensive". Every denominator a

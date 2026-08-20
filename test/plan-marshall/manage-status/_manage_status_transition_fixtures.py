@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-status.py transition + archive + delete + orphans + loop-back.
+"""Shared preamble for the ``manage status transition`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for manage-status.py transition + archive + delete + orphans + loop-back.
 
 Split from test_manage_status.py: covers cmd_transition (incl. inline
 strict-verify guard for guarded boundaries, and last-phase symmetry with

@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for the generic ``direct-gh-glab-usage.py`` aspect (Surfaces A+B) and
+"""Shared preamble for the ``direct gh glab usage`` test modules.
+
+Holds the module-level loads, constants and helpers those modules
+share. The contract they pin, in full:
+
+Tests for the generic ``direct-gh-glab-usage.py`` aspect (Surfaces A+B) and
 the retrospective-aspect extension point that homes the former Surface C.
 
 Covers the domain-invariant detection scenarios for the generic aspect:
