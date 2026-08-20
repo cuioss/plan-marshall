@@ -11,9 +11,16 @@ the write side's core logic is deterministically testable offline:
   requires D2 to ship rather than assert;
 * the edit is **applied** bottom-up to preserve positions (``apply_text_edits`` /
   ``apply_workspace_edit``), returning the original file contents so a worsened
-  post-application diagnostic set can be **rolled back** (``restore_files``);
-* the pre/post error counts drive an explicit ``edit_verdict`` — a *worsened*
-  set fails the step.
+  post-application diagnostic set can be **rolled back** (``restore_files``).
+  The apply loop is all-or-nothing: a failure part-way through restores every
+  file already written and raises :class:`WorkspaceApplyError` naming the file
+  that failed, so no caller can observe a half-applied edit;
+* the pre/post error **sets** — per file, keyed by
+  ``(severity, code, message, line, character)`` — drive an explicit
+  ``edit_verdict``: a file that *gained* an error diagnostic fails the step.
+  A set rather than a count, because summed counts net to zero when an error is
+  swapped for a different one in the same file, or moves between two files in
+  the same footprint.
 
 LSP positions are 0-based ``{line, character}`` where ``character`` is a UTF-16
 code-unit offset. For the BMP (all identifiers and virtually all source text)
@@ -25,6 +32,7 @@ Stdlib only.
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -37,6 +45,22 @@ DIAGNOSTIC_SEVERITY_ERROR = 1
 # file). A rename refactor produces only text edits; a resource op is surfaced
 # in notes rather than silently dropped.
 _RESOURCE_OP_KINDS = frozenset({'create', 'rename', 'delete'})
+
+
+class WorkspaceApplyError(Exception):
+    """A workspace edit failed part-way through; the caller must not see a partial write.
+
+    Raised by :func:`apply_workspace_edit` once every file it had already
+    rewritten has been restored. ``restore_error`` is non-``None`` only when the
+    rollback *itself* failed — the one case in which files really are left
+    modified, and which the caller must report rather than swallow.
+    """
+
+    def __init__(self, path: str, cause: BaseException, restore_error: BaseException | None = None) -> None:
+        super().__init__(f'failed to apply edits to {path}: {cause}')
+        self.path = path
+        self.cause = cause
+        self.restore_error = restore_error
 
 
 def path_to_uri(path: str | Path) -> str:
@@ -145,15 +169,37 @@ def apply_workspace_edit(workspace_edit: dict[str, Any]) -> tuple[list[dict[str,
     ``{path, edit_count}`` list and ``originals`` maps each touched path to its
     pre-edit content, so :func:`restore_files` can roll the whole change back if
     the post-application diagnostics come back worse.
+
+    **All-or-nothing.** If any file fails to read, transform or write — a
+    malformed ``TextEdit`` with no ``range``, an unwritable path, an I/O error —
+    every file already rewritten is restored and
+    :class:`WorkspaceApplyError` is raised naming the offending path. Without
+    that boundary an exception on the second of three files escapes with file
+    one rewritten and ``originals`` discarded, leaving a partial edit on disk
+    and no footprint in the output.
+
+    Raises:
+        WorkspaceApplyError: the edit failed part-way; see ``restore_error`` on
+            the exception for whether the rollback itself also failed.
     """
     changes, _notes = normalize_changes(workspace_edit)
     originals: dict[str, str] = {}
     footprint: list[dict[str, Any]] = []
     for path in sorted(changes):
         file_path = Path(path)
-        original = file_path.read_text(encoding='utf-8')
-        originals[path] = original
-        file_path.write_text(apply_text_edits(original, changes[path]), encoding='utf-8')
+        try:
+            original = file_path.read_text(encoding='utf-8')
+            new_text = apply_text_edits(original, changes[path])
+            originals[path] = original
+            file_path.write_text(new_text, encoding='utf-8')
+        except Exception as exc:  # noqa: BLE001 — re-raised as WorkspaceApplyError below
+            originals.pop(path, None)
+            restore_error: BaseException | None = None
+            try:
+                restore_files(originals)
+            except OSError as restore_exc:
+                restore_error = restore_exc
+            raise WorkspaceApplyError(path, exc, restore_error) from exc
         footprint.append({'path': path, 'edit_count': len(changes[path])})
     return footprint, originals
 
@@ -169,11 +215,73 @@ def count_error_diagnostics(diagnostics: list[dict[str, Any]]) -> int:
     return sum(1 for diag in diagnostics if diag.get('severity') == DIAGNOSTIC_SEVERITY_ERROR)
 
 
-def edit_verdict(errors_before: int, errors_after: int) -> str:
-    """Return ``'failed'`` when the edit worsened the error set, else ``'success'``.
+def diagnostic_key(diagnostic: dict[str, Any]) -> tuple[Any, ...]:
+    """Return the identity of one diagnostic within a file.
 
-    A worsened diagnostic set fails the step: an edit nobody read is at minimum
-    an edit the parser re-checked, and a re-check that finds *new* errors is a
-    rejection, not a pass.
+    Two diagnostics are the same diagnostic when they agree on severity, code,
+    message and start position. The file is *not* part of the key: keys are only
+    ever compared within one file's before/after pair, and folding the path in
+    would make an error that moved between files look like two unrelated ones.
     """
-    return 'failed' if errors_after > errors_before else 'success'
+    start = (diagnostic.get('range') or {}).get('start') or {}
+    return (
+        diagnostic.get('severity'),
+        str(diagnostic.get('code', '')),
+        diagnostic.get('message', ''),
+        start.get('line', 0),
+        start.get('character', 0),
+    )
+
+
+def error_diagnostics(diagnostics: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return only the Error-severity diagnostics — the gate's severity scope."""
+    return [diag for diag in diagnostics if diag.get('severity') == DIAGNOSTIC_SEVERITY_ERROR]
+
+
+def diagnostic_delta(
+    before: list[dict[str, Any]], after: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Return ``(added, removed)`` Error diagnostics between two reads of one file.
+
+    Compared as multisets of :func:`diagnostic_key`, so three identical errors
+    becoming four yields one ``added`` row rather than none. ``added`` is what
+    the verdict gates on and what the failure payload reports as new — built by
+    diffing, never by re-listing the whole post-edit set, which would present
+    every pre-existing error as newly introduced.
+    """
+    before_keys = Counter(diagnostic_key(diag) for diag in error_diagnostics(before))
+    after_keys = Counter(diagnostic_key(diag) for diag in error_diagnostics(after))
+    added = _select_by_key(error_diagnostics(after), after_keys - before_keys)
+    removed = _select_by_key(error_diagnostics(before), before_keys - after_keys)
+    return added, removed
+
+
+def _select_by_key(diagnostics: list[dict[str, Any]], wanted: Counter[tuple[Any, ...]]) -> list[dict[str, Any]]:
+    """Pick ``wanted[key]`` diagnostics per key out of ``diagnostics``, in order."""
+    remaining = Counter(wanted)
+    selected: list[dict[str, Any]] = []
+    for diag in diagnostics:
+        key = diagnostic_key(diag)
+        if remaining[key] > 0:
+            remaining[key] -= 1
+            selected.append(diag)
+    return selected
+
+
+def edit_verdict(added_by_path: dict[str, list[dict[str, Any]]]) -> str:
+    """Return ``'failed'`` when any file gained an error diagnostic, else ``'success'``.
+
+    A worsened diagnostic **set** fails the step: an edit nobody read is at
+    minimum an edit the parser re-checked, and a re-check that finds *new* errors
+    is a rejection, not a pass.
+
+    The gate is per file and set-based, not a footprint-wide count, because a
+    count cannot see the two cases that matter: one error swapped for a
+    different one in the same file, and an error moving from one file in the
+    footprint to another. Both net to zero and both used to pass.
+
+    Args:
+        added_by_path: per touched file, the Error diagnostics present after the
+            edit that were not present before it (see :func:`diagnostic_delta`).
+    """
+    return 'failed' if any(added_by_path.values()) else 'success'

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import sys
 
+import pytest
 from conftest import get_script_path
 
 SCRIPT_PATH = get_script_path('plan-marshall', 'lsp-client', 'lsp_client.py')
@@ -123,6 +124,30 @@ def test_apply_and_restore_round_trip(tmp_path):
     assert b.read_text() == 'bar = 2\n'
 
 
+def test_apply_rolls_back_every_written_file_when_a_later_one_fails(tmp_path):
+    """A malformed TextEdit on the middle file leaves all three byte-identical."""
+    originals_text = {'a.py': 'foo = 1\n', 'b.py': 'bar = 2\n', 'c.py': 'baz = 3\n'}
+    files = {}
+    for name, text in originals_text.items():
+        files[name] = tmp_path / name
+        files[name].write_text(text)
+    edit = {'documentChanges': [
+        {'textDocument': {'uri': we.path_to_uri(files['a.py'])}, 'edits': [_text_edit(0, 0, 0, 3, 'AAA')]},
+        # No 'range' — the exact shape a server bug produces, raising mid-apply
+        # after a.py has already been rewritten.
+        {'textDocument': {'uri': we.path_to_uri(files['b.py'])}, 'edits': [{'newText': 'oops'}]},
+        {'textDocument': {'uri': we.path_to_uri(files['c.py'])}, 'edits': [_text_edit(0, 0, 0, 3, 'CCC')]},
+    ]}
+
+    with pytest.raises(we.WorkspaceApplyError) as raised:
+        we.apply_workspace_edit(edit)
+
+    assert raised.value.path == str(files['b.py'].resolve())
+    assert raised.value.restore_error is None
+    for name, text in originals_text.items():
+        assert files[name].read_text() == text
+
+
 # -- diagnostics counting + verdict ------------------------------------------
 
 
@@ -131,12 +156,52 @@ def test_count_error_diagnostics_counts_only_errors():
     assert we.count_error_diagnostics(diags) == 2
 
 
-def test_edit_verdict_fails_on_worsened():
-    assert we.edit_verdict(0, 1) == 'failed'
-    assert we.edit_verdict(2, 5) == 'failed'
+def _error(message, line=0, code='E'):
+    return {'severity': 1, 'code': code, 'message': message,
+            'range': {'start': {'line': line, 'character': 0}}}
 
 
-def test_edit_verdict_passes_on_equal_or_improved():
-    assert we.edit_verdict(0, 0) == 'success'
-    assert we.edit_verdict(3, 3) == 'success'
-    assert we.edit_verdict(3, 1) == 'success'
+def test_edit_verdict_fails_when_any_file_gained_an_error():
+    assert we.edit_verdict({'/a.py': [_error('boom')]}) == 'failed'
+    assert we.edit_verdict({'/a.py': [], '/b.py': [_error('boom')]}) == 'failed'
+
+
+def test_edit_verdict_passes_when_no_file_gained_an_error():
+    assert we.edit_verdict({}) == 'success'
+    assert we.edit_verdict({'/a.py': [], '/b.py': []}) == 'success'
+
+
+# -- diagnostic set delta -----------------------------------------------------
+
+
+def test_delta_sees_a_swapped_error_that_a_count_cannot():
+    """[A] -> [B] is one error out, one in: the count is unchanged, the set is not."""
+    added, removed = we.diagnostic_delta([_error('A')], [_error('B')])
+    assert [diag['message'] for diag in added] == ['B']
+    assert [diag['message'] for diag in removed] == ['A']
+
+
+def test_delta_reports_only_the_new_error_not_the_pre_existing_one():
+    added, removed = we.diagnostic_delta([_error('A')], [_error('A'), _error('B', line=4)])
+    assert [diag['message'] for diag in added] == ['B']
+    assert removed == []
+
+
+def test_delta_is_a_multiset_so_a_repeated_error_gaining_one_is_visible():
+    before = [_error('dup'), _error('dup')]
+    after = [_error('dup'), _error('dup'), _error('dup')]
+    added, removed = we.diagnostic_delta(before, after)
+    assert len(added) == 1
+    assert removed == []
+
+
+def test_delta_ignores_non_error_severities():
+    warning = {'severity': 2, 'message': 'style', 'range': {'start': {'line': 0, 'character': 0}}}
+    added, removed = we.diagnostic_delta([], [warning])
+    assert added == []
+    assert removed == []
+
+
+def test_delta_distinguishes_same_message_at_a_different_line():
+    added, _removed = we.diagnostic_delta([_error('A', line=1)], [_error('A', line=1), _error('A', line=9)])
+    assert [diag['range']['start']['line'] for diag in added] == [9]

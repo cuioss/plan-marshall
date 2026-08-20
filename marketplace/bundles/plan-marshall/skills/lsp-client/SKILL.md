@@ -59,9 +59,14 @@ nothing* — the same fail-closed discipline the module graph applies one tier u
 | `not_configured` | 0 | `degraded` | No server is configured (or it is disabled) for this language. Absence of capability — fall back to `Read`/`Edit`. |
 | `unreachable` | 0 | `degraded` | A server is configured but did not start/initialise; carries a `reason`. Fall back to `Read`/`Edit`. |
 | `ok` | 1 | `success` | A server ran. An empty `locations[]` / `diagnostics[]` is then a **real, positive answer**, not a missing capability. |
+| `unknown` | 1 | `success` | A server ran but published **no verdict** for the file (`answered: false`, `reason: diagnostics_unanswered`). The `diagnose` payload then carries **no** `error_count`, `warning_count` or `diagnostics[]` at all — a zero there would be a clean signal nobody measured. |
 
 `not_configured` and `unreachable` are separately representable, so an operator
 can tell "install/configure a server" from "the configured server is broken".
+`ok` with `answered: true` and `unknown` are likewise separately representable,
+so a reader can tell "the parser examined this file and found nothing" from "the
+parser said nothing about this file" — payloads that used to be identical in
+every field.
 
 `preflight` reports the same three situations but names the healthy one `ready`
 (configured **and** reachable) rather than `ok` — `ready` is a *precondition*
@@ -78,12 +83,46 @@ that answers it:
    `edit_count`) is captured from the `WorkspaceEdit` itself — never from a diff
    taken afterwards.
 2. **Apply, then verify.** The edit is applied to the footprint files, then
-   diagnostics are re-run over exactly those files.
-3. **A worsened diagnostic set fails the step.** If the post-application error
-   count exceeds the pre-application count, the verb returns `status: failed`
-   with `reason: diagnostics_worsened`, **rolls the change back**
-   (`rolled_back: true`), and reports `errors_before` / `errors_after` /
-   `new_diagnostics[]`. An edit that broke the parse never lands silently.
+   diagnostics are re-run over exactly those files — each wait requiring a
+   `publishDiagnostics` **newer** than the one cached before the change, so the
+   post-edit check can never settle for the server's opinion of the pre-edit
+   content.
+3. **A worsened diagnostic *set* fails the step.** The pre-edit error
+   diagnostics are retained **per file**; after the edit each file's set is
+   diffed and the verb fails when **any** file gained an error. It returns
+   `status: failed` with `reason: diagnostics_worsened`, **rolls the change
+   back** (`rolled_back: true`), and reports `errors_before` / `errors_after`
+   alongside `new_diagnostics[]`, which lists the **added** diagnostics only.
+   A set rather than a footprint-wide count, because a count cannot see one
+   error swapped for a different one in the same file, or an error moving from
+   one footprint file to another: both net to zero.
+4. **All-or-nothing on disk.** An edit carrying a create/rename/delete-file
+   resource operation is refused whole (`reason:
+   unsupported_resource_operation`, with `notes[]` naming each and
+   `unapplied_operation_count`) rather than applied minus the part this client
+   cannot perform. A failure part-way through the apply loop restores every file
+   already written and returns `reason: apply_failed` with `failed_path`. Either
+   way no file is left modified — and if the rollback itself fails, that is
+   reported in `restore_error`, never swallowed.
+
+### `diagnostics_unavailable` / `diagnostics_unanswered` mean "not checked", not "wrong"
+
+A file the server publishes **no** diagnostics for has no verdict, and this
+client refuses to invent one: `edit` returns `status: failed` with
+`reason: diagnostics_unavailable` and rolls back, `diagnose` returns
+`state: unknown` with `reason: diagnostics_unanswered`.
+
+**Read that as "unverified", and verify by build.** It does *not* say the edit
+was wrong. The usual cause is the server, not the change: some servers answer
+only pull-style diagnostic requests and never push at all, and a busy server can
+miss the wait window. The edit is not implicated by either.
+
+So the next step is the canonical build — run `./pw verify` and judge the change
+on **its** result. Do not revert the change as faulty, do not retry the rename
+expecting a different verdict, and do not report a broken edit: all three read a
+missing measurement as a negative one, which is exactly the confusion this
+fail-closed direction exists to prevent. `reason: diagnostics_worsened` is the
+one that says the edit was wrong; these two say only that nobody checked.
 
 ## Diagnostics (`diagnose`) supplement the gate — they do not replace it
 
