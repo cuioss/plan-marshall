@@ -102,33 +102,37 @@ side of the match, or when the line is a heading.
 
 *The live sites the narrowing would newly surface* — re-derived at HEAD by
 running the matcher with the inline-code skip disabled and subtracting the sites
-that fire with it enabled. The gap document says **two**; the measured figure at
-HEAD is **six**, and the difference is this run's own doing: D8 added two
-narration families, so the exempt population grew. This is exactly why the plan
-said to re-derive rather than carry the recorded figure forward.
+that fire with it enabled.
 
-The six do not weigh the same, and the split is the argument:
+⚠️ **This figure has moved three times during this run, and every move was
+self-inflicted.** The gap document says two. It measured six once D8's two new
+narration families widened the exempt population; **seven** at round 2's head,
+because a docstring example round 2 wrote with a real `#NNNN` reference became a
+live match of the very family it was describing; and **five** now, once that
+example and a pre-existing one were spelled as placeholders. The figure is a
+function of the tree at the moment it is taken — including of this run's own
+prose — so it is re-derived here rather than carried, and a later reader should
+re-derive rather than quote it.
+
+At HEAD the five are:
 
 | # | Site | Snippet | Genuine narration? |
 |---|---|---|---|
-| 1 | `plan-marshall/skills/phase-6-finalize/standards/finalize-step-preference-emitter.md:100` | ``the failure mode `#990` closed cannot recur`` | **YES** — incident narration in a normative standard, exempt only because the reference is quoted. This is 130/G2's real subject. |
-| 2 | `pm-dev-frontend/skills/javascript/standards/jsdoc-essentials.md:109` | ``` `@since 1.2.0` ``` | No — a JSDoc **tag documentation example**, not prose pinned to a moment. |
-| 3 | `pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py:92` | ``` ``plan-marshall#123`` ``` | No — that analyzer's own **specification prose**, documenting the shape it matches. |
+| 1 | `plan-marshall/skills/phase-6-finalize/standards/finalize-step-preference-emitter.md:100` | ``failure mode `#990` `` | **YES** — incident narration in a normative standard, exempt only because the reference is quoted. This is 130/G2's real subject. |
+| 2 | `pm-dev-frontend/skills/javascript/standards/jsdoc-essentials.md:109` | ``` `@since 1.2.0` ``` | No — a JSDoc **tag documentation example**. |
+| 3 | `pm-plugin-development/skills/plugin-doctor/scripts/_analyze_test_conventions.py:92` | ``` ``plan-marshall#123`` ``` | No — that analyzer's own **specification prose**. |
 | 4 | `…/_analyze_test_conventions.py:99` | ``` ``plan-marshall#123`` ``` | No — same specification, second occurrence. |
-| 5 | `…/_analyze_test_conventions.py:101` | ``` ``pre-#812`` ``` | No — and the surrounding sentence says so outright: *"a schema-state literal the corpus asserts on, not a citation of 812"*. |
-| 6 | `pm-plugin-development/skills/plugin-doctor/scripts/_analyze_incident_reference_in_docs.py:41` | ``` ``#948 sibling-worktree shape`` ``` | No — the incident rule's **own module docstring**, documenting its own pattern. |
+| 5 | `…/_analyze_test_conventions.py:101` | ``` ``pre-#812`` ``` | No — the surrounding sentence says so outright: *"a schema-state literal the corpus asserts on, not a citation of 812"*. |
 
-**One of six is a real finding; five are false positives, and four of those are
-the detectors' own specification prose.** The narrowing as the gap describes it
-would make `no-incident-references` fire on the document that specifies it, and
-on a sibling analyzer's specification of the shapes IT matches — a rule flagging
-its own definition. That is a stronger argument against the narrowing than the
-convention-amendment reason alone, and it was not available to the gap author,
-whose two-site measurement predated these families.
+**One of five is a real finding; four are false positives, three of them a
+detector's own specification prose.** The narrowing as the gap describes it would
+make `no-incident-references` fire on a sibling analyzer's specification of the
+shapes IT matches. That is a stronger argument against the narrowing than the
+convention-amendment reason alone.
 
 If an operator still wants site 1 addressed, the cheap remedy is to fix that one
 sentence (the mechanism is already stated beside it), not to narrow a
-project-wide exemption whose false-positive rate on this corpus is 5-in-6.
+project-wide exemption whose false-positive rate on this corpus is 4-in-5.
 
 A suppression entry is the wrong remedy here: the rule ships **unconditional**
 by explicit design — no prefix is registered under `no-incident-references` in
@@ -210,6 +214,13 @@ documents.
 | RW-6 | round-2 verifier (V2-12) | `blind_spots` was claimed as published "on the analyzer's output" in two places; it existed only on `derive_coverage`, so a reader of a FINDING had to do exactly the re-derivation the sentence promised they need not. | Fixed: findings now carry `details.unresolved_notation_blind_spots`; both claims corrected. |
 | RW-7 | round-2 verifier (V2-13) | "the flag's `choices=` exist and sit unread **in another module**" is false for a substantial share: re-derived, **12 of the 43** underived-parser sites have `choices=` in the SAME file, unreachable for a different reason (a parser passed into a helper, or a loop-variable `add_parser`), and some have none anywhere. | Fixed in three places. The cause now asserts only what it means — the surface was not modelled — and enumerates the three mechanisms without claiming where the choices live. |
 | RW-8 | round-2 verifier (V2-14) | `persona-plan-marshall-agent/SKILL.md` was edited by round 1 and is neither in the plan's Expected surface nor in § Collateral. | Fixed: row added below. |
+| RX-1 | round-3 verifier (V3-1) | **`no_choices_declared`'s published meaning was false of the sites in it.** It read "describes a free-form value, so there is genuinely no enum claim to contradict — the ONLY non-blind-spot cause". Verified against four sampled sites, all refuting: `untrusted-ingestion validate --schema` is constrained by `SCHEMAS.get()` → *Unknown schema*; `manage-tasks update --status` by a five-member tuple test; two `manage-execution-manifest record-step` flags by `VALID_*` constants. Their documented enums ARE real claims — enforced somewhere this rule does not read, by design. And this is the bucket round 2's headline fix moved a site INTO. | Fixed at four sites. The cause now states what it means — this rule's authority (`choices=` and nothing else) is established as ABSENT rather than unestablished — and says explicitly that this is a statement about the rule's authority, not about the flag. |
+| RX-2 | round-3 verifier (V3-2) | **A mechanism round 2 invented and never ran.** The `parser_surface_not_derived` bullet listed "a parser passed INTO a helper" as a cause. Executed on that exact shape: the caller's own `add_parser` models the path, so only the authority key is missing and the site lands in `no_choices_declared` instead. The bullet describes a state the code cannot produce. | Fixed: the bullet is removed and replaced with the fact, plus a note that it was verified by execution. The two surviving mechanisms are confirmed live. |
+| RX-3 | round-3 verifier (V3-3, V3-4, V3-10) | **My own docstring examples were live matches of my own rule.** The narrowing example round 2 wrote carried a real `#NNNN`, making it the ONLY `observed_on` match in the whole population — so the "ZERO matches, vacuous bound" claim was false, and its verdict flipped under the very change it illustrated. A pre-existing `#948` example did the same for `incident_term_of_art`. Both silently moved the P1 figure. | Fixed: both spelled as placeholders; the worked example moved to the test, where the file is outside the population. Measured after: `observed_on` and `incident_term_of_art` raw matches are now **0**, so the vacuity claim is now true. P1 re-derived (above). The module comment now says why backticks are not a substitute — an exempt match is still a match. |
+| RX-4 | round-3 verifier (V3-5, V3-6) | **RV-3 and RV-4 were STILL half-applied after round 2 corrected them.** The retired argparse claim survived in `argparse_surface.py`, `tools-script-executor/SKILL.md` (which contradicted itself 156 lines later), and three test docstrings; the stale signature count survived on the References line of the file round 2 had just edited three times. | All fixed. |
+| RX-5 | round-3 verifier (V3-9) | The `--paths` docstring lead-in said "Two rules behave specially" — and the second entry is not a rule but a property of the finding. | Fixed. |
+| RX-6 | round-3 verifier (V3-11) | **`_walk_declarative_specs` injected the PARENT path for a spec whose `name` is absent or non-literal** — for a top-level entry, the root `()`. A documented root-level flag on such a script would then read `no_choices_declared`, i.e. authority-established-absent, although the parser was never reached. Round 2's change widened the aperture: before it, such a dict contributed a path only when it also declared `choices`. Zero live instances, but zero is smallness, not characterisation. | Fixed rather than characterised: a nameless spec contributes no path and is still recursed into. Pinned by `test_a_nameless_dict_spec_contributes_no_modelled_path`. |
+| RX-7 | round-3 verifier (V3-7, V3-8, V3-12, V3-13) | Four smaller false statements, including two restatements of the "choices in another module" claim inside the file whose own text forbids that restatement, and a "12 of the 43" figure that is 10 under the reading its own sentence needs. | Fixed; the figure is dropped rather than corrected, since the sentence's point does not need it. |
 | RF-6 | full verify, D6 | The new `ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED` rule had no provenance row and no firing positive fixture; two whole-tree guards failed. | Fixed: provenance row added; firing fixture added to `build_fixture_corpus`. |
 | CC-1 | coverage check vs 360/G3 | That gap's *Done when* is a literal `grep -n -i 'retention.pin\|degraded fallback'` returning nothing. The rewritten docstring USED both phrases while explaining they were fiction, so the stated condition was not met. | Fixed: the paragraph describes what the body once computed without the two banned phrases. Condition now met (`grep` exits 1). |
 | CC-2 | coverage check vs 320/G5 | That gap requires that **no surface** still claims the backward-resolution divergence is "practically unreachable". `320-.../report-01.md` still did. | Fixed: replaced with what the mechanism actually is. **Collateral, justified**: the file is outside this plan's Expected surface, but it is a location the gap itself names, and the claim is false — condition A admits no deferral. |
@@ -249,12 +260,18 @@ DO with each. Readings taken:
   different wrong mechanism restated in more places than before. Both of round
   1's headline fixes — the coverage split and the exemption-offset explanation —
   were themselves defective.
-- **Findings are not yet narrowing.** Round 2's findings are about the shipped
-  change, not merely about this report, and one (RW-1) changed a published
-  figure. That is the signal that another round is worth running, not a
-  formality.
+- **Round 3** — one verifier, aimed at whether round 2 repeated round 1's
+  pattern. **It did.** Returned RX-1..RX-7: round 2's headline prose introduced
+  two new falsehoods (RX-1's aggravation, RX-2's impossible mechanism), one
+  self-refuting example (RX-3), and left RV-3 and RV-4 half-applied for a second
+  time — one of them on the References line of a file round 2 had just corrected
+  three times.
+- **Findings are STILL not narrowing.** Nine of round 3's twelve items were about
+  the shipped bundle and test surface, not this report. A published figure moved
+  again (P1: six → seven → five), for the same reason each time — a measurement
+  carried across a population the run's own commit had altered.
 - **Budget:** five rounds (the contract default — this plan sets no other).
-  Rounds used so far: 2.
+  Rounds used so far: 3.
 
 ## Reviewer participation
 

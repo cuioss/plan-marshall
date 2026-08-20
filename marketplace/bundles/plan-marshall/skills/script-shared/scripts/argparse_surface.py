@@ -214,10 +214,17 @@ DEFAULT_CONFIG = DerivationConfig()
 #:   the target script's argparse runs, so it appears in no node's ``--help``
 #:   even though every plan-audited dispatch passes it.
 #: - ``plan-id`` / ``project-dir`` — declared on many ROOT parsers (or injected
-#:   by the executor for worktree binding) and honoured on every subcommand
-#:   through argparse's parent-flag propagation, yet frequently rendered only in
-#:   the root's help. The ancestor union covers the root-declared case; this set
-#:   is the guarantee for the executor-injected one.
+#:   by the executor for worktree binding), and frequently rendered only in the
+#:   root's help, so a leaf-only flag set calls them unknown. The ancestor union
+#:   covers the root-declared case; this set is the guarantee for the
+#:   executor-injected one.
+#:
+#:   ⛔ The union is deliberate OVER-APPROXIMATION, not argparse propagation:
+#:   argparse does NOT honour a root-declared flag after the verb — the
+#:   subparser owns everything from the verb onward and rejects it. A
+#:   root-declared flag belongs BEFORE the subcommand, which is a placement
+#:   question judged by ``ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED``, not by any
+#:   accept-set here.
 #:
 #: The arity values are a LAST-RESORT fallback, consulted only for a flag the
 #: derived surface has no arity for: the same structural invisibility that puts

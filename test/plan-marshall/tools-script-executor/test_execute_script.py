@@ -1209,8 +1209,10 @@ def test_unregistered_verb_is_still_rejected_without_a_help_token():
 def test_executor_injected_flags_are_never_rejected():
     """``--plan-id`` / ``--project-dir`` are accepted even on an empty flag set.
 
-    Both are honoured through argparse's parent-flag propagation or injected by
-    the executor, and either way can be absent from the node's rendered help.
+    Both are either declared on a root parser or injected by the executor, and
+    either way can be absent from the node's rendered help. (Not "propagated by
+    argparse" — argparse does not carry a root flag past the verb; the accept-set
+    widens deliberately so a leaf-only set cannot reject the convention.)
     Rejecting them would refuse the worktree-binding convention the whole
     codebase dispatches with.
     """

@@ -807,7 +807,8 @@ def cmd_quality_gate(args) -> dict:
     With ``--paths {dir}...`` the SAME invariant rule set runs, but the
     file-scopeable findings are filtered to those whose ``file`` resolves under
     a supplied path. No flag = today's marketplace-wide behavior, byte-for-byte
-    unchanged. Two rules behave specially under ``--paths``:
+    unchanged. TWO CLASSES are reported unfiltered under ``--paths`` — note the
+    second is not a rule but a property of the finding:
 
       - ``validate_extension_contracts`` ALWAYS runs whole-tree and its findings
         are included UNFILTERED — extension-contract compliance has no

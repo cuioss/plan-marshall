@@ -122,23 +122,39 @@ refusal to invent an authority:
   - a parser built by an IMPORTED helper (``script-shared``'s build-CLI factory
     and the declarative front-ends around it), so the file the notation names
     carries no ``ArgumentParser()`` at all;
-  - a parser passed INTO a helper (``add_plan_id_arg(parser, …)``), whose
-    ``add_argument`` calls have a receiver this walk does not resolve to a
-    parser path;
   - a subparser registered from a LOOP variable
-    (``for t in KINDS: sub.add_parser(t)``), whose verb name is not a literal.
+    (``for t in KINDS: sub.add_parser(t)``), whose verb name is not a literal,
+    so the path exists at runtime and not in this walk.
 
-  So the flag's ``choices=`` may sit unread in another module, or in THIS file
-  beyond the walk's reach, or may not exist at all. What the cause asserts is
-  only that the surface was not modelled — do not restate it as "the choices are
-  in another module", which is true of some of these sites and not others.
+  Both are live in this tree. A parser merely PASSED INTO a helper is NOT one of
+  them, and was wrongly listed here once: the caller's own ``add_parser`` models
+  the path, so only the authority key is missing and such a site lands in
+  ``no_choices_declared`` instead — verified by executing that shape rather than
+  by reading it.
+
+  What the cause asserts is only that the surface was not modelled. Do not
+  restate it as "the choices are in another module": that is true of some of
+  these sites, false of others, and unknowable for the ones whose flag declares
+  no ``choices=`` anywhere.
 * ``no_choices_declared`` — the subcommand's parser WAS modelled and declares no
-  ``choices=`` for this flag. The documented ``{a|b|c}`` describes a free-form
-  value, so there is genuinely no enum claim to contradict. This is the ONLY
-  non-blind-spot cause, which is why it is kept apart from the one above:
-  reading "the parser was never seen" as "the flag declares nothing" turns the
-  largest gap into reassurance, and that is the failure this whole rule exists
-  to catch, committed by the rule's own coverage figure.
+  ``choices=`` for this flag. This rule's authority is ``choices=`` and nothing
+  else (see the declared-vs-derived note above), so here the authority is
+  established as ABSENT rather than merely unestablished, and there is nothing
+  for the rule to compare the documented enum against.
+
+  ⛔ That is a statement about this rule's authority, NOT about the flag. Several
+  sites in this bucket ARE constrained — by a membership test in the handler
+  (``manage-tasks update --status``), by a lookup that rejects an unknown key
+  (``untrusted-ingestion validate --schema``), or against a ``VALID_*`` constant
+  (``manage-execution-manifest record-step --phase``). Their documented enums are
+  real claims; they are simply enforced somewhere this rule does not read, by
+  design. Do not describe this bucket as "free-form values" or as "no enum claim
+  to contradict" — both were written here once and both are false of it.
+
+  It is kept apart from ``parser_surface_not_derived`` because the two differ in
+  KIND: authority established-absent versus authority not established. Reading
+  the second as the first turns the largest gap into reassurance, which is the
+  failure this whole rule exists to catch, committed by the rule's own figure.
 * ``choices_unresolvable`` — the parser was modelled and declares a ``choices=``
   this resolver cannot reduce to a concrete member set. A blind spot: a real enum
   claim went unverified. The structural case is a ``choices=`` naming a constant
@@ -273,11 +289,17 @@ UNRESOLVED_CAUSES = (
     UNRESOLVED_CHOICES_UNRESOLVABLE,
 )
 
-# The causes that are genuine BLIND SPOTS — a real enum claim the sweep could not
-# check. ``no_choices_declared`` is deliberately NOT among them: there the parser
-# WAS modelled and simply declares no ``choices=``, so there is nothing to
-# contradict. Getting that partition wrong is worse than not publishing it, since
-# a coverage figure that mislabels its own gap reads as reassurance.
+# The causes where the rule's authority could not be ESTABLISHED — a documented
+# enum the sweep was unable to check against anything. ``no_choices_declared`` is
+# deliberately NOT among them: there the authority was established and is absent,
+# which is a different state from not knowing.
+#
+# ⛔ Not among them is not the same as harmless. A flag with no ``choices=`` may
+# still be constrained elsewhere in the script, where this rule does not look by
+# design — see the cause description in the module docstring. The partition is
+# about what the RULE established, not about what the flag accepts, and getting
+# it wrong is worse than not publishing it: a coverage figure that mislabels its
+# own gap reads as reassurance.
 UNRESOLVED_BLIND_SPOT_CAUSES = frozenset(
     {
         UNRESOLVED_NOTATION,
@@ -793,7 +815,21 @@ def _walk_declarative_specs(tree: ast.Module) -> list[tuple[tuple[str, ...], ast
 
     def visit(spec: ast.Dict, path: tuple[str, ...]) -> None:
         name = _dict_spec_string(spec, 'name')
-        here = path + (name,) if name else path
+        if not name:
+            # A spec whose ``name`` is absent or is not a literal string models a
+            # verb this walk cannot name. Appending ``path`` here would inject the
+            # PARENT path — for a top-level entry, the root ``()`` — and a root
+            # path in the modelled set makes a site whose parser was never
+            # reached read as ``no_choices_declared``: the mis-attribution this
+            # whole census exists to prevent, arriving through the back door.
+            # Recurse for nested entries, but contribute no path of our own.
+            nested_only = _dict_key(spec, 'subcommands')
+            if isinstance(nested_only, (ast.List, ast.Tuple)):
+                for child in nested_only.elts:
+                    if isinstance(child, ast.Dict):
+                        visit(child, path)
+            return
+        here = path + (name,)
         found.append((here, spec))
         nested = _dict_key(spec, 'subcommands')
         if isinstance(nested, (ast.List, ast.Tuple)):
@@ -814,11 +850,11 @@ def _derived_subcommand_paths(tree: ast.Module) -> set[tuple[str, ...]]:
     """Every subcommand path this module's parser surface was actually MODELLED at.
 
     The discriminator between "this flag declares no ``choices=``" and "this
-    module's parser was never seen". Both leave the authority key absent, and
+    module's parser was never modelled". Both leave the authority key absent, and
     conflating them is the worse direction: a script whose parser is built by an
     IMPORTED helper yields no ``ArgumentParser()`` assignment here, so every one
-    of its documented enums looks like a flag with nothing to check while its
-    ``choices=`` sit unread in another module.
+    of its documented enums looks like a flag the rule established nothing to
+    check against, when in fact the rule never reached the parser at all.
     """
     paths: set[tuple[str, ...]] = set()
     for path_set in _build_parser_path_sets(tree).values():
@@ -906,8 +942,8 @@ def derive_population(marketplace_root: Path, cache=None) -> list[EnumSite]:
                 #   * it parsed but this subcommand's parser was never MODELLED
                 #     — the dominant case being a parser built by an imported
                 #     helper, which yields no ``ArgumentParser()`` here. A real
-                #     blind spot: the flag's ``choices=`` live somewhere this
-                #     resolver never looked;
+                #     blind spot: the rule never reached the parser, so it
+                #     established nothing either way;
                 #   * the parser WAS modelled and the key is simply absent, which
                 #     is the only one of the three that means "this flag declares
                 #     no choices, so there is nothing to contradict".
@@ -978,11 +1014,15 @@ def derive_coverage(population: list[EnumSite]) -> dict:
     an absence a reader must interpret.
 
     ``blind_spots`` is the sum over :data:`UNRESOLVED_BLIND_SPOT_CAUSES` — every
-    cause EXCEPT ``no_choices_declared``, which is the only one where the parser
-    was modelled and genuinely declares nothing to contradict. That partition is
-    the load-bearing part, and getting it wrong is worse than not publishing it:
-    a coverage figure that files "the parser was never seen" under "nothing to
-    check" reports its largest gap as reassurance.
+    cause EXCEPT ``no_choices_declared``, which is the only one where the rule's
+    authority was ESTABLISHED and found absent rather than left unestablished.
+    That partition is the load-bearing part, and getting it wrong is worse than
+    not publishing it: a coverage figure that files "the parser was never seen"
+    under "nothing to check" reports its largest gap as reassurance.
+
+    It is a statement about this rule's authority, not about the flags: a site in
+    ``no_choices_declared`` may still be constrained by a check this rule does
+    not read.
     """
     total = len(population)
     unresolved_sites = [site for site in population if not site.resolved]

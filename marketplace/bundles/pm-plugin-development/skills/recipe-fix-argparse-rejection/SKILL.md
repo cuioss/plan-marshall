@@ -87,5 +87,5 @@ Apply the correction to the **calling** skill's workflow document (or the inline
 
 ## See Also
 
-- [`plan-marshall:persona-plan-marshall-agent` § "Never invent script subcommands"](../../../plan-marshall/skills/persona-plan-marshall-agent/standards/agent-behavior-rules.md) — the prevention rule and the canonical home of the four argparse-rejection recurrence signatures.
+- [`plan-marshall:persona-plan-marshall-agent` § "Never invent script subcommands"](../../../plan-marshall/skills/persona-plan-marshall-agent/standards/agent-behavior-rules.md) — the prevention rule and the canonical home of the argparse-rejection recurrence signatures.
 - [`pm-plugin-development:plugin-script-architecture/standards/cross-skill-integration.md` § "Script invocation in documentation"](../plugin-script-architecture/standards/cross-skill-integration.md) — the explicit-call-or-xref authoring contract that a correct fix satisfies, plus the `manage-invocation-invalid` / `missing-canonical-block` rules that guard it at edit time.

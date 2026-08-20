@@ -182,8 +182,10 @@ Four long flags are accepted on every node regardless of the derived surface,
 because each is invisible to the derivation for a structural reason: `help`
 (declared by every argparse parser and deliberately stripped from each derived
 set), `audit-plan-id` (consumed by the executor before the target's argparse
-runs), and `plan-id` / `project-dir` (honoured on every subcommand through
-parent-flag propagation but often rendered only in the root's help).
+runs), and `plan-id` / `project-dir` (declared on many root parsers and often rendered only in the
+root's help, so a leaf-only flag set would call them unknown — the accept-set widens to
+avoid that false rejection, NOT because argparse propagates a root flag past the verb; it
+does not, and such a flag belongs before the subcommand).
 
 That accept-set is defined once, as `UNIVERSAL_FLAG_ARITY` in the shared
 [`argparse_surface` module](../script-shared/scripts/argparse_surface.py), and

@@ -27,6 +27,7 @@ Test layers:
   * A ``choices=CONST`` reference is resolved to the constant's members.
 """
 
+import ast
 from pathlib import Path
 
 from conftest import MARKETPLACE_ROOT, load_script_module
@@ -765,3 +766,30 @@ def test_a_dict_spec_subcommand_with_no_choices_is_not_a_blind_spot(tmp_path):
     assert coverage['unresolved_causes'][_mod.UNRESOLVED_NO_CHOICES_DECLARED] == 1
     assert coverage['unresolved_causes'][_mod.UNRESOLVED_PARSER_NOT_DERIVED] == 0
     assert coverage['blind_spots'] == 0
+
+
+def test_a_nameless_dict_spec_contributes_no_modelled_path():
+    """A spec whose verb cannot be named must not inject the PARENT path.
+
+    ``here = path + (name,) if name else path`` followed by an unconditional
+    append made a nameless top-level entry contribute ``()`` — the root path — to
+    the modelled set. A documented root-level flag on such a script would then
+    read as ``no_choices_declared`` ("the authority was established and is
+    absent") although the parser was never reached: the census mis-attribution
+    this module exists to prevent, arriving through a second entry point.
+
+    Nested entries are still walked, so a named child below a nameless parent is
+    not lost — it is simply attributed to the path its named ancestors give it.
+    """
+    tree = ast.parse(
+        'def build():\n'
+        '    return helper(subcommands=[\n'
+        "        {'help': 'nameless top-level'},\n"
+        "        {'name': 'outer', 'subcommands': [{'name': 'inner', 'args': []}]},\n"
+        '    ])\n'
+    )
+
+    paths = _mod._derived_subcommand_paths(tree)
+
+    assert () not in paths
+    assert paths == {('outer',), ('outer', 'inner')}

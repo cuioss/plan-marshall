@@ -38,7 +38,7 @@ above):
 4. **Incident term-of-art** — a ``#NNNN`` (optionally ``PR #NNNN``) bound to an
    incident noun: ``failure mode`` / ``signature`` / ``shape`` / ``defect`` /
    ``incident`` / ``regression`` (an optional single hyphenated qualifier may
-   sit between, e.g. ``#948 sibling-worktree shape``).
+   sit between, e.g. ``#NNNN sibling-worktree shape``).
 5. **Incident term-of-art, REVERSED** — the same noun set with the reference
    AFTER it ("the failure mode #NNNN"), same optional hyphenated qualifier.
    English prose reaches for this ordering at least as often as form 4's.
@@ -146,9 +146,14 @@ _TERM_OF_ART_RE = re.compile(
 # — passed a rule whose own brief named it. Same noun set, same optional
 # hyphenated qualifier, mirrored.
 #
-# The example above spells the reference as a LITERAL ``#NNNN`` placeholder, as
-# every example in this module does: the population includes ``*.py``, so a
-# comment carrying a real digit run would make the analyzer fire on itself.
+# The example above spells the reference as a LITERAL ``#NNNN`` placeholder, and
+# every example in this file does the same: the population includes ``*.py``, so
+# a real digit run here is a live match of this module's own rule. Backticks are
+# not a substitute — they only make the match EXEMPT, and an exempt match is
+# still a match, which is enough to change what a disable-the-exemption
+# measurement reports about the tree. That happened: an example written with a
+# real reference became the only ``observed_on`` match in the whole population
+# and shifted a published figure.
 _TERM_OF_ART_REVERSED_RE = re.compile(
     r'(?:failure mode|signature|shape|defect|incident|regression)\s+'
     r'(?:[A-Za-z]+-[A-Za-z]+\s+)?`?#\d{3,4}',
@@ -293,11 +298,14 @@ def _exemption_offset(match: re.Match) -> int:
     back-ticked reference there still fired, making it the one family in which
     the project-wide "a back-ticked reference is a code token" convention did not
     hold. The change is not purely a widening, though — it also NARROWS, when the
-    OPENER is quoted and the reference is not: on
-    ``` `Observed on the run log` shows #812. ``` the match start (offset 1) is
-    inside the code span and the reference (offset 32) is outside it, so the line
-    was exempt before and fires now. Both directions follow from the same rule,
-    that the exemption is about the REFERENCE being a code token.
+    OPENER is quoted and the reference is not: a line quoting the whole clause
+    and leaving the reference bare has its match start inside a code span and its
+    reference outside, so it was exempt before and fires now. Both directions
+    follow from the same rule, that the exemption is about the REFERENCE being a
+    code token. The worked example, with both offsets asserted, lives in
+    ``test_the_change_narrows_as_well_as_widens`` rather than here: spelled out
+    in this docstring it is a live match of this very family, in a file the
+    population includes — which is exactly what happened when it was.
 
     The widening is deliberate and disclosed rather than silent, and pinned by
     ``test_observed_on_with_a_backticked_ref_is_exempt``. ⚠️ Its live-incidence
