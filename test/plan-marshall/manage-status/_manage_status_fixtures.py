@@ -16,6 +16,14 @@ from conftest import get_script_path
 
 
 def _write_status(plan_dir: Path) -> None:
+    """Create ``{plan_dir}/status.json`` with no phases and no metadata.
+
+    The consumers need the plan to EXIST rather than to hold anything: each
+    seeds this empty document and asserts on what the command under test makes
+    of it. The pre-split copy said "so ``--persist`` write paths can read it",
+    which was true of the one module it came from and is not true of the three
+    that share it now.
+    """
     plan_dir.mkdir(parents=True, exist_ok=True)
     (plan_dir / 'status.json').write_text(
         json.dumps({'plan_id': plan_dir.name, 'phases': [], 'metadata': {}}),

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: F811 — tests take the imported fixture as a parameter
-"""Tests for manage-status.py transition: loop-back targets and the finalize-boundary findings gate."""
+"""Tests for manage-status.py transition: the loop-back target contract,
+the inline strict-verify guard, and the persisted-title-state drive seam."""
 
 
 import json
@@ -18,7 +19,6 @@ from _manage_status_transition_fixtures import (  # noqa: F401 — a fixture is 
     _seed_execute_phase_plan,
     _seed_plan_with_5_execute_capture,
     _setup_plan,
-    _stub_finding_queries,
     _stub_metadata,
     cmd_mark_step_done,
     cmd_transition,
@@ -26,6 +26,11 @@ from _manage_status_transition_fixtures import (  # noqa: F401 — a fixture is 
 
 from conftest import run_script
 
+# =============================================================================
+# Regression Tests: cmd_transition inline strict-verify guard for guarded
+# boundaries (folded from the standalone phase_handshake verify --strict step
+# that orchestrator workflow docs used to issue separately at 5-execute -> 6-finalize).
+# =============================================================================
 
 @pytest.fixture
 def _stubbed_invariants(monkeypatch):
@@ -72,29 +77,8 @@ def _stubbed_invariants(monkeypatch):
 
 
 # =============================================================================
-# Fixed actionable-vs-knowledge rule at the 5-execute -> 6-finalize boundary
+# Test: Hybrid loopback contract — `--loop-back-target` granularity flag
 # =============================================================================
-#
-# Integration-level assertions over the REAL ``_capture_pending_findings_blocking_count``
-# (narrowed INVARIANTS registry) driven through ``cmd_capture --phase 6-finalize``:
-# a pending KNOWLEDGE-type finding does NOT block the guarded boundary; a pending
-# ACTIONABLE-type finding DOES. No marshal.json blocking_finding_types partition
-# is involved — the rule is hardcoded in ``_invariants._ACTIONABLE_FINDING_TYPES``.
-
-
-@pytest.fixture
-def _only_blocking_invariant(monkeypatch):
-    """Narrow INVARIANTS to just the real pending-findings-blocking entry."""
-    stubbed = [
-        (
-            'pending_findings_blocking_count',
-            lambda _pid, _md: True,
-            _inv._capture_pending_findings_blocking_count,
-        ),
-    ]
-    monkeypatch.setattr(_inv, 'INVARIANTS', stubbed)
-    monkeypatch.setattr(_cmds, 'INVARIANTS', stubbed)
-
 
 class TestLoopBackTargetValidation:
     """The `--loop-back-target` flag is REQUIRED on every loop_back outcome
@@ -231,38 +215,9 @@ class TestLoopBackTargetValidation:
         assert result['error'] == 'invalid_loop_back_target'
 
 
-def test_finalize_boundary_pending_knowledge_finding_does_not_block(
-    plan_context, _only_blocking_invariant, _stub_metadata, monkeypatch
-):
-    """A pending KNOWLEDGE-type finding (``insight``) clears the 6-finalize
-    capture under the fixed rule."""
-    _stub_finding_queries(monkeypatch, {'insight': 5, 'tip': 3})
-
-    result = _cmds.cmd_capture(
-        Namespace(plan_id='fixed-rule-knowledge', phase='6-finalize', override=False, reason=None, strict=False)
-    )
-
-    assert result['status'] == 'success'
-    assert result['invariants']['pending_findings_blocking_count'] in (0, '0')
-
-
-def test_finalize_boundary_pending_actionable_finding_blocks(
-    plan_context, _only_blocking_invariant, _stub_metadata, monkeypatch
-):
-    """A pending ACTIONABLE-type finding (``build-error``) refuses the 6-finalize
-    capture under the fixed rule."""
-    _stub_finding_queries(monkeypatch, {'build-error': 1})
-
-    result = _cmds.cmd_capture(
-        Namespace(plan_id='fixed-rule-actionable', phase='6-finalize', override=False, reason=None, strict=False)
-    )
-
-    assert result['status'] == 'error'
-    assert result['error'] == 'blocking_findings_present'
-    assert result['blocking_count'] == 1
-    assert result['blocking_types'] == list(_inv._ACTIONABLE_FINDING_TYPES)
-    assert result['per_type']['build-error'] == 1
-
+# =============================================================================
+# Regression Tests: persisted-title-state-write drive seam (Defects 1 & 2)
+# =============================================================================
 
 def test_cmd_transition_fires_drive_seam_after_write(plan_context, monkeypatch):
     """cmd_transition fires _surface_drive exactly once (with the plan_id) on advance."""
@@ -343,48 +298,3 @@ def test_drive_bind_and_repaint_target_correct_verbs(monkeypatch):
         ('session', 'push-title-token', '--plan-id', 'paint-plan'),
     ), 'repaint must push with NO --icon (plain repaint, default active icon)'
     assert '--icon' not in calls[1][1], 'the repaint seam must never pass --icon (Defect 1 plain repaint)'
-
-
-def test_run_executor_skips_when_executor_absent(monkeypatch, tmp_path):
-    """_run_executor is a no-op (no subprocess) when the executor is not on disk."""
-    missing = tmp_path / 'execute-script.py'  # deliberately not created
-    monkeypatch.setattr(_core, 'get_executor_path', lambda: missing)
-    spawned = []
-    monkeypatch.setattr(_core.subprocess, 'run', lambda *a, **k: spawned.append(a))
-
-    _core._run_executor('plan-marshall:platform-runtime:platform_runtime', 'session', 'bind', '--plan-id', 'x')
-
-    assert spawned == [], 'an absent executor must skip the subprocess spawn entirely'
-
-
-def test_run_executor_spawns_when_executor_present(monkeypatch, tmp_path):
-    """_run_executor spawns the executor subprocess when the script exists on disk."""
-    present = tmp_path / 'execute-script.py'
-    present.write_text('# stub executor\n', encoding='utf-8')
-    monkeypatch.setattr(_core, 'get_executor_path', lambda: present)
-    captured = []
-    monkeypatch.setattr(_core.subprocess, 'run', lambda cmd, **k: captured.append(cmd))
-
-    _core._run_executor(
-        'plan-marshall:platform-runtime:platform_runtime', 'session', 'push-title-token', '--plan-id', 'x'
-    )
-
-    assert len(captured) == 1, f'exactly one spawn expected, got {captured!r}'
-    cmd = captured[0]
-    assert str(present) in cmd
-    assert cmd[-4:] == ['session', 'push-title-token', '--plan-id', 'x']
-
-
-def test_run_executor_swallows_subprocess_oserror(monkeypatch, tmp_path):
-    """A subprocess OSError is swallowed — _run_executor never propagates."""
-    present = tmp_path / 'execute-script.py'
-    present.write_text('# stub executor\n', encoding='utf-8')
-    monkeypatch.setattr(_core, 'get_executor_path', lambda: present)
-
-    def _explode(*_a, **_k):
-        raise OSError('simulated spawn failure')
-
-    monkeypatch.setattr(_core.subprocess, 'run', _explode)
-
-    # Must NOT raise.
-    _core._run_executor('plan-marshall:platform-runtime:platform_runtime', 'session', 'bind', '--plan-id', 'x')

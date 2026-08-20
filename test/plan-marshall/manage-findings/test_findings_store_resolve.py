@@ -18,6 +18,9 @@ from _findings_store_fixtures import (
     resolve_qgate_findings_by_evidence,
 )
 
+# =============================================================================
+# Test: Q-Gate findings
+# =============================================================================
 
 def test_resolve_qgate_finding(plan_context):
     """Test resolving a Q-Gate finding."""
@@ -63,6 +66,91 @@ def test_resolve_qgate_finding_rejected_is_valid(plan_context):
     assert result['resolution'] == 'rejected'
 
 
+def test_qgate_dedup_pending(plan_context):
+    """Test Q-Gate deduplication for pending findings with same title AND content.
+
+    Dedup keys on the (title, content-discriminator) pair — a bare title
+    collision alone is no longer enough. A genuine re-detection of the same
+    defect carries the SAME title AND the SAME content (detail/file/rule), so
+    the discriminator matches and the second add collapses onto the first.
+    """
+    r1 = add_qgate_finding(
+        'store-qgate-dedup',
+        '5-execute',
+        'qgate',
+        'build-error',
+        'Same title',
+        'Same detail',
+    )
+    assert r1['status'] == 'success'
+
+    r2 = add_qgate_finding(
+        'store-qgate-dedup',
+        '5-execute',
+        'qgate',
+        'build-error',
+        'Same title',
+        'Same detail',
+    )
+    assert r2['status'] == 'deduplicated'
+    assert r2['hash_id'] == r1['hash_id']
+
+
+def test_qgate_reopen_resolved(plan_context):
+    """Test Q-Gate reopens a resolved finding when the SAME defect is re-detected.
+
+    Reopen fires only on a genuine re-detection — same title AND same content
+    discriminator (detail/file/rule) as the resolved record. A same-title but
+    different-content finding fails the discriminator match and is filed fresh
+    instead of reopening the unrelated resolved record.
+    """
+    r1 = add_qgate_finding(
+        'store-qgate-reopen',
+        '5-execute',
+        'qgate',
+        'build-error',
+        'Flaky test',
+        'Detail',
+    )
+    resolve_qgate_finding('store-qgate-reopen', '5-execute', r1['hash_id'], 'fixed')
+
+    r2 = add_qgate_finding(
+        'store-qgate-reopen',
+        '5-execute',
+        'qgate',
+        'build-error',
+        'Flaky test',
+        'Detail',
+    )
+    assert r2['status'] == 'reopened'
+    assert r2['hash_id'] == r1['hash_id']
+
+
+def test_rejected_qgate_finding_is_non_pending_in_unified_read(plan_context):
+    """A `rejected` Q-Gate finding is non-blocking: excluded from the unified read.
+
+    The findings-gate invariant in `query_findings_unified` merges ONLY pending
+    Q-Gate records. A finding resolved to `rejected` is therefore treated as
+    non-pending exactly like `fixed` / `accepted` — it never surfaces through the
+    unified gate read and so does not block the gate.
+    """
+    pid = 'store-qgate-rejected-nonpending'
+    pending = add_qgate_finding(
+        pid, '5-execute', 'qgate', 'test-failure', 'Stays pending', 'Detail'
+    )
+    refuted = add_qgate_finding(
+        pid, '5-execute', 'qgate', 'test-failure', 'Gets rejected', 'Detail'
+    )
+    resolve_qgate_finding(pid, '5-execute', refuted['hash_id'], 'rejected')
+
+    unified = query_findings_unified(pid)
+
+    assert unified['qgate_count'] == 1
+    titles = {f['title'] for f in unified['findings']}
+    assert titles == {'Stays pending'}
+    assert pending['hash_id'] in {f['hash_id'] for f in unified['findings']}
+
+
 # =============================================================================
 # Test: resolve_qgate_findings_by_evidence (D3 — self-review loop-back resolution)
 #
@@ -71,7 +159,6 @@ def test_resolve_qgate_finding_rejected_is_valid(plan_context):
 # is the important one: a finding marked `fixed` without a landed change touching
 # its file is strictly worse than one left `pending`.
 # =============================================================================
-
 
 def test_resolve_evidenced_transitions_finding_whose_file_changed(plan_context):
     """A pending finding whose file_path IS in the landed-fix set is resolved `fixed`."""
@@ -217,141 +304,6 @@ def test_resolve_evidenced_failed_write_reported_as_pending_not_resolved(plan_co
     assert [e['hash_id'] for e in result['left_pending']] == [r['hash_id']]
 
 
-# =============================================================================
-# Test: promote_finding
-# =============================================================================
-
-
-def test_promote_finding_success(plan_context):
-    """Test promoting a finding."""
-    r = add_finding('store-promote', 'bug', 'Bug', 'Detail')
-    hash_id = r['hash_id']
-
-    result = promote_finding('store-promote', hash_id, 'manage-lessons')
-    assert result['status'] == 'success'
-    assert result['promoted_to'] == 'manage-lessons'
-
-    query = query_findings('store-promote', promoted=True)
-    assert query['filtered_count'] == 1
-
-
-def test_qgate_dedup_pending(plan_context):
-    """Test Q-Gate deduplication for pending findings with same title AND content.
-
-    Dedup keys on the (title, content-discriminator) pair — a bare title
-    collision alone is no longer enough. A genuine re-detection of the same
-    defect carries the SAME title AND the SAME content (detail/file/rule), so
-    the discriminator matches and the second add collapses onto the first.
-    """
-    r1 = add_qgate_finding(
-        'store-qgate-dedup',
-        '5-execute',
-        'qgate',
-        'build-error',
-        'Same title',
-        'Same detail',
-    )
-    assert r1['status'] == 'success'
-
-    r2 = add_qgate_finding(
-        'store-qgate-dedup',
-        '5-execute',
-        'qgate',
-        'build-error',
-        'Same title',
-        'Same detail',
-    )
-    assert r2['status'] == 'deduplicated'
-    assert r2['hash_id'] == r1['hash_id']
-
-
-def test_qgate_reopen_resolved(plan_context):
-    """Test Q-Gate reopens a resolved finding when the SAME defect is re-detected.
-
-    Reopen fires only on a genuine re-detection — same title AND same content
-    discriminator (detail/file/rule) as the resolved record. A same-title but
-    different-content finding fails the discriminator match and is filed fresh
-    instead of reopening the unrelated resolved record.
-    """
-    r1 = add_qgate_finding(
-        'store-qgate-reopen',
-        '5-execute',
-        'qgate',
-        'build-error',
-        'Flaky test',
-        'Detail',
-    )
-    resolve_qgate_finding('store-qgate-reopen', '5-execute', r1['hash_id'], 'fixed')
-
-    r2 = add_qgate_finding(
-        'store-qgate-reopen',
-        '5-execute',
-        'qgate',
-        'build-error',
-        'Flaky test',
-        'Detail',
-    )
-    assert r2['status'] == 'reopened'
-    assert r2['hash_id'] == r1['hash_id']
-
-
-def test_qgate_persist_ok_admits_every_in_store_outcome(plan_context):
-    """The three outcomes that leave the record IN the store are all members."""
-    observed = _observed_qgate_statuses('store-qgate-partition-ok')
-
-    assert observed['fresh'] in QGATE_PERSIST_OK
-    assert observed['dedup'] in QGATE_PERSIST_OK
-    assert observed['reopened'] in QGATE_PERSIST_OK
-
-
-def test_qgate_persist_ok_excludes_the_rejection_outcome(plan_context):
-    """A REJECTED persist is outside the set — it must never read as benign."""
-    observed = _observed_qgate_statuses('store-qgate-partition-reject')
-
-    assert observed['rejected'] not in QGATE_PERSIST_OK
-    assert observed['rejected'] != observed['dedup'], (
-        'a rejection must not collapse onto the benign deduplicated outcome'
-    )
-
-
-def test_qgate_persist_ok_partitions_the_outcome_space_exactly(plan_context):
-    """The set is exactly the in-store outcomes — no more, no less.
-
-    Derived both ways: every observed in-store outcome is a member, and the set
-    carries no member the primitive never produces, so an extra value silently
-    added to ``QGATE_PERSIST_OK`` (which would re-admit a rejection) fails here.
-    """
-    observed = _observed_qgate_statuses('store-qgate-partition-exact')
-
-    in_store = {observed['fresh'], observed['dedup'], observed['reopened']}
-    assert set(QGATE_PERSIST_OK) == in_store
-
-
-def test_rejected_qgate_finding_is_non_pending_in_unified_read(plan_context):
-    """A `rejected` Q-Gate finding is non-blocking: excluded from the unified read.
-
-    The findings-gate invariant in `query_findings_unified` merges ONLY pending
-    Q-Gate records. A finding resolved to `rejected` is therefore treated as
-    non-pending exactly like `fixed` / `accepted` — it never surfaces through the
-    unified gate read and so does not block the gate.
-    """
-    pid = 'store-qgate-rejected-nonpending'
-    pending = add_qgate_finding(
-        pid, '5-execute', 'qgate', 'test-failure', 'Stays pending', 'Detail'
-    )
-    refuted = add_qgate_finding(
-        pid, '5-execute', 'qgate', 'test-failure', 'Gets rejected', 'Detail'
-    )
-    resolve_qgate_finding(pid, '5-execute', refuted['hash_id'], 'rejected')
-
-    unified = query_findings_unified(pid)
-
-    assert unified['qgate_count'] == 1
-    titles = {f['title'] for f in unified['findings']}
-    assert titles == {'Stays pending'}
-    assert pending['hash_id'] in {f['hash_id'] for f in unified['findings']}
-
-
 def test_clear_qgate_findings(plan_context):
     """Test clearing all Q-Gate findings for a phase."""
     add_qgate_finding(
@@ -384,3 +336,56 @@ def test_clear_qgate_findings_empty(plan_context):
     result = clear_qgate_findings('store-qgate-clear-empty', '5-execute')
     assert result['status'] == 'success'
     assert result['cleared'] == 0
+
+
+# =============================================================================
+# Test: promote_finding
+# =============================================================================
+
+def test_promote_finding_success(plan_context):
+    """Test promoting a finding."""
+    r = add_finding('store-promote', 'bug', 'Bug', 'Detail')
+    hash_id = r['hash_id']
+
+    result = promote_finding('store-promote', hash_id, 'manage-lessons')
+    assert result['status'] == 'success'
+    assert result['promoted_to'] == 'manage-lessons'
+
+    query = query_findings('store-promote', promoted=True)
+    assert query['filtered_count'] == 1
+
+
+# =============================================================================
+# Test: QGATE_PERSIST_OK — the published persist-outcome partition
+# =============================================================================
+
+def test_qgate_persist_ok_admits_every_in_store_outcome(plan_context):
+    """The three outcomes that leave the record IN the store are all members."""
+    observed = _observed_qgate_statuses('store-qgate-partition-ok')
+
+    assert observed['fresh'] in QGATE_PERSIST_OK
+    assert observed['dedup'] in QGATE_PERSIST_OK
+    assert observed['reopened'] in QGATE_PERSIST_OK
+
+
+def test_qgate_persist_ok_excludes_the_rejection_outcome(plan_context):
+    """A REJECTED persist is outside the set — it must never read as benign."""
+    observed = _observed_qgate_statuses('store-qgate-partition-reject')
+
+    assert observed['rejected'] not in QGATE_PERSIST_OK
+    assert observed['rejected'] != observed['dedup'], (
+        'a rejection must not collapse onto the benign deduplicated outcome'
+    )
+
+
+def test_qgate_persist_ok_partitions_the_outcome_space_exactly(plan_context):
+    """The set is exactly the in-store outcomes — no more, no less.
+
+    Derived both ways: every observed in-store outcome is a member, and the set
+    carries no member the primitive never produces, so an extra value silently
+    added to ``QGATE_PERSIST_OK`` (which would re-admit a rejection) fails here.
+    """
+    observed = _observed_qgate_statuses('store-qgate-partition-exact')
+
+    in_store = {observed['fresh'], observed['dedup'], observed['reopened']}
+    assert set(QGATE_PERSIST_OK) == in_store
