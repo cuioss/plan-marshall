@@ -917,6 +917,42 @@ The remaining 4 nitpicks were absorbed into the fixes above rather than tracked 
 Both dispositions and the applied set were posted to the PR, so the decline is on the record rather
 than silent.
 
+**Round B — CodeRabbit on `ccdb985`.** Re-triggered with `@coderabbitai review` once the rate-limit
+window reopened. The review limit here is **one included review per hour**, which is why the two
+pushes between the rounds were refused rather than reviewed; a refusal consumes nothing. Merge Risk
+stayed 🟡 Moderate but the two issues it previously named were gone, replaced by a new set — the
+round found **3 actionable plus 1 outside-diff**, two of them real defects that fifteen verification
+rounds and round A had both missed.
+
+| # | Severity | Finding | Disposition |
+|---|---|---|---|
+| 1 | Minor (outside diff) | `_tokens` coerced every list ITEM with `str()`, so `targets: [true]` became the target name `'True'` | **Accepted — a real defect, and a self-inconsistency.** The whole-value branch already refused to coerce a mapping or a boolean precisely so the error would not name a target nobody wrote; the item path did exactly that. A non-string item now raises, through a separate `_NotAName` marker so the message can name the ITEM's type — reusing `_NotAList` would have produced "is list, not a list". Pinned by 8 parametrised cases (bool, int, float, mapping, nested list, YAML date, block form, and a bad item beside a good one), all of which fail against the old line |
+| 2 | Minor | The lossy re-read in the `UnicodeDecodeError` branch is a second filesystem call sitting outside the earlier `except OSError`, so a file vanishing between the two reads leaks a raw `OSError` | **Accepted — real.** Introduced by round A's own fix, which is how it escaped every earlier round. Guarded, degrading the way an unreadable file already does. Pinned with a `monkeypatch` that fails only the `errors='replace'` read, asserting both reads were attempted so the pin cannot pass by never reaching the second |
+| 3 | Minor | `marketplace-build.adoc` named `frontmatter-standards.md` as plain text where the standards require `xref:` | **Accepted** |
+| 4 | **Major** | The differential test detects component-kind drift but does not remove the duplicated `('agents', 'commands')` list; move the layout to a shared stdlib-compatible contract and derive both walkers | **DECLINED — see below** |
+
+Both accepted code fixes were **mutation-checked**: the fix was reverted in place and the new pins
+re-run, confirming all 8 item cases and the vanishing-file case fail without it. The file was
+restored from a byte snapshot and the restore verified.
+
+**Why finding 4 is declined.** The remedy asks for a module both `marketplace/targets/` and the
+plugin-doctor script import. The duplication exists because those two live on opposite sides of a
+distribution boundary: `marketplace/targets/` is meta-project-only and absent from a consumer
+install, while the doctor script ships inside the bundle. A shared contract would therefore have to
+live in the bundle and be imported *by the build* — inverting the dependency so the generator
+depends on a plugin's script tree. That is a larger and worse coupling than the one it removes.
+
+The alternative — import from `marketplace/targets/` when present, fall back to literals otherwise —
+does not remove the second list either; it adds a branch whose derived path only ever runs in the
+meta-project, which is exactly where the differential test already runs.
+
+What the differential buys is that drift stops being silent: `_FILE_COMPONENT_DIRS` and the doctor's
+walk are compared against each other, so the suite fails in the same repository and on the same
+commit where someone would add a fourth component kind. The residual exposure is a consumer running
+a doctor built before that change, which no derivation inside this repository could fix anyway. This
+is a judgement against a stated coding guideline rather than an oversight of it, and it is recorded
+here as such — see § Residue.
+
 ## Cost
 
 _(filled in at close)_
@@ -930,6 +966,13 @@ _(filled in at close)_
 _(filled in at close)_
 
 ## Residue
+
+**Declined reviewer finding (round B, Major).** Deriving the plugin-doctor component-kind walk from
+`component_targets.py` rather than pinning it with a differential. Declined because the shared module
+would have to live in the consumer-installed bundle and be imported by the build, inverting the
+dependency across a distribution boundary. The drift is pinned, not silent. A maintainer who weighs
+the guideline above that coupling should reopen it.
+
 
 Six dispositions above defer here (F4, F10, R4-8, R4-10, and the two survivor bounds); this is
 that record. Round 10 adds the decisions below, which are not defects and cannot be settled by

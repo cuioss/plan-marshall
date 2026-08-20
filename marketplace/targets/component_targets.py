@@ -50,6 +50,10 @@ moment it is read and an invalid one aborts the build
   mapping, a number, a boolean. Coercing one into a name and then rejecting
   it as unregistered would name a target nobody wrote. A bare or quoted
   scalar IS a valid declaration of one name;
+* a list holding an ITEM that is not a string — ``targets: [true]`` is a
+  well-formed list, so the rule above never sees it, and coercing the item
+  would name the target ``True``. Quoting keeps a name a name: ``['true']``
+  is a string to YAML and is read as an (unregistered) name;
 * frontmatter that is not well-formed YAML **and mentions the field**.
   Guessing at unparseable frontmatter is how a declaration goes unread, and
   the component then ships everywhere carrying an invalid declaration nobody
@@ -303,7 +307,8 @@ def _tokens(value: object) -> list[str] | None:
         is ``None`` and not ``[]``.
 
     Raises:
-        _NotAList: The value is present but is not a sequence or a string.
+        _NotAList: The value is present but is not a sequence or a string, or
+            it is a sequence holding an item that is not a string.
     """
     if value is _ABSENT:
         return None
@@ -312,7 +317,15 @@ def _tokens(value: object) -> list[str] | None:
     if isinstance(value, str):
         return [token.strip() for token in value.split(',') if token.strip()]
     if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
+        # Every item must already BE a name. `str()` here would coerce
+        # `targets: [true]` into the name 'True' and then reject it as
+        # unregistered, naming a target nobody wrote — the same defect the
+        # whole-value branch below refuses to commit, and worse if a name
+        # like that were ever registered.
+        for item in value:
+            if not isinstance(item, str):
+                raise _NotAName(item)
+        return [item.strip() for item in value if item.strip()]
     raise _NotAList(value)
 
 
@@ -321,6 +334,16 @@ class _NotAList(Exception):
 
     Raised by :func:`_tokens`, which has no component path, and turned into a
     :class:`TargetScopeError` by :func:`read_target_scope`, which does.
+    """
+
+
+class _NotAName(Exception):
+    """Internal marker: ``targets:`` IS a list, but an ITEM of it is not a name.
+
+    Distinct from :class:`_NotAList` because the two need different messages:
+    there the value's own type is the complaint, here the value is a perfectly
+    good list and one entry inside it is not a string. Reporting the container's
+    type for this case would say "is list, not a list".
     """
 
 
@@ -382,7 +405,13 @@ def read_target_scope(path: Path) -> frozenset[str] | None:
         # gets. A file that appears to declare a scope fails CLOSED, because
         # shipping it everywhere would be shipping an unread declaration; one
         # that does not is somebody else's defect and degrades as before.
-        if not _mentions_the_field(path.read_text(encoding='utf-8', errors='replace')):
+        try:
+            lossy_text = path.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            # The file went away between the two reads. Nothing to decide
+            # against, so degrade exactly as an unreadable file does.
+            return None
+        if not _mentions_the_field(lossy_text):
             return None
         raise TargetScopeError(
             f'{path}: the file is not valid UTF-8, and its frontmatter appears to declare '
@@ -410,6 +439,13 @@ def read_target_scope(path: Path) -> frozenset[str] | None:
             f'{path}: `{TARGET_SCOPE_FIELD}:` is {type(not_a_list.args[0]).__name__}, not a '
             f'list of target names. Write `{TARGET_SCOPE_FIELD}: [a, b]`, a `- ` block, or a '
             f'single name. Registered targets are: {_named(registered_target_names())}.'
+        ) from None
+    except _NotAName as not_a_name:
+        item = not_a_name.args[0]
+        raise TargetScopeError(
+            f'{path}: `{TARGET_SCOPE_FIELD}:` is a list, but the item {item!r} is '
+            f'{type(item).__name__}, not a target name. Coercing it to text would name a '
+            f'target nobody wrote. Registered targets are: {_named(registered_target_names())}.'
         ) from None
     if tokens is None:
         return None

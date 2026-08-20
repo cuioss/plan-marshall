@@ -308,6 +308,36 @@ def test_undecodable_bytes_that_appear_to_declare_a_scope_fail_closed(tmp_path):
         read_target_scope(path)
 
 
+def test_a_file_that_vanishes_between_the_two_reads_degrades(tmp_path, monkeypatch):
+    """The lossy re-read is a SECOND filesystem call and can fail on its own.
+
+    The first read raises `UnicodeDecodeError`, which is not an `OSError`, so
+    it lands in a branch outside the earlier guard. If the file is removed or
+    becomes unreadable in between, an unguarded second read leaks a raw
+    `OSError` out of the build instead of holding the documented degradation.
+    There is nothing left to decide against at that point, so it degrades the
+    way an unreadable file does.
+    """
+    path = tmp_path / 'demo.md'
+    path.write_bytes(b'---\nname: demo\ntargets: [\xff\xfe]\n---\n')
+
+    real_read_text = Path.read_text
+    calls: list[str] = []
+
+    def flaky(self, *args, **kwargs):
+        calls.append(kwargs.get('errors', 'strict'))
+        if kwargs.get('errors') == 'replace':
+            raise OSError('vanished between the two reads')
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'read_text', flaky)
+
+    assert read_target_scope(path) is None
+    # Both reads were actually attempted, so the pin is not passing by never
+    # reaching the second one.
+    assert calls == ['strict', 'replace']
+
+
 def test_a_four_hyphen_line_inside_the_block_fails_closed(tmp_path):
     """``----`` is neither a fence nor valid YAML, and it is now refused.
 
@@ -362,6 +392,48 @@ def test_a_value_that_is_not_a_list_of_names_says_so(tmp_path, frontmatter, kind
     """
     with pytest.raises(TargetScopeError, match=f'is {kind}, not a list'):
         read_target_scope(_component(tmp_path, frontmatter))
+
+
+@pytest.mark.parametrize(
+    ('frontmatter', 'kind'),
+    [
+        pytest.param('targets: [true]', 'bool', id='boolean-item'),
+        pytest.param('targets: [3]', 'int', id='number-item'),
+        pytest.param('targets: [1.5]', 'float', id='float-item'),
+        pytest.param('targets: [{claude: yes}]', 'dict', id='mapping-item'),
+        pytest.param('targets: [[claude]]', 'list', id='nested-list-item'),
+        pytest.param('targets: [2024-01-01]', 'date', id='date-item'),
+        pytest.param('targets:\n  - true', 'bool', id='boolean-item-block'),
+        pytest.param('targets: [claude, 3]', 'int', id='bad-item-beside-a-good-one'),
+    ],
+)
+def test_a_list_item_that_is_not_a_name_says_so(tmp_path, frontmatter, kind):
+    """A well-formed list may still hold something that is not a name.
+
+    ``targets: [true]`` is a list, so the not-a-list branch never sees it, and
+    `str()` would turn the item into the name ``'True'`` — then reject it as
+    unregistered, naming a target nobody wrote. That is the same defect the
+    whole-value branch refuses to commit, and it would be worse than cosmetic
+    if a name matching one of these coercions were ever registered.
+
+    The message names the ITEM's type, not the container's: reporting the
+    container would say "is list, not a list".
+    """
+    with pytest.raises(TargetScopeError, match=f'is {kind}, not a target name'):
+        read_target_scope(_component(tmp_path, frontmatter))
+
+
+def test_a_list_of_names_is_still_read_when_a_name_looks_like_another_type(tmp_path):
+    """The item check tests the RESOLVED type, so quoting keeps a name a name.
+
+    Without this the fix above would be over-broad: `targets: ['true']` is a
+    string in YAML and must stay a legal (if unregistered) name rather than
+    being refused as a boolean.
+    """
+    from marketplace.targets.component_targets import TargetScopeError
+
+    with pytest.raises(TargetScopeError, match='unknown'):
+        read_target_scope(_component(tmp_path, "targets: ['true']"))
 
 
 @pytest.mark.parametrize(
