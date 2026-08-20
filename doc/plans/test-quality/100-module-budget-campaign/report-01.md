@@ -401,15 +401,87 @@ module — reorders tests between files and is a larger change than this deliver
 
 ## Reviewer participation
 
-_pending_
+**Population derived from configuration**, not transcribed: the `author_login` of each registry doc
+under `marketplace/bundles/plan-marshall/skills/automatic-review/standards/` — `coderabbit.md`,
+`pr-agent.md`, `sourcery.md`.
+
+| Reviewer (`author_login`) | Verdict | Reopens? | Body evidence |
+|---|---|---|---|
+| `cuioss-review-bot` | `reviewed` | — | Published a review against the diff: *"PR contains tests · No security concerns identified · No major issues detected"* |
+| `coderabbitai` | `rate-limited` | **no** | *"Review skipped — Too many files! This PR contains 317 files, which is 217 over the limit of 100. To get a review, reduce the PR to 100 files or fewer…"* |
+| `sourcery-ai` | `rate-limited` | **no** | *"Sorry, we are unable to review this pull request. The GitHub API does not allow us to fetch diffs exceeding 300 files, and this pull request has 317"* |
+
+**Coverage: 1 of 3.** The § Step 8 condition 5 disclosure fired and said exactly that.
+
+⚠️ **Neither refusal is a clock, and that is the whole point.** Both are ceilings on *this diff's size* —
+100 files for one reviewer, 300 for the other — so `Reopens? no`: no wait, no retry and no jitter
+schedule can change them, and the lane's retry budget does not apply. Condition 6 is satisfied on its
+`Reopens? no` arm rather than by spending attempts against a mechanism that cannot deliver.
+
+⛔ **This is a structural finding about the campaign, not an incident on one PR.** A slice split
+produces a PR of roughly this size by construction — 66 sources became 263 files here — so **runs 2
+through 7 will each be refused by the same two reviewers for the same reason**. Two thirds of this
+repository's automated review capacity is unreachable for the campaign as the plan currently shapes a
+run, and no run can fix that from inside itself: the remedy is a plan-level decision about how a slice
+is carved into pull requests. It is recorded in § Residue and raised to the operator rather than
+absorbed.
+
+The inline review-thread surface (`get_review_comments`) returned an empty set and the read succeeded,
+so that is a genuine absence rather than an unreadable surface. All three surfaces were read.
+
+Every comment on the PR was dispositioned: two are refusal notices needing no action, one is a clean
+review with no findings. No comment was left open.
 
 ## Cost
 
-_pending_
+- **Tokens:** not available to the agent in this session — the harness does not expose a token count to
+  the run, so no figure is stated rather than one being estimated.
+- **Wall-clock:** the run's first commit is stamped `2026-08-19T22:32:22Z`. The session spanned a
+  container restart, so elapsed wall-clock over-counts the work by the length of that outage; the
+  figure is not stated as a work duration for that reason. What *is* measurable and comparable is the
+  instrumented part: the whole-tree suite took 1958.89 s before the change (see § Verification
+  conditions for after), the slice takes about 185 s per run and was run six times, and the whole-tree
+  `test-conventions` sweep about 40 s and was run seven times.
+- **Population:** these figures count **this single cloud session's own subprocesses**, measured from
+  their own start/end stamps. ⛔ They are **not comparable** to a plan-marshall `metrics.toon` total,
+  which counts an orchestrator-plus-agent dispatch tree under a per-task billing boundary this lane
+  does not share. No attempt is made to reconcile them.
+
+The dominant cost of this run was not the split. It was **re-running the whole verification chain after
+each correction** — the tree was rebuilt from the pre-split sources and re-verified end to end seven
+times, because each round of findings changed the emitter rather than the output. A run 2 that inherits
+the rules in § D2 and § D4 pays that once.
 
 ## Contract check (Step 9)
 
-_pending_
+**GitHub access path:** the GitHub MCP server. There is no `gh` CLI in this session.
+**Branch form:** harness-assigned (`claude/module-budget-campaign-test-3gbpv6`), kept as-is per the
+lane's resume rule. This run did not create a branch, so the closed prefix set does not apply to it.
+**Arrival:** first run, then **resumed after a container restart** — the VM was reclaimed mid-run and
+its replacement re-cloned. Nothing was lost, because every commit had been pushed: the working tree
+came back clean with `HEAD` identical to `origin`. That is the durability rule paying for itself.
+**Plugin cache sync:** not owed. It is a machine-local build step a cloud run never performs.
+
+| Step | Verdict |
+|---|---|
+| 1 Skills loaded | **done** — named in § Skills loaded, all read by bundle path |
+| 2 Branch | **done** — on `origin` before the first edit; survived a container restart intact |
+| 3 Plan directory | **done** — `doc/plans/test-quality/100-module-budget-campaign/plan.md`, opening with the first-instruction block, which was present and needed no repair |
+| 4 Implement | **done** — commits carry the trailer, no "Generated with" footer |
+| 4 Per-commit gate | **done** — every commit touching `*.py` was preceded by `./pw quality-gate` reporting `issues[0]` with ruff, mypy and the SPDX check each clean |
+| 4 Pushed | **done** — no unpushed commit at any point; proven by the restart |
+| 5 Build gate | **done** — Python changed, so the full gate applies. CI ran `verify / verify` to **success** on this exact head SHA, which is the authoritative result; a local `./pw verify` was run as well |
+| 6 Verification sub-agent | **done** — see § Findings and the stop record below |
+| 7 PR cycle | **done** — PR #1314; all three comment surfaces read; every comment dispositioned; participation table carries a verdict and a `Reopens?` value per reviewer |
+| 8 Merge gate | see below |
+| 8 Bridge | **done** — nothing written under `doc/plans/` outside this plan's own directory; no ledger, no status file, no other plan touched |
+| 9 This check | **done** — this table |
+| 9 What have we learned | **done** — below |
+
+**Step 5 note, stated rather than glossed:** the local `./pw verify` and the whole-tree suite were each
+started, killed and restarted more than once, because a code change landed after they began. A run that
+measures a tree it then modifies has measured nothing; the figures reported here come from runs against
+the final tree, and the discarded ones are named as discarded.
 
 ## What have we learned (Step 9)
 
