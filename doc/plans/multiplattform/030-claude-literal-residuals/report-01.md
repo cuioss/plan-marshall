@@ -280,7 +280,13 @@ three bundle files edited but unaccounted, and a lead-in count that disagreed wi
 | `manage-providers/SKILL.md` | `070` | its verb table and a section heading promised deny rules on every target, which the routed call no longer implies | kept, forced |
 | `manage-providers/standards/security-considerations.md` | `070` | same claim, and it additionally held a prose copy of the exfiltration-vector list D3 moved into the runtime — a second home for a list this plan exists to single-source | kept, forced |
 | `marshall-steward/references/provider-setup.md` | `070` | same claim, at the wizard step that invokes the command | kept, forced |
-| `tools-permission-doctor/standards/permission-architecture.md` | `070`, **and named in this plan's own Out of scope** | corrects a defect that pre-dates this change | **reverted** — recorded below instead |
+| `tools-permission-doctor/standards/permission-architecture.md` | `070`, **and named in this plan's own Out of scope** | its "Resolution Priority" section states the read preference backwards — a defect that pre-dates this change | **kept, on an operator decision.** Reverted first, on the epic's rule; re-landed after round 3 raised the collision between that rule and the lane's "nothing false is left, wherever it lives" and the operator chose to fix it. The only row here whose disposition is an operator's rather than the run's |
+
+**Two of these rows are truth fixes in another plan's surface, not consequences of this change** —
+`permission-architecture.md` and the `tools-permission-doctor` description row in
+`manage-providers/SKILL.md`. Both were held back under the epic's constraint and then landed on the
+operator's explicit decision, recorded here because a scope rule overridden silently is worse than
+one not applied at all.
 
 Two epic documents outside `030`'s own plan directory were also edited, and are not surface
 expansions but duties the epic assigns to the closing plan: `reference/coupling-inventory.md` (the
@@ -368,7 +374,7 @@ per instance, so one defect appearing three times is three rows.
 | F15 | round 1 | `platform_runtime.py` edited against the same clause | **reported** — as above |
 | F16 | round 1 | `opencode_runtime.py` edited, `010`'s surface | **reported** — as above; D3's `no-op` requirement fails without it |
 | F17 | round 1 | `platform-runtime/SKILL.md` edited, `070`'s surface | **reported** — as above |
-| F18 | round 1 | `permission-architecture.md` edited — named in this plan's own Out of scope, and fixing a *pre-existing* defect no deliverable needs | **reverted.** The pre-existing defect (its "Resolution Priority" states the READ preference backwards) is recorded against the standards row in the coupling inventory instead, which is what the epic's constraint asks for. The round also found the rationale added in that edit self-undermining, which is a second reason not to keep it |
+| F18 | round 1 | `permission-architecture.md` edited — named in this plan's own Out of scope, and fixing a *pre-existing* defect no deliverable needs | **reverted, then re-landed on an operator decision.** The revert was correct on the epic's rule. Round 3 then framed the residue as a *policy collision* rather than a review gap — condition A says "nothing false, wherever it lives", the epic says record instead — and put it to the operator, who chose to fix it. The re-landed edit drops the self-undermining rationale round 1 objected to (it justified the preference by an audit-completeness argument the selector's own single-file return contradicts) and states the two preferences as what the runtime selectors return, attributed to them, with no claim about how Claude Code itself layers the files |
 | F19 | round 1 | `tools-permission-fix/SKILL.md` edited | **reported** — forced: its intent table enumerates the operation values |
 | F20 | round 1 | `credentials.py` edited and not named in the brief's own list of knowingly-touched files | **reported** — now in the surface table; the same commit's F8 closes the inconsistency it left |
 | F21 | round 1 | the claim table's required record of the schema addition was absent — the report was `_pending_` | **fixed** — recorded above |
@@ -408,7 +414,7 @@ fixes. It returned fifteen findings.
 | R2-11 | round 2 | `layout_bundle_cache_root`'s docstring claimed the cache layout is "spelled once"; the steward's bootstrap detector and the executor generator each compose it | **fixed** |
 | R2-12 | round 2 | `test_project_scan_resolves_an_absolute_declared_root` claimed to cover the `~`-anchored case, which it did not exercise | **fixed** — the `~` case has its own test, since it reaches a different resolver branch (`expanduser()` runs before `is_absolute()`) |
 | R2-13 | round 2 | "only `claude` and `opencode` are registered" did not name which registry, and contradicts principles §6's "the registry already holds three" | **fixed** — the runtime registry is named, and the build registry's third target is noted as having no `Runtime` |
-| R2-14 | round 2 | `manage-providers/SKILL.md` describes `tools-permission-doctor` as a "Deny rule manipulation reference"; the doctor is read-only | **reported, not fixed.** Pre-existing, and `070`'s prose surface — the same test that reverted the `permission-architecture.md` edit applies. Recorded here so the exclusion is not a silent loss |
+| R2-14 | round 2 | `manage-providers/SKILL.md` describes `tools-permission-doctor` as a "Deny rule manipulation reference"; the doctor is read-only | **reported, then fixed on the same operator decision as F18.** The row now describes the doctor as a read-only audit. Round 3's observation that the F18 precedent fitted this case imperfectly — F18 reverted an edit to a file this change otherwise does not touch, whereas this sentence sits in a file the change edits twice — is what made it worth escalating rather than settling |
 | R2-15 | round 2 | `contract.md` documented `protect-path` but not the conditional-write asymmetry it introduced | **fixed** — the contract states the asymmetry and why |
 
 ### Verification round 3 — dispositions

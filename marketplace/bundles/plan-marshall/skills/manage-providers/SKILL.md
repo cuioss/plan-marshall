@@ -264,4 +264,4 @@ python3 .plan/execute-script.py plan-marshall:manage-providers:credentials migra
 | `plan-marshall:marshall-steward` | Invokes credential management via wizard and menu |
 | `plan-marshall:workflow-integration-sonar` | First consumer of credential extension API |
 | `plan-marshall:extension-api` | Discovery pattern reference |
-| `plan-marshall:tools-permission-doctor` | Deny rule manipulation reference |
+| `plan-marshall:tools-permission-doctor` | Read-only permission audit — inspects what the protection wrote, never writes itself |
