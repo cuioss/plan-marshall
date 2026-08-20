@@ -171,7 +171,25 @@ records are git-ignored and are absent from this clone. Nothing in this plan req
    subset** of the baseline; and publish **both** sets on the verdict payload beside
    `reviewer_coverage`, so a reader sees the narrowing rather than having to compare rosters across
    PRs (nothing in the tree performs that comparison today, and no baseline is recorded against which a
-   shrink is even detectable). Then restate the guarantee in terms of the **baseline** — not as an
+   shrink is even detectable).
+
+   ⛔ **The baseline is not optional, and an absent or unusable one withholds the share — it never
+   defaults to the effective roster.** An optional baseline reintroduces the blocker by the front
+   door: a direct `assess_delta` call that omits it would compare the narrowed roster against itself
+   and publish a `structural_share` at reduced real coverage, which is the exact defect this
+   deliverable exists to close. Make P1 **present on every execution path** — require the input, or
+   derive P1 internally from the registry when the caller supplies none — and fail closed on each of
+   these, withholding the share with a reason that names the cause rather than computing one:
+
+   - **omitted** — no baseline supplied and none derivable;
+   - **empty** — a baseline with no members;
+   - **not a superset** — an effective roster containing a member the baseline does not, which means
+     the two were computed over different registries and neither can anchor the other.
+
+   Only a baseline that is a genuine superset of the effective roster admits a share: equal sets
+   publish it, a **proper superset** withholds with `WITHHELD_ROSTER_NARROWED`.
+
+   Then restate the guarantee in terms of the **baseline** — not as an
    unqualified property of coverage — at all four sites that currently state it absolutely:
    `review_gate_delta.py`'s module docstring (the "Two properties that keep the signal from becoming
    harmful" section), `automatic-review/standards/bot-participation-contract.md`
@@ -180,7 +198,11 @@ records are git-ignored and are absent from this clone. Nothing in this plan req
    *Done when:* a test drives `assess_delta` twice with the **same** escapes, the **same** partition
    labels and the **same** two SHAs, differing only in that the second arm's `enabled_bots` is a proper
    subset of the first's, and asserts the second arm **withholds** the share with
-   `WITHHELD_ROSTER_NARROWED`; and no input reachable from
+   `WITHHELD_ROSTER_NARROWED`; three further tests drive `assess_delta` directly with an **omitted**
+   baseline, an **empty** baseline, and a **non-superset** baseline, and each asserts the share is
+   withheld with a reason naming that cause — none of the three may publish a `structural_share`; a
+   fifth test asserts an equal baseline and effective roster **does** publish one, so the fail-closed
+   rule is not simply withholding everything; and no input reachable from
    `.claude/skills/finalize-step-review-retrospective/SKILL.md` Step 3b can produce a `structural_share`
    at reduced real coverage.
 
@@ -357,8 +379,14 @@ records are git-ignored and are absent from this clone. Nothing in this plan req
      `marketplace/bundles/plan-marshall/skills/extension-api/standards/ext-point-self-review-surfacing.md`
      and have the step forward the surfacer's value into it. The `display_detail` budget stays
      untouched.
-   - **Three gates carry no structural limit at all (G13).** Using P2's derived gate roster: for each
-     gate whose verdict carries no limit, name the analysis it performs and the defect class it
+   - **Three gates carry no structural limit at all (G13).** Using P2's derived gate roster. **First,
+     make that roster machine-readable**, so this is the last time the population is judged from prose:
+     write P2's Stage-2 adjudication into an explicit frontmatter marker (an `assurance_verdict:`
+     boolean or equivalent) on **every** Stage-1 candidate — in-members and out-members alike, so an
+     absent marker is a new unadjudicated step rather than an implicit "no" — and add a test that
+     derives the gate roster from the marker, asserts every registered step carries one, and fails
+     naming the step when a new step appears without it. Then, for each gate whose verdict carries no
+     limit, name the analysis it performs and the defect class it
      structurally cannot reach, and put that statement on its verdict, following
      `pre-push-quality-gate.md` § "A gate states what its green does not evaluate" as the pattern.
      A prior analysis named `ci-verify.md`, `sonar-roundtrip.md` and the project-local
@@ -374,7 +402,9 @@ records are git-ignored and are absent from this clone. Nothing in this plan req
    empty-scope and module-scoped-plugin-doctor cases pinned by test;
    `render_coverage_summary(CoverageBoundary())` contains neither `COMPLETE` nor `PARTIAL` and a test
    asserts that; a test asserts the self-review dispatched-envelope's `structural_limit` field is
-   populated on a clean full-surface round; and every gate P2 identified as limitless carries a limit
+   populated on a clean full-surface round; every registered finalize step carries an explicit
+   assurance-gate marker and a test fails, naming the step, when one appears without it — proven by an
+   actual red run recorded in the report; and every gate P2 identified as limitless carries a limit
    that is a property of its **analysis** rather than of its file set.
 
 5. **D5 — Measure the count-prose detector's three reach axes, and fix the instances outside them.**

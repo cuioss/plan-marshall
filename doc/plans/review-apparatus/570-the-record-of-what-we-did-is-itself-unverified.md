@@ -284,10 +284,25 @@ Discharges **060 G5**, **060 G6**, **060 G7**. All three are in one file, so the
 
 1. **The outcome.** The header still reads `**Outcome:** _in progress_`. The lane contract in force at
    that run admitted only `completed | partial | blocked`. Derive the outcome mechanically, not by
-   judgement: **`completed`** if the PR merged and every deliverable the report's § Deliverables
-   section describes carries a state that is not "not done"; **`partial`** if it merged with any
-   deliverable unmet; **`blocked`** if it never merged. Confirm the merge state from git — the merge
-   commit's presence on `main` — not from the report's own header, which is the artifact in question.
+   judgement, over an **explicit deliverable state set** — ⛔ **never by treating "anything other than
+   `not done`" as success**, which would let `in progress`, `blocked`, `unrecorded`, or a deliverable
+   with no state at all classify an unfinished report as `completed`.
+
+   Classify each deliverable in the report's § Deliverables section into exactly one of three buckets,
+   and write the bucket per deliverable into the run report so the classification is reviewable:
+
+   - **met** — the deliverable carries an **explicit success state** (`done` / `completed`, or a
+     sentence that positively states the work landed). This is the only bucket that admits
+     `completed`.
+   - **unmet** — an explicit non-success state: `not done`, `in progress`, `blocked`, `deferred`,
+     `partial`.
+   - **indeterminate** — no state recorded, an unrecognised state, or a state that cannot be read.
+     ⚠ **Indeterminate is not success.** It counts as unmet for the outcome.
+
+   Then: **`completed`** if the PR merged **and every deliverable is `met`**; **`partial`** if it
+   merged with any deliverable `unmet` or `indeterminate`; **`blocked`** if it never merged. Confirm
+   the merge state from git — the merge commit's presence on `main` — not from the report's own
+   header, which is the artifact in question.
 2. **The build-gate footprint.** § Build gate states the Python footprint as "two test files" and
    asserts "No production source was changed by this plan". The plan's merge commit changed **four**
    Python paths — two new test files, plus
@@ -597,7 +612,7 @@ rather than letting the gate absorb it.
 
 | Claim | Label | Confirm/refute artifact |
 |---|---|---|
-| `_existing_pr_comment_shas`, `_recorded_dropped_comment_shas` and `test_currency_anchor_is_derived_from_both_sha_sources` exist nowhere in the tree — an asserted **absence** | OBSERVED | A repo-wide search for all three returned hits only inside `doc/plans/review-apparatus/010-…/` (report, gaps, verification) and no source or test hit; **re-derive before editing, and publish the searched population** |
+| `_existing_pr_comment_shas`, `_recorded_dropped_comment_shas` and `test_currency_anchor_is_derived_from_both_sha_sources` exist in no source or test file — an asserted **absence** | OBSERVED | Search for all three **scoped to `marketplace/` and `test/`** — ⛔ **not repo-wide**: this plan file names all three identifiers, as do plan 010's own report, gaps and verification files, so a repo-wide sweep hits the audit corpus and refutes an "only inside plan 010" phrasing that is about the audit corpus itself. Exclude `doc/plans/review-apparatus/` explicitly, or scope to source and tests. **Re-derive before editing, and publish both the scope and its denominator (the searched-file count).** |
 | The shipped currency reader is `_recorded_currency_records` with writer `_record_currency_records`, and the real test is `test_currency_anchor_is_recorded_in_the_ledger_on_credit` asserting one ledger source | OBSERVED | `workflow-integration-github/scripts/github_pr.py` and `test/plan-marshall/workflow-integration-github/test_github_pr.py` — resolve each name at the moment you write it |
 | The `invalid_cap` guard and `--max-per-component` were introduced by `010ea461` (PR #1039), not PR #1153 | OBSERVED | `git log -S'invalid_cap' -- marketplace/bundles/plan-marshall/skills/manage-lessons/scripts/_lessons_query.py` returns exactly one commit; **re-derive** |
 | Plan 110's report § Residue says "None blocking … No follow-up owed" while its `gaps.md` records five live items | OBSERVED | The report's § Residue and the directory's `gaps.md`; **confirm each item is still open before listing it** |
@@ -614,7 +629,7 @@ rather than letting the gate absorb it.
 | The empty-argument cause class is closed by `nargs='?'`/`const=''` plus the executor's documented stripping | OBSERVED | `review_completeness.py`'s bot-observation flag registration, and the "Strip empty string args" branch in `tools-script-executor/templates/execute-script.py.template` |
 | The 040 G14 insight is recorded nowhere in the `automatic-review` or `workflow-integration-github` bundle docs — an asserted **absence** | OBSERVED | Searches for "summary card" / "trigger acknowledg" over both bundles returned nothing; **re-derive and publish the searched population before writing "this is not recorded anywhere"** |
 | The charter axis is a two-bucket partition, because exactly one commit touches `marketplace/targets/pr_agent/target.py` | OBSERVED, count is a lead | `git log -- marketplace/targets/pr_agent/target.py`; **re-derive — a second commit makes it three buckets** |
-| `enable_prompt_for_ai_agents` appears nowhere outside plan 100's own directory — an asserted **absence** | OBSERVED | A repo-wide search for the flag name returned hits only under `doc/plans/review-apparatus/100-…/`; **re-derive** |
+| `enable_prompt_for_ai_agents` appears in no source, test or bundle file — an asserted **absence** | OBSERVED | Search for the flag name **scoped to `marketplace/` and `test/`** — ⛔ **not repo-wide**: this plan file names the flag, as does plan 100's directory, so a repo-wide sweep hits the audit corpus and cannot support an "only under plan 100" phrasing. Exclude `doc/plans/review-apparatus/` explicitly, or scope to source, tests and bundles. **Re-derive, and publish both the scope and its denominator.** |
 | D1a's opening and closing anchors still exist in `cloud-plan-lane/SKILL.md`, but the span between them now contains the `unreadable` verdict and the `Reopens?` subsection | OBSERVED | The current § "Record per-reviewer participation, from the bodies" block, read end to end; the line numbers in plan 050's proposals no longer locate it |
 | The shortfall disclosure is now Step 8 **condition 5**, not condition 4, and carries a `Reopens?` clause | OBSERVED | The current § Step 8 numbered conditions; **re-verify the ordinal at the moment of writing** |
 | The lane's Step 9 bridge row forbids a *status or bookkeeping* write outside the plan's own directory, and this plan's edits are neither | OBSERVED, the reading is the point at issue | The Step 9 contract-check table's Bridge row, read in full — this is the disagreement D5 item 5 reports, not one the run resolves |
@@ -661,6 +676,16 @@ that was never recounted is the original defect with a new value.
 commit SHA that appears in the *edited* portion of any report, resolve it: symbols and tests against
 the tree, PRs and SHAs against `git log`. Report the sweep's population size and its result. An
 unresolvable citation is a blocker, not a note.
+
+**Every absence claim publishes its scope and its denominator, and excludes the audit corpus.**
+⛔ **No absence claim in this run is made repository-wide.** This plan, the plans beside it, and the
+`gaps.md` / `verification.md` files under `doc/plans/review-apparatus/` all quote the very identifiers
+whose absence is being asserted, so a repo-wide sweep hits the audit corpus and turns a true
+"absent from source and tests" into a false "present in the tree". Scope every such sweep to the
+substrate the claim is actually about — `marketplace/` and `test/`, or the named bundle — or exclude
+`doc/plans/review-apparatus/` explicitly, and record with each result **both** the scope expression
+and the searched-file count. A match count with no denominator is the defect plan 100 was audited for
+(D2 item 4); repeating it here would be the same defect one level up.
 
 **Sweep-and-count on the corrections.** A claim is corrected at every site or it is not corrected.
 Where a report states the same wrong fact in more than one section — plan 060's `sourcery-ai` verdict

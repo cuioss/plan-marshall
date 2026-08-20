@@ -138,8 +138,9 @@ states everything the run needs without them.
    it makes no D3 or D4 edit, records the plan **blocked** in the run report naming exactly what could
    not be derived, opens no PR for D3/D4 work, and ends. It does **not** continue with the remaining
    deliverables and it does **not** author a hand-maintained verb list as a fallback: that is the
-   defect this deliverable closes. D1, D2 and D5 are independent of D0, so if they have already landed
-   in their own commits they stay landed; the blocked report names them as the run's only outcome.
+   defect this deliverable closes. Because D0 runs first, nothing else will normally have landed; if
+   D1, D2 or D5 happens to have landed already in its own commit it stays landed, and the blocked
+   report names it as the run's only outcome.
 
    The HALT is observable from the plan text alone: the run must record, as the first line of the D0
    section of its report, either `D0 derivation: SUCCEEDED` with the derived population, or
