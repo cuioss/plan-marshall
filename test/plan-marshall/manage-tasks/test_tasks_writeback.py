@@ -22,7 +22,7 @@ Tier 2 (direct import via ``_manage_tasks_fixtures``) tests exercise the ``cmd_u
 ``cmd_next`` round-trip with the ``plan_context`` PLAN_BASE_DIR sandbox; Tier 3
 subprocess tests exercise the CLI plumbing (flag acceptance, the status: error
 TOON on validation rejection, and the argparse type rejection on a
-non-integer token count). The sibling ``test_tasks_cost_*.py`` mirrors the same
+non-integer token count). The sibling ``test_tasks_cost*.py`` mirrors the same
 Tier-2/Tier-3 split for the pure deriver.
 """
 

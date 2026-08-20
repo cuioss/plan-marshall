@@ -9,7 +9,7 @@ Tests for the notation cross-check on ``pre-commit-verify-freshness``.
 
 The gate's primary predicate ("a ``kind=build`` row with ``status == 'success'``
 and a matching ``worktree_sha`` exists") asserts a row EXISTS; it never asks
-whether the row is evidence of a build THIS project performs. This file pins the
+whether the row is evidence of a build THIS project performs. Those tests pin the
 check that closes that gap, in BOTH directions — because a one-directional fix
 trades one false signal for its mirror:
 

@@ -15,7 +15,7 @@ invisible at the guard's own site.
 Owner arbitration and age-based staleness are asserted here at the INVARIANT
 level — as properties that hold across the whole vocabulary — rather than as
 per-value cases. The per-value behaviour of the ``title-token`` verb lives in
-``test_title_token_*.py``.
+``test_title_token.py``.
 """
 
 import json

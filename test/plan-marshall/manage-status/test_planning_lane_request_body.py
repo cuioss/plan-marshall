@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """End-to-end regression coverage: an orchestrated plan spec routes on its WHOLE body.
 
-This module is deliberately distinct from ``test_planning_lane_*.py``. That module
+This module is deliberately distinct from ``test_planning_lane.py``. That module
 unit-tests the pure helpers (``scope_estimate_from_request_pure``,
 ``_read_request_body``, ``_distinct_paths``). This one drives the **command entry
 points** — ``cmd_scope_estimate_heuristic`` and ``cmd_planning_lane_route`` —
@@ -20,9 +20,9 @@ line, and the plan-spec template's blockquote citation of a governing document.
 The one path token in that preamble is a **citation**, never a target, so a
 seven-target plan could score ``surgical`` on the strength of boilerplate.
 
-Every fixture below is built so the truncated reading and the whole-body reading
-give **different answers**, which is what makes these assertions regressions
-rather than restatements.
+Every fixture this module uses is built so the truncated reading and the
+whole-body reading give **different answers**, which is what makes these
+assertions regressions rather than restatements.
 
 The second defect being regressed
 ---------------------------------
@@ -34,7 +34,7 @@ orchestrator specs are saturated with ``**bold**``, essentially every orchestrat
 plan banded ``single_module`` regardless of how many paths it named, the path-count
 thresholds were unreachable, and ``single_module`` then satisfied
 ``narrow_and_concrete`` — suppressing S3/S4 (→ ``light``) *and* projecting the
-``minimal`` posture, which drops the security audit. The fixtures below pin all
+``minimal`` posture, which drops the security audit. The fixtures pin all
 three halves at the entry point: bold is not fan-out, a real fan-out marker
 **widens** to ``multi_module``, and a large concrete spec routes ``deep`` with a
 non-``minimal`` posture.
@@ -59,8 +59,9 @@ Scenarios
 7. ``test_bare_filename_is_excluded_from_the_count_by_the_counter_not_the_reader``
    — the bare-filename exclusion is a counter decision, asserted as intended.
 
-No ``conftest.py`` is introduced and no fixture code is shared with
-``test_planning_lane_*.py``; the helpers below are local to this module.
+No ``conftest.py`` is introduced. The helpers and region constants this module
+drives live beside it in ``_planning_lane_request_body_fixtures.py``, which
+serves this module alone — nothing is shared with ``test_planning_lane.py``.
 """
 
 

@@ -7,10 +7,6 @@ Covers:
 
 * ``cmd_add`` CLI plumbing via subprocess (TestCliPlumbingAdd)
 * ``status=active`` frontmatter seeding on add (TestStatusFrontmatterOnAdd)
-* Collision-safe id allocation in ``cmd_add`` / ``cmd_from_error``
-  ``_allocate_and_write_scaffold`` helper that both subcommands share;
-  ``cmd_from_error`` is exercised in one regression test to pin the shared
-  contract rather than be split across files.
 """
 
 

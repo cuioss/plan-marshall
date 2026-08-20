@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """In-process behavioral tests for ``analyze-logs.py``.
 
-The sibling ``test_analyze_logs_*.py`` covers the phase-5 fact extractors and the
-folded-global-log analyzer directly, but drives the top-level ``cmd_run``
+The siblings ``test_analyze_logs_phase5_logging_gap_extractors.py`` and
+``test_analyze_logs_analyze_folded_global.py`` cover the phase-5 fact extractors
+and the folded-global-log analyzer directly, but drive the top-level ``cmd_run``
 orchestration only through ``run_script`` (subprocess — not counted for
 coverage). This module fills the in-process gaps: ``cmd_run`` itself (and its
 finding-emitting branches), the dispatch-boundary file parser's malformed/OSError

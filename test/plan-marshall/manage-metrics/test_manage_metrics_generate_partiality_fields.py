@@ -229,7 +229,7 @@ class TestGeneratePartialityFields:
 class TestGenerateDenominatorFields:
     """`generate` returns each persisted denominator with its sampling point.
 
-    The dedicated behaviour suite lives in `test_denominator_sampling_point_*.py`;
+    The dedicated behaviour suite lives in `test_denominator_sampling_point*.py`;
     these two cases pin the `generate` OUTPUT surface itself — that the pair
     reaches the return, and that an undeterminable denominator is omitted from
     it rather than defaulted, exactly as it is from the record.

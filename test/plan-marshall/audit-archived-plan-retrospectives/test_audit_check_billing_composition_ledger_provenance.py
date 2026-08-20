@@ -179,7 +179,7 @@ class TestDispatchBoundaryZeroProvenance:
         `_parse_dispatch_boundary_file`, `if value != 0`) — parity established by
         READING, not by this test, which drives only this reader and would not
         fail if that one diverged. The cross-reader pinning lives in
-        `test_record_model_representability_*.py`, over a shared fixture.
+        `test_record_model_representability*.py`, over a shared fixture.
         """
         path = self._ledger(
             tmp_path,

@@ -6,7 +6,7 @@ share. The contract they pin, in full:
 
 Tests for the oracle-backed footprint classification shared by the two checks.
 
-Each test here pins one deliverable of the plan that introduced
+Each of those tests pins one deliverable of the plan that introduced
 ``_footprint_classification`` and was verified to FAIL against the pre-fix code:
 
 * ``TestProjectLocalTreeSurvivesFilter`` (D5a) — a multi-file footprint under the

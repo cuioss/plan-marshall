@@ -25,7 +25,7 @@ conditional merge-lock release):
 * **``check`` surfaces the verdict** — the non-mutating ``check`` action carries a
   ``staleness`` field on the ``held`` branch.
 
-Isolation mirrors ``test_manage_locks_merge_lock_*.py``: every test runs against an
+Isolation mirrors ``test_manage_locks_merge_lock*.py``: every test runs against an
 isolated ``PLAN_BASE_DIR`` staged under ``tmp_path`` so the lock, the FIFO queue,
 and holder plan dirs resolve there rather than the real ``.plan`` tree.
 """

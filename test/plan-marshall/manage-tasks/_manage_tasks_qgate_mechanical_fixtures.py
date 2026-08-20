@@ -10,12 +10,12 @@ Tests for the ``qgate-mechanical-checks`` subcommand of manage-tasks.
 The subcommand runs the deterministic Q-Gate checks over the tasks and parent
 deliverables of a plan, emitting one finding per failure under ``--source
 qgate`` so the existing phase-4-plan aggregate consumes them without
-modification. The check names this file asserts against are enumerated once, in
+modification. The check names those tests assert against are enumerated once here, in
 :data:`_ALL_CHECKS`, and read from the result rather than restated per test.
 
 The CLOSURE checks (``declared_set_closure``,
 ``declared_scope_reconciliation``) have their own suite in
-``test_qgate_closure_*.py``; here they are exercised only as members of the full
+``test_qgate_closure*.py``; here they are exercised only as members of the full
 result — a fixture in this file must be a well-formed plan except for the one
 fault the test injects.
 """

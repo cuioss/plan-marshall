@@ -22,8 +22,8 @@ These tests pin the contract for the per-type storage layer:
   their respective files within the same ``findings/`` directory.
 
 Implementation tests (CLI plumbing, validation error paths, qgate dedup/reopen
-semantics) live in ``test_findings_store_*.py`` and ``test_manage_findings_*.py``;
-this module is intentionally storage-layout focused.
+semantics) live in ``test_findings_store_*.py`` and ``test_manage_findings*.py``;
+the modules this preamble serves are intentionally storage-layout focused.
 """
 
 

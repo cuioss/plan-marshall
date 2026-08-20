@@ -5,8 +5,8 @@
 Covers ``cmd_from_error`` direct invocation: successful creation of a
 lesson from a JSON error context, and the invalid-JSON error path.
 ``status=active`` frontmatter seeding for the from-error path is covered
-under ``test_add_*.py`` (TestStatusFrontmatterOnAdd), and the collision-safe
-id-allocation regression for from-error lives in ``test_add_*.py``
+under ``test_add*.py`` (TestStatusFrontmatterOnAdd), and the collision-safe
+id-allocation regression for from-error lives in ``test_add*.py``
 (TestCollisionSafeAllocation) — both belong with the shared
 ``_allocate_and_write_scaffold`` contract.
 """

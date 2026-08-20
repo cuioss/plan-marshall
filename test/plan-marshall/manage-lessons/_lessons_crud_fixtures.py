@@ -8,8 +8,7 @@ share. The contract they pin, in full:
 
 Tests for the trivial getter/setter CRUD subcommands of manage-lessons.py.
 
-This module absorbs the four single-verb suites whose bodies were each small
-enough that a dedicated file cost more navigation than it bought:
+The four single-verb suites this preamble serves cover:
 
 * ``get`` — ``cmd_get`` direct invocation (metadata retrieval, not-found) plus
   the Tier 3 subprocess check pinning ``read`` as an alias for ``get``
@@ -32,7 +31,7 @@ The complex-verb suites (``supersede``, ``convert_to_plan``,
 ``restore_from_plan``, ``from_error``, ``add``, ``remove``, ``update``) keep
 their own files — only the trivial getter/setter verbs are co-located here.
 
-All four absorbed suites now share ONE module-load path: ``_lessons_helpers``
+All four suites share ONE module-load path: ``_lessons_helpers``
 loads ``manage-lessons.py`` exactly once and re-exports the ``cmd_*``
 callables. ``cmd_set_title`` is not among the helper's re-exports, so it is
 resolved off the shared ``_mod`` handle rather than by re-loading the script —

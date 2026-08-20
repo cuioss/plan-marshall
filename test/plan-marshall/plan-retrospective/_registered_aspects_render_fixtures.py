@@ -35,7 +35,7 @@ This guard asserts both directions of the completeness contract:
   ``routing-decisions`` and passes only once D1's row is in place.
 
 The scripts are loaded by explicit importlib path via ``conftest.load_script_module``
-(the sibling pattern in ``test_compile_report_behavior_*.py``) so the test does not
+(the sibling pattern in ``test_compile_report_behavior*.py``) so the test does not
 depend on conftest import-name discovery order.
 """
 

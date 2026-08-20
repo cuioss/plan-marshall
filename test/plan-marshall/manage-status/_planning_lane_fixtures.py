@@ -16,7 +16,7 @@ light→deep ratchet that refuses any downgrade.
 
 Coverage:
 - Each signal (S1–S6) firing deep in isolation. S7 (``risk_prose``) is covered
-  in ``test_planning_lane_risk_prose.py``, not here.
+  in ``test_planning_lane_risk_prose.py``, not by the modules this preamble serves.
 - The all-light default (no deep signal fires).
 - The deep_lane ``always`` / ``never`` short-circuit.
 - ``--lane-override`` handling.

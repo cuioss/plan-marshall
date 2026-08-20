@@ -8,7 +8,7 @@ share. The contract they pin, in full:
 
 End-to-end regression over a re-entered, multiply-fired, partly-unmeasured, denominated plan.
 
-The three fixes this module composes were each pinned in isolation by their own
+The three fixes those tests compose were each pinned in isolation by their own
 deliverable's unit tests. What no unit test can show is whether the RECORD — the
 one artifact a downstream consumer actually reads — still asserts a value it did
 not earn once all four shapes coexist on the same plan:
@@ -24,7 +24,7 @@ not earn once all four shapes coexist on the same plan:
   names the moment its reference class was taken.
 
 That composition is the case the spec named: a plan certified ``partial: false``
-while being arithmetically impossible. This module drives it through the REAL
+while being arithmetically impossible. They drive it through the REAL
 verbs — ``start-phase`` / ``phase-boundary`` / ``end-phase`` from
 ``manage-metrics``, ``record-dispatch-boundary`` from the same module,
 ``mark-step-done`` from ``manage-status``, then ``generate`` — and asserts on the

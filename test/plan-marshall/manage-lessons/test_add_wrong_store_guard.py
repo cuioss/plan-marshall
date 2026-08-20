@@ -1,15 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
 # ruff: noqa: I001
-"""Tests for the ``add`` subcommand of manage-lessons.py.
-
-Covers:
-
-* Collision-safe id allocation in ``cmd_add`` / ``cmd_from_error``
-  ``_allocate_and_write_scaffold`` helper that both subcommands share;
-  ``cmd_from_error`` is exercised in one regression test to pin the shared
-  contract rather than be split across files.
-"""
+"""Tests for the ``add`` subcommand of manage-lessons.py."""
 
 
 import json

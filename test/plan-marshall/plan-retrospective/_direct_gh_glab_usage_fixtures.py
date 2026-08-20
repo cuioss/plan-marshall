@@ -16,7 +16,7 @@ Covers the domain-invariant detection scenarios for the generic aspect:
 (d) Fixture where ``gh`` appears only in a comment — negative, must NOT
     trip the diff scanner.
 
-Plus the Surface C split contract, scoped to this file per the deliverable:
+Plus the Surface C split contract, scoped to those tests per the deliverable:
 
 * Surfaces A+B remain in the generic, domain-invariant ``direct-gh-glab-usage``
   aspect; ``wrapper_tangle`` is no longer emitted there.
