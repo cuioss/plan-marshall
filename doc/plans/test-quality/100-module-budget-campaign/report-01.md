@@ -852,12 +852,17 @@ can be emitted once above exactly the constructs the pre-split source gave it. T
 400 lines once their headings are back — and both cross it because they genuinely hold more than one
 subject, so each is split along its own section boundaries:
 
-| Module | Lines |
-|---|---|
-| `test_manage_status_transition_loop_back.py` | 424 → 300 |
-| `test_manage_status_transition_finalize_boundary.py` | new, 141 |
-| `test_title_token.py` | 402 → 146 |
-| `test_title_token_lifecycle.py` | new, 271 |
+Counted the way the rule counts, `len(source.splitlines())`, and read from git at each end — the
+intermediate state with the headings restored and the file not yet split exists in no commit, so it is
+described rather than quoted:
+
+| Module | Before round 7 | With its headings restored | At HEAD |
+|---|---:|---:|---:|
+| `test_manage_status_transition_loop_back.py` | 390 | over budget | **300** |
+| `test_manage_status_transition_finalize_boundary.py` | — | — | **140** (new) |
+| `test_title_token.py` | 379 | over budget | **146** |
+| `test_title_token_lifecycle.py` | — | — | **270** (new) |
+| `test_findings_store_resolve.py` | 386 | fits | **399** — inside the budget with its headings back, so not split |
 
 **Constructs under a wrong banner: 106 at the split → 0 at HEAD**, both measured by re-running one
 script over both refs, reading each file from git — 204 attributable modules at the split, 199 at HEAD.
