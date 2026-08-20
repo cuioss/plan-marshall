@@ -80,9 +80,8 @@ def default_analysis_config() -> dict[str, Any]:
     }
 
 
-def _config_for_section(section: str) -> Any:
+def _config_for_section(section: str, analysis: dict[str, Any]) -> Any:
     """Return the config object a server expects for a requested section name."""
-    analysis = default_analysis_config()
     if section.endswith('analysis'):
         return analysis
     if section in ('python', 'basedpyright', 'pyright', ''):
@@ -93,7 +92,15 @@ def _config_for_section(section: str) -> Any:
 class StdioTransport:
     """Spawn a language server and speak JSON-RPC over its stdio pipes."""
 
-    def __init__(self, command: list[str], cwd: str) -> None:
+    def __init__(self, command: list[str], cwd: str, analysis_config: dict[str, Any] | None = None) -> None:
+        # The analysis settings answered to a `workspace/configuration` pull.
+        # Injectable because a caller may need to tell the server where a
+        # workspace's modules actually live: this repository's cross-bundle
+        # imports are bare imports satisfied at runtime by a generated
+        # executor's sys.path, which a server rooted at the repository root
+        # cannot follow unless it is handed the same search path
+        # (`extraPaths`). Default is the interactive client's own config.
+        self._analysis_config = dict(analysis_config) if analysis_config else default_analysis_config()
         self._proc = subprocess.Popen(  # noqa: S603 — command is operator-configured
             command,
             stdin=subprocess.PIPE,
@@ -190,7 +197,7 @@ class StdioTransport:
         result: Any = None
         if method == 'workspace/configuration':
             items = (message.get('params') or {}).get('items') or []
-            result = [_config_for_section((item or {}).get('section', '')) for item in items]
+            result = [_config_for_section((item or {}).get('section', ''), self._analysis_config) for item in items]
         self._write_message({'jsonrpc': '2.0', 'id': message['id'], 'result': result})
 
     # -- public API ---------------------------------------------------------
@@ -323,9 +330,16 @@ class LspSession:
         root_path: str,
         diagnostics_settle: float = 2.0,
         diagnostics_timeout: float = 15.0,
+        analysis_config: dict[str, Any] | None = None,
     ) -> None:
         self._t = transport
         self._root = str(Path(root_path).resolve())
+        # Sent as `initializationOptions`. A server may take its settings from
+        # the handshake, from a `workspace/configuration` pull, or from both, so
+        # a caller supplying an analysis config gives it to the transport AND
+        # here — the two must agree or the server's view depends on which
+        # channel it happened to read.
+        self._analysis_config = dict(analysis_config) if analysis_config else default_analysis_config()
         self._doc_versions: dict[str, int] = {}
         self._open_paths: set[str] = set()
         # How long every diagnostics wait on this session settles for and waits
@@ -341,7 +355,7 @@ class LspSession:
             'processId': None,
             'rootUri': root_uri,
             'workspaceFolders': [{'uri': root_uri, 'name': Path(self._root).name}],
-            'initializationOptions': {'python': {'analysis': default_analysis_config()}},
+            'initializationOptions': {'python': {'analysis': self._analysis_config}},
             'capabilities': {
                 'textDocument': {
                     'documentSymbol': {'hierarchicalDocumentSymbolSupport': True},

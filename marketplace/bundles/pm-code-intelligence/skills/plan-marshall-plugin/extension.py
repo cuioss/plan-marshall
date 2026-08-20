@@ -111,10 +111,20 @@ class Extension(ExtensionBase, DerivationResolverBase):
         """Derive module edges from harvested language-server references.
 
         A pure join over the ``component_refs`` field discovery materializes: the
-        language server ran at discovery time, its references were lifted to
-        module granularity through the path-attribution seam, and this method
-        performs no file I/O and runs no subprocess, as the Axis-C purity contract
-        requires.
+        language server ran at discovery time, its file-granular references were
+        lifted to module granularity, and this method performs no file I/O and
+        runs no subprocess, as the Axis-C purity contract requires.
+
+        **The lift does not go through the Axis-D path-attribution seam.** It
+        uses a caller-supplied path-to-module lookup — a longest-prefix table the
+        harvest builds from the discovered module set. That is necessary rather
+        than incidental: the live seam claims only ``.claude`` and ``.plan``, so
+        it attributes no ``marketplace/bundles/**`` path at all and routing
+        through it would guarantee zero edges. The substitute does **not** carry
+        the seam's ambiguous-ownership obligation (its equal-length tie-break is
+        iteration order, which the seam's contract forbids; unreachable today
+        because bundle directory names are unique), and vendored-tree exclusion
+        is handled by the harvest rather than by the lookup.
 
         The harvest's own status record is read first and reported. A harvest that
         did not run yields a note naming the reason, so ``edge_count: 0`` from a

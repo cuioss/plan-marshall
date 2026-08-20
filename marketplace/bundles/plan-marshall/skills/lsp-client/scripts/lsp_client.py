@@ -40,7 +40,7 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from _lsp_jsonrpc import LspError, LspSession, StdioTransport
+from _lsp_jsonrpc import LspError, LspSession, StdioTransport, default_analysis_config
 from _lsp_workspace_edit import (
     WorkspaceApplyError,
     apply_workspace_edit,
@@ -112,6 +112,33 @@ def select_language_server(config: dict[str, Any], language: str) -> dict[str, A
 def resolve_language_server(language: str) -> dict[str, Any] | None:
     """Resolve the enabled server entry for ``language`` from the run-config store."""
     return select_language_server(read_run_config(get_run_config_path()), language)
+
+
+def analysis_config_with_extra_paths(extra_paths: list[str]) -> dict[str, Any]:
+    """This client's analysis settings, plus a module search path for bare imports.
+
+    A server rooted at the project root resolves an import the way the
+    interpreter would from that root. Where a project's own scripts import each
+    other by bare name — satisfied at runtime by a launcher that puts their
+    directory on ``sys.path`` — that is the wrong root and **nothing** resolves.
+    ``extraPaths`` hands the server the same search path.
+
+    Deriving *which* paths is the caller's job, since it depends on how that
+    project is laid out and launched; assembling them into the settings this
+    client speaks is this module's.
+
+    Args:
+        extra_paths: Absolute directories to add to the server's search path.
+
+    Returns:
+        A config accepted by :class:`StdioTransport` and :class:`LspSession` as
+        ``analysis_config``. Pass it to **both**: a server may read its settings
+        from the handshake, from a ``workspace/configuration`` pull, or from
+        both, and the two must not disagree.
+    """
+    config = default_analysis_config()
+    config['extraPaths'] = list(extra_paths)
+    return config
 
 
 # =============================================================================
