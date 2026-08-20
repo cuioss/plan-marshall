@@ -437,9 +437,38 @@ round's own prose is the highest-risk surface:
 | S1 | `corpus_lsp.py`'s `--project-path` **argparse help** still said only "(default: cwd)" — the behaviour G4 replaced. A prose-bearing string literal in production code: a docs sweep never opens the file and a code sweep never reads the sentence | **fixed** |
 | S2 | `proposals.md` said `merge_path_claims` "returns five claims" — run, it returns a `(claims, roster)` pair whose claim list holds five | **fixed** |
 
-### Round 3
+### Round 3 — cold read
 
-_Pending._
+All four required readings came back **correct** a second time, on the corrected texts. The reader
+also confirmed five of this run's mechanism claims by executing them — the Axis-D claim set (5 claims
+/ 3 attributors, `None` for a marketplace path), the npm two-of-four extraction, the single untyped
+`LspError` raised for both causes, D6/G10's 308 / 5083 / 5022 / 61 and its 26 / 4 / 31 split, and
+G25's asserted absence — each reproduced exactly.
+
+Seven findings, all fixed in `bd4053f`. **Four of the seven are defects the previous round's own
+fixes introduced**, which is the pattern the contract predicts: by round N the highest-risk text is
+what round N−1 wrote.
+
+| # | Finding | Disposition |
+|---|---|---|
+| R1 | **A silent-empty case nothing documented, created by this deliverable.** The strict fallback is all-or-nothing per file: a `[project]` table supplying a name suppresses `[tool.poetry]` **whole**, including its dependency lists. Run: the hybrid layout returns `metadata {'name': 'hybrid-dist'}` with `dependencies []` — a valid edge **target** contributing no outbound edges, with nothing saying why | **fixed by disclosure + a test.** All-or-nothing stays: a per-field merge would let one form silently override the other, and the plan's own ⚠ requires the fallback be strict. Now a stated limit in the user page, pinned by `test_a_pep621_name_suppresses_the_poetry_table_whole_including_its_dependencies` |
+| R2 | `proposals.md` P6 described **in the present tense** a documentation state the same run had corrected, sending a reader to `SKILL.md` for a 97 % claim that is no longer there | **fixed** — past tense, plus an explicit "those surfaces have since been corrected; what remains open is the gate" |
+| R3 | The corpus user page said the index is built "when the first **request** arrives" — but `initialize` **is** a request and is always first, so read literally it says the handshake pays the build, which `SKILL.md` explicitly denies | **fixed** — "when the first **lookup** arrives — not during the handshake, which builds nothing" |
+| R4 | "Two scopes are read from **each** descriptor form" is false for `setup.cfg` (runtime only), and the sentence contradicted itself three clauses later; the ecosystem **table** carried the same unqualified promise | **fixed** at both — "up to two scopes, depending on which form supplied the name" |
+| R5 | `lsp-code-intelligence.adoc`'s section is titled "the states you can always tell apart" and omits `preflight`'s `ready`, so a reader who calls `preflight` gets a state the exhaustive-sounding table lacks | **fixed** — a NOTE naming `ready` and when to expect it |
+| R6 | The same page names `diagnostics_unavailable` but never `diagnostics_worsened` — the one reason code that **does** mean the edit was wrong was the one it could not look up | **fixed** |
+| R7 | An empty find-references result has **five** causes the editor cannot distinguish: an off server advertises nothing, `completeness_note` rides in a field no editor renders, and the withheld count arrives as a `window/logMessage` many clients hide by default | **fixed** — a new `[[empty-references]]` section tabulating all five and the two commands that separate them |
+
+⚠ **R7 is worth naming as more than a doc gap.** This epic exists to make an empty answer legible, and
+the *editor* surface — the one an operator actually looks at — could not distinguish five kinds of
+empty. The withholding D5 introduced (G28) made that strictly worse by adding a sixth. The fix is
+documentation because the LSP protocol offers no richer channel; the underlying limit is real and is
+now stated rather than implied.
+
+### Round 3 — plan verifier
+
+_In flight at the time this section was written; its findings and dispositions are appended before
+the merge gate._
 
 ## Reviewer participation
 
