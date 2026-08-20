@@ -864,8 +864,11 @@ def is_derivation_resolver_enabled(resolver_id: str, section: dict[str, Any] | N
 def cmd_derivation_resolver_get(args: argparse.Namespace) -> dict:
     """Get the binding for a resolver id.
 
-    ``configured`` reports whether an entry exists; ``enabled`` reports the
-    EFFECTIVE state, which is the default when no entry does.
+    ``configured`` reports whether a **well-formed** (dict) entry exists;
+    ``enabled`` reports the EFFECTIVE state, which is the default when no entry
+    does. The dict test is the shared definition: ``extension_api``'s resolver
+    roster applies the same one, so the two readers of this store cannot report
+    different things about a malformed entry.
     """
     try:
         entry = read_derivation_resolvers_section().get(args.resolver)

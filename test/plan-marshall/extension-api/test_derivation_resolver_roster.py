@@ -35,6 +35,7 @@ isolation and failed in the full suite until the lookup was deferred.
 """
 
 import importlib
+import json
 
 import extension_api
 import pytest
@@ -259,3 +260,72 @@ def test_cli_verb_dispatches_to_the_roster(plan_context, roster):
     result = extension_api.cmd_derivation_resolvers_list(parse_ns('plan-marshall', 'manage-run-config', 'run_config.py', 'derivation-resolver', 'list'))
     assert result['status'] == 'success'
     assert [entry['id'] for entry in result['resolvers']] == ['markdown', 'python']
+
+
+# ---------------------------------------------------------------------------
+# One store, one meaning of `configured`
+# ---------------------------------------------------------------------------
+
+
+MALFORMED_ENTRY = 'yes'
+"""A non-dict entry — the shape the two readers used to disagree about."""
+
+
+def _write_malformed_entry(resolver_id: str = 'markdown') -> None:
+    """Put a non-dict entry into the store, bypassing the `set` verb's validation."""
+    live = _live('run_config')
+    path = live.get_run_config_path()
+    config = live.read_run_config(path)
+    config['derivation_resolvers'] = {resolver_id: MALFORMED_ENTRY}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(config), encoding='utf-8')
+
+
+def test_a_non_dict_entry_is_not_configured_in_the_roster(plan_context, roster):
+    """Key presence is not configuration: the menu renders this as "deliberately set"."""
+    _write_malformed_entry()
+
+    assert _by_id(extension_api.list_derivation_resolvers())['markdown']['configured'] is False
+
+
+def test_both_readers_agree_on_a_non_dict_entry(plan_context, roster):
+    """The defect was the DISAGREEMENT, so the guard compares the two answers.
+
+    Asserting a value on one side alone would pass against the shipped code,
+    which was self-consistent on each side and contradictory across them: the
+    roster reported `configured: true` for `{"markdown": "yes"}` while
+    `derivation-resolver get --resolver markdown` reported `configured: false`,
+    and the menu document instructs the agent to render that field as the
+    distinction between "left at the default" and "deliberately set".
+    """
+    _write_malformed_entry()
+
+    roster_says = _by_id(extension_api.list_derivation_resolvers())['markdown']['configured']
+    store_says = _live('run_config').cmd_derivation_resolver_get(
+        parse_ns('plan-marshall', 'manage-run-config', 'run_config.py',
+                 'derivation-resolver', 'get', '--resolver', 'markdown')
+    )['configured']
+
+    assert roster_says == store_says
+    assert roster_says is False  # positively, not merely "they match"
+
+
+def test_both_readers_agree_on_a_well_formed_entry(plan_context, roster):
+    """The control: agreement must not have been bought by reporting False always."""
+    run_config.cmd_derivation_resolver_set(parse_ns('plan-marshall', 'manage-run-config', 'run_config.py', 'derivation-resolver', 'set', '--resolver', 'markdown', '--enabled'))
+
+    roster_says = _by_id(extension_api.list_derivation_resolvers())['markdown']['configured']
+    store_says = _live('run_config').cmd_derivation_resolver_get(
+        parse_ns('plan-marshall', 'manage-run-config', 'run_config.py',
+                 'derivation-resolver', 'get', '--resolver', 'markdown')
+    )['configured']
+
+    assert roster_says == store_says
+    assert roster_says is True
+
+
+def test_a_malformed_entry_still_fails_open_on_enabled(plan_context, roster):
+    """Tightening `configured` must not have tightened `enabled` — that fails OPEN."""
+    _write_malformed_entry()
+
+    assert _by_id(extension_api.list_derivation_resolvers())['markdown']['enabled'] is True

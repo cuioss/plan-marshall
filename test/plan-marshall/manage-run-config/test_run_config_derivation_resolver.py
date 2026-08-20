@@ -17,6 +17,7 @@ rather than once.
 """
 
 import argparse
+import json
 
 import run_config
 
@@ -270,3 +271,40 @@ def test_cli_list_and_remove(plan_context):
     removed = run_script(SCRIPT_PATH, 'derivation-resolver', 'remove', '--resolver', 'lsp')
     assert removed.success, removed.stderr
     assert removed.toon().get('action') == 'removed'
+
+
+# ---------------------------------------------------------------------------
+# One store, one meaning of `configured`
+# ---------------------------------------------------------------------------
+
+
+def _write_raw_section(section: dict) -> None:
+    """Write the section verbatim, bypassing the `set` verb's own validation."""
+    path = run_config.get_run_config_path()
+    config = run_config.read_run_config(path)
+    config['derivation_resolvers'] = section
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(config), encoding='utf-8')
+
+
+def test_get_reports_a_non_dict_entry_as_not_configured(plan_context):
+    """An entry that is not a dict carries no binding, so nothing was set.
+
+    This is the store side of a definition the resolver roster shares. Written
+    on one side alone the pair could drift again — see the roster's own
+    agreement test, which compares the two answers directly.
+    """
+    _write_raw_section({'markdown': 'yes'})
+
+    got = run_config.cmd_derivation_resolver_get(
+        argparse.Namespace(resolver='markdown')
+    )
+
+    assert got['configured'] is False
+
+
+def test_a_non_dict_entry_still_leaves_the_resolver_enabled(plan_context):
+    """`configured` is a statement about the store; `enabled` fails OPEN."""
+    _write_raw_section({'markdown': 'yes'})
+
+    assert run_config.cmd_derivation_resolver_get(argparse.Namespace(resolver='markdown'))['enabled'] is True

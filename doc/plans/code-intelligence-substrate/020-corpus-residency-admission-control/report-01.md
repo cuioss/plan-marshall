@@ -247,3 +247,27 @@ opened for it.
   whether an LSP-shaped client (built for code symbols) is the right shape for section-granular reads
   over markdown documents, or whether `manage-architecture`'s existing content-search surface is the
   better home (the plan's Expected-surface leaves this open).
+
+  > **Correction appended by plan 500 (`500-lsp-and-derivation-resolver-correctness`), covering
+  > `020/G12`.** The note above points at the wrong surface, and its question has more candidates than
+  > the two it names. This is appended rather than rewritten: the note records what this execution
+  > concluded, and that record stands.
+  >
+  > **The surface to coordinate with first is `pm-plugin-development:tools-corpus-language-server`,
+  > not `plan-marshall:lsp-client`.** The note was written when the only shipped LSP surface was a
+  > **code-facing client** — one that spawns a third-party language server over source files. A
+  > **corpus-facing resident server** has shipped since, over the marketplace document corpus, and it
+  > already solves the three problems D2 would otherwise re-solve: the index, the resident cost model
+  > (~1.9 s build paid once at `initialize` rather than per call), and the opt-in switch.
+  >
+  > **It does not satisfy D2, and the limit is granularity.** Its index is **component-granular**:
+  > `_corpus_index.py` records no intra-file position, `definition` returns the owning component's
+  > file at **line 0** by explicit design, and `hover` returns description plus frontmatter. D2 needs
+  > **section-granular** reads — a heading or anchor within a document — and the server has no heading
+  > or anchor concept at all. Extending it is a real change, not a call.
+  >
+  > **The open question is three-way, not two-way.** The note also predates the removal of the LSP
+  > query facade (plan 135), so the candidate set it names is stale. Pose it as: extend
+  > `tools-corpus-language-server` with a section-granular request; extend `manage-architecture`'s
+  > content surface; or extend a `--section` verb on the document surface. `plan-marshall:lsp-client`
+  > is not among the candidates — it is a client of a *code* language server and reads no documents.

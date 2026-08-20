@@ -164,7 +164,15 @@ def list_derivation_resolvers() -> dict[str, Any]:
                 'id': resolver_id,
                 'origin': record.get('origin', 'unknown'),
                 'enabled': enabled,
-                'configured': resolver_id in section,
+                # An entry counts as configured only when it is a DICT — the
+                # same definition `manage-run-config`'s store verb applies. Mere
+                # key presence disagreed with it on a malformed entry such as
+                # `{"markdown": "yes"}`: the roster said configured, the store
+                # verb said not, and the menu document instructs the agent to
+                # render this field as "left at the default" versus
+                # "deliberately set". Two readers of one store told an operator
+                # two different things about it.
+                'configured': isinstance(section.get(resolver_id), dict),
                 'file_patterns': patterns,
             }
         )
