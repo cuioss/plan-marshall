@@ -87,6 +87,18 @@ SHAPE_6_DIVERGENCE_NO_GC = 'shape6:divergence-without-gc-exposure'
 # check is falsifiable rather than depending on an unstated choice of "the pin".
 GATE_FIELD = 'installPath'
 
+# Executor-anchor statuses. The three non-anchored states are kept DISTINCT
+# because they call for opposite handling: a split executor was read successfully
+# and is internally inconsistent (a divergence the oracle must FAIL on), while an
+# unreadable or unanchored one is a store the run could not look at (an
+# ``indeterminate`` driver). Collapsing all three to ``None`` — the shape this
+# reader had before — silently filed a demonstrated disagreement as "could not
+# look", which is the false-clean direction.
+EXECUTOR_ANCHORED = 'anchored'
+EXECUTOR_UNREADABLE = 'unreadable'
+EXECUTOR_NO_ANCHOR = 'no_anchor'
+EXECUTOR_SPLIT = 'split'
+
 _UNMARKED_DERIVED_NOTE = (
     'The unmarked set is REGISTRY-DERIVED, not an independent witness: the foreign '
     'garbage collector deletes the marker from the registry installPath directory '
@@ -156,31 +168,94 @@ class VersionDir:
 class ContentComparison:
     """Pin-content-vs-source comparison, reported as a count and never a boolean.
 
-    ``matched`` of ``total`` source files hashed identically in the pin dir;
-    ``diverged`` is the remainder of the SCANNED files. ``scanned`` defaults to
-    ``total`` (a full scan); a smaller value marks a partial scan, which
-    :meth:`render` states explicitly so a degraded comparison can never read as
-    clean.
+    ``matched`` of ``total`` paths hashed identically in the pin dir; ``diverged``
+    is the remainder of the SCANNED paths. ``total`` is the size of the UNION of
+    the source and pin path sets, so a file the pin carries and source does not —
+    retired-file residue — is inside the denominator rather than invisible to it;
+    ``extra_in_pin`` counts that subset and :meth:`render` reports it distinctly,
+    so residue is never mistaken for a content edit.
+
+    ``scanned`` defaults to ``total`` (a full scan); a smaller value marks a
+    partial scan, which :meth:`render` states explicitly so a degraded comparison
+    can never read as clean.
+
+    A comparison that walked ZERO paths, or one whose source or pin side could
+    not be enumerated, is UNUSABLE: it is evidence about nothing, and the oracle
+    must not resolve it as a pass. :attr:`usable` is the predicate, and
+    :attr:`unusable_because` carries the reason — which distinguishes an
+    unreadable directory from a genuinely empty one, because the two call for
+    different operator action.
     """
 
     matched: int
     total: int
     diverged: int
     scanned: int | None = None
+    extra_in_pin: int = 0
+    unusable_reason: str | None = None
 
     @property
-    def _scanned(self) -> int:
+    def scanned_count(self) -> int:
+        """Paths actually read on both sides (``total`` when ``scanned`` is unset)."""
         return self.total if self.scanned is None else self.scanned
 
     @property
     def partial(self) -> bool:
-        return self._scanned < self.total
+        return self.scanned_count < self.total
+
+    @property
+    def unusable_because(self) -> str | None:
+        """Why this comparison is not evidence, or ``None`` when it is.
+
+        An explicitly recorded reason wins; a comparison over zero paths is
+        unusable whether or not the adapter recorded why, so a hand-built
+        ``ContentComparison(0, 0, 0)`` cannot satisfy a pass either.
+        """
+        if self.unusable_reason is not None:
+            return self.unusable_reason
+        if self.total == 0:
+            return (
+                'empty_comparison: the comparison walked ZERO paths, so it is '
+                'evidence about nothing'
+            )
+        return None
+
+    @property
+    def usable(self) -> bool:
+        """True when this comparison is evidence about at least one path."""
+        return self.unusable_because is None
+
+    def signature(self) -> tuple:
+        """The counts a read-during-write can flip between two samples."""
+        return (self.matched, self.total, self.diverged, self.scanned_count, self.extra_in_pin)
 
     def render(self) -> str:
+        if not self.usable:
+            return f'NOT COMPARABLE ({self.unusable_because})'
         base = f'{self.matched} of {self.total} files match; {self.diverged} diverge'
+        if self.extra_in_pin:
+            base += (
+                f' ({self.extra_in_pin} present in the pin and ABSENT from source '
+                '— retired-file residue, not a content edit)'
+            )
         if self.partial:
-            base += f' (PARTIAL scan: {self._scanned} of {self.total} scanned)'
+            base += f' (PARTIAL scan: {self.scanned_count} of {self.total} scanned)'
         return base
+
+
+@dataclass(frozen=True)
+class ExecutorAnchor:
+    """What the executor's embedded paths say about the version they anchor at.
+
+    ``status`` is one of the four ``EXECUTOR_*`` constants. ``version`` is set
+    only for :data:`EXECUTOR_ANCHORED`; ``versions`` carries every distinct
+    version segment found, which is what makes a :data:`EXECUTOR_SPLIT` result
+    reportable by name rather than as a bare "could not read".
+    """
+
+    status: str
+    version: str | None = None
+    versions: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -190,9 +265,11 @@ class StoreObservation:
     ``None`` fields mean the store could not be read — a state the oracle keeps
     distinct from both pass and fail. ``version_dirs`` is the cache population;
     ``content`` is the installPath dir compared against source (``None`` when not
-    compared). ``newest_marker_age_seconds`` is REPORTED for diagnosis, never fed
-    into the oracle decision (an age-based staleness heuristic is out of scope —
-    markers get re-written, resetting apparent age).
+    compared). ``executor_anchor`` carries WHY ``executor_version`` is ``None``
+    when it is, so a version-SPLIT executor is reported as the disagreement it is
+    rather than as an unreadable store. ``newest_marker_age_seconds`` is REPORTED
+    for diagnosis, never fed into the oracle decision (an age-based staleness
+    heuristic is out of scope — markers get re-written, resetting apparent age).
     """
 
     executor_version: str | None
@@ -201,6 +278,7 @@ class StoreObservation:
     version_dirs: tuple[VersionDir, ...]
     content: ContentComparison | None = None
     newest_marker_age_seconds: float | None = None
+    executor_anchor: ExecutorAnchor | None = None
 
 
 @dataclass(frozen=True)
@@ -290,15 +368,26 @@ def loader_selected_version(dirs: tuple[VersionDir, ...]) -> str | None:
 def _volatile_signature(obs: StoreObservation) -> tuple:
     """The facts that a read-during-write can flip between two samples.
 
-    The marker set is the volatile one the double-sample guards; the registry and
-    executor reads are included so a mid-write to any of them also forces
-    ``indeterminate`` rather than a verdict over an inconsistent snapshot.
+    EVERY axis the oracle reads is included, because the double-sample guard's
+    whole claim is that the two samples agreed — a claim it cannot make about an
+    axis it never compared. The marker set is the volatile one the guard was
+    built for; the registry and executor reads are here so a mid-write to either
+    forces ``indeterminate``; the CONTENT counts are here because the content
+    comparison is the longest read in the observation and therefore the axis most
+    likely to straddle a write, and omitting it let the guard issue a confident
+    verdict over two samples that demonstrably disagreed on it. The executor
+    anchor's status and version set are included for the same reason: two
+    differently-split executor reads both leave ``executor_version`` at ``None``
+    and would otherwise compare equal.
     """
+    anchor = obs.executor_anchor
     return (
         tuple(sorted((d.name, d.marked) for d in obs.version_dirs)),
         obs.install_path_version,
         obs.registry_version,
         obs.executor_version,
+        None if anchor is None else (anchor.status, anchor.versions),
+        None if obs.content is None else obs.content.signature(),
     )
 
 
@@ -344,6 +433,7 @@ def _evaluate_single(obs: StoreObservation, sampling_instant: str) -> Verdict:
     rv = obs.registry_version
     ev = obs.executor_version
     content = obs.content
+    executor_anchor = obs.executor_anchor
     loader = loader_selected_version(dirs)
 
     shapes: list[str] = []
@@ -361,9 +451,21 @@ def _evaluate_single(obs: StoreObservation, sampling_instant: str) -> Verdict:
     # D4 — the loader follows a dir other than the registry pin.
     if loader is not None and ipv is not None and loader != ipv:
         divergences.append(f'loader_selected({loader}) != {GATE_FIELD}({ipv})')
-    # Conjunct 4 — content vs source, as a count, never a boolean.
-    if content is not None and content.diverged > 0:
+    # Conjunct 4 — content vs source, as a count, never a boolean. Gated on
+    # `usable`: a comparison that walked zero paths has a `diverged` of 0 for the
+    # same reason it has a `matched` of 0, so reading its silence as agreement
+    # would issue a verdict over an axis nothing looked at.
+    if content is not None and content.usable and content.diverged > 0:
         divergences.append(f'pin content diverges from source: {content.render()}')
+    # Conjunct 5 — the executor read succeeded and its embedded paths disagree
+    # with EACH OTHER. Distinct from an unreadable executor: this is a
+    # demonstrated disagreement, so it belongs on the divergence axis rather than
+    # on the could-not-look list.
+    if executor_anchor is not None and executor_anchor.status == EXECUTOR_SPLIT:
+        divergences.append(
+            'executor is version-SPLIT across its embedded paths: '
+            + ', '.join(executor_anchor.versions)
+        )
 
     # --- GC-exposure axis (a load-bearing dir is orphan-marked, or saturation) ---
     pin_dir = next((d for d in dirs if d.name == ipv), None) if ipv is not None else None
@@ -382,7 +484,13 @@ def _evaluate_single(obs: StoreObservation, sampling_instant: str) -> Verdict:
         shapes.append(SHAPE_3_STALE_UNMARKED_BESIDE_PIN)
 
     # --- Shape 4: the ONLY unmarked dir IS the pin, yet the pin diverges from source ---
-    if ipv is not None and unmarked_names == {ipv} and content is not None and content.diverged > 0:
+    if (
+        ipv is not None
+        and unmarked_names == {ipv}
+        and content is not None
+        and content.usable
+        and content.diverged > 0
+    ):
         shapes.append(SHAPE_4_PIN_DIVERGES_FROM_SOURCE)
 
     # --- Shape 6: a cache-selection divergence with NO GC exposure ("repair when
@@ -394,7 +502,7 @@ def _evaluate_single(obs: StoreObservation, sampling_instant: str) -> Verdict:
     cache_divergence = (
         (ev is not None and ipv is not None and ev != ipv)
         or (loader is not None and ipv is not None and loader != ipv)
-        or (content is not None and content.diverged > 0)
+        or (content is not None and content.usable and content.diverged > 0)
     )
     already_specific = any(
         s in shapes for s in (SHAPE_3_STALE_UNMARKED_BESIDE_PIN, SHAPE_4_PIN_DIVERGES_FROM_SOURCE)
@@ -404,7 +512,9 @@ def _evaluate_single(obs: StoreObservation, sampling_instant: str) -> Verdict:
 
     # --- Outcome: fail wins; then could-not-look; then content-not-compared; then pass ---
     unreadable: list[str] = []
-    if ev is None:
+    # A version-SPLIT executor is NOT unreadable — it was read, and it disagrees
+    # with itself. It is reported on the divergence axis above.
+    if ev is None and not (executor_anchor is not None and executor_anchor.status == EXECUTOR_SPLIT):
         unreadable.append('executor')
     if ipv is None:
         unreadable.append(f'registry.{GATE_FIELD}')
@@ -430,6 +540,13 @@ def _evaluate_single(obs: StoreObservation, sampling_instant: str) -> Verdict:
     elif content is None:
         outcome = OUTCOME_INDETERMINATE
         reason = 'could_not_look: pin content was not compared against source'
+        remedy = REMEDY_RESAMPLE
+    elif not content.usable:
+        # The comparison ran and is not evidence — an unreadable directory, or a
+        # walk over zero paths. Either way the content conjunct was never
+        # actually tested, so the pass arm is unreachable from here.
+        outcome = OUTCOME_INDETERMINATE
+        reason = f'could_not_look: {content.unusable_because}'
         remedy = REMEDY_RESAMPLE
     else:
         outcome = OUTCOME_PASS
@@ -613,64 +730,159 @@ def _find_in_list(items: list, plugin_name: str) -> object:
     return None
 
 
-def read_executor_anchored_version(executor_path: Path) -> str | None:
-    """Extract the plugin-cache version dir the executor's embedded paths anchor at.
+def read_executor_anchored_version(executor_path: Path) -> ExecutorAnchor:
+    """Read which plugin-cache version dir the executor's embedded paths anchor at.
 
     The generated executor embeds absolute script paths under
     ``.../cache/{plugin}/{version}/skills/...``. This scans the executor text for
-    those version segments and returns the single version they agree on; it
-    returns ``None`` when the file is unreadable or carries no such segment (the
-    marketplace-layout executor, or a corrupt one), and — fail-closed — when the
-    embedded paths disagree on the version (an internally version-split executor
-    is not a single anchored version).
+    those version segments and reports one of four states, kept distinct because
+    they are not the same fact about the executor:
+
+    * :data:`EXECUTOR_ANCHORED` — the embedded paths agree on one version, which
+      is carried in ``version``;
+    * :data:`EXECUTOR_UNREADABLE` — the file could not be read at all;
+    * :data:`EXECUTOR_NO_ANCHOR` — it was read and carries no such segment (the
+      marketplace-layout executor, or a corrupt one);
+    * :data:`EXECUTOR_SPLIT` — it was read and its embedded paths name MORE THAN
+      ONE version. ``versions`` carries them all, so the oracle can name the
+      conflict instead of filing a demonstrated disagreement as an unread store.
+
+    Every non-anchored state leaves ``version`` at ``None``, so the load-safety
+    gate stays fail-closed: an executor whose version is not established never
+    satisfies ``executor == installPath``.
     """
     try:
         text = executor_path.read_text(encoding='utf-8')
     except OSError:
-        return None
-    versions = set(re.findall(r'/cache/[^/]+/(\d+\.\d+[^/\'"]*)/skills/', text))
+        return ExecutorAnchor(status=EXECUTOR_UNREADABLE)
+    versions = tuple(sorted(set(re.findall(r'/cache/[^/]+/(\d+\.\d+[^/\'"]*)/skills/', text))))
     if len(versions) == 1:
-        return str(next(iter(versions)))
-    return None
+        return ExecutorAnchor(status=EXECUTOR_ANCHORED, version=versions[0], versions=versions)
+    if not versions:
+        return ExecutorAnchor(status=EXECUTOR_NO_ANCHOR)
+    return ExecutorAnchor(status=EXECUTOR_SPLIT, versions=versions)
+
+
+def _relative_file_set(base: Path) -> set[Path] | None:
+    """Every file under ``base``, as paths relative to it — ``None`` if unwalkable.
+
+    ``None`` is a genuinely different answer from ``set()``: a directory that is
+    ABSENT or could not be enumerated is unknown, while one that exists and holds
+    nothing is known to be empty, and the comparison must not read the first as
+    the second.
+
+    The ``is_dir()`` test is load-bearing rather than defensive. ``rglob`` over a
+    path that does not exist does NOT raise — it yields nothing — so relying on
+    the ``OSError`` alone would report a missing directory as an empty one, which
+    is the same launder-an-absence-into-an-observation defect this module exists
+    to prevent, one level down.
+    """
+    try:
+        if not base.is_dir():
+            return None
+        return {p.relative_to(base) for p in base.rglob('*') if p.is_file()}
+    except OSError:
+        return None
 
 
 def compare_pin_content(pin_dir: Path, source_dir: Path) -> ContentComparison:
-    """Compare every source file against its counterpart in the pin dir, by bytes.
+    """Compare the pin dir against source by bytes, over the UNION of both sides.
 
     Returns a count — "N of M match; K diverge" — never a boolean, so a
     divergence on a handful of files is actionable rather than laundered into
-    "stale". A file that cannot be read on either side is counted as scanned-but-
-    not-matched AND marks the scan partial, so a degraded comparison never reads
-    as clean. ``total`` is the number of source files (the M the pin is measured
-    against).
+    "stale".
+
+    ``total`` is the size of the union of the two path sets, NOT the source side
+    alone. Enumerating only source made a pin dir that is a strict SUPERSET of it
+    read as a complete match, which is exactly the retired-file residue this
+    detector exists to catch: the extra files are counted into ``diverged`` and
+    reported separately as ``extra_in_pin``.
+
+    The three ways a path can fail to match are kept apart, because two of them
+    are findings and the third is not:
+
+    * the pin LACKS a source file, or holds different bytes → a divergence, and
+      the path counts as scanned;
+    * the pin holds a file source does not → a divergence and an ``extra_in_pin``;
+    * a path could not be READ on either side → genuinely UNSCANNED, so the scan
+      is partial and says so. Counting an unread path as diverged would fail on
+      an axis nothing looked at.
+
+    A comparison whose source or pin side is ABSENT or could not be enumerated,
+    or that walks zero paths over two directories that both exist, is returned
+    UNUSABLE with the reason recorded — the cases stay distinguishable, because a
+    missing directory and an empty one call for different operator action.
     """
-    try:
-        source_files = sorted(p for p in source_dir.rglob('*') if p.is_file())
-    except OSError:
-        return ContentComparison(matched=0, total=0, diverged=0, scanned=0)
-    total = len(source_files)
+    source_rels = _relative_file_set(source_dir)
+    if source_rels is None:
+        return ContentComparison(
+            matched=0,
+            total=0,
+            diverged=0,
+            scanned=0,
+            unusable_reason=(
+                f'source_unreadable: {source_dir} is absent or could not be enumerated'
+            ),
+        )
+    pin_rels = _relative_file_set(pin_dir)
+    if pin_rels is None:
+        return ContentComparison(
+            matched=0,
+            total=0,
+            diverged=0,
+            scanned=0,
+            unusable_reason=(
+                f'pin_unreadable: {pin_dir} is absent or could not be enumerated'
+            ),
+        )
+
+    union = sorted(source_rels | pin_rels)
+    total = len(union)
+    if total == 0:
+        return ContentComparison(
+            matched=0,
+            total=0,
+            diverged=0,
+            scanned=0,
+            unusable_reason=(
+                f'empty_comparison: neither {pin_dir} nor {source_dir} holds any '
+                'file, so the comparison walked ZERO paths'
+            ),
+        )
+
     matched = 0
-    scanned = 0
-    unreadable = 0
-    for src in source_files:
-        rel = src.relative_to(source_dir)
-        counterpart = pin_dir / rel
-        try:
-            src_bytes = src.read_bytes()
-            pin_bytes = counterpart.read_bytes()
-        except OSError:
-            unreadable += 1
+    diverged = 0
+    unscanned = 0
+    extra_in_pin = 0
+    for rel in union:
+        if rel not in source_rels:
+            extra_in_pin += 1
+            diverged += 1
             continue
-        scanned += 1
+        try:
+            src_bytes = (source_dir / rel).read_bytes()
+        except OSError:
+            unscanned += 1
+            continue
+        try:
+            pin_bytes = (pin_dir / rel).read_bytes()
+        except FileNotFoundError:
+            diverged += 1
+            continue
+        except OSError:
+            unscanned += 1
+            continue
         if src_bytes == pin_bytes:
             matched += 1
-    diverged = scanned - matched
-    scanned_total = scanned + unreadable
+        else:
+            diverged += 1
+
     return ContentComparison(
         matched=matched,
         total=total,
-        diverged=diverged + unreadable,
-        scanned=scanned_total if scanned_total < total or unreadable else None,
+        diverged=diverged,
+        scanned=total - unscanned,
+        extra_in_pin=extra_in_pin,
     )
 
 
@@ -692,7 +904,8 @@ def observe(
     """
     version_dirs, marker_age = observe_cache_version_dirs(cache_bundle_dir, now=now)
     install_version, registry_version = read_registry_entry(registry_path, plugin_name)
-    executor_version = read_executor_anchored_version(executor_path)
+    executor_anchor = read_executor_anchored_version(executor_path)
+    executor_version = executor_anchor.version
     content: ContentComparison | None = None
     if source_dir is not None and install_version is not None:
         pin_dir = cache_bundle_dir / install_version
@@ -705,11 +918,17 @@ def observe(
         version_dirs=version_dirs,
         content=content,
         newest_marker_age_seconds=marker_age,
+        executor_anchor=executor_anchor,
     )
 
 
 __all__ = [
     'ContentComparison',
+    'EXECUTOR_ANCHORED',
+    'EXECUTOR_NO_ANCHOR',
+    'EXECUTOR_SPLIT',
+    'EXECUTOR_UNREADABLE',
+    'ExecutorAnchor',
     'GATE_FIELD',
     'LoadedVersionVerdict',
     'OUTCOME_FAIL',

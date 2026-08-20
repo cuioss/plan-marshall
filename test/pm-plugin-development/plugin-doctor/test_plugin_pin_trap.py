@@ -317,10 +317,39 @@ def test_content_comparison_full_scan_render():
     assert ContentComparison(matched=360, total=360, diverged=0).render() == '360 of 360 files match; 0 diverge'
 
 
-def test_content_comparison_partial_scan_says_so():
-    cc = ContentComparison(matched=100, total=360, diverged=10, scanned=110)
-    assert cc.partial
-    assert 'PARTIAL scan: 110 of 360 scanned' in cc.render()
+def test_compare_pin_content_partial_scan_when_a_source_file_is_unreadable(tmp_path, monkeypatch):
+    """An unreadable SOURCE file leaves the scan partial, and ``render()`` says so.
+
+    Driven through ``compare_pin_content`` rather than the dataclass
+    constructor: a hand-built ``ContentComparison`` accepts any ``scanned``
+    value, so constructing one proves nothing about whether the adapter can ever
+    reach a partial state. The distinction is the whole point — a file the pin
+    merely LACKS is a divergence (scanned, and reported), while a source file
+    that cannot be READ is genuinely unscanned and degrades the comparison.
+    """
+    source = tmp_path / 'source'
+    pin = tmp_path / 'pin'
+    for base in (source, pin):
+        (base / 'skills' / 's').mkdir(parents=True)
+        (base / 'skills' / 's' / 'ok.py').write_text('print(1)\n', encoding='utf-8')
+        (base / 'skills' / 's' / 'locked.py').write_text('print(2)\n', encoding='utf-8')
+
+    blocked = (source / 'skills' / 's' / 'locked.py').resolve()
+    real_read_bytes = Path.read_bytes
+
+    def _read_bytes(self):
+        if self.resolve() == blocked:
+            raise PermissionError(13, 'Permission denied', str(self))
+        return real_read_bytes(self)
+
+    monkeypatch.setattr(Path, 'read_bytes', _read_bytes)
+
+    cc = _ppt.compare_pin_content(pin, source)
+
+    assert cc.total == 2
+    assert cc.partial is True
+    assert cc.scanned_count == 1
+    assert 'PARTIAL scan: 1 of 2 scanned' in cc.render()
 
 
 # ---------------------------------------------------------------------------
@@ -391,18 +420,46 @@ def test_read_executor_anchored_version_extracts_single_version(tmp_path):
         '}\n',
         encoding='utf-8',
     )
-    assert _ppt.read_executor_anchored_version(executor) == '0.1.200'
+    anchor = _ppt.read_executor_anchored_version(executor)
+    assert anchor.status == _ppt.EXECUTOR_ANCHORED
+    assert anchor.version == '0.1.200'
 
 
-def test_read_executor_anchored_version_split_is_none(tmp_path):
-    # An internally version-split executor is not a single anchored version.
+def test_read_executor_anchored_version_split_names_the_conflicting_versions(tmp_path):
+    """A version-split executor is reported as SPLIT, naming every version found.
+
+    It is not "unreadable": the file was read and its embedded paths disagree
+    with each other, which is a demonstrated divergence rather than an absence of
+    evidence. ``version`` stays ``None`` so the load-safety gate remains
+    fail-closed.
+    """
     executor = tmp_path / 'execute-script.py'
     executor.write_text(
         '"/h/.claude/plugins/cache/plan-marshall/0.1.200/skills/b/scripts/c.py"\n'
         '"/h/.claude/plugins/cache/plan-marshall/0.1.100/skills/e/scripts/f.py"\n',
         encoding='utf-8',
     )
-    assert _ppt.read_executor_anchored_version(executor) is None
+    anchor = _ppt.read_executor_anchored_version(executor)
+    assert anchor.status == _ppt.EXECUTOR_SPLIT
+    assert anchor.version is None
+    assert anchor.versions == ('0.1.100', '0.1.200')
+
+
+def test_read_executor_anchor_distinguishes_unreadable_from_unanchored(tmp_path):
+    """A missing executor and an anchor-less one are DIFFERENT states.
+
+    Both leave ``version`` at ``None``, and the old reader collapsed them — and
+    a split executor — into that single ``None``.
+    """
+    missing = tmp_path / 'absent' / 'execute-script.py'
+    assert _ppt.read_executor_anchored_version(missing).status == _ppt.EXECUTOR_UNREADABLE
+
+    unanchored = tmp_path / 'execute-script.py'
+    unanchored.write_text('"marketplace/bundles/b/skills/s/scripts/c.py"\n', encoding='utf-8')
+    anchor = _ppt.read_executor_anchored_version(unanchored)
+    assert anchor.status == _ppt.EXECUTOR_NO_ANCHOR
+    assert anchor.version is None
+    assert anchor.versions == ()
 
 
 def test_compare_pin_content_reports_counts(tmp_path):
@@ -453,3 +510,187 @@ def test_observe_assembles_full_observation(tmp_path):
     assert obs.content is not None and obs.content.diverged == 0
     verdict = evaluate(obs, obs, sampling_instant='2026-08-13T00:00:00Z')
     assert verdict.outcome == PASS
+
+
+# ---------------------------------------------------------------------------
+# The oracle issues no verdict over an axis it did not read (320/G1, G3, G7, G8).
+# ---------------------------------------------------------------------------
+def test_zero_file_content_comparison_is_indeterminate_not_pass():
+    """A comparison that walked ZERO paths cannot satisfy the pass arm.
+
+    Its ``diverged`` is 0 for the same reason its ``matched`` is 0 — nothing was
+    read — so testing ``diverged > 0`` alone let an empty comparison satisfy the
+    content conjunct and resolve a healthy-looking observation to ``pass``.
+    """
+    verdict = _verdict(_obs(content=ContentComparison(matched=0, total=0, diverged=0)))
+
+    assert verdict.outcome == INDET
+    assert 'empty_comparison' in verdict.reason
+
+
+def test_unreadable_source_dir_is_distinguishable_from_an_empty_one(tmp_path):
+    """The two unusable causes carry DIFFERENT reasons, and neither is a pass.
+
+    An unreadable directory and a genuinely empty one call for different
+    operator action, so collapsing them into one 'nothing to compare' would tell
+    the operator nothing about which they have.
+    """
+    empty_source = tmp_path / 'empty-source'
+    empty_pin = tmp_path / 'empty-pin'
+    empty_source.mkdir()
+    empty_pin.mkdir()
+
+    empty = _ppt.compare_pin_content(empty_pin, empty_source)
+    assert empty.usable is False
+    assert empty.unusable_because is not None
+    assert empty.unusable_because.startswith('empty_comparison')
+
+    unreadable = _ppt.compare_pin_content(empty_pin, tmp_path / 'does-not-exist')
+    assert unreadable.usable is False
+    assert unreadable.unusable_because is not None
+    assert unreadable.unusable_because.startswith('source_unreadable')
+
+    assert _verdict(_obs(content=unreadable)).outcome == INDET
+    assert 'source_unreadable' in _verdict(_obs(content=unreadable)).reason
+
+
+def test_pin_superset_of_source_is_a_divergence(tmp_path):
+    """A pin holding a file source does not is retired-file residue, and fails.
+
+    Enumerating only the source side made a strict superset read as a complete
+    match — the exact residue the detector exists to catch, invisible because it
+    was outside the denominator.
+    """
+    source = tmp_path / 'source'
+    pin = tmp_path / 'pin'
+    for base in (source, pin):
+        (base / 'skills' / 's').mkdir(parents=True)
+        (base / 'skills' / 's' / 'kept.py').write_text('print(1)\n', encoding='utf-8')
+    (pin / 'skills' / 's' / 'retired.py').write_text('print(2)\n', encoding='utf-8')
+
+    cc = _ppt.compare_pin_content(pin, source)
+
+    assert cc.total == 2
+    assert cc.matched == 1
+    assert cc.diverged == 1
+    assert cc.extra_in_pin == 1
+    assert cc.partial is False
+    assert 'ABSENT from source' in cc.render()
+
+    verdict = _verdict(_obs(content=cc))
+    assert verdict.outcome == FAIL
+    assert any('pin content diverges' in d for d in verdict.divergences)
+
+
+def test_pin_missing_a_source_file_is_a_scanned_divergence(tmp_path):
+    """A file the pin LACKS diverges and counts as scanned — it is not unscanned.
+
+    The distinction is what makes ``partial`` mean something: an absent
+    counterpart is a fully-observed disagreement, while an unreadable path is an
+    observation that did not happen.
+    """
+    source = tmp_path / 'source'
+    pin = tmp_path / 'pin'
+    for base in (source, pin):
+        (base / 'skills' / 's').mkdir(parents=True)
+        (base / 'skills' / 's' / 'kept.py').write_text('print(1)\n', encoding='utf-8')
+    (source / 'skills' / 's' / 'added.py').write_text('print(3)\n', encoding='utf-8')
+
+    cc = _ppt.compare_pin_content(pin, source)
+
+    assert cc.total == 2
+    assert cc.matched == 1
+    assert cc.diverged == 1
+    assert cc.extra_in_pin == 0
+    assert cc.partial is False
+    assert cc.scanned_count == 2
+
+
+def test_samples_differing_only_in_content_are_indeterminate():
+    """The double-sample guard covers the content axis too.
+
+    The content comparison is the longest read in an observation and therefore
+    the one most likely to straddle a write; leaving it out of the volatile
+    signature let the guard issue a confident verdict over two samples that
+    demonstrably disagreed.
+    """
+    sample_a = _obs(content=ContentComparison(matched=360, total=360, diverged=0))
+    sample_b = _obs(content=ContentComparison(matched=359, total=360, diverged=1))
+
+    verdict = evaluate(sample_a, sample_b, sampling_instant='2026-08-13T00:00:00Z')
+
+    assert verdict.outcome == INDET
+    assert 'read_during_write' in verdict.reason
+
+
+def test_samples_agreeing_on_content_still_reach_a_verdict():
+    """The control for the test above: equal content counts do not force indeterminate."""
+    sample_a = _obs(content=ContentComparison(matched=360, total=360, diverged=0))
+    sample_b = _obs(content=ContentComparison(matched=360, total=360, diverged=0))
+
+    assert evaluate(sample_a, sample_b, sampling_instant='2026-08-13T00:00:00Z').outcome == PASS
+
+
+def test_version_split_executor_fails_naming_the_conflicting_versions():
+    """A split executor is a FAIL on the divergence axis, not a could-not-look.
+
+    It was read successfully; what it says is internally inconsistent. Filing
+    that as "could not read the executor" would report a demonstrated
+    disagreement as an absence of evidence.
+    """
+    split = _ppt.ExecutorAnchor(
+        status=_ppt.EXECUTOR_SPLIT, version=None, versions=('0.1.100', '0.1.200')
+    )
+
+    verdict = _verdict(_obs(executor_version=None, executor_anchor=split))
+
+    assert verdict.outcome == FAIL
+    assert any('version-SPLIT' in d for d in verdict.divergences)
+    assert any('0.1.100' in d and '0.1.200' in d for d in verdict.divergences)
+    assert 'could not read' not in verdict.reason
+
+
+def test_unreadable_executor_is_still_indeterminate():
+    """The control: a genuinely unreadable executor keeps its could-not-look outcome."""
+    unreadable = _ppt.ExecutorAnchor(status=_ppt.EXECUTOR_UNREADABLE)
+
+    verdict = _verdict(_obs(executor_version=None, executor_anchor=unreadable))
+
+    assert verdict.outcome == INDET
+    assert 'could_not_look' in verdict.reason
+    assert 'executor' in verdict.reason
+
+
+def test_observe_reports_a_split_executor_end_to_end(tmp_path):
+    """``observe`` carries the anchor through, so the oracle sees the split."""
+    cache = tmp_path / 'cache'
+    bundle = cache / 'plan-marshall'
+    _make_version_dir(bundle, '0.1.200', marked=False, files={'skills/s/scripts/a.py': 'print(1)\n'})
+    source = tmp_path / 'source'
+    (source / 'skills' / 's' / 'scripts').mkdir(parents=True)
+    (source / 'skills' / 's' / 'scripts' / 'a.py').write_text('print(1)\n', encoding='utf-8')
+
+    registry = tmp_path / 'config.json'
+    registry.write_text(
+        '{"plan-marshall": {"installPath": "/c/plan-marshall/0.1.200", "version": "0.1.200"}}',
+        encoding='utf-8',
+    )
+    executor = tmp_path / 'execute-script.py'
+    executor.write_text(
+        '"/x/cache/plan-marshall/0.1.200/skills/s/scripts/a.py"\n'
+        '"/x/cache/plan-marshall/0.1.100/skills/s/scripts/b.py"\n',
+        encoding='utf-8',
+    )
+
+    obs = _ppt.observe(
+        cache_bundle_dir=bundle,
+        registry_path=registry,
+        plugin_name='plan-marshall',
+        executor_path=executor,
+        source_dir=source,
+    )
+
+    assert obs.executor_version is None
+    assert obs.executor_anchor is not None
+    assert obs.executor_anchor.status == _ppt.EXECUTOR_SPLIT
+    assert evaluate(obs, obs, sampling_instant='2026-08-13T00:00:00Z').outcome == FAIL
