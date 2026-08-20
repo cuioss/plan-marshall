@@ -47,6 +47,30 @@ This is the measured reason the surface is a server rather than a one-shot verb.
 The `query` verb exists for scripted and one-shot use and *does* pay the full
 build each time; it is a convenience, not the interactive path.
 
+### The staleness bound residency buys
+
+⚠ **Answers may be stale after an edit.** Paying the index build once is exactly
+what makes the index a *snapshot*: it is built at the first request and **never
+rebuilt or invalidated** for the life of the process. `textDocument/didOpen`,
+`didChange` and `didClose` update the synced document text — which is what
+position resolution reads — and touch nothing else. So for the whole session:
+
+- a component **added** after the server started is invisible;
+- a component **removed** after the server started is still answered for;
+- an edge added or removed by an edit is not reflected;
+- a reference site's line/file caches keep their first-read contents, so a site
+  that moved still resolves to where it was.
+
+**Restart the server to pick up corpus changes.** The `query` verb is unaffected
+— it builds a fresh index every call, which is the trade it makes for paying the
+full build each time.
+
+This bounds "re-read before it is reported" below: the re-read happens against
+the *cached* line contents, once per file per process, not against the file as it
+stands at the moment of the request. An invalidate-and-debounce design is
+recorded as a proposal rather than implemented, because a rebuild costs a full
+index build and choosing a debounce policy is a design decision.
+
 ## Opt-in, and where it is enforced
 
 ⭐ **The opt-in switch cannot live in the plugin manifest.** A plugin-declared LSP
@@ -115,10 +139,28 @@ every `path` and `import` edge unverified regardless of whether its site was cor
 confirmed when its line carries **either** the full notation **or** the target's discriminating
 final segment (the script name for a three-part notation, the skill name for a two-part one).
 
+Candidates are **ranked**, not taken first-come: a line carrying the full
+notation outranks one carrying only the tail segment, because the tail alone is
+an ordinary word a sibling document can contain at the same line number by
+coincidence. Where two candidates match at the same rank the tie is **not**
+broken — no file ordering makes one of them more correct — so the site is
+reported against the owner and flagged unverified.
+
 | `verified` | Meaning |
 |---|---|
-| `true` | The cited line was re-read and carries the target — an exact location. |
-| `false` | The site could not be confirmed (a non-positional frontmatter edge, or a line that no longer matches). Reported against the owner's file, and **never presented as exact**. |
+| `true` | The cited line was re-read and carries the target, in exactly one candidate file — an exact location. |
+| `false` | The site could not be confirmed: a non-positional frontmatter edge, a line that no longer matches, or **two candidates matching equally well**. Reported against the owner's file, and **never presented as exact**. |
+
+⛔ **`textDocument/references` omits unverified sites entirely.** LSP has no
+weaker form than `Location`, so emitting one would present an unconfirmed site as
+an exact position — the thing the row above says never happens. Omission alone
+would trade one false signal for another, so the withheld count travels with the
+answer: on each returned `Location` as `omittedUnverifiedCount`, and as a
+`window/logMessage` notification, which is the only channel left when every site
+was withheld and the list is empty.
+
+The `query` verb is **not** filtered. It emits every site with its `verified`
+flag, and is the surface on which an unconfirmed site is legible as unconfirmed.
 
 ## Diagnostics are deliberately absent
 

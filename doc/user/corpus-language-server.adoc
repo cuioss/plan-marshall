@@ -179,9 +179,33 @@ So an empty result means *the index found no reference*, not *the corpus contain
 
 When a reference is cited inside a skill's sub-document, the index records it against the *owning skill* — whose own file is `SKILL.md` — while the line number belongs to the sub-document. Following that pairing naively lands you on that line number in `SKILL.md`: usually a blank line, in the wrong file.
 
-So every site is re-read before it is reported. A site whose line genuinely refers to the target is marked `verified`; one that cannot be confirmed is still shown, but never presented as an exact location.
+So every site is re-read before it is reported. A site whose line genuinely refers to the target is marked `verified`.
 
-What counts as referring to the target is not the notation alone, because not every reference is written as one — a relative-path reference appears as a path and an import as a bare module name. A line qualifies when it carries the full notation *or* the target's final segment, which is the form every kind of reference has in common.
+What counts as referring to the target is not the notation alone, because not every reference is written as one — a relative-path reference appears as a path and an import as a bare module name. A line qualifies when it carries the full notation *or* the target's final segment, which is the form every kind of reference has in common. A line carrying the full notation wins over one carrying only the final segment, since that segment is an ordinary word another document can happen to contain at the same line number. Where two files match equally well, neither is picked: the site is reported against the owning skill and left unconfirmed, because no file ordering makes one of them the right answer.
+
+*In your editor, unconfirmed sites are not shown at all.* Go-to-references has no way to say "roughly here" — every result it returns is an exact position — so showing one would present a guess as a fact. The count of what was withheld comes back with the answer, and as a log message, so an empty result is never mistaken for "no references". To see the withheld sites *as* unconfirmed, ask for them directly:
+
+[source,bash]
+----
+python3 .plan/execute-script.py pm-plugin-development:tools-corpus-language-server:corpus_lsp query \
+  --kind references --notation bundle:skill
+----
+
+That verb lists every site with its `verified` flag.
+
+[[staleness]]
+=== Answers may be stale after an edit
+
+The server builds its index once, when the first request arrives, and *does not rebuild it* while it runs. That is the same decision that makes it fast: the ~2 second build is paid once instead of per request. The cost is that everything it tells you describes the corpus *as it was when the server started*.
+
+For the life of the session, that means:
+
+* a skill or script you *add* is invisible to it;
+* one you *delete* is still answered for;
+* a reference you add or remove is not reflected;
+* a reference that moved to a different line still resolves to the old one.
+
+*Restart the language server to pick up corpus changes.* If you would rather not, the `query` verb builds a fresh index on every call and is always current — it simply pays the full build each time.
 
 == What it deliberately does not do
 

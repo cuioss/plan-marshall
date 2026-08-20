@@ -14,6 +14,17 @@ cached.
 A resident server pays that cost once at ``initialize``, which is the only shape
 in which this substrate is interactive at all.
 
+⚠ **The staleness bound that buys.** The index is built once and is **never
+rebuilt or invalidated** for the life of the process; the ``didOpen`` /
+``didChange`` / ``didClose`` handlers update the synced document text — which is
+what position resolution reads — and touch nothing else. So **answers may be
+stale after an edit**: for the whole session a component added afterwards is
+invisible, one removed is still answered for, and the per-file line caches keep
+their first-read contents. Restart the server to pick up corpus changes; the
+``query`` verb builds a fresh index every call and is always current. Invalidate
+-and-debounce is recorded as a proposal rather than implemented — a rebuild costs
+a full index build, and the debounce policy is a design decision.
+
 **Opt-in, and where it is enforced.** A plugin-declared LSP server starts
 automatically when its plugin is enabled, so the manifest cannot be the opt-in
 switch. The switch is ``code_intelligence.corpus_language_server.enabled`` in the
@@ -37,6 +48,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -142,6 +154,10 @@ STATE_NOT_CONFIGURED = 'not_configured'  # absent or disabled — the no-op path
 STATE_READY = 'ready'  # preflight only: enabled and the index builds
 STATE_OK = 'ok'  # a run verb executed (an empty result is then a real answer)
 
+# LSP MessageType.Info — the level a withheld-site report is sent at. Withholding
+# is expected behaviour, not a fault, so it is not a warning.
+LOG_MESSAGE_INFO = 3
+
 CONFIG_SECTION = 'code_intelligence'
 CONFIG_KEY = 'corpus_language_server'
 PLAN_DIR_NAME = '.plan'
@@ -225,6 +241,32 @@ def path_to_uri(path: Path) -> str:
     return path.resolve().as_uri()
 
 
+def client_root_from(params: dict[str, Any]) -> Path | None:
+    """Extract the workspace root a client declares in ``initialize`` params.
+
+    Tried in the LSP's own order of preference: ``rootUri``, then the deprecated
+    ``rootPath``, then the first entry of ``workspaceFolders``. Returns ``None``
+    when the client declared none of them, or declared one this server cannot
+    read as a local path.
+    """
+    root_uri = params.get('rootUri')
+    if isinstance(root_uri, str) and root_uri:
+        path = uri_to_path(root_uri)
+        if path is not None:
+            return path
+
+    root_path = params.get('rootPath')
+    if isinstance(root_path, str) and root_path:
+        return Path(root_path)
+
+    folders = params.get('workspaceFolders')
+    if isinstance(folders, list) and folders:
+        first = folders[0]
+        if isinstance(first, dict) and isinstance(first.get('uri'), str):
+            return uri_to_path(first['uri'])
+    return None
+
+
 # =============================================================================
 # The server
 # =============================================================================
@@ -240,6 +282,40 @@ class CorpusLanguageServer:
         self.corpus_path = resolve_corpus_path(project_root, config) if self.enabled else None
         self.documents: dict[str, str] = {}
         self._index: CorpusIndex | None = None
+        # Server-to-client notification hook, bound by `build_server` when a
+        # client is connected. `None` when this object is driven directly.
+        self.notify: Callable[[str, dict[str, Any]], None] | None = None
+        # How many sites the last `textDocument/references` answer withheld.
+        self.last_omitted_unverified = 0
+
+    def adopt_client_root(self, params: dict[str, Any]) -> bool:
+        """Re-resolve this server's project from the client's ``initialize`` params.
+
+        The documented editor configuration is the one most likely to omit
+        ``--project-path``, and its failure was silent and looked exactly like a
+        deliberate opt-out: the project root came only from the CLI, defaulting
+        to whatever directory the client happened to launch the server in.
+
+        Only called when ``--project-path`` was **not** given (see
+        :func:`build_server`), so an explicit flag still wins.
+
+        Returns:
+            Whether a project was adopted. ``False`` leaves this server exactly
+            as the CLI configured it.
+        """
+        root = client_root_from(params)
+        if root is None:
+            return False
+        project_root = find_project_root(root)
+        if project_root is None:
+            return False
+        config = read_corpus_config(project_root)
+        self.project_root = project_root
+        self.config = config
+        self.enabled = bool(config.get('enabled'))
+        self.corpus_path = resolve_corpus_path(project_root, config) if self.enabled else None
+        self._index = None  # the previous root's index, if any, is now wrong
+        return True
 
     @property
     def index(self) -> CorpusIndex | None:
@@ -319,13 +395,53 @@ class CorpusLanguageServer:
         return _lsp_location(location.path, location.line)
 
     def on_references(self, params: dict[str, Any]) -> list[dict[str, Any]]:
+        """Return the CONFIRMED reference sites, and say how many were withheld.
+
+        LSP has no weaker form than ``Location``: a site the index could not
+        confirm, emitted here, reaches an editor as an exact position — and two
+        shipped pages promise, in near-identical words, that such a site is never
+        presented as one. So an unverified site is omitted rather than downgraded.
+
+        Omission alone would substitute one false signal for another — a silent
+        empty result — so the count of withheld sites travels with the answer two
+        ways: on each returned ``Location`` as ``omittedUnverifiedCount`` (an
+        extra key a client ignores), and as a ``window/logMessage`` notification,
+        which is the only channel left when every site was withheld and the list
+        is empty.
+
+        The ``query`` verb is unaffected and still emits **every** site with its
+        ``verified`` flag; it is the surface where an unconfirmed site is
+        legible as unconfirmed.
+        """
         index = self.index
         if index is None:
             return []
         notation = self.notation_at_position(params)
         if notation is None:
             return []
-        return [_lsp_location(ref.location.path, ref.location.line) for ref in index.references(notation)]
+        references = index.references(notation)
+        confirmed = [ref for ref in references if ref.verified]
+        omitted = len(references) - len(confirmed)
+        self.last_omitted_unverified = omitted
+        if omitted:
+            self._report_omitted(notation, omitted, len(references))
+        return [
+            {**_lsp_location(ref.location.path, ref.location.line), 'omittedUnverifiedCount': omitted}
+            for ref in confirmed
+        ]
+
+    def _report_omitted(self, notation: str, omitted: int, total: int) -> None:
+        """Tell the client that sites were withheld, so an empty list is not read as none."""
+        if self.notify is None:
+            return
+        self.notify('window/logMessage', {
+            'type': LOG_MESSAGE_INFO,
+            'message': (
+                f'{omitted} of {total} reference site(s) for {notation} could not be confirmed against the '
+                f'cited line and were omitted; run `corpus_lsp query --kind references` to see them with '
+                f'their verified flag'
+            ),
+        })
 
     def on_hover(self, params: dict[str, Any]) -> Any:
         index = self.index
@@ -372,12 +488,36 @@ def _render_hover(payload: dict[str, Any]) -> str:
     return '\n'.join(lines)
 
 
-def build_server(project_root: Path | None, config: dict[str, Any]) -> tuple[LspServer, CorpusLanguageServer]:
-    """Assemble the JSON-RPC server and register the corpus handlers."""
+def build_server(
+    project_root: Path | None,
+    config: dict[str, Any],
+    *,
+    project_path_explicit: bool = True,
+) -> tuple[LspServer, CorpusLanguageServer]:
+    """Assemble the JSON-RPC server and register the corpus handlers.
+
+    Args:
+        project_root: Project root resolved from the CLI, or ``None``.
+        config: The corpus config read from that root.
+        project_path_explicit: Whether ``--project-path`` was actually passed.
+            When it was not, the ``initialize`` handler adopts the root the
+            client declares — the case the documented editor block produces, and
+            the one whose failure looked exactly like a deliberate opt-out. An
+            explicit flag always wins, so the documented block's behaviour is
+            unchanged for anyone who passes it.
+    """
     corpus = CorpusLanguageServer(project_root, config)
     rpc = LspServer(enabled=corpus.enabled)
+    corpus.notify = rpc.notify
 
-    rpc.register('initialize', lambda params: {'capabilities': rpc.capabilities()})
+    def _on_initialize(params: dict[str, Any]) -> dict[str, Any]:
+        if not project_path_explicit and corpus.adopt_client_root(params):
+            # Capabilities are derived from `enabled`, which adopting may have
+            # changed, so the roster is rebuilt BEFORE it is advertised.
+            rpc.enabled = corpus.enabled
+        return {'capabilities': rpc.capabilities()}
+
+    rpc.register('initialize', _on_initialize)
     rpc.register('initialized', lambda params: None)
     rpc.register('textDocument/didOpen', lambda params: corpus.did_open(params))
     rpc.register('textDocument/didChange', lambda params: corpus.did_change(params))
@@ -394,7 +534,7 @@ def build_server(project_root: Path | None, config: dict[str, Any]) -> tuple[Lsp
 
 
 def _context(args: argparse.Namespace) -> tuple[Path | None, dict[str, Any]]:
-    project_root = find_project_root(Path(args.project_path))
+    project_root = find_project_root(Path(args.project_path or '.'))
     return project_root, read_corpus_config(project_root)
 
 
@@ -481,7 +621,7 @@ def cmd_query(args: argparse.Namespace) -> dict[str, Any]:
 def cmd_serve(args: argparse.Namespace) -> int:
     """Run the JSON-RPC loop on stdio. Starts even when not enabled (a no-op)."""
     project_root, config = _context(args)
-    rpc, _corpus = build_server(project_root, config)
+    rpc, _corpus = build_server(project_root, config, project_path_explicit=args.project_path is not None)
     return rpc.serve(sys.stdin.buffer, sys.stdout.buffer)
 
 
@@ -491,7 +631,11 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
 
 def _add_project_path(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument('--project-path', default='.', help='Project root to resolve config from (default: cwd)')
+    # Default `None`, not '.', so the code can tell "not given" from "given as
+    # the cwd" — `serve` adopts the client's declared root only in the first
+    # case. Every reader spells the fallback as `args.project_path or '.'`, so
+    # the effective default is unchanged.
+    parser.add_argument('--project-path', default=None, help='Project root to resolve config from (default: cwd)')
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -532,5 +676,26 @@ def _main() -> int:
     return main()
 
 
-if __name__ == '__main__':
+def _entry() -> int:
+    """Route ``serve`` around ``@safe_main``.
+
+    ``safe_main``'s contract is TOON-on-stdout, which is correct for a verb and
+    fatal for a stdio protocol channel: an escaping exception would append
+    ``status: error`` to the byte stream a client is still parsing as
+    ``Content-Length`` frames, corrupting every message after it. ``serve``
+    contains its own failures (see ``_corpus_lsp_protocol.LspServer.serve``) and
+    reports them on stderr, so it needs no such wrapper — it needs to be kept
+    out of one.
+    """
+    parser = _build_arg_parser()
+    args = parser.parse_args()
+    if args.command == 'serve':
+        return cmd_serve(args)
+    # `_main` is the @safe_main-wrapped path and exits the process itself, so
+    # nothing after this line runs for a TOON verb.
     _main()
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(_entry())

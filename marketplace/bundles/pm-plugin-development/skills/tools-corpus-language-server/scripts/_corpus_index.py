@@ -217,7 +217,21 @@ class CorpusIndex:
         recorded line number may belong to a sibling document rather than to the
         owner's own definition file. Re-reading the cited line is what tells the
         two apart; without it, a reference would point confidently at the wrong
-        file. Candidate files are searched owner-first, then its sub-documents.
+        file.
+
+        **Candidates are ranked, not taken first-come.** A line carrying the
+        **full notation** outranks one carrying only the discriminating tail
+        segment, because the tail alone is an ordinary word that prose at the
+        same line number in a sibling document can contain by coincidence. Taking
+        the first match in ``sorted(rglob)`` order made such a decoy win over the
+        true citation with ``verified: True`` — a confidently wrong position,
+        chosen by filename order.
+
+        **A tie is not resolved, it is reported.** Where two candidates match at
+        the same rank, no file ordering makes one of them more correct, so the
+        site is reported against the owner and flagged unverified. Some sites
+        that used to be verified therefore become unverified: that is the honest
+        direction, and it lowers the headline verified count.
         """
         owner = self.index.components.get(dep.source.to_notation())
         if owner is None:
@@ -229,13 +243,27 @@ class CorpusIndex:
             return Location(path=owner.file_path, line=0), False
 
         zero_based = line_no - 1
-        tokens = expected_tokens(notation)
+        tail_tokens = [token for token in expected_tokens(notation) if token != notation]
+        full_matches: list[Path] = []
+        tail_matches: list[Path] = []
         for candidate in self._candidate_files(owner.file_path):
             lines = self._lines(candidate)
-            if 0 <= zero_based < len(lines) and any(token in lines[zero_based] for token in tokens):
-                return Location(path=candidate, line=zero_based), True
+            if not 0 <= zero_based < len(lines):
+                continue
+            line = lines[zero_based]
+            if notation in line:
+                full_matches.append(candidate)
+            elif any(token in line for token in tail_tokens):
+                tail_matches.append(candidate)
 
-        # Cited, but unconfirmable — reported against the owner, flagged as such.
+        for ranked in (full_matches, tail_matches):
+            if len(ranked) == 1:
+                return Location(path=ranked[0], line=zero_based), True
+            if ranked:
+                break  # ambiguous at this rank; a lower rank cannot break the tie
+
+        # Unconfirmable, or confirmable in more than one place — reported against
+        # the owner, flagged as such.
         return Location(path=owner.file_path, line=zero_based), False
 
     def _candidate_files(self, owner_file: Path) -> list[Path]:
