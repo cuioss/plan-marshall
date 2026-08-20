@@ -239,7 +239,26 @@ Resolution probes the archive, so a CONSUMED message is distinguishable from a M
 
 The archived branch is validated through the same `validate_envelope` seam as the queued branch, so an archived message's rejection codes are identical. `location` is a *resolution* outcome, not an envelope-validation verdict.
 
-`file_not_found` now means the message is present at NEITHER `inbox/` nor `inbox/archive/`. On envelope rejection the verb returns the distinct error code for the failing class — `missing_header_field`, `unknown_envelope_version`, `invalid_sender_type`, `invalid_kind`, `empty_payload`, `epic_mismatch`, or `filename_sender_mismatch` (checked in that order; see the validator error-code table in [`standards/inbox-envelope.md`](standards/inbox-envelope.md)).
+`file_not_found` now means the message is present at NEITHER `inbox/` nor `inbox/archive/`. Every rejection code the verb can return, in the order the checks run:
+
+| # | `error` | Raised by |
+|:-:|---------|-----------|
+| 1 | `invalid_slug` | the verb, before resolution — `--slug` is not a path-safe identifier |
+| 2 | `invalid_message_name` | the verb, before resolution — `--message` is not a bare filename |
+| 3 | `file_not_found` | resolution — present at neither `inbox/` nor `inbox/archive/` |
+| 4 | `missing_header_field` | `validate_envelope`, base sweep |
+| 5 | `unknown_envelope_version` | `validate_envelope`, base sweep |
+| 6 | `invalid_sender_type` | `validate_envelope`, base sweep |
+| 7 | `invalid_kind` | `validate_envelope`, base sweep |
+| 8 | `empty_payload` | `validate_envelope`, base sweep |
+| 9 | `epic_mismatch` | `validate_envelope`, base sweep — reachable here because the verb supplies the epic |
+| 10 | `filename_sender_mismatch` | `validate_envelope`, base sweep — reachable here because the verb supplies the filename |
+| 11 | `invalid_lifecycle` | `_validate_state_fields` |
+| 12 | `invalid_revision` | `_validate_state_fields` |
+| 13 | `revision_not_monotonic` | `_validate_state_fields` |
+| 14 | `invalid_supersede_state` | `_validate_state_fields` |
+
+**Checked in that order**, and the ordering claim is exact: the four message-state checks (11–14) run AFTER the base envelope sweep (4–10), so the base rejection codes are unchanged by their addition and a message carrying none of the state fields — the virgin `live` case — passes every one of them. See the validator error-code table in [`standards/inbox-envelope.md`](standards/inbox-envelope.md) for each code's rejection condition. The verb also carries an `invalid_envelope` fallback for a rejection reporting no code; it is unreachable while `validate_envelope` returns a code on every rejection branch, and is listed here as the defensive default rather than as a fifteenth outcome.
 
 ### inbox list
 

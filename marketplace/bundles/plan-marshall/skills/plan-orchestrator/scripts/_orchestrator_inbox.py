@@ -30,9 +30,14 @@ retired sequence number is ever re-opened during a partial migration.
 The orchestrator-side drain surface (:func:`cmd_inbox_list`,
 :func:`cmd_inbox_archive`) is bounded by the same construction: both derive
 their target from the validated slug plus a bare message filename, and the only
-path they ever write is ``inbox/archive/`` joined with either the source
-message's own bare filename or the bare, sender-constrained ``--as-name``
-override — never a caller-supplied path.
+path they ever write is ``inbox/archive/{sender}/`` — the per-sender layout
+above — joined with either the source message's own bare filename or the bare,
+sender-constrained ``--as-name`` override. One carve-out is deliberate: a source
+name matching no message-name pattern yields no sender, so its destination stays
+FLAT under ``inbox/archive/`` and its ``os.link`` failure still surfaces as
+``invalid_message_name`` rather than being masked by a foldering step. In both
+branches the destination is composed here from validated parts — never a
+caller-supplied path.
 
 The message format is markdown with the repo's existing ``key=value`` metadata
 header (``file_ops.parse_markdown_metadata`` /

@@ -55,16 +55,18 @@ operation groups against the main-anchored orchestrator store
   participating rows and the sample instant. An unreadable or disagreeing
   observation resolves to ``indeterminate`` and never to ``not_ready``.
 - ``inbox {write,amend,supersede,close-stream,validate,list,archive,
-  migrate-archive,detect}`` — the epic's plan-writable OUTBOX and its
-  orchestrator-side drain: append one ``inbox/{sender_id}-{NNN}.md`` message,
+  migrate-archive,detect,landing-check}`` — the epic's plan-writable OUTBOX and
+  its orchestrator-side drain: append one ``inbox/{sender_id}-{NNN}.md`` message,
   correct a filed message body in place (``amend`` — preserves ``created``,
   stamps a monotonic ``revision``), retire a message in favour of a successor
   (``supersede`` — tombstone-style), mark a sender's stream ended
   (``close-stream``), validate an existing message against the envelope schema,
   enumerate the queued messages with their validation verdicts and lifecycle,
   retire a consumed message to ``inbox/archive/{sender}/``, fold a flat archive
-  into that per-sender layout (``migrate-archive``), or classify a plan's
-  ``source_id`` pointer as orchestrated. Backed by :mod:`_orchestrator_inbox`;
+  into that per-sender layout (``migrate-archive``), classify a plan's
+  ``source_id`` pointer as orchestrated, or report whether a landing message
+  carries its required machine-readable facts (``landing-check``). Backed by
+  :mod:`_orchestrator_inbox`;
   the write boundary is enforced by construction there (no caller-supplied
   output path exists).
 
@@ -2621,10 +2623,10 @@ def _add_cleanup_group(subparsers: Any) -> None:
 def _add_inbox_group(subparsers: Any) -> None:
     """Register the ``inbox`` verb group.
 
-    Sub-verbs: ``write``, ``amend``, ``supersede``, ``close-stream``,
-    ``validate``, ``list``, ``archive``, ``migrate-archive``, ``detect``. The
-    handlers live in :mod:`_orchestrator_inbox`; this function only wires argv
-    to them. Note what the surface deliberately does NOT expose: no output
+    Sub-verbs, in registration order: ``write``, ``amend``, ``supersede``,
+    ``close-stream``, ``validate``, ``list``, ``archive``, ``migrate-archive``,
+    ``detect``, ``landing-check``. The handlers live in
+    :mod:`_orchestrator_inbox`; this function only wires argv to them. Note what the surface deliberately does NOT expose: no output
     path, no sequence number, and no inbox directory — the write and correction
     targets are derived from ``--slug`` plus ``--sender-id`` / a bare
     ``--message`` filename alone, which is what makes the ledger write-boundary
@@ -2637,8 +2639,10 @@ def _add_inbox_group(subparsers: Any) -> None:
     inbox = subparsers.add_parser(
         'inbox',
         help=(
-            'Epic inbox OUTBOX and drain: append, validate, list, or archive a '
-            "message, or detect a plan's orchestration context."
+            'Epic inbox OUTBOX and drain: append, correct (amend/supersede), '
+            'end a sender stream, validate, list, archive or fold the archive '
+            "per sender, detect a plan's orchestration context, or check a "
+            "landing's required facts."
         ),
         allow_abbrev=False,
     )
