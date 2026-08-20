@@ -165,7 +165,7 @@ def test_qgate_is_not_a_seeded_flat_finalize_field(plan_context):
     """``qgate`` is no longer a seeded flat phase-6-finalize field.
 
     The finalize `qgate` run-at-all gate was migrated onto the per-element
-    ``steps[pre-push-quality-gate].lane`` override, so a fresh config carries no
+    ``steps[default:pre-push-quality-gate].lane`` override, so a fresh config carries no
     flat ``qgate`` field under ``plan.phase-6-finalize`` (the former flat
     ``set --field qgate`` / ``get --field qgate`` round-trip no longer applies —
     the gate rides the lane channel).
@@ -301,11 +301,27 @@ def test_finalize_steps_list_ask_lane_cli_is_recognized():
 
 
 def test_finalize_steps_set_lane_cli_rejects_invalid_lane_choice():
-    """`finalize-steps set-lane --lane bogus` → argparse choices rejection (exit 2)."""
+    """`finalize-steps set-lane --lane bogus` → HANDLER rejection naming the route.
+
+    The refusal moved off argparse ``choices=`` and into the handler so it can
+    route a caller to the verb that DOES write the value they asked for. That
+    matters for ``minimal`` / ``ask``, which the composer honours; a bogus value
+    takes the same path and still gets told where lane values are written. The
+    contract asserted here is the emitted ``status: error``, not the exit code —
+    ``main`` returns 0 after printing any result, so every manage-config
+    validation error rides that channel. See
+    ``test_finalize_steps_lane_rejection.py`` for the full rejection contract.
+    """
     result = run_script(
         SCRIPT_PATH, 'finalize-steps', 'set-lane', '--step-id', 'plan-marshall:automatic-review', '--lane', 'bogus'
     )
-    assert result.returncode == 2, '--lane choices must reject a non-off/standard/full value at argparse'
+    combined = f'{result.stdout}\n{result.stderr}'
+    assert 'invalid choice' not in combined, (
+        'argparse rejected --lane before the handler ran, so no routing message reaches the caller'
+    )
+    assert 'status: error' in combined, 'a refused write must not report success'
+    assert "invalid lane 'bogus'" in combined
+    assert 'step set' in combined, 'the rejection must name the verb that writes lane values'
 
 
 def test_finalize_steps_set_lane_cli_requires_step_id_and_lane():

@@ -630,7 +630,7 @@ class TestBranchSyncState:
         assert result['error'] == 'worktree_not_materialized'
 
     def test_verdict_token_drives_refire_skip_mapping(self, tmp_path: Path, monkeypatch):
-        """The state token drives the documented barrier mapping.
+        """The PRODUCTION mapping — not a local oracle — decides the barrier action.
 
         Per phase-6-finalize/SKILL.md the push barrier re-fires ONLY on a
         present-but-behind tracking ref (``ahead``). A ref-absent verdict never
@@ -638,43 +638,79 @@ class TestBranchSyncState:
         already on the base — re-pushing would resurrect it), and
         ``remote_absent_unverified`` DECLINES (the ambiguity is surfaced, not
         resolved by a resurrecting re-push). Only ``ahead`` is a re-fire.
+
+        The mapping under assertion is ``git_workflow.push_barrier_action`` —
+        the function the payload's ``barrier_action`` field is computed by and
+        the dispatcher branches on. A local ``def verdict(state)`` here would
+        assert this module's own restatement of the rule against itself, leaving
+        the shipped mapping free to disagree with the prose in both directions.
         """
-
-        def verdict(state: str) -> str:
-            return 'RE-FIRE' if state == 'ahead' else 'SKIP-OR-DECLINE'
-
         # remote_absent_unverified: never pushed, no base ref to prove landing.
         work = self._seed_repo_with_origin(tmp_path)
-        unverified_state = self._state(monkeypatch, work)['state']
-        assert unverified_state == 'remote_absent_unverified'
+        unverified = self._state(monkeypatch, work)
+        assert unverified['state'] == 'remote_absent_unverified'
         # synced: pushed, no local commits.
         self._push(work)
-        synced_state = self._state(monkeypatch, work)['state']
+        synced = self._state(monkeypatch, work)
         # ahead: committed locally past origin.
         self._commit_past_origin(work)
-        ahead_state = self._state(monkeypatch, work)['state']
+        ahead = self._state(monkeypatch, work)
         # remote_absent_landed: merged into origin/main, feature ref deleted.
         # A distinct subdir avoids colliding with the first fixture's origin.git.
         merged_root = tmp_path / 'merged'
         merged_root.mkdir()
         merged_work = self._seed_merged_and_deleted(merged_root)
-        landed_state = self._state(monkeypatch, merged_work)['state']
-        assert landed_state == 'remote_absent_landed'
+        landed = self._state(monkeypatch, merged_work)
+        assert landed['state'] == 'remote_absent_landed'
 
-        verdicts = {
-            state: verdict(state)
-            for state in (unverified_state, synced_state, ahead_state, landed_state)
+        payloads = (unverified, synced, ahead, landed)
+        assert {p['state']: git_workflow.push_barrier_action(p['state']) for p in payloads} == {
+            'remote_absent_unverified': 'skip',
+            'synced': 'skip',
+            'ahead': 're-fire',
+            'remote_absent_landed': 'skip',
         }
-        assert verdicts == {
-            'remote_absent_unverified': 'SKIP-OR-DECLINE',
-            'synced': 'SKIP-OR-DECLINE',
-            'ahead': 'RE-FIRE',
-            'remote_absent_landed': 'SKIP-OR-DECLINE',
-        }
+
+        # Every success payload PUBLISHES the action, so the dispatcher reads it
+        # rather than re-deriving the mapping from the state token.
+        for payload in payloads:
+            assert payload['barrier_action'] == git_workflow.push_barrier_action(payload['state']), (
+                f"branch-sync-state published barrier_action={payload['barrier_action']!r} for "
+                f"state={payload['state']!r}, which disagrees with push_barrier_action. The "
+                f'published field and the mapping must not drift.'
+            )
+
         # The resurrection defect this fix closes: NEITHER ref-absent state maps
         # to a re-fire.
-        assert verdict(unverified_state) != 'RE-FIRE'
-        assert verdict(landed_state) != 'RE-FIRE'
+        assert git_workflow.push_barrier_action(unverified['state']) != 're-fire'
+        assert git_workflow.push_barrier_action(landed['state']) != 're-fire'
+
+    def test_unrecognised_state_fails_toward_skip(self):
+        """An unmapped state is not evidence a push is safe, so it skips.
+
+        Re-firing is a PUSH, so the asymmetry is deliberate: an over-broad
+        re-fire resurrects a landed branch, while an over-broad skip leaves a
+        genuinely-unpushed branch for the operator to notice.
+        """
+        assert git_workflow.push_barrier_action('some_state_added_later') == 'skip'
+
+    def test_error_payload_publishes_no_barrier_action(self, tmp_path: Path, monkeypatch):
+        """An unresolvable state is not a verdict to map, so no action is published.
+
+        The consumer's own ``status: error`` branch (fail toward pushing) governs
+        that path; publishing a ``skip`` here would route an error to the
+        opposite action.
+        """
+        work = self._seed_repo_with_origin(tmp_path)
+        monkeypatch.setattr(
+            git_workflow, '_resolve_worktree_path_for_plan', lambda plan_id: (work, None)
+        )
+        monkeypatch.setattr(git_workflow, '_read_metadata_field', lambda plan_id, field: '')
+
+        result = git_workflow.cmd_branch_sync_state(Namespace(plan_id='sync-plan'))
+
+        assert result['status'] == 'error'
+        assert 'barrier_action' not in result
 
 
 class TestDetectArtifacts:

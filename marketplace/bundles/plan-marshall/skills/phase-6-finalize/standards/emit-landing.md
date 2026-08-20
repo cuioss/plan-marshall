@@ -12,6 +12,10 @@ presets:
   - full
 mutates_source: false
 post_run_review: true
+reads:
+  - metrics
+records_facts:
+  - work_performed
 implements: plan-marshall:extension-api/standards/ext-point-finalize-step
 ---
 
@@ -157,9 +161,15 @@ run yet). A read that fails degrades its field to `n/a` (Error Handling), never 
 
 4. **PR reference and merge state** — the STEP's own recorded claim, never a corroboration (see the
    payload spec's finding #4: a contradiction of a step's merge claim is operator narrative, not a fact
-   this step fabricates). Derive `pr` and `merge_state` from the `create-pr` and `branch-cleanup` step
-   records read in item 1 (their `facts` / `outcome` / `display_detail`); when no PR exists, both are
-   `n/a`.
+   this step fabricates). Both are **typed facts**, read from the `facts` sub-dict of the step records
+   in item 1 — do NOT re-parse either out of a `display_detail` string:
+
+   - `pr` ← `create-pr`'s `pr_number` fact, rendered as `#{pr_number}`.
+   - `merge_state` ← `branch-cleanup`'s `merge_state` fact, transcribed verbatim
+     (`merged` / `open` / `n/a`).
+
+   A fact absent because its step did not run (the manifest excluded it, or it has no record) is
+   written as `n/a`, its key still present, per the Error Handling table.
 
 ### Step 2: Assemble the machine-readable landing payload
 
@@ -212,29 +222,73 @@ and the payload body by
 [`../../plan-orchestrator/standards/landing-payload-spec.md`](../../plan-orchestrator/standards/landing-payload-spec.md);
 do not restate them here.
 
-This step writes only under `.plan/`, matching its `mutates_source: false` fact, so it never reaches the
-dispatcher's commit instrumentation (item 5f skips (a)-(d) on the declared fact). Because it also declares
-`post_run_review: true`, item 5f's sub-item (0) observes the MAIN CHECKOUT on return and reports any dirty
-TRACKED path outside `.plan/` as a non-blocking WARNING plus a finding — the declaration is checked, not
-trusted.
+This step writes only UNTRACKED plan state under `.plan/` (the staged payload body), so its
+`mutates_source: false` fact is unchanged and it never reaches the dispatcher's commit instrumentation
+at all — item 5f reads the declared `mutates_source` fact first and skips (a)-(d). The declaration is
+not trusted blind: this step also declares `post_run_review: true`, so item 5f's sub-item (0) observes
+the MAIN CHECKOUT on return (the worktree is gone by this order) and reports any dirty TRACKED path —
+source, or a tracked `.plan/` config/descriptor, the exemption being keyed on git trackedness rather
+than the path prefix — as a non-blocking WARNING plus a recorded finding.
 
 ### Step 4: Mark step done
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step emit-landing --outcome done \
+  --fact work_performed=true \
   --display-detail "landing -> epic {epic}"
 ```
 
 The `display_detail` string appears in the renderer's per-step `[OK]` row.
+
+`work_performed=true` records that a landing message actually reached the inbox on this path. The
+step declares `records_facts: [work_performed]` because its terminal call sites disagree about whether
+the characteristic work happened: this one emitted a landing, and the failed-write branch below records
+`work_performed=false` having emitted none. `records_facts` is the union over terminal call sites, and
+a `loop_back` is a terminal call site, so the declaration covers both.
+
+A consumer asking *"did this run actually emit a landing?"* reads the fact rather than the outcome.
+Since the failed-write branch became `loop_back`, `outcome: done` on this step does now imply the
+landing was written — but the fact remains the thing to read, because it is what the union declares and
+what survives a future branch that reintroduces a work-free `done`.
 
 ## Error Handling
 
 | Scenario | Action |
 |----------|--------|
 | A fact read (`manage-status` / `manage-solution-outline` / `manage-execution-manifest`) returns an error | Write that field as `n/a` in the fenced block (key still present) and continue — a missing field never blocks the emission or archive |
-| `orchestrator inbox write` returns an error | Non-fatal: log the failure and mark `done` with the failure noted in `display_detail`; a failed landing write never blocks finalize |
+| `orchestrator inbox write` returns an error | Log the failure, then mark **`loop_back`** to `6-finalize` recording `work_performed=false` (the call is spelled out below). This does NOT silently continue: the landing is the plan's only machine-readable hand-off to the orchestrator, and `default:archive-plan` (order 1100) destroys the plan directory immediately after this step |
 | `epic` is empty / plan not orchestrated | Step 0's diagnosable skip fires — no landing is written and the misconfiguration is surfaced as a WARNING |
+
+The failed-write branch terminates with this call — spelled out rather than left to prose, because it
+is the one terminal branch on which no landing was emitted:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step emit-landing --outcome loop_back \
+  --loop-back-target 6-finalize \
+  --fact work_performed=false \
+  --display-detail "landing write failed: {error}"
+```
+
+**Why `loop_back` and not `done` or `failed`.** A landing that was never written is not recoverable
+after this step: `default:archive-plan` at order 1100 declares `destroys: [plan-directory]` and moves
+the plan out from under every later reader, so whatever this branch records is the last chance to keep
+the run recoverable. The three candidate outcomes are not interchangeable here:
+
+- **`done`** is skipped on re-entry ([`../SKILL.md`](../SKILL.md) § Resumability: *"Skip dispatch
+  entirely … do not re-execute"*), so the retry never happens and the landing is lost silently.
+- **`failed`** does not help either, and for a less obvious reason: a leaf's own `failed` record does
+  **not** halt the FOR loop — item 5e records an `error` execution-log row and the loop advances, so
+  `archive-plan` still runs and still destroys the directory. Only the *post-dispatch guard*
+  (`step_record_missing`) halts, and that is a different path.
+- **`loop_back`** is the one outcome that does both halves: the dispatcher halts and returns control
+  on the default `loop_back_without_asking: false`, so `archive-plan` never runs, and the general
+  resumability rule re-fires the step on re-entry (*"treat as no record"*). The `max_iterations`
+  ceiling bounds it, so a persistently failing inbox cannot spin.
+
+This is the same defect shape as `branch-cleanup` Branch F, and it takes the same remedy — a `done`
+record standing in for work that did not happen, on a step with no re-entry override.
 
 ## Related
 

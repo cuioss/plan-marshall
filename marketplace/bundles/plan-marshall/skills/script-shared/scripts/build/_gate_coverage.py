@@ -52,11 +52,16 @@ statements rather than re-deriving them here.
    analysed less states less; a dimension with no registered limit renders as UNKNOWN
    rather than being omitted, since omission would make the block read as exhaustive.
 
-3. **Parity population** (:func:`parity_population`) — the derived set of
-   dimensions along which the local gate's coverage is compared to CI's. It is
-   returned so a test can assert it is **non-empty**: a parity table derived from
-   nothing looks identical to perfect parity, which is exactly the confident-but-
-   empty signal this whole effort exists to prevent.
+3. **Parity population** (:func:`parity_population`) — a **RECORDED** set of
+   dimensions along which the local gate's coverage was compared to CI's. It is
+   recorded, not derived: the cells and their notes were written by hand at plan
+   160 and re-verified against ``origin/main`` at ``61a43e5``. It is returned so a
+   test can assert it is **non-empty**: a parity table computed over nothing looks
+   identical to perfect parity, which is exactly the confident-but-empty signal
+   this whole effort exists to prevent. A non-empty assertion over a recorded
+   literal is a weaker guarantee than one over a derivation, and calling it
+   "derived" would overstate it — so at least one cell is additionally re-checked
+   against the substrate it describes (see the function's own docstring).
 
 All functions are pure — no I/O, no subprocess, no clock. Durations, file counts
 and dimension verdicts are supplied by the caller, so the module is deterministic
@@ -432,14 +437,31 @@ class ParityCell:
 
 
 def parity_population() -> tuple[ParityCell, ...]:
-    """Return the derived set of local-gate-vs-CI parity dimensions.
+    """Return the RECORDED set of local-gate-vs-CI parity dimensions.
 
     This is the machine-readable form of plan 160's D1 parity table: the
-    dimensions along which the in-house gate's coverage is compared to CI's
-    (``./pw verify``). It is derived here so a test can assert it is **non-empty**
-    — a parity table computed over an empty population is indistinguishable from
-    perfect parity, and that empty-looks-like-perfect confusion is the exact
-    defect this gate-coverage work exists to prevent.
+    dimensions along which the in-house gate's coverage was compared to CI's
+    (``./pw verify``). **The cells are a recorded literal, not a derivation.**
+    Each ``verdict`` and ``note`` was established by reading both sides at plan
+    160 and re-verified against ``origin/main`` at ``61a43e5``; nothing recomputes
+    them, and no production code consumes this function — its sole consumer is the
+    test suite.
+
+    Naming that honestly matters because the alternative reading is the defect
+    this module exists to prevent: a hand-written table described as "derived"
+    invites a reader to trust its cells as current, when in fact a change to
+    either side leaves them stale and silent. Building real derivation machinery
+    for an artifact with no production consumer is a capability change and was
+    deliberately not taken; relabelling it and binding one cell to its substrate
+    was.
+
+    **One cell IS re-checked against its substrate**: ``spdx-paths`` names the
+    exact path list the whole-tree quality gate hands to the SPDX checker, and
+    ``test/plan-marshall/build-pyproject/test_gate_coverage_parity_substrate.py``
+    asserts that note against ``build.py``'s actual construction. A note that
+    drifts from the code fails the build instead of quietly misdescribing it. The
+    other cells remain recorded-only, and that asymmetry is deliberate rather than
+    an oversight.
 
     The population spans both axes the goal names — scope and freshness — plus
     the honest-coverage-boundary property that is the through-line of both.

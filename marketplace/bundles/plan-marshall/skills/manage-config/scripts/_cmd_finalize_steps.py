@@ -67,6 +67,53 @@ _PLAN_LOCAL_STEP_MAP_KEY = 'finalize_step_overrides'
 # infra elements. ``off`` = "no bots / no Sonar"; ``standard`` / ``full`` = "has them".
 _RESOLVED_ASK_LANE_VALUES: tuple[str, ...] = ('off', 'standard', 'full')
 
+# The per-element override value space the COMPOSER reads, of which
+# :data:`_RESOLVED_ASK_LANE_VALUES` is this writer's deliberate subset. Held here
+# so a rejection can tell an operator whether the value they asked for is
+# unwritable-by-this-verb (route them onward) or not a lane value at all. It
+# MIRRORS ``_manifest_lanes.LANE_OVERRIDES``, which is the authority — the two are
+# bound by ``test_finalize_steps_lane_rejection.py`` so this copy cannot drift.
+_READER_LANE_VALUES: tuple[str, ...] = ('off', 'minimal', 'standard', 'full', 'ask')
+
+#: The generic per-element writer a rejected-but-valid lane value routes to. Named
+#: in every such rejection, because a rejection with no route reads as "this value
+#: is unsupported" when the truth is "this verb does not write it, and another one
+#: does".
+_GENERIC_STEP_PARAM_ROUTE = (
+    'plan phase-6-finalize step set --step-id <step-id> --param lane --value <value>'
+)
+
+
+def _reject_lane_value(lane: str) -> str:
+    """Build the rejection message for a ``--lane`` value this verb will not write.
+
+    A bare argparse ``choices=`` rejection states only that the value is not in a
+    three-element set. That is true and useless for ``minimal`` and ``ask``, which
+    ARE per-element lane values the composer honours — they are simply not values
+    THIS verb writes. An operator who wants one is not making a mistake; they are
+    using the wrong verb, and the message says which one to use instead.
+
+    The routed verb writes the ``lane`` param verbatim without narrowing the value
+    space, so it does reach ``minimal`` / ``ask``. It differs from this verb in one
+    way worth stating in the message: it requires the step to already be present in
+    the phase's step map, where this verb materializes an absent entry.
+    """
+    if lane in _READER_LANE_VALUES:
+        return (
+            f"lane '{lane}' is a per-element lane value the composer honours, but not "
+            f'one this verb writes: `finalize-steps set-lane` persists only the '
+            f'resolved operator answers {list(_RESOLVED_ASK_LANE_VALUES)}. Write it '
+            f'through the generic per-element writer, which does not narrow the value '
+            f'space (it does require the step to already be in the phase step map): '
+            f'`{_GENERIC_STEP_PARAM_ROUTE}`.'
+        )
+    return (
+        f"invalid lane '{lane}'; `finalize-steps set-lane` accepts "
+        f'{list(_RESOLVED_ASK_LANE_VALUES)}, and the per-element value space the '
+        f'composer reads is {list(_READER_LANE_VALUES)} — writable through the '
+        f'generic per-element writer: `{_GENERIC_STEP_PARAM_ROUTE}`.'
+    )
+
 
 def _known_finalize_steps() -> frozenset[str]:
     """Return the known finalize-step universe via the discovery query.
@@ -304,17 +351,22 @@ def cmd_finalize_steps_set_lane(args) -> dict:
     valid enum is not the two-readers-disagreeing drift — both readers accept the
     full enum; this writer simply never produces the seed half of it.
 
+    The lane check runs FIRST, before the initialization check. It is a property
+    of the argument, not of the project, and it held that way while it was an
+    argparse ``choices=`` — an argparse rejection precedes every handler. Checking
+    initialization first would tell a caller who passed ``--lane minimal`` in a
+    fresh checkout to run ``/marshall-steward``, and only after that reveal that
+    the value was never writable by this verb.
+
     A resolved answer written here is never dropped by the compose-time
     drop-when-no-provider safety net.
     """
-    if not is_initialized():
-        return error_exit('marshal.json not initialized; run /marshall-steward first')
-
     lane = args.lane
     if lane not in _RESOLVED_ASK_LANE_VALUES:
-        return error_exit(
-            f"invalid lane '{lane}'; must be one of {list(_RESOLVED_ASK_LANE_VALUES)}"
-        )
+        return error_exit(_reject_lane_value(lane))
+
+    if not is_initialized():
+        return error_exit('marshal.json not initialized; run /marshall-steward first')
 
     step_id = args.step_id
     if step_id not in _known_finalize_steps():

@@ -470,16 +470,26 @@ def test_main_finalize_steps_set_lane_with_plan_id_leaves_marshal_unchanged(
 
 
 def test_main_finalize_steps_set_lane_rejects_a_seed_lane_value(plan_context, monkeypatch, capsys):
-    """`--lane ask` is rejected by argparse choices on BOTH channels (exit 2).
+    """`--lane ask` is refused on BOTH channels, with the working route named.
 
     ``ask`` / ``minimal`` are seed values only shipped frontmatter and marshal
     seeding emit; the writer enum is deliberately the resolved-answer subset. The
-    rejection happens at the parser, so it applies before the channel selector is
-    even consulted.
+    refusal is raised by the HANDLER rather than by an argparse ``choices=``, so
+    it can name the generic ``step set --param lane`` verb that does write them —
+    a value the composer honours deserves a route, not a bare "invalid choice".
+    The check still precedes the channel selector, so ``--plan-id`` never reaches
+    a write.
+
+    The refusal is therefore signalled on ``status: error`` in the emitted TOON,
+    not by the exit code: ``main`` returns 0 after printing any result, so every
+    manage-config validation error rides that channel and callers read ``status``.
+    Moving this one check off argparse moved it from exit 2 onto that same
+    channel, which is where its siblings — unknown step id, uninitialized marshal
+    — already were.
     """
     create_marshal_json(plan_context.fixture_dir)
 
-    code, _, err = _drive(
+    _code, out, err = _drive(
         monkeypatch,
         capsys,
         'finalize-steps',
@@ -492,8 +502,11 @@ def test_main_finalize_steps_set_lane_rejects_a_seed_lane_value(plan_context, mo
         'cli-plan-local',
     )
 
-    assert code == 2
-    assert 'ask' in err
+    combined = f'{out}\n{err}'
+    assert 'invalid choice' not in combined
+    assert 'status: error' in combined, 'a refused write must not report success'
+    assert 'ask' in combined
+    assert 'step set' in combined, 'the refusal must name the verb that writes seed lane values'
 
 
 def test_main_build_map_read_missing_is_error(plan_context, monkeypatch, capsys):

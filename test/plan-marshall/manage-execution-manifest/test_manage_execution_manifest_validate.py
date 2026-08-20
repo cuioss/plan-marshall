@@ -426,11 +426,11 @@ def test_orchestrator_owned_registry_steps_all_resolve_orchestrator_owned():
 # a non-None frontmatter order, so all participate in the ascending assertion.
 _ORDER_RESOLVABLE_CANDIDATES = [
     'finalize-step-sync-baseline',  # order 3
+    'architecture-refresh',  # order 10
     'push',  # order 11
     'ci-verify',  # order 22
-    'architecture-refresh',  # order 25
-    'finalize-step-preference-emitter',  # order 61
     'branch-cleanup',  # order 70
+    'finalize-step-preference-emitter',  # order 992
     'record-metrics',  # order 998
     'finalize-step-print-phase-breakdown',  # order 999
     'archive-plan',  # order 1100 — the plan-mutating barrier, highest order (terminus)
@@ -455,15 +455,15 @@ _SHUFFLED_SEED_ORDERINGS = [
     ],
     # Fully reverse-sorted: archive-plan first, every step in descending order.
     [
-        'archive-plan',
-        'finalize-step-print-phase-breakdown',
-        'record-metrics',
-        'finalize-step-preference-emitter',
-        'branch-cleanup',
-        'architecture-refresh',
-        'ci-verify',
-        'push',
-        'finalize-step-sync-baseline',
+        'archive-plan',  # 1100
+        'finalize-step-print-phase-breakdown',  # 999
+        'record-metrics',  # 998
+        'finalize-step-preference-emitter',  # 992
+        'branch-cleanup',  # 70
+        'ci-verify',  # 22
+        'push',  # 11
+        'architecture-refresh',  # 10
+        'finalize-step-sync-baseline',  # 3
     ],
     # High/low interleave: archive-plan mid-list, high-order steps scattered
     # among low-order ones.

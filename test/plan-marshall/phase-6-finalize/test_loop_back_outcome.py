@@ -322,7 +322,15 @@ def test_pre_push_quality_gate_head_compare_unchanged():
     the augmented table are load-bearing:
 
       * `done` + matches live HEAD  → Skip dispatch entirely (steady-state).
-      * `done` + differs from live HEAD  → Re-fire (HEAD has advanced).
+      * `done` + differs from live HEAD  → consult the verdict-currency classifier,
+        which Step 3's table owns.
+
+    The differing-SHA row is deliberately NOT pinned to an unconditional re-fire.
+    It once read that way, and § Resumability was then a second, competing
+    statement of a decision Step 3 had already narrowed: a step declaring a
+    ``verdict_inputs`` surface the tree difference does not touch resolves
+    ``preserved`` and SKIPs. Pinning the superseded wording here is what would
+    hold that contradiction in place, so this test pins the DEFERRAL instead.
 
     This test pins the special-case text against accidental removal.
     """
@@ -348,8 +356,15 @@ def test_pre_push_quality_gate_head_compare_unchanged():
     assert 'differs from live HEAD' in skill_text, (
         'Resumability table missing the "differs from live HEAD" row.'
     )
-    assert 'HEAD has advanced past the validated SHA' in skill_text, (
-        'Mismatched-HEAD row must explain that HEAD has advanced past the validated SHA.'
+    assert 'Consult the verdict-currency classifier' in skill_text, (
+        'Mismatched-HEAD row must DEFER to the verdict-currency classifier rather than '
+        'prescribing an action of its own — Step 3 owns that decision, and a second '
+        'statement of it here is what drifted last time.'
+    )
+    assert 'NOT an unconditional re-fire' in skill_text, (
+        'The mismatched-HEAD row must say explicitly that the action is not an '
+        'unconditional re-fire; without that, a reader takes the old reading from the '
+        'row heading alone.'
     )
 
     # Membership is DERIVED, not listed: the hand-maintained literal must be

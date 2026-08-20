@@ -70,7 +70,7 @@ def _step_ids(steps_map: dict) -> list:
 # The distributed run-at-all gates that stay FLAT phase-level siblings, and the
 # phase block each lives under. The finalize `qgate` gate is intentionally absent
 # here — it has been migrated off the run-at-all channel onto the per-element
-# `steps.pre-push-quality-gate.lane` override (the ceremony run-at-all → lane
+# `steps.default:pre-push-quality-gate.lane` override (the ceremony run-at-all → lane
 # migration), so it is no longer a flat phase-level sibling.
 _DISTRIBUTED_GATES = (
     ('phase-1-init', 'deep_lane'),

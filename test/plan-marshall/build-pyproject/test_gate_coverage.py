@@ -13,9 +13,12 @@ parity:
 * ``CoverageBoundary`` / ``render_coverage_summary`` — the honest partial-vs-full
   verdict (D5). A degraded run must be distinguishable, in the gate's own words,
   from one that genuinely passed.
-* ``parity_population`` — the derived local-gate-vs-CI comparison set (D1),
+* ``parity_population`` — the RECORDED local-gate-vs-CI comparison set (D1),
   asserted NON-EMPTY (D6): a parity table over an empty population looks identical
-  to perfect parity.
+  to perfect parity. Non-emptiness is all this module asserts about it, and over a
+  recorded literal that is a weak guarantee — the cells can all be stale and still
+  pass. One cell (``spdx-paths``) is separately bound to the substrate it describes
+  in ``test_gate_coverage_parity_substrate.py``.
 
 The module is stdlib-only and lives on the ``script-shared/scripts/build/``
 PYTHONPATH entry the root conftest configures, so it is exercised by a plain

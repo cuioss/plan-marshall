@@ -176,8 +176,13 @@ from scratch.
 
 - (a) era-stamp-only → one CI run: the D1 verdict shows the extra run is **intrinsic** to the
   PR-number dependency (not a defect to relocate), recorded in `source-edit-pushability.md`. The
-  ordering invariant (era-stamp 21 < ci-verify 22) already holds and is derived by
-  `test_finalize_edge_ordering.py`. No new mechanism, so no new test.
+  ordering invariant (era-stamp 21 < ci-verify 22) already holds, but **nothing derived it**:
+  `test_finalize_edge_ordering.py` derives only the two gate-relative edge families
+  (`mutates_source: true` → merge gate, merge gate → `post_run_review: true`) and says so in its own
+  prose; the era-stamp adjacency is a named-step data dependency no frontmatter marker expresses, so
+  it fell outside that module's derivation entirely. The adjacency is derived by
+  `test_finalize_edge_ordering.py::test_era_stamp_fill_runs_between_pr_creation_and_ci_verification`,
+  added by plan 510 (`truthful-signals/510-…`, closing gap 230/G2).
 - (b) two producers → one loop-back round: **coupled to the deferred D2 dispatcher change** — not added
   this run (there is no consolidated barrier to turn it green against).
 - (c) fail-closed still holds: the invariant a batched barrier must preserve — ci-verify's red path
