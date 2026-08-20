@@ -93,6 +93,15 @@ jobs:
             echo "Branch ${BRANCH_NAME} does not exist yet — first publish for this target"
           fi
 
+      - name: Install the generator's declared dependencies
+        # The generator reads component frontmatter with `yaml.safe_load`, so it
+        # is no longer stdlib-only. `pyproject.toml` is the single source of
+        # truth for the constraint; deriving it here keeps CI from carrying a
+        # second copy that could drift from it.
+        run: |
+          python3 -c "import pathlib, tomllib; print('\n'.join(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['dependencies']))" > /tmp/generator-requirements.txt
+          python3 -m pip install -r /tmp/generator-requirements.txt
+
       - name: Regenerate target directory
         env:
           GENERATOR_TARGET_FLAG: ${{ matrix.generator_target_flag }}

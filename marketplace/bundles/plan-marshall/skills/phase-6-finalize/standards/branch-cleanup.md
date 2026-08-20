@@ -13,6 +13,7 @@ records_facts:
   - action
   - upstream_commit_count
   - merge_mechanism
+  - merge_state
   - work_performed
 default_on: true
 presets:
@@ -227,7 +228,11 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 
 Parse the TOON return for fields `classification`, `auto_reconcilable`, `conflict_count`, `conflicts[]`, `upstream_commit_count`.
 
-If the script exits non-zero (per the **Exit-code convention** at the top of this document) → STOP and return an error TOON to the dispatcher carrying the stderr verbatim. Do NOT silently fall back to `needs_user` on classifier failure — a broken probe is a different signal than a real conflict and must surface as an error so the user can repair the environment.
+Branch on the returned `status` **before** parsing `classification` — the wrapper prints the payload through a helper that always exits 0, so an "if the script exits non-zero" test never fires and a skipped or errored payload carries no `classification` field to parse:
+
+- **`status: error`** → STOP and return the error TOON to the dispatcher verbatim. Do NOT silently fall back to `needs_user` on classifier failure — a broken probe is a different signal than a real conflict and must surface as an error so the user can repair the environment.
+- **`status: skipped`** → force `{decision} = needs_user` and log the returned `reason`. A skip is the probe declining to classify (no worktree, no remote, a failed fetch, an unresolvable HEAD, or an unresolvable merge base), which is not evidence that the rebase is safe.
+- **`status: success`** → proceed to parse `classification`.
 
 #### Compute the gate decision
 
@@ -235,7 +240,7 @@ Apply the following rules in order; the first match wins:
 
 - `classification == no_overlap` → `{decision} = auto_proceed` (regardless of threshold, except `never` which already short-circuited above).
 - `classification == overlap_no_content_conflict` AND `auto_reconcilable == true` AND `{threshold} == auto_resolvable` → `{decision} = auto_proceed`.
-- `classification == overlap_no_content_conflict` AND (`auto_reconcilable == false` OR `{threshold} == no_overlap_only`) → `{decision} = needs_user` (the threshold opts out even for an auto-reconcilable overlap — `auto_reconcilable` is a non-mutating capability signal, so an `overlap_no_content_conflict` always reports `auto_reconcilable == true`; the probe never performs the reconcile itself, that is `worktree-rebase-to`'s job).
+- `classification == overlap_no_content_conflict` AND `{threshold} == no_overlap_only` → `{decision} = needs_user` (the threshold opts out even for an auto-reconcilable overlap — `auto_reconcilable` is a non-mutating capability signal, so an `overlap_no_content_conflict` always reports `auto_reconcilable == true`; the probe never performs the reconcile itself, that is `worktree-rebase-to`'s job).
 - `classification == overlap_with_content_conflict` → `{decision} = needs_user` (genuine conflict requiring human resolution).
 
 #### Log the classifier decision
@@ -516,7 +521,13 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 
 Parse the TOON return for refreshed `classification`, `auto_reconcilable`, `conflict_count`, `upstream_commit_count` values. These values are surfaced to the operator in the prompt below so the merge decision is anchored to current reality, not to the pre-rebase snapshot. Under `merge_hold_window == full_window_release_at_waits` this re-run classifier IS the mandatory post-hold re-validation before the merge (§ "Merge-Mutex Hold Window" invariant 1).
 
-If the script exits non-zero, STOP and return an error TOON to the dispatcher carrying the stderr verbatim. Do NOT silently fall back to `needs_user` on classifier failure — a broken probe is a different signal than a real conflict. **Release-on-abort**: release the merge mutex if held before returning (§ "Merge-Mutex Hold Window" invariant 4).
+Branch on the returned `status` **before** parsing `classification` — the wrapper prints the payload through a helper that always exits 0, so an "if the script exits non-zero" test never fires and a skipped or errored payload carries no `classification` field to parse:
+
+- **`status: error`** → STOP and return the error TOON to the dispatcher verbatim. Do NOT silently fall back to `needs_user` on classifier failure — a broken probe is a different signal than a real conflict.
+- **`status: skipped`** → force `{decision} = needs_user` and log the returned `reason`; a skip is the probe declining to classify, not a clean re-validation.
+- **`status: success`** → proceed to parse `classification`.
+
+**Release-on-abort**: on either non-success branch, release the merge mutex if held before returning (§ "Merge-Mutex Hold Window" invariant 4).
 
 #### Auto-merge bypass (`final_merge_without_asking == true`)
 
@@ -1086,12 +1097,12 @@ Neither barrier mode offers the re-triage remedy:
 
   ```bash
   python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-    decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-6-finalize) Pre-merge review barrier: structural refusal — structural_bots={structural_bots} refused over cap={cap} against measured_diff_size={measured_diff_size}; unproven_bots={unproven_bots}. A re-review cannot change this (the diff is the same size), so the loop-back exists to re-check AUTHORIZATION, not to re-request the review. Remedies, each complete as written: (1) split the PR under the cap and re-run; (2) 'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant --plan-id {plan_id} --kind barrier-ask-override --head {sha} --gap-class review-barrier-gap --granted-over \"structural refusal: {structural_bots} over cap {cap}, measured {measured_diff_size}; unproven_bots={unproven_bots}\" --reason \"<why this gap is acceptable>\"' — HEAD-BOUND, and this barrier re-resolves HEAD after an unconditional rebase, so grant against the HEAD the next pass resolves; (3) 'python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest step-params set --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review --param required_bots --value \"<list minus the bot>\"' followed by the same call with '--param optional_bots --value \"<list plus the bot>\"' — TWO calls, and the barrier reads the plan-local manifest snapshot, NOT marshal.json. pre_merge_comment_barrier={barrier_mode} (merge blocked, looping back for operator remedy)"
+    decision --plan-id {plan_id} --level WARNING --message "(plan-marshall:phase-6-finalize) Pre-merge review barrier: structural refusal — structural_bots={structural_bots} refused over cap={cap} against measured_diff_size={measured_diff_size}; unproven_bots={unproven_bots}. A re-review cannot change this (the diff is the same size), so the loop-back exists to re-check AUTHORIZATION, not to re-request the review. Remedies, each complete as written: (1) split the PR under the cap and re-run; (2) 'python3 .plan/execute-script.py plan-marshall:manage-status:manage-status merge-authorization grant --plan-id {plan_id} --kind barrier-ask-override --head {sha} --gap-class review-barrier-gap --granted-over \"structural refusal: {structural_bots} over cap {cap}, measured {measured_diff_size}; unproven_bots={unproven_bots}\" --reason \"<why this gap is acceptable>\"' — HEAD-BOUND, and this barrier re-resolves HEAD on the next pass — after a rebase on the `use_merge_queue == false` path, and after no rebase at all on the `true` path, where the queue owns the rebase (§ 'Rebase Branch onto Base'). Either way, grant against the HEAD the next pass resolves, not against the one you are reading now; (3) 'python3 .plan/execute-script.py plan-marshall:manage-execution-manifest:manage-execution-manifest step-params set --plan-id {plan_id} --phase 6-finalize --step-id plan-marshall:automatic-review --param required_bots --value \"<list minus the bot>\"' followed by the same call with '--param optional_bots --value \"<list plus the bot>\"' — TWO calls, and the barrier reads the plan-local manifest snapshot, NOT marshal.json. pre_merge_comment_barrier={barrier_mode} (merge blocked, looping back for operator remedy)"
   ```
 
   Do NOT proceed to **Merge PR**, and **return control to the finalize dispatcher** — exactly as the pending-findings and UNKNOWN loop-backs do. ⛔ **"Do not merge" is not sufficient on its own**: the sections after **Merge PR** are not merge-gated. § "Remove Worktree (if any)" fires on `{worktree_path}` alone and § "Switch to Base Branch, Pull, and Delete Local Branch" is uniform across `open` and `merged`, so falling through would remove the worktree and delete the branch of an **unmerged** PR — and the loop-back just recorded would then re-enter with no worktree to work in.
 
-  ⚠ Unlike the pending-findings loop-back, the re-fired pipeline cannot clear this on its own — it clears only if an operator applied a remedy in between. Two costs to know before enabling an unattended retry: the plan's `max_iterations` bound is what terminates the run (on the default `loop_back_without_asking: false` it halts after one pass), and **each pass re-runs the unconditional rebase, an authoritative CI wait, and trigger A** — so a re-review trigger comment is spent per pass even though the refusing bot's answer cannot change.
+  ⚠ Unlike the pending-findings loop-back, the re-fired pipeline cannot clear this on its own — it clears only if an operator applied a remedy in between. Two costs to know before enabling an unattended retry: the plan's `max_iterations` bound is what terminates the run (on the default `loop_back_without_asking: false` it halts after one pass), and **each pass re-runs trigger A, plus whatever the `use_merge_queue` path prescribes: on `false`, the rebase and the authoritative CI wait; on `true`, no rebase and only a non-authoritative CI snapshot, because the queue re-tests** — so a re-review trigger comment is spent per pass on either path, even though the refusing bot's answer cannot change.
 
 **The `{barrier_mode} == ask` structural prompt.** This is an operator-wait boundary, so under `merge_hold_window == full_window_release_at_waits` release the merge mutex if held and FIFO-re-enqueue BEFORE the prompt (§ "Merge-Mutex Hold Window" invariant 1) — carried inline here rather than by reference, as every sibling `ask` branch does:
 
@@ -1380,7 +1391,7 @@ Also honour the `merge_hold_budget_seconds` bound from § "Merge-Mutex Hold Wind
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-     work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup queue-landing gate: PR #{pr_number} enqueued but not merged after {wait_budget}s (terminal observation: {state_or_error}) — skipping the post-merge tail; the head branch and its remote-tracking ref are left intact for the queue. Re-enter finalize once the queue merge lands."
+     work --plan-id {plan_id} --level WARNING --message "[WARNING] (plan-marshall:phase-6-finalize) Branch cleanup queue-landing gate: PR #{pr_number} enqueued but not merged after {wait_budget}s (terminal observation: {state_or_error}) — skipping the post-merge tail; the head branch and its remote-tracking ref are left intact for the queue. Recovery depends on the terminal observation — see the F1/F2/F3 split under Mark Step Complete."
    ```
 
 2. **Release the merge mutex** if held (`merge_lock release --plan-id {plan_id}`; idempotent + foreign-safe) per § "Merge-Mutex Hold Window" invariant 4. The plan is no longer inside the merge-to-main critical section — the platform owns the merge from here — so holding the lock would block every other plan for a wait this plan cannot shorten:
@@ -1693,14 +1704,15 @@ Pass a `--display-detail` value alongside `--outcome done` so the output-templat
 
 ### Structured facts recorded here
 
-This step declares the `records_facts` union `action`, `upstream_commit_count`, `merge_mechanism`, `work_performed`. The union is a step-level declaration, NOT a per-branch mandate — each of the six `--outcome done` call sites below (**Branches A through F**) records only the **honest subset** its own path produced, per [ext-point-finalize-step.md](../../extension-api/standards/ext-point-finalize-step.md) § "Structured step facts". The path conditions:
+This step declares the `records_facts` union `action`, `upstream_commit_count`, `merge_mechanism`, `merge_state`, `work_performed`. The union is a step-level declaration, NOT a per-branch mandate — each of the eight terminal call sites below (**Branches A through E**, plus **F1/F2/F3**, the three observations the queue landing gate routes to Branch F; seven record `--outcome done` and F1 records `--outcome loop_back`, which is terminal for this dispatch and so carries the same fact obligation) records only the **honest subset** its own path produced, per [ext-point-finalize-step.md](../../extension-api/standards/ext-point-finalize-step.md) § "Structured step facts". The path conditions:
 
 | Fact | Recorded iff |
 |------|--------------|
 | `action` | The executing path reached **Rebase Branch onto Base** and parsed its `worktree-rebase-to` TOON. The value is that TOON's `action` — `noop` when the rebase replayed nothing, `rebased` when it moved HEAD. A path that never rebased records NO `action`; its absence is the honest signal, not a gap to fill. |
 | `upstream_commit_count` | Same condition as `action` — it is read from the same rebase-path payload. |
 | `merge_mechanism` | The merge actually **landed** and was corroborated (`{merge_landed} == true`). Value is `pr_safe_merge` when `ci pr safe-merge` returned a corroborated `merged: true`, or `merge_queue` when § "Wait for the Queue Merge to Land (bounded)" observed the platform queue merge the enqueued PR. A path that enqueued but whose merge never landed (**Branch F**) records NO `merge_mechanism` — dispatching a merge-shaped verb is not the same fact as a merge, and that branch reports the enqueue in its `display_detail` instead. A path that never merged at all likewise records none. |
-| `work_performed` | **Every** `--outcome done` call site below, `true` or `false`, never omitted — the one declared exception to the honest-subset rule. |
+| `merge_state` | **Every** terminal call site below, `done` and Branch F's `loop_back` alike. Unlike `merge_mechanism` — which records HOW a merge landed and is therefore absent wherever none did — `merge_state` records WHAT STATE the PR is in, and every branch determines that: `merged` on the two branches that landed a merge (A, E); `open` where a live PR is left unmerged (C declined, F1 still queued); `closed` where the queue dequeued it without merging (F2); `unknown` where the PR state could not be read at all (F3); and `n/a` where no PR exists (B local-only, D no-PR-found). The five values are distinct claims and are not interchangeable — `closed` is not `open`, and `unknown` asserts only that nothing was observed. Recording it everywhere is the honest subset, not an exception: no branch lacks the value. Its consumer is the terminal `default:emit-landing` step, whose `landing-facts` block carries a required `merge_state` key. |
+| `work_performed` | **Every** terminal call site below, `true` or `false`, never omitted — the one declared exception to the honest-subset rule. |
 
 `--display-detail` on every branch is a **rendering of the facts that branch recorded**. In particular it MUST NOT assert a rebase or a merge the recorded facts do not support — a fixed literal claiming a rebase unconditionally is exactly what the per-branch facts exist to prevent. It MUST equally not render an *enqueue* as a merge, nor a queue merge as a merge this step performed: `merge_mechanism == merge_queue` records that the PLATFORM merged the PR and this step corroborated the landing, so its rendering says so rather than reusing the direct-merge phrasing.
 
@@ -1711,7 +1723,7 @@ This step declares the `records_facts` union `action`, `upstream_commit_count`, 
 
 Branch B carries one placeholder (`{base_branch}`) and is checked the same way. Branches C, D, and F carry none, so each is its own worst case; the longest of those three is Branch F at **59 chars**.
 
-Every `loop_back` call site in the pre-merge comment barrier is deliberately untouched — none is a `done` record, so none carries a fact obligation.
+The three `loop_back` call sites in the pre-merge comment barrier are deliberately untouched. The reason is that each hands control back with the cleanup **not attempted** — no branch state was determined, so there is no honest subset to record. It is NOT that `loop_back` exempts a site from the fact obligation: Branch F is a `loop_back` and does carry facts, because it determined the PR's state before deferring.
 
 **Branch A — PR mode (landed merge + cleanup)** (the merge **landed** and was corroborated, base branch pulled, feature branch deleted locally and on remote, worktree removed — preceded by a rebase on the `use_merge_queue == false` path and by no rebase on the `true` path). Branch A is the **clean-barrier** payload: use it only when the pre-merge review barrier resolved via its clean path. When the merge proceeded past a reported gap under an authorization, emit **Branch E** instead. When the PR was enqueued but the queue merge never landed, emit **Branch F** instead — Branch A requires `{merge_landed} == true`. It is the only clean-path branch that reaches a landed merge, so it carries `merge_mechanism` and `work_performed` **always**, plus the two rebase facts **on the path that rebased**:
 
@@ -1721,6 +1733,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   {--fact action={action} (if use_merge_queue == false)} \
   {--fact upstream_commit_count={rebase_upstream_commit_count} (if use_merge_queue == false)} \
   --fact merge_mechanism={merge_mechanism} \
+  --fact merge_state=merged \
   --fact work_performed=true \
   --display-detail "{rendered_detail}"
 ```
@@ -1749,24 +1762,27 @@ The `merge_queue` clause is deliberately not the word "merged" alone: the platfo
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
+  --fact merge_state=n/a \
   --fact work_performed=true \
   --display-detail "local-only: switched to {base_branch}"
 ```
 
-**Branch C — declined by user** (interactive prompt was rejected; cleanup was not performed). Nothing was rebased, merged, or cleaned up, so `work_performed=false` and no other fact is recorded:
+**Branch C — declined by user** (interactive prompt was rejected; cleanup was not performed). Nothing was rebased, merged, or cleaned up, so `work_performed=false`. The PR is left live and unmerged, so `merge_state=open`; no `action` or `merge_mechanism` is recorded, because no path produced one:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
+  --fact merge_state=open \
   --fact work_performed=false \
   --display-detail "declined by user"
 ```
 
-**Branch D — no PR found** (PR mode, `pr view` returned `status: error` — there is no PR for the current branch, so there is nothing to clean up on the remote side). The path exits before the rebase and before any merge, so it records `work_performed=false` alone:
+**Branch D — no PR found** (PR mode, `pr view` returned `status: error` — there is no PR for the current branch, so there is nothing to clean up on the remote side). The path exits before the rebase and before any merge, so it records `work_performed=false` and, since no PR exists to be in any state, `merge_state=n/a`; no `action` or `merge_mechanism` is recorded:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
+  --fact merge_state=n/a \
   --fact work_performed=false \
   --display-detail "no PR, nothing to clean up"
 ```
@@ -1783,6 +1799,7 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
   {--fact action={action} (if use_merge_queue == false)} \
   {--fact upstream_commit_count={rebase_upstream_commit_count} (if use_merge_queue == false)} \
   --fact merge_mechanism={merge_mechanism} \
+  --fact merge_state=merged \
   --fact work_performed=true \
   --display-detail "merged under {kind}, gap recorded"
 ```
@@ -1791,11 +1808,59 @@ python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-s
 
 This branch is reached only on `use_merge_queue == true`, and that is exactly the path § "Rebase Branch onto Base" routes AWAY from the rebase. It therefore **never reaches the rebase** and records neither `action` nor `upstream_commit_count` — their absence is the honest signal the fact table above names, and interpolating either placeholder here would fabricate a rebase that structurally cannot have happened on this branch. It performed real work — the enqueue — so `work_performed=true`. It records **no `merge_mechanism`**, because no merge landed: recording `merge_queue` here would assert exactly the fact this branch exists to deny, and would make Branch F indistinguishable from Branch A to any consumer reading the facts rather than the detail string:
 
+⚠ **Three different observations reach this branch, and they do NOT share an outcome.** § "Wait for the Queue Merge to Land (bounded)" routes the landing-gate failure path here from `state == open` with the budget exhausted, from `state == closed` (dequeued), and from `status: error` (unobservable). Collapsing them is a defect: `closed` is not `open`, an unreadable state is neither, and only ONE of the three can be improved by re-running. Pick the sub-path by the observation the landing gate actually made.
+
+**F1 — still queued, budget exhausted** (`state == open`). The merge is pending, not refused: the queue may land it at any time, so a later run CAN reach the `state == merged` path and perform the deferred cleanup. This is the only genuinely deferred sub-path, and the only one that loops back:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome loop_back \
+  --loop-back-target 6-finalize \
+  --fact merge_state=open \
+  --fact work_performed=true \
+  --display-detail "queued, merge not landed in budget, cleanup deferred"
+```
+
+**F2 — dequeued without merging** (`state == closed`). The queue removed the PR — its re-test went red against the latest base, or an operator removed it. **Re-running cannot change this**: identical input yields the identical answer, so a `loop_back` here would spin to `max_iterations` against a state only an operator can clear. It terminates, reporting the state actually observed:
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
   --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
+  --fact merge_state=closed \
   --fact work_performed=true \
-  --display-detail "enqueued to merge queue, merge not landed, cleanup deferred"
+  --display-detail "dequeued without merging, cleanup owed"
 ```
 
-The detail is a fixed literal (59 chars, no placeholders), so its worst case is its literal form. Re-entering finalize once the queue merge lands takes the `state == merged` path, which performs the deferred local cleanup.
+**F3 — state unobservable** (`status: error` on `pr view`). The gate could not read the PR at all. It fails CLOSED: it must not claim `open`, which would assert a state nobody observed, and must not loop, because an unreadable provider is not a pending merge:
+
+```bash
+python3 .plan/execute-script.py plan-marshall:manage-status:manage-status mark-step-done \
+  --plan-id {plan_id} --phase 6-finalize --step branch-cleanup --outcome done \
+  --fact merge_state=unknown \
+  --fact work_performed=true \
+  --display-detail "queue state unreadable, cleanup owed"
+```
+
+Every detail above is a fixed literal (F1 52, F2 38, F3 36 chars, measured not transcribed; no placeholders), so each worst case is its literal form.
+
+**Why F1 loops back and F2/F3 do not.** F1 ends with work still owed AND a path to discharging it: the queue has the PR, the merge has not landed, and the local branch and worktree still exist. A
+`done` record would suppress the very re-entry that deferral depends on — `default:branch-cleanup`
+declares no `head_dependent` fact, so [`../SKILL.md`](../SKILL.md) § Resumability applies its
+**general** table verbatim, and `done` there means *"Skip dispatch entirely … do not re-execute."* The
+step has no `push`-style override (parity-driven re-entry plus explicit dispatcher re-invocation) to
+rescue it, so the deferred cleanup would simply never happen.
+
+`loop_back` is the outcome whose documented semantics are exactly F1's need — *"re-fire (treat
+as no record — dispatch as fresh run)"* — so re-entry once the queue merge lands takes the
+`state == merged` path and performs the deferred cleanup, which is what this branch always claimed and
+now actually does. F2 and F3 also leave cleanup owed, but **re-running cannot discharge it**: a
+dequeued PR stays dequeued and an unreadable provider stays unreadable until something outside this
+run changes, so looping there would convert a diagnosable stop into `max_iterations` of identical
+retries. They terminate with an honest `merge_state` and carry the owed cleanup in the landing. The `max_iterations` ceiling bounds the retries, and the merge mutex was already
+released above, so the loop-back holds no lock. `emit-landing`'s failed-write branch takes the same
+remedy for the same reason.
+
+⚠ F1's `loop_back` is the one in this document that is **not** a blocked-barrier disposition:
+the barrier loop-backs above hand control back because something must be triaged, whereas F1
+hands it back because an external event (the queue merge) has not happened yet. Both re-fire; only the
+barrier ones carry a finding.

@@ -1,0 +1,717 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+"""Tests for the per-component ``targets:`` frontmatter filter."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from marketplace.targets import TARGET_REGISTRY
+from marketplace.targets.base import TargetBase
+from marketplace.targets.component_targets import (
+    TargetScopeError,
+    component_tree_target_names,
+    emits_to,
+    excluded_emission_roots,
+    is_under_any,
+    iter_component_manifests,
+    read_target_scope,
+    registered_target_names,
+)
+
+# Every declaration spelling the build must accept, paired with the scope it
+# yields. Reading is YAML's job now, so this is a list of the shapes an AUTHOR
+# may write rather than of the shapes a scanner happens to survive: each row
+# is here because a component could plausibly be written that way, not because
+# some hand-rolled rule needed cornering.
+_ACCEPTED_FORMS = {
+    'inline-flow': ('targets: [claude]', {'claude'}),
+    'inline-flow-multi': ('targets: [claude, opencode]', {'claude', 'opencode'}),
+    'inline-bare': ('targets: claude', {'claude'}),
+    # Not YAML's reading — YAML sees one string — but the build's own
+    # comma-splitting convenience. See the module docstring.
+    'inline-bare-multi': ('targets: claude, opencode', {'claude', 'opencode'}),
+    'block': ('targets:\n  - claude\n  - opencode', {'claude', 'opencode'}),
+    'quoted-item': ("targets: ['claude']", {'claude'}),
+    'quoted-key': ('"targets": [claude]', {'claude'}),
+    'inline-flow-trailing-comment': ('targets: [claude]  # only here', {'claude'}),
+    'inline-bare-trailing-comment': ('targets: claude  # only here', {'claude'}),
+    'block-with-comment-line': ('targets:\n  # why\n  - claude', {'claude'}),
+    'block-item-trailing-comment': ('targets:\n  - claude  # why', {'claude'}),
+    'block-with-blank-line': ('targets:\n\n  - claude', {'claude'}),
+    'flow-across-lines': ('targets: [claude,\n  opencode]', {'claude', 'opencode'}),
+    'flow-across-lines-with-comment': (
+        'targets: [claude,  # and\n  opencode]',
+        {'claude', 'opencode'},
+    ),
+    'flow-opened-on-its-own-line': ('targets: [\n  claude\n  ]', {'claude'}),
+    'flow-below-the-key': ('targets:\n  [claude, opencode]', {'claude', 'opencode'}),
+    'comment-then-block': ('targets: # note\n  - claude', {'claude'}),
+    'duplicate-item': ('targets: [claude, claude]', {'claude'}),
+}
+
+# Shapes a line scanner could not read, and that a YAML reader resolves
+# exactly. Seven were REJECTED by the hand-rolled parser at the commit it was
+# replaced at, several under a message naming a construct the author had not
+# written. Two were not: `uniformly-indented-block` and
+# `comment-above-an-indented-block` had already been fixed, by rounds 10 and
+# 11 respectively. They are kept because they are the shapes three successive
+# indentation rules were written for, and a YAML reader gets them right with
+# no rule at all. (`value-continued-at-column-zero` IS one of the seven — it
+# is the shape the third of those rules still got wrong.)
+_ONCE_REFUSED_NOW_READ = {
+    'folded-block-scalar': ('targets: >-\n  claude', {'claude'}),
+    'literal-block-scalar': ('targets: |-\n  claude', {'claude'}),
+    'block-scalar-with-indent-indicator': ('targets: |2\n   claude', {'claude'}),
+    'quoted-scalar-across-lines': ('targets: "claude,\n  opencode"', {'claude', 'opencode'}),
+    'plain-scalar-below-the-key': ('targets:\n  claude', {'claude'}),
+    'plain-scalar-across-lines': ('targets: claude,\n  opencode', {'claude', 'opencode'}),
+    'uniformly-indented-block': (None, {'claude'}),
+    'comment-above-an-indented-block': (None, {'claude'}),
+    'value-continued-at-column-zero': (None, {'claude'}),
+}
+
+# The whole-file spellings for the three rows above that are about the BLOCK
+# rather than about one value.
+_ONCE_REFUSED_WHOLE_FILE = {
+    'uniformly-indented-block': '---\n  name: demo\n  targets: [claude]\n---\n',
+    'comment-above-an-indented-block': '---\n# a note\n  name: demo\n  targets: [claude]\n---\n',
+    'value-continued-at-column-zero': (
+        '---\n  description: "one\ntwo"\n  targets: [claude]\n---\n'
+    ),
+}
+
+
+def _component(tmp_path: Path, frontmatter: str, *, name: str = 'demo.md') -> Path:
+    path = tmp_path / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f'---\nname: demo\n{frontmatter}\n---\n\n# Body\n', encoding='utf-8')
+    return path
+
+
+# ---------------------------------------------------------------------------
+# Registry-derived target sets
+# ---------------------------------------------------------------------------
+
+
+class _TreelessTarget(TargetBase):
+    """A registered target whose output is not a component tree."""
+
+    @property
+    def name(self) -> str:
+        return 'treeless'
+
+    @property
+    def emits_bundle_tree(self) -> bool:
+        return False
+
+    def generate(self, marketplace_dir, output_dir, bundles=None):  # noqa: ANN001, ANN201, D102
+        return []
+
+    def supports_agents(self) -> bool:
+        return False
+
+    def supports_commands(self) -> bool:
+        return False
+
+    @property
+    def config_dir(self) -> Path:
+        return Path(__file__).resolve().parent
+
+
+class _TreeTarget(_TreelessTarget):
+    """A registered target whose output IS a component tree."""
+
+    @property
+    def name(self) -> str:
+        return 'treeful'
+
+    @property
+    def emits_bundle_tree(self) -> bool:
+        return True
+
+
+def test_component_tree_names_follow_the_capability_not_a_list(monkeypatch):
+    """The component-tree set is derived from ``emits_bundle_tree``, not enumerated.
+
+    Registering two synthetic targets that differ only in that capability is
+    what makes the derivation observable: a hard-coded list would report the
+    same answer for both.
+    """
+    monkeypatch.setitem(TARGET_REGISTRY, 'treeless', _TreelessTarget)
+    monkeypatch.setitem(TARGET_REGISTRY, 'treeful', _TreeTarget)
+
+    assert 'treeful' in component_tree_target_names()
+    assert 'treeless' not in component_tree_target_names()
+    assert {'treeful', 'treeless'} <= registered_target_names()
+
+
+def test_registered_names_cover_every_component_tree_name():
+    """Every component-tree target is registered — the sets cannot diverge."""
+    assert component_tree_target_names() <= registered_target_names()
+
+
+# ---------------------------------------------------------------------------
+# Declaration parsing
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ('frontmatter', 'expected'),
+    [pytest.param(form, expected, id=key) for key, (form, expected) in _ACCEPTED_FORMS.items()],
+)
+def test_every_authoring_spelling_yields_the_same_scope(tmp_path, frontmatter, expected):
+    """Inline-flow, bare-scalar and block spellings all read the same."""
+    assert read_target_scope(_component(tmp_path, frontmatter)) == expected
+
+
+@pytest.mark.parametrize(
+    ('key', 'expected'),
+    [
+        pytest.param(key, expected, id=key)
+        for key, (_form, expected) in _ONCE_REFUSED_NOW_READ.items()
+    ],
+)
+def test_shapes_a_line_scanner_refused_are_now_read(tmp_path, key, expected):
+    """Twelve rounds of rejections that were never the author's fault.
+
+    Every shape here is ordinary YAML naming a registered target. Seven were
+    refused by the hand-rolled parser at the commit it was replaced at, several
+    under a message naming a construct the author had not written. The two
+    exceptions are named in the fixture's own comment — they had been fixed by
+    then, after three successive indentation rules, and are kept because a YAML
+    reader needs none of them.
+
+    They are accepted because a YAML reader resolves them, which is the point
+    of using one. This test is the record that the change is deliberate: any
+    future edit that re-refuses one of them must argue for it here.
+    """
+    whole_file = _ONCE_REFUSED_WHOLE_FILE.get(key)
+    if whole_file is None:
+        path = _component(tmp_path, _ONCE_REFUSED_NOW_READ[key][0])
+    else:
+        path = tmp_path / 'demo.md'
+        path.write_text(whole_file, encoding='utf-8')
+
+    assert read_target_scope(path) == expected
+
+
+def test_a_duplicate_key_resolves_the_way_yaml_resolves_it(tmp_path):
+    """The LAST declaration wins, because that is what YAML says.
+
+    Carried for eight rounds as an open behavioural survivor: the line scanner
+    took the first declaration where YAML takes the last, so a component with
+    two ``targets:`` keys could both gain and lose a target relative to what a
+    YAML reader sees. Delegating the read closed it without a policy decision.
+    """
+    path = tmp_path / 'demo.md'
+    path.write_text(
+        '---\nname: demo\ntargets: [claude]\ntargets: [opencode]\n---\n', encoding='utf-8'
+    )
+
+    assert read_target_scope(path) == {'opencode'}
+
+
+def test_absent_field_means_every_target(tmp_path):
+    """A component with no declaration ships everywhere — the default."""
+    path = tmp_path / 'demo.md'
+    path.write_text('---\nname: demo\ndescription: x\n---\n\n# Body\n', encoding='utf-8')
+
+    assert read_target_scope(path) is None
+    for target_name in registered_target_names():
+        assert emits_to(path, target_name)
+
+
+@pytest.mark.parametrize(
+    'text',
+    [
+        pytest.param('# Body only\n', id='no-frontmatter'),
+        pytest.param('---\nname: demo\n---\n', id='frontmatter-without-the-field'),
+        pytest.param('---\n- a\n- b\n---\n', id='frontmatter-that-is-not-a-mapping'),
+        pytest.param('---\n---\ntargets: [claude]\n---\n', id='immediately-closed-block'),
+        pytest.param(
+            '---\nname: demo\nmetadata:\n  targets: nonsense\n---\n', id='nested-under-a-key'
+        ),
+    ],
+)
+def test_shapes_that_declare_nothing(tmp_path, text):
+    """None of these is a declaration, so all of them ship everywhere.
+
+    The nested case is the one worth stating: a ``targets:`` inside another
+    mapping is a different field, and it stays one however the surrounding
+    block is indented.
+    """
+    path = tmp_path / 'demo.md'
+    path.write_text(text, encoding='utf-8')
+
+    assert read_target_scope(path) is None
+
+
+@pytest.mark.parametrize(
+    'text',
+    [
+        pytest.param('﻿---\nname: demo\ntargets: [claude]\n---\n', id='byte-order-mark'),
+        pytest.param('--- \nname: demo\ntargets: [claude]\n---\n', id='fence-trailing-space'),
+        pytest.param('---\nname: demo\ntargets: [claude]\n--- \n', id='close-trailing-space'),
+        pytest.param('---\t\nname: demo\ntargets: [claude]\n---\n', id='fence-trailing-tab'),
+        pytest.param(
+            '---\ndescription: a --- b\ntargets: [claude]\n---\n', id='three-hyphens-in-a-value'
+        ),
+    ],
+)
+def test_fence_handling_does_not_hide_a_declaration(tmp_path, text):
+    """Finding the block is still this module's job; getting it wrong fails OPEN.
+
+    A BOM, a fence carrying invisible trailing whitespace, a value containing
+    three hyphens — each of these once read as "no frontmatter", which ships
+    the component everywhere with its declaration unread AND lets an invalid
+    declaration past the build unreported. (``----`` is NOT among them: it is
+    invalid YAML and now fails closed — see the sibling test.)
+    """
+    path = tmp_path / 'demo.md'
+    path.write_text(text, encoding='utf-8')
+
+    assert read_target_scope(path) == {'claude'}
+    assert emits_to(path, 'opencode') is False
+
+
+def test_crlf_line_endings_do_not_hide_the_declaration(tmp_path):
+    """Universal-newline decoding normalises CRLF; pin it rather than assume it."""
+    path = tmp_path / 'demo.md'
+    path.write_bytes(b'---\r\nname: demo\r\ntargets: [claude]\r\n---\r\n\r\n# Body\r\n')
+
+    assert read_target_scope(path) == {'claude'}
+
+
+def test_undecodable_bytes_that_declare_nothing_degrade_to_every_target(tmp_path):
+    """A read fault must never be able to REMOVE a component from a target."""
+    path = tmp_path / 'demo.md'
+    path.write_bytes(b'---\nname: demo\ndescription: \xff\xfe\n---\n')
+
+    assert read_target_scope(path) is None
+    assert emits_to(path, 'claude') is True
+
+
+def test_undecodable_bytes_that_appear_to_declare_a_scope_fail_closed(tmp_path):
+    """Whether undecodable bytes HIDE a declaration is decidable — so it is decided.
+
+    Degrading past this would ship the component everywhere carrying a
+    declaration nobody has read, which is the same silent widening the module
+    refuses for unparseable YAML. The lossy re-read answers only the question
+    "does this mention the field", never what the value is.
+    """
+    path = tmp_path / 'demo.md'
+    path.write_bytes(b'---\nname: demo\ntargets: [\xff\xfe]\n---\n')
+
+    with pytest.raises(TargetScopeError, match='not valid UTF-8'):
+        read_target_scope(path)
+
+
+def test_a_file_that_vanishes_between_the_two_reads_degrades(tmp_path, monkeypatch):
+    """The lossy re-read is a SECOND filesystem call and can fail on its own.
+
+    The first read raises `UnicodeDecodeError`, which is not an `OSError`, so
+    it lands in a branch outside the earlier guard. If the file is removed or
+    becomes unreadable in between, an unguarded second read leaks a raw
+    `OSError` out of the build instead of holding the documented degradation.
+    There is nothing left to decide against at that point, so it degrades the
+    way an unreadable file does.
+    """
+    path = tmp_path / 'demo.md'
+    path.write_bytes(b'---\nname: demo\ntargets: [\xff\xfe]\n---\n')
+
+    real_read_text = Path.read_text
+    calls: list[str] = []
+
+    def flaky(self, *args, **kwargs):
+        calls.append(kwargs.get('errors', 'strict'))
+        if kwargs.get('errors') == 'replace':
+            raise OSError('vanished between the two reads')
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'read_text', flaky)
+
+    assert read_target_scope(path) is None
+    # Both reads were actually attempted, so the pin is not passing by never
+    # reaching the second one.
+    assert calls == ['strict', 'replace']
+
+
+def test_a_four_hyphen_line_inside_the_block_fails_closed(tmp_path):
+    """``----`` is neither a fence nor valid YAML, and it is now refused.
+
+    Three readers disagreed about this line. The old line scanner skipped it
+    and read the declaration beneath; the tree's canonical frontmatter reader
+    (``_dep_detection``) matches a ``---`` PREFIX and treats it as the closing
+    fence, so the declaration is body text to it; and YAML calls the block
+    malformed. Delegating the read settles it on YAML's answer, which is the
+    only one of the three that refuses rather than silently picking a side.
+    """
+    path = tmp_path / 'demo.md'
+    path.write_text('---\ndescription: a\n----\ntargets: [claude]\n---\n', encoding='utf-8')
+
+    with pytest.raises(TargetScopeError, match='not well-formed YAML'):
+        read_target_scope(path)
+
+
+@pytest.mark.parametrize(
+    'frontmatter',
+    [
+        pytest.param('targets: [claude,', id='unclosed-flow-sequence'),
+        pytest.param('targets: [claude\n  opencode]\n  : x', id='malformed-mapping'),
+        pytest.param('targets: [a\n\tb]', id='tab-indentation'),
+    ],
+)
+def test_malformed_frontmatter_fails_closed(tmp_path, frontmatter):
+    """Frontmatter YAML cannot read is REFUSED, not read past.
+
+    Guessing at unparseable frontmatter is how a declaration goes unread, and
+    a component then ships everywhere carrying an invalid declaration nobody
+    was told about. That happened three times under the previous parser, so
+    the failure names YAML's own complaint rather than inventing a diagnosis.
+    """
+    with pytest.raises(TargetScopeError, match='not well-formed YAML'):
+        read_target_scope(_component(tmp_path, frontmatter))
+
+
+@pytest.mark.parametrize(
+    ('frontmatter', 'kind'),
+    [
+        pytest.param('targets: {claude: yes}', 'dict', id='mapping'),
+        pytest.param('targets: 3', 'int', id='number'),
+        pytest.param('targets: true', 'bool', id='boolean'),
+    ],
+)
+def test_a_value_that_is_not_a_list_of_names_says_so(tmp_path, frontmatter, kind):
+    """Naming the shape beats coercing it and then rejecting the coercion.
+
+    ``targets: {claude: yes}`` is a mapping in any reading. Reporting it as an
+    unknown target named ``{claude: yes}`` would name a target nobody wrote —
+    the defect this module spent twelve rounds removing from other shapes.
+    """
+    with pytest.raises(TargetScopeError, match=f'is {kind}, not a list'):
+        read_target_scope(_component(tmp_path, frontmatter))
+
+
+@pytest.mark.parametrize(
+    ('frontmatter', 'kind'),
+    [
+        pytest.param('targets: [true]', 'bool', id='boolean-item'),
+        pytest.param('targets: [3]', 'int', id='number-item'),
+        pytest.param('targets: [1.5]', 'float', id='float-item'),
+        pytest.param('targets: [{claude: yes}]', 'dict', id='mapping-item'),
+        pytest.param('targets: [[claude]]', 'list', id='nested-list-item'),
+        pytest.param('targets: [2024-01-01]', 'date', id='date-item'),
+        pytest.param('targets:\n  - true', 'bool', id='boolean-item-block'),
+        pytest.param('targets: [claude, 3]', 'int', id='bad-item-beside-a-good-one'),
+    ],
+)
+def test_a_list_item_that_is_not_a_name_says_so(tmp_path, frontmatter, kind):
+    """A well-formed list may still hold something that is not a name.
+
+    ``targets: [true]`` is a list, so the not-a-list branch never sees it, and
+    `str()` would turn the item into the name ``'True'`` — then reject it as
+    unregistered, naming a target nobody wrote. That is the same defect the
+    whole-value branch refuses to commit, and it would be worse than cosmetic
+    if a name matching one of these coercions were ever registered.
+
+    The message names the ITEM's type, not the container's: reporting the
+    container would say "is list, not a list".
+    """
+    with pytest.raises(TargetScopeError, match=f'is {kind}, not a target name'):
+        read_target_scope(_component(tmp_path, frontmatter))
+
+
+def test_a_list_of_names_is_still_read_when_a_name_looks_like_another_type(tmp_path):
+    """The item check tests the RESOLVED type, so quoting keeps a name a name.
+
+    Without this the fix above would be over-broad: `targets: ['true']` is a
+    string in YAML and must stay a legal (if unregistered) name rather than
+    being refused as a boolean.
+    """
+    from marketplace.targets.component_targets import TargetScopeError
+
+    with pytest.raises(TargetScopeError, match='unknown'):
+        read_target_scope(_component(tmp_path, "targets: ['true']"))
+
+
+@pytest.mark.parametrize(
+    ('block', 'declares'),
+    [
+        pytest.param('description: a: b\ntargets: [claude]', True, id='mentions-the-field'),
+        pytest.param('description: a: b\n"targets": [claude]', True, id='quoted-key'),
+        pytest.param('description: a: b\n  targets: [claude]', True, id='indented-key'),
+        pytest.param('description: a: b\nname: demo', False, id='never-mentions-it'),
+    ],
+)
+def test_unparseable_frontmatter_is_refused_only_where_a_declaration_could_hide(
+    tmp_path, block, declares
+):
+    """Target scoping is not the repository's YAML linter.
+
+    Unparseable frontmatter that never mentions ``targets:`` has no
+    declaration for this module to misread, so refusing it would widen the
+    build's failure surface over a defect belonging to whatever consumes the
+    rest of the file. Where the field IS mentioned, guessing is how a
+    declaration goes unread — so that fails closed.
+
+    The mention test is deliberately over-inclusive (any indentation, quoted
+    or not), because every way it can be wrong REFUSES a malformed file that
+    would otherwise pass. It cannot hide a declaration: hiding one would need
+    the block to omit the key, and a block omitting the key declares nothing.
+    """
+    path = tmp_path / 'demo.md'
+    path.write_text(f'---\n{block}\n---\n', encoding='utf-8')
+
+    if declares:
+        with pytest.raises(TargetScopeError, match='not well-formed YAML'):
+            read_target_scope(path)
+    else:
+        assert read_target_scope(path) is None
+
+
+def test_a_registered_target_name_may_not_contain_a_comma_or_whitespace(tmp_path):
+    """The premise the comma-splitting convenience rests on, enforced not assumed.
+
+    ``targets: a, b`` is one string to YAML and the build splits it, so a name
+    carrying a comma could never be matched by that spelling while still
+    matching in a list.
+    """
+    from marketplace.targets import register_target
+
+    for name in ('my target', 'a,b'):
+        with pytest.raises(ValueError, match='neither a comma nor'):
+            register_target(name, _TreeTarget)
+
+
+# ---------------------------------------------------------------------------
+# The emission predicate
+# ---------------------------------------------------------------------------
+
+
+def test_scoped_component_is_emitted_only_by_a_named_target(tmp_path):
+    """``targets: [claude]`` admits claude and refuses every other target."""
+    path = _component(tmp_path, 'targets: [claude]')
+
+    assert emits_to(path, 'claude') is True
+    for target_name in registered_target_names() - {'claude'}:
+        assert emits_to(path, target_name) is False
+
+
+# ---------------------------------------------------------------------------
+# Fail-closed validation
+# ---------------------------------------------------------------------------
+
+
+def test_unknown_target_name_is_rejected(tmp_path):
+    """A typo fails the build, naming the component and the unknown value."""
+    path = _component(tmp_path, 'targets: [cluade]')
+
+    with pytest.raises(TargetScopeError) as excinfo:
+        read_target_scope(path)
+
+    message = str(excinfo.value)
+    assert 'cluade' in message
+    assert str(path) in message
+
+
+def test_partially_unknown_target_list_is_rejected(tmp_path):
+    """One valid name does not excuse an unknown one beside it."""
+    path = _component(tmp_path, 'targets: [claude, nope]')
+
+    with pytest.raises(TargetScopeError, match='nope'):
+        read_target_scope(path)
+
+
+@pytest.mark.parametrize(
+    'frontmatter',
+    [
+        pytest.param('targets: []', id='inline-empty'),
+        pytest.param('targets:\ndescription: x', id='key-with-no-items'),
+    ],
+)
+def test_empty_declaration_is_rejected(tmp_path, frontmatter):
+    """A component shipped nowhere is an authoring error, not an intent."""
+    path = _component(tmp_path, frontmatter)
+
+    with pytest.raises(TargetScopeError) as excinfo:
+        read_target_scope(path)
+
+    message = str(excinfo.value)
+    assert 'empty list' in message
+    assert str(path) in message
+
+
+def test_only_non_component_tree_targets_is_rejected(tmp_path):
+    """A registry-valid list that still ships the component nowhere is rejected.
+
+    The offending value passes a membership check, so nothing but the
+    ``emits_bundle_tree`` capability separates it from a valid declaration.
+    """
+    treeless = sorted(registered_target_names() - component_tree_target_names())
+    assert treeless, 'fixture assumes at least one registered non-component-tree target'
+    path = _component(tmp_path, f'targets: [{", ".join(treeless)}]')
+
+    with pytest.raises(TargetScopeError) as excinfo:
+        read_target_scope(path)
+
+    message = str(excinfo.value)
+    assert 'ship nowhere' in message
+    assert str(path) in message
+
+
+# ---------------------------------------------------------------------------
+# Bundle-level helpers
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def scoped_bundle(tmp_path: Path) -> Path:
+    """A bundle holding one scoped and one unscoped component of each kind."""
+    bundle = tmp_path / 'demo'
+    scoped = '---\nname: {name}\ndescription: d\ntargets: [claude]\n---\n\n# Body\n'
+    plain = '---\nname: {name}\ndescription: d\n---\n\n# Body\n'
+    for rel, template, name in (
+        ('agents/scoped-agent.md', scoped, 'scoped-agent'),
+        ('agents/plain-agent.md', plain, 'plain-agent'),
+        ('commands/scoped-cmd.md', scoped, 'scoped-cmd'),
+        ('commands/plain-cmd.md', plain, 'plain-cmd'),
+        ('skills/scoped-skill/SKILL.md', scoped, 'scoped-skill'),
+        ('skills/plain-skill/SKILL.md', plain, 'plain-skill'),
+    ):
+        path = bundle / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(template.format(name=name), encoding='utf-8')
+    (bundle / 'skills' / 'scoped-skill' / 'standards' / 'x.md').parent.mkdir(parents=True)
+    (bundle / 'skills' / 'scoped-skill' / 'standards' / 'x.md').write_text('x\n', encoding='utf-8')
+    return bundle
+
+
+def test_manifests_map_each_component_to_what_it_governs(scoped_bundle):
+    """An agent/command governs its file; a skill governs its whole directory."""
+    mapped = {
+        manifest.relative_to(scoped_bundle).as_posix(): root.relative_to(scoped_bundle).as_posix()
+        for manifest, root in iter_component_manifests(scoped_bundle)
+    }
+
+    assert mapped['agents/scoped-agent.md'] == 'agents/scoped-agent.md'
+    assert mapped['commands/scoped-cmd.md'] == 'commands/scoped-cmd.md'
+    assert mapped['skills/scoped-skill/SKILL.md'] == 'skills/scoped-skill'
+
+
+def test_excluded_roots_name_only_the_scoped_out_components(scoped_bundle):
+    """Excluding for a non-named target catches every kind; claude excludes none."""
+    excluded = excluded_emission_roots(scoped_bundle, 'opencode')
+
+    assert excluded == {
+        Path('agents/scoped-agent.md'),
+        Path('commands/scoped-cmd.md'),
+        Path('skills/scoped-skill'),
+    }
+    assert excluded_emission_roots(scoped_bundle, 'claude') == frozenset()
+
+
+def test_excluded_roots_validate_every_component_not_only_excluded_ones(tmp_path):
+    """An invalid declaration fails even for the target it would have admitted."""
+    bundle = tmp_path / 'demo'
+    path = bundle / 'commands' / 'bad.md'
+    path.parent.mkdir(parents=True)
+    path.write_text('---\nname: bad\ntargets: [claude, bogus]\n---\n\n# Body\n', encoding='utf-8')
+
+    with pytest.raises(TargetScopeError, match='bogus'):
+        excluded_emission_roots(bundle, 'claude')
+
+
+def test_a_skill_directory_exclusion_covers_its_whole_subtree():
+    """Every path beneath an excluded skill directory is excluded with it."""
+    roots = frozenset({Path('skills/scoped-skill')})
+
+    assert is_under_any(Path('skills/scoped-skill'), roots) is True
+    assert is_under_any(Path('skills/scoped-skill/standards/x.md'), roots) is True
+    assert is_under_any(Path('skills/plain-skill/SKILL.md'), roots) is False
+    assert is_under_any(Path('skills/scoped-skill-extra/SKILL.md'), roots) is False
+
+
+def test_no_exclusions_means_nothing_is_under_any():
+    """The empty-exclusion fast path agrees with the general answer."""
+    assert is_under_any(Path('agents/a.md'), frozenset()) is False
+
+
+@pytest.mark.parametrize(
+    ('text', 'expected'),
+    [
+        pytest.param('---\nname: d\ntargets: [claude]\n---\t\n', {'claude'}, id='close-fence-tab'),
+        pytest.param('---\nname: d\ntargets: [claude]\n---', {'claude'}, id='close-fence-at-eof'),
+        pytest.param('---\nname: d\ntargets: [claude]\n---  ', {'claude'}, id='eof-with-spaces'),
+    ],
+)
+def test_fence_shapes_that_were_pinned_and_stopped_being(tmp_path, text, expected):
+    """Two fence properties lost their pins in the rewrite.
+
+    The close fence's tolerance of a trailing TAB, and its acceptance at
+    end-of-file with no trailing newline. Both still hold; neither was
+    pinned, and each mutant survived the whole suite until round 13.
+    """
+    path = tmp_path / 'demo.md'
+    path.write_text(text, encoding='utf-8')
+
+    assert read_target_scope(path) == expected
+
+
+@pytest.mark.parametrize(
+    ('frontmatter', 'expected'),
+    [
+        pytest.param('targets: claude,', {'claude'}, id='trailing-comma-in-a-string'),
+        pytest.param('targets: claude,,opencode', {'claude', 'opencode'}, id='doubled-comma'),
+        pytest.param("targets: ['claude', '']", {'claude'}, id='empty-item-in-a-list'),
+        pytest.param("targets: ['claude', '  ']", {'claude'}, id='blank-item-in-a-list'),
+    ],
+)
+def test_blank_tokens_are_dropped_rather_than_reported(tmp_path, frontmatter, expected):
+    """A stray comma or an empty list item is not a target named "".
+
+    Both filters were unpinned: without them the build fails naming an unknown
+    target whose name is the empty string, which tells an author nothing about
+    the character they actually typed.
+    """
+    assert read_target_scope(_component(tmp_path, frontmatter)) == expected
+
+
+def test_unparseable_frontmatter_declaring_the_field_off_a_line_start_is_refused(tmp_path):
+    """Round 13's own fix for a fail-open had no test at all.
+
+    Re-anchoring the mention test to a line start — the exact code round 13
+    replaced — leaves every suite green while this file's declaration goes
+    unread and the component ships everywhere.
+    """
+    path = tmp_path / 'demo.md'
+    path.write_text('---\n{targets: [typo], name: x\n---\n', encoding='utf-8')
+
+    with pytest.raises(TargetScopeError, match='not well-formed YAML'):
+        read_target_scope(path)
+
+
+def test_a_deeply_nested_flow_collection_names_the_file_rather_than_crashing(tmp_path):
+    """``safe_load`` can raise ``RecursionError``, which is not a ``YAMLError``.
+
+    Round 13 caught it and pinned it with nothing: reverting to the narrower
+    ``except`` left the suite green while the generator aborted on a raw
+    traceback instead of naming the component.
+    """
+    path = tmp_path / 'demo.md'
+    path.write_text('---\ntargets: ' + '[' * 20000 + '\n---\n', encoding='utf-8')
+
+    with pytest.raises(TargetScopeError, match='not well-formed YAML'):
+        read_target_scope(path)
+
+
+def test_a_dotfile_component_is_not_walked(tmp_path):
+    """A leading dot marks a file the emitters skip, so it is not validated."""
+    bundle = tmp_path / 'demo'
+    (bundle / 'commands').mkdir(parents=True)
+    (bundle / 'commands' / '.hidden.md').write_text(
+        '---\nname: h\ntargets: [typo]\n---\n', encoding='utf-8'
+    )
+
+    assert excluded_emission_roots(bundle, 'claude') == frozenset()

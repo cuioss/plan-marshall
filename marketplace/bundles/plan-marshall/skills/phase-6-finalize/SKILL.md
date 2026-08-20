@@ -194,13 +194,17 @@ Skill: {step_reference}
 
 **DISPATCHED external steps** (e.g., `project:finalize-step-plugin-doctor`) do NOT use the `Skill:` template above —
 they dispatch under `Task: execution-context-{level}` with the step's own SKILL.md
-as the `workflow` prompt-body field. Their input contract is the 5-field
-prompt-body shape (`name`, `plan_id`, `skills[]`, `workflow`, `WORKTREE`) plus any
-workflow-specific runtime inputs (`--iteration`, `producer`, whitelisted
-`--session-id`) and any step-specific fields the step declares in its
-`requires_prompt_fields` frontmatter (see [`../extension-api/standards/ext-point-finalize-step.md`](../extension-api/standards/ext-point-finalize-step.md)
-§ "Step-specific prompt-body fields"). See the Execute Step Pipeline step § "DISPATCHED project/skill step" for the
-dispatch shape.
+as the `workflow` prompt-body field. Their input contract is the **exempt set** —
+the 5-field prompt-body shape (`name`, `plan_id`, `skills[]`, exactly one of
+`workflow`/`instructions`, `WORKTREE`), the optional 6th-field extension `caller_phase`, and the
+dispatcher-supplied runtime inputs `iteration`, `producer` and whitelisted
+`session_id` — plus any step-specific fields the step declares in its
+`requires_prompt_fields` frontmatter. Every one of those declared fields is
+carried by the generic template's declared-field slot unless the step keeps a
+dispatch body of its own. The exempt set is defined once, in
+[`../extension-api/standards/ext-point-finalize-step.md`](../extension-api/standards/ext-point-finalize-step.md)
+§ "Step-specific prompt-body fields"; do not restate its membership here. See the
+Execute Step Pipeline step § "DISPATCHED project/skill step" for the dispatch shape.
 
 In both cases the step body can access the plan's context via manage-* scripts (references, status, config).
 
@@ -579,7 +583,7 @@ The comparison consults HEAD-advance only — there is no dirty-tree re-fire bra
 
 Membership is **declared, never listed** — see the authoritative statement above. Each head-dependent step MUST persist `head_at_completion` on its terminal `--outcome done` `mark-step-done` call so the comparison above is meaningful, and each step's own authoritative doc carries the per-step instruction for capturing `git rev-parse HEAD` immediately before the `mark-step-done` invocation and forwarding it via `--head-at-completion {sha}`. Branches that mark `loop_back` or `failed` do not need to persist the SHA — the dispatcher's general resumability handling for those outcomes does not consult it. CI completion is a separate dispatcher-resolved precondition (`requires: [ci-complete]`) — its cache key is the same `git rev-parse HEAD` SHA, so the same HEAD-advance signal that invalidates a stale `done` record also invalidates the precondition cache.
 
-The `push` step is a pure push barrier and is deliberately NOT head-dependent (its doc declares no `head_dependent` fact): its skip/re-fire decision at re-entry is **parity-driven, not done-record-driven** — the item-1 re-entry check consults `branch-sync-state` (remote-comparison: `ahead` → re-fire; `synced` and the ref-absent `remote_absent_landed` / `remote_absent_unverified` verdicts → skip, so a merged-and-deleted branch is never re-pushed) instead of trusting a recorded `done`. The dispatcher additionally re-invokes it explicitly after a post-PR `mutates_source` step commits (item 5f § "Post-PR re-push") as the fast path. The freshness precondition that validates *that a `verify` was actually performed against this version of the code* (`pre-commit-verify-freshness`, see `manage-tasks/SKILL.md` § "Pre-Commit Verify Freshness") is retained on the `push` step itself — see `standards/push.md` § "Freshness precondition".
+The `push` step is a pure push barrier and is deliberately NOT head-dependent (its doc declares no `head_dependent` fact): its skip/re-fire decision at re-entry is **parity-driven, not done-record-driven** — the item-1 re-entry check consults `branch-sync-state` and branches on the `barrier_action` the verb publishes (so a merged-and-deleted branch is never re-pushed) instead of trusting a recorded `done`. The state→action mapping is not restated here: it is owned by `push_barrier_action` in `workflow-integration-git`, documented in that skill's § `branch-sync-state`. The dispatcher additionally re-invokes it explicitly after a post-PR `mutates_source` step commits (item 5f § "Post-PR re-push") as the fast path. The freshness precondition that validates *that a `verify` was actually performed against this version of the code* (`pre-commit-verify-freshness`, see `manage-tasks/SKILL.md` § "Pre-Commit Verify Freshness") is retained on the `push` step itself — see `standards/push.md` § "Freshness precondition".
 
 Resolve the comparison HEAD inside the dispatcher block at the moment of the per-step check:
 
@@ -637,12 +641,12 @@ Task: plan-marshall:{target}
     plan_id: {plan_id}
     skills[N]:
     - <step-specific skills>
-    workflow: <workflow-doc-from-table>
+    workflow: <workflow-doc-from-table>      # or `instructions:` — exactly one of the two
     <plus every step-specific field the step declares in requires_prompt_fields>
     WORKTREE: {worktree_path}
 ```
 
-The 5-field prompt-body contract (`name`, `plan_id`, `skills[]`, `workflow`, `WORKTREE`) is documented in [`plan-marshall:extension-api/standards/ext-point-execution-context-workflow`](../extension-api/standards/ext-point-execution-context-workflow.md); those five are a **floor, not a ceiling**. A step that declares step-specific required prompt-body fields in its `requires_prompt_fields` frontmatter (see [`../extension-api/standards/ext-point-finalize-step.md`](../extension-api/standards/ext-point-finalize-step.md) § "Step-specific prompt-body fields") carries each of them in the `<…>` slot above, and the dispatcher MUST forward every declared field. Do NOT hard-code any one step's field into this generic template — that leaves the class open; a step's extras live in its own dispatch body, gated to its own `requires_prompt_fields` declaration. The declaration↔carriage agreement is enforced in both directions by `test/plan-marshall/phase-6-finalize/test_step_prompt_fields_contract.py`. The variant resolution (canonical no-suffix for `inherit`/empty level; `execution-context-{level}` otherwise) lives in [`plan-marshall:plan-marshall/standards/effort-variants.md`](../plan-marshall/standards/effort-variants.md).
+The 5-field prompt-body contract (`name`, `plan_id`, `skills[]`, exactly one of `workflow`/`instructions`, `WORKTREE`) is documented in [`plan-marshall:extension-api/standards/ext-point-execution-context-workflow`](../extension-api/standards/ext-point-execution-context-workflow.md); those five are a **floor, not a ceiling**. A step that declares step-specific required prompt-body fields in its `requires_prompt_fields` frontmatter (see [`../extension-api/standards/ext-point-finalize-step.md`](../extension-api/standards/ext-point-finalize-step.md) § "Step-specific prompt-body fields") carries each of them in the `<…>` slot above, and the dispatcher MUST forward every declared field. Do NOT hard-code any one step's field into this generic template — that leaves the class open; the slot is generic and is filled from whatever the dispatched step declares. The declaration is enforced against three surfaces — the step's own dispatch body where it has one, and its input table for every step — by `test/plan-marshall/phase-6-finalize/test_step_prompt_fields_contract.py`. The variant resolution (canonical no-suffix for `inherit`/empty level; `execution-context-{level}` otherwise) lives in [`plan-marshall:plan-marshall/standards/effort-variants.md`](../plan-marshall/standards/effort-variants.md).
 
 **Inline-only built-in steps** — membership is every step classified under [`standards/dispatch-inline-split.md`](standards/dispatch-inline-split.md) § "Inline steps", the single source of truth; that roster also carries each step's own inline rationale (user interaction, sequential dependency, or a bounded polling primitive that fits comfortably under the host platform's per-call Bash ceiling). Do NOT re-list the membership here. The notes below add only the dispatcher-local sequencing detail the roster does not carry:
 - `record-metrics` is the last token-accounting step — it runs after all token-consuming steps and before the read-only `print-phase-breakdown`/`archive-plan` tail, on the still-live plan directory.
@@ -698,21 +702,21 @@ FOR each step_id in manifest.phase_6.steps:
        - ELSE IF step_id == "push" (parity-driven barrier re-entry):
            - IF outcome == "done": invoke the remote-parity probe
              `git-workflow branch-sync-state --plan-id {plan_id}`
-             (see `workflow-integration-git` Canonical invocations → `branch-sync-state`) and branch on `state`:
-               - `state == "ahead"`: RE-FIRE (the tracking ref exists but HEAD is past it — local commits
-                 are not on origin, so the `done` record is stale; dispatch the push step as a fresh run)
-               - `state == "synced"`: SKIP this step (local HEAD already on origin)
-               - `state == "remote_absent_landed"`: SKIP — the branch's work is already contained in
-                 `origin/{base_branch}` (it merged and the remote branch was deleted). Re-pushing would
-                 RESURRECT a landed branch, so the barrier MUST NOT re-fire.
-               - `state == "remote_absent_unverified"`: DO NOT re-fire — the tracking ref is absent and its
-                 cause is ambiguous (never-pushed vs squash-merged-and-deleted are indistinguishable from
-                 local state alone), so the barrier DECLINES rather than routing to a re-push that could
-                 resurrect a merged branch. Log the ambiguity and SKIP; a genuinely-unpushed branch here is
-                 an operator concern, not a silent resurrection. (This is the D4 fix: an under-determined
-                 verdict never routes to a destructive action.)
+             (see `workflow-integration-git` Canonical invocations → `branch-sync-state`) and branch on
+             the payload's `barrier_action` field — the verb computes the state→action mapping itself
+             (`push_barrier_action`), so this consumer does NOT re-derive it from the `state` token:
+               - `barrier_action == "re-fire"`: RE-FIRE (dispatch the push step as a fresh run)
+               - `barrier_action == "skip"`: SKIP this step
                - `status: error`: RE-FIRE (fail toward pushing — the push step's own freshness
-                 precondition still guards the actual push)
+                 precondition still guards the actual push). An error payload carries no
+                 `barrier_action`, because an unresolvable state is not a verdict to map.
+
+             The `state` token remains in the payload for logging and diagnosis. What each state means,
+             and why only `ahead` re-fires, is documented on `push_barrier_action` — in short: re-firing
+             is a PUSH, so an over-broad re-fire resurrects a landed branch (`remote_absent_landed`) or
+             acts on an under-determined verdict (`remote_absent_unverified`), while an over-broad skip
+             leaves a genuinely-unpushed branch for the operator to notice. Log the resolved `state`
+             alongside the action so an ambiguity-driven skip stays visible.
            - IF outcome == "failed": RETRY (proceed to dispatch as fresh run)
            - IF outcome == "loop_back": RE-FIRE (treat as no record — dispatch as fresh run)
            - IF no record OR any other value: dispatch normally
@@ -747,7 +751,7 @@ FOR each step_id in manifest.phase_6.steps:
      once per re-entry, and there is no adjacent emit step to suppress. The INFO skip-decision line
      above is the audit record for this path.
 
-     **HEAD-dependent step set**: membership is the derived `head_dependent: true` frontmatter fact — see § "Special case — HEAD-dependent steps" above for the single authoritative statement and the governing discriminator; do NOT re-list or count the members here. A loop-back commit (typically produced by `plan-marshall:automatic-review` or `sonar-roundtrip` opening a fix task that produces a new commit) advances HEAD past the previously-validated SHA, and a stale `done` record on any head-dependent step would produce a false-clean result on re-entry. The same `head_at_completion` comparison applies to every member. The `push` step is NOT head-dependent — it is a pure push barrier whose re-entry skip/re-fire decision is parity-driven, not done-record-driven: the item-1 push-specific branch consults `branch-sync-state` (`ahead` → re-fire; `synced` and the ref-absent `remote_absent_*` verdicts → skip) instead of a HEAD-comparison, and the dispatcher additionally re-invokes it explicitly after a post-PR `mutates_source` step commits (item 5f § "Post-PR re-push") as the fast path. Every other step whose authoritative doc declares no `head_dependent` fact is likewise not head-dependent — their effect is captured by side-effect (a created PR, recorded lessons, regenerated `target/claude/` from the post-merge source tree) and is idempotent against HEAD advances; the general rule above applies to them. Note that head-dependence is **orthogonal to the dispatched/inline split** — do NOT infer non-head-dependence from a step's presence on the [`standards/dispatch-inline-split.md`](standards/dispatch-inline-split.md) § "Inline steps" roster. Some steps on that roster declare `head_dependent: true` and some do not, so resolve each step's own frontmatter fact rather than inferring from its roster placement. CI completion is resolved as a separate dispatcher-side precondition (`requires: [ci-complete]`) — its cache key is the same `git rev-parse HEAD` SHA, so a HEAD advance also invalidates the precondition cache.
+     **HEAD-dependent step set**: membership is the derived `head_dependent: true` frontmatter fact — see § "Special case — HEAD-dependent steps" above for the single authoritative statement and the governing discriminator; do NOT re-list or count the members here. A loop-back commit (typically produced by `plan-marshall:automatic-review` or `sonar-roundtrip` opening a fix task that produces a new commit) advances HEAD past the previously-validated SHA, and a stale `done` record on any head-dependent step would produce a false-clean result on re-entry. The same `head_at_completion` comparison applies to every member. The `push` step is NOT head-dependent — it is a pure push barrier whose re-entry skip/re-fire decision is parity-driven, not done-record-driven: the item-1 push-specific branch consults `branch-sync-state` and branches on the `barrier_action` it publishes instead of on a HEAD-comparison, and the dispatcher additionally re-invokes it explicitly after a post-PR `mutates_source` step commits (item 5f § "Post-PR re-push") as the fast path. Every other step whose authoritative doc declares no `head_dependent` fact is likewise not head-dependent — their effect is captured by side-effect (a created PR, recorded lessons, regenerated `target/claude/` from the post-merge source tree) and is idempotent against HEAD advances; the general rule above applies to them. Note that head-dependence is **orthogonal to the dispatched/inline split** — do NOT infer non-head-dependence from a step's presence on the [`standards/dispatch-inline-split.md`](standards/dispatch-inline-split.md) § "Inline steps" roster. Some steps on that roster declare `head_dependent: true` and some do not, so resolve each step's own frontmatter fact rather than inferring from its roster placement. CI completion is resolved as a separate dispatcher-side precondition (`requires: [ci-complete]`) — its cache key is the same `git rev-parse HEAD` SHA, so a HEAD advance also invalidates the precondition cache.
 
   2. Log step start:
      python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
@@ -1045,10 +1049,13 @@ FOR each step_id in manifest.phase_6.steps:
            every field the step declares in its `requires_prompt_fields`
            frontmatter — the `<…>` slot above (see
            [`../extension-api/standards/ext-point-finalize-step.md`](../extension-api/standards/ext-point-finalize-step.md)
-           § "Step-specific prompt-body fields"; the both-direction guard
+           § "Step-specific prompt-body fields"; the three-surface guard
            `test/plan-marshall/phase-6-finalize/test_step_prompt_fields_contract.py`
-           fails the build when a declared field is not carried, or a carried
-           field is not declared). The
+           fails the build when a step's input table and its declaration disagree,
+           when a step carries an undeclared field, or when a step that keeps its
+           OWN dispatch body declares a field that body does not carry. A step
+           dispatched through this generic template has no own body, so leaving
+           the carriage to the `<…>` slot above is correct and is not a failure). The
            `[--session-id {session_id}]` runtime input follows the same whitelist
            rule documented under "Interface Contract for External Steps".
 
@@ -1752,12 +1759,12 @@ The Step 3 dispatch loop is fully resumable across re-entries: each step's `stat
 | (no record) | Dispatch as a first-time run. |
 | any other value | Dispatch as a first-time run (treat as a degraded record). |
 
-**Special case — head-dependent steps** (`pre-push-quality-gate` is the canonical example): a head-dependent step's resumable check is augmented with a worktree-HEAD comparison so a loop-back commit re-fires the gate instead of skipping it on a stale `done`. The augmented rule applies to exactly the steps whose authoritative doc declares `head_dependent: true` — see § "Special case — HEAD-dependent steps" in Step 3 for the single authoritative statement of that membership and its governing discriminator. Every step that does not declare the fact uses the general table above verbatim.
+**Special case — head-dependent steps** (`pre-push-quality-gate` is the canonical example): a head-dependent step's resumable check is augmented with a worktree-HEAD comparison, so a `done` record is not taken at face value once HEAD has advanced. **Step 3 owns both halves of this case — which steps it applies to AND what a differing SHA does** — see § "Special case — HEAD-dependent steps" there; the membership discriminator and the differing-SHA action are stated once, in that section, and are not restated here. Every step that does not declare the fact uses the general table above verbatim.
 
 | Outcome on re-entry | `head_at_completion` vs live HEAD | Action |
 |---------------------|-----------------------------------|--------|
 | `done` | matches live `git -C {worktree_path} rev-parse HEAD` | Skip dispatch entirely (steady-state — gate already validated this exact tree). |
-| `done` | differs from live HEAD | Re-fire (treat as no record — HEAD has advanced past the validated SHA, e.g., after a loop-back commit). |
+| `done` | differs from live HEAD | **Consult the verdict-currency classifier — see Step 3's table, which owns this decision.** The action is NOT an unconditional re-fire: a step that declares a `verdict_inputs` surface the tree difference does not touch resolves `preserved` and SKIPs. |
 | `done` | `head_at_completion` field absent | Re-fire AND report the prior verdict UNVERIFIED — a record with no SHA was never anchored to a tree, so it is never left standing as green. |
 | `failed` | n/a | Retry from scratch (unchanged). |
 | (no record) | n/a | Dispatch as a first-time run (unchanged). |
@@ -1765,7 +1772,7 @@ The Step 3 dispatch loop is fully resumable across re-entries: each step's `stat
 
 The live HEAD MUST be resolved fresh per iteration via `git -C {worktree_path} rev-parse HEAD` — do NOT cache across the loop, so a step that advances HEAD mid-loop is observed correctly by every later check. Cross-reference: `standards/pre-push-quality-gate.md` "Mark Step Complete" Branch A, which persists `head_at_completion` on the success path.
 
-This makes finalize safe to interrupt and re-enter — completed work is preserved, failed work gets a retry, never-run work runs for the first time, and the HEAD-dependent quality gate re-fires whenever the tree it validated has been superseded. There is no separate "resume" mode; every Phase 6 entry is implicitly resumable.
+This makes finalize safe to interrupt and re-enter — completed work is preserved, failed work gets a retry, never-run work runs for the first time, and a HEAD-dependent step whose validated tree has been superseded is re-decided rather than skipped on a stale record. Whether that re-decision re-fires the step or preserves its verdict is the verdict-currency classifier's call (Step 3), not an unconditional re-fire. There is no separate "resume" mode; every Phase 6 entry is implicitly resumable.
 
 In-step state checks (consulted by individual standards docs after dispatch — these guard idempotent operations, not skip activation):
 

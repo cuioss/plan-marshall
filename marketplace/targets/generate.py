@@ -3,11 +3,11 @@
 """CLI entry point for marketplace target generation.
 
 Usage:
-    python3 marketplace/targets/generate.py --target claude
-    python3 marketplace/targets/generate.py --target claude --output target/claude
-    python3 marketplace/targets/generate.py --target opencode --output target/opencode
-    python3 marketplace/targets/generate.py --target pr-agent --output . --packs python,plugin
-    python3 marketplace/targets/generate.py --target all --output target
+    uv run python marketplace/targets/generate.py --target claude
+    uv run python marketplace/targets/generate.py --target claude --output target/claude
+    uv run python marketplace/targets/generate.py --target opencode --output target/opencode
+    uv run python marketplace/targets/generate.py --target pr-agent --output . --packs python,plugin
+    uv run python marketplace/targets/generate.py --target all --output target
 
 Exits 0 on success, 2 on any failure (unknown target, missing required
 flag, generator-reported error).

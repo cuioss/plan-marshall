@@ -60,7 +60,11 @@ This section is scoped to a SINGLE `stale` route: `reason: worktree_mutated`, wh
 Within `worktree_mutated` there are two distinct causes, and only ONE is a genuine defect:
 
 - **Genuine un-built source drift** — source was edited after the last successful `verify`, and no build observed the current tree. This MUST stay fail-closed (halt per the table above).
-- **Finalize-internal re-stale (known-safe)** — a finalize-internal `mutates_source: true` step (`era-stamp-fill`, `lessons-capture`) committed DURING finalize, advancing the working-tree `worktree_sha` past the last `kind=build` ledger entry. The source a `verify` DID observe is unchanged; only a finalize-owned commit moved the currency hash. Overriding this silently with `--force` discards the distinction and the audit trail.
+- **Finalize-internal re-stale (known-safe)** — a finalize-internal step committed DURING finalize, advancing the working-tree `worktree_sha` past the last `kind=build` ledger entry. The source a `verify` DID observe is unchanged; only a finalize-owned commit moved the currency hash. Overriding this silently with `--force` discards the distinction and the audit trail.
+
+  **Membership is a discriminator, not a list**: a step whose authoritative doc declares `mutates_source: true` **and** whose `order` is greater than `default:pre-push-quality-gate`'s. Both operands are load-bearing. `mutates_source: true` is what makes the step capable of moving the hash at all; the order bound is what makes the move happen *after* the ledger entry this route is measured against, since that entry is written by the pre-push quality gate. A `mutates_source: true` step ordered at or below that gate commits before the ledger row exists, so its commit is already covered by it and produces no re-stale. Resolve both operands from the step docs' own frontmatter rather than from any list here — this bullet deliberately states no membership count, because a count here would go stale the moment a step is added. `default:finalize-step-simplify` and `plan-marshall:automatic-review` are among the members today, named as examples only.
+
+  `default:lessons-capture` is NOT a member and never was: it declares `mutates_source: false`.
 
 Before failing closed on `stale`, the executor MUST determine which cause applies by consulting the **reconciliation record** the dispatcher emits at `phase-6-finalize/SKILL.md` Step 3 item 5f(d) immediately after a finalize-internal `mutates_source` commit. Resolve the current HEAD:
 
@@ -116,7 +120,7 @@ Against the clean tree this barrier asserts, the Commit Changes workflow's Step 
 
 ## Mark Step Complete
 
-Record that this step ran on the live plan. This step's frontmatter declares no `head_dependent` fact, so it is not head-dependent and stamps no `head_at_completion` — it does NOT capture or forward `--head-at-completion`. Its re-entry decision is the dispatcher's `branch-sync-state` parity check (see `phase-6-finalize/SKILL.md` Step 3 item 1's push-specific branch: `ahead` → re-fire; `synced`, `remote_absent_landed`, and `remote_absent_unverified` → skip — a ref-absent verdict never re-fires, so a merged-and-deleted branch is never resurrected), with the explicit post-PR re-invocation after a `mutates_source` step commits (item 5f § "Post-PR re-push") as the fast path.
+Record that this step ran on the live plan. This step's frontmatter declares no `head_dependent` fact, so it is not head-dependent and stamps no `head_at_completion` — it does NOT capture or forward `--head-at-completion`. Its re-entry decision is the dispatcher's `branch-sync-state` parity check (see `phase-6-finalize/SKILL.md` Step 3 item 1's push-specific branch, which branches on the `barrier_action` the verb publishes — a ref-absent verdict never re-fires, so a merged-and-deleted branch is never resurrected; the state→action mapping is owned by `push_barrier_action` and is not restated here), with the explicit post-PR re-invocation after a `mutates_source` step commits (item 5f § "Post-PR re-push") as the fast path.
 
 Resolve `{branch}` — the feature branch just pushed — from the worktree HEAD:
 

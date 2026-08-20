@@ -251,7 +251,7 @@ When classification is `overlap_with_content_conflict`, the script emits ONE Q-G
 
 An `overlap_no_content_conflict` means upstream and in-flight touch overlapping files but `git merge-tree` predicts a clean three-way merge — so no re-authoring is needed, this sub-step adds no findings, and it does NOT re-enter the iterate-to-confidence loop (that loop is reserved for `overlap_with_content_conflict`, where re-authoring is genuinely required).
 
-**The probe does NOT perform the merge.** `baseline-reconcile` is a non-mutating classifier on every path: it reports `auto_reconcilable: true` — a *capability* signal established by the tree-level `git merge-tree`, not a claim that a merge happened — and leaves HEAD unchanged. The actual reconcile is owned by the standard rebase steps that already run against `origin/{base_branch}`: phase-5's `sync-with-main` self-absorption and phase-6's `sync-baseline` / `branch-cleanup` rebases. A probe that merged here would move the branch ref out from under the very merge-base its ranges anchor on, so the next call would re-report the merged-in commits as still-upstream — a self-inflicted, self-amplifying over-report. Deferring the reconcile to the rebase steps is what keeps the classifier truthful and idempotent.
+**The probe does NOT perform the merge.** `baseline-reconcile` moves no refs and touches no working-tree file on any path (its one persisted write is the stale-`base_branch` auto-update — see the skip table above): it reports `auto_reconcilable: true` — a *capability* signal established by the tree-level `git merge-tree`, not a claim that a merge happened — and leaves HEAD unchanged. The actual reconcile is owned by the standard rebase steps that already run against `origin/{base_branch}`: phase-5's `sync-with-main` self-absorption and phase-6's `sync-baseline` / `branch-cleanup` rebases. A probe that merged here would move the branch ref out from under the very merge-base its ranges anchor on, so the next call would re-report the merged-in commits as still-upstream — a self-inflicted, self-amplifying over-report. Deferring the reconcile to the rebase steps is what keeps the classifier truthful and idempotent.
 
 | classification | script payload fields | next sub-step |
 |----------------|----------------------|---------------|
@@ -271,15 +271,24 @@ The fetch/compare path above is read-only — it never touches the working tree.
 
 ### Skip Conditions Summary
 
-| Condition | Behavior |
-|-----------|----------|
-| `metadata.use_worktree == false` | Skip entirely |
-| No base branch configured | Skip entirely |
-| Repo has no remote | Skip entirely |
-| `git fetch` fails (network, auth) | Log warning, skip — do not block refine on transient infrastructure issues |
-| Zero upstream commits since phase-1-init | Fast-path log, no findings |
-| Upstream commits exist but none overlap request files | Log each commit, no findings |
-| Upstream commits overlap request files | Emit one blocking Q-Gate finding per overlapping commit |
+Each `status: skipped` row below names the `reason` the return carries, so a consumer branches on
+the token rather than on prose. There is no *no-base-branch* skip: an unconfigured base branch
+falls back to `main` (`base_branch_source: default`) and the probe proceeds. A skip is the probe **declining to classify**; the payload carries no
+`classification` field, so a consumer that parses one without checking `status` first reads nothing.
+
+| Condition | `status` / `reason` | Behavior |
+|-----------|---------------------|----------|
+| `metadata.use_worktree == false` (worktree state `disabled`) | `skipped` / `main_checkout_flow` | Skip entirely |
+| Worktree declared but not materialized yet (state `pending`) | `skipped` / `worktree_not_materialized` | Skip entirely. Distinct from the row above on purpose: the plan IS bound to a worktree, nobody has created it |
+| `status.json` missing or unparseable, or its declared path resolves to nothing / is not a directory | `skipped` / `status_not_found` \| `status_module_unavailable` \| `worktree_path_missing` \| `worktree_path_not_a_directory` | Skip entirely |
+| Repo has no remote | `skipped` / `no_remote` | Skip entirely |
+| `git fetch` fails (network, auth) | `skipped` / `fetch_failed` | Log warning, skip — do not block refine on transient infrastructure issues |
+| `git rev-parse HEAD` does not resolve in the worktree | `skipped` / `head_unresolved` | Fail closed: skip without a classification. An unresolvable HEAD leaves nothing to anchor the comparison on |
+| `merge-base(HEAD, origin/{base_branch})` does not resolve | `skipped` / `merge_base_unresolved` | Fail closed: skip without a classification. Unrelated histories or an absent upstream ref leave no anchor for the commit range or the conflict probe |
+| HEAD moved during the probe | `error` / `probe_mutated_head` | STOP. The classifier moves no refs, so a moved ref means it cannot be trusted to have classified the state it reported; it refuses to return a verdict derived from a mutated tree |
+| Zero upstream commits since phase-1-init | `success` | Fast-path log, no findings |
+| Upstream commits exist but none overlap request files | `success` | Log each commit, no findings |
+| Upstream commits overlap request files | `success` | Emit one blocking Q-Gate finding per overlapping commit |
 
 ### Logging
 

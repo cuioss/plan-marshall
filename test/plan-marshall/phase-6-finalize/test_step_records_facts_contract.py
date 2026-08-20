@@ -353,8 +353,31 @@ def test_work_performed_is_recorded_on_every_done_call_site():
     )
 
 
+#: Outcomes that TERMINATE a dispatch and therefore carry the fact obligation.
+#: ``records_facts`` is defined as the union over a step's terminal call sites,
+#: and ``loop_back`` ends the dispatch exactly as ``done`` does — it hands control
+#: back rather than continuing, so its record is the last word on that run.
+#: ``failed`` is excluded: it reports that the step did not complete, so it makes
+#: no claim about what work was performed.
+_TERMINAL_OUTCOMES = frozenset({'done', 'loop_back'})
+
+
 def test_work_performed_has_a_false_carrier_on_every_declaring_step():
-    """(7) A key that is always ``true`` cannot separate the two states."""
+    """(7) A key that is always ``true`` cannot separate the two states.
+
+    Scoped to TERMINAL call sites, not to ``done`` alone. The distinction became
+    load-bearing when the two work-free branches that motivated this key moved
+    off ``done``: ``emit-landing``'s failed-write branch and ``branch-cleanup``'s
+    Branch F now record ``loop_back``, because a ``done`` record is skipped on
+    re-entry and would strand the work they defer. Both still record
+    ``work_performed=false`` — the key distinguishes exactly what it always did.
+
+    Restricting this to ``done`` would now demand that a step keep a work-free
+    ``done`` branch purely to satisfy the guard, which is the bug those branches
+    were changed to fix. What the key must have is a false carrier on SOME
+    terminal site; which outcome carries it is a control-flow decision the
+    resumability contract owns, not this guard.
+    """
     offenders = []
     for record in _declaring_records():
         if _WORK_PERFORMED not in record['facts']:
@@ -362,17 +385,17 @@ def test_work_performed_has_a_false_carrier_on_every_declaring_step():
         values = {
             _block_facts(block).get(_WORK_PERFORMED)
             for block in _doc_blocks(record)
-            if _block_outcome(block) == 'done'
+            if _block_outcome(block) in _TERMINAL_OUTCOMES
         }
         if 'false' not in values:
             offenders.append(f"{record['name']}: recorded values {sorted(v for v in values if v)}")
 
     assert not offenders, (
-        f'These steps declare {_WORK_PERFORMED} but no --outcome done call site '
-        f'records it false. The key exists precisely because a done branch is '
-        f'reachable WITHOUT the step having performed its characteristic work; '
-        f'if every branch reports true, the declaration distinguishes nothing: '
-        f'{offenders}'
+        f'These steps declare {_WORK_PERFORMED} but no TERMINAL call site '
+        f'(--outcome done or loop_back) records it false. The key exists precisely '
+        f'because a terminal branch is reachable WITHOUT the step having performed '
+        f'its characteristic work; if every branch reports true, the declaration '
+        f'distinguishes nothing: {offenders}'
     )
 
 

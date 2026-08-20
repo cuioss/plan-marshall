@@ -75,6 +75,7 @@ from _analyze_skill_notation import analyze_skill_notation
 from _analyze_skill_relative_temp_path import analyze_skill_relative_temp_path
 from _analyze_step_configurable_contract import scan_step_configurable_contract
 from _analyze_sys_path_bootstrap import analyze_sys_path_bootstrap
+from _analyze_target_scope import analyze_target_scope
 from _analyze_thinking_directive_in_workflow_docs import (
     analyze_thinking_directive_in_workflow_docs,
 )
@@ -223,6 +224,11 @@ class RuleRunner:
         # project-config exemptions apply (CodeRabbit PR #811 review fix).
         emit('analyze_lane_frontmatter', suppressed(analyze_lane_frontmatter(root)))
         emit('analyze_skill_mode', scoped(analyze_skill_mode(root)))
+        # targets-scope-invalid — a component's build-time `targets:` frontmatter
+        # naming an unregistered target, or declaring an empty list. The
+        # multi-target build rejects both; catching them here reports the defect
+        # while the author is still looking at the file.
+        emit('analyze_target_scope', scoped(analyze_target_scope(root)))
         emit(
             'analyze_persona_profile_uniqueness',
             scoped(analyze_persona_profile_uniqueness(root)),
@@ -367,6 +373,7 @@ class RuleRunner:
         issues.extend(analyze_readme_skill_coverage(root))
         issues.extend(analyze_skill_notation(root))
         issues.extend(analyze_frontmatter(root))
+        issues.extend(analyze_target_scope(root))
         issues.extend(analyze_resolver_matrix_coverage(root, cache=cache))
 
         if 'script_call_drift' in active_rules:

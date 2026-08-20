@@ -72,6 +72,15 @@ class TargetBase(ABC):
         Returns:
             A list of generated (or would-be-generated) file paths. May be
             empty for validation-only modes.
+
+        A target that emits a component tree MUST honour each component's
+        ``targets:`` frontmatter scope: a component whose declaration omits
+        this target's :attr:`name` is not emitted at all. The predicate is
+        ``marketplace.targets.component_targets.emits_to``; nothing in this
+        base class can apply it on a subclass's behalf, because only the
+        subclass knows which paths it emits and when. A target whose output
+        is not a component tree has nothing to filter and is exempt by its
+        own ``emits_bundle_tree`` declaration.
         """
 
     def finalize(self, output_dir: Path, marketplace_dir: Path) -> list[Path]:

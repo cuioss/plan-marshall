@@ -7,6 +7,8 @@ description: Early baseline rebase — rebase the worktree feature branch onto o
 order: 3
 mutates_source: true
 advances_main_via_rebase: true
+reads:
+  - worktree
 records_facts:
   - action
   - upstream_commit_count
@@ -73,7 +75,7 @@ python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   decision --plan-id {plan_id} --level INFO --message "(plan-marshall:phase-6-finalize) Sync baseline: classifier bypassed (threshold=never), pre-rebase gate will fire"
 ```
 
-Otherwise, dispatch the existing `baseline-reconcile` probe to classify the upcoming rebase against `origin/{base_branch}`. `--no-emit` suppresses Q-Gate finding emission (those are a phase-2-refine concern; this step consumes the classification directly). The probe is a **non-mutating classifier on every classification** — it performs only `fetch + diff + merge-tree`, anchors its ranges on `merge-base(HEAD, origin/{base_branch})` recomputed per call, and never moves the branch ref. The rebase itself is performed later by `worktree-rebase-to`, not by the probe:
+Otherwise, dispatch the existing `baseline-reconcile` probe to classify the upcoming rebase against `origin/{base_branch}`. `--no-emit` suppresses Q-Gate finding emission (those are a phase-2-refine concern; this step consumes the classification directly). The probe **never moves the branch ref and never touches the working tree** on any classification, and anchors its ranges on `merge-base(HEAD, origin/{base_branch})` recomputed per call. It is not side-effect-free: its one persisted write is a **stale-`base_branch` auto-update**, which fires only when the configured base branch no longer resolves on origin — it rewrites `base_branch` in `references.json` and emits a decision-log entry, and it runs BEFORE the fetch and is NOT gated by `--no-emit` (`--no-emit` suppresses Q-Gate findings only). When it fires, the return carries `base_branch_updated: true` and `original_base_branch`. The rebase itself is performed later by `worktree-rebase-to`, not by the probe:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workflow \
@@ -82,7 +84,12 @@ python3 .plan/execute-script.py plan-marshall:workflow-integration-git:git-workf
 
 Parse the returned TOON for `classification`, `auto_reconcilable`, `conflict_count`, `conflicts[]`, and `upstream_commit_count`.
 
-If the script exits non-zero (per the **Exit-code convention** above) → STOP and return an error TOON to the dispatcher carrying the stderr verbatim. Do NOT silently fall back to `needs_user` on classifier failure — a broken probe is a different signal than a real conflict and must surface as an error.
+Branch on the returned `status` **before** parsing `classification` — the wrapper prints the payload through a helper that always exits 0, so an "if the script exits non-zero" test never fires and a skipped or errored payload carries no `classification` field to parse:
+
+- **`status: error`** → STOP and return the error TOON to the dispatcher verbatim. Do NOT silently fall back to `needs_user` on classifier failure — a broken probe is a different signal than a real conflict and must surface as an error.
+- **`status: skipped`** → force `{decision} = needs_user` and log the returned `reason`. A skip is the probe declining to classify (no worktree, no remote, a failed fetch, an unresolvable HEAD, or an unresolvable merge base), which is not evidence that the rebase is safe.
+- **`status: success`** → proceed to parse `classification`.
+
 
 ### Compute the gate decision
 
@@ -90,7 +97,7 @@ Apply the following rules in order; the first match wins:
 
 - `classification == no_overlap` → `{decision} = auto_proceed` (regardless of threshold, except `never` which already short-circuited above).
 - `classification == overlap_no_content_conflict` AND `auto_reconcilable == true` AND `{threshold} == auto_resolvable` → `{decision} = auto_proceed`.
-- `classification == overlap_no_content_conflict` AND (`auto_reconcilable == false` OR `{threshold} == no_overlap_only`) → `{decision} = needs_user` (the threshold opts out even for an auto-reconcilable overlap — `auto_reconcilable` is a non-mutating capability signal, so an `overlap_no_content_conflict` always reports `auto_reconcilable == true`; the probe never performs the reconcile itself, that is `worktree-rebase-to`'s job).
+- `classification == overlap_no_content_conflict` AND `{threshold} == no_overlap_only` → `{decision} = needs_user` (the threshold opts out even for an auto-reconcilable overlap — `auto_reconcilable` is a non-mutating capability signal, so an `overlap_no_content_conflict` always reports `auto_reconcilable == true`; the probe never performs the reconcile itself, that is `worktree-rebase-to`'s job).
 - `classification == overlap_with_content_conflict` → `{decision} = needs_user` (genuine conflict requiring human resolution).
 
 Log the classifier decision for grep-ability and retrospective audit:

@@ -265,25 +265,23 @@ python3 .plan/execute-script.py plan-marshall:plan-marshall:phase_handshake veri
 
 Compute the dispatch target via the role resolver. Phases 2-4 always run on the main checkout (the worktree is not materialized until phase-5 Step 2.5), so the dispatch's `WORKTREE:` header is the static main-checkout marker `.`:
 
+The resolve carries the dispatch context (`--workflow`/`--plan-id`/`--caller`), so the seam emits the standardized `[DISPATCH]` work-log line and its paired decision-log record itself — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. Do NOT hand-write a separate `[DISPATCH]` line; every firing re-runs the resolve, so the record is re-emitted per firing. The `[ATTEMPT]` line below is a different marker with a different consumer and is still hand-emitted.
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --role phase-2-refine
+  effort resolve-target --role phase-2-refine \
+  --workflow plan-marshall:phase-2-refine/SKILL.md --plan-id {plan_id} \
+  --caller plan-marshall:plan-marshall
 ```
 
-Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch and the post-resolve log line below.
+Extract the `target` field from the TOON output. Use that value as `{target}` in the dispatch below.
 
-Emit the standardized pre-dispatch attempt log line and the post-resolve dispatch log line — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract for the field semantics and placement rule:
+Emit the standardized pre-dispatch attempt log line:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO \
   --message "[ATTEMPT] (plan-marshall:plan-marshall) dispatching target={target} role=phase-2-refine plan_id={plan_id}"
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO \
-  --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=phase-2-refine workflow=plan-marshall:phase-2-refine/SKILL.md plan_id={plan_id}"
 ```
 
 Dispatch:
@@ -301,29 +299,29 @@ Task: plan-marshall:{target}
 
 The agent returns confidence + track + scope_estimate + qgate_pending_count + qgate_validation_required (plus a conditional `refine_prompt` envelope) in its TOON. The 12-step confidence loop (Steps 3b/3c/8/9/10/11/12) iterates *inside* this single envelope. **Operator prompts inside an `execution-context` dispatch are unreachable at runtime** — a dispatched leaf does NOT receive `AskUserQuestion`, so the Step 11 clarification cannot prompt the operator from the subagent. Instead the leaf batches every open clarification question into a `refine_prompt` **prompt-required envelope** and this main-context orchestrator owns the prompt, per [`ref-workflow-architecture/standards/agents.md`](../../ref-workflow-architecture/standards/agents.md) § "Leaf cannot fire AskUserQuestion — return a prompt-required envelope". The **Post-return `refine_prompt` batched operator-question dispatch** block below handles the envelope.
 
-**Post-return `refine_prompt` batched operator-question dispatch (conditional)**: Read the `refine_prompt` envelope from the phase-2-refine return TOON captured above. When it is present with one or more questions, the leaf's confidence fell below threshold and it batched the open clarification questions it could not resolve on its own — it completed the refine pass with a best-judgment `clarified_request` but flagged these for operator confirmation. Because the dispatched leaf cannot reach the operator but this orchestrator runs in the main context and can (see [`ref-workflow-architecture/standards/agents.md` § Leaf cannot fire AskUserQuestion](../../ref-workflow-architecture/standards/agents.md#leaf-cannot-fire-askuserquestion--return-a-prompt-required-envelope)), fire ONE batched `AskUserQuestion` covering EVERY question in the envelope, presenting each with the leaf's `recommended` default. After the operator answers, re-dispatch phase-2-refine **at most once** via the same `Task: plan-marshall:{target}` envelope used above, baking every answer into the dispatch prompt so the re-entered leaf records the clarifications (Step 12) and re-analyzes to threshold. A re-dispatched run that is still below threshold returns the current confidence flagged for manual review — do NOT re-dispatch a second time. When the `refine_prompt` envelope is absent or carries no questions, skip this block.
+**Post-return `refine_prompt` batched operator-question dispatch (conditional)**: Read the `refine_prompt` envelope from the phase-2-refine return TOON captured above. When it is present with one or more questions, the leaf's confidence fell below threshold and it batched the open clarification questions it could not resolve on its own — it completed the refine pass with a best-judgment `clarified_request` but flagged these for operator confirmation. Because the dispatched leaf cannot reach the operator but this orchestrator runs in the main context and can (see [`ref-workflow-architecture/standards/agents.md` § Leaf cannot fire AskUserQuestion](../../ref-workflow-architecture/standards/agents.md#leaf-cannot-fire-askuserquestion--return-a-prompt-required-envelope)), fire ONE batched `AskUserQuestion` covering EVERY question in the envelope, presenting each with the leaf's `recommended` default. After the operator answers, re-run the resolve above (which re-emits) and re-dispatch phase-2-refine **at most once** through the resulting envelope, baking every answer into the dispatch prompt so the re-entered leaf records the clarifications (Step 12) and re-analyzes to threshold. A re-fire re-runs the resolve, which re-emits the `[DISPATCH]` record for that firing; a re-dispatch that reused a previously-resolved `{target}` without re-resolving would contribute ONE trail line for N firings. A re-dispatched run that is still below threshold returns the current confidence flagged for manual review — do NOT re-dispatch a second time. When the `refine_prompt` envelope is absent or carries no questions, skip this block.
 
 **Post-return q-gate-validation dispatch (conditional)**: Read `qgate_validation_required` from the phase return TOON captured above. When `true` (lesson-derived plan activated Step 13.5's `narrative-vs-code-validator`), dispatch q-gate-validation as a sibling top-level Task at the orchestrator layer — the phase body cannot spawn it because the `Task` tool is unavailable inside an `execution-context-{level}` subagent. When `false` or absent, skip this block and continue to the Post-dispatch contract assertion below.
 
 Resolve the dispatch target via the same role used for phase-2-refine (q-gate-validation tracks the calling phase's default per the manage-config effort contract):
 
+The resolve carries the dispatch context (`--workflow`/`--plan-id`/`--caller`), so the seam emits the standardized `[DISPATCH]` work-log line and its paired decision-log record itself — see [`ref-workflow-architecture/standards/dispatch-logging.md`](../../ref-workflow-architecture/standards/dispatch-logging.md) § Emission contract. Do NOT hand-write a separate `[DISPATCH]` line; every firing re-runs the resolve, so the record is re-emitted per firing. The `[ATTEMPT]` line below is a different marker with a different consumer and is still hand-emitted.
+
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  effort resolve-target --role phase-2-refine
+  effort resolve-target --role phase-2-refine \
+  --workflow plan-marshall:plan-marshall/workflow/q-gate-validation.md --plan-id {plan_id} \
+  --caller plan-marshall:plan-marshall
 ```
 
-Extract the `target` field. Emit the standardized pre-dispatch attempt log line and the post-resolve dispatch log line:
+Extract the `target` field. The emitted `role=` is `phase-2-refine` — the role-key this resolve actually used. The hand-written line this replaced claimed `role=q-gate-validation`, a role no resolve here ever passed.
+
+Emit the standardized pre-dispatch attempt log line:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
   work --plan-id {plan_id} --level INFO \
-  --message "[ATTEMPT] (plan-marshall:plan-marshall) dispatching target={target} role=q-gate-validation plan_id={plan_id}"
-```
-
-```bash
-python3 .plan/execute-script.py plan-marshall:manage-logging:manage-logging \
-  work --plan-id {plan_id} --level INFO \
-  --message "[DISPATCH] (plan-marshall:plan-marshall) target={target} level={level} role=q-gate-validation workflow=plan-marshall:plan-marshall/workflow/q-gate-validation.md plan_id={plan_id}"
+  --message "[ATTEMPT] (plan-marshall:plan-marshall) dispatching target={target} role=phase-2-refine plan_id={plan_id}"
 ```
 
 Dispatch:

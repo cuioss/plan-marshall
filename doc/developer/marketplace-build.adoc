@@ -44,7 +44,7 @@ The marketplace generator also supports non-Claude targets via adapters under `m
 
 [source,bash]
 ----
-python3 marketplace/targets/generate.py --target opencode --output target/opencode
+uv run python marketplace/targets/generate.py --target opencode --output target/opencode
 ----
 
 The OpenCode adapter produces output conforming to the OpenCode specification; only the Claude target is validated end-to-end. Adapter implementations register in `TARGET_REGISTRY` (see `marketplace/targets/generate.py`).
@@ -55,7 +55,7 @@ Not every target emits an assistant bundle tree. The `pr-agent` target emits a r
 
 [source,bash]
 ----
-python3 marketplace/targets/generate.py --target pr-agent --output . --packs python,plugin
+uv run python marketplace/targets/generate.py --target pr-agent --output . --packs python,plugin
 ----
 
 Three consequences follow from that difference, and all are load-bearing.
@@ -145,8 +145,9 @@ Plan Marshall adds frontmatter fields the open standard does not define. These a
 * `user-invocable` (required) — whether the skill appears in the slash menu or is loaded only internally.
 * `mode` (required) — the execution archetype (`knowledge` / `workflow` / `script-executor` / `manifest`) that tells an agent how to consume the skill.
 * `implements` (optional) — declares that the skill satisfies a Plan Marshall extension-point contract.
+* `targets` (optional) — the build targets the component ships to; absent means every target that emits a component tree. Consumed by the adapter system below, which omits the component from any target the list does not name.
 
-The full optional set (`argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`) is documented in `frontmatter-standards.md`. None of these fields is part of the agentskills.io spec; they are Plan Marshall's own workflow metadata.
+The further optional fields are listed in xref:../../marketplace/bundles/pm-plugin-development/skills/plugin-architecture/references/frontmatter-standards.md[`frontmatter-standards.md`] § Optional Fields rather than restated here, and that list is not an exhaustive register — a field may instead be declared by the extension-point contract that owns it. None of these fields is part of the agentskills.io spec; they are Plan Marshall's own workflow metadata.
 
 === How the adapter system relates to the standard
 
@@ -175,7 +176,7 @@ The Claude Code marketplace registration MUST point at `target/claude/`, not at 
 
 One-time migration on a developer machine:
 
-1. Ensure `target/claude/` is current: `python3 marketplace/targets/generate.py --target claude --output target/claude`.
+1. Ensure `target/claude/` is current: `uv run python marketplace/targets/generate.py --target claude --output target/claude`.
 2. Re-point the marketplace: edit `~/.claude/plugins/known_marketplaces.json` so the `plan-marshall` entry's `source.path` and `installLocation` point at `/path/to/plan-marshall/target/claude` (NOT `.../marketplace`). Alternatively, in-app: `/plugin marketplace remove plan-marshall` then `/plugin marketplace add /path/to/plan-marshall/target/claude`.
 3. Reinstall the plugins so install metadata picks up the variant-aware `plugin.json`: `claude plugin uninstall plan-marshall@plan-marshall && claude plugin install plan-marshall@plan-marshall` (repeat per bundle as needed).
 4. Restart Claude Code or run `/reload-plugins`.

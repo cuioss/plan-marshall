@@ -328,7 +328,7 @@ def test_default_plan_finalize_ceremony_gates_have_no_run_at_all_params():
     # qgate no longer a flat phase-level sibling.
     assert 'qgate' not in finalize, (
         'plan.phase-6-finalize.qgate must NOT survive as a flat run-at-all sibling '
-        '(finalize-qgate now rides steps[pre-push-quality-gate].lane)'
+        '(finalize-qgate now rides steps[default:pre-push-quality-gate].lane)'
     )
 
     config = _config_defaults_mod.get_default_config()
@@ -1561,7 +1561,7 @@ def test_default_plan_finalize_drops_flat_step_owned_knobs():
     assert finalize['max_iterations'] == 3
     assert finalize['finalize_without_asking'] is True
     # qgate is no longer a flat run-at-all sibling — finalize-qgate now rides
-    # steps[pre-push-quality-gate].lane (the ceremony run-at-all → lane migration).
+    # steps[default:pre-push-quality-gate].lane (the ceremony run-at-all → lane migration).
     assert 'qgate' not in finalize
 
 

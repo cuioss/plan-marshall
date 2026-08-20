@@ -30,6 +30,7 @@ Covered:
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from conftest import MARKETPLACE_ROOT, get_script_path, load_script_module, run_script
@@ -62,23 +63,39 @@ _PRE_FIX_PROSE_LANDING = (
 )
 
 
+#: A representative value per required fact key. This is a SAMPLE table, not a
+#: second copy of the required-key list: :func:`_facts_block` iterates
+#: ``LANDING_REQUIRED_KEYS`` and looks each key up here, so a key added to the
+#: constant with no sample fails loudly instead of silently dropping out of every
+#: "complete" fixture — which would leave the completeness assertions green while
+#: exercising an incomplete block.
+_SAMPLE_FACT_VALUES: dict[str, str] = {
+    'schema': LANDING_FACTS_SCHEMA,
+    'plan_id': 'truthful-signals-302',
+    'pr': '#1234',
+    'merge_state': 'merged',
+    'deliverables_total': '6',
+    'deliverables_done': '6',
+    'total_tokens': '512000',
+    'steps': 'push:done,create-pr:done,archive-plan:done',
+}
+
+
 def _facts_block(**overrides: str) -> str:
     """Build a complete ``landing-facts`` block, with optional key overrides.
 
-    Every required key is present with a non-empty value by default; an override
-    of ``''`` drops a key's value (to exercise the missing-key branch) and an
-    override to a non-``None`` value replaces it.
+    The default key set is ``LANDING_REQUIRED_KEYS`` itself — iterated, not
+    transcribed — so a key added to the constant is present in every fixture
+    automatically. An override of ``''`` drops a key's value (to exercise the
+    missing-key branch) and an override to a non-``None`` value replaces it.
     """
-    values = {
-        'schema': LANDING_FACTS_SCHEMA,
-        'plan_id': 'truthful-signals-302',
-        'pr': '#1234',
-        'merge_state': 'merged',
-        'deliverables_total': '6',
-        'deliverables_done': '6',
-        'total_tokens': '512000',
-        'steps': 'push:done,create-pr:done,archive-plan:done',
-    }
+    unmapped = [key for key in LANDING_REQUIRED_KEYS if key not in _SAMPLE_FACT_VALUES]
+    assert not unmapped, (
+        f'LANDING_REQUIRED_KEYS carries {unmapped}, for which _SAMPLE_FACT_VALUES has no '
+        'sample. Add one — omitting it would silently build an INCOMPLETE block and every '
+        'assertion that a complete landing passes would be exercising the wrong input.'
+    )
+    values = {key: _SAMPLE_FACT_VALUES[key] for key in LANDING_REQUIRED_KEYS}
     values.update(overrides)
     lines = '\n'.join(f'{key}={value}' for key, value in values.items())
     return f'{_FENCE}landing-facts\n{lines}\n{_FENCE}'
@@ -139,6 +156,118 @@ class TestSeenToFailOnPreFixLanding:
         assert 'schema' in LANDING_REQUIRED_KEYS
         assert 'total_tokens' in LANDING_REQUIRED_KEYS
         assert 'steps' in LANDING_REQUIRED_KEYS
+
+
+# =============================================================================
+# The two DOCUMENTED enumerations agree with the constant
+# =============================================================================
+#
+# ``LANDING_REQUIRED_KEYS`` is restated twice in prose: the payload spec's
+# required-key table, and the producer's Step 2 enumeration. Nothing derived
+# either from the constant, so a key added to or removed from the constant left
+# both documents describing a payload shape the validator no longer enforces —
+# and a producer following the stale enumeration emits a landing the drain
+# rejects. Both parsers extract the documented set and assert EQUALITY, so a
+# divergence in either direction fails.
+
+_EMIT_LANDING_DOC: Path = _PLAN_MARSHALL / 'phase-6-finalize' / 'standards' / 'emit-landing.md'
+
+#: A backticked code span. Used to pull key names out of a prose enumeration.
+_CODE_SPAN = re.compile(r'`([^`]+)`')
+
+#: A fact KEY as written in either enumeration: lowercase words and underscores,
+#: optionally followed by ``=`` and a sample value (the spec writes the schema
+#: marker as ``schema=landing-facts/1``). Anything else a code span may hold — a
+#: fence info-string (``landing-facts``), a placeholder (``{step}:{outcome}``), a
+#: sentinel (``n/a``) — fails to match and is excluded by construction.
+_FACT_KEY = re.compile(r'^([a-z][a-z0-9_]*)(?:=.*)?$')
+
+
+def _keys_from_code_spans(text: str) -> set[str]:
+    """Every fact key named by a backticked code span in ``text``."""
+    keys = set()
+    for span in _CODE_SPAN.findall(text):
+        match = _FACT_KEY.match(span.strip())
+        if match:
+            keys.add(match.group(1))
+    return keys
+
+
+def _spec_table_keys() -> set[str]:
+    """The `Key` column of the payload spec's required-fact-keys table.
+
+    The section is located by its heading and bounded by the next heading, so a
+    table added elsewhere in the document is not folded in.
+    """
+    text = _PAYLOAD_SPEC.read_text(encoding='utf-8')
+    section = re.search(
+        r'^## Required machine-readable fact keys$(.*?)(?=^## |\Z)',
+        text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert section, (
+        f'{_PAYLOAD_SPEC.name} carries no "## Required machine-readable fact keys" '
+        'section, so this guard would read an empty table.'
+    )
+    keys = set()
+    for row in re.finditer(r'^\|\s*`([^`]+)`\s*\|', section.group(1), re.MULTILINE):
+        keys.add(row.group(1).strip())
+    return keys
+
+
+def _emit_landing_enumeration_keys() -> set[str]:
+    """The required keys enumerated in emit-landing.md's Step 2 body part 2.
+
+    The enumeration is truncated at ``Optional keys``, which introduces the keys a
+    landing MAY carry: folding those in would make the set a superset of the
+    required one and the equality assertion could never hold.
+    """
+    text = _EMIT_LANDING_DOC.read_text(encoding='utf-8')
+    item = re.search(r'^2\. \*\*The required.*$', text, re.MULTILINE)
+    assert item, (
+        f'{_EMIT_LANDING_DOC.name} carries no Step 2 "The required `landing-facts` fenced '
+        'block" enumeration item, so this guard would read nothing.'
+    )
+    body = item.group(0)
+    optional_at = body.find('Optional keys')
+    assert optional_at != -1, (
+        'The Step 2 enumeration no longer names "Optional keys", so the truncation that '
+        'separates required from optional has nothing to cut at and the extracted set '
+        'would silently include the optional keys.'
+    )
+    return _keys_from_code_spans(body[:optional_at])
+
+
+class TestDocumentedEnumerationsMatchTheConstant:
+    def test_the_extractors_are_not_vacuous(self):
+        """Both parsers must find something, or the equalities below prove nothing."""
+        assert _spec_table_keys(), 'the payload-spec table parser extracted no keys'
+        assert _emit_landing_enumeration_keys(), (
+            'the emit-landing Step 2 enumeration parser extracted no keys'
+        )
+
+    def test_payload_spec_table_names_exactly_the_required_keys(self):
+        assert _spec_table_keys() == set(LANDING_REQUIRED_KEYS), (
+            'The payload spec\'s "Required machine-readable fact keys" table and '
+            '`LANDING_REQUIRED_KEYS` disagree. A key in the table but not the constant is '
+            'documented as required and enforced by nothing; a key in the constant but not '
+            'the table is enforced by the drain and documented nowhere, so a producer '
+            f'following the spec emits a landing the drain rejects. Table: '
+            f'{sorted(_spec_table_keys())}; constant: {sorted(LANDING_REQUIRED_KEYS)}.'
+        )
+
+    def test_emit_landing_enumeration_names_exactly_the_required_keys(self):
+        assert _emit_landing_enumeration_keys() == set(LANDING_REQUIRED_KEYS), (
+            "emit-landing.md's Step 2 enumeration and `LANDING_REQUIRED_KEYS` disagree. "
+            'The enumeration is what the PRODUCER follows, so a key it omits is one the '
+            'emitted landing will not carry and the drain will reject. Enumeration: '
+            f'{sorted(_emit_landing_enumeration_keys())}; constant: '
+            f'{sorted(LANDING_REQUIRED_KEYS)}.'
+        )
+
+    def test_the_two_documents_agree_with_each_other(self):
+        """Transitively implied by the two equalities, asserted for a direct message."""
+        assert _spec_table_keys() == _emit_landing_enumeration_keys()
 
 
 # =============================================================================

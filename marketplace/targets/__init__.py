@@ -13,6 +13,10 @@ Adding a new target:
        `register_target('{name}', YourTarget)`.
     4. Import the new sub-package below so the registration side-effect
        fires when callers `import marketplace.targets`.
+    5. If the target emits a component tree, honour each component's
+       `targets:` frontmatter scope from the emit path — see
+       `TargetBase.generate` and `marketplace/targets/README.md`
+       § "Adding a New Target", which carries the full checklist.
 """
 
 from __future__ import annotations
@@ -28,7 +32,20 @@ def register_target(name: str, target_cls: type[TargetBase]) -> None:
     Idempotent: re-registering the same name with the same class is a
     no-op. Re-registering with a different class is rejected so reload
     accidents do not silently replace a target.
+
+    Raises:
+        ValueError: ``name`` is empty, or contains a comma or whitespace.
+        RuntimeError: ``name`` is already registered to a different class.
     """
+    if not name or ',' in name or any(ch.isspace() for ch in name):
+        raise ValueError(
+            f'Target name {name!r} must be non-empty and contain neither a comma nor '
+            'whitespace. The comma is load-bearing: component target scoping accepts '
+            '`targets: a, b`, which YAML reads as one string, and splits it on commas — '
+            'so a name containing one could never be matched by that spelling while '
+            'still matching in a list. Whitespace is a naming convention, since a '
+            'registry name is also a `--target` command-line value.'
+        )
     existing = TARGET_REGISTRY.get(name)
     if existing is target_cls:
         return

@@ -138,6 +138,7 @@ _accf = _load('_cmd_cross_file.py', '_accf_fixtures')
 verify_findings = _accf.verify_findings
 _abfic = _load('_analyze_bash_fence_inline_code_exemption.py', '_abfic_fixtures')
 _asm = _load('_analyze_skill_mode.py', '_asm_fixtures')
+_ats = _load('_analyze_target_scope.py', '_ats_fixtures')
 _appu = _load('_analyze_persona_profile_uniqueness.py', '_appu_fixtures')
 _apbr = _load('_analyze_persona_binding_resolves.py', '_apbr_fixtures')
 _aalb = _load('_analyze_agentfile_line_budget.py', '_aalb_fixtures')
@@ -480,6 +481,18 @@ def build_fixture_corpus() -> dict[str, FixtureSpec]:
     corpus['skill-missing-mode'] = FixtureSpec(
         analyzer=_asm.analyze_skill_mode,
         files={_PM_SKILL: _GOOD_SKILL_FM + '\n# F\n'},
+    )
+    # targets-scope-invalid: a command declaring an empty ``targets:`` list ships
+    # to no target at all. The empty-declaration branch is the one that fires
+    # without a marketplace/targets/ tree, which a scratch bundles root has no
+    # sibling for.
+    corpus['targets-scope-invalid'] = FixtureSpec(
+        analyzer=_ats.analyze_target_scope,
+        files={
+            'plan-marshall/commands/fixture-cmd.md': (
+                '---\nname: fixture-cmd\ndescription: Fixture command\ntargets: []\n---\n\n# F\n'
+            ),
+        },
     )
     # persona-profile-uniqueness: two persona SKILL.md files declaring the same
     # first ``profiles:`` entry triggers a primary-profile collision finding.

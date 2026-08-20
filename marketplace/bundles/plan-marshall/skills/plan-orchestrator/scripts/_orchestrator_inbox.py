@@ -806,8 +806,13 @@ LANDING_FACTS_SCHEMA = 'landing-facts/1'
 #: landing missing any one is INCOMPLETE, and the drain records the gap rather
 #: than reconciling as if the inbox had drained everything material. The set is
 #: the single source of truth the producer (``emit-landing.md``) and this
-#: validator share; it is NOT re-listed in prose elsewhere — the spec doc points
-#: here.
+#: validator share. Two documents DO re-list it — ``landing-payload-spec.md``'s
+#: key table and ``emit-landing.md``'s prose enumeration — so each is bound back
+#: to this tuple by a test (``test_landing_completeness.py``
+#: ``test_payload_spec_table_names_exactly_the_required_keys`` and
+#: ``test_emit_landing_enumeration_names_exactly_the_required_keys``). Adding a
+#: key here without updating both surfaces turns those tests red; that is the
+#: intended failure, not a reason to relax them.
 LANDING_REQUIRED_KEYS: tuple[str, ...] = (
     'schema',
     'plan_id',

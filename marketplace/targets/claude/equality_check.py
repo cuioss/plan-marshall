@@ -37,6 +37,15 @@ copying, so orphans are eliminated by a fresh emit). Source
 ``marketplace/bundles/{bundle}/.claude-plugin/`` are canonical-only and
 MUST NOT be edited to satisfy the gate — only the build artifact under
 ``target/claude/`` is consulted.
+
+Target-scoped components are DELIBERATELY ABSENT, not drift: a component
+whose ``targets:`` frontmatter scope omits this target is dropped from
+the emitted tree and from the regenerated manifest by the same filter
+(see ``component_targets.py``), so neither the manifest diff nor the
+orphan-file sweep has anything to report. The regeneration this engine
+diffs against is therefore performed for the SAME target as the emit —
+hence the ``target_name`` parameter threaded through to
+``build_plugin_json``.
 """
 
 from __future__ import annotations
@@ -46,6 +55,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field as _dc_field
 from pathlib import Path
 
+from marketplace.targets.claude.emitter import CLAUDE_TARGET_NAME
 from marketplace.targets.claude.marketplace_json_gen import build_marketplace_json
 from marketplace.targets.claude.plugin_json_gen import build_plugin_json
 
@@ -164,7 +174,12 @@ def _on_disk_entries(target_bundle_dir: Path, subdir: str) -> list[str]:
     )
 
 
-def check_bundle(bundle_dir: Path, target_dir: Path) -> list[BundleDiff]:
+def check_bundle(
+    bundle_dir: Path,
+    target_dir: Path,
+    *,
+    target_name: str = CLAUDE_TARGET_NAME,
+) -> list[BundleDiff]:
     """Compare the regenerated ``plugin.json`` against the emitted artifact.
 
     The emitted file lives at
@@ -189,7 +204,7 @@ def check_bundle(bundle_dir: Path, target_dir: Path) -> list[BundleDiff]:
        drifted past it.
     """
     committed = _read_emitted_plugin_json(bundle_dir, target_dir)
-    generated = build_plugin_json(bundle_dir)
+    generated = build_plugin_json(bundle_dir, target_name=target_name)
     target_bundle_dir = target_dir / bundle_dir.name
     diffs: list[BundleDiff] = []
     for field_name in ('agents', 'commands', 'skills'):
@@ -219,7 +234,12 @@ def check_bundle(bundle_dir: Path, target_dir: Path) -> list[BundleDiff]:
     return diffs
 
 
-def run_equality_check(target_dir: Path, bundle_dirs: Iterable[Path]) -> EqualityResult:
+def run_equality_check(
+    target_dir: Path,
+    bundle_dirs: Iterable[Path],
+    *,
+    target_name: str = CLAUDE_TARGET_NAME,
+) -> EqualityResult:
     """Run the equality check across the supplied bundle directories.
 
     ``target_dir`` is the root of the emitted Claude target output (e.g.
@@ -241,7 +261,7 @@ def run_equality_check(target_dir: Path, bundle_dirs: Iterable[Path]) -> Equalit
     if not target_dir.exists():
         summary = (
             f"target/claude not generated at {target_dir} — "
-            "run 'python3 marketplace/targets/generate.py --target claude --output target/claude' first"
+            "run 'uv run python marketplace/targets/generate.py --target claude --output target/claude' first"
         )
         return EqualityResult(
             passed=False,
@@ -259,7 +279,7 @@ def run_equality_check(target_dir: Path, bundle_dirs: Iterable[Path]) -> Equalit
             missing.append(bundle_dir.name)
             continue
         try:
-            all_diffs.extend(check_bundle(bundle_dir, target_dir))
+            all_diffs.extend(check_bundle(bundle_dir, target_dir, target_name=target_name))
         except CorruptEmittedPluginJsonError:
             # An emitted plugin.json that exists but is not valid JSON is
             # resolved by re-emitting, exactly like a missing one — return the
@@ -274,7 +294,7 @@ def run_equality_check(target_dir: Path, bundle_dirs: Iterable[Path]) -> Equalit
             reasons.append(f"not valid JSON for: {', '.join(sorted(corrupt))}")
         summary = (
             f"target/claude/{{bundle}}/.claude-plugin/plugin.json {'; '.join(reasons)} — "
-            "run 'python3 marketplace/targets/generate.py --target claude --output target/claude' first"
+            "run 'uv run python marketplace/targets/generate.py --target claude --output target/claude' first"
         )
         return EqualityResult(
             passed=False,
@@ -298,7 +318,7 @@ def run_equality_check(target_dir: Path, bundle_dirs: Iterable[Path]) -> Equalit
     elif marketplace_drift and not all_diffs:
         summary = (
             f'equality check failed: {marketplace_diagnostic}. '
-            "Re-run 'python3 marketplace/targets/generate.py --target claude --output target/claude' "
+            "Re-run 'uv run python marketplace/targets/generate.py --target claude --output target/claude' "
             "to regenerate target/claude/ from current sources."
         )
     else:
@@ -310,7 +330,7 @@ def run_equality_check(target_dir: Path, bundle_dirs: Iterable[Path]) -> Equalit
             f'equality check failed: {len(all_diffs)} drift entries '
             f'across {len(bundles_with_drift)}/{bundle_count} bundles '
             f'({", ".join(bundles_with_drift)}).{suffix} '
-            "Re-run 'python3 marketplace/targets/generate.py --target claude --output target/claude' "
+            "Re-run 'uv run python marketplace/targets/generate.py --target claude --output target/claude' "
             "to regenerate target/claude/ from current sources. "
             "Do NOT edit the source plugin.json files — they are canonical-only."
         )

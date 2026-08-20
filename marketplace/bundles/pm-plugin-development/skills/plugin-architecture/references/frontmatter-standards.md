@@ -8,9 +8,10 @@ YAML frontmatter configuration standards for agents, commands, and skills in the
 2. [Agent Frontmatter](#agent-frontmatter)
 3. [Command Frontmatter](#command-frontmatter)
 4. [Skill Frontmatter](#skill-frontmatter)
-5. [Tools Declaration](#tools-declaration)
-6. [Common Issues](#common-issues)
-7. [Validation Rules](#validation-rules)
+5. [Target Scoping](#target-scoping)
+6. [Tools Declaration](#tools-declaration)
+7. [Common Issues](#common-issues)
+8. [Validation Rules](#validation-rules)
 
 ## Frontmatter Format
 
@@ -93,6 +94,10 @@ color: blue
 - Purpose: Visual identification in UI
 - No functional impact
 
+**targets** (optional):
+- Build-time field naming the build targets this agent ships to; absent means every target
+- See [Target Scoping](#target-scoping) for the format, the validation rules, and the admission test
+
 ### Complete Agent Example
 
 ```yaml
@@ -143,7 +148,7 @@ Commands use the same field specifications as agents with these differences:
 
 ### Optional Fields
 
-Same as agents: `model`, `color`
+Same as agents: `model`, `color`, `targets` (see [Target Scoping](#target-scoping))
 
 ### Complete Command Example
 
@@ -192,7 +197,13 @@ user-invocable: true
 
 ### Optional Fields
 
-Skills do not use `model`, `color`, or `tools`/`allowed-tools` fields. The plugin schema for skills supports only: `name`, `description`, `user-invocable`, `mode`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`, `profiles`, `priming_preamble`, `composes`.
+Skills do not use `model`, `color`, or `tools`/`allowed-tools` fields.
+
+Skill fields named in this document, required and optional together: `name`, `description`, `user-invocable`, `mode`, `implements`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`, `profiles`, `priming_preamble`, `composes`, `targets`. Where each is specified: `name`, `description` and `user-invocable` above; `mode`, `implements`, `profiles`, `priming_preamble`, `composes` and `metadata` below; `targets` in its own section, [Target Scoping](#target-scoping); and `argument-hint`, `compatibility`, `disable-model-invocation` and `license` nowhere but this list. A name in this list is not a statement that the field is optional, nor that it is explained anywhere.
+
+⛔ **That is not the whole set of frontmatter a skill may carry, and this document is not the register of it.** A field belongs to whichever contract declares it, and several are declared elsewhere: `scope:` by [`plan-marshall:ref-workflow-architecture` § manage-contract](../../../../plan-marshall/skills/ref-workflow-architecture/standards/manage-contract.md), `lane:` by [`ext-point-lane-element`](../../../../plan-marshall/skills/extension-api/standards/ext-point-lane-element.md), and a finalize-step's `order` / `default_on` / `presets` / `mutates_source` and their siblings by [`ext-point-finalize-step`](../../../../plan-marshall/skills/extension-api/standards/ext-point-finalize-step.md). Read the owning contract before concluding a field is unsupported — an enumeration here would go stale the moment a contract adds one, which is why this one does not claim to be exhaustive.
+
+The fields listed above are largely this marketplace's own: `profiles`, `priming_preamble`, and `composes` are plan-marshall fields the host platform never reads, documented here when the tooling that consumes them was built. `targets` (see [Target Scoping](#target-scoping)) is the newest such addition. The owning contract also fixes *where* its field is written: top-level for most, but nested under `metadata:` where the contract says so — [`ext-point-verify`](../../../../plan-marshall/skills/extension-api/standards/ext-point-verify.md) declares `verification_profile` and places it under `metadata:`. `metadata:` is therefore both the location a contract may choose and the escape hatch for a key that needs to be recognized but has no owning contract at all.
 
 **implements** (optional):
 
@@ -315,7 +326,7 @@ composes: [plan-marshall:persona-implementer, plan-marshall:persona-module-teste
 
 **metadata** (optional):
 
-A nested mapping that is the supported **escape hatch** for declaring well-known keys the closed top-level skill schema does not define. Because the top-level skill frontmatter schema is closed (see the supported-field list above), a bare top-level key the schema does not name is silently ignored — keys that are not first-class top-level fields are carried under `metadata:` instead, where they are recognized.
+A nested mapping that is the supported **escape hatch** for a well-known key that no contract declares as a top-level field. A bare top-level key that is neither named above nor declared by an owning contract is ignored, so such a key is carried under `metadata:` instead, where it is recognized. A key that DOES have an owning contract (`scope:`, `lane:`, a finalize-step's `order:`) stays top-level and is read from there — `metadata:` is the home for the leftovers, not for everything the list above omits.
 
 - **Field name**: `metadata`
 - **Format**: a YAML mapping of recognized sub-keys.
@@ -403,6 +414,63 @@ mode: script-executor
 ---
 ```
 
+## Target Scoping
+
+### `targets` (optional — agents, commands, and skills alike)
+
+Declares the closed list of build targets a component ships to. It is a **build-time** field: the multi-target generator reads it from the source bundle and decides whether to emit the component at all.
+
+```yaml
+---
+name: tools-fix-intellij-diagnostics
+description: Retrieve and fix IDE diagnostics automatically
+tools: Read, Edit, Task, mcp__ide__getDiagnostics
+targets: [claude]
+---
+```
+
+**Semantics**:
+
+- **Field absent ⇒ every target that emits a component tree.** This is the default and the overwhelmingly common case. Omitting the field is how an author says "ship everywhere"; nearly every component in the marketplace omits it. The qualifier matters only because a registered target need not emit a component tree at all — a target whose `emits_bundle_tree` capability is false ships no components, so no declaration, present or absent, puts one there.
+- **Field present ⇒ only the targets named.** On every other target the component is simply **absent** — no stub, no runtime no-op, no empty file.
+- **Format**: a YAML list, inline (`targets: [claude]`) or block form. Values are build-target registry names. The live set is never enumerated in prose because it would go stale; ask the tooling for it instead:
+
+  ```bash
+  uv run python marketplace/targets/generate.py --help
+  ```
+
+  The `--target` choices it prints are the registry as it stands at the moment you run it, derived from `TARGET_REGISTRY` in `marketplace/targets/__init__.py`, plus the literal `all` — a run-every-target convenience, not a target name and not a valid `targets:` value.
+- **Scope of one declaration**: an agent's or a command's declaration governs that one file. A skill's declaration lives on its `SKILL.md` and governs the **whole skill directory**, its `standards/`, `references/`, `templates/`, and `scripts/` sub-trees included. Files *inside* a skill are not individually scopable.
+
+**Validation** — every one of these **fails the build**, because a component silently shipping to fewer targets than intended is exactly the defect the field exists to prevent:
+
+| Declaration | Outcome |
+|---|---|
+| A name absent from `TARGET_REGISTRY` (a typo) | Build fails, naming the component and the unknown value |
+| `targets: []`, or `targets:` with nothing after it | Build fails — a component shipped nowhere is an authoring error, not an intent. Omit the field to say "everywhere" |
+| Only targets that emit no component tree | Build fails — such a declaration also ships the component nowhere |
+| A value that is not a list of names — a mapping, a number, a boolean | Build fails, naming the shape you wrote. Coercing it into a name and then rejecting the coercion would report a target nobody wrote |
+| A list holding an item that is not a name — `targets: [true]`, `targets: [3]`, `targets: [{a: b}]` | Build fails, naming that item's type. The list itself is well formed, so the row above does not catch it. Quote it (`['true']`) if the name really is that text |
+| Frontmatter that is not well-formed YAML **and mentions `targets:`** | Build fails, quoting YAML's own complaint. Unparseable frontmatter that never mentions the field is not this check's business — target scoping is not the repository's YAML linter |
+
+**Write it however YAML lets you.** The build reads frontmatter with `yaml.safe_load`, so any spelling YAML resolves to a **list of names, or a single name**, is a spelling this field accepts — the table above is about what the resolved VALUE must be, not about syntax: inline flow (`[a, b]`) or spanning lines, a `- ` block, a bare scalar, a quoted scalar, a block scalar (`>` / `|`), a value opening on the line below the key, a comment between the key and its list. There is no list of blessed shapes to learn, and a duplicate key resolves the way YAML resolves it — the last one wins.
+
+One convenience is the build's own rather than YAML's: `targets: a, b` is a single string to YAML, and the build splits it on commas. That is why a registered target name may contain neither a comma nor whitespace.
+
+The plugin-doctor `targets-scope-invalid` rule surfaces what it can at authoring time, and it is deliberately **an approximation rather than a mirror**: a doctor script is stdlib-only, because a consumer project installs the bundles without this repository's dependencies, so it cannot parse YAML. It reads the shapes it is certain of and stays silent on the rest — a block scalar, a value spanning lines, an indented frontmatter block, a flow sequence whose items are quoted or tagged, a `targets:` line that is really the continuation of something opened above it — leaving all of those to the build. What it promises is that anything it *does* report is a real build failure, never that it reports every one. Two further gaps are structural: the ships-nowhere case needs each target's `emits_bundle_tree` capability, and the unknown-name check needs the `marketplace/targets/` tree to derive the registry from. The empty-declaration check needs neither and always runs.
+
+### Admission test — when a target-scoped component is the right answer
+
+A target-scoped component is the **fourth** placement home, and it is gated. A capability that exists everywhere but *behaves* differently belongs behind a runtime operation (uniform contract, per-target implementation); emitted-text and emitted-frontmatter vocabulary belongs in the build target's `mapping.json` data. Reach for `targets:` only when all three of these hold:
+
+1. It is a whole workflow or knowledge body — not reducible to a single runtime operation or to a body/frontmatter transform.
+2. It is genuinely not applicable on other targets, rather than merely hard to abstract.
+3. Normalizing it would force a no-op operation onto every other target, or distort the shared contract.
+
+It must never be used to dodge normalization: format-coupling (metrics shape, permission DSL, tool-name vocabulary) still normalizes into the runtime and build-target homes. The field is for target-bound *capabilities*, never for the per-target *rendering* of a shared one.
+
+**Cross-references are the author's responsibility.** Scoping a component away from a target does not rewrite references to it from components that still ship there. A component that scopes itself out of a target should not be the only path to a capability the remaining components point at.
+
 ## Tools Declaration
 
 ### Correct Format: Comma-Separated
@@ -476,7 +544,7 @@ Agents must not declare `Task` — the host platform restricts Task from sub-age
 
 ### Issue 4: Unsupported Fields in Skills
 
-Skills must not declare `allowed-tools` or `tools`. The skill schema only supports: `name`, `description`, `user-invocable`, `mode`, `argument-hint`, `compatibility`, `disable-model-invocation`, `license`, `metadata`, `profiles`, `priming_preamble`, `composes`. Any other field is silently ignored — remove it.
+Skills must not declare `allowed-tools` or `tools`. For the fields a skill MAY carry, see [Skill Frontmatter → Optional Fields](#optional-fields-2) — and note that the list there is not the whole set: a field may be declared by its own owning contract instead. A field that is neither specified here nor declared by a contract is ignored — carry it under `metadata:` if it needs to be recognized, or remove it.
 
 ### Issue 5: Invalid Tool Names
 
@@ -617,6 +685,7 @@ Use this checklist when creating or reviewing frontmatter:
 - `description` field present with adequate length
 - No blank lines in frontmatter
 - Valid YAML syntax (no tabs, proper spacing)
+- `targets` field, if present, is non-empty and names only registered build targets — and the component meets the three-condition admission test in [Target Scoping](#target-scoping)
 
 **Agents**:
 - `tools` field uses comma-separated format (not array)

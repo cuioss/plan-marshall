@@ -227,7 +227,7 @@ def _resolve_marketplace_root(args: argparse.Namespace) -> Path:
 
 def _regenerate_hint() -> str:
     return (
-        'Regenerate with `python3 marketplace/targets/generate.py '
+        'Regenerate with `uv run python marketplace/targets/generate.py '
         '--target claude --output target/claude`.'
     )
 

@@ -153,12 +153,9 @@ Separate from the auto-continuation knobs above (which decide *whether to pause*
 
 * `auto` — defer to the existing decision machinery (the phase-1-init lane router for the planning gates, the manifest composer for the finalize gates). This is the historical behaviour.
 * `always` — force the gate in, overriding the machinery that would otherwise skip it. For the finalize gates this overrides the manifest composer's `scope_gated_finalize` drop on surgical / single-module plans.
-* `never` — skip the gate. For a finalize gate that guards a safety net this can mask real failures; `finalize.qgate` is the highest-risk (it can mask real build/test failures and push a red tree).
+* `never` — skip the gate. For a gate that guards a safety net this can mask real failures.
 
-There are **two** ways to keep a step the `scope_gated_finalize` drop would otherwise remove, and `always` is only one of them:
-
-. **Force it back in with a ceremony `always`** (above). Available only for the four ceremony gates — `self_review`, `qgate`, `simplify`, `security_audit` — because those are the only steps the ceremony transform can re-add.
-. **Declare a per-step `lane` override, which makes the step immune to the drop in the first place.** Available for *any* finalize step, including the ones no `always` covers (`plan-marshall:plan-retrospective` is the usual case). A step carrying an explicit, non-`standard` `lane` is never dropped by the scope gate, because that gate only *infers* what you probably do not want, and an inference must not override something you actually said.
+To keep a finalize step the `scope_gated_finalize` drop would otherwise remove, **declare a per-step `lane` override**, which makes the step immune to the drop in the first place. This works for *any* finalize step. A step carrying an explicit, non-`standard` `lane` is never dropped by the scope gate, because that gate only *infers* what you probably do not want, and an inference must not override something you actually said.
 
 The `lane` declaration itself has two scopes — project-wide, or for one plan only:
 
@@ -177,7 +174,9 @@ The `--plan-id` form exists so an answer you give about one plan does not silent
 
 [NOTE]
 ====
-**What `set-lane` accepts.** The `finalize-steps set-lane --lane` verb accepts `off` \| `standard` \| `full` — the operator-resolvable answers (`off` = drop the step; `standard` / `full` = pin its tier). This is a deliberate subset of the wider per-element override *value space* `off` \| `minimal` \| `standard` \| `full` \| `ask` (see <<execution-profile-lane-selection>>): `minimal` (force-keep floor) and `ask` (always-prompt) ship as each element's frontmatter `lane:` default and are honoured by the composer, but they are not values `set-lane` writes — `set-lane --lane minimal` is rejected.
+**What `set-lane` accepts.** The `finalize-steps set-lane --lane` verb accepts `off` \| `standard` \| `full` — the operator-resolvable answers (`off` = drop the step; `standard` / `full` = pin its tier). This is a deliberate subset of the wider per-element override *value space* `off` \| `minimal` \| `standard` \| `full` \| `ask` (see <<execution-profile-lane-selection>>): `minimal` (force-keep floor) and `ask` (always-prompt) ship as each element's frontmatter `lane:` default and are honoured by the composer, but they are not values `set-lane` writes.
+
+`set-lane --lane minimal` is therefore rejected — but the rejection **names the route that works** rather than dead-ending: the generic `step set --step-id <step-id> --param lane --value minimal` verb writes the `lane` param without narrowing the value space, so every value the composer reads is reachable. (It differs in one way `set-lane` does not: it requires the step to already be present in the phase step map.) Read the rejection message rather than restating the value sets from here.
 ====
 
 [cols="1,1,3", options="header"]
@@ -187,22 +186,34 @@ The `--plan-id` form exists so an answer you give about one plan does not silent
 | `plan.phase-1-init.deep_lane` | `auto` | Whether the precondition-driven deep planning lane runs. `always` forces deep; `never` forces light.
 | `plan.phase-1-init.escalation` | `auto` | Whether the hard-escalation safety ratchet stays live. `never` is the explicit full-speed-full-risk opt-in.
 | `plan.phase-2-refine.revalidation` | `auto` | Whether the premise / narrative-vs-code safety check runs.
-| `plan.phase-6-finalize.self_review` | `auto` | Whether the pre-submission structural + cognitive self-review is selected into the execution manifest.
-| `plan.phase-6-finalize.qgate` | `auto` | Whether the finalize blocking-findings re-capture runs. Highest-risk gate — `never` can push a red tree.
-| `plan.phase-6-finalize.plugin_doctor` | `auto` | Whether the structural marketplace lint runs before push.
-| `plan.phase-6-finalize.simplify` | `auto` | Whether the holistic post-implementation simplification sweep runs. `always` forces it in even when the composer's `simplify_inactive` pre-filter would drop it; `never` skips it.
-| `plan.phase-6-finalize.steps['default:finalize-step-security-audit'].security_audit` | `auto` | Whether the proactive `finalize-step-security-audit` pre-ship security sweep runs. `auto` defers to the composer's `security_class_inactive` pre-filter, which retains the step unless the plan has **both** zero declared affected files **and** an empty live footprint — the gate reads no `change_type`, so an unknown or misleading change shape keeps the sweep; `always` forces it in even in that no-change-surface case; `never` skips it. The step contract (footprint scope, the `extra_security_skills` plug-in, hardening edits committed by the dispatcher's instrumentation) lives in link:../../marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/finalize-step-security-audit.md[`finalize-step-security-audit.md`].
 |===
 
-Read or set the run-at-all gates with the standard phase `get`/`set` verb against the owning phase block:
+**The four finalize ceremony gates are not run-at-all keys.** `qgate`, `self_review`, `simplify` and `security_audit` are each set through their owning step's `lane` override, using `step set --step-id <owning-step> --param lane --value <value>`. The manifest ceremony transform maps that lane onto the same tri-state the table above uses: `off` → `never`, `minimal` → `always`, and **every other accepted value — `standard`, `full`, `ask`, or an absent override — → `auto`**. So `minimal` is the value that forces a gate in; `full` does not, despite reading like the strongest setting.
+
+The owning steps are `default:pre-push-quality-gate` (`qgate`), `default:pre-submission-self-review` (`self_review`), `default:finalize-step-simplify` (`simplify`) and `default:finalize-step-security-audit` (`security_audit`) — the `default:` prefix is part of the key as seeded, and `step set` rejects the bare name with `Step '<name>' not found in phase-6-finalize`. The per-element override row is documented in <<execution-profile-lane-selection>>.
+
+Switching the finalize self-review off, in full:
 
 [source,bash]
 ----
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize get --field self_review
+  plan phase-6-finalize step set \
+  --step-id default:pre-submission-self-review --param lane --value off
+----
 
+`step set` is named here rather than `set-lane` because it is the only one of the two that reaches `minimal`, the value that forces a gate *in*. For the three values both verbs accept — `off`, `standard`, `full` — they are interchangeable: both write the same `plan.phase-6-finalize.steps.<step-id>.lane` key, so `finalize-steps set-lane --step-id default:pre-submission-self-review --lane off` produces the identical result. They differ only when the step is absent from the phase step map, which `set-lane` materialises and `step set` refuses; all four owning steps above are seeded, so that difference does not arise for a ceremony gate.
+
+Read or set a run-at-all gate with the standard phase `get`/`set` verb against the owning phase block — all three live on `phase-1-init` / `phase-2-refine`, per the table above; `phase-6-finalize` carries none. Read a ceremony gate through its owning step instead:
+
+[source,bash]
+----
+# A run-at-all gate: flat --field against the owning phase block
 python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
-  plan phase-6-finalize set --field plugin_doctor --value always
+  plan phase-1-init set --field deep_lane --value always
+
+# A ceremony gate: through its owning step, never a flat --field
+python3 .plan/execute-script.py plan-marshall:manage-config:manage-config \
+  plan phase-6-finalize step get --step-id default:pre-submission-self-review
 ----
 
 See the canonical per-key reference in link:../../marketplace/bundles/plan-marshall/skills/manage-config/standards/data-model.md[`data-model.md`] for the full per-phase gate catalogue.
