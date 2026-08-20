@@ -2,7 +2,7 @@
 
 **Date (UTC):** 2026-08-20    **Branch:** `claude/orchestrator-inbox-lifecycle-cleanup-kxrzew`    **PR:** _pending_    **Outcome:** _pending_
 
-> **Verification loop exit:** _pending_
+> **Verification loop exit:** `verifier-clear`
 
 ## Skills loaded
 
@@ -351,6 +351,34 @@ Run in parallel with round 6, against the shipped text — the pass § Three col
 
 ⭐ **CR4-6 is the epic's own thesis turned on the document that states it.** `cleanup.md` says three times that a silent application is indistinguishable from a lossy one — and left its own direct structural write to `epic.md` unreported.
 
+### Round 7 — final round, frozen tree, scoped to the young corrections
+
+Round 6 recommended stopping but raised one caveat against its own verdict: `cleanup.md` was being rewritten by cold-read fixes **while it verified**. Round 7 ran against a frozen tree (no edit was made between dispatch and result) and targeted only `git diff c843a0f6~1..HEAD -- marketplace/ test/` — the corrections themselves, which five rounds of evidence identify as the highest-risk text.
+
+**It confirmed both predictions rather than refuting them.** 3 findings, all shipped text, all mechanical.
+
+| # | Finding | Disposition |
+|---|---|---|
+| R7-1 | ⛔ **The D3 overclaim at a FOURTH site** — `test_landing_completeness.py`'s own module docstring, a test file's statement of what the code under test guarantees. Round 6's fix reached three of four. Established by execution: `pr=n/a & merge_state=n/a` → `(True, [])`. | **fixed**; the sweep now returns **zero** across `marketplace/`, `test/` and `.claude/` |
+| R7-2 | ⛔ **A FRESH self-contradiction, introduced by `c843a0f6` in the bullet it was editing.** `orchestration-model.md` described Rule 2 as applying to "the opposite case" and then, one clause later, said the two rules are NOT complements — but if Rule 2 were the opposite case they would be. Established by fixture: after one pass the markers are present with no hand-written line and `_replace_block` returns `unchanged`, the state matching neither rule — **the steady state of every ledger after its first compaction**, not an edge case. | **fixed** |
+| R7-3 | The same commit added a fourth `compaction_*` key and left "The three `compaction_*` keys" standing two paragraphs above it. | **fixed** |
+
+Round 7 additionally found a **fail-open in the phase gate `c843a0f6` added**: a `manage-status read` that errors, or a payload carrying no `phase`, was read as *not-closed* rather than *unobserved* — in the one gate whose entire purpose is that the writes it protects happen before anything else can refuse them. **Fixed**: it now fails closed and reports `ledger_compaction: indeterminate`.
+
+**All three survivors re-checked by execution; all bounds hold.** S3 proved **tighter** than this report had claimed: a `superseded` row is dispositioned `retired_by_successor` and archived, after which `inbox list` reports `count: 0` — the message is consumed, not silently ignored. The characterisation was pessimistic and is corrected in § Survivors.
+
+### The independent read of round 7's own fixes
+
+Round 7's closing recommendation — because each round's corrections have carried the next round's defects for five consecutive rounds — was that its fixes be read by someone who did not write them before a PR is opened. That read ran against `eb49a7a6` alone.
+
+⭐ **Verdict: no fresh false clause. The first round in eight whose corrections introduced nothing false.** Every added clause was established by running the code or the sweep: eight `check_landing_completeness` fixtures covering the optional-key, degraded-value and empty-value claims; a two-pass `cmd_compact` fixture confirming the "steady state after first compaction" clause; and `cmd_orchestrator_read` driven over three states, which showed the phase-less-but-**successful** payload is genuinely reachable — the fail-open hole was not hypothetical.
+
+It returned **one** finding, and it is an *unsatisfiable* instruction rather than a false one: the new fail-closed clause orders `ledger_compaction: indeterminate` **"with the read's own error"**, while the schema had widened only the scalar enum — leaving nowhere to put the error. **Fixed** by adding `ledger_compaction_reason`, mirroring the `archive_drain` / `archive_drain_reason` pair two lines below and its stated rationale.
+
+It also confirmed the gate's failure direction is the safe one, by fixture rather than by argument: skipping costs a deferred compaction and `cmd_compact` is idempotent, while proceeding runs two direct `epic.md` writes against a possibly-closed tree whose refusal fires only after them. **Deferrable versus unrecoverable.**
+
+One bound it recorded rather than scoring as a defect: "the steady state of every ledger after its first compaction" holds along the conforming path, but a ledger where Rule 1 was owed and skipped reports `markers_absent` on every pass instead. Since Step 8 mandates Rule 1 before the script call, the clause is true as written; the narrower phrasing would be "every compacted block".
+
 ### Verification rounds — the record
 
 ⛔ **This section is frozen: a table of rounds and counts, and nothing else.** Its two predecessors were
@@ -366,8 +394,10 @@ no longer contains any.
 | 3 | 10 | `7e4c1734` |
 | 4 | 12 | `635dd345` |
 | 5 | 15 | `de1eaabe` |
-| 6 (shipped text only) | 9 | this commit |
+| 6 (shipped text only) | 9 | `17d86ceb` |
 | cold read 4 | 8 | `c843a0f6` |
+| 7 (frozen tree, corrections only) | 3 | `eb49a7a6` |
+| read of round 7's fixes | 1 (no fresh false clause) | `d6c26ede` |
 
 Cold reads of `cleanup.md` § Step 8: three passes. Pass 1 found two defects, pass 2 found three, pass 3
 took the intended reading on all four scenarios put to it and found three further defects.
@@ -376,6 +406,19 @@ took the intended reading on all four scenarios put to it and found three furthe
 findings still reach shipped marketplace text rather than narrowing to the run's own record. That is
 stated here as the measured outcome; no explanation for it is offered, because none has survived being
 checked.
+
+### When the loop stopped, and on what
+
+**Exit: `verifier-clear`.** Not `budget-exhausted`, and the distinction is the whole point of recording it.
+
+- **Budget.** The contract's default is five rounds. Round 5 exhausted it; the operator was reachable, was asked at that boundary with the counts and the survivors, and **granted five more** (rounds 6–10) on identical terms. Rounds 6 and 7 plus two dispatched reads were spent; **three rounds went unused**, which is what makes this a verifier exit rather than a budget one.
+- **The round that ended it.** The independent read of `eb49a7a6`, answering the stop question over its own findings and all three survivors.
+- **The verifier's own last answer, not the author's:** *"Does this commit introduce any fresh false clause — **no**. Every clause the four edits added is true, and each was established by running the code or the sweep, not by reading a callee and judging it compatible."* Its one finding was an unsatisfiable instruction, fixed in `d6c26ede`.
+- **The evidence it rests on is stronger than a read.** Eight `check_landing_completeness` fixtures; a two-pass `cmd_compact` fixture establishing the steady-state clause; `cmd_orchestrator_read` driven over three states, showing the phase-less-but-successful payload is genuinely reachable; and a whole-tree sweep for the corrected phrase returning zero. Each could have come back different.
+- **Were the late rounds narrower, or merely fewer?** **Narrower, measurably.** Rounds 2–5 found their defects overwhelmingly in the report's own prose about itself; the counts did not fall (19 → 14 → 10 → 12 → 15). Scoping round 6 to shipped text alone changed both: 9 findings, **0 in the report**, and its six independent spot-checks of report figures all correct. Round 7, frozen and scoped to the corrections, found 3. The read found 1, and none false.
+- **What residue to assume remains.** The deliverables should be read as still carrying defects of the kind the last rounds found — an enumeration falsified by a later edit, a claim fixed at n−1 of n sites, an instruction ordering a field the schema does not define. Two shipped-text surfaces are the likeliest: `cleanup.md` § Step 8, rewritten six times and the source of a finding in every round that examined it, and any prose written to explain a fix. **The last round found nothing false; that is not the same as there being nothing false.**
+
+⛔ **Stopping is a decision this run made on the verifier's answer, not a state it reached.** Three granted rounds were left unspent. A further round would very likely find something — the honest claim is that the findings have moved from the shipped product to its record and then to near-zero, not that the text is now correct.
 
 ### Survivors — left open, each characterised
 
@@ -390,7 +433,7 @@ checked.
 
 **S3 — a fourth zero the three-zero table absorbs into EMPTY** (R6-B2). A queue holding only `lifecycle: superseded` messages yields `live_count 0 / closed_senders empty / invalid_count 0` — the EMPTY triple — while `count > 0`.
 
-*(b) Bounded.* It mislabels **one report line** and changes no drain behaviour: a superseded row is correctly excluded from `live_count` by design, is correctly not a closed sender, and is correctly valid. Reachability requires a superseded row to outlive its successor in the queue — normally impossible, since `supersede` names a successor that is itself enumerated, and reachable only after an `archive_failed` strands one. The promise it stays outside of: `count` is reported alongside the three discriminators at every one of the four sites, so a reader who checks `count` is never misled. Closing it means a fourth discriminator column across four surfaces plus the code comment, which is a wider edit than the defect warrants. **Recorded, not fixed.**
+*(b) Bounded — and round 7 established the bound is TIGHTER than first stated.* A `superseded` row is dispositioned `retired_by_successor` and archived by `analyze.md` Step 3 item 2, after which `inbox list` reports `count: 0`: the message is **consumed, not ignored**, and Step 6's classification is therefore recorded after the drain, when the queue genuinely is empty. The imprecision is confined to reading the EMPTY row's gloss against the enumeration-time payload. It mislabels **no report line in the conforming flow** and changes no drain behaviour: a superseded row is correctly excluded from `live_count` by design, is correctly not a closed sender, and is correctly valid. Reachability requires a superseded row to outlive its successor in the queue — normally impossible, since `supersede` names a successor that is itself enumerated, and reachable only after an `archive_failed` strands one. The promise it stays outside of: `count` is reported alongside the three discriminators at every one of the four sites, so a reader who checks `count` is never misled. Closing it means a fourth discriminator column across four surfaces plus the code comment, which is a wider edit than the defect warrants. **Recorded, not fixed.**
 
 ### Rejected — none
 
