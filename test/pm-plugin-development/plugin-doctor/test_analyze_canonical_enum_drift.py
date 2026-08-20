@@ -638,6 +638,7 @@ def test_findings_publish_the_unresolved_share(tmp_path):
 
     details = findings[0]['details']
     assert details['unresolved_notation_fraction'] == 0.0
+    assert details['unresolved_notation_blind_spots'] == 0
     assert details['unresolved_notation_causes'] == dict.fromkeys(_mod.UNRESOLVED_CAUSES, 0)
 
 
@@ -719,3 +720,48 @@ def test_real_tree_blind_spot_count_is_published_and_dominated_by_underived_pars
     assert coverage['blind_spots'] == coverage['unresolved'] - causes[_mod.UNRESOLVED_NO_CHOICES_DECLARED]
     assert coverage['blind_spots'] > causes[_mod.UNRESOLVED_NO_CHOICES_DECLARED]
     assert causes[_mod.UNRESOLVED_PARSER_NOT_DERIVED] > 0
+
+
+def test_a_dict_spec_subcommand_with_no_choices_is_not_a_blind_spot(tmp_path):
+    """A declaratively-modelled verb whose args are all free-form was MODELLED.
+
+    The path set was derived from the authority map's keys, and that map only
+    gains a key when an arg carries ``choices`` — so a dict-spec subcommand
+    declaring nothing but ``help`` contributed no path and was filed as a parser
+    that was never seen. It is the opposite: the spec models the verb in plain
+    sight, and the flag genuinely declares no choices.
+
+    Live subject when this was found: `untrusted-ingestion`'s `validate
+    --schema`, which the census reported as a blind spot.
+    """
+    skill_dir = tmp_path / 'mybundle' / 'skills' / 'myskill'
+    (skill_dir / 'scripts').mkdir(parents=True)
+    (skill_dir / 'scripts' / 'myscript.py').write_text(
+        'from helper import build\n'
+        '\n'
+        '\n'
+        'def main():\n'
+        '    return build(\n'
+        "        subcommands=[\n"
+        "            {'name': 'validate', 'args': [\n"
+        "                {'flags': ['--schema'], 'help': 'a|b'},\n"
+        '            ]},\n'
+        '        ],\n'
+        '    )\n',
+        encoding='utf-8',
+    )
+    (skill_dir / 'SKILL.md').write_text(
+        '# My Skill\n\n'
+        '## Canonical invocations\n\n'
+        f'{_FENCE}bash\n'
+        'python3 .plan/execute-script.py mybundle:myskill:myscript validate \\\n'
+        '  --schema {a|b}\n'
+        f'{_FENCE}\n',
+        encoding='utf-8',
+    )
+
+    coverage = _mod.derive_coverage(derive_population(tmp_path))
+
+    assert coverage['unresolved_causes'][_mod.UNRESOLVED_NO_CHOICES_DECLARED] == 1
+    assert coverage['unresolved_causes'][_mod.UNRESOLVED_PARSER_NOT_DERIVED] == 0
+    assert coverage['blind_spots'] == 0

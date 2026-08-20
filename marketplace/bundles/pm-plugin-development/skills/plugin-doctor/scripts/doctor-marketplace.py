@@ -1232,8 +1232,12 @@ Examples:
             'Optional explicit component paths to scope the findings to. The SAME '
             'invariant rule set runs; file-anchored findings are filtered to those '
             'under a supplied path. No flag = marketplace-wide (byte-for-byte '
-            'unchanged). NOTE: validate_extension_contracts ALWAYS runs whole-tree '
-            'and is included unfiltered even under --paths.'
+            'unchanged). NOTE: TWO classes are reported unfiltered even under '
+            '--paths — validate_extension_contracts, which ALWAYS runs whole-tree, '
+            'and any finding anchored at the marketplace ROOT (the anti-vacuity '
+            'guards, which report that a rule derived an EMPTY population). The '
+            'root is a parent of every scope dir, so the scope test could never '
+            'admit one.'
         ),
     )
     p_quality_gate.add_argument('--marketplace-root', dest='marketplace_root', help=marketplace_root_help)

@@ -996,10 +996,13 @@ def test_missing_required_flag_is_rejected_before_any_spawn():
 
 
 def test_root_declared_flag_is_accepted_on_a_subcommand():
-    """argparse honours a root flag on every subcommand; so must the check.
+    """A root-declared flag is accepted by this CHECK, by deliberate widening.
 
-    Without the ancestor union this is the classic false rejection: the flag is
-    rendered only in the ROOT help, so a leaf-only flag set calls it unknown.
+    Not because argparse accepts it after the verb — it does not; the subparser
+    owns everything from the verb onward. The ancestor union exists to avoid the
+    classic false rejection: the flag is rendered only in the ROOT help, so a
+    leaf-only flag set calls it unknown. Placement is judged elsewhere, by
+    ``ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED``.
     """
     surfaces = {
         _SPAWN_NOTATION: _surface_entry({'read': _node()}, root_flags=['project-dir'])

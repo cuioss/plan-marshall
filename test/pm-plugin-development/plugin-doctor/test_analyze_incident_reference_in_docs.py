@@ -501,13 +501,16 @@ def test_analyzer_is_registered_in_runner() -> None:
     assert 'analyze_incident_reference_in_docs' in runner_source
 
 
-class TestBacktickExemptionAppliesToEveryFamily:
+class TestBacktickExemptionIsTestedAtTheReference:
     """The inline-code exemption is tested at the REFERENCE, not the match start.
 
-    Two families have a match that begins before the reference — ``observed_on``
-    (up to 80 characters of clause before the ref) and the reversed term-of-art
-    form. Under a match-start test a back-ticked reference still fired in those,
-    making them the exceptions to a convention published project-wide.
+    Four of the six families have a match that begins before the reference, but
+    the count is not the discriminator: what decides whether the two offsets can
+    land on opposite sides of a code-span boundary is whether the pattern permits
+    a backtick BETWEEN them. Two do — ``observed_on`` (up to 80 arbitrary
+    characters before the ref) and the reversed term-of-art form. Under a
+    match-start test a back-ticked reference still fired in those, making them
+    the exceptions to a convention published project-wide.
     """
 
     def test_observed_on_with_a_backticked_ref_is_exempt(self, tmp_path: Path) -> None:
@@ -530,3 +533,81 @@ class TestBacktickExemptionAppliesToEveryFamily:
             analyze_incident_reference_in_docs, root, [RULE_ID]
         )
         assert findings[0]['pattern_family'] == 'observed_on'
+
+
+class TestExemptionOffsetMechanism:
+    """The offset rule is a property of each PATTERN, not a count of families.
+
+    Pinned because the count is the thing a maintainer adding a seventh family
+    would reuse to decide whether theirs is in scope, and the count was twice
+    written down wrong.
+    """
+
+    def test_four_families_match_before_the_reference(self) -> None:
+        """Executed per pattern, not reasoned from the regexes."""
+        probes = {
+            'plan_marshall_ref': 'See `plan-marshall#123` here.',
+            'observed_on': 'Observed on the run log: `#812` was the culprit.',
+            'temporal_narration': 'The behaviour changed `post-#900` in the resolver.',
+            'incident_term_of_art': 'The `#948 sibling-worktree shape` recurs.',
+            'incident_term_of_art_reversed': 'This `failure mode #866` closed the PR.',
+            'dated_narration': 'Green `as of 2026-07` on the check.',
+        }
+        differ = set()
+        for name, pattern in _air._PATTERNS:
+            match = pattern.search(probes[name])
+            assert match is not None, f'{name} does not match its own probe'
+            if match.start() != _air._exemption_offset(match):
+                differ.add(name)
+
+        assert differ == {
+            'plan_marshall_ref',
+            'observed_on',
+            'temporal_narration',
+            'incident_term_of_art_reversed',
+        }
+
+    def test_only_two_families_admit_a_backtick_between_start_and_reference(self) -> None:
+        """The discriminator: can a code-span boundary fall strictly between them.
+
+        ``plan-marshall#NNNN`` is contiguous, and ``since #``/``post-#``/``pre-#``
+        stop matching the moment a backtick is inserted — so for those two the
+        offsets always land on the same side of any boundary, however far apart
+        they are.
+        """
+        probes = {
+            'plan_marshall_ref': 'See plan-marshall`#123` here.',
+            'observed_on': 'Observed on the run log: `#812` was the culprit.',
+            'temporal_narration': 'It changed since `#900` landed.',
+            'incident_term_of_art_reversed': 'This is the failure mode `#866` we hit.',
+        }
+        flips = set()
+        for name, pattern in _air._PATTERNS:
+            if name not in probes:
+                continue
+            line = probes[name]
+            match = pattern.search(line)
+            if match is None:
+                continue
+            spans = _air._inline_code_spans(line)
+            if _air._offset_in_inline_code(match.start(), spans) != _air._offset_in_inline_code(
+                _air._exemption_offset(match), spans
+            ):
+                flips.add(name)
+
+        assert flips == {'observed_on', 'incident_term_of_art_reversed'}
+
+    def test_the_change_narrows_as_well_as_widens(self) -> None:
+        """A quoted OPENER with a bare reference fires, where it was exempt before.
+
+        Both directions follow from the same rule — the exemption is about the
+        reference being a code token — and describing the change as a widening
+        alone is half of it.
+        """
+        line = '`Observed on the run log` shows #812.'
+        match = _air._OBSERVED_ON_RE.search(line)
+        assert match is not None
+        spans = _air._inline_code_spans(line)
+
+        assert _air._offset_in_inline_code(match.start(), spans) is True
+        assert _air._offset_in_inline_code(_air._exemption_offset(match), spans) is False

@@ -51,8 +51,10 @@ Deliberately NOT flagged, because the reference is not incident narration the
 reader cannot act without: a bare ``#NNNN`` in prose with no incident noun
 (ordinary provenance / worked-example / external-tracker citation), a
 back-ticked ``#NNNN`` (a code token, exempt as inline code — tested at the
-reference's offset inside the match, so forms 2 and 5, whose matches begin
-before the reference, are exempt on the same terms as the rest), a lowercase
+reference's offset inside the match rather than at the match start, so a
+back-ticked reference is exempt in every family, including the two whose
+patterns allow a backtick to sit between the match start and the reference; see
+:func:`_exemption_offset`), a lowercase
 "observed on #NNNN" in an observation record, and a version CONSTRAINT carrying
 no temporal preposition ("requires Python 3.12", "Node 20.1.0 or newer",
 ">= 1.2.3"), which states a requirement holding NOW rather than a moment.
@@ -267,23 +269,41 @@ def _exemption_offset(match: re.Match) -> int:
     The exemption is about the REFERENCE being a code token, so it is tested at
     the ``#NNNN`` inside the match rather than at the match's first character.
 
-    TWO families have a match that begins BEFORE the reference, and both are
-    affected — not just the new one:
+    **FOUR of the six families have a match that begins before the reference** —
+    ``plan_marshall_ref``, ``observed_on``, ``temporal_narration`` and
+    ``incident_term_of_art_reversed`` (verified by execution, not by reading the
+    patterns). Differing offsets are not what matters, though: what matters is
+    whether a code-span BOUNDARY can fall strictly between them, because only
+    then can the two offsets land on opposite sides of it.
 
-    * ``incident_term_of_art_reversed``, where the match begins at the noun; and
-    * ``observed_on``, whose pattern begins at ``Observed`` and can carry up to
-      80 characters before the reference. Under the match-start test a
-      back-ticked reference there still fired, making ``observed_on`` the ONE
-      family in which the project-wide "a back-ticked reference is a code token"
-      convention did not hold. Testing at the reference offset makes it hold
-      everywhere, which WIDENS that family's exemption.
+    **Two families can.** ``observed_on`` admits up to 80 arbitrary characters
+    between its opener and the reference, and the reversed term-of-art form
+    admits whitespace and an optional qualifier — so a backtick can sit there and
+    the verdict changes. The other two cannot: ``plan-marshall#NNNN`` is
+    contiguous, and ``since #``/``post-#``/``pre-#`` stop matching the moment a
+    backtick is inserted, so no boundary can fall inside either match.
 
-    That widening is deliberate and is disclosed rather than silent: it aligns
-    the family with the convention published across the rule catalogue, the
-    provenance table, a named test, and a sibling rule. It is bounded — over the
-    whole derived population, zero ``observed_on`` lines have a verdict the
-    change flips — and pinned by
-    ``test_observed_on_with_a_backticked_ref_is_exempt``.
+    Do not restate this as "two families are affected" — that was the earlier
+    wording, and it is the sentence a maintainer adding a seventh family would
+    reuse to decide whether theirs is in scope. The test is *can a backtick
+    appear between the match start and the reference*, which is a property of the
+    pattern, not a count.
+
+    For ``observed_on`` this WIDENS the exemption: under the match-start test a
+    back-ticked reference there still fired, making it the one family in which
+    the project-wide "a back-ticked reference is a code token" convention did not
+    hold. The change is not purely a widening, though — it also NARROWS, when the
+    OPENER is quoted and the reference is not: on
+    ``` `Observed on the run log` shows #812. ``` the match start (offset 1) is
+    inside the code span and the reference (offset 32) is outside it, so the line
+    was exempt before and fires now. Both directions follow from the same rule,
+    that the exemption is about the REFERENCE being a code token.
+
+    The widening is deliberate and disclosed rather than silent, and pinned by
+    ``test_observed_on_with_a_backticked_ref_is_exempt``. ⚠️ Its live-incidence
+    bound is **vacuous**: the derived population contains ZERO ``observed_on``
+    matches, so "no live line changes verdict" is not evidence of harmlessness —
+    it is evidence that nothing exercises this family in the tree at all.
 
     A match carrying no ``#NNNN`` at all (the dated-narration form) has no
     reference to exempt, so the match start is used.
@@ -354,8 +374,12 @@ def _scan_file(path: Path, rel_to_bundles: str, default_cfg: dict[str, list[str]
         emitted = False
         for family_name, pattern in _PATTERNS:
             for m in pattern.finditer(line):
-                # Skip matches whose start offset is fully inside an inline-code
-                # span — those are code-token references, not narration.
+                # Skip matches whose REFERENCE offset is inside an inline-code
+                # span — those are code-token references, not narration. The
+                # test is on the reference, not the match start: two families
+                # match text that can carry a backtick between the two, and
+                # testing the start there gets the opposite answer.
+                # See _exemption_offset.
                 if _offset_in_inline_code(_exemption_offset(m), spans):
                     continue
                 findings.append(

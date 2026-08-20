@@ -37,8 +37,8 @@ Consequences of the promotion, both intended:
   output) and this adapter widens further, unioning each subcommand's whole
   subtree with the root parser's flags. That is the safe direction — fewer
   findings, no false findings — but it IS a real sensitivity change from the
-  exact AST set, so the four canonical argparse-rejection recurrence
-  signatures are pinned as positive controls in this cluster's tests.
+  exact AST set, so every canonical argparse-rejection recurrence signature is
+  pinned as a positive control in this cluster's tests.
 
 Findings have severity=error and fixable=False, matching the
 ``DISPLAY_DETAIL_*`` finding shape used elsewhere in the plugin-doctor

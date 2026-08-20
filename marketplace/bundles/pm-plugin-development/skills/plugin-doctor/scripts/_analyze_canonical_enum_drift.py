@@ -90,6 +90,7 @@ Findings have the shape::
             'not_in_choices': [...],
             'population_size': <int>,  # enum sites examined in this sweep
             'unresolved_notation_fraction': <float>,  # share NOT compared
+            'unresolved_notation_blind_spots': <int>,  # of those, real gaps
             'unresolved_notation_causes': {<cause>: <int>},
         },
     }
@@ -115,12 +116,22 @@ refusal to invent an authority:
   in this tree (an unregistered or renamed notation).
 * ``script_unparseable`` — the script was found but its AST could not be read.
 * ``parser_surface_not_derived`` — the script parsed, but the documented
-  subcommand's parser was never MODELLED here. The dominant case is a script
-  whose parser is built by an IMPORTED helper (``script-shared``'s build-CLI
-  factory, and the declarative front-ends around it): there is no
-  ``ArgumentParser()`` assignment in the file the notation names, so the walk
-  finds no parser tree at all. A real blind spot, and the LARGEST one — the
-  flag's ``choices=`` exist and sit unread in another module.
+  subcommand's parser was never MODELLED here. A real blind spot, and the
+  LARGEST one. The reasons vary and are worth not collapsing:
+
+  - a parser built by an IMPORTED helper (``script-shared``'s build-CLI factory
+    and the declarative front-ends around it), so the file the notation names
+    carries no ``ArgumentParser()`` at all;
+  - a parser passed INTO a helper (``add_plan_id_arg(parser, …)``), whose
+    ``add_argument`` calls have a receiver this walk does not resolve to a
+    parser path;
+  - a subparser registered from a LOOP variable
+    (``for t in KINDS: sub.add_parser(t)``), whose verb name is not a literal.
+
+  So the flag's ``choices=`` may sit unread in another module, or in THIS file
+  beyond the walk's reach, or may not exist at all. What the cause asserts is
+  only that the surface was not modelled — do not restate it as "the choices are
+  in another module", which is true of some of these sites and not others.
 * ``no_choices_declared`` — the subcommand's parser WAS modelled and declares no
   ``choices=`` for this flag. The documented ``{a|b|c}`` describes a free-form
   value, so there is genuinely no enum claim to contradict. This is the ONLY
@@ -137,9 +148,10 @@ refusal to invent an authority:
   form, and stops there. A conflicting re-declaration of the same ``(path, flag)``
   also lands here, by design.
 
-``blind_spots`` is published alongside the raw census so the actionable number
-does not have to be re-derived by a reader who would have to know which causes
-count. It is the sum over :data:`UNRESOLVED_BLIND_SPOT_CAUSES`.
+The actionable number is published rather than left to a reader who would have
+to know which causes count: on a finding as
+``details.unresolved_notation_blind_spots``, and on :func:`derive_coverage` as
+``blind_spots``. Both are the sum over :data:`UNRESOLVED_BLIND_SPOT_CAUSES`.
 
 Public API
 ----------
@@ -737,32 +749,52 @@ def _declarative_authority(
     key, so a nested verb path resolves exactly as ``add_parser`` nesting does.
     """
     resolved: dict[tuple[tuple[str, ...], str], frozenset[str] | None] = {}
+    for here, spec in _walk_declarative_specs(tree):
+        args = _dict_key(spec, 'args')
+        if not isinstance(args, (ast.List, ast.Tuple)):
+            continue
+        for arg in args.elts:
+            if not isinstance(arg, ast.Dict):
+                continue
+            choices_node = _dict_key(arg, 'choices')
+            if choices_node is None:
+                continue
+            flags_node = _dict_key(arg, 'flags')
+            if not isinstance(flags_node, (ast.List, ast.Tuple)):
+                continue
+            members = resolver.resolve_expr(choices_node, tree, 0)
+            for flag_node in flags_node.elts:
+                if not isinstance(flag_node, ast.Constant) or not isinstance(flag_node.value, str):
+                    continue
+                if not flag_node.value.startswith('--'):
+                    continue
+                key = (here, flag_node.value[2:])
+                if key in resolved and resolved[key] != members:
+                    resolved[key] = None
+                else:
+                    resolved[key] = members
+    return resolved
+
+
+def _walk_declarative_specs(tree: ast.Module) -> list[tuple[tuple[str, ...], ast.Dict]]:
+    """Every ``(subcommand_path, spec_dict)`` in the declarative parser form.
+
+    Split out from :func:`_declarative_authority` because the two questions it
+    serves are different and must not be conflated: which paths the spec MODELS,
+    and which of them declare ``choices``. Deriving the first from the second —
+    which is what reading the authority map's keys does — silently drops every
+    subcommand whose args are all free-form, and those then look like parsers
+    that were never seen at all. That is the blind-spot mis-attribution this
+    module's coverage census exists to avoid, and it shipped once: a dict-spec
+    verb declaring nothing but ``help`` was counted as a parser nobody had
+    modelled, in the very census written to stop that conflation.
+    """
+    found: list[tuple[tuple[str, ...], ast.Dict]] = []
 
     def visit(spec: ast.Dict, path: tuple[str, ...]) -> None:
         name = _dict_spec_string(spec, 'name')
         here = path + (name,) if name else path
-        args = _dict_key(spec, 'args')
-        if isinstance(args, (ast.List, ast.Tuple)):
-            for arg in args.elts:
-                if not isinstance(arg, ast.Dict):
-                    continue
-                choices_node = _dict_key(arg, 'choices')
-                if choices_node is None:
-                    continue
-                flags_node = _dict_key(arg, 'flags')
-                if not isinstance(flags_node, (ast.List, ast.Tuple)):
-                    continue
-                members = resolver.resolve_expr(choices_node, tree, 0)
-                for flag_node in flags_node.elts:
-                    if not isinstance(flag_node, ast.Constant) or not isinstance(flag_node.value, str):
-                        continue
-                    if not flag_node.value.startswith('--'):
-                        continue
-                    key = (here, flag_node.value[2:])
-                    if key in resolved and resolved[key] != members:
-                        resolved[key] = None
-                    else:
-                        resolved[key] = members
+        found.append((here, spec))
         nested = _dict_key(spec, 'subcommands')
         if isinstance(nested, (ast.List, ast.Tuple)):
             for child in nested.elts:
@@ -775,12 +807,10 @@ def _declarative_authority(
                 for child in node.value.elts:
                     if isinstance(child, ast.Dict):
                         visit(child, ())
-    return resolved
+    return found
 
 
-def _derived_subcommand_paths(
-    tree: ast.Module, declarative: dict[tuple[tuple[str, ...], str], frozenset[str] | None]
-) -> set[tuple[str, ...]]:
+def _derived_subcommand_paths(tree: ast.Module) -> set[tuple[str, ...]]:
     """Every subcommand path this module's parser surface was actually MODELLED at.
 
     The discriminator between "this flag declares no ``choices=``" and "this
@@ -793,7 +823,7 @@ def _derived_subcommand_paths(
     paths: set[tuple[str, ...]] = set()
     for path_set in _build_parser_path_sets(tree).values():
         paths |= path_set
-    paths |= {path for path, _flag in declarative}
+    paths |= {path for path, _spec in _walk_declarative_specs(tree)}
     return paths
 
 
@@ -864,9 +894,7 @@ def derive_population(marketplace_root: Path, cache=None) -> list[EnumSite]:
                     parsed_cache[notation] = tree is not None
                     if tree is not None:
                         authority_cache[notation] = _authority_by_subcommand_flag(tree, resolver)
-                        paths_cache[notation] = _derived_subcommand_paths(
-                            tree, _declarative_authority(tree, resolver)
-                        )
+                        paths_cache[notation] = _derived_subcommand_paths(tree)
                     else:
                         authority_cache[notation] = {}
                         paths_cache[notation] = set()
@@ -990,9 +1018,10 @@ def analyze_canonical_enum_drift(marketplace_root: Path, cache=None) -> list[dic
     list[dict]
         One finding dict per diverging enum site (see module docstring shape).
         Every finding publishes ``population_size`` — the count of enum sites the
-        sweep examined — plus ``unresolved_notation_fraction`` and
-        ``unresolved_notation_causes``, the share of that population the sweep
-        could not resolve an authority for and what stopped it. A clean run
+        sweep examined — plus ``unresolved_notation_fraction``,
+        ``unresolved_notation_blind_spots`` and ``unresolved_notation_causes``:
+        the share of that population the sweep could not resolve an authority
+        for, how much of that share is a real gap, and what stopped it. A clean run
         carries no findings and therefore no figures; :func:`derive_coverage`
         over :func:`derive_population` is the clean-run surface for both.
     """
@@ -1034,6 +1063,7 @@ def analyze_canonical_enum_drift(marketplace_root: Path, cache=None) -> list[dic
                     'not_in_choices': not_in_choices,
                     'population_size': population_size,
                     'unresolved_notation_fraction': coverage['unresolved_fraction'],
+                    'unresolved_notation_blind_spots': coverage['blind_spots'],
                     'unresolved_notation_causes': coverage['unresolved_causes'],
                 },
                 extra={'rule': RULE_NAME},

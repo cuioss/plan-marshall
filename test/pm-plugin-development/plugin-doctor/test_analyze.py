@@ -1726,17 +1726,22 @@ def test_argument_naming_undeclared_verb_still_reported_with_aliases_present(tmp
 
 
 # -----------------------------------------------------------------------------
-# The four canonical argparse-rejection recurrence signatures — positive controls
+# The canonical argparse-rejection recurrence signatures — positive controls
 # -----------------------------------------------------------------------------
 #
 # The shared derivation over-approximates a node's flag set (every
 # ``--long-token`` anywhere in the help) and this cluster's adapter widens
 # further (root flags ∪ the subcommand's whole subtree). That is the safe
 # direction, but it IS a real sensitivity reduction against the exact AST set
-# it replaced. These four controls pin the catch rate on the recurrence
-# signatures the project documents in
+# it replaced. These controls pin the catch rate on the recurrence signatures
+# the project documents in
 # ``persona-plan-marshall-agent/standards/agent-behavior-rules.md``, so the
-# widening cannot silently blunt the cluster.
+# widening cannot silently blunt the cluster. No count is stated here: the
+# signature list is owned by that document, and a count restated in this file
+# goes stale the moment one is added there — which is how the missing control
+# for the router-flag-placement signature went unnoticed while the block still
+# claimed to cover them all. Its control lives with the placement rule's own
+# tests below.
 
 
 def test_recurrence_signature_verb_paraphrase_is_caught(tmp_path):
@@ -1932,9 +1937,10 @@ def test_unconfident_descendant_withdraws_the_whole_subtree_union():
 def test_unconfident_root_flag_surface_withdraws_every_scope():
     """An unconfident ROOT flag surface poisons the root AND every subcommand.
 
-    Each subcommand's value is widened with the root's own flags, because
-    argparse honours a root-declared flag on every subcommand while rendering it
-    only in the root's help. When those root flags were never derived, no
+    Each subcommand's value is widened with the root's own flags — deliberate
+    over-approximation so the unknown-flag rule cannot manufacture a finding out
+    of a scope question, NOT a claim that argparse accepts a root flag after the
+    verb (it does not). When those root flags were never derived, no
     subcommand's union can be trusted either. The reachable producer is the
     deserialization path — ``_node_from_dict`` rehydrates the markers verbatim
     from a cached entry.
