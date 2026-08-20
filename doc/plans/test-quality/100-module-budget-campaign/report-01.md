@@ -663,9 +663,37 @@ real constraint**, and each constraint is now a rule the pass enforces:
    made a test patch one object and call another. Seven tests failed with an empty log spy, and nothing
    about the change looked wrong.
 
+**Measured against `origin/main` rather than against the split's own worst moment, which is the
+comparison that answers "is this tree better or worse":**
+
+| Duplicated top-level definitions in the slice | names | redundant lines |
+|---|---:|---:|
+| `origin/main` | 103 | 597 |
+| HEAD | **27** | **215** |
+| delta | **−76** | **−382** |
+
+**The slice now carries materially less duplicated code than it did before the split**, not merely less
+than the split briefly introduced.
+
 **Result: 27 names / 215 redundant lines remain, of which 74 lines are locked by module identity** —
 the rules above, not a shortfall of effort. Slice growth ends at **+5,184 lines (+5.7%)** against
 `origin/main`, from +7.2% before any of this.
+
+⚠️ **What the remaining 215 lines are, so the number is not read as unfinished work.** 74 lines are
+module-identity bindings the rules above forbid moving. Most of the rest is duplicated **across
+different units** — `_write_status` sits in `test_aggregate_confidence.py`,
+`test_change_type_heuristic.py` and `test_sibling_collision.py`, three separate subjects — so the only
+home that would serve them is a new directory-wide helper, and building one to save nineteen lines
+trades a real cross-unit dependency for a small count. Several of those carriers are modules this run
+never created. A last group is impure in a way that cannot travel at all: `_PLAN_HANDSHAKE_SCRIPTS_DIR`
+reads `__file__`, which resolves relative to the file it sits in.
+
+⛔ **And one measurement in this section was itself unsafe, which is worth recording because it nearly
+drove a change.** An intermediate sweep labelled 95 of those lines "movable", including
+`_stubbed_invariants`, on the grounds that a helper bound the `_cmds` and `_inv` names it reads. Those
+names *are* bound there — as **different module objects**, loaded by a different file. Moving the
+definition on that evidence is exactly the failure that broke seven tests earlier in this round. The
+"movable" label was computed by the same kind of reasoning the failure had already refuted.
 
 ⚠️ **The cost is real and is a widened lint blind spot, not a line count.** A fixture reached by import
 is unused *as a name*, so `ruff --fix` deletes the import and the fixture silently stops existing —
