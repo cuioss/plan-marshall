@@ -5,10 +5,18 @@ without re-deriving the analysis.
 
 Sixteen entries, ordered by severity: majors G1–G3, then minors G4–G16.
 
-## G1 — Persist the reviewed-at-all classification, so the retrospective can tell reviewed-clean from nobody-reviewed
+## G1 — Consume the persisted reviewed-at-all classification, so the retrospective can tell reviewed-clean from nobody-reviewed
 
 - **Severity:** major
 - **Kind:** incomplete
+- **⛔ Ownership — this entry is a CONSUMER, not the owner.** The handoff itself (producer, artifact,
+  reader) is owned by **Plan 050 G2** ("Build the persisted reviewed-at-all handoff, or stop claiming
+  the grade discriminates"). 050 owns it because 050 G2 carries the hard coupling that decides the
+  design: *"⛔ Ship G3 in the same change — this handoff is what arms G3's false-clean."* Building the
+  handoff without 050 G3's required-denominated `clean` would take a latent defect live, so the two must
+  land together and the owning entry has to be the one that states the coupling. This entry records the
+  same missing handoff as it is observed from the 040 surface and states what 040's *Done when* needs
+  from it; it must not be implemented independently of 050 G2/G3.
 - **Where:** `.claude/skills/finalize-step-review-retrospective/SKILL.md:151-156` (the ⚠ block that
   records the missing handoff and instructs the step to pass the flag bare), repeated at `:225-230`;
   `.claude/skills/finalize-step-review-retrospective/scripts/review_retrospective.py:153`
@@ -35,13 +43,14 @@ Sixteen entries, ordered by severity: majors G1–G3, then minors G4–G16.
   as the same string on every run the workflow can actually produce. The fail-closed direction is correct
   — an unsubstantiated review must never be credited clean — so the defect is the missing handoff, not the
   grading rule.
-- **Task:** Persist the reviewed-at-all set where a step ordered after the merge gate can read it. The set
-  is `bot_states` filtered to `_REVIEWED_STATES` and mapped `bot_kind → author_login` through the registry
-  docs — the mapping `finalize-step-review-retrospective/SKILL.md:145-149` already specifies. Write it at
-  the `automatic-review` step (the classification's only producer) into a plan-scoped artifact the
-  retrospective can read at `order: 990`, then have the retrospective read it instead of passing the flag
-  bare. Replace the ⚠ block with the mechanism, and keep the fail-closed default for the case where the
-  artifact is absent — a missing handoff must stay `indeterminate`, never become `clean`.
+- **Task:** Take the persisted set from Plan 050 G2 and consume it here. The set is `bot_states` filtered
+  to `_REVIEWED_STATES` and mapped `bot_kind → author_login` through the registry docs — the mapping
+  `finalize-step-review-retrospective/SKILL.md:145-149` already specifies. 050 G2 owns writing it at the
+  `automatic-review` step (the classification's only producer) into a plan-scoped artifact readable at
+  `order: 990`; this entry owns the consumption side — have the retrospective read that artifact instead
+  of passing the flag bare, replace the ⚠ block with the mechanism, and keep the fail-closed default for
+  the case where the artifact is absent, since a missing handoff must stay `indeterminate` and never
+  become `clean`.
 - **Done when:** a zero-findings run in which an enabled reviewer reviewed and found nothing renders a
   different `--display-detail` from one in which no reviewer produced content, with a test that exercises
   the *step's* path rather than `aggregate()` directly; and the ⚠ block no longer instructs the step to
@@ -78,8 +87,17 @@ Sixteen entries, ordered by severity: majors G1–G3, then minors G4–G16.
   value a consumer reads — still says `clean`.
 - **Task:** Add a fourth verdict alongside `DEFICIT_DEFICIT` / `DEFICIT_CLEAN` / `DEFICIT_UNASSESSABLE` —
   the required-side companion of `unassessable` (a name such as `DEFICIT_REQUIRED_ABSENT`) — and return it
-  from `assess_deficit` when `baseline` is non-empty and `required_reviewed` is empty. Order the branches
-  so the baseline check still wins (no baseline stays `unassessable`). Make `_emit_deficit_toon` print
+  from `assess_deficit` when `baseline` is non-empty, **`required_bots` is non-empty**, and
+  `required_reviewed` is empty. ⛔ The `required_bots` guard is load-bearing: `required_reviewed` is
+  filtered on membership in `required_set` (`:675-678`), so it is also empty whenever `required_bots`
+  itself is empty. Without the guard, a run with a reviewing baseline and *no required reviewers
+  configured* — a vacuously satisfied quorum, which `bot-participation-contract.md:46-47` calls "a
+  legitimate configured state, not a misconfiguration" — would be reported as a required-side absence.
+  Define that case separately and keep it out of the new verdict: with `required_bots` empty there is no
+  required side to be absent, so the existing `clean` / `deficit` arithmetic over an empty
+  `required_reviewed` stands, and the empty `required_bots` population is disclosed by the unconditional
+  emission below rather than by a verdict. Order the branches so the baseline check still wins (no
+  baseline stays `unassessable`). Make `_emit_deficit_toon` print
   `baseline_reviewers` and `required_reviewed` unconditionally, as explicit empty lists rather than omitted
   lines, so an absent population is visible instead of inferred. Then update **every** restatement of the
   three-member vocabulary in lock-step — `review_completeness.py:171` (TOON shape), `:175-176` (the
@@ -87,9 +105,10 @@ Sixteen entries, ordered by severity: majors G1–G3, then minors G4–G16.
   (`assess_deficit`'s Returns), `bot-participation-contract.md:554-559`, and
   `automatic-review/SKILL.md:1021-1024` — and land the guard from G8 in the same change so the next
   widening cannot drift them apart by hand.
-- **Done when:** `assess_deficit` with a reviewing baseline and zero reviewing required reviewers returns
-  the new verdict (never `clean`), the rendered TOON shows both populations explicitly in that case and on
-  `unassessable`, a test pins both (see G12), and all five restatements name the new member.
+- **Done when:** `assess_deficit` with a reviewing baseline, a non-empty `required_bots`, and zero
+  reviewing required reviewers returns the new verdict (never `clean`); the same call with an **empty**
+  `required_bots` does **not** return it; the rendered TOON shows both populations explicitly in both
+  cases and on `unassessable`; a test pins each (see G12); and all five restatements name the new member.
 - **Suggested grouping:** automatic-review / review_completeness — deficit signal
 
 ## G3 — Wire the `deficit` subcommand into a workflow, or record explicitly that it is a manual surface
@@ -264,17 +283,18 @@ Sixteen entries, ordered by severity: majors G1–G3, then minors G4–G16.
 - **Evidence:** The guard applies `re.compile(r'classified into exactly one of (?P<count>\w+) members')` to
   the contract's own § "Failure taxonomy" only, and its docstring says so at `:528-529`: *"The
   closure-count check above reads the CONTRACT doc's one closure sentence, so a count restated anywhere
-  else is outside its reach."* A whole-tree sweep finds **seven** taxonomy-count statements, all correct
-  today: `bot-participation-contract.md:52` (the guarded one) and `:73`, `review_completeness.py:189`,
+  else is outside its reach."* A whole-tree sweep finds **nine** taxonomy-count statements across six
+  files, all correct today: `bot-participation-contract.md:52` (the guarded one) and `:73`,
+  `review_completeness.py:60` and `:189`,
   `workflow-pr-doctor/standards/automated-review-lifecycle.md:56`,
-  `phase-6-finalize/workflow/create-pr.md:201`, `automatic-review/SKILL.md:24`, and
-  `tools-integration-ci/standards/pr-review-operations.md:248` — so **six** sit outside the guard. The
+  `phase-6-finalize/workflow/create-pr.md:203`, `automatic-review/SKILL.md:24` and `:700`, and
+  `tools-integration-ci/standards/pr-review-operations.md:248` — so **eight** sit outside the guard. The
   sibling sweep at `:525` covers the whole tree but for `N blocking members`, a different and strictly
   smaller quantity. The same shape now exists one level down: the three-member deficit verdict vocabulary
   is restated at five sites — `review_completeness.py:171`, `:283-285`, `:646-647`,
   `bot-participation-contract.md:554-559`, `automatic-review/SKILL.md:1021-1024` — with no guard reading
   any of them.
-- **Impact:** Those six taxonomy restatements are exactly the class of site the landing run's own
+- **Impact:** Those eight unguarded taxonomy restatements are exactly the class of site the landing run's own
   verification sub-agent had to correct by hand when the taxonomy went from eight members to nine, and the
   five verdict restatements are the sites G2's fourth verdict will have to reach. A count restated in prose
   and guarded nowhere is the misleading-signal defect this epic exists to remove, one level of indirection
@@ -318,7 +338,7 @@ Sixteen entries, ordered by severity: majors G1–G3, then minors G4–G16.
 - **Done when:** both documented `deficit` invocations carry the flag, and a test fails if either drops it.
 - **Suggested grouping:** automatic-review / review_completeness — deficit signal
 
-## G10 — Make the empty-roster `display_detail` fallback state that no reviewer was configured
+## G10 — Give the empty-roster `display_detail` fallback a rendering that does not read as a review
 
 - **Severity:** minor
 - **Kind:** incomplete
@@ -336,11 +356,21 @@ Sixteen entries, ordered by severity: majors G1–G3, then minors G4–G16.
   configured would be a claim about nothing), but the *display string* still reads to a cold reader as "a
   review happened and found nothing".
 - **Task:** Give the empty-roster case its own honest rendering at the composition site rather than at the
-  composer — e.g. `"{N} comment(s) found - no reviewers configured"` — leaving
-  `compose_review_state_summary`'s `''` return and its rationale unchanged. Keep it ASCII and within the
-  80-character bound (see G5).
+  composer, leaving `compose_review_state_summary`'s `''` return and its rationale unchanged. ⛔ Do **not**
+  assert configuration from the empty roster: a string such as `"no reviewers configured"` is a claim that
+  the operator answered *none*, and it is false in the default case, where the question was never put.
+  `automatic-review/SKILL.md:24` states the default is EMPTY *"so a never-asked key stays distinguishable
+  from an answered-empty value"*, and `bot_lists_provenance` (`never_asked` / `migrated` / `answered`) is
+  the field that separates them. Either consume that provenance and render the two cases distinctly — the
+  split Plan 050 G7 owns, mirroring the house pattern in `create-pr.md`'s `skip-bot-review` label rules
+  (`:258-259`, which refuse the label on an empty-plus-`never_asked` posture and apply it only on
+  `answered`/`migrated`) — or, until that mechanism
+  reaches this surface, use wording that claims nothing about configuration, e.g.
+  `"{N} comment(s) found - no reviewer state to report"`. Keep it ASCII and within the 80-character bound
+  (see G5).
 - **Done when:** a run with an empty reviewer roster renders a `display_detail` that differs from the one a
-  reviewed-clean run renders, and a test pins the difference.
+  reviewed-clean run renders, a test pins the difference, and no rendering on this path states that
+  reviewers were configured as none unless `bot_lists_provenance` establishes it.
 - **Suggested grouping:** automatic-review — display_detail composition
 
 ## G11 — Correct the Branch A illustration that describes an unreachable state

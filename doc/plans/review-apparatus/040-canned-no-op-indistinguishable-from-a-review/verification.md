@@ -54,9 +54,12 @@ throughout):
   `deficit` invocation block (`:799`).
 - `grep -rniE "(five|six|seven|eight|nine|ten|eleven)[ -]member" --include=*.md --include=*.py
   marketplace/ test/ .claude/ doc/developer/`, widened with `"one of ten|of the ten|ten non-participation"`
-  because two sites state the count in forms the first pattern misses — **seven** taxonomy-count
-  statements, all reading "ten", all correct (the remaining hits are unrelated metrics-bucket and
-  HEAD-dependence prose).
+  and then with a bare `\bten\b` pass over the owning skills because those patterns still miss two
+  sites (`automatic-review/SKILL.md:700`, "the ten closed non-participation members", and
+  `review_completeness.py:60`, "Ten of the eleven") — **nine taxonomy-count statements across six
+  files**, all reading "ten", all correct (the remaining hits are unrelated metrics-bucket,
+  body-store-verb and HEAD-dependence prose). *Counted here and throughout this document: individual
+  count-bearing **statements**, one per `path:line`, not files and not grouped findings.*
 - `grep -rn "refused_awaitable" … | grep -v "refused_unknown"` — fifteen hits, every one a single-member
   mention in context; no surviving two-way refusal enumeration.
 - `grep -rn "comment(s) found" --include=*.md --include=*.py marketplace/ test/ .claude/` — nine hits, all
@@ -200,11 +203,13 @@ All three registry documents declare the field, with the values the report state
 wording was honoured.
 
 The drift risk the new member created was chased down. A whole-tree sweep for member-count prose returns
-**seven** statements, all reading "ten" and all correct: `bot-participation-contract.md:52`
-("classified into exactly one of ten members") and `:73` ("Seven of the ten members"),
-`review_completeness.py:189` ("Ten members"), `automated-review-lifecycle.md:56` ("exactly one of ten"),
-`create-pr.md:201` ("closed ten-member"), `automatic-review/SKILL.md:24` ("the ten-member failure
-taxonomy"), and `pr-review-operations.md:248` ("That taxonomy has **ten** non-participation members").
+**nine statements across six files**, all reading "ten" and all correct:
+`bot-participation-contract.md:52` ("classified into exactly one of ten members") and `:73` ("Seven of
+the ten members"), `review_completeness.py:60` ("Ten of the eleven") and `:189` ("Ten members"),
+`automated-review-lifecycle.md:56` ("exactly one of ten"), `create-pr.md:203` ("closed ten-member"),
+`automatic-review/SKILL.md:24` ("the ten-member failure taxonomy") and `:700` ("the ten closed
+non-participation members"), and `pr-review-operations.md:248` ("That taxonomy has **ten**
+non-participation members").
 The derived cardinality agrees: `_NON_PARTICIPATION_MEMBERS` in
 `test/plan-marshall/automatic-review/test_bot_participation_contract.py:114-125` is a ten-tuple. A sweep
 for `refused_awaitable`/`refused_hard` without `refused_unknown` finds no surviving two-way enumeration.
@@ -213,7 +218,7 @@ The count is partly machine-guarded: that file's `:501`,
 `_CLOSURE_COUNT = re.compile(r'classified into exactly one of (?P<count>\w+) members')` (`:174`) to the
 contract's own § "Failure taxonomy" and compares the word to the tuple's length. That guard's reach is one
 sentence in one document — the test says so itself at `:528-529` ("a count restated anywhere else is
-outside its reach") — so the other **six** restatements are unguarded prose. A sibling guard at `:525`
+outside its reach") — so the other **eight** statements are unguarded prose. A sibling guard at `:525`
 does sweep the whole tree, but for `N blocking members` claims, a different and strictly smaller quantity.
 
 ### D2 — the deficit signal
@@ -396,7 +401,7 @@ account of *why* they are was weak.
 | `compose_review_state_summary()` + `review_state_summary` field; Branch A interpolates it | ACCURATE | `:586`, `:915`, `automatic-review/SKILL.md:797`, `:805` |
 | Surface 2 "emits a row per **enabled** reviewer (roster ∪ observed), each carrying `participation: measured \| unmeasurable`, closing the vacuous-set (no-row) defect" | ACCURATE | The row emission is at `review_retrospective.py:317`, and the no-row collapse is what the claim names as closed. It does not claim the per-row field separates reviewed-clean from never-ran, and it does not: `:331` renders both `unmeasurable`, as the accompanying test asserts |
 | Surface 2 closes D3's *Done when* (the report's "D3 … (both surfaces)" heading) | OVERSTATED | The no-row collapse is closed. The *string* collapse D3 names is not: at the landing surface 2 had no discriminating rendering at all, and the `comparison` grade that supplies one (#1170) is fed by an input `finalize-step-review-retrospective/SKILL.md:151-155` records as unavailable to the step (§ D3) |
-| "eight documentation-drift instances … all were **fixed** (commit `607fa10`), then confirmed clean by full-tree greps" | ACCURATE | All eight named sites carry the corrected text today, at drifted line numbers: `review_completeness.py:189` ("Ten members"), `automated-review-lifecycle.md:56` ("exactly one of ten"), `pr-review-operations.md:248` ("**ten** non-participation members") and `:258` (three-way refused row), `workflow-integration-github/SKILL.md:137`, `github_pr.py:812` and `:1034-1035`, `_github_pr.py:178`, `test_github_pr.py:1009`. My independent whole-tree sweeps for stale member counts and two-way refusal enumerations return clean |
+| "eight documentation-drift instances … all were **fixed** (commit `607fa10`), then confirmed clean by full-tree greps" | ACCURATE ON THE REMEDIATION, OFF BY ONE ON THE TALLY | Every named site carries the corrected text today, at drifted line numbers — but the sites are **nine locations in seven files**, not eight: `review_completeness.py:189` ("Ten members"), `automated-review-lifecycle.md:56` ("exactly one of ten"), `pr-review-operations.md:248` ("**ten** non-participation members") and `:258` (three-way refused row), `workflow-integration-github/SKILL.md:137`, `github_pr.py:812` and `:1034-1035`, `_github_pr.py:178`, `test_github_pr.py:1009`. The report's "eight" therefore counts neither locations (nine) nor files (seven); the discrepancy is in the tally, not in the work — every one of the nine is corrected. My independent whole-tree sweeps for stale member counts and two-way refusal enumerations return clean |
 | "`test_required_count_alone_cannot_distinguish_the_rows` pins that `required_count == 0` is identical across all five rows" | ACCURATE | The test exists at `:1999`, passes, and varies only the baseline |
 | "New/changed functions did not exist pre-fix, so their tests AttributeError against pre-fix code" (as the D4 fail-pre-fix proof) | ACCURATE BUT NON-DISCRIMINATING | True of any new symbol, so it is not the pre-fix evidence the plan's Verification section demanded. The tests themselves are nonetheless discriminating — the naive-detector mutant fails five of nine (§ D4) |
 | "`./pw verify` … 18979 passed, 14 skipped" | UNVERIFIABLE | Not re-run (the instructions forbid a full build). The two touched test files pass: 184 passed |
@@ -545,10 +550,12 @@ closed, and `--reviewed-reviewers` correctly attributes the clean-vs-indetermina
 
 **Consumers swept, and found clean.** Every restatement of the taxonomy member count, of the refusal
 split, and of the `display_detail` template was checked across `marketplace/`, `test/`, `.claude/`, and
-`doc/developer/` — prose, docstrings, comments, and test docstrings alike. Six member-count statements, all
-"ten"; no two-way refusal enumeration survives; nine occurrences of `comment(s) found` and five of `unified
-triage pending`, all in the changed sites or their tests. The eight drift sites the report names all carry
-corrected text. This part of the work is genuinely complete and better than most.
+`doc/developer/` — prose, docstrings, comments, and test docstrings alike. **Nine** member-count
+*statements* across six files, all "ten" (the same nine itemized under § D1; one is machine-guarded, eight
+are unguarded prose); no two-way refusal enumeration survives; nine occurrences of `comment(s) found` and
+five of `unified triage pending`, all in the changed sites or their tests. The drift sites the report
+names — **nine locations in seven files**, which its own figure of eight undercounts — all carry corrected
+text. This part of the work is genuinely complete and better than most.
 
 **Missing: the deficit signal has no caller.** Established by `grep -rn "deficit" marketplace/ .claude/
 doc/ -l` and `grep -rn "check_deficit\|assess_deficit\|cmd_deficit" --include=*.py`.
@@ -583,7 +590,7 @@ where the collapse survives.
 **Missing: the member-count guard reaches one sentence.**
 `test_bot_participation_contract.py:501` checks the contract's own closure sentence, and a separate sweep
 (`:525`) checks every "N blocking members" claim across the marketplace docs — but no check reads the
-**six** other *taxonomy*-count restatements. Those six are exactly the class of site the run's own
+**eight** other *taxonomy*-count statements. Those eight are exactly the class of site the run's own
 sub-agent had to correct by hand when the taxonomy went from eight members to nine. The same shape now
 exists one level down for this plan's own additions: the three-member deficit verdict vocabulary is
 restated at five sites — `review_completeness.py:171` (the docstring's TOON shape), `:283-285` (the
@@ -659,8 +666,9 @@ Counts by severity: **0 blockers, 3 major, 13 minor** (16 gaps, listed in `gaps.
 
 The plan's hard mechanism landed and is correct where it landed: the three-valued `rate_limit_class` no
 longer folds `unknown` into a positive hard-quota finding, the counting rule is written once with all three
-populations published and is genuinely consumed by the code, and the eight documentation-drift instances
-the new taxonomy member created were chased down and are still correct in the tree — a whole-tree sweep for
+populations published and is genuinely consumed by the code, and the documentation-drift instances the new
+taxonomy member created — nine locations in seven files, which the report tallies as eight — were chased
+down and are still correct in the tree; a whole-tree sweep for
 stale member counts and two-way refusal enumerations comes back clean. Every behaviour the plan's D4
 enumerates has a test, and those tests discriminate: the naive count-only detector the plan warns about
 fails five of the nine, both load-bearing negative cases among them.

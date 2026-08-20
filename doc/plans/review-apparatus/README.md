@@ -79,10 +79,11 @@ carries, and `500` reports the prose dependency instead of editing it.
 
 Line numbers here are **leads** — re-derive each passage by its quoted text, not by its line.
 
-A passage this table does not name is settled by neither plan: **report it, do not choose.**
+A passage this table does not name is settled by no plan here: **report it, do not choose.**
 
-**Three checks keep this from drifting, and each can fail.** Run them against `500` and `510` before
-either is handed to a session. Check 1 is the one that matters: an earlier version tested only
+**Three checks keep this from drifting, and each can fail.** Run them against every plan the
+`Written by` column names — `500`, `510`, `560` and `570` — before any of them is handed to a
+session. Check 1 is the one that matters: an earlier version tested only
 whether a named passage *appeared* in the table, which is why it caught one of three known defects —
 presence was never the question, **agreement with the `Written by` column** is.
 
@@ -93,11 +94,13 @@ presence was never the question, **agreement with the `Written by` column** is.
    other plan MUST carry the literal phrase `per the README table`** — that token, not a paraphrase,
    so the check is a grep rather than a judgement. A plan listing a passage in its § Expected surface,
    or under a *Done when* it must satisfy, is claiming to write it, so an unmarked mention there is a
-   failure. Test the assignee, not the mention.
+   failure. Test the assignee, not the mention. A mention that only **reads** a passage — `570` D4's
+   cold read of §§ "The currency rule" and "Evidence for a bot that edits one comment in place", both
+   `500`'s — takes the marker too, because an exemption a grep cannot see is one that goes stale.
 2. **Every contract passage a plan writes has a row here.** A passage a deliverable writes and this
    table does not name is owned by nobody — the defect that took four rounds to find. Read the
    deliverable bodies for this, not the Notes.
-3. **Neither plan assigns ownership.** Grep both for `owns` / `owned by` / `belongs to` in a sentence
+3. **No plan assigns ownership.** Grep each for `owns` / `owned by` / `belongs to` in a sentence
    that also names a contract passage. The only permitted hit is a pointer *to this table* naming no
    passage. Any other hit is a second copy of the split, and a second copy is what goes stale.
 
@@ -116,7 +119,8 @@ one; a later verification refuted a row of it by re-running the checks against a
 claim about a heuristic's coverage is exactly as prone to going stale as the split it guards, and a
 false coverage claim is worse than none — it licenses trusting a grep that did not look.
 
-The same rule is why **neither plan counts the passages or sites of this shared document**: every
+The same rule is why **neither `500` nor `510` counts the passages or sites of this shared
+document**: every
 falsehood this boundary produced was a stale numeral. That set is re-derived from `010 gaps.md`
 § Where at the moment of the claim, and written down neither here nor there. The rule is scoped to
 this document — a count elsewhere in a plan is fine where it names its members in the same breath,

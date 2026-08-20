@@ -122,10 +122,23 @@ anything; and the population size appears in the test's own output.
 ### D1 — Stop the producer pre-filter reading a finding's AI-agent block as an acknowledgment
 
 Scope the **shared** `ignore.low` layer in `_is_obvious_noise` to what it is for: a short,
-whole-comment acknowledgment, not a phrase buried in a long review body. Apply the shared
-`_COMPILED_IGNORE` layer only when the whitespace-stripped body is at or under a length threshold;
-leave the per-bot literal-marker layer and the registered-trigger recognizer untouched, since both are
-already whole-comment scoped.
+whole-comment acknowledgment, not a phrase buried in a review body. Leave the per-bot literal-marker
+layer and the registered-trigger recognizer untouched, since both are already whole-comment scoped.
+
+⛔ **A length threshold alone does not close this defect, and must not be the only guard.** Below the
+threshold the shared patterns still run against the raw body, so a *short* genuine finding whose
+quoted code, blockquote, or compact AI-agent block contains `looks good`, `ship it`, `no objection` or
+`[bot]` is dropped exactly as before — the same defect, merely rarer. Both guards are required:
+
+1. **Structural (the guard that actually closes it).** Before the shared layer runs, remove from the
+   candidate text every region that is not the commenter's own bare prose: fenced code blocks,
+   blockquoted lines, and `<details>` blocks (which is where the AI-agent prompt block lives). Apply
+   `_COMPILED_IGNORE` to the **remainder**, and treat the comment as noise only when that remainder is
+   non-empty and an acknowledgment pattern covers **the whole of it** — a whole-comment match, not a
+   substring hit. A body whose acknowledgment phrase survives only inside a removed region is
+   therefore not noise, at any length.
+2. **Length (a cheap outer bound, kept as a secondary condition).** Apply the shared layer only when
+   the whitespace-stripped body is at or under a derived length threshold.
 
 The threshold is **derived, not guessed**: take the longest body in the existing noise-filter test
 fixtures that must still be dropped by the shared layer, round up, and record that number and its

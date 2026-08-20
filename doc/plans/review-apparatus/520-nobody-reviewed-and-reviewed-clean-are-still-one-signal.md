@@ -100,8 +100,20 @@ files. **Every line number in this plan is a lead**: re-derive it by reading the
 
 **This is a stop condition, not a survey.** D1–D3 rest on the premise that the reviewed-at-all
 handoff can be built entirely from things already derivable from the tree. Establish all four legs
-below by reading the repository. **If any leg cannot be derived, stop, write what failed into the run
-report, and do not proceed to D1.** In particular: **do not author a hand-maintained
+below by reading the repository.
+
+⛔ **If any leg cannot be derived, the run STOPS at D0 — executably, and readable from this plan
+alone.** It reverts any partial D0 edit, makes **no** change to any file named in § Expected surface,
+starts **none** of D1–D6 (a halted premise blocks the plan, not merely the deliverables that consume
+the populations), and writes a run report whose first line records the plan as **BLOCKED AT D0**,
+naming the leg that failed and what was tried. There is no partial-credit path in which some
+deliverables ship after a failed derivation.
+
+⛔ **Precondition for D1–D6.** Each of D1, D2, D3, D4, D5 and D6 begins **only** after D0 has
+reported PASS on all four legs. This precondition is restated at the head of each later deliverable
+so it binds wherever the run resumes reading.
+
+In particular: **do not author a hand-maintained
 `bot_kind → author_login` list, and do not hard-code a reviewer roster anywhere.** A transcribed
 reviewer list is the same defect class this plan is closing, so a fallback of that shape would
 rebuild the defect inside the fix.
@@ -124,26 +136,57 @@ rebuild the defect inside the fix.
    `manage-files write`).
 
 *Done when:* the run report states, per leg, the file and symbol that settled it and the value
-derived — or states which leg failed and that the plan halted there. No `bot_kind → author_login`
-pair is written as a literal into any file this plan changes.
+derived — or states which leg failed, that the plan halted there, and shows a diff carrying no change
+to any file in § Expected surface. No `bot_kind → author_login` pair is written as a literal into any
+file this plan changes.
 
 ### D1 — Build the reviewed-at-all handoff, producer to consumer
 
 **Gaps: 040/G1, 050/G2, 050/G9.**
 
+⛔ **Precondition: D0 reported PASS on all four legs.** If D0 halted, this deliverable does not start.
+
 The missing write, both ends of it, and the instructions that currently prescribe the workaround.
+
+**The artifact contract — decided here, so the run does not decide.** `manage-files write` / `read`
+are only a transport; a handoff is not defined until the two ends agree on an identity, a schema, and
+what a bad read means. All four are fixed as follows, and both ends state them in their own text:
+
+- **Identity.** One file per plan, at the plan-directory root beside the retrospective's own
+  `review-retrospective.md`: `--plan-id {plan_id} --file review-participation-handoff.json`. The
+  `{plan_id}` is the same one both steps already carry; there is no second lookup key and no search.
+- **Schema.** A single UTF-8 JSON object, keys sorted, with exactly these members:
+  `schema_version` (integer, `1`), `pr_number` (integer — the PR the classification was computed
+  for), `head_sha` (string — the HEAD the `review_completeness check` observation was taken at),
+  `reviewed_author_logins` (sorted string array), `required_author_logins` (sorted string array),
+  `optional_author_logins` (sorted string array), and `bot_lists_provenance` (string, one of the
+  three-valued key D0 leg 3 confirms). Every login is derived through the registry; **none is
+  written as a literal.**
+- **Producer key / consumer lookup.** The `automatic-review` step is the only writer; the
+  retrospective is the only reader, and it looks the artifact up by that exact `{plan_id}` and
+  filename — never by scanning the plan directory, never by falling back to another file.
+- **Absent, unreadable, malformed, or stale.** Four cases, **one behaviour**. Absent =
+  `manage-files read` returns `status: error` with `file_not_found`. Unreadable = any other non-success
+  return. Malformed = the payload is not a JSON object, or `schema_version` is missing or is a value
+  this consumer does not know, or any member above is missing or of the wrong type. **Stale** = the
+  artifact's `pr_number` is not the PR being finalized — the case that makes a wrong-plan or
+  left-over file dangerous, and the reason `pr_number` is in the schema at all. In **all four**, the
+  consumer treats the handoff as absent: `--reviewed-reviewers` stays bare, the grade stays
+  `indeterminate`, and the step records **which** of the four fired. It must never repair, guess at,
+  or partially consume a payload it could not fully validate.
 
 - **Producer.** At the `automatic-review` step — the classification's only producer, at the point it
   already reads `bot_states` (`automatic-review/SKILL.md` around line 700, fed by the
-  `review_completeness check` call around line 676) — persist the reviewed-at-all set as a plan-dir
-  artifact via `manage-files write`. The set is `bot_states` filtered to `_REVIEWED_STATES` and
-  mapped `bot_kind → author_login` through the registry (the mapping the retrospective's skill
-  already specifies around lines 145–149). Persist the **required** and **optional** classifications
-  alongside it, since D2 needs them.
+  `review_completeness check` call around line 676) — persist the reviewed-at-all set as the artifact
+  defined above, via `manage-files write` (multi-line payload, so staged with the `Write` tool and
+  passed by `--content-file`, per `manage-files`' own constraint). The `reviewed_author_logins` set is
+  `bot_states` filtered to `_REVIEWED_STATES` and mapped `bot_kind → author_login` through the
+  registry (the mapping the retrospective's skill already specifies around lines 145–149). The
+  **required** and **optional** classifications go in the same object, since D2 needs them.
 - **Consumer.** Have `finalize-step-review-retrospective` read that artifact and pass the real value
   to `--reviewed-reviewers`, at both invocation sites (SKILL.md around lines 166–170 and 232–236).
-  **Keep the fail-closed default**: when the artifact is absent or unreadable, the flag stays bare
-  and the grade stays `indeterminate`. A missing handoff must never become `clean`.
+  **Keep the fail-closed default**: the four failure cases above all leave the flag bare and the grade
+  `indeterminate`. A missing handoff must never become `clean`.
 - **Remove the workaround text.** Replace the ⚠ block at SKILL.md ~151–156 and its repeat at ~225–230
   with the mechanism. No sentence may still instruct the flag to be passed bare as the normal path.
 - **Fix the placeholders (050/G9).** `{reviewed_author_logins}` appears in both bash blocks and is
@@ -153,14 +196,23 @@ The missing write, both ends of it, and the instructions that currently prescrib
   derive-never-transcribe style. Also define `{k}` in the `clean` display-detail row (around line
   190).
 
-*Done when:* a test exercises the **step's** path — not `aggregate()` directly — and shows that a
-zero-findings run in which an enabled reviewer is present in the persisted artifact produces a
-different `--display-detail` from one in which the artifact is absent or names no reviewer; the ⚠
-block is gone; and no placeholder in either invocation block is undefined in the skill.
+*Done when:* tests exercise **both step paths** — the producer's write and the retrospective's read,
+not `aggregate()` directly — and show that a zero-findings run in which **a required reviewer**
+(`required_author_logins` carries it, and `reviewed_author_logins` carries the same login) is present
+in the persisted artifact produces a different `--display-detail` from an otherwise identical run in
+which that **same required reviewer** is absent from `reviewed_author_logins`. Using the same required
+login on both sides is the point: a case that passes with an *optional* reviewer proves nothing about
+the required-versus-optional contract D2 consumes. A companion test drives each of the four failure
+cases — absent, unreadable, malformed, and a `pr_number` naming a different PR — and asserts all four
+leave the flag bare and the grade `indeterminate`, with the fired case named. A round-trip test
+asserts the producer writes, and the consumer accepts, exactly the schema above. The ⚠ block is gone,
+and no placeholder in either invocation block is undefined in the skill.
 
 ### D2 — Make the `comparison` grade compute over the populations it names
 
 **Gaps: 050/G1, 050/G3, 050/G6, 050/G7, 050/G8, 040/G6.**
+
+⛔ **Precondition: D0 reported PASS on all four legs.** If D0 halted, this deliverable does not start.
 
 Every item here is one shape: *a field asserting something the code did not read, or read from the
 wrong operand.*
@@ -230,14 +282,29 @@ claims the artifact carries something Step 4 does not instruct it to write. A te
 
 **Gaps: 040/G2, 040/G3, 040/G12, 050/G13.**
 
+⛔ **Precondition: D0 reported PASS on all four legs.** If D0 halted, this deliverable does not start.
+
 The same defect on two envelopes of `review_completeness.py`, plus the wiring that makes the first
 one observable at all.
 
 - **A fourth deficit verdict (040/G2).** Add the required-side companion of `unassessable` — a name
   such as `DEFICIT_REQUIRED_ABSENT` — alongside `DEFICIT_DEFICIT` / `DEFICIT_CLEAN` /
-  `DEFICIT_UNASSESSABLE` (around lines 283–285), and return it from `assess_deficit` when `baseline`
-  is non-empty and `required_reviewed` is empty. Order the branches so the baseline check still wins:
+  `DEFICIT_UNASSESSABLE` (around lines 283–285). Order the branches so the baseline check still wins:
   no baseline stays `unassessable`.
+
+  ⚠ **`required_reviewed` empty is two different facts, and only one of them is a finding.** It is
+  empty when a configured required reviewer did not review, and *equally* empty when no required
+  reviewer is configured at all — so selecting the new verdict on `required_reviewed` emptiness alone
+  would report a project with a deliberately empty required roster as missing a required review, a
+  false positive of exactly the shape this plan exists to remove. **Give `assess_deficit` the required
+  roster and its provenance as its own inputs** (it derives neither today), and restrict
+  `DEFICIT_REQUIRED_ABSENT` to a **configured, non-empty** required population: `baseline` non-empty
+  **and** the required roster non-empty **and** `required_reviewed` empty. Where the required roster
+  is empty, the verdict carries the same distinction `quorum_basis` draws in the last bullet of this
+  deliverable — `vacuous` for an answered-empty roster, `unestablished` for `never_asked` /
+  `migrated` — and is in no case reported as a missing required review, and in no case `clean`. The
+  two surfaces must agree: a run whose `check` envelope says `quorum_basis: vacuous` must not get a
+  `deficit` verdict that claims a required reviewer is absent.
 - **Publish the empty populations (040/G2).** Make `_emit_deficit_toon` print `baseline_reviewers`
   and `required_reviewed` **unconditionally**, as explicit empty lists rather than omitted lines, so
   an absent population is visible instead of inferred. This is the plan's own principle applied to
@@ -251,15 +318,21 @@ one observable at all.
 - **Give the signal a caller (040/G3).** Nothing in the tree invokes `deficit`; the only occurrence
   is the § "Canonical invocations" block. Add the call to the `automatic-review` step's
   participation-guard block, immediately after the `check` call whose observation sets it already
-  shares, forwarding the same flags **including `--refused-causes` and `--refusal-size-caps`**.
+  shares, forwarding the same flags **including `--refused-causes` and `--refusal-size-caps`**, and
+  **including the required roster and its provenance** — without those two the verdict cannot tell a
+  missing required review from an unconfigured one, so a caller that omits them is a caller that
+  re-opens the false positive.
   Record the verdict as an INFO `decision` line — never as a gate, never in `display_detail`'s
   pass/fail sense — so the non-gating ceiling stated in the envelope (`gates_merge: false`,
   `proves: reviewer_quality_only`) stays intact.
 - **Test the blind spot (040/G12).** No test in the tree constructs a required reviewer with
   `reviewed: False` alongside a *reviewing* baseline: the nearest case sets `reviewed=False` on the
   baselines too, so the `not baseline` branch short-circuits before the gap can be observed. Add the
-  mixed shape, asserting the verdict is not `clean`, plus a companion asserting both
-  `baseline_reviewers` and `required_reviewed` appear in the rendered TOON when empty.
+  mixed shape with a **configured, non-empty** required roster, asserting the verdict is the new one
+  and not `clean`; add its twin with an **answered-empty** required roster, asserting the verdict is
+  neither the new one nor `clean` and that it agrees with the envelope's `quorum_basis`; plus a
+  companion asserting both `baseline_reviewers` and `required_reviewed` appear in the rendered TOON
+  when empty.
 - **Mark the vacuous quorum on the participation envelope (050/G13).** `check_completeness` returns
   `participation_complete: true` for an empty `required_bots` — a vacuously satisfied quorum — and
   the envelope carries no field distinguishing that from a met one. Emit a distinguishing field
@@ -270,8 +343,11 @@ one observable at all.
   path around line 982) — **adding the provenance read to that step is part of this deliverable, not
   an assumption about it.**
 
-*Done when:* `assess_deficit` with a reviewing baseline and zero reviewing required reviewers returns
-the new verdict and never `clean`; the rendered TOON shows both populations explicitly in that case
+*Done when:* `assess_deficit` with a reviewing baseline, a **configured non-empty** required roster
+and zero reviewing required reviewers returns the new verdict and never `clean`; the same call with an
+**answered-empty** required roster returns neither the new verdict nor `clean`, but the vacuous form
+that agrees with the `check` envelope's `quorum_basis` for the same configuration; the rendered TOON
+shows both populations explicitly in that case
 and on `unassessable`; a workflow document invokes `review_completeness deficit` and dispositions its
 verdict as non-gating; a `check` with empty `required_bots` produces an envelope a consumer can tell
 apart from a satisfied non-empty quorum, and `branch-cleanup.md` reads and renders the provenance.
@@ -280,6 +356,8 @@ Tests pin the deficit cases and the quorum pair.
 ### D4 — Bound and de-glyph every operator-facing string these surfaces render
 
 **Gaps: 040/G4, 040/G5, 040/G10, 040/G11, 050/G14.**
+
+⛔ **Precondition: D0 reported PASS on all four legs.** If D0 halted, this deliverable does not start.
 
 The governing contract is
 `marketplace/bundles/plan-marshall/skills/phase-6-finalize/standards/external-step-contract.md` §
@@ -308,6 +386,18 @@ against **worst-case placeholder expansion**, never the literal form. The render
   summary segment is present (the summary already tells the reader more), and cap the summary at the
   N largest buckets with a `+K more` remainder so the length has a ceiling independent of roster
   size.
+
+  ⚠ **The bucket count is only one of the two unbounded axes; the numbers are the other.** Capping
+  segments bounds how many `{count} {label}` pairs are rendered, and bounds nothing about how wide
+  each `{count}` is: the leading `{N} comment(s) found`, every per-bucket count, and the `+K more`
+  remainder all grow a digit at a time with no ceiling, so a capped-bucket string is still unbounded.
+  **Bound the numeric width too**, so the ≤80 budget holds for any input and not merely for any
+  roster: render every count through one shared bounded formatter that caps its own width at a stated
+  number of digits (a count at or above the ceiling renders as a saturating form such as `99+`),
+  **or** compose against an explicit character budget — build segments in priority order and stop
+  adding them while the budget still admits the remainder marker. Whichever shape the run takes, state
+  the ceiling beside the table, and make the budget a property of the renderer rather than of the
+  inputs it happened to be tested with.
 - **The empty-roster fallback (040/G10)** at `automatic-review/SKILL.md` ~798 falls back to
   `"{N} comment(s) found (unified triage pending)"` — character-for-character the collapsed string
   this whole epic exists to remove — and `required_bots`/`optional_bots` **both default empty**, so an
@@ -334,15 +424,20 @@ against **worst-case placeholder expansion**, never the literal form. The render
   git-tracked, and write the disclosure so it reports whatever value the run observes.
 
 *Done when:* every rendered form of both `display_detail` families is ASCII-only and ≤80 characters
-at its widest expansion **over any roster size**; each measurement is stated beside its table in the
+at its widest expansion **over any roster size and any count magnitude** — a roster carrying one
+reviewer in every bucket, and the same roster with counts large enough to exercise the numeric
+ceiling, both fit; each measurement is stated beside its table in the
 skill that owns it; a run with an empty reviewer roster renders a string that differs from a
 reviewed-clean run's; the Branch A illustration names a configuration that actually reaches Branch A;
 and the awaitable-refusal disclosure names its governing config key. Tests pin the length/ASCII
-budget and the empty-roster difference.
+budget over **both** axes — large bucket populations and large counts — and the empty-roster
+difference.
 
 ### D5 — Replace guards that cannot fail with guards derived from behaviour
 
 **Gaps: 040/G7, 040/G8, 040/G9, 050/G10, 050/G11, 050/G15.**
+
+⛔ **Precondition: D0 reported PASS on all four legs.** If D0 halted, this deliverable does not start.
 
 Each item is a guard whose expectation is transcribed from — or derived from — the very thing it
 guards, or a documented surface with no guard at all.
@@ -411,6 +506,8 @@ docstring enumerates the `comparison` section.
 ### D6 — Record three open decisions instead of taking them
 
 **Gaps: 040/G13, 040/G15, 050/G5.**
+
+⛔ **Precondition: D0 reported PASS on all four legs.** If D0 halted, this deliverable does not start.
 
 This run has no operator to ask, so each of these is authored to **record a proposal**, never to make
 the call. Write each into the run report as a clearly-labelled proposal carrying: the current
@@ -616,7 +713,9 @@ this run; those command lines are **the text being edited**, not commands to run
 **No plugin-cache sync is owed.** This plan edits `marketplace/bundles/`, and in the standalone lane
 that neither triggers a sync nor records one as owed — the merged bundle source is authoritative.
 
-**Sequencing inside the plan.** D0 gates D1–D3. D1 must land **with** D2's required-denominated
+**Sequencing inside the plan.** D0's HALT gates **all** of D1–D6 — a failed premise blocks the plan,
+not merely the deliverables that read its populations — while D0's *populations* are consumed by
+D1–D3. D1 must land **with** D2's required-denominated
 `clean`, not before it: `clean` is unreachable in production today precisely because the handoff is
 missing, so building the handoff alone arms a false-clean that is latent right now. D2's row-level
 three-valued `participation` is likewise inert until D1 lands. D4, D5 and D6 are independent of that

@@ -155,6 +155,7 @@ case the diff carries no change to any file in § Expected surface.
 ### D1 — Emit the refusal cause and cap on both producers, and stop the ETA extractor crashing
 
 *Discharges:* `120` G1 (the headline), `120` G2, `120` G4.
+
 ⛔ **Precondition: D0 reported PASS.** If D0 halted, this deliverable does not start.
 
 - Add `cause` (via `_github_pr.refusal_cause`) and `cap` (via `_github_pr.refusal_size_cap`) to both
@@ -193,6 +194,7 @@ arming fixture would fail if an `awaitable_window` bot's size refusal armed `cla
 ### D2 — Make a drifted refusal wording observable, and sweep every declared wording
 
 *Discharges:* `110` G3, `110` G4, `110` G5.
+
 ⛔ **Precondition: D0 reported PASS.** If D0 halted, this deliverable does not start.
 
 - **Expose the layer provenance first.** `_is_refusal_notice` returns a bare `bool` and swallows
@@ -246,6 +248,7 @@ test.
 ### D3 — Make `review_completeness`'s flag surface describe and behave like its own parser
 
 *Discharges:* `030` G5, `030` G8, `120` G5.
+
 ⛔ **Precondition: D0 reported PASS.** If D0 halted, this deliverable does not start.
 
 - **Stop the silent drop.** `--stale-participation-bots` routes through `parse_participation`, whose
@@ -292,6 +295,7 @@ subcommand; and each of the three invocation sites states the pair-form set in i
 ### D4 — Make the operator-facing refusal surfaces say something an operator can act on
 
 *Discharges:* `120` G3, `120` G7, `120` G11.
+
 ⛔ **Precondition: D0 reported PASS.** If D0 halted, this deliverable does not start.
 
 - **Give `{cap}` a derivation.** The barrier interpolates a bare `{cap}` into the headless
@@ -331,6 +335,7 @@ default-path loop-back prompt names where the remedies are.
 ### D5 — Account a decline as a decline, and make the call-site population test say what it asserts
 
 *Discharges:* `010` G6, `110` G7, `110` G8, `010` G12.
+
 ⛔ **Precondition: D0 reported PASS.** If D0 halted, this deliverable does not start.
 
 - **Consume `head_sha_verified`.** `bot-participation-contract.md` states the rule — "a `matched:
@@ -366,6 +371,7 @@ for the taxonomy's cardinality remains in the test module.
 ### D6 — Rewrite the contract and registry prose that no longer describes the code
 
 *Discharges:* `010` G4, `010` G13, `120` G6, `120` G10.
+
 ⛔ **Precondition: D0 reported PASS.** If D0 halted, this deliverable does not start.
 
 Every site below is prose whose only value is what a later reader does with it, so D6's verification

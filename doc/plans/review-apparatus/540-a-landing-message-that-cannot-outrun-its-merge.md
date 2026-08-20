@@ -172,17 +172,24 @@ run needs, so those files are corroboration, never required reading.
    retry at `:721` and the continue-to-next-step behaviour at `:1057` / `:592`).
    *Done when:* a test fails against the current unconditional emission and passes against the new one,
    asserting that a run whose `branch-cleanup` facts carry no `merge_mechanism` produces a message whose
-   payload **and** prose assert no landing; `emit-landing.md` contains no unconditional
-   landing-asserting headline template and carries a worked example for the non-merged case; and no
-   sentence in `branch-cleanup.md` claims a re-entry the re-entry check suppresses.
+   payload **and** prose assert no landing; every row of the mapping table — including the fallback row
+   — is covered by a test that asserts the message shape that row names and rejects the shapes of its
+   neighbours; `emit-landing.md` contains no unconditional landing-asserting headline template and
+   carries a worked example for each non-merged row; and no sentence in `branch-cleanup.md` claims a
+   re-entry the re-entry check suppresses.
 
 3. **D2 — The landing's facts are validated at the value level, carry their commit, and exist once per
    plan** *(discharges 080-G3, 080-G6, 080-G9)*
    In `plan-orchestrator/scripts/_orchestrator_inbox.py`:
    — `cmd_inbox_write` (`:890-982`) validates slug, sender id, sender type, kind, epic existence,
-   target-plan deliverability and payload non-emptiness, and never checks for an existing landing from
-   the same sender; `allocate_message_path` (`:721-749`) simply takes the next free sequence. Refuse a
-   second `kind: landing` from the same `sender_id` at the write boundary with a **named error**. Prefer
+   target-plan deliverability and payload non-emptiness, and never checks for an existing landing for
+   the target plan; `allocate_message_path` (`:721-749`) simply takes the next free sequence. Refuse a
+   second `kind: landing` **for the same `target_plan`** at the write boundary with a **named error**.
+   ⛔ **Scope the uniqueness key on `target_plan` + `kind: landing`, not on `sender_id`.** The invariant
+   this discharges is one landing per *plan*; a retry, a re-entered finalize, or a re-dispatched step
+   arrives with a different `sender_id` and would file a second landing for the same plan against a
+   sender-scoped key. `sender_id` is retained on the message as **metadata** — it is reported in the
+   refusal so the operator can see which sender lost the race — and is not part of the key. Prefer
    this over an automatic supersession link (`cmd_inbox_supersede` exists as a manual verb): a
    supersession marker leaves the drain reconciling a sequence, which the single-landing invariant exists
    to avoid. The invariant every source states today is scoped per *run*
@@ -192,8 +199,18 @@ run needs, so those files are corroboration, never required reading.
    (`missing = [key for key in LANDING_REQUIRED_KEYS if not facts.get(key)]`), while the producer's Error
    Handling table instructs writing a failed fact read as `n/a` (`emit-landing.md:235`) — a non-empty
    value, so every degraded field passes. Add a value-level arm: report a `degraded_keys` list beside
-   `missing_keys` and refuse `complete: true` for an all-`n/a` block, and validate `merge_state` against
-   the vocabulary the spec declares — `merged` / `open` / `n/a`
+   `missing_keys`, and set **`complete: false` whenever `degraded_keys` is non-empty** — not only when
+   every key is degraded. ⛔ **An all-`n/a` test is the wrong threshold**: a block carrying
+   `merge_state: merged` with one required fact degraded to `n/a` is still non-empty, still passes an
+   all-`n/a` check, and still reports a landing as fully substantiated on a fact nobody read. One
+   degraded required fact makes the block incomplete.
+
+   The one exception is a degradation the specification **declares as allowed** — the local-only case,
+   where `pr` and `merge_state` are `n/a` by design (`branch-cleanup` Branch B). Enumerate the allowed
+   degradations explicitly in `landing-payload-spec.md`, one entry per key naming the condition under
+   which `n/a` is a legitimate value for it; a key degraded outside its declared condition, and any key
+   with no declared allowed degradation at all, forces `complete: false`. Also validate `merge_state`
+   against the vocabulary the spec declares — `merged` / `open` / `n/a`
    (`plan-orchestrator/standards/landing-payload-spec.md:84`) — which nothing validates today.
    — Add a merge-commit SHA key to `LANDING_REQUIRED_KEYS` (**eight** keys today — ⚠ re-derive by
    reading `:811-820`), to the payload spec's mechanisable table and to the producer's fact assembly,
@@ -206,8 +223,13 @@ run needs, so those files are corroboration, never required reading.
    `test_landing_completeness.py:137-141` asserts three membership facts about `LANDING_REQUIRED_KEYS`
    and never reads the producer. Parse `emit-landing.md`'s required-key list and compare it against the
    constant.
-   *Done when:* a second landing write from the same sender is refused with a named error; an all-`n/a`
-   landing is not reported `complete: true` and an out-of-vocabulary `merge_state` is named as a defect;
+   *Done when:* a second landing write for the same `target_plan` is refused with a named error —
+   pinned by a test that writes the second landing under a **different** `sender_id` and still observes
+   the refusal; a landing carrying a single
+   degraded required fact beside otherwise-substantiated ones is not reported `complete: true`, pinned
+   by a test whose block sets `merge_state: merged` and exactly one other required key to `n/a`; a
+   block whose only `n/a` values are the spec's declared allowed degradations **is** reported complete;
+   an out-of-vocabulary `merge_state` is named as a defect;
    a landing emitted for a merged PR carries the merged commit SHA and the completeness check reports it
    missing when absent; and the shared-source test fails when producer and validator diverge.
 
@@ -220,10 +242,26 @@ run needs, so those files are corroboration, never required reading.
    `workflow/create-pr.md:169-172` tells the agent `omitted: true` means the plan has no outline intent
    and "This is a normal outcome for outline-less plans, not a failure" — and the decision-log line
    interpolates the script's reason, so a reader failure is logged **as** the absence claim. Distinguish
-   the three degradations: return an error status (or an `omitted: true` carrying a distinct
-   `reason: outline_unreadable`) when the reader raises `OSError`, exits non-zero, or returns an
-   unparseable envelope, and reserve the absence reason for a reader that succeeded and reported empty
-   or not-found sections. Route the new reason in `create-pr.md`'s branch table to a failure disposition.
+   the three degradations, in **one** response schema — do not leave the choice open, because the two
+   candidate shapes need different consumer branches and a run with no operator cannot pick between
+   them mid-flight.
+
+   ⛔ **The contract is: a reader failure is an error result, not an omission.** When
+   `_run_outline_read` raises `OSError`, the child exits non-zero, or the envelope is unparseable,
+   `cmd_render` emits the module's **existing** error shape — `status: 'error'`, `operation: 'render'`,
+   `error: 'outline_unreadable'`, and a `detail` naming the section and the underlying cause — and
+   returns **exit code 1**, exactly as its `draft_unreadable`, `empty_draft` and `body_unreadable`
+   siblings already do. It does **not** emit `omitted: true`, and it does not exit 0. The
+   `omitted: true` / `reason: no outline intent…` shape is reserved for a reader that **succeeded** and
+   reported every declared section empty or not-found. ⚠ Re-derive the sibling error shape and its exit
+   code from `pr_intent_section.py` before implementing rather than trusting this paragraph.
+
+   In `create-pr.md`, route `outline_unreadable` to the **same failure branch** the document already
+   gives a non-zero `pr_intent_section` exit under its exit-code convention — STOP the step and return
+   the error TOON verbatim — and name that branch explicitly beside the `omitted: true` row, so the
+   branch table states which of the two rows a given return takes. Delete or qualify the sentence at
+   `create-pr.md:169-178` that calls the omitted outcome "a normal outcome for outline-less plans, not
+   a failure", so it describes only the succeeded-and-empty case.
    Only the non-success-status path is exercised today
    (`test/plan-marshall/phase-6-finalize/test_pr_intent_section.py:67-68`, through a stand-in that
    always carries `returncode=0` and parseable output); cover the other three.
@@ -241,8 +279,11 @@ run needs, so those files are corroboration, never required reading.
    reading the retrospective later." Add the resolved SHA to the artifact body as an unconditional
    as-of line, alongside the `gate_head_sha` / `reviewed_head_sha` the delta section already carries,
    and correct the `:94` claim to name where the stamp actually lands.
-   *Done when:* a reader failure produces an outcome distinguishable from a genuinely intent-less plan,
-   pinned by a test, and no document describes a reader failure as normal; the composed PR body states
+   *Done when:* each of the three reader failures produces `status: error` with
+   `error: outline_unreadable` and a non-zero exit, pinned by one test per failure, and none of them
+   produces `omitted: true`; a succeeded-but-empty read still produces `omitted: true` with the absence
+   reason and exit 0; `create-pr.md`'s branch table names the disposition for each of the two returns
+   and no document describes a reader failure as normal; the composed PR body states
    the HEAD its diff scope was resolved against; and the composed `review-retrospective.md` carries the
    HEAD it describes regardless of which optional sections are present.
 
@@ -313,9 +354,18 @@ run needs, so those files are corroboration, never required reading.
    registration, and two test files — **no code path calls the gate**, and the only refusal assertion
    tests `check()` directly. Deleting the entire "Pre-Archive Foreign-PR Landing Gate" section therefore
    breaks no test. (⚠ Prose-only invocation is the house convention for this skill's scripts, not an
-   anomaly — the missing thing is the proof, not a different call style.) Add an enforcement test at the
-   archive boundary: a document-contract test asserting `archive-plan.md` carries the gate invocation and
+   anomaly.) Add a document-contract test asserting `archive-plan.md` carries the gate invocation and
    the `blocked` / `error` STOP handling **ahead of** the archive call.
+
+   ⛔ **State in the test's own docstring what it does and does not establish, and claim nothing more.**
+   The document-contract test establishes that the *instruction* is present and correctly ordered — it
+   catches the deletion this bullet's evidence shows is currently free. It does **not** establish that
+   an archive run *evaluated* `blocked` or `error`: the executing agent can ignore correct prose and
+   the archive still proceeds. This deliverable therefore closes the deletion hole, not the
+   enforcement hole, and must not be written up as if it closed both. The remaining enforcement hole —
+   moving the gate onto the executable archive seam, which today is `manage-status archive`, a generic
+   verb shared by every archive caller and not a finalize-only surface — changes a cross-skill contract
+   and is **not this run's to take**; D6 records it as a proposal with the surfaces it would touch.
    — **Where `done` is decided (020-G5).** The landed report
    `doc/plans/review-apparatus/020-a-foreign-task-reports-done-with-no-pr-anywhere/report-01.md` § D0
    records "`done` is written in exactly one place: `manage-tasks/scripts/_tasks_crud.py::cmd_update`".
@@ -354,8 +404,11 @@ run needs, so those files are corroboration, never required reading.
    **repository root**. Add a `kind` discriminator (`declared_path` / `repo_root`) or split into two
    named lists, and correct the docstring and `archive-plan.md:51`'s "resolve every `unresolved[]` item"
    instruction to match.
-   *Done when:* a test fails if the gate section is removed from `archive-plan.md` or if the archive path
-   stops honouring a `blocked` verdict; `report-01.md` § D0 names both `done` writers with the verdict
+   *Done when:* a test fails if the gate section is removed from `archive-plan.md`, or if its
+   `blocked` / `error` STOP handling is removed, or if the gate invocation is reordered after the
+   archive call — proven by three actual red runs recorded in the report — and the test's docstring
+   states that it guards the instruction's presence and order, not an archive run's evaluation of it;
+   `report-01.md` § D0 names both `done` writers with the verdict
    restated; every `subprocess.run` in the gate passes a timeout and a patched `TimeoutExpired` yields a
    TOON `status: error` with exit code 1 rather than a traceback; a non-github provider yields the named
    error code; each of the three seam functions is entered by at least one test and one asserts the full
@@ -364,8 +417,9 @@ run needs, so those files are corroboration, never required reading.
 
 7. **D6 — Record the open lifecycle choices as proposals, and give the foreign column a consumer**
    *(discharges 020-G4, 020-G17, 080-G5 (mechanism half))*
-   Two questions this plan surfaces cannot be settled by a run with no operator, because settling either
-   changes lifecycle behaviour for every plan rather than fixing a stated defect. Record each as a
+   Three questions this plan surfaces cannot be settled by a run with no operator, because settling any
+   of them changes lifecycle or cross-skill behaviour for every plan rather than fixing a stated defect.
+   Record each as a
    **proposal for the operator**, in a git-tracked location the epic will read — a
    `## Proposals` section of this plan's run report, plus a pointer from the affected document — and
    **change no behaviour for either**:
@@ -389,13 +443,22 @@ run needs, so those files are corroboration, never required reading.
    `branch-cleanup` `head_dependent: true` so the re-entry comparison can re-arm it, or accept that
    Branch F's cleanup is deferred to an operator action — changes the dispatcher's control flow on every
    finalize run and is not this run's to take. The proposal states all three with the cost of each.
+   — **(020-G6, residual) Executable enforcement of the archive gate.** D5 closes the deletion hole
+   with a document-contract test; the enforcement hole stays open, because prose is not a mechanism and
+   an executing agent that skips a correct instruction still archives. The proposal states the one
+   executable seam that exists — `manage-status archive`, which every archive caller shares, not a
+   finalize-only surface — and the cost of putting a finalize-phase foreign-PR gate behind it: a
+   cross-skill contract change affecting callers that have no foreign deliverables and no finalize
+   context, plus the question of how the verb would learn a gate verdict it did not compute. State the
+   arm not taken (leave enforcement to the workflow document, as every other finalize gate does) and
+   its failure mode. **Change no behaviour.**
    — **(020-G17) One consumer for the column.** The `foreign` column exists and exactly one site reads
    it: searches for `foreign` across `manage-metrics/`, `plan-retrospective/` and
    `manage-execution-manifest/` return nothing, so every coverage ratio still pools host paths with
    foreign ones — the standalone second reason the column was built for. Give at least one emitted
    coverage figure a host/foreign split (or a documented exclusion stated in the payload), starting from
    `manage-metrics`' `files_modified` denominator and the retrospective's declared-surface recall check.
-   *Done when:* the run report carries a `## Proposals` section naming both open choices, each with its
+   *Done when:* the run report carries a `## Proposals` section naming all three open choices, each with its
    options and their failure modes, and asserting that no behaviour was changed for either; the
    survey-scope pinning test carries intent-bearing fixtures; and at least one emitted coverage figure
    carries a host/foreign split or a documented exclusion, asserted by a test against a fixture
@@ -517,10 +580,15 @@ Beyond each deliverable's *Done when*:
   reads to learn whether work shipped, so "implemented as specified" cannot verify it. Dispatch an
   independent reader (the lane's pre-PR verification sub-agent, `cloud-plan-lane` § Step 6) that has
   **not** read this plan. Give it only the composed message a run would emit on `branch-cleanup`
-  Branch F — enqueued, merge not landed — and ask one question: *did this plan's work merge?* Report the
-  answer verbatim in the run report. The wording has failed, however complete it looks, unless the reader
-  answers **no** or **cannot tell from this** — not "yes" and not "probably". Repeat the same cold read
-  for the Branch B local-only message, whose current form renders `shipped as n/a (n/a)`.
+  Branch F — enqueued, merge not landed — and ask two questions: *did this plan's work merge?* and
+  *what happened instead?* Report both answers verbatim in the run report. The check passes only when
+  the reader answers the first **no** — a definite negative — **and** the second by naming the actual
+  outcome that row describes (for Branch F, that the change was enqueued and has not yet landed).
+  "Yes", "probably", "cannot tell from this", and a "no" with no outcome named are all **failures**:
+  the Goal requires the message to state plainly what happened, so a message a reader cannot decide
+  from has not met it. Rewrite and re-read cold. Repeat the same two-question cold read for every
+  non-landing row of D1's mapping table, including the Branch B local-only message whose current form
+  renders `shipped as n/a (n/a)`.
 - **Cold read of the gate's operator text (D5).** Give the same kind of reader a `blocked` verdict and an
   `error` verdict carrying one `unresolved[]` row of each kind, and ask what they would do next. The
   discriminator has failed if the reader cannot say whether the named path is a file they declared or a
