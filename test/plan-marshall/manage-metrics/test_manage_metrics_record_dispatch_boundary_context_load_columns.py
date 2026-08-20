@@ -26,6 +26,9 @@ from _manage_metrics_module_fixtures import (
     manage_metrics,
 )
 
+# =============================================================================
+# require_plan_exists guard fixtures
+# =============================================================================
 
 @pytest.fixture(autouse=True)
 def _seed_guarded_plan_dirs(plan_context, monkeypatch):
@@ -54,6 +57,10 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
     monkeypatch.setattr(manage_metrics, 'require_plan_exists', _seeding_require)
     return plan_context
 
+
+# =============================================================================
+# Test: record-dispatch-boundary (Tier 2 - direct import)
+# =============================================================================
 
 class TestRecordDispatchBoundaryContextLoadColumns:
     """The four per-dispatch context-load columns are appended after the legacy five.

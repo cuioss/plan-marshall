@@ -9,6 +9,9 @@ from pathlib import Path
 from _collect_fragments_fixtures import _ArgsNS, _load_module, _valid_fragment_body
 from _plan_retrospective_fixtures import setup_live_plan  # noqa: E402
 
+# =============================================================================
+# Direct-import unit tests — exercise internal functions for coverage
+# =============================================================================
 
 class TestCmdInit:
     """Direct unit tests for cmd_init."""

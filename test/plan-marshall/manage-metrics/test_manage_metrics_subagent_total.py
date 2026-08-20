@@ -18,6 +18,9 @@ from _manage_metrics_module_fixtures import (
     manage_metrics,
 )
 
+# =============================================================================
+# require_plan_exists guard fixtures
+# =============================================================================
 
 @pytest.fixture(autouse=True)
 def _seed_guarded_plan_dirs(plan_context, monkeypatch):
@@ -26,9 +29,10 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
     The patched guard resolves the plan dir via the real ``get_plan_dir`` and, for
     any plan_id NOT registered as unseeded, writes the ``status.json`` sentinel
     before delegating to the genuine ``require_plan_exists``. This keeps every
-    positive test's happy path intact without per-test seeding, while the
-    negative tests (which call ``_register_unseeded``) still exercise the real
-    ``plan_not_found`` failure.
+    positive test's happy path intact without per-test seeding. A
+    module whose tests need the real ``plan_not_found`` failure registers the
+    plan id via ``_register_unseeded`` first; no test in this module does, so
+    the guard here always seeds and the registry stays empty.
     """
     _UNSEEDED_PLAN_IDS.clear()
     real_require = manage_metrics.require_plan_exists
@@ -170,6 +174,10 @@ def test_boundary_bullet_declares_coverage_and_drops_the_false_parenthetical(pla
     # The retired claim must be gone from the whole report, not just this bullet.
     assert 'same-population max' not in report
 
+
+# =============================================================================
+# billing_weighted_total as a first-class cost figure
+# =============================================================================
 
 def test_billing_column_is_rendered_with_its_own_total(plan_context):
     """The Billing column and its Total are distinct from every work column."""

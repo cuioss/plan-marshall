@@ -8,6 +8,9 @@ import json
 import pytest
 from _manage_status_main_dispatch_fixtures import _PHASES, _ms, _parse, _pin_stale_snapshot, _run
 
+# =============================================================================
+# metadata / title-token / update-phase / progress
+# =============================================================================
 
 def test_main_phase_write_preserves_a_title_token_set_after_its_snapshot_read(
     plan_context, monkeypatch, capsys
@@ -110,6 +113,10 @@ def test_main_transition_invalid_phase_exits_zero_with_error(plan_context, monke
     assert data['status'] == 'error'
     assert data['error'] == 'invalid_phase'
 
+
+# =============================================================================
+# metadata / title-token / update-phase / progress
+# =============================================================================
 
 def test_main_archive_still_drops_the_title_token(plan_context, monkeypatch, capsys):
     """``archive`` opts OUT of the preserve rule — its owner-agnostic pop must stick.

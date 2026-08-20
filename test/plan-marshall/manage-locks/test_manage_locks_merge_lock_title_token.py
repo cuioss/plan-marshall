@@ -169,6 +169,11 @@ class TestTitleTokenSurface:
         assert 'lock-owned' not in _stub_title_tokens.set_states
 
 
+# =============================================================================
+# Live-worktree reclaim guard — orphaned shell auto-reclaims, genuine
+# mid-recovery worktree stays protected (strengthened holder_has_live_worktree)
+# =============================================================================
+
 class TestTitleTokenOwnerScoping:
     """The lock title surface writes and clears under the ``merge-lock`` owner.
 

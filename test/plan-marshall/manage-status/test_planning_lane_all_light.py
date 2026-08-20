@@ -148,6 +148,10 @@ def test_s5_regex_constants_are_module_level_importable():
         assert isinstance(pattern, re.Pattern), f'{name} must be a compiled regex'
 
 
+# =============================================================================
+# Each signal firing deep in isolation
+# =============================================================================
+
 def test_s1_free_form_source_with_vague_request_forces_deep(plan_context):
     """S1 — free-form source AND failed S5 concreteness conjunction forces deep."""
     # Free-form source (plan_source unset) + vague body.
@@ -235,6 +239,10 @@ def test_deep_lane_auto_defers_to_signal_set(plan_context):
     assert result['decision_predicate'] == 'signal_set'
     assert result['planning_lane'] == 'deep'
 
+
+# =============================================================================
+# project_profile_pure — execution-profile posture projection
+# =============================================================================
 
 def test_deep_lane_always_does_not_coerce_profile_to_full(plan_context):
     """deep_lane=always forces planning_lane=deep but leaves the profile projection alone.

@@ -7,6 +7,9 @@ from __future__ import annotations
 import pytest
 from _analyze_logs_fixtures import _analyze_logs, _line, _write_folded_log
 
+# =============================================================================
+# Voluntary-checkpoint polling detector (tightened)
+# =============================================================================
 
 class TestPerCallCeilingPreserved:
     """The per-call ceiling keeps its predicate and its count when the roll-up lands."""

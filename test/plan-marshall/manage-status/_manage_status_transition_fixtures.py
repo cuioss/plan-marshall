@@ -291,6 +291,10 @@ def _setup_plan(plan_id: str) -> None:
     )
 
 
+# =============================================================================
+# Fixed actionable-vs-knowledge rule at the 5-execute -> 6-finalize boundary
+# =============================================================================
+
 def _stub_finding_queries(monkeypatch, per_type: dict[str, int], qgate: int = 0) -> None:
     """Stub the per-type and qgate-aggregator query helpers."""
     monkeypatch.setattr(

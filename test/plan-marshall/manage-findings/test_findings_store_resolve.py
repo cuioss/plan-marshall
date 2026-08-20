@@ -18,6 +18,9 @@ from _findings_store_fixtures import (
     resolve_qgate_findings_by_evidence,
 )
 
+# =============================================================================
+# Test: Q-Gate findings
+# =============================================================================
 
 def test_resolve_qgate_finding(plan_context):
     """Test resolving a Q-Gate finding."""
@@ -235,6 +238,10 @@ def test_promote_finding_success(plan_context):
     assert query['filtered_count'] == 1
 
 
+# =============================================================================
+# Test: Q-Gate findings
+# =============================================================================
+
 def test_qgate_dedup_pending(plan_context):
     """Test Q-Gate deduplication for pending findings with same title AND content.
 
@@ -295,6 +302,10 @@ def test_qgate_reopen_resolved(plan_context):
     assert r2['hash_id'] == r1['hash_id']
 
 
+# =============================================================================
+# Test: QGATE_PERSIST_OK — the published persist-outcome partition
+# =============================================================================
+
 def test_qgate_persist_ok_admits_every_in_store_outcome(plan_context):
     """The three outcomes that leave the record IN the store are all members."""
     observed = _observed_qgate_statuses('store-qgate-partition-ok')
@@ -327,6 +338,10 @@ def test_qgate_persist_ok_partitions_the_outcome_space_exactly(plan_context):
     assert set(QGATE_PERSIST_OK) == in_store
 
 
+# =============================================================================
+# Test: Q-Gate findings
+# =============================================================================
+
 def test_rejected_qgate_finding_is_non_pending_in_unified_read(plan_context):
     """A `rejected` Q-Gate finding is non-blocking: excluded from the unified read.
 
@@ -351,6 +366,15 @@ def test_rejected_qgate_finding_is_non_pending_in_unified_read(plan_context):
     assert titles == {'Stays pending'}
     assert pending['hash_id'] in {f['hash_id'] for f in unified['findings']}
 
+
+# =============================================================================
+# Test: resolve_qgate_findings_by_evidence (D3 — self-review loop-back resolution)
+#
+# A loop-back that lands a fix transitions the corresponding finding; a finding
+# with no evidenced fix is left alone. Both directions are asserted — the second
+# is the important one: a finding marked `fixed` without a landed change touching
+# its file is strictly worse than one left `pending`.
+# =============================================================================
 
 def test_clear_qgate_findings(plan_context):
     """Test clearing all Q-Gate findings for a phase."""

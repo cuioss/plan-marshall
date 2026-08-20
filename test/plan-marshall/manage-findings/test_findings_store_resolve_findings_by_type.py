@@ -12,6 +12,9 @@ from _findings_store_fixtures import (
     resolve_findings_by_type,
 )
 
+# =============================================================================
+# Test: resolve_finding
+# =============================================================================
 
 def test_resolve_findings_by_type_accepts_rejected(plan_context):
     """Bulk resolve accepts `rejected` as a valid target resolution."""
@@ -189,6 +192,18 @@ def test_resolve_findings_by_type_with_detail_still_overwrites(plan_context):
     record = resolved['findings'][0]
     assert record['resolution_detail'] == 'Superseded by bulk fix'
 
+
+# =============================================================================
+# Test: responded-marker lifecycle (the RESPOND idempotency key)
+#
+# The provider RESPOND verbs stamp a `responded` marker after transmitting a
+# reply, and skip a finding that already carries it. Re-resolving a finding to a
+# DIFFERENT disposition must clear the marker so the corrected decision goes out
+# again; an unchanged re-resolve must preserve it so the already-sent reply is
+# not re-sent. That clearing is what makes the idempotency a per-(finding,
+# disposition) key rather than a permanent suppression, and it must hold at BOTH
+# resolve entry points.
+# =============================================================================
 
 def test_resolve_findings_by_type_clears_responded_marker_on_change(plan_context):
     """The bulk resolve path clears the marker on a disposition change, like resolve_finding.

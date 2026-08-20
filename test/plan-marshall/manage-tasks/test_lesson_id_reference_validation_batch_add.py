@@ -18,6 +18,9 @@ from _lesson_id_reference_validation_fixtures import (
     cmd_batch_add,
 )
 
+# =============================================================================
+# Helpers
+# =============================================================================
 
 @pytest.fixture(autouse=True)
 def short_circuit_anchor(monkeypatch):
@@ -126,6 +129,10 @@ def test_batch_add_all_real_succeeds(plan_context, patch_inventory):
     assert [f.name for f in files] == ['TASK-001.json', 'TASK-002.json']
 
 
+# =============================================================================
+# Case (e) — lesson IDs cited in the TITLE only are still scanned
+# =============================================================================
+
 def test_batch_add_phantom_in_title_only_aborts(plan_context, patch_inventory):
     """The batch path also scans title text — a phantom ID cited only in
     one entry's title aborts the entire batch."""
@@ -155,6 +162,16 @@ def test_batch_add_phantom_in_title_only_aborts(plan_context, patch_inventory):
     if task_dir.exists():
         assert list(task_dir.glob('TASK-*.json')) == []
 
+
+# =============================================================================
+# Case (f) — plan-dir converted-lesson artifact is the tier-2 exemption.
+#
+# A lesson ID absent from the active inventory but present on disk at
+# ``{plan_dir}/lesson-{id}.md`` resolves and the write proceeds. A token
+# absent from BOTH tiers still hard-fails with the unchanged
+# ``lesson_id_not_found`` payload. (Covers the plan-dir exemption in
+# ``_scan_unresolved_lesson_ids``.)
+# =============================================================================
 
 def test_batch_add_plan_dir_artifact_exempts_inventory_miss(plan_context, patch_inventory):
     """The batch path honours the same tier-2 exemption: an entry citing an

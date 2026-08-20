@@ -21,6 +21,9 @@ from _build_queue_fixtures import (
     build_queue,
 )
 
+# =============================================================================
+# Fixtures
+# =============================================================================
 
 @pytest.fixture
 def isolated_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:

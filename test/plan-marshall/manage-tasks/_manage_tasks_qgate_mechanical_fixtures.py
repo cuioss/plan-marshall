@@ -166,6 +166,10 @@ def _write_outline(plan_dir: Path, deliverables: list[dict[str, Any]]) -> None:
     (plan_dir / 'solution_outline.md').write_text('\n'.join(lines), encoding='utf-8')
 
 
+# =============================================================================
+# Files-exist check
+# =============================================================================
+
 def _files_exist_failed(plan_context, slug, target, intent):
     """Seed one task with a single (target, intent) step and return failed count."""
     plan_dir = plan_context.plan_dir_for(slug)

@@ -25,6 +25,9 @@ from _resolve_project_dir_fixtures import (
     worktree_query_result,
 )
 
+# =============================================================================
+# Fixture builders
+# =============================================================================
 
 @pytest.fixture(autouse=True)
 def _stub_resolver_seam(monkeypatch):
@@ -66,6 +69,10 @@ def _expected_notations_resolve(monkeypatch):
     """
     _stub_expected_notations(monkeypatch, _RESOLVED_NOTATIONS)
 
+
+# =============================================================================
+# Resolver-migration contract
+# =============================================================================
 
 def test_unresolvable_worktree_falls_back_to_cwd(
     plan_context, monkeypatch, tmp_path

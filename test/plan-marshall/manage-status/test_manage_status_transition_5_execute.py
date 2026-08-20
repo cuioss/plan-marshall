@@ -18,6 +18,11 @@ from _manage_status_transition_fixtures import (
     cmd_transition,
 )
 
+# =============================================================================
+# Regression Tests: cmd_transition inline strict-verify guard for guarded
+# boundaries (folded from the standalone phase_handshake verify --strict step
+# that orchestrator workflow docs used to issue separately at 5-execute -> 6-finalize).
+# =============================================================================
 
 @pytest.fixture
 def _stubbed_invariants(monkeypatch):
@@ -73,6 +78,11 @@ def _stub_metadata(monkeypatch):
     return md
 
 
+# =============================================================================
+# Regression Tests: cmd_transition(completed='5-execute') no longer seeds
+# references.modified_files
+# =============================================================================
+
 def test_transition_5_execute_does_not_write_modified_files(plan_context):
     """The 5-execute transition must NOT add modified_files to references.json."""
     plan_dir = plan_context.plan_dir_for('transition-no-seed')
@@ -112,6 +122,10 @@ def test_transition_5_execute_preserves_legacy_modified_files_untouched(plan_con
     )
 
 
+# =============================================================================
+# Test: cmd_archive --reason flag persistence
+# =============================================================================
+
 def test_transition_last_phase_sets_complete(plan_context):
     """cmd_transition must mirror cmd_archive when completing the LAST phase."""
     plan_id = 'transition-last-phase-complete'
@@ -139,6 +153,12 @@ def test_transition_last_phase_sets_complete(plan_context):
         f'{live_status["phases"][-1]["status"]!r}.'
     )
 
+
+# =============================================================================
+# Regression Tests: cmd_transition inline strict-verify guard for guarded
+# boundaries (folded from the standalone phase_handshake verify --strict step
+# that orchestrator workflow docs used to issue separately at 5-execute -> 6-finalize).
+# =============================================================================
 
 def test_transition_5_execute_refuses_on_handshake_drift(plan_context, _stubbed_invariants, _stub_metadata):
     """cmd_transition refuses to advance when the captured 5-execute row drifts."""

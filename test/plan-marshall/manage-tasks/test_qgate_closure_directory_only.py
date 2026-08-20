@@ -34,6 +34,9 @@ from _qgate_closure_fixtures import (
 
 from conftest import PROJECT_ROOT
 
+# =============================================================================
+# End-to-end through the mechanical Q-Gate
+# =============================================================================
 
 def test_a_directory_only_scope_is_unmeasured_not_a_clean_zero():
     """``marketplace/bundles/*/`` matches only directories, which is/was dropped.

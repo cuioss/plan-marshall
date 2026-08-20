@@ -36,6 +36,10 @@ def adr_dir(tmp_path, monkeypatch):
     return directory
 
 
+# =========================================================================
+# Tier 2: Direct import tests
+# =========================================================================
+
 def test_filename_sanitization(adr_dir):
     """Test filename sanitization for special characters."""
     result = cmd_create(Namespace(command='create', title='Use API/REST for User Service!', status='Proposed'))
@@ -158,6 +162,10 @@ def test_parse_adr_file_surfaces_metadata(adr_dir):
     assert adr['supersedes'] == []
 
 
+# =========================================================================
+# Tier 2: Width-agnostic numeric-prefix parsing and numbering
+# =========================================================================
+
 def test_parse_adr_file_three_digit_prefix(adr_dir):
     """parse_adr_file extracts the number from a 3-digit prefixed filename."""
     _touch_adr(adr_dir, '008-Three_Digit.adoc', title='Three Digit')
@@ -244,6 +252,10 @@ def test_scan_filter_no_match(adr_dir):
     assert result['count'] == 0
     assert result['adrs'] == []
 
+
+# =========================================================================
+# Tier 2: Width-agnostic numeric-prefix parsing and numbering
+# =========================================================================
 
 def test_detect_corpus_width_empty_defaults_to_four(adr_dir):
     """An empty corpus yields the default prefix width of 4."""

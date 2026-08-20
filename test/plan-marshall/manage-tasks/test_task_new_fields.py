@@ -263,6 +263,10 @@ def test_update_fails_with_invalid_skills(plan_context):
     assert 'skill' in msg or 'bundle:skill' in msg
 
 
+# =============================================================================
+# Tests: arbitrary domains (config-driven, not hardcoded)
+# =============================================================================
+
 def test_update_with_arbitrary_domain(plan_context):
     """Update accepts any domain value."""
     add_task_with_fields(plan_id='nf-upd-arb-dom', title='Task', domain='java')

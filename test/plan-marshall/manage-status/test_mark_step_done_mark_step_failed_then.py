@@ -6,6 +6,9 @@
 import pytest
 from _mark_step_done_fixtures import _args, _make_plan, cmd_mark_step_done, read_status, write_status
 
+# =============================================================================
+# Error paths
+# =============================================================================
 
 def test_mark_step_failed_then_done_with_force(plan_context):
     """After a 'failed' marker, dispatcher can re-fire and overwrite with 'done' under --force.

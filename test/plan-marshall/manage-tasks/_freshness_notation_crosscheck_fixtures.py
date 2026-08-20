@@ -175,6 +175,10 @@ def _run(plan_context, monkeypatch, tmp_path, entries, plan_id) -> dict:
     return result
 
 
+# =============================================================================
+# Positive control: the WHOLE real path, no seam stubbed
+# =============================================================================
+
 class _FakeQueryModule:
     """Stand-in for ``_cmd_client_query`` exposing only the one function used.
 

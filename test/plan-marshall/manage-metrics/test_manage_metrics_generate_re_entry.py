@@ -19,6 +19,9 @@ from _manage_metrics_module_fixtures import (
     manage_metrics,
 )
 
+# =============================================================================
+# require_plan_exists guard fixtures
+# =============================================================================
 
 @pytest.fixture(autouse=True)
 def _seed_guarded_plan_dirs(plan_context, monkeypatch):
@@ -27,9 +30,10 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
     The patched guard resolves the plan dir via the real ``get_plan_dir`` and, for
     any plan_id NOT registered as unseeded, writes the ``status.json`` sentinel
     before delegating to the genuine ``require_plan_exists``. This keeps every
-    positive test's happy path intact without per-test seeding, while the
-    negative tests (which call ``_register_unseeded``) still exercise the real
-    ``plan_not_found`` failure.
+    positive test's happy path intact without per-test seeding. A
+    module whose tests need the real ``plan_not_found`` failure registers the
+    plan id via ``_register_unseeded`` first; no test in this module does, so
+    the guard here always seeds and the registry stays empty.
     """
     _UNSEEDED_PLAN_IDS.clear()
     real_require = manage_metrics.require_plan_exists
@@ -47,6 +51,10 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
     monkeypatch.setattr(manage_metrics, 'require_plan_exists', _seeding_require)
     return plan_context
 
+
+# =============================================================================
+# Test: first-class partiality fields (Tier 2 - direct import)
+# =============================================================================
 
 class TestGenerateReEntryMarker:
     """generate surfaces ``close_count > 1`` as a first-class re-entry marker.
@@ -187,6 +195,10 @@ class TestGenerateReEntryMarker:
         assert '- **Closes**' not in md
 
 
+# =============================================================================
+# billing_weighted_total as a first-class cost figure
+# =============================================================================
+
 def test_generate_returns_total_billing_weighted(plan_context):
     """The cost aggregate is returned as its own field, never folded into tokens."""
     plan_id = 'billing-return'
@@ -198,6 +210,10 @@ def test_generate_returns_total_billing_weighted(plan_context):
     # The dispatched work total is the tokens sum, untouched by the cost figure.
     assert result['total_tokens'] == 20000
 
+
+# =============================================================================
+# Test: generate (Tier 2 - direct import)
+# =============================================================================
 
 def test_tokens_column_header_names_a_default_not_a_single_population(plan_context):
     """The Tokens header states a DEFAULT population plus the marking convention.

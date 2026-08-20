@@ -13,6 +13,9 @@ from _assert_step_recorded_fixtures import (
     write_status,
 )
 
+# =============================================================================
+# Step not recorded -> not recorded / error under --require-terminal
+# =============================================================================
 
 def test_phase_absent_returns_not_recorded(plan_context):
     """A phase with no recorded steps reports recorded=false."""
@@ -147,6 +150,10 @@ def test_canonical_exact_match_wins_over_stale_legacy_prefixed_key(plan_context)
     assert result['recorded'] is True
     assert result['outcome'] == 'done'
 
+
+# =============================================================================
+# Near-miss orphan key -> step_record_mismatched_key
+# =============================================================================
 
 def test_only_bare_orphan_present_returns_mismatched_key(plan_context):
     """(2) When only a bare/mis-keyed orphan terminal record is present under a

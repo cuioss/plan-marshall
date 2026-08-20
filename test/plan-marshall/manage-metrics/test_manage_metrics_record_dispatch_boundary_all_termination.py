@@ -206,6 +206,15 @@ def test_dispatch_termination_causes_contains_returned_with_findings():
     assert 'returned_with_findings' in DISPATCH_TERMINATION_CAUSES
 
 
+# =============================================================================
+# (i) budget_yield — the phase-5 budget-bounded dispatch loop's yield signal
+#
+#     The phase-5-execute envelope yields to the orchestrator at a TASK
+#     boundary when the per-task budget reserve is exhausted; the orchestrator
+#     records that yield with termination_cause=budget_yield. This block pins
+#     both the enum membership and the recorder's acceptance of the value.
+# =============================================================================
+
 def test_budget_yield_cause_accepted_and_recorded(plan_context):
     """budget_yield records a single data row carrying the cause verbatim."""
     plan_id = 'disp-budget-yield'
@@ -250,6 +259,18 @@ def test_budget_yield_subprocess_accepted_by_argparse(plan_context):
     )
     assert _boundary_path(plan_dir, '5-execute').exists()
 
+
+# =============================================================================
+# (j) returned_with_findings — the productive-loop-back dispatch-ledger member
+#
+#     The finalize dispatcher stamps a review-shaped dispatch that returned
+#     findings and signalled a loop-back (its mark-step-done recorded
+#     outcome: loop_back) as returned_with_findings — NEVER error. Before this
+#     member existed, such a return fell through to `error`, conflating the most
+#     productive dispatches with fatal failures. This block pins both the enum
+#     membership and the recorder's acceptance of the value on the finalize
+#     boundary file (its actual routing target).
+# =============================================================================
 
 def test_returned_with_findings_recorded_on_the_finalize_boundary(plan_context):
     """A loop-back dispatch is stamped returned_with_findings in the finalize file.

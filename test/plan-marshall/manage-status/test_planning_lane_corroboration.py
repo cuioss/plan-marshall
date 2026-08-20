@@ -88,6 +88,10 @@ def test_recorded_vector_routes_deep_without_the_corroboration_fix():
     assert result['suppressed_signals'] == []
 
 
+# =============================================================================
+# D0/D3(b) — the orchestrator-spec plan_source bridge (end-to-end via the router)
+# =============================================================================
+
 def test_recorded_case_end_to_end_routes_light(plan_context):
     """End-to-end wiring of D3(a): a single_module request whose body fires ONLY S7
     routes light through the real command entry point.
@@ -270,6 +274,10 @@ def test_confidence_high_when_most_signals_resolve():
     assert confidence['null_signals'] == ['planning_lane_override']
     assert confidence['low_confidence'] is False
 
+
+# =============================================================================
+# D0/D3(b) — the orchestrator-spec plan_source bridge (end-to-end via the router)
+# =============================================================================
 
 def test_d3b_orchestrator_spec_resolves_plan_source_nonnull(plan_context):
     """(b) An orchestrator-spec-sourced request resolves ``plan_source`` non-null.

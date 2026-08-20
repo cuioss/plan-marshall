@@ -36,6 +36,9 @@ from _resolve_project_dir_fixtures import (
     worktree_query_result,
 )
 
+# =============================================================================
+# Fixture builders
+# =============================================================================
 
 @pytest.fixture(autouse=True)
 def _stub_resolver_seam(monkeypatch):
@@ -77,6 +80,10 @@ def _expected_notations_resolve(monkeypatch):
     """
     _stub_expected_notations(monkeypatch, _RESOLVED_NOTATIONS)
 
+
+# =============================================================================
+# Build-necessity short-circuit — the sole build/no-build authority
+# =============================================================================
 
 def test_short_circuit_forwards_the_verdict_reason_verbatim(
     plan_context, monkeypatch, tmp_path
@@ -149,6 +156,10 @@ def test_build_verdict_falls_through_to_the_ledger_scan(
     assert result['status'] == 'stale', result
 
 
+# =============================================================================
+# Anti-regression: the manifest's step SHAPE is no longer an oracle
+# =============================================================================
+
 def test_build_shaped_steps_still_exempt_a_footprint_needing_no_build(
     plan_context, monkeypatch, tmp_path
 ) -> None:
@@ -182,6 +193,10 @@ def test_build_shaped_steps_still_exempt_a_footprint_needing_no_build(
     assert result['status'] == 'fresh', result
     assert 'no build_map glob' in result['reason']
 
+
+# =============================================================================
+# Build-necessity short-circuit — the sole build/no-build authority
+# =============================================================================
 
 def test_consult_is_command_free(plan_context, monkeypatch, tmp_path) -> None:
     """The gate asks the plan-wide question — it passes NO canonical command.
@@ -330,6 +345,10 @@ def test_absent_manifest_is_irrelevant_to_the_gate(
     assert result['status'] == 'fresh', result
     assert result['reason'] == 'plan footprint is empty'
 
+
+# =============================================================================
+# Resolver-migration contract
+# =============================================================================
 
 def test_worktree_root_routes_through_the_resolver(
     plan_context, monkeypatch, tmp_path

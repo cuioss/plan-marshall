@@ -215,6 +215,10 @@ class TestAuthoritativeAspectInventory:
         assert int(finalize_data['aspect_count']) == 1
 
 
+# =============================================================================
+# Direct-import unit tests — exercise internal functions for coverage
+# =============================================================================
+
 class TestResolveBundlePath:
     """Direct unit tests for resolve_bundle_path.
 

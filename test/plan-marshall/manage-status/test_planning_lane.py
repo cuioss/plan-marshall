@@ -38,6 +38,10 @@ def test_persist_writes_planning_lane_metadata(plan_context):
     assert status['metadata']['planning_lane'] == 'light'
 
 
+# =============================================================================
+# project_profile_pure — execution-profile posture projection
+# =============================================================================
+
 def test_persist_writes_execution_profile_metadata(plan_context):
     """--persist writes the projected posture into status.metadata.execution_profile."""
     plan_dir = _light_setup(plan_context, 'pl-profile-persist')
@@ -48,6 +52,10 @@ def test_persist_writes_execution_profile_metadata(plan_context):
     status = json.loads((plan_dir / 'status.json').read_text())
     assert status['metadata']['execution_profile'] == 'minimal'
 
+
+# =============================================================================
+# --persist
+# =============================================================================
 
 def test_route_without_persist_does_not_write(plan_context):
     """Without --persist the router does not mutate status.json."""
@@ -72,6 +80,10 @@ def test_route_plan_dir_not_found_errors(plan_context):
     assert result['status'] == 'error'
     assert result['error'] == 'plan_dir_not_found'
 
+
+# =============================================================================
+# project_profile_pure — execution-profile posture projection
+# =============================================================================
 
 def test_route_surfaces_execution_profile(plan_context):
     """The route return surfaces execution_profile + the structured profile block."""
@@ -106,6 +118,10 @@ def test_route_without_persist_does_not_write_execution_profile(plan_context):
     status = json.loads((plan_dir / 'status.json').read_text())
     assert 'execution_profile' not in status.get('metadata', {})
 
+
+# =============================================================================
+# classify_scope_pure — pre-route coarse scope classifier (D2)
+# =============================================================================
 
 def test_route_surfaces_scope_provenance(plan_context):
     """The route return carries scope_provenance alongside BOTH verdicts.
@@ -201,6 +217,10 @@ def test_escalate_records_each_trigger(plan_context, trigger):
     status = json.loads((plan_dir / 'status.json').read_text())
     assert status['metadata']['escalation_trigger'] == trigger
 
+
+# =============================================================================
+# Error path
+# =============================================================================
 
 def test_escalate_plan_dir_not_found_errors(plan_context):
     """escalate against a missing plan dir returns a structured error."""

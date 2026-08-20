@@ -23,6 +23,9 @@ from _qgate_closure_fixtures import (
 
 from conftest import PROJECT_ROOT
 
+# =============================================================================
+# Claim-versus-index closure — a declared glob against the enumerated list
+# =============================================================================
 
 def test_unexpandable_glob_is_reported_not_silently_zero():
     """An absolute pattern is an UNMEASURED scope, never an empty one."""
@@ -99,6 +102,10 @@ def test_population_reports_what_was_actually_scanned():
     assert population['population_complete'] is True
 
 
+# =============================================================================
+# End-to-end through the mechanical Q-Gate
+# =============================================================================
+
 def test_population_publishes_member_identities_not_only_counts():
     """The positive-population assertion needs the members, not the cardinality.
 
@@ -114,6 +121,10 @@ def test_population_publishes_member_identities_not_only_counts():
     assert population['scanned_paths_truncated'] is False
 
 
+# =============================================================================
+# Population — the positive-population guard (D3)
+# =============================================================================
+
 def test_verification_tasks_are_excluded_from_the_scanned_population():
     """A verification task's steps are commands, not paths, so it is skipped."""
     deliverables = [_deliverable(1, affected=[_REAL_A])]
@@ -124,6 +135,10 @@ def test_verification_tasks_are_excluded_from_the_scanned_population():
     assert gaps == []
     assert population['tasks_scanned'] == 1
 
+
+# =============================================================================
+# End-to-end through the mechanical Q-Gate
+# =============================================================================
 
 def test_qgate_reports_closure_gap_while_files_exist_stays_clean(plan_context):
     """Every declared path resolves, and the set is still incomplete.

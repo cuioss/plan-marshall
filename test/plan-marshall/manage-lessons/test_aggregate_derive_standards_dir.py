@@ -237,6 +237,10 @@ class TestGroupByCrossRef:
             assert row['reason'].startswith('cross-ref to ')
 
 
+# =============================================================================
+# Case (b) — grouping by shared standards directory
+# =============================================================================
+
 class TestDeriveStandardsDirResolverPath:
     """``_derive_standards_dir`` resolves the bundles root through the
     cache-aware ``find_marketplace_path`` resolver in script-shared rather than

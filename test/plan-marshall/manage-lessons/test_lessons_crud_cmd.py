@@ -199,6 +199,10 @@ Body content here.
         assert 'content' not in result['lessons'][0]
 
 
+# =============================================================================
+# Tier 2: cmd_list --status filter
+# =============================================================================
+
 class TestCmdListStatusFilter:
     """``cmd_list --status`` filter behaviour."""
 

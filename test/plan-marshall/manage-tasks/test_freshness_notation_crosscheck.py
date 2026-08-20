@@ -29,6 +29,9 @@ from _freshness_notation_crosscheck_fixtures import (
 
 from conftest import PROJECT_ROOT
 
+# =============================================================================
+# Fixture builders
+# =============================================================================
 
 @pytest.fixture(autouse=True)
 def _stub_resolver_seam(monkeypatch):

@@ -181,6 +181,10 @@ def test_rmw_json_blocks_until_guard_released(tmp_path, monkeypatch):
     assert not guard.exists()
 
 
+# =============================================================================
+# [LOCK] event emission — log_lock_event + _resolve_lock_log_path
+# =============================================================================
+
 def test_resolve_lock_log_path_is_main_anchored(tmp_path, monkeypatch):
     # The lock-event log lives under the MAIN-anchored .plan/logs dir, derived
     # from <PLAN_BASE_DIR>.parent / logs / lock-{date}.log — NOT a worktree path.

@@ -22,6 +22,9 @@ from _manage_metrics_module_fixtures import (
     manage_metrics,
 )
 
+# =============================================================================
+# require_plan_exists guard fixtures
+# =============================================================================
 
 @pytest.fixture(autouse=True)
 def _seed_guarded_plan_dirs(plan_context, monkeypatch):
@@ -30,9 +33,10 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
     The patched guard resolves the plan dir via the real ``get_plan_dir`` and, for
     any plan_id NOT registered as unseeded, writes the ``status.json`` sentinel
     before delegating to the genuine ``require_plan_exists``. This keeps every
-    positive test's happy path intact without per-test seeding, while the
-    negative tests (which call ``_register_unseeded``) still exercise the real
-    ``plan_not_found`` failure.
+    positive test's happy path intact without per-test seeding. A
+    module whose tests need the real ``plan_not_found`` failure registers the
+    plan id via ``_register_unseeded`` first; no test in this module does, so
+    the guard here always seeds and the registry stays empty.
     """
     _UNSEEDED_PLAN_IDS.clear()
     real_require = manage_metrics.require_plan_exists
@@ -50,6 +54,10 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
     monkeypatch.setattr(manage_metrics, 'require_plan_exists', _seeding_require)
     return plan_context
 
+
+# =============================================================================
+# Test: enrich delegates to the platform-runtime normalized-tokens op
+# =============================================================================
 
 class TestManageMetricsHasNoTranscriptCode:
     """Regression: the Claude-transcript engine no longer lives in manage-metrics.
@@ -93,6 +101,10 @@ class TestManageMetricsHasNoTranscriptCode:
         assert 'SESSION_ID_RE' not in source
         assert 'BILLING_WEIGHT' not in source
 
+
+# =============================================================================
+# Test: first-class partiality fields (Tier 2 - direct import)
+# =============================================================================
 
 class TestExplorationCountersAbsentVsMeasuredZero:
     """An absent counter and a measured-zero counter stay distinguishable everywhere.
@@ -314,6 +326,10 @@ class TestExplorationSubsourceRoundTrip:
             in md
         )
 
+
+# =============================================================================
+# Exploration-share bucket contract drift
+# =============================================================================
 
 def test_exploration_buckets_match_platform_runtime_contract():
     """``_EXPLORATION_BUCKETS`` matches the bucket set the runtime contract declares.

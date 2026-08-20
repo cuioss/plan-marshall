@@ -40,16 +40,10 @@ load of the same production module under a separate name.
 """
 
 
-
-
 from pathlib import Path
 
 
-
-
 from _lessons_helpers import _mod
-
-
 
 
 # ``cmd_set_title`` is not re-exported by ``_lessons_helpers`` (that module is
@@ -57,6 +51,10 @@ from _lessons_helpers import _mod
 # shared module handle. This keeps the single-load contract intact.
 cmd_set_title = _mod.cmd_set_title
 
+
+# =============================================================================
+# Tier 2: cmd_get
+# =============================================================================
 
 def _seed_cli_lesson(tmp_path: Path, lesson_id: str, title: str) -> None:
     """Seed a minimal lesson file under ``{tmp_path}/lessons-learned``."""

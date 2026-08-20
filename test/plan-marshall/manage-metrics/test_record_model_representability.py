@@ -31,6 +31,10 @@ from _record_model_representability_fixtures import (
 )
 
 
+# =============================================================================
+# The composed record: no field asserts an unearned value
+# =============================================================================
+
 def test_the_previously_impossible_row_now_states_what_it_measured(plan_context):
     """The exact case once certified `partial: false` while being impossible.
 
@@ -177,6 +181,10 @@ def test_the_generated_record_reads_as_current_schema_in_the_archived_reader(pla
     assert presence.unreadable_note == ''
 
 
+# =============================================================================
+# Companion: an OLD-schema archived record, distinguishable from both neighbours
+# =============================================================================
+
 def test_old_schema_record_is_distinct_from_a_clean_verdict_and_from_pre_812(tmp_path):
     """Three records, three verdicts, no two of them equal.
 
@@ -244,6 +252,10 @@ def test_old_schema_record_does_not_buy_a_zero_token_phase_out_of_blind(tmp_path
     assert '5-execute' in old_schema['metrics_blind']
 
 
+# =============================================================================
+# Fixtures: one file carrying both representations, and the legacy floor
+# =============================================================================
+
 def test_legacy_fixture_is_byte_identical():
     """The five-column fixture did not move when the representation changed."""
     assert _LEGACY_FIXTURE.read_text(encoding='utf-8') == _LEGACY_FIXTURE_BYTES
@@ -279,6 +291,10 @@ def test_legacy_fixture_still_parses_in_both_readers():
     for column in _CONTEXT_COLUMNS:
         assert column not in totals, column
 
+
+# =============================================================================
+# The undatable-zero fixture: one artifact, both readers, one provenance gate
+# =============================================================================
 
 def test_undatable_fixture_carries_no_post_token_fingerprint():
     """The fixture is the pre-token writer's shape: nine columns, all zeros.

@@ -97,6 +97,10 @@ def test_projection_covers_the_mutation_scope_of_a_survey_deliverable():
     assert gaps == [_REAL_B]
 
 
+# =============================================================================
+# Referrer closure — step target the deliverable never declared
+# =============================================================================
+
 def test_projection_leaves_a_declared_glob_to_the_reconciliation_check():
     """A declared glob in the write-set is not reported as an unprojected write.
 
@@ -196,6 +200,10 @@ def test_declared_glob_fully_enumerated_is_closed():
     assert population['matches_enumerated'] == len(expected_hits)
     assert population['population_complete'] is True
 
+
+# =============================================================================
+# End-to-end through the mechanical Q-Gate
+# =============================================================================
 
 def test_a_declared_glob_escaping_the_repo_is_unmeasured_not_empty():
     """An escaping pattern is rejected, and the escape target really exists.

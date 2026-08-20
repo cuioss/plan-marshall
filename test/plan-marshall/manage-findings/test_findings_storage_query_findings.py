@@ -16,6 +16,9 @@ from _findings_storage_fixtures import (
     resolve_finding,
 )
 
+# =============================================================================
+# Routing: each storage flavour goes to its own file under findings/
+# =============================================================================
 
 def test_assessment_writes_to_assessments_file(plan_context):
     """`add_assessment` creates `findings/assessments.jsonl` only."""

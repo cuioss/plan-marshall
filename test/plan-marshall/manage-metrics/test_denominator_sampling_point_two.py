@@ -125,6 +125,10 @@ def test_two_generations_of_the_same_plan_are_distinguishable_by_the_field(plan_
     assert second['denominators_sampled_at'] >= first_sampled_at
 
 
+# =============================================================================
+# One deliverable grammar, not two producers of one number
+# =============================================================================
+
 def test_the_two_deliverable_extractors_share_one_heading_pattern(monkeypatch):
     """The agreement above is by construction, not by two matching literals.
 

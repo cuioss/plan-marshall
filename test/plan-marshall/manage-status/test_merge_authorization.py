@@ -67,6 +67,10 @@ def test_check_at_the_granting_head_is_valid(plan_context):
     assert _verdict_for(result, 'pre-merge-consent') == 'valid'
 
 
+# =============================================================================
+# check — the single-question contract, pinned at the CLI boundary
+# =============================================================================
+
 def test_check_cli_accepts_the_documented_form(plan_context):
     """Positive control: the documented `check --plan-id --head --gap-class` form works.
 

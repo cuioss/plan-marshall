@@ -28,6 +28,9 @@ from _manage_metrics_module_fixtures import (
 
 from conftest import run_script  # noqa: I001
 
+# =============================================================================
+# require_plan_exists guard fixtures
+# =============================================================================
 
 @pytest.fixture(autouse=True)
 def _seed_guarded_plan_dirs(plan_context, monkeypatch):
@@ -36,9 +39,10 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
     The patched guard resolves the plan dir via the real ``get_plan_dir`` and, for
     any plan_id NOT registered as unseeded, writes the ``status.json`` sentinel
     before delegating to the genuine ``require_plan_exists``. This keeps every
-    positive test's happy path intact without per-test seeding, while the
-    negative tests (which call ``_register_unseeded``) still exercise the real
-    ``plan_not_found`` failure.
+    positive test's happy path intact without per-test seeding. A
+    module whose tests need the real ``plan_not_found`` failure registers the
+    plan id via ``_register_unseeded`` first; no test in this module does, so
+    the guard here always seeds and the registry stays empty.
     """
     _UNSEEDED_PLAN_IDS.clear()
     real_require = manage_metrics.require_plan_exists
@@ -75,6 +79,10 @@ def test_enrich_with_unknown_session(plan_context):
     # Will be 'not found' since session doesn't exist in ~/.claude
     assert result['status'] == 'success'
 
+
+# =============================================================================
+# Test: enrich delegates to the platform-runtime normalized-tokens op
+# =============================================================================
 
 class TestEnrichDelegatesToRuntimeOp:
     """cmd_enrich consumes the runtime op's normalized per-phase numbers."""
@@ -205,6 +213,10 @@ class TestEnrichDelegatesToRuntimeOp:
         assert phases['5-execute']['input_tokens'] == 50
         assert 'input_tokens' not in phases.get('6-finalize', {})
 
+
+# =============================================================================
+# total_tokens population labelling
+# =============================================================================
 
 def test_enrich_labels_a_zero_dispatch_phase_as_inline(plan_context, monkeypatch):
     """The inline fold still happens — and the row says so, twice.

@@ -25,6 +25,10 @@ def test_findings_dir_absent_until_first_write(plan_context):
     assert not findings_dir.exists()
 
 
+# =============================================================================
+# Routing: each storage flavour goes to its own file under findings/
+# =============================================================================
+
 def test_findings_qgate_assessments_coexist_in_same_dir(plan_context):
     """All three storage flavours share one `findings/` directory without colliding."""
     findings_dir = get_findings_dir('storage-coexist')
@@ -43,6 +47,10 @@ def test_findings_qgate_assessments_coexist_in_same_dir(plan_context):
     children = sorted(p.name for p in findings_dir.iterdir() if p.is_file())
     assert children == ['assessments.jsonl', 'bug.jsonl', 'qgate-5-execute.jsonl']
 
+
+# =============================================================================
+# Lazy creation: per-type file appears only after first matching write
+# =============================================================================
 
 def test_per_type_file_created_lazily_on_first_add(plan_context):
     """Adding a `bug` finding creates `findings/bug.jsonl` only."""

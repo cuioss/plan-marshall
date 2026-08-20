@@ -46,6 +46,10 @@ def test_grant_persists_head_bound_record(plan_context):
     assert set(persisted) == {'head', 'gap_class', 'granted_over', 'reason', 'granted_at'}
 
 
+# =============================================================================
+# check — the single-question contract, pinned at the CLI boundary
+# =============================================================================
+
 def test_grant_cli_requires_the_gap_class(plan_context):
     """`grant` without --gap-class is an argparse rejection.
 
@@ -76,6 +80,10 @@ def test_grant_cli_requires_the_gap_class(plan_context):
     assert '--gap-class' in result.stderr
 
 
+# =============================================================================
+# grant — persistence and the overwrite-is-the-re-seek contract
+# =============================================================================
+
 def test_record_round_trips_granted_over_and_reason(plan_context):
     """granted_over and reason survive persistence verbatim.
 
@@ -100,6 +108,10 @@ def test_record_round_trips_granted_over_and_reason(plan_context):
     assert checked['records'][0]['granted_over'] == gap
     assert checked['records'][0]['reason'] == reason
 
+
+# =============================================================================
+# check — admissibility: the gap class, not just the HEAD
+# =============================================================================
 
 def test_record_without_a_gap_class_matches_no_class(plan_context):
     """A record carrying no ``gap_class`` is never admissible — no wildcard.
@@ -132,6 +144,10 @@ def test_record_without_a_gap_class_matches_no_class(plan_context):
     assert _record_for(result, 'barrier-ask-override')['gap_class'] is None
 
 
+# =============================================================================
+# grant — persistence and the overwrite-is-the-re-seek contract
+# =============================================================================
+
 def test_regrant_at_new_head_overwrites_the_record(plan_context):
     """A re-grant replaces the record rather than accumulating a second one.
 
@@ -151,6 +167,10 @@ def test_regrant_at_new_head_overwrites_the_record(plan_context):
     assert list(authorizations) == ['barrier-ask-override']
     assert authorizations['barrier-ask-override']['head'] == HEAD_B
 
+
+# =============================================================================
+# check — the lapse rule (D5a) and the re-seek (D5b)
+# =============================================================================
 
 def test_regrant_at_new_head_reauthorizes(plan_context):
     """The re-grant rule: a re-seek at the advanced HEAD restores authorization.

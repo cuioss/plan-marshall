@@ -140,6 +140,12 @@ def _read_queue(queue_path: Path) -> dict:
 # =============================================================================
 
 
+# =============================================================================
+# D5 — self-healing stale-slot reclaim (active_since + validate_lock_queue +
+# adaptive build_queue_upper_limit). ADDITIVE over D4: these are new functions,
+# none of D4's [LOCK]-event tests above are modified.
+# =============================================================================
+
 def _write_queue(queue_path: Path, state: dict) -> None:
     """Persist a hand-built queue state directly (for seeding stale entries)."""
     queue_path.write_text(json.dumps(state), encoding='utf-8')

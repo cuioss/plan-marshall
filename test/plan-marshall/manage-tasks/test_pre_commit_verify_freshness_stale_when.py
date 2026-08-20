@@ -28,6 +28,9 @@ from _resolve_project_dir_fixtures import (
     worktree_query_result,
 )
 
+# =============================================================================
+# Fixture builders
+# =============================================================================
 
 @pytest.fixture(autouse=True)
 def _stub_resolver_seam(monkeypatch):
@@ -91,6 +94,21 @@ def test_fresh_when_matching_build_entry_present(plan_context, monkeypatch, tmp_
     assert result['matched_notation'] == 'plan-marshall:build-pyproject:pyproject_build'
 
 
+# =============================================================================
+# The ``stale`` REASON — a distinct remedy per route
+#
+# The gate's pass/fail behaviour is identical on every route below (only
+# ``fresh`` ever permits), so these cases pin the half that differs: what the
+# refusal SAYS. The historical single message asserted "the worktree has been
+# mutated since the last observed build ... re-dispatch a build before
+# retrying" on every one of them — a cause the gate never established, and a
+# remedy that is exactly the blind retry a ``killed`` build forbids.
+#
+# The two ``notation_*`` routes are NOT exercised here: they come from the
+# cross-check rather than from ``_stale_reason``, and live in
+# ``test_freshness_notation_crosscheck.py``.
+# =============================================================================
+
 def test_fresh_match_is_tier_agnostic_across_resolved_notations(
     plan_context, monkeypatch, tmp_path
 ) -> None:
@@ -149,6 +167,10 @@ def test_fresh_among_mixed_entries(plan_context, monkeypatch, tmp_path) -> None:
     assert result['status'] == 'fresh', result
     assert result['matched_notation'] == 'plan-marshall:build-npm:npm'
 
+
+# =============================================================================
+# Tests
+# =============================================================================
 
 def test_stale_when_ledger_empty(plan_context, monkeypatch, tmp_path) -> None:
     """ledger empty -> fail closed (undecidable / no_registry)."""
@@ -295,6 +317,21 @@ def test_stale_when_only_change_entry_matches_sha(plan_context, monkeypatch, tmp
 # ``test_freshness_notation_crosscheck*.py``.
 # =============================================================================
 
+
+# =============================================================================
+# The ``stale`` REASON — a distinct remedy per route
+#
+# The gate's pass/fail behaviour is identical on every route below (only
+# ``fresh`` ever permits), so these cases pin the half that differs: what the
+# refusal SAYS. The historical single message asserted "the worktree has been
+# mutated since the last observed build ... re-dispatch a build before
+# retrying" on every one of them — a cause the gate never established, and a
+# remedy that is exactly the blind retry a ``killed`` build forbids.
+#
+# The two ``notation_*`` routes are NOT exercised here: they come from the
+# cross-check rather than from ``_stale_reason``, and live in
+# ``test_freshness_notation_crosscheck.py``.
+# =============================================================================
 
 @pytest.mark.parametrize(
     ('row_status', 'expected_reason'),

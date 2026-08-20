@@ -132,6 +132,10 @@ def _unseeded_plan_dir(plan_context, plan_id: str) -> Path:
     return plan_dir
 
 
+# =============================================================================
+# Test: generate (Tier 2 - direct import)
+# =============================================================================
+
 def _phase_breakdown_header(md_content: str) -> str:
     """Return the header row of the ## Phase Breakdown table."""
     lines = md_content.splitlines()

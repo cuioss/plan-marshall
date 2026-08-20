@@ -13,6 +13,9 @@ from _plan_retrospective_fixtures import setup_live_plan  # noqa: E402
 
 from conftest import run_script  # noqa: E402
 
+# =============================================================================
+# Registry-consistency regression guard (deliverable 2)
+# =============================================================================
 
 class TestPhaseDispatchBoundariesSection:
     """Rendering tests for the Phase Dispatch Boundaries section."""
@@ -124,6 +127,10 @@ class TestPhaseDispatchBoundariesSection:
         # 6-finalize carries the genuinely-wasted vs retryable split distinctly.
         assert '| 6-finalize | 0 | 10000 | 16000 | 2 | 0 | 0 |' in content
 
+
+# =============================================================================
+# Loud-drop partition of the non-emit path
+# =============================================================================
 
 class TestDroppedSectionIsLoud:
     """A section whose trigger fragment carries real payload is a DROP, not an omission.

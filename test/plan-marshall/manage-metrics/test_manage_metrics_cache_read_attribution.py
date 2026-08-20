@@ -18,6 +18,9 @@ from _manage_metrics_module_fixtures import (
     manage_metrics,
 )
 
+# =============================================================================
+# require_plan_exists guard fixtures
+# =============================================================================
 
 @pytest.fixture(autouse=True)
 def _seed_guarded_plan_dirs(plan_context, monkeypatch):
@@ -26,9 +29,10 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
     The patched guard resolves the plan dir via the real ``get_plan_dir`` and, for
     any plan_id NOT registered as unseeded, writes the ``status.json`` sentinel
     before delegating to the genuine ``require_plan_exists``. This keeps every
-    positive test's happy path intact without per-test seeding, while the
-    negative tests (which call ``_register_unseeded``) still exercise the real
-    ``plan_not_found`` failure.
+    positive test's happy path intact without per-test seeding. A
+    module whose tests need the real ``plan_not_found`` failure registers the
+    plan id via ``_register_unseeded`` first; no test in this module does, so
+    the guard here always seeds and the registry stays empty.
     """
     _UNSEEDED_PLAN_IDS.clear()
     real_require = manage_metrics.require_plan_exists
@@ -46,6 +50,10 @@ def _seed_guarded_plan_dirs(plan_context, monkeypatch):
     monkeypatch.setattr(manage_metrics, 'require_plan_exists', _seeding_require)
     return plan_context
 
+
+# =============================================================================
+# Test: first-class partiality fields (Tier 2 - direct import)
+# =============================================================================
 
 class TestCacheReadAttributionRoundTrip:
     """The attribution group survives enrich -> metrics.toon -> generate intact.
@@ -190,6 +198,10 @@ class TestCacheReadAttributionRoundTrip:
         )
 
 
+# =============================================================================
+# Exploration-share bucket contract drift
+# =============================================================================
+
 def test_cache_read_attribution_fields_match_platform_runtime_contract():
     """``_CACHE_READ_ATTRIBUTION_FIELDS`` equals the contract's attribution key set exactly.
 
@@ -205,6 +217,10 @@ def test_cache_read_attribution_fields_match_platform_runtime_contract():
     # would turn a partial split into an apparently complete one.
     assert 'cache_read_unattributed' in contract_keys
 
+
+# =============================================================================
+# Test: first-class partiality fields (Tier 2 - direct import)
+# =============================================================================
 
 class TestTwoUnattributedPopulationsAreDistinguishable:
     """Plan 030 D1 (GATE): the two "unattributed" quantities are separately named

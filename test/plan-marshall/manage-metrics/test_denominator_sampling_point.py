@@ -204,6 +204,10 @@ def test_readable_outline_with_no_deliverable_heading_is_counted_as_zero(
     assert data['deliverable_count_sampling_point'] == 'generate_time'
 
 
+# =============================================================================
+# One deliverable grammar, not two producers of one number
+# =============================================================================
+
 @pytest.mark.parametrize('label', sorted(_DIVERGENT_OUTLINES))
 def test_deliverable_count_agrees_with_the_sibling_producer(plan_context, label):
     """The metrics counter and `manage-solution-outline` return ONE number.

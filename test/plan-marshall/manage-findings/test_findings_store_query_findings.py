@@ -74,6 +74,10 @@ def test_query_findings_by_file_pattern(plan_context):
     assert result['filtered_count'] == 1
 
 
+# =============================================================================
+# Test: pr-comment author / kind first-class fields
+# =============================================================================
+
 def test_query_findings_by_author(plan_context):
     """query_findings filters by exact author match."""
     add_finding('store-prc-byauthor', 'pr-comment', 'C1', 'd', author='alice', kind='inline')
@@ -146,6 +150,10 @@ def test_query_findings_unified_filters_qgate_by_author(plan_context):
     assert 'Q-Gate finding without author' not in titles
 
 
+# =============================================================================
+# Test: pr-comment reviewed_commit_sha / bot_kind first-class fields
+# =============================================================================
+
 def test_query_findings_by_bot_kind(plan_context):
     """query_findings filters by exact bot_kind match."""
     add_finding('store-prc-bybotkind', 'pr-comment', 'C1', 'd', author='coderabbitai[bot]', bot_kind='coderabbit')
@@ -196,6 +204,10 @@ def test_query_findings_unified_filters_by_bot_kind(plan_context):
     assert unified['plan_count'] == 1
     assert unified['findings'][0]['title'] == 'From coderabbit'
 
+
+# =============================================================================
+# Test: Q-Gate findings
+# =============================================================================
 
 def test_query_qgate_findings(plan_context):
     """Test querying Q-Gate findings."""

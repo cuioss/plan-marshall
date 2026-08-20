@@ -254,6 +254,10 @@ def test_set_writes_no_title_body_artifact(plan_context):
     assert not (plan_dir / 'title-body.txt').exists()
 
 
+# =============================================================================
+# phase writers: NO title-token sweep — staleness is resolved read-side
+# =============================================================================
+
 def test_set_phase_performs_no_title_token_sweep(plan_context):
     """``cmd_set_phase`` sweeps nothing on either a forward move or a backward
     loop-back re-entry — same contract as ``cmd_transition``."""

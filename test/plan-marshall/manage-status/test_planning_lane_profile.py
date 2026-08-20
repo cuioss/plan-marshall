@@ -26,6 +26,9 @@ from _planning_lane_fixtures import (
     scope_estimate_from_request_pure,
 )
 
+# =============================================================================
+# _read_request_body — the whole-body, heading-blind read
+# =============================================================================
 
 def test_concreteness_and_scope_consume_the_identical_body(plan_context, monkeypatch):
     """S5 concreteness and the scope band read the SAME text — asserted, not claimed.
@@ -200,6 +203,10 @@ def test_evaluate_signals_pure_emits_profile_projection():
 # return and the decision-log line explain the band rather than only asserting it.
 # No new prompt and no new override seam — --lane-override / S6 already exists.
 
+
+# =============================================================================
+# classify_scope_pure — pre-route coarse scope classifier (D2)
+# =============================================================================
 
 @pytest.mark.parametrize(
     ('body', 'expected_rule', 'expected_count', 'expected_fan_out'),

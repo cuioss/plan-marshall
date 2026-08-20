@@ -28,6 +28,9 @@ from _title_token_fixtures import (
 
 from conftest import run_script
 
+# =============================================================================
+# arbitration: open SET (last writer wins), owner-scoped CLEAR
+# =============================================================================
 
 def test_clear_from_a_foreign_owner_is_a_reported_no_op(plan_context):
     """A ``clear`` from an owner that does not own the live record leaves it
@@ -109,6 +112,10 @@ def test_clear_twice_is_idempotent(plan_context):
     assert 'title_token' not in stored
 
 
+# =============================================================================
+# argparse: invalid --state / --owner is rejected with exit code 2
+# =============================================================================
+
 def test_clear_invalid_owner_rejected_by_argparse():
     """``title-token clear --owner <bad>`` is likewise rejected at parse time."""
     result = run_script(
@@ -123,6 +130,10 @@ def test_clear_invalid_owner_rejected_by_argparse():
     assert result.returncode == 2
 
 
+# =============================================================================
+# no rendering: the verb writes no title-body.txt artifact
+# =============================================================================
+
 def test_clear_writes_no_title_body_artifact(plan_context):
     """``clear`` persists only status.json — no title-body.txt rendering."""
     cmd_create(Namespace(plan_id='tt-no-render-clear', title='Test', phases='1-init', force=False))
@@ -132,6 +143,10 @@ def test_clear_writes_no_title_body_artifact(plan_context):
     plan_dir = plan_context.plan_dir_for('tt-no-render-clear')
     assert not (plan_dir / 'title-body.txt').exists()
 
+
+# =============================================================================
+# arbitration: open SET (last writer wins), owner-scoped CLEAR
+# =============================================================================
 
 def test_lock_clear_does_not_clear_a_foreign_build_busy_but_does_clear_its_own(plan_context):
     """The asymmetry end to end: a merge-lock clear leaves a build-hook token
@@ -147,6 +162,10 @@ def test_lock_clear_does_not_clear_a_foreign_build_busy_but_does_clear_its_own(p
     _clear(plan_id, owner='merge-lock')
     assert 'title_token' not in _read_status(plan_context, plan_id)
 
+
+# =============================================================================
+# phase writers: NO title-token sweep — staleness is resolved read-side
+# =============================================================================
 
 def test_lock_tokens_preserved_across_transition_and_set_phase(plan_context):
     """A live lock token survives both phase writers untouched — the live
@@ -167,6 +186,10 @@ def test_lock_tokens_preserved_across_transition_and_set_phase(plan_context):
     stored = _read_status(plan_context, plan_id)
     assert stored['title_token']['state'] == 'lock-waiting'
 
+
+# =============================================================================
+# staleness: read-side, age-based, clearable by ANY owner
+# =============================================================================
 
 def test_read_title_token_hides_a_stale_record_without_mutating_it():
     """``read_title_token`` is the read-side accessor: a stale record reads as
@@ -209,6 +232,10 @@ def test_a_fresh_foreign_token_is_still_protected(plan_context):
     assert result['cleared'] is False
     assert result['reason'] == 'foreign_owner'
 
+
+# =============================================================================
+# archive: cmd_archive pops title_token before writing the archived status.json
+# =============================================================================
 
 def test_archive_pops_merge_lock_title_token(plan_context):
     """cmd_archive must pop a pre-set merge-lock title_token before archiving."""
@@ -258,6 +285,10 @@ def test_archive_pops_build_busy_title_token(plan_context):
         f"title_token before write_status/shutil.move."
     )
 
+
+# =============================================================================
+# drive seam: the state settle reports no delivery, because it delivers nothing
+# =============================================================================
 
 def test_archive_releases_no_session_binding(plan_context, monkeypatch):
     """``cmd_archive`` fires NO teardown delegation at all.
@@ -327,6 +358,10 @@ def test_transition_performs_no_title_token_sweep(plan_context):
     assert stored['title_token']['owner'] == 'build-hook'
 
 
+# =============================================================================
+# drive seam: the state settle reports no delivery, because it delivers nothing
+# =============================================================================
+
 def test_transition_writes_no_repaint_non_delivery_entry(plan_context, monkeypatch):
     """A real ``current_phase`` transition writes NO title non-delivery entry.
 
@@ -356,6 +391,10 @@ def test_transition_writes_no_repaint_non_delivery_entry(plan_context, monkeypat
     assert 'not delivered' not in work_log
     assert 'no_controlling_tty' not in work_log
 
+
+# =============================================================================
+# phase writers: NO title-token sweep — staleness is resolved read-side
+# =============================================================================
 
 def test_killed_detached_build_busy_token_ages_out_without_any_phase_change(plan_context):
     """Killed-detached-build repro, re-pinned to the mechanism that actually

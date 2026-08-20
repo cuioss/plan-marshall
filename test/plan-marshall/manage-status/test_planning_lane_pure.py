@@ -16,6 +16,9 @@ from _planning_lane_fixtures import (
     scope_estimate_from_request_pure,
 )
 
+# =============================================================================
+# evaluate_signals_pure — direct, I/O-free unit coverage
+# =============================================================================
 
 def test_pure_all_light_signals_resolve_light():
     """No signal fires → the pure scorer resolves the light default."""
@@ -171,6 +174,10 @@ def test_pure_override_defaults_to_none_when_omitted():
     assert result['lane'] == 'light'
     assert result['signals']['planning_lane_override'] is None
 
+
+# =============================================================================
+# S5 regex constants + _request_is_concrete importability (downstream consumers)
+# =============================================================================
 
 def test_request_is_concrete_is_module_level_importable():
     """_request_is_concrete is importable for downstream re-derivation of S5."""

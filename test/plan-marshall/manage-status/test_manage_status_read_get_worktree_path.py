@@ -297,6 +297,10 @@ class TestGetWorktreePathPreMaterialization:
         )
 
 
+# =============================================================================
+# Test: cmd_get_worktree_path verb
+# =============================================================================
+
 def test_cli_get_worktree_path_help(plan_context):
     """get-worktree-path --help must succeed (subparser registration check)."""
     result = run_script(SCRIPT_PATH, 'get-worktree-path', '--help')

@@ -8,6 +8,12 @@ from pathlib import Path
 
 from _check_artifact_consistency_fixtures import _check_mod
 
+# =============================================================================
+# Unit tests for the footprint resolver (_resolve_footprint delegates to the shared
+# whole-chain resolver: live diff → realized-footprint capture → merge-commit →
+# legacy key → unresolvable). These tests exercise the tier-1/legacy/unresolvable
+# endpoints; the capture and merge-commit tiers are covered in test_footprint_resolver.py.
+# =============================================================================
 
 class TestMetricsGeneratedOrderingDerivedVerdict:
     """``metrics_generated``'s absence verdict is derived from step ORDERING.

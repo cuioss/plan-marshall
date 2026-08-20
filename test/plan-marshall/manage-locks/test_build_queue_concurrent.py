@@ -25,6 +25,9 @@ from toon_parser import parse_toon
 
 from conftest import run_script
 
+# =============================================================================
+# Fixtures
+# =============================================================================
 
 @pytest.fixture
 def isolated_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:

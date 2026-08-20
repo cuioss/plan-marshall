@@ -86,6 +86,9 @@ from _planning_lane_request_body_fixtures import (
     cmd_scope_estimate_heuristic,
 )
 
+# =============================================================================
+# Scenario 1 — many paths plus a glob, all below the first nested heading
+# =============================================================================
 
 def test_orchestrated_spec_with_many_paths_and_glob_bands_multi_module(plan_context):
     """An orchestrated spec with five paths and a real glob bands multi_module.
@@ -124,6 +127,10 @@ def test_orchestrated_spec_with_many_paths_and_glob_bands_multi_module(plan_cont
     refs = json.loads((plan_dir / 'references.json').read_text())
     assert refs['scope_estimate'] == 'multi_module'
 
+
+# =============================================================================
+# Scenario 2 — a bold-saturated spec with exactly three paths stays surgical
+# =============================================================================
 
 def test_bolded_spec_with_three_paths_bands_surgical_and_routes_light(plan_context):
     """A bold-saturated spec naming three paths bands surgical and routes light.
@@ -167,6 +174,10 @@ def test_bolded_spec_with_three_paths_bands_surgical_and_routes_light(plan_conte
     assert route_result['execution_profile'] == 'minimal'
 
 
+# =============================================================================
+# Scenario 3 — a bolded spec naming ten paths is large, and must route deep
+# =============================================================================
+
 def test_bolded_spec_with_ten_paths_bands_multi_module_and_routes_deep(plan_context):
     """A bolded ten-path spec bands multi_module, fires S2, routes deep, and is not minimal.
 
@@ -207,6 +218,10 @@ def test_bolded_spec_with_ten_paths_bands_multi_module_and_routes_deep(plan_cont
     status = json.loads((plan_dir / 'status.json').read_text())
     assert status['metadata']['execution_profile'] != 'minimal'
 
+
+# =============================================================================
+# Scenario 4 — a genuine glob is the ONLY fan-out signal, and still widens
+# =============================================================================
 
 def test_spec_whose_only_fan_out_signal_is_a_real_glob_routes_deep(plan_context):
     """A real fan-out marker widens to multi_module and routes deep on ONE counted path.
@@ -300,6 +315,10 @@ def test_empty_request_file_declares_unknown(plan_context):
     assert result['scope_estimate'] == 'none'
     assert result['scope_resolved'] is False
 
+
+# =============================================================================
+# Scenario 3 — the bare-filename exclusion is a COUNTER decision
+# =============================================================================
 
 def test_bare_filename_is_excluded_from_the_count_by_the_counter_not_the_reader(
     plan_context,

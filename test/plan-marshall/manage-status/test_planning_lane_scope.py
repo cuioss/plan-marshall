@@ -22,6 +22,9 @@ from _planning_lane_fixtures import (
 
 from conftest import load_script_module
 
+# =============================================================================
+# _read_request_body — the whole-body, heading-blind read
+# =============================================================================
 
 def test_scope_heuristic_declares_unknown_for_unreadable_request(plan_context):
     """End-to-end: an unscoreable request persists the declared unknown, not a band."""
@@ -57,6 +60,10 @@ def test_scope_heuristic_reports_scope_resolved_true_for_a_scored_body(plan_cont
     assert result['scope_estimate'] == 'surgical'
     assert result['scope_resolved'] is True
 
+
+# =============================================================================
+# classify_scope_pure — pre-route coarse scope classifier (D2)
+# =============================================================================
 
 @pytest.mark.parametrize(
     'body',

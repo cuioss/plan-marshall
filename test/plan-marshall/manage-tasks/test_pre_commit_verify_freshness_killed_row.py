@@ -27,6 +27,9 @@ from _resolve_project_dir_fixtures import (
     worktree_query_result,
 )
 
+# =============================================================================
+# Fixture builders
+# =============================================================================
 
 @pytest.fixture(autouse=True)
 def _stub_resolver_seam(monkeypatch):
@@ -68,6 +71,21 @@ def _expected_notations_resolve(monkeypatch):
     """
     _stub_expected_notations(monkeypatch, _RESOLVED_NOTATIONS)
 
+
+# =============================================================================
+# The ``stale`` REASON — a distinct remedy per route
+#
+# The gate's pass/fail behaviour is identical on every route below (only
+# ``fresh`` ever permits), so these cases pin the half that differs: what the
+# refusal SAYS. The historical single message asserted "the worktree has been
+# mutated since the last observed build ... re-dispatch a build before
+# retrying" on every one of them — a cause the gate never established, and a
+# remedy that is exactly the blind retry a ``killed`` build forbids.
+#
+# The two ``notation_*`` routes are NOT exercised here: they come from the
+# cross-check rather than from ``_stale_reason``, and live in
+# ``test_freshness_notation_crosscheck.py``.
+# =============================================================================
 
 def test_killed_row_is_not_reported_as_a_mutation(plan_context, monkeypatch, tmp_path) -> None:
     """The defect in one assertion: a kill is not a mutation and must not read as one."""
@@ -183,6 +201,10 @@ def test_malformed_ledger_lines_are_skipped(plan_context, monkeypatch, tmp_path)
 
     assert result['status'] == 'fresh', result
 
+
+# =============================================================================
+# Anti-regression: the manifest's step SHAPE is no longer an oracle
+# =============================================================================
 
 def test_malformed_manifest_is_irrelevant_to_the_gate(
     plan_context, monkeypatch, tmp_path

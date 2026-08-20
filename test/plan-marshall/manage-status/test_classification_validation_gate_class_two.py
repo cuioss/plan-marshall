@@ -21,6 +21,9 @@ from _classification_validation_gate_fixtures import (
     run_classification_validation,
 )
 
+# =============================================================================
+# Mismatch class 3 — a narrow persisted band over a multi-module-sized body
+# =============================================================================
 
 def test_class_two_and_class_three_are_mutually_exclusive(plan_context):
     """Classes 2 and 3 can never co-fire, so all three classes cannot fire at once.

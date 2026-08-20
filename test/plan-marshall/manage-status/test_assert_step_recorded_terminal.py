@@ -108,6 +108,11 @@ def test_non_terminal_with_require_terminal_returns_error(plan_context):
     assert result['step'] == 'impl'
 
 
+# =============================================================================
+# Legacy-vs-canonical duplicate: the fresher canonical write must win over a
+# stale legacy (``default:``-prefixed) key inserted earlier in the dict.
+# =============================================================================
+
 def test_non_terminal_near_miss_does_not_escalate_to_mismatched_key(plan_context):
     """A near-miss orphan whose outcome is NON-terminal must NOT trigger the
     mismatched-key branch — only a terminal orphan record counts as a near-miss.
@@ -131,6 +136,10 @@ def test_non_terminal_near_miss_does_not_escalate_to_mismatched_key(plan_context
     assert 'orphan_key' not in result
 
 
+# =============================================================================
+# Step recorded but non-terminal value -> not recorded
+# =============================================================================
+
 def test_bare_string_legacy_entry_not_recorded(plan_context):
     """A legacy bare-string entry is not a dict, so it does NOT count as recorded."""
     plan_id = 'assert-legacy-string'
@@ -145,6 +154,12 @@ def test_bare_string_legacy_entry_not_recorded(plan_context):
     assert result['recorded'] is False
     assert result['outcome'] is None
 
+
+# =============================================================================
+# Canonical step-key round-trip: a bare↔default: / promoted-alias variant
+# recorded with one spelling resolves as a canonical MATCH when queried with the
+# variant spelling (shared canonicalize_step_key on both write and read).
+# =============================================================================
 
 def test_bare_record_matches_default_prefixed_query(plan_context):
     """Record via ``push`` then assert via ``default:push`` → recorded (no mismatch)."""

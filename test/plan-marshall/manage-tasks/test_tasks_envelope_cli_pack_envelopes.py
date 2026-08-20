@@ -9,6 +9,9 @@ from _tasks_envelope_fixtures import SCRIPT_PATH, _seed_task_file
 
 from conftest import run_script
 
+# =============================================================================
+# pack-envelopes — CLI plumbing (Tier 3, on-disk task files)
+# =============================================================================
 
 def test_cli_pack_envelopes_returns_success(plan_context):
     """The pack-envelopes subcommand returns a success TOON with envelope_count."""

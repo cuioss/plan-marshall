@@ -6,6 +6,9 @@
 import pytest
 from _manage_tasks_batch_add_fixtures import _BARE_BLOCK_TASK_TOON, _BRACKETED_TASK_TOON, parse_stdin_task
 
+# =============================================================================
+# Tests: parse_stdin_task accepts both bracketed and bare-block list forms
+# =============================================================================
 
 @pytest.mark.parametrize(
     'toon,label',

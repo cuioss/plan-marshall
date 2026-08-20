@@ -42,6 +42,10 @@ def test_unmeasured_dispatch_columns_are_absent_rather_than_zero(plan_context):
     assert ',20000,9,90000,0,0,0,0' not in rows[1]
 
 
+# =============================================================================
+# Fixtures: one file carrying both representations, and the legacy floor
+# =============================================================================
+
 def test_unmeasured_fixture_reads_three_ways_in_the_retrospective_reader():
     """One file, both representations, read per column by the retrospective reader."""
     parsed = analyze_logs._parse_dispatch_boundary_file(_UNMEASURED_FIXTURE)
@@ -99,6 +103,10 @@ def test_unmeasured_fixture_separates_measured_zeros_from_unmeasured_in_the_audi
     # The two are the same integer and completely different facts.
     assert 'cache_creation_input_tokens' not in totals
 
+
+# =============================================================================
+# The composed record: no field asserts an unearned value
+# =============================================================================
 
 def test_measured_zero_dispatch_column_is_present_as_zero(plan_context):
     """A measured `0` is still `0` — on the row, and in the result.

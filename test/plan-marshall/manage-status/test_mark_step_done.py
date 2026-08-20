@@ -6,6 +6,14 @@
 import pytest
 from _mark_step_done_fixtures import _args, _make_plan, cmd_mark_step_done, read_status, write_status
 
+# =============================================================================
+# Stale legacy-key duplicate migration
+#
+# A pre-migration run may have persisted a ``default:``-prefixed key directly.
+# A later canonical write must locate that stale key via the canonicalized
+# fallback scan (so the conflict check fires against the true existing outcome)
+# AND pop it on write, so a legacy-vs-canonical duplicate never survives.
+# =============================================================================
 
 def test_mark_step_conflict_fires_against_stale_legacy_key(plan_context):
     """A differing-outcome write over a stale ``default:push`` key raises conflict.
