@@ -429,6 +429,12 @@ absorbed.
 The inline review-thread surface (`get_review_comments`) returned an empty set and the read succeeded,
 so that is a genuine absence rather than an unreadable surface. All three surfaces were read.
 
+**Operator disposition.** The shortfall was put to the operator, who instructed that the reviewers
+which structurally cannot review this diff be ignored, and authorised the landing. § Step 8 condition 6
+is therefore satisfied on its `Reopens? no` arm *and* by explicit operator instruction; the run records
+the instruction rather than treating the gate as met on its own reading. The operator also directed a
+final adversarial verification of five rounds before landing — recorded in § Findings.
+
 Every comment on the PR was dispositioned: two are refusal notices needing no action, one is a clean
 review with no findings. No comment was left open.
 
