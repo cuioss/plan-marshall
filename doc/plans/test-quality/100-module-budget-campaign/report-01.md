@@ -1029,6 +1029,44 @@ failing. And the licence question was never asked of the plan — a split that r
 files is exactly what "split by behaviour cluster" means. The regrouping is now done and recorded as
 **M14**; it cost one further rebuild, and it moved the whole-tree budget count not at all.
 
+## Verification loop — stop record (Step 6)
+
+**Exit: `budget-exhausted, non-converging`.**
+
+Seven rounds ran. The loop stopped because the operator's authorization for further rounds ran out, not
+because a round came back clean — and the evidence that it had not converged is the last round itself.
+
+Counted from this report's own finding tables, plus the two findings written up in prose rather than a
+row (M32 in round 5, M39 in round 6) and round 7's six, which are prose throughout:
+
+| Round | New findings | Where they came from |
+|---|---:|---|
+| 1 (the split) | 15 | M1–M15, the move's own defects |
+| 2 | 8 | M16–M23 |
+| 3 and 4 | 5 | M24–M28 — including the banner attribution, invisible to a suite and a linter alike |
+| 5 | 4 | M29–M32 — first round to ask whether the result is any *good* rather than whether it is faithful |
+| 6 | 7 | M33–M39 — five overstated dispositions from round 5, and two fixes that introduced new defects |
+| 7 | 6 | M40–M45 — including **a false headline figure that had stood since round 5** |
+
+**Round 7 found the single most consequential defect of the run**, which is the strongest available
+evidence that an eighth round would have found more. M45 was not a subtle one: the report's duplication
+table claimed the slice "now carries materially less duplicated code than it did before the split", and
+it did not. That claim had been read by six adversarial rounds and by two cold reads.
+
+**Why it survived.** Every round verified that each number was correctly derived. None asked whether the
+two numbers were the same measurement. The defect lives in the *relation* between two individually
+correct figures, and no per-number check can reach it — which is why it is written up as lesson 4 rather
+than only as a finding. Applying that lesson immediately produced a second instance in the very
+correction that introduced it: a banner delta drafted as "167 → 0" from two different instruments, which
+is 106 → 0 when both sides come from one script.
+
+**What that implies for a reader of this report.** The deliverable's *mechanical* claims are the
+strongest thing here — the multiset fidelity diff, the registration invariant, the rule counts — because
+each is produced by a single script run over both refs, which is exactly the property M45 was missing.
+The *narrative* claims have been wrong at least three times (M12, M25's disposition, M45) and were each
+time corrected by the round that followed. **There is no round after this one**, so any narrative
+judgement in this report should be read as unverified by an independent pass.
+
 ## Verification conditions
 
 | Condition | Before | After | Verdict |
