@@ -1,7 +1,11 @@
 # Run report — 510-finalize-step-contract-ordering-and-refire-currency (run 01)
 
-**Date (UTC):** 2026-08-18    **Branch:** `claude/step-contract-ordering-refire-cjlzup`    **PR:** _pending_    **Outcome:** _in progress_
+**Date (UTC):** 2026-08-18    **Branch:** `claude/step-contract-ordering-refire-cjlzup`    **PR:** [#1309](https://github.com/cuioss/plan-marshall/pull/1309)    **Outcome:** merged 2026-08-20T08:26:45Z via the merge queue, head `f07f0ea`
 
+> **Run status:** complete. Merged; §§ Reviewer participation, Cost, Contract check, What have we
+> learned and Residue are filled from what happened, and the one contract deviation (a commit shipped
+> without a bot review, operator-directed) is recorded in § Contract check rather than smoothed over.
+>
 > **Verification loop exit:** `budget-exhausted` — five rounds run, the full budget. Round 5 returned
 > five findings plus three minor, all condition A and all counting prose; every one is fixed above
 > except **T8**, characterised in § Residue, and commit `c92dd11`'s message (**S8**), characterised
@@ -434,7 +438,7 @@ checked against:
 | F10a | round 1 | `test_verdict_currency.py` ended the refusal-heading guard with `assert level, …` — a tautology (the regex guarantees 1–6 `#`) whose message reads as success text in a failure slot | **fixed** — replaced with a real level-set check |
 | F10b | round 1 | A paraphrase of `ext-point-execution-context-workflow.md` was presented inside quote marks, in two places | **fixed** — de-quoted; the claim is unchanged and remains true |
 | F10c | round 1 | `test_the_three_scopes_publish_their_populations` claims to publish counts and prints nothing | **fixed** — renamed to what it asserts (own-block population is a proper, non-empty subset), and the module docstring's item (6) updated to match |
-| F8 | round 1 | Collateral check and report sections unfinished | **partly fixed** — § Collateral check is complete below, as are §§ Populations, Deliverables, Build gate and Reviewer participation's derived population. The sections that record Steps 7–9 (per-reviewer verdicts, Cost, Contract check, What have we learned, Residue) stay `_pending_` because those steps have not run; they are filled at the point the run reaches them, not before |
+| F8 | round 1 | Collateral check and report sections unfinished | **partly fixed** — § Collateral check is complete below, as are §§ Populations, Deliverables, Build gate and Reviewer participation's derived population. The sections that record Steps 7–9 (per-reviewer verdicts, Cost, Contract check, What have we learned, Residue) were left `_pending_` at the time because those steps had not run — they are filled at the point the run reaches them, not before. **All are now complete**, the run having merged; this row records the state when F8 was raised, not the state today |
 | F9 | round 1 | D5's Done-when clause "every `effort resolve-target` in the former dispatch-site files carries `--workflow`" is not literally met | **rejected, with reason** — see § Collateral check |
 
 ### Round 2 — the pre-PR verification sub-agent, re-dispatched over the round-1 fixes
@@ -658,19 +662,123 @@ and read back.
 
 | Reviewer (`author_login`) | Verdict | Reopens? | Body evidence / reason |
 |---|---|---|---|
-| _pending_ | | | |
+| `coderabbitai` | **Participated — four passes, 8 findings** | Yes, three times | Reviewed `083068e`, `518b2b5`, `03877a1`. Each pass raised findings against the commit that fixed the previous pass |
+| `cuioss-review-bot` | **Participated — clean** | No | One "PR Reviewer Guide": *"PR contains tests / No security concerns identified / No major issues detected"* |
+| `sourcery-ai` | **Refused — `refused_structural`** | No | *"your pull request is larger than the review limit of 150000 diff characters"*. Measured: `git diff origin/main...HEAD \| wc -c` → **437,707**, 2.9× the ceiling |
+
+**Coverage shortfall, disclosed rather than absorbed.** Of M = 3, two reviewed and one refused
+structurally — and the commit that merged was reviewed by **none of them**.
+
+- **sourcery** cannot be cleared by re-request: the ceiling is a property of the diff, so the only
+  remedy is splitting the PR. Re-triggering would have spent a request for the identical answer.
+- **coderabbit did not review the head that merged.** `f07f0ea` fixes three findings against
+  `03877a1`; its review was blocked by the per-developer rate limit (*"You've used all free OSS
+  reviews for now"*), which did not reopen across three retries spaced by the ETAs CodeRabbit itself
+  published — 32, 41 and 29 minutes, the last two ~10 hours apart in wall-clock. The operator judged
+  the existing reviews sufficient and directed the merge. Recorded because this report's other review
+  claims describe the commits that *were* reviewed, and `f07f0ea` was not one of them.
+
+**What the automated reviewers caught that five in-house rounds did not.** The sharpest finding of the
+run was CodeRabbit's, against a fix this run had just made: moving Branch F to `loop_back` closed the
+lost-cleanup path but sent `state == closed` and unreadable-state observations into a retry against
+input that cannot change. Five verification rounds never examined that branch's input population. Its
+other findings were the same family the rounds were already producing — counting prose, doc-echo
+drift, an under-exercised test — but that one was a behavioural regression this run introduced and
+would otherwise have shipped.
 
 ## Cost
 
-_pending_
+**Not instrumented, and that is a property of the lane.** There is no token ledger here — `.plan/` is
+absent from the clone, so the per-dispatch accounting a local run records was never available. What
+follows is what the run's own artifacts support, each countable from git, the PR, or the gate logs.
+
+| Measure | Value |
+|---|---|
+| Commits on the branch | 22 |
+| Files changed | 62 (+3377 / −443) |
+| Whole-tree `./pw verify` invocations | **12** — 8 reported `SUCCESS`, 3 ended with `FAILED` lines, 1 was interrupted and restarted |
+| Verification sub-agent dispatches | 5 rounds + 4 cold reads = **9** |
+| Automated review passes | 4 CodeRabbit, 1 pr-agent, 1 sourcery refusal |
+| Findings raised and dispositioned | **60** — 52 across five rounds, 8 across four review passes |
+| Wall-clock, first commit to merge | 2026-08-19T19:28Z → 2026-08-20T08:26Z ≈ **13 h**, of which ~10 h was rate-limit wait |
+
+Two of the three red gates were red because a guard caught **this run's own change** — the sweep guard
+tripping on the report's text, and the `work_performed` false-carrier guard tripping on the
+`loop_back` migration. That is the gate working, not the run thrashing; the third was a ruff `F401`.
+
+The figure worth carrying forward is the gate count. **12 whole-tree runs at roughly six minutes each
+is over an hour of gate time**, and the shape that produced it — fix, gate, push, review, fix again —
+is the same shape that produced the findings. A cheaper run would have been a less-verified one.
 
 ## Contract check (Step 9)
 
-_pending_
+Against `cloud-plan-lane`, step by step. Each row states what was done, not merely that it was.
+
+| Step | Contract | This run |
+|---|---|---|
+| 1 | Load the lane skill first | Loaded as the first action, before reading the plan |
+| 2 | Keep the harness-assigned branch | `claude/step-contract-ordering-refire-cjlzup` kept. The reason is resumability, not convenience: a reclaimed VM re-clones and cannot find a renamed branch |
+| 3 | Plan-directory lifecycle | `plan.md` moved into `510-.../`; this report beside it |
+| 4 | Implement | D1–D8, plus five behavioural fixes that came out of review |
+| 5 | Conditional build gate | Fired — the branch changes Python. Verdict read from the streamed output, never the exit code; two real defects were caught exactly that way while the wrapper exited 0 |
+| 6 | Pre-PR verification sub-agent | 5 rounds, the full budget. Exit `budget-exhausted`, **not** `verifier-clear` |
+| 7 | PR and review cycle | PR #1309, no `skip-bot-review` (the diff carries `*.py`, bundles and `.claude/skills/**`). Every thread answered; 10 of 11 resolved, 1 left open deliberately |
+| 8 | Merge gate | **Deviation, operator-directed — see below** |
+| 9 | Report and closing self-check | This document |
+| — | `.plan/` never touched | `git status --porcelain .plan/` empty at every commit |
+| — | Temp files outside the repository | Scratchpad and `/tmp` only; mutation snapshots written there and restored in a `finally` |
+| — | No plugin-cache sync performed or owed | Correct for this lane |
+
+**The one deviation, stated plainly rather than absorbed.** § Step 8 condition 6 gates the merge on
+CodeRabbit's review where the PR carries no `skip-bot-review` label, bounded by a retry budget so the
+gate *delays* rather than *strands*. This run exhausted that budget: three retries, each placed after
+the ETA CodeRabbit published, and the allowance never reopened. The gate's design anticipates delay,
+not indefinite blockage. The operator, reading the evidence recorded in § Reviewer participation,
+directed the merge on the strength of the reviews already obtained.
+
+The merge is therefore **operator-authorised, not gate-satisfied**. The distinction matters and is not
+blurred here: `f07f0ea` shipped unreviewed, and a reader of this report should not infer that every
+shipped commit passed a bot review.
 
 ## What have we learned (Step 9)
 
-_pending_
+- **A green single-test run is not a green tree, and this run recorded one as the other.** After the
+  sweep guard failed, the fix was verified by re-running that one test (`6 passed`) and written up as
+  resolved. The next whole-tree gate returned the same failure with **four** hits instead of one,
+  because writing the finding up had reintroduced the token three more times. The lesson is not "run
+  more tests" — it is that a scoped re-run answers a scoped question, and the report claimed the
+  unscoped one.
+- **A fix applied at the sites a review names, rather than across the class the defect occupies, comes
+  back.** One defect — an unprefixed step id — was declared "fixed at all three sites", then "the
+  fourth site", then "fifth", then "sites six through eight", then "nine through eleven". **Five
+  rounds, each fixing exactly what it was shown.** What ended it was not another sweep but stating the
+  class boundary: which namespace requires the prefix and which is canonically bare. A defect class
+  without a written boundary cannot be exhausted, only chased.
+- **An exhaustion claim is only as good as the search behind it, and the search is the part nobody
+  checks.** "Swept to exhaustion" was written on a grep matching two of the defect's three surface
+  forms. It read as the strongest claim in the report and was the weakest thing in it.
+- **Quoting a plausible failure message is the same defect as quoting a plausible fact.** The
+  red-first ledger carried a message read off the *test source* for a mutation under which that
+  assertion never fired — an earlier one failed first. The harness now prints the emitted
+  `AssertionError` and the cells are filled from the run.
+- **A guard that fails when you fix a bug may be encoding the bug.** The `work_performed`
+  false-carrier guard went red because the work-free `done` branch it required had been moved to
+  `loop_back` — which *was* the fix. Widening it to terminal outcomes was right, but a guard relaxed
+  to accommodate one's own change is the one to distrust most, so the widened form was mutation-tested
+  before being trusted.
+- **A status check can be green and mean nothing.** CodeRabbit's context reported `success` with the
+  description "Review rate limited" — state and meaning in direct contradiction. Twice, the only way
+  to know whether a review had happened was to check whether a review *existed*.
+- **Counting prose is where a careful run's defects concentrate.** For the final two verification
+  rounds, every finding was in this report's own numbers: a seventh-largest change called the largest,
+  three tests described where four exist, "true at every commit" false at two commits. The substrate
+  work — populations, guards, mutations, the gate — reproduced exactly every time it was re-derived.
+  The prose about that work did not.
+- **Reviewers with different reach find different things, so a structural refusal is a real gap.**
+  Sourcery refused on diff size and its share of the review surface was simply never covered. The PR
+  was 2.9× its ceiling; the only remedy is a smaller PR. A 62-file plan is at the edge of what this
+  review apparatus can actually inspect, which is an argument for splitting future plans of this size
+  rather than a note about one tool's limits.
 
 ## Residue
 
@@ -714,3 +822,19 @@ Things this run found, did not fix, and is naming rather than leaving for someon
   two tables is authoritative.
 - **F9 stands as rejected**, with its reasoning in § Collateral check: D5's Done-when clause
   overreaches its own plan's § Out of scope, which excludes the zero-emission dispatch site by name.
+- **The preference-emitter admissibility gate is prose where the auditor has code — now staged as its
+  own plan.** The one review thread left open on PR #1309. The cross-plan auditor enforces authorship
+  admissibility in `_preference_admissible`; the per-plan emitter enforces it by instructing an agent
+  in prose, and the routing standard says outright that the prose *is* the implementation. Closing it
+  means creating a component that does not exist, which is why it was out of scope here.
+  **Checked against every staged plan in this epic before filing** — `500`–`590` return only
+  order-comment and documentation mentions of the emitter, none covering enforcement — so it is now
+  `doc/plans/truthful-signals/600-preference-admissibility-is-prose-where-the-auditor-has-code.md`,
+  carrying the finding, its provenance, and the constraint that `add_finding` must **not** be narrowed
+  to reject a missing `bot_kind` (an absent value is the honest state for an unattributed human
+  comment and for the pipeline's own).
+
+**Two survivors shipped, both characterised above rather than carried silently:** commit `c92dd11`'s
+message (unfixable without rewriting pushed history) and ledger row 160/G2's paraphrased cell. A third
+item — `f07f0ea` shipping without a CodeRabbit review — is not residue but a **contract deviation**,
+and is recorded as such in § Contract check.
