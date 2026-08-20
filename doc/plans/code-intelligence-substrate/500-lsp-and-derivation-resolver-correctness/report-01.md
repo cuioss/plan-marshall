@@ -378,7 +378,68 @@ clone, so no citation was unreachable and the plan's restated content was corrob
 
 ## Findings
 
-_Pending — the verification sub-agents' findings and dispositions are recorded here._
+Two independent sub-agents were dispatched per round: a **plan verifier** (reads the plan and the
+diff, runs the claims) and a **cold reader** (Verification item 4 — reads the four reader-facing texts
+with **no access to the plan**, and reports which reading it took).
+
+### Round 1 — cold read
+
+All four required readings came back **correct**: `diagnostics_unavailable` read as *"verify by
+build"* (B), the attribution docstrings read as *a caller-supplied prefix table* (B), the staleness
+bound read as *"answers may be stale"* (A), and every item of `proposals.md` read as *proposal
+recorded* (with `D1` correctly read as a decision record). No wording failure by the plan's own
+criterion — but the reader named four places where it nearly took the wrong one, and one sentence
+that is false as written. All five fixed in `8128115`.
+
+| # | Finding | Disposition |
+|---|---|---|
+| C1 | `proposals.md`'s preamble said everything is "recorded, not decided" and "needs an operator's approval first" — **false** of the decision record it introduces: leaving a surface unwired needs nobody's approval | **fixed** — the preamble now separates the two entry kinds by who must act next |
+| C2 | The user page's "every site is re-read before it is reported" sits several sections above the staleness bound with nothing reconciling them; the reader was pushed toward the freshness reading before the later section corrected it | **fixed** — the cache clause and an xref to the existing `[[staleness]]` anchor |
+| C3 | The lsp-client write-side rule described fail-and-rollback only for `diagnostics_worsened`, so `status: failed` momentarily reads as "you broke something" | **fixed** — a forward pointer in the rule |
+| C4 | `derive_edges`' "the lift does not go through the Axis-D seam" is a claim about **upstream** code in a method that performs no lift, sending a reader hunting for a callable that is not there | **fixed** — names the harvest as the lift's location |
+| C5 | P6's heading stated a conclusion ("has inverted") where it reports a measurement; P5 read as if the landed option had settled the question | **fixed** — both now state the measurement and leave the decision open |
+
+### Round 2 — plan verifier
+
+Twenty findings. The verifier ran the claims rather than reading them, which is what produced most of
+these. All fixed in `d63bfc0`.
+
+| # | Finding | Disposition |
+|---|---|---|
+| F1 | **A real deliverable gap.** D3 *Done when* (c)'s second clause requires `lift_to_modules` with a root-scoped module and a `.venv` target to produce **no edge**. It produced `[('alpha','rootmod')]` with no note — the exclusion lived only in `harvest_workspace` | **fixed** — `lift_to_modules` now refuses a vendored endpoint itself, under the same constant, with a `vendor-tree` suppression. The root-scoped fallback is still untouched, per the plan's ⛔ |
+| F2 | A guard named `..._is_never_attributed_to_a_root_scoped_module` asserted that it **is** — a false statement standing in test output | **fixed** — split into the attributor's pinned behaviour and the lift's actual refusal |
+| F3 | "the live seam claims only `.claude` and `.plan`" — **false** at three sites. Executed: five claims from three attributors. The *conclusion* (`None` for marketplace paths) holds; the premise did not | **fixed** at all three, and independently re-derived by this run |
+| F4 | D4 falsified four statements in `build-pyproject/SKILL.md` and the dependency user page | **fixed** — and a **fifth** the verifier missed: the user page's ecosystem **table**, the same claim in a different consumer kind |
+| F5 | D1 falsified `doc/user/lsp-code-intelligence.adoc` — "the three states" and "if the error count went **up**, the step fails" | **fixed** — an `unknown` row and set-based write-side bullets |
+| F6 | D6/G9 falsified the run-config standard's "`configured` reports whether an **entry exists**" | **fixed** at the standard and the SKILL.md comment |
+| F7 | D5/G4 falsified the corpus skill's load-bearing `--project-path` paragraph, and the new adoption behaviour was documented nowhere operator-facing | **fixed** — both |
+| F8 | "pays the build once at `initialize`" is **false** — the index is a lazy property and the handshake builds nothing; two adjacent statements in one document disagreed | **fixed** at three sites; independently re-derived (`index` is a `property`; `_on_initialize` does not touch it) |
+| F9 | `proposals.md` P2 said the npm join "reads the first segment and must not start treating a new scope as an edge" — it reads the **name** and *deliberately ignores* the scope, which makes the coupling **tighter** than stated. Wrong file path too | **fixed** — and the stronger reason stated |
+| F10 | P6's reproduction command does not run by direct path (`ModuleNotFoundError: marketplace_bundles`) | **fixed** — the executor form recorded, with why |
+| F11 | D5 *Done when* (b) says "driving a running `serve`"; the test called `on_references` in process, so the omitted count and the `window/logMessage` were never observed on the wire | **fixed** — a subprocess test |
+| F12 | D2's ⚠ CLI-seam obligation half-met for `lookup`: the `path` assertion ran against a direct helper call because the fake answered `workspace/symbol` with `null` | **fixed** — the fake returns a real `SymbolInformation` and the assertion lands on rendered TOON |
+| F13 | The nine-way vendored sweep asserted only an empty reference list — which a fake server that never spawned satisfies nine times | **fixed** — asserts `outcome.ran` |
+| F14 | `test_the_query_verb_...` called the index, not `cmd_query`, and its final assertion could not fail | **fixed** — drives `cmd_query` |
+| F15 | `test_the_skip_set_is_one_constant_used_for_sources_and_targets` asserted only membership, never the coupling its name claims | **fixed** — renamed, plus a new test that **moves** the constant and watches all three consumers follow |
+| F16 | No run report existed, so the report-bound *Done when* clauses were unverifiable | **not a gap** — the report was untracked at the time and is committed in `d63bfc0`. Round 3 verifies its content |
+| F17 | The run **measured** a shipped figure false and left it shipped: the ~380-of-~5300 / ~97 %-false-positive premise, against this run's 61-of-5083 / 43 % | **fixed** at four sites. ⚠ These surfaces belong to sibling plan `560`, which should **reconcile rather than duplicate**; leaving a knowingly-false figure shipped was the worse option |
+| F18 | The new user-page sentence "a `pyproject.toml` that does not parse publishes nothing" is false when a `setup.cfg` is present | **fixed** |
+| F19 | `bare_import_roots`' "no `__init__.py` is not a package" — under PEP 420 it is a namespace-package **portion** | **fixed** — the real reason is that a portion is importable only under its dotted path |
+| F20 | `proposals.md`'s "a decision record is a decision the run *did* take" can read as the run having decided | **fixed** — reworded to "left exactly as it found it" |
+
+### Round 2b — the run's own sweep of its round-2 prose
+
+Fixed in `6185ba1`, found by this run rather than by a verifier, applying the rule that the previous
+round's own prose is the highest-risk surface:
+
+| # | Finding | Disposition |
+|---|---|---|
+| S1 | `corpus_lsp.py`'s `--project-path` **argparse help** still said only "(default: cwd)" — the behaviour G4 replaced. A prose-bearing string literal in production code: a docs sweep never opens the file and a code sweep never reads the sentence | **fixed** |
+| S2 | `proposals.md` said `merge_path_claims` "returns five claims" — run, it returns a `(claims, roster)` pair whose claim list holds five | **fixed** |
+
+### Round 3
+
+_Pending._
 
 ## Reviewer participation
 
