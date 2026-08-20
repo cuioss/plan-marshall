@@ -1,6 +1,6 @@
 # Run report — 520-orchestrator-inbox-lifecycle-cleanup-and-landing-payload (run 01)
 
-**Date (UTC):** 2026-08-20    **Branch:** `claude/orchestrator-inbox-lifecycle-cleanup-kxrzew`    **PR:** _pending_    **Outcome:** _pending_
+**Date (UTC):** 2026-08-20    **Branch:** `claude/orchestrator-inbox-lifecycle-cleanup-kxrzew`    **PR:** [#1317](https://github.com/cuioss/plan-marshall/pull/1317)    **Outcome:** completed
 
 > **Verification loop exit:** `verifier-clear`
 
