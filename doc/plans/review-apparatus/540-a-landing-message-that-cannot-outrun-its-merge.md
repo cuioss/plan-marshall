@@ -114,9 +114,22 @@ run needs, so those files are corroboration, never required reading.
    population comes from the same git-tracked source D0 used rather than from the `marshal.json`
    snapshot alone — the snapshot is tracked but **stale**, holding 25 steps and not `emit-landing`, so
    the invariant meant to catch an unclassified step is currently blind to the one this plan is about.
+
+   ⚠ **The roster row is written by hand, and that is deliberate — the drift check is what makes it
+   safe.** The dispatched/inline classification is a per-step *decision* carrying its own rationale
+   (each row states the `manage-config effort resolve-target` lookup it resolves under and why), so it
+   cannot be generated from the registered-step table: the table names the steps, not their
+   classification. What must be single-sourced is the **population** both sides compare against. Wire
+   the closure test's registered-step population to the derived table D0(c) produced — the one
+   machine-readable source — so that the hand-written roster is protected by a drift check in **both**
+   directions: a registered step with no roster row, and a roster row naming no registered step, each
+   turn the closure test red and each name the offending key.
    *Done when:* the run report carries the three derived tables; `emit-landing` appears in exactly one
-   roster; and `test_dispatch_roster_closure.py` fails when a registered step is unclassified, proven by
-   temporarily removing one roster row and observing red before restoring it.
+   roster; `test_dispatch_roster_closure.py` reads its registered-step population from the D0(c)-derived
+   source and asserts that population is non-empty; and the test fails in both drift directions, each
+   proven by an actual red run recorded in the report — once by temporarily removing a roster row for a
+   registered step, and once by temporarily adding a registered step key with no roster row — before
+   restoring both.
 
 2. **D1 — The landing's claim is gated on a substantiated merge** *(discharges 080-G1 (blocker),
    080-G2, 080-G5 (documentation half), 080-G11)*
@@ -124,7 +137,21 @@ run needs, so those files are corroboration, never required reading.
    from the `create-pr` and `branch-cleanup` step records, so the substantiation read has a hook. Add a
    merge-substantiation arm to it — when `branch-cleanup`'s recorded facts carry `merge_mechanism`, emit
    the landing-asserting message; when they do not, emit a **distinct, explicitly non-landing message
-   shape** naming what the run did instead (declined / no PR / enqueued-not-landed).
+   shape** naming what the run did instead.
+
+   ⛔ **A missing `merge_mechanism` is the landing/non-landing discriminator only — it does not say
+   which non-landing branch ran, and the message must.** Write an explicit **mapping table** into
+   `emit-landing.md`, one row per terminal branch in the set D0(a) derived, keyed on facts the emitting
+   step can actually read: the branch's recorded **`work_performed`** value, the derived **`pr`** value,
+   and the derived **`merge_state`** value. Each row names exactly one message shape. Derive the keys
+   from D0(a)'s table rather than transcribing them; at authoring time the rows were declined (Branch
+   C), no PR found (Branch D), enqueued-not-landed (Branch F) and local-only (Branch B, `pr` and
+   `merge_state` both `n/a`) — ⚠ **re-derive, do not trust this list**. The table must be **total**: add
+   an explicit fallback row for a fact combination matching no other row, whose message asserts no
+   landing and states that the outcome could not be classified. State per row which fact
+   distinguishes it from its neighbours, so a later reader can tell the rows apart without guessing.
+   Test **every** row, including the fallback: one case per row asserting the emitted payload and prose
+   are the shape that row names and no other.
    ⛔ **Do not implement this as a step skip.** `SKILL.md:37` bars skipping a step on earlier step
    outcomes, so the "emit nothing" arm is closed by the dispatcher contract; the remedy changes *what is
    emitted*, never *whether the step runs*. State in the document the failure mode of the arm not

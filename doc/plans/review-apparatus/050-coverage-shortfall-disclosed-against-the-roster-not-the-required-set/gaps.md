@@ -207,12 +207,12 @@ without re-deriving the analysis. **Sixteen entries: 4 major, 12 minor, 0 blocke
   names, reachable by default, in shipped code.
 - **Task:** pass the provenance to the aggregator and split `vacuous` into the established-empty case
   (`answered` and `migrated` alike) and an `unestablished` case for `never_asked` alone; name both in
-  `comparison_states`. `migrated` is an established posture — `create-pr.md:256-257` groups it with
-  `answered`, not with `never_asked`. Mirror the
-  distinction in `SKILL.md:188-192`'s display-detail table. ⭐ **The house pattern already exists** —
-  `create-pr.md:256-257` splits exactly this pair for the `skip-bot-review` label ("**A never-asked
-  posture does NOT mean 'skip review'** … Fail toward being reviewed"); mirror it rather than
-  inventing a second rule.
+  `comparison_states`. ⛔ `migrated` is an **established** posture and belongs with `answered`; only
+  `never_asked` takes the unestablished rendering. Mirror the distinction in `SKILL.md:188-192`'s
+  display-detail table. ⭐ **The house pattern already exists** — `create-pr.md:256-257` splits exactly
+  this pair for the `skip-bot-review` label, applying it on an empty-plus-`answered`/`migrated`
+  posture and refusing to on an empty-plus-`never_asked` one ("**A never-asked posture does NOT mean
+  'skip review'** … Fail toward being reviewed"); mirror it rather than inventing a second rule.
 - **Done when:** an empty roster with provenance `never_asked` does not grade identically to one with
   provenance `answered`, and a test pins the pair.
 - **Suggested grouping:** finalize-step-review-retrospective / the `comparison` grade

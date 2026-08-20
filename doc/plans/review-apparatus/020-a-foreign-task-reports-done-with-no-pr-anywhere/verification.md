@@ -421,20 +421,29 @@ invocation in `archive-plan.md:43`, the module's own docstring (`:58`), and two 
 `test/plan-marshall/manage-solution-outline/test_survey_scope_declaration.py:202`). No code path calls
 the gate; the archive step is executed by an LLM dispatcher following a standards document.
 
-**That much is the house convention, not a defect of this plan.** Every one of the eight scripts in
-`phase-6-finalize/scripts/` is invoked the same way — `ci_verify`, `verdict_currency`,
+**The invocation shape is the house convention, not an anomaly of this plan.** Every one of the eight
+scripts in `phase-6-finalize/scripts/` is invoked the same way — `ci_verify`, `verdict_currency`,
 `post_run_source_guard`, `derive_gate_bundles`, `ci_complete_precondition`, `pr_intent_section` and
 `review_commitments` each appear only in a fenced block inside `SKILL.md` or a `standards/*.md`
 (`grep -rn "execute-script.py plan-marshall:phase-6-finalize"`), and `archive-plan.md` is itself a
-registered finalize step (`order: 1100`, `default_on: true`) that the phase-6 dispatcher runs. The
-plan's D2 objection — *"Prose that no gate reads must not be the record of a blocking condition"* — is
-about prose **carrying** an obligation no code evaluates; here the obligation is computed in code and
-the prose only invokes it. Reading this as "the same failure shape" overstates it.
+registered finalize step (`order: 1100`, `default_on: true`).
 
-What is genuinely missing is the proof: the plan's D1 *Done when* asks that "a plan with a
-`pushed_no_pr` foreign deliverable is refused **at archive**", and the only assertion is that `check()`
-returns `blocked` (`test_foreign_pr_gate.py:71`). Nothing exercises the archive path itself, so deleting
-the whole § "Pre-Archive Foreign-PR Landing Gate" section from `archive-plan.md` breaks no test.
+**That narrows the failure shape without discharging it.** The plan's D2 objection — *"Prose that no
+gate reads must not be the record of a blocking condition"* — is about prose **carrying** an obligation
+no code evaluates; here the obligation is at least *computed* in code. But its **invocation** is prose
+too, and this verification identified no source, build or CI mechanism that reads
+`archive-plan.md` § "Pre-Archive Foreign-PR Landing Gate", dispatches `foreign_pr_gate check`, or
+honours its `blocked` and `error` verdicts. That a registered step's document body is executed is an
+assumption about the LLM dispatcher, not a verified property: nothing in this audit established it, and
+the frontmatter tests that mention `default:archive-plan` assert step *ordering*, not the body. The
+convention therefore explains the shape; it does not supply the enforcement.
+
+The proof is missing on both halves: the plan's D1 *Done when* asks that "a plan with a `pushed_no_pr`
+foreign deliverable is refused **at archive**", and the only assertion is that `check()` returns
+`blocked` (`test_foreign_pr_gate.py:71`) — a direct call on the module, not a traversal of the archive
+path. Deleting the whole gate section from `archive-plan.md` breaks no test. This stays an **open
+enforcement gap** — filed as G6 — until an executing mechanism is identified and tested; it is not
+downgraded to a convention note.
 
 ## Out-of-scope compliance
 

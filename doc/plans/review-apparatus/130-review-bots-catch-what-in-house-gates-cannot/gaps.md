@@ -45,14 +45,24 @@ without re-deriving the analysis. Eighteen entries: 1 blocker, 7 major, 10 minor
   shrink; nothing in the tree performs that comparison, and no baseline is recorded against which a
   shrink is even detectable.
 - **Task:** make the denominator an observed constant rather than a caller argument, or make a
-  shrink observable and disqualifying. Concretely: add a `--roster-baseline` (or equivalent) input
-  carrying the configured roster independent of any per-PR disable, and emit a new
-  `WITHHELD_ROSTER_NARROWED` reason when the effective roster is a proper subset of the baseline;
-  publish both sets on the verdict. Restate the guarantee in terms of the baseline at all four sites
-  above, rather than as an unqualified property of coverage.
-- **Done when:** a test that shrinks `enabled_bots` between two arms — same escapes, same partition,
-  same SHAs — asserts the second arm withholds the share; and no input reachable from
-  `finalize-step-review-retrospective` Step 3b can produce a share at reduced real coverage.
+  shrink observable and disqualifying. ⛔ **A caller-supplied `--roster-baseline` taken on trust does
+  not close this** — it reproduces the defect one argument over, because the same caller that passes
+  the reduced `--enabled-bots` can pass the reduced roster as the baseline too and get `100.0` again.
+  The baseline must be **derived from authoritative state, not accepted**: read the configured roster
+  from the persisted `plan-marshall:automatic-review` step configuration (the `required_bots ∪
+  optional_bots` union the execution manifest holds, which is the same store the *disable this
+  reviewer* remedy writes through `step-params set`), and persist that union at the point the roster
+  is first resolved for the PR so a later disable cannot rewrite what the baseline says. Emit a new
+  `WITHHELD_ROSTER_NARROWED` reason when the effective roster is a proper subset of the recorded
+  baseline; publish both sets on the verdict. Restate the guarantee in terms of the baseline at all
+  four sites above, rather than as an unqualified property of coverage.
+- **Done when:** the baseline is read from the persisted step configuration (or a recorded pre-disable
+  snapshot of it) rather than from an unchecked caller argument, and the comparison against it is what
+  gates the share; a test that shrinks `enabled_bots` between two arms — same escapes, same partition,
+  same SHAs — asserts the second arm withholds the share; a test that passes the **reduced** roster as
+  both the effective roster and the baseline asserts the share is still withheld; and no input
+  reachable from `finalize-step-review-retrospective` Step 3b can produce a share at reduced real
+  coverage.
 - **Suggested grouping:** automatic-review / review-gate-delta
 
 ## G2 — Exclude findings the run rejected from the gate-escape count
@@ -152,7 +162,7 @@ without re-deriving the analysis. Eighteen entries: 1 blocker, 7 major, 10 minor
   `marketplace/bundles/plan-marshall/skills/automatic-review/SKILL.md:1080-1084`;
   `.claude/skills/finalize-step-review-retrospective/SKILL.md:369-386`; and the same sentence in the
   run report's D2 section.
-- **Evidence:** all five sites assert that *a forward pass never re-gates*, and therefore that *"the
+- **Evidence:** all six sites assert that *a forward pass never re-gates*, and therefore that *"the
   ONLY measurable PRs are those where **neither** post-gate mutating step committed anything"*. The
   first clause is true only of a forward pass. `pre-push-quality-gate.md:315` states the gate
   *"declares **no** `verdict_inputs` … so the dispatcher's verdict-currency classifier never narrows
@@ -176,13 +186,17 @@ without re-deriving the analysis. Eighteen entries: 1 blocker, 7 major, 10 minor
   and whose findings all carry one SHA equal to the gate's final stamp"* — narrower than the
   correction alone suggests, and with no established bias toward PRs where review found something.
 - **Impact:** provenance accuracy is a plan-mandated deliverable (*"publishes its population and
-  provenance"*), so a provenance that mis-states the mechanism is a defect in D2 itself. Five sites
-  must be corrected together or they drift apart.
+  provenance"*), so a provenance that mis-states the mechanism is a defect in D2 itself. Six sites carry the
+  claim: the five live ones must be corrected together or they drift apart, and the sixth — the run
+  report — goes on publishing the false forward-pass selection claim to every later reader of the
+  record if it is left out.
 - **Task:** rewrite `_PROVENANCE`'s selection-effect clause to describe the loop-back re-gate, the
   actual measurable condition, and the mixed-SHA exclusion that follows a review-driven loop-back.
   Mirror the correction in the module docstring, the contract section, the bundle SKILL.md canonical
   block, and Step 3b's consumer text, which must stay verbatim-consistent with the emitted string.
-- **Done when:** the five sites describe the same, correct mechanism, and a test asserts the
+  Restate the same sentence in `report-01.md` § D2 — a record correction stated in place, with no
+  correction note and no dated entry, exactly as G14 and G15 prescribe for that file.
+- **Done when:** all six sites describe the same, correct mechanism, and a test asserts the
   `provenance` string emitted by `assess_delta` matches the contract's stated wording (so the two
   cannot drift again).
 - **Suggested grouping:** automatic-review / review-gate-delta

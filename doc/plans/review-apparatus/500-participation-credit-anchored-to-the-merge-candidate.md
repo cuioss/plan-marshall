@@ -116,10 +116,25 @@ corroboration, not required reading, and the run is not blocked if it chooses no
      `_UPDATE_REQUIRING_BOTS` near `test/plan-marshall/workflow-integration-github/test_github_pr.py:2313`;
      reuse or lift it, do not re-hand-list it.
    - **The participation-site population** — scan `marketplace/bundles/**` for the sites that credit
-     participation or decide whether a comment is NEW INFORMATION, keyed on the symbol family
+     participation or decide whether a comment is NEW INFORMATION. The symbol family
      `_reviewed_at_merge_candidate`, `participation_requires_update`, `participation_evidence`,
      `head_sha_verified`, `stale_participation`, `existing_comment_keys`,
-     `_is_self_authored_response`. Guard the population non-empty **at import**, and publish its size.
+     `_is_self_authored_response` is a **seed, not the population**. A hand-maintained seed is the
+     defect class this deliverable exists to close, so it is protected in **both** directions by a
+     drift check living in the same test module:
+
+     - **No stale member.** Every seed symbol must resolve to at least one occurrence under
+       `marketplace/bundles/**`. A seed symbol with zero hits **fails the test** — a rename that
+       silently narrows the scan is exactly how the population goes quietly incomplete.
+     - **No missed member.** Derive a candidate set **independently of the seed**: AST-walk
+       `github_pr.py`, `_github_pr.py` and `bot_registry.py`, collect the module-level and
+       class-level names they define, and keep those whose name carries any of the participation
+       vocabulary stems `particip`, `reviewed`, `stale`, `head_sha`, `comment_key`,
+       `merge_candidate`. Assert every candidate is **either** in the seed **or** carries a written
+       exclusion reason recorded in the same module. A newly added crediting symbol therefore either
+       joins the population or fails the test; it cannot be absent from both.
+
+     Guard the population non-empty **at import**, and publish its size.
 
    Give each discovered site a per-site **expectation record** stating three things: what it reads
    (the live scan / the durable currency ledger / a deduped projection), what it anchors on (a commit
@@ -142,39 +157,67 @@ corroboration, not required reading, and the run is not blocked if it chooses no
    participant list from the registry intersected with the bots represented in the module's
    `_COMMENTS` fixture.
 
-   ⛔ **HALT condition.** If either population cannot be derived from the tree — the scan yields an
-   empty site set, or the registry accessor is unavailable — **stop, write the run report saying
-   which derivation failed and what was tried, and ship nothing further.** Do **not** substitute a
-   hand-maintained roster: a hand-maintained list is the exact defect class this deliverable exists
-   to close, so a fallback would reproduce the defect inside the fix.
+   ⛔ **HALT condition — executable, and readable from this plan alone.** If either population cannot
+   be derived from the tree — the scan yields an empty site set, the seed's two-way drift check
+   cannot be run, or the registry accessor is unavailable — the run **STOPS at D0**: it reverts any
+   partial D0 edit, makes **no** change to any file named in § Expected surface, starts **none** of
+   D1–D5, and writes a run report whose first line records the plan as **BLOCKED AT D0**, naming
+   which derivation failed and what was tried. Do **not** substitute a hand-maintained roster: a
+   hand-maintained list is the exact defect class this deliverable exists to close, so a fallback
+   would reproduce the defect inside the fix.
+
+   ⛔ **Precondition for D1–D5.** Each of D1, D2, D3, D4 and D5 begins **only** after D0 has reported
+   PASS — both populations derived, non-empty, and their sizes published. A run that reaches any
+   later deliverable without that report has violated the gate; there is no partial-credit path in
+   which some deliverables ship after a failed derivation. This precondition is restated at the head
+   of each later deliverable so it binds wherever the run resumes reading.
 
    *Done when:* adding a new participation-crediting site under `marketplace/bundles/**` without a
    matching expectation record fails a test **at import**; both populations publish their size and
-   fail when empty; and `test_a_deduped_comment_is_still_credited_as_participating` contains no
-   bot-name literal while still failing if participation is re-coupled to `existing_comment_keys`.
+   fail when empty; the seed's drift check fails both when a seed symbol resolves nowhere and when a
+   vocabulary-matching symbol is neither seeded nor given a written exclusion reason; and
+   `test_a_deduped_comment_is_still_credited_as_participating` contains no bot-name literal while
+   still failing if participation is re-coupled to `existing_comment_keys`. If instead D0 halted, the
+   report carries the BLOCKED AT D0 line and the diff carries no change to any deliverable's surface.
 
 2. **D1 (BLOCKER) — Evaluate the currency test for every evidence comment, not just the first** —
    discharges `010 G1`.
 
+   ⛔ **Precondition: D0 reported PASS.** If D0 halted, this deliverable does not start.
+
    In the participation loop (`github_pr.py:~941-975`), stop short-circuiting a currency-subject bot
-   at its first credit. For a bot declaring `participation_requires_update`, evaluate every comment
-   whose `kind` is one of that bot's declared publish shapes, and stage a currency-ledger row per
-   `(bot_kind, comment_id)` for **each** such comment — whether or not the bot is already credited on
-   this fetch. The participation verdict is unchanged: the bot is credited if **any** of its evidence
-   comments passes. What changes is that no evidence comment can reach a later HEAD without a
-   history. Correct the `cmd_fetch_findings` docstring sentence at `github_pr.py:~779-783` — "recorded
+   at its first credit. For a bot declaring `participation_requires_update`, **evaluate** every
+   comment whose `kind` is one of that bot's declared publish shapes — whether or not the bot is
+   already credited on this fetch. The participation verdict is unchanged: the bot is credited if
+   **any** of its evidence comments passes. What changes is that no evidence comment can reach a
+   later HEAD without a history.
+
+   ⚠ **Evaluate every evidence comment; stage a ledger row only for the ones that PASS.** A
+   currency-ledger row per `(bot_kind, comment_id)` is written or refreshed **only** when that
+   comment passed the currency predicate on this fetch. A comment that **fails** leaves its ledger
+   row exactly as it stood — unchanged if it had one, and none written if it had none. Staging a row
+   for a failing comment would stamp the current HEAD onto stale evidence, and the very next fetch
+   would read `recorded_sha == merge_candidate_sha` and credit the comment the previous fetch had
+   just rejected — reintroducing the defect this deliverable closes, one fetch later.
+
+   Correct the `cmd_fetch_findings` docstring sentence at `github_pr.py:~779-783` — "recorded
    uniformly whether the comment was stored as a finding or dropped as noise" is true of the storage
-   axis and false of the per-comment axis — in the same change.
+   axis and false of the per-comment axis — in the same change, and state the pass-only staging rule
+   there so the writer's condition is documented where its reader looks.
 
    *Done when:* a new test in `test_github_pr.py`, parametrized over D0's currency-subject population,
    fetches at HEAD_A with **two** unchanged evidence comments of the same bot present, then fetches at
    an advanced HEAD_B with both comments unchanged, and asserts `participated_bots == []` with the bot
-   present in `stale_participation_bots[]`. The run records, verbatim in the report, that this test
-   **fails against the pre-change code** — a test that passes both before and after has not pinned
-   the defect.
+   present in `stale_participation_bots[]`; and a **regression test for the staging rule** performs a
+   **third** fetch at the unchanged HEAD_B and asserts the identical verdict, proving the failing
+   comments were not stamped with HEAD_B by the fetch that rejected them — a stale comment stays stale
+   across consecutive fetches. The run records, verbatim in the report, that both tests **fail against
+   the pre-change code** — a test that passes both before and after has not pinned the defect.
 
 3. **D2 — Make every arm of the currency predicate fail closed on degenerate input** — discharges
    `010 G3`, `010 G7`, `010 G8`.
+
+   ⛔ **Precondition: D0 reported PASS.** If D0 halted, this deliverable does not start.
 
    Three changes to `_reviewed_at_merge_candidate` (`github_pr.py:652-708`) and its writer:
 
@@ -203,6 +246,8 @@ corroboration, not required reading, and the run is not blocked if it chooses no
 
 4. **D3 — An unresolvable merge candidate is undecidable, not stale** — discharges `110 G1`.
 
+   ⛔ **Precondition: D0 reported PASS.** If D0 halted, this deliverable does not start.
+
    `cmd_fetch_findings` emits `merge_candidate_sha_resolved: bool`, derived from
    `bool(reviewed_commit_sha)` (`github_pr.py:904`). When it is `false`, a currency-subject bot whose
    comment already matched a declared publish shape is reported in a **new**
@@ -229,6 +274,8 @@ corroboration, not required reading, and the run is not blocked if it chooses no
 
 5. **D4 — Give the cross-iteration dedup an edit term** — discharges `110 G2`.
 
+   ⛔ **Precondition: D0 reported PASS.** If D0 halted, this deliverable does not start.
+
    Widen the filing dedup identity at `github_pr.py:1102` from `(bot_kind, comment_id)` to
    `(bot_kind, comment_id, updated_at)`, falling back to a body digest where `updated_at` is absent,
    so an in-place-edited review presents as new information while an unchanged re-fetch still
@@ -250,6 +297,8 @@ corroboration, not required reading, and the run is not blocked if it chooses no
 
 6. **D5 — Name the ledger what it holds, and make the contract's stated reach match the code's** —
    discharges `010 G11`, `010 G2`.
+
+   ⛔ **Precondition: D0 reported PASS.** If D0 halted, this deliverable does not start.
 
    - **Rename.** `_DROPPED_COMMENT_KEYS_ARTIFACT` (`github_pr.py:590`, value
      `'pr-noise-dropped-comments.jsonl'`) and `_dropped_comment_keys_path` (`:593`) name a noise-drop
@@ -404,9 +453,15 @@ Beyond each deliverable's *Done when*:
   (b) for a bot that publishes a new comment per review, whether the credit is currency-tested at
   all — and whether the contract *says so*, or whether the reader had to infer it;
   (c) when the merge-candidate SHA cannot be read, whether the affected bot **blocks**, is
-  **disclosed**, or is **ignored**.
+  **disclosed**, or is **ignored**;
+  (d) for a comment the ledger has never seen, whether the contract presents the credit as something
+  it **verified** or as something it **assumes**, and which way the assumption errs. This question is
+  **this plan's**, because D2 rewrites that sentence; plan `510`'s cold read is instructed not to ask
+  it, so it is asked here or nowhere.
   **Record the reading verbatim in the run report.** The intended answers are (a) the merge candidate,
-  (b) no, and the contract says so explicitly, (c) it blocks as UNKNOWN and is never authorizable. A
+  (b) no, and the contract says so explicitly, (c) it blocks as UNKNOWN and is never authorizable,
+  (d) a bounded assumption — a fetched comment carries no reviewed SHA, so the arm errs toward
+  crediting, and the contract says so rather than calling it a definition. A
   divergence means the *wording* failed, however complete the change looks — fix the wording and
   re-read, do not argue the reading away.
 - **Cold read of the halt condition** — have the same sub-agent read D0's expectation-record scheme

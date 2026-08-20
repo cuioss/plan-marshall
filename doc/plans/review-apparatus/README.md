@@ -32,18 +32,20 @@ surfaced them, so one seam is repaired once:
 | `560` | The instruments that measure our own gates |
 | `570` | The epic's records, which carry the defect the epic is named after |
 
-`500` and `510` contend on one seam and MUST NOT run concurrently. `560` adds a row to the same
-§ "Consumers" table that `500` D3 and `510` D2 both add rows to — distinct rows, so this is a textual
-merge risk rather than an ownership question, but do not run `560` alongside either without checking
-that table.
+`500` and `510` contend on one seam and MUST NOT run concurrently. `560` does **not** add a
+§ "Consumers" row: it **rewrites the existing `review_gate_delta assess` row** — its D3 replaces that
+row's "two independent implementations" claim — in the same table `500` D3 and `510` D2 each add a
+new row to. An existing-row edit against two row insertions is a textual merge risk in one table
+rather than an ownership question, but do not run `560` alongside either without checking that table.
 
 ### The shared-document split
 
-Both plans edit
+`500` and `510` both edit
 `marketplace/bundles/plan-marshall/skills/automatic-review/standards/bot-participation-contract.md`,
-and so — in smaller, disjoint ways — do `520`, `560` and `570`; check each plan's own § Expected
-surface rather than assuming this pair is the whole set. **For the passages below, this table is the
-single authority for who writes what.** Each plan references it and restates
+and so — in smaller, disjoint ways — do `520`, `560` and `570`. The table below names the passages
+`500`, `510`, `560` and `570` write; `520`'s are not enumerated here, so check its own § Expected
+surface rather than assuming the table is the whole set of editors. **For the passages below, this
+table is the single authority for who writes what.** Each plan references it and restates
 none of it — a split described in two documents is a split that goes stale in one of them, which is
 exactly how this boundary was stated wrongly four times in succession.
 
@@ -59,6 +61,14 @@ exactly how this boundary was stated wrongly four times in succession.
 | The "union of the stored-finding SHAs and the recorded sidecar SHAs" paragraphs, **including the "observation sidecar" naming inside them** | `010 G4` | `510` |
 | The advance-disclosure sentence | `120 G6` | `510` |
 | The § "Consumers" row for fields `510` adds | — | `510` |
+| The § "The review-versus-gate delta" withholding guarantee, restated against the roster baseline | `130 G1` | `560` |
+| The resolution axis (`rejected` / `suppressed`) added to § "The counting rule" | `130 G2` | `560` |
+| The reviewer population the escape set is filtered to, in § "The review-versus-gate delta" | `130 G6` | `560` |
+| The selection-effect sentence naming the measurable population, in § "The review-versus-gate delta" | `130 G4` | `560` |
+| The **existing** § "Consumers" row for `review_gate_delta assess` — its "two independent implementations" claim, rewritten in place rather than added | `130 G7` | `560` |
+| The instrument's declared scope (meta-project-instrumented only), in § "The review-versus-gate delta" | `130 G10` | `560` |
+| The summary-card / trigger-acknowledgement insight, as a new subsection of § "Participation is not review quality" | `040 G14` | `570` |
+| The charter-partition record — its deriving command, its two population sizes, and the statement that no measured cause partition of the historical absence corpus exists | `040 G16` | `570` |
 
 **The one overlap, resolved here rather than in either plan.** `010 G4` § Where names
 `bot-participation-contract.md:491-498` and `010 G11` § Where names `:493-500` — the same paragraphs.

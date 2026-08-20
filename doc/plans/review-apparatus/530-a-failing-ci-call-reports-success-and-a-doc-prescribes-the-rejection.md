@@ -239,10 +239,24 @@ states everything the run needs without them.
      existing 403/404 handling as the residual transport-level arm. The probe is read-only, so a
      refusal costs no side effect — that is the same ordering rationale already documented for the
      GitHub sibling.
-   - **Name the scope (060-G13).** Pass the resolved project path into both GitLab refusal messages
-     (or into their `detail`), in the shape the GitHub siblings use for the base branch. Do **not**
-     invent a branch scope: a GitLab merge train is project-scoped, and a base-branch-scoped GitLab
-     probe is explicitly rejected in `gitlab_ops.py`'s own § "Merge-shaped verb guards" comment block.
+   - **Name the scope (060-G13) — two message contracts, not one.** A refusal can only name a project
+     path it actually has, and the branch this deliverable's first bullet adds is precisely the one
+     that has none. Define the two shapes separately and do not merge them:
+
+     - **Scope-resolution failure** (`get_project_path()` empty, the new non-`None` third element).
+       The message states that the **GitLab project scope could not be resolved**, and names what the
+       operator does about it. It carries **no** concrete project path, because none exists — do not
+       interpolate an empty string, a placeholder, or a guessed remote name.
+     - **Ineligible/eligible-configured verdict with a known project path** (every branch reached
+       *after* resolution succeeded — `_refuse_on_required_merge_train`'s configured-train refusal and
+       `cmd_pr_merge_queue`'s new off-routing refusal). The message names the **concrete resolved
+       project path**, in the shape the GitHub siblings use for the base branch.
+
+     Do **not** invent a branch scope in either shape: a GitLab merge train is project-scoped, and a
+     base-branch-scoped GitLab probe is explicitly rejected in `gitlab_ops.py`'s own § "Merge-shaped
+     verb guards" comment block. Test both shapes — one case asserting the resolution-failure message
+     names the unresolvable scope and interpolates no path, one case per known-path refusal asserting
+     the concrete project path appears.
    - **Lock the 404 arm (060-G14).** `test/plan-marshall/workflow-integration-gitlab/test_gitlab_merge_queue.py`
      asserts the routed-verb remedy on the 403 arm but not on the 404 arm, although both drive the
      same branch. Add the "merge train" and "safe-merge" message assertions to the 404 test.
@@ -259,9 +273,12 @@ states everything the run needs without them.
    issued no `mr merge` call; `cmd_pr_merge_queue` returns `status: error` on an off-routing dispatch
    **without** issuing the merge-train POST, proven by a test that stubs `_probe_merge_train_state` to
    `MERGE_QUEUE_ELIGIBLE_UNCONFIGURED`, stubs `run_glab` to succeed, and asserts both the error and
-   that `run_glab` captured no `api -X POST` call; both GitLab refusals name the project they apply
-   to; both ineligible tests assert the message names the merge train and `safe-merge`; and no passage
-   in the two standards docs describes a probe posture the code no longer has.
+   that `run_glab` captured no `api -X POST` call; the scope-resolution-failure message states that
+   the GitLab project scope could not be resolved and interpolates no project path, locked by its own
+   test; every refusal reached after a successful resolution names the concrete resolved project path,
+   locked by a test per refusal; both ineligible tests assert the message names the merge train and
+   `safe-merge`; and no passage in the two standards docs describes a probe posture the code no longer
+   has.
 
 4. **D4 — Make the routing guards falsifiable, observable, and single-sourced**
    *(discharges 060-G3, 060-G8, 060-G11, 060-G12, 030-G9)* — four guards that pass for reasons they
@@ -568,7 +585,9 @@ Beyond each deliverable's *Done when*:
   G14–G19. Each is excluded for a reason stated in § Out of scope (bot-flag parsing, run-report
   hygiene, the foreign-PR landing gate, provider parity). They are not forgotten and must not be
   pulled in mid-run.
-- **Ordering.** D0 gates D3 and D4 — both build on the derived merge-shaped population. D1, D2 and D5
+- **Ordering.** D0 gates D3 and D4 — both build on the derived merge-shaped population, and both carry
+  an explicit precondition on D0's recorded `SUCCEEDED` line; a D0 failure stops the run outright
+  rather than being noted and worked around. D1, D2 and D5
   are independent of D0 and of each other and may proceed in any order. Within D3, the probe (060-G1)
   must land before D4's off-routing arm can be driven through the discriminator, and before the
   "no probe" passages in the two standards docs can be rewritten truthfully; the plan therefore

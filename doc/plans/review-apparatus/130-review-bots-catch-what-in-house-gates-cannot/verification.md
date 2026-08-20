@@ -5,10 +5,15 @@
 
 Every artifact the report names exists in the tree today. D1 is fully discharged; D3 falls short only
 on the mutation clause its own Verification section demands. D0 and D2 are each partially discharged
-against their own *Done when*: two reachable gate-verdict render paths carry no scope limit at all,
-and the metric D2 ships **can** produce the inversion the plan says must not ship — by a route the
-plan's own inversion test does not cover. Further correctness defects sit in the landed code. The
-report is accurate on substance and inaccurate on two counts (test/file tallies).
+against their own *Done when*: the most reachable gate-verdict render path — the freshness-suspect
+PARTIAL — carries no scope limit at all (a second bare path, the empty-boundary COMPLETE, is real in
+the module but **not reachable from production**), and the metric D2 ships **can** produce the
+inversion the plan says must not ship — by a route the plan's own inversion test does not cover.
+Further correctness defects sit in the landed code. The report is honest about what it did not do, but
+several of its load-bearing claims do not survive the audit: two overstated D2 claims (the
+collapse-safety guarantee and the measurable population), a false GitLab rationale under finding #19,
+a parity obligation that is now stale, two wrong test/file tallies, and a `./pw verify` total that
+disagrees with the commit message's.
 
 ## Method
 
@@ -568,10 +573,13 @@ PR` remedy that makes C1 reachable.
 
 **Gaps by severity: 1 blocker, 7 major, 10 minor (18 total).**
 
-Everything the report claims to have built exists in the tree today and works as described; D1 is fully discharged and D3
+Everything the report claims to have built exists in the tree today; D1 is fully discharged and D3
 falls short only on the mutation clause, the test suites pass, the out-of-scope boundary was respected, and the
 report's disclosures — the dropped deliverable, the named gate-set boundary, the labelled regression
-pin, the un-emitted rate — are honest and mostly accurate. D0 and D2 are each partially discharged
+pin, the un-emitted rate — are honest. Its load-bearing claims are not uniformly accurate: § Report-claim
+audit records two overstated D2 claims, a rationale that is false as to GitLab, a parity obligation that
+has gone stale, two wrong tallies and a verify total that disagrees with the commit message's.
+D0 and D2 are each partially discharged
 against their own *Done when*, which is what moves the verdict to **partially-implemented**.
 
 The plan's central prohibition is violated: `structural_share` reaches `100.0` at `1/1` coverage the

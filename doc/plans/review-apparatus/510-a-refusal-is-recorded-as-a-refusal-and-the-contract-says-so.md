@@ -137,12 +137,25 @@ is missing, or a derived population comes back EMPTY — record exactly which, a
 hand-write the missing list.** A hand-maintained population is the defect class this plan is closing;
 reproducing it inside the fix would defeat the plan while looking complete.
 
+⛔ **What STOP means, executably, and readable from this plan alone.** The run reverts any partial D0
+edit, makes **no** change to any file named in § Expected surface, starts **none** of D1–D6, and
+writes a run report whose first line records the plan as **BLOCKED AT D0**, naming which derivation
+failed and what was tried. There is no partial-credit path in which some deliverables ship after a
+failed derivation.
+
+⛔ **Precondition for D1–D6.** Each of D1, D2, D3, D4, D5 and D6 begins **only** after D0 has reported
+PASS — all three populations derived, non-empty, and their sizes and derivation expressions recorded.
+This precondition is restated at the head of each later deliverable so it binds wherever the run
+resumes reading.
+
 *Done when:* the run report carries all three populations with their sizes and the expression each
-was derived from, **or** a HALT statement naming which derivation failed and why.
+was derived from, **or** a HALT statement naming which derivation failed and why — and in the HALT
+case the diff carries no change to any file in § Expected surface.
 
 ### D1 — Emit the refusal cause and cap on both producers, and stop the ETA extractor crashing
 
 *Discharges:* `120` G1 (the headline), `120` G2, `120` G4.
+⛔ **Precondition: D0 reported PASS.** If D0 halted, this deliverable does not start.
 
 - Add `cause` (via `_github_pr.refusal_cause`) and `cap` (via `_github_pr.refusal_size_cap`) to both
   refusal records. `_detect_rate_limited_bots` already holds the body in hand at the point it builds
@@ -180,12 +193,26 @@ arming fixture would fail if an `awaitable_window` bot's size refusal armed `cla
 ### D2 — Make a drifted refusal wording observable, and sweep every declared wording
 
 *Discharges:* `110` G3, `110` G4, `110` G5.
+⛔ **Precondition: D0 reported PASS.** If D0 halted, this deliverable does not start.
 
+- **Expose the layer provenance first.** `_is_refusal_notice` returns a bare `bool` and swallows
+  which of its two layers fired — the bot's registry `refusal_patterns`, or the structural
+  `_is_rate_limit_notice` fallback — so no caller can currently tell a registry hit from a structural
+  one, and `fetch_findings` cannot construct a drift record without that fact. **Before emitting any
+  drift, make the two layers separately observable**: either evaluate them independently at the call
+  site (consult `bot_registry.refusal_patterns(bot_kind)` and `_is_rate_limit_notice(body)` as two
+  results), or give `_github_pr` a provenance-returning seam beside the boolean (e.g. a
+  `refusal_layers(body, bot_kind)` returning which layers matched) and have `_is_refusal_notice` keep
+  its boolean contract by deriving from it. **Keep the existing boolean signature working** — the
+  re-review path and the participation guard call it and are not this deliverable's surface. This is
+  a prerequisite of the drift record, not an optional refinement: without it the record cannot name a
+  layer, and a drift entry that cannot say which layer fired alone reports nothing actionable.
 - **Emit the drift.** Where a comment resolves to a registered bot, is in a declared
-  `participation_evidence` publish shape, and the two recognition layers **disagree** — the structural
+  `participation_evidence` publish shape, and the two layer results **disagree** — the structural
   shape matches but no `refusal_patterns` entry does, or the converse — record the divergence as a
   `refusal_pattern_drift[]` entry on the `fetch_findings` return naming the bot and which layer fired
-  alone. `_is_rate_limit_notice`'s own docstring already states the intent ("a refusal recognized
+  alone, read from the provenance above rather than inferred from the boolean.
+  `_is_rate_limit_notice`'s own docstring already states the intent ("a refusal recognized
   here but absent from the registry is a signal that the bot's `refusal_patterns` need the observed
   phrasing added"); the signal is documented and not emitted. Document the new field in
   `workflow-integration-github/SKILL.md` § `fetch_findings` output.
@@ -205,7 +232,11 @@ arming fixture would fail if an `awaitable_window` bot's size refusal armed `cla
   beside the key naming the observation that would settle it (a PR where that bot reviewed with no
   trigger comment posted). Do not invent a value from reasoning about vendor behaviour.
 
-*Done when:* `fetch_findings` emits a drift record for a body the structural layer recognises and the
+*Done when:* a test proves the two recognition layers are separately observable — a body matching
+only the registry layer and a body matching only the structural layer are told apart through the new
+provenance seam, while `_is_refusal_notice` still returns `True` for both and every existing caller
+of it is unchanged; `fetch_findings` emits a drift record naming the layer that fired alone for a
+body the structural layer recognises and the
 bot's `refusal_patterns` does not, pinned by a test and documented in the SKILL; the declared-wording
 sweep parametrizes over the D0 pair population with a vacuity guard that publishes its size, and
 removing any single `refusal_patterns` entry from a registry doc makes a *named* case fail; and every
@@ -215,6 +246,7 @@ test.
 ### D3 — Make `review_completeness`'s flag surface describe and behave like its own parser
 
 *Discharges:* `030` G5, `030` G8, `120` G5.
+⛔ **Precondition: D0 reported PASS.** If D0 halted, this deliverable does not start.
 
 - **Stop the silent drop.** `--stale-participation-bots` routes through `parse_participation`, whose
   admissibility filter (`if evidence_kind in bot_registry.participation_evidence(bot_kind)`) drops a
@@ -260,6 +292,7 @@ subcommand; and each of the three invocation sites states the pair-form set in i
 ### D4 — Make the operator-facing refusal surfaces say something an operator can act on
 
 *Discharges:* `120` G3, `120` G7, `120` G11.
+⛔ **Precondition: D0 reported PASS.** If D0 halted, this deliverable does not start.
 
 - **Give `{cap}` a derivation.** The barrier interpolates a bare `{cap}` into the headless
   decision-log message, the `ask` prompt body, and the pending-findings obligations —
@@ -298,6 +331,7 @@ default-path loop-back prompt names where the remedies are.
 ### D5 — Account a decline as a decline, and make the call-site population test say what it asserts
 
 *Discharges:* `010` G6, `110` G7, `110` G8, `010` G12.
+⛔ **Precondition: D0 reported PASS.** If D0 halted, this deliverable does not start.
 
 - **Consume `head_sha_verified`.** `bot-participation-contract.md` states the rule — "a `matched:
   true` with `head_sha_verified: false` is a decline, never a completed re-review, and a consumer
@@ -332,6 +366,7 @@ for the taxonomy's cardinality remains in the test module.
 ### D6 — Rewrite the contract and registry prose that no longer describes the code
 
 *Discharges:* `010` G4, `010` G13, `120` G6, `120` G10.
+⛔ **Precondition: D0 reported PASS.** If D0 halted, this deliverable does not start.
 
 Every site below is prose whose only value is what a later reader does with it, so D6's verification
 is a **cold read** (see § Verification), not "the text was changed".
@@ -432,7 +467,8 @@ holds the boundary mid-run.
 Production code:
 
 - `marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/_github_pr.py` — D1
-  (both producer records' new fields; the ETA extractor's empty-group resolution).
+  (both producer records' new fields; the ETA extractor's empty-group resolution), D2 (the
+  refusal-layer provenance seam beside `_is_refusal_notice`, whose boolean contract is preserved).
 - `marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/github_re_review.py`
   — D1 (`_refusal_record`'s new fields).
 - `marketplace/bundles/plan-marshall/skills/workflow-integration-github/scripts/github_pr.py` — D2
@@ -522,11 +558,14 @@ Beyond the per-deliverable *Done when* conditions:
    sub-agent read the changed text **cold — without this plan and without the gaps files** — and
    report, in its own words and **verbatim in the run report**:
    - (a) Reading `bot-participation-contract.md` § "Evidence for a bot that edits one comment in
-     place": what is a participation credit anchored to, and **how many sources supply that anchor?**
-     The intended reading is *one* — a single currency ledger. ⚠ **Do not ask about, and do not act
-     on, the first-observation arm's definition-versus-assumption wording** — that sentence is not
-     this plan's, per the README table — so a "wrong" reading there is the other plan's to fix, and a
-     mismatch is **reported, never corrected here.**
+     place": **which commit** is a participation credit anchored to, and **how many sources supply
+     that anchor?** The intended reading is the merge-candidate commit, from *one* source — a single
+     currency ledger. ⚠ **Ask nothing else about this section.** In particular, do not ask about, and
+     do not act on, the first-observation arm's definition-versus-assumption wording — that sentence
+     is not this plan's, per the README table, and plan `500` § Verification asks the
+     bounded-assumption question over it. A mismatch there is **reported, never corrected here**, and
+     this plan's intended reading for (a) is confined to the commit and the source count, so no
+     answer about the assumption's wording can make (a) fail.
    - (b) Reading `automatic-review/standards/pr-agent.md`'s `rate_limit_class` section alone: a
      PR-Agent refusal caused by the diff being over a size ceiling escalates with which `reason`?
    - (c) Reading the advance-disclosure paragraphs in `bot-participation-contract.md` and
@@ -537,7 +576,8 @@ Beyond the per-deliverable *Done when* conditions:
    - (e) Reading `automatic-review/SKILL.md` § Branch 0 together with the producer field contracts:
      where does the `{cap}` it interpolates come from?
 
-   The intended readings are: (a) the merge candidate's commit, one ledger, a bounded assumption;
+   The intended readings are: (a) the merge candidate's commit, and one ledger — nothing about the
+   first-observation arm's wording, which plan `500` owns;
    (b) `refusal_structural`; (c) no — only *which* reviewers carry a ceiling; (d) no, it must be
    paired with `head_sha_verified`; (e) the producer's refusal record, which now carries it. **A
    mismatch is a wording failure, not a reader failure** — fix the text and re-read. Record both
