@@ -859,7 +859,15 @@ subject, so each is split along its own section boundaries:
 | `test_title_token.py` | 402 → 146 |
 | `test_title_token_lifecycle.py` | new, 271 |
 
-**Constructs under a wrong banner: 167 at the split → 28 after round 3 → 0, across 199 modules.**
+**Constructs under a wrong banner: 106 at the split → 0 at HEAD**, both measured by re-running one
+script over both refs, reading each file from git — 204 attributable modules at the split, 199 at HEAD.
+
+⚠️ **That is not the 167 M25 recorded, and the difference is lesson 4 applied to this very sentence.**
+An earlier draft of this section wrote "167 → 28 → 0", taking each number from the round that produced
+it. M25's 167 was measured by round 3's instrument over round 3's file scope, and is left standing above
+as the record of what round 3 saw; it is **not** commensurable with a HEAD measurement, so it cannot be
+the left-hand side of a delta. The pair reported here is the one both sides of which came out of the
+same run of the same script.
 
 Making the sections contiguous means reordering, and reordering changes the order pytest runs a
 module's tests in. `pytest-randomly` is **not** installed here, so nothing in the harness independently
@@ -879,7 +887,12 @@ this run's. The enumeration is deliberately unfiltered and phrased "Its sections
 and a construct under no heading appears in neither list. The remaining 38 have no headings to promote
 and were written by hand, one at a time, from their tests.
 
-**165 modules sharing a docstring → 2, and neither of those two is a module this run created.**
+**Whole tree, one script run over each ref: `origin/main` 2 modules share a docstring with a sibling,
+the split as first written 192, HEAD 2 — the same pre-existing pair, so the split's 190 are all gone.**
+
+⚠️ The "165" above is the count taken **mid-round-7**, after some renames had already landed, and is
+what this finding was opened on. It is kept as the finding's own evidence and is deliberately not used
+as the left-hand side of the delta, per lesson 4 — 165 and 2 were not measured at comparable moments.
 
 ⚠️ Promoting a heading verbatim added a `test-docstring-historical-prose` finding the first time it ran:
 one heading carries "(deliverable 3)", which is history and which that rule rightly flags in a preamble.
