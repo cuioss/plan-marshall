@@ -85,7 +85,10 @@ inside that surface is the sweep itself: re-run whole-tree after the split, **ev
 is unchanged** (`030` 40, `040` 55, `060` 53, `070` 61, `080` 42, row 7 = 1). A stray edit outside the
 surface would have moved one of them.
 
-66 modules become **201 test modules** plus **59 `_{domain}_fixtures.py`** modules.
+66 modules become **199 test modules** plus **63 `_{domain}_fixtures.py`** modules. (The slice held 209
+test modules before and holds 342 now; 143 were never over budget and are untouched, so 342 − 143 = 199
+is what the 66 became. The `.py` file count goes 215 → 411, and 69 − 6 = 63 of the difference is the
+new fixtures modules.)
 
 **Class boundaries are the cluster boundaries.** Every module with test classes was split on them; no
 class was split. Where a module carried loose top-level `test_` functions, those are the clusters.
@@ -93,22 +96,30 @@ Modules are named for the behaviour their clusters share, never for position —
 counter-example is `test_resolver_part2.py`, and the run's first naming pass produced ten such names
 before the labeller was changed to walk more specific candidates instead of appending an ordinal.
 
-**Single-class exceptions — four, named with their line counts** as the plan requires. Each exceeds
-the 400-line budget on its own, so leaving it whole is the plan's stated exception rather than a
-licence to split a class:
+**Five modules remain over budget, and they are two different things.** The plan's stated exception is
+"a class larger than the budget", so the five are reported split by whether the class actually is:
 
-| Class | Lines | Now in |
-|---|---:|---|
-| `TestDispatchBoundaryContextLoadColumns` | 528 | `plan-retrospective/test_analyze_logs_dispatch_boundary_context_load_columns.py` |
-| `TestCmdListStalled` | 426 | `manage-lessons/test_list_stalled.py` |
-| `TestCmdRestoreFromPlan` | 424 | `manage-lessons/test_restore_from_plan.py` |
-| `TestPhase5LoggingGapExtractors` | 406 | `plan-retrospective/test_analyze_logs_phase5_logging_gap_extractors.py` |
+| Class | Class lines | Module lines | Over budget alone? | Now in |
+|---|---:|---:|---|---|
+| `TestDispatchBoundaryContextLoadColumns` | **495** | 537 | **yes** — the plan's exception | `plan-retrospective/test_analyze_logs_dispatch_boundary_context_load_columns.py` |
+| `TestCmdListStalled` | **424** | 467 | **yes** | `manage-lessons/test_list_stalled.py` |
+| `TestCmdRestoreFromPlan` | **422** | 466 | **yes** | `manage-lessons/test_restore_from_plan.py` |
+| `TestLiveWorktreeReclaimGuard` | 355 | 432 | **no** — the class fits | `manage-locks/test_manage_locks_merge_lock_live_worktree_reclaim_guard.py` |
+| `TestPhase5LoggingGapExtractors` | 399 | 418 | **no** — the class fits, by one line | `plan-retrospective/test_analyze_logs_phase5_logging_gap_extractors.py` |
 
-The plan records exactly one such class for the `060` slice and labels the count HYPOTHESIS for every
-other. For `050` the count is **four**, of which one (`TestLiveWorktreeReclaimGuard`, 363 lines) was
-*not* an exception: it fits the budget, and only the replicated module docstring pushed its module
-over. That one is carried with the docstring's summary line alone, so it is inside the budget and the
-rest of that prose stays in its sibling modules.
+The plan records exactly one budget-exceeding class for the `060` slice and labels the count HYPOTHESIS
+for every other slice. For `050` it is **three**.
+
+The last two are a distinct shape the plan does not name and this report does not fold into the
+exception: the class is inside the budget and the *module* is not, because a module also carries a
+header, an import block and the pytest fixtures its tests consume. Those fixtures cannot be hoisted —
+importing one puts its name where ruff reads a redefinition at the consuming parameter — and the
+class cannot be split, so neither module can be brought under 400 by anything this deliverable
+permits. `TestPhase5LoggingGapExtractors` misses by 18 lines against a 399-line class; there is no
+slack left to find.
+
+Both are inside the budget on the measure the epic actually cares about — the class is nameable and
+whole — and both are reported here rather than quietly counted as class exceptions.
 
 **Deviation from D2's letter, stated rather than absorbed.** D2 says shared helpers, constants and
 loaders "move into a `_{domain}_fixtures.py`". This run hoists **per source module**
@@ -163,19 +174,24 @@ directories:
 
 | Measure | Before | After | Verdict |
 |---|---:|---:|---|
-| Comments (distinct texts lost) | 8182 | 8663 | **0 lost** |
+| Comments (distinct texts lost) | 8182 | 8653 | **0 lost** |
 | `Class::test` multiset | 3970 | 3970 | **0 lost, 0 gained** |
-| Non-blank non-comment lines (distinct lost) | 67866 | 73934 | **0 lost** |
+| Non-blank non-comment lines (distinct lost) | 67866 | 71508 | **0 lost** |
 | Collected items (slice) | 4207 | 4207 | identical |
 | Distinct node ids (slice) | 3822 | 3822 | identical |
 
-**Every difference accounted for.** The comment count *rises* by 481 across the slice: an output module
-carries its source's header and import statements, so a comment inside the module docstring is
-replicated once per output. The count rose by 719 in an earlier pass, and the extra 238 were the comment
-*blocks* sitting between imports being replicated too — that also multiplied one
-`test-docstring-historical-prose` finding into three. Output modules now take the import statements
-alone and the commented block survives whole in the fixtures module, which returned that rule to its
-pre-split count.
+**Every difference accounted for.** The comment count *rises* by 472 across the slice: an output module
+carries its source's import statements, so a comment on an import line is replicated once per output.
+An earlier pass rose by 719, and the extra was the comment *blocks* between imports being replicated
+too — which also multiplied one `test-docstring-historical-prose` finding into three (M8). Output
+modules now take the import statements alone and the commented block survives whole in the fixtures
+module.
+
+⚠️ **This check is the only reason M4 was caught.** Seven tests were silently lost to a filename
+collision, and every other signal was green: the suite passed, the doctor sweep reported the budget
+falling, ruff and mypy were clean. Only the multiset diff against the pre-split sources said
+`tests lost=7`. A run that had asserted "the split is a pure move" on the strength of a green suite
+would have shipped it.
 
 Seven import lines no longer appear verbatim: `ruff --fix` rewrote them where the split left some of
 their names unused (`from conftest import get_script_path, load_script_module, run_script` becoming the
@@ -192,20 +208,23 @@ directories it names were sufficient, so the next run inherits it unchanged.
 |---|---:|---:|---:|---|
 | `test-module-line-budget`, slice `050` | 66 | **5** | −61 | `{DOCTOR} --test-root test/`, grouped by slice |
 | `test-module-line-budget`, whole tree | 318 | **257** | −61 | `{DOCTOR} --test-root test/` |
-| Test modules in slice | 209 | 345 | +136 | `Path.rglob('*.py')` over the slice, `test_*` only |
-| `.py` files in slice | 215 | 414 | +199 | same, all `.py` |
+| Test modules in slice | 209 | 342 | +133 | `Path.rglob('*.py')` over the slice, `test_*` only |
+| `.py` files in slice | 215 | 411 | +196 | same, all `.py` |
 | Collected items, slice | 4207 | 4207 | 0 | `uv run python -m pytest {slice} -o addopts= --collect-only -q` |
-| Comments in slice | 7967 | 8448 | +481 | `tokenize`, `COMMENT` tokens |
-| Lines in slice | 90928 | 99708 | **+8780 (+9.7%)** | `len(read_text().split('\n'))` |
-| Coverage, slice bundle paths | 89% | 89% | 0 | `pytest {slice} --cov={10 skill script dirs} --cov-report=term` |
+| Distinct `Class::test` ids, slice | 3822 | 3822 | 0 | `ast`, class/function walk |
+| Comments in slice | 7967 | 8439 | +472 | `tokenize`, `COMMENT` tokens |
+| Lines in slice | 90928 | 97014 | **+6086 (+6.7%)** | `len(read_text().split('\n'))` |
+| Coverage, slice bundle paths | 89% | _pending_ | | `pytest {slice} --cov={10 skill script dirs} --cov-report=term` |
 
-Coverage is not merely non-decreasing but **identical**: 9986 statements, 962 missed, 3682 branches,
-355 partial, both sides.
-
-**The line delta is an observation, not a target.** +9.7% **confirms** the plan's HYPOTHESIS that
+**The line delta is an observation, not a target.** +6.7% **confirms** the plan's HYPOTHESIS that
 splitting is line-neutral to slightly positive; it is not a refutation, and nothing was deleted to
 improve it. The growth is a header and an import block per new module, which is the cost the plan
 predicted and priced in when it refused a line floor.
+
+It was **+9.7%** before the docstring change described under M1: replicating each source's whole
+docstring into every output was the single largest contributor, and keeping the full text once in the
+fixtures module removed about 2,700 lines while making each output's docstring true of that output.
+The number moved because a defect was fixed, not because it was chased.
 
 ## Build gate
 
@@ -216,7 +235,75 @@ _verify pending_
 
 ## Findings
 
-_pending_
+One row per instance. "Move-induced" means this run's split created it; "pre-existing" means the
+split moved byte-identical text and the defect was already there.
+
+### Move-induced, all fixed
+
+| # | Finding | Evidence | Disposition |
+|---|---|---|---|
+| M1 | A replicated module docstring enumerates the contract of the **original** module, so in each output it claims coverage that output does not have. `test_build_queue_admission.py` claimed corrupt-file handling, machine-global resolution, foreign-holder pruning and a spawned-subprocess contention suite — none of them in it | Cold read § "docstrings describing what the code does not do" | **Fixed** — each output keeps the docstring's summary paragraph; the full text lives once in the fixtures module beside it |
+| M2 | 29 directional references falsified across 19 files: a comment reading "the test below" was true while helper and tests shared a module, and points at nothing once the helper is hoisted | Cold read items 4–6; sweep of the 63 new fixtures modules | **Fixed** — each rewrite drops the direction and keeps the claim. Directional words still true (a markdown heading's body, a magnitude, a numeric threshold, a symbol genuinely above in the same file) were checked individually and kept |
+| M3 | Module names truncated to a character budget, ending mid-phrase — `_is_absent_rather_than`, `_stale_legacy_key_without`, `_does_not_claim`. 71 of 202 names exceeded 52 characters | Name sweep of the generated set | **Fixed** — candidates are built from whole meaningful words and a name repeating the unit it already carries has the repetition dropped. 19 names remain long; none is truncated |
+| M4 | **Seven tests silently lost.** Two bins of one module resolved to the same filename; `render()` keys its output by filename, so the second write replaced the first and every test in the first disappeared | `verify_move.py` reported `tests lost=7`, all from `test_manage_locks_merge_lock.py` (`TestIdempotentRepoll`, `TestReleaseAdvancesFront`) | **Fixed** — the name search widens until unique, and a duplicate is now an assertion rather than a silent overwrite |
+| M5 | The fixtures module grouped every import ahead of every statement, moving a `sys.path.insert` **after** the import it enables | Cold read item 3 | **Fixed** — regions are emitted in source order, imports and statements interleaved |
+| M6 | A compacted docstring was cut at its first physical **line**; these docstrings wrap, so the module's own description ended mid-sentence (`…the first-class`) | Scan for docstrings not ending in terminal punctuation | **Fixed** — compaction keeps the summary **paragraph** |
+| M7 | `test-module-preamble-boilerplate` rose 100 → 102: two modules whose shared preamble sat just under the hoisting threshold duplicated a `spec_from_file_location` block into each output | Whole-tree sweep diff | **Fixed** — threshold lowered so the loader lands in a fixtures module, as D2 directs. Back to 100 |
+| M8 | `test-docstring-historical-prose` rose 200 → 203: comment blocks *between imports* were replicated into every output, multiplying a citation | Whole-tree sweep diff, per-file | **Fixed** — outputs take import statements only; the commented block survives whole in the fixtures module |
+| M9 | `test-docstring-historical-prose` rose 200 → 201: a **non-splitting** module keeps its own full docstring, and the fixtures module copied it, duplicating the citation it carries | Whole-tree sweep diff, `manage-status` 2 → 3 | **Fixed** — the fixtures module carries the full docstring only when the outputs are compacted |
+
+Every one of M7–M9 was found by re-measuring **all seven** rules whole-tree rather than only the one
+this plan targets. The final sweep has `test-module-line-budget` at 257 and the other six at exactly
+their pre-split values.
+
+### Pre-existing, recorded not fixed
+
+The cold read (§ Verification, "By reading") found **6 of 10** tests recoverable. The four that were
+not are **pre-existing**, and that is established mechanically rather than asserted: each test's
+source was extracted at the pre-split commit and from the tree now and compared byte for byte.
+
+| Test | Body byte-identical across the move | Carried a docstring before the move |
+|---|---|---|
+| `TestTheTwoPartialityShapes::test_a_re_entered_phase_is_its_own_shape` | yes | yes — preserved verbatim |
+| `TestAdmission::test_default_max_slots_is_five` | yes | **no** |
+| `TestFaultPaths::test_missing_fragments_file_errors` | yes | **no** |
+| `TestSessionIdPassthrough::test_session_id_default_string_when_missing` | yes | **no** |
+
+The plan's remedy for an unrecoverable answer is to *restore* the rationale lost in the move. **No
+rationale was lost**: three of the four never carried one, and the fourth's is intact. Writing new
+rationale here would be authoring claims about production code this run did not read — the
+invented-rationale defect rather than a fix — and § Out of scope assigns prose work to the slice's own
+reduction plan. So they are **recorded**, and the owner is plan `050`'s residue.
+
+The cold read raised further pre-existing items, none of which this plan may fix (§ Out of scope
+excludes `marketplace/bundles/**`, `test/conftest.py`, and prose work). Recorded with their owners:
+
+| Finding | Owner |
+|---|---|
+| `test_build_queue_admission.py`'s docstring pins a `build_queue.max_slots` config path while its fixture writes `build.queue.max_slots` — the documented contract names a path the suite never exercises | `050` residue (prose) — or a real production defect, in which case `090` |
+| `_ledger_reconciliation_fixtures.py::_boundary_timestamps` hand-parses boundary TOON by `str.split(',')` and skips a literal `'rows[]'` prefix, while the writer emits the tabular `rows[N]{cols}:` form — the header row would not be skipped | `090` if the writer's form is as described; otherwise `050` residue |
+| `EXEMPT_RULE_IDS`-style bare literals asserted as contracts with no shared named constant (`'cumulative across closes'`, `'end_time'`, `'failed to delete fragments bundle'`, the `100`/`150` run-log bound, the `5` default slots) | `050` residue |
+| Two constants with byte-identical values in `_compile_report_fixtures.py` (`_COLLECT_FRAGMENTS_SCRIPT`, `_COLLECT_FRAGMENTS_SCRIPT_REGISTRY`); a dead `content` assignment in `_write_fragments_with_dispatch_boundaries`; an unused `plan_dir` local | `050` residue |
+| An undocumented autouse fixture (`_seed_guarded_plan_dirs`) that monkeypatches production `require_plan_exists` to *create* the directory it guards, with no docstring saying why | `050` residue |
+| Stale external pointers with no in-repo target (`solution_outline.md D5`, `lock-reconciliation-analysis.md §5`, `ADR-002`, `Task-4 coverage`, two bare commit hashes) | `050` residue (prose) |
+
+**Filename-versus-content drift, and it is partly this run's:** the cold read noted that
+`test_ledger_reconciliation_manifest_parsing.py` holds one manifest-parsing test out of ten, and that
+`test_compile_report_fault_paths.py` ends with a registry-consistency guard that is not a fault path.
+That is the naming rule's limit rather than a bug in it: a bin is named for the behaviour its clusters
+share, and where adjacent clusters share none the name describes the bin's leading cluster. It is
+disclosed here rather than fixed, because the alternative — regrouping clusters by theme across the
+module — reorders tests between files and is a larger change than this deliverable licenses.
+
+## Verification conditions
+
+| Condition | Before | After | Verdict |
+|---|---|---|---|
+| 1. Collected test count does not decrease (slice) | 4207 | 4207 | **holds** — identical, not merely non-decreasing |
+| 2. Coverage does not decrease (slice bundle paths) | 89% | _pending_ | _pending_ |
+| 3. Order-independent (default **and** reverse directory order) | — | 4207 passed both | **holds** |
+| 4. `EXEMPT_RULE_IDS` unchanged | n/a | n/a | **not applicable** — that check is stated for the `080` slice; this run is `050` and touches no plugin-doctor module |
+| 5. Suite not slower, skipped count not higher (whole tree) | 21070 passed, 14 skipped, 1958.89 s | _pending_ | _pending_ |
 
 ## Reviewer participation
 
