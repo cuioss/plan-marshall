@@ -100,16 +100,33 @@ directory's `0700` mode — the primary boundary holds on a target with no permi
 **Deliberate differences from the retired code, each stated rather than absorbed** — named rather
 than counted, since the list grew once already:
 
-- **De-duplication.** For a directory outside `$HOME` the tilde and absolute spellings are the same
-  string, so the old builder drafted 19 rules of which 9 were duplicates and reported
-  `rules_existing: 9` for rules that never existed. Nothing that lands in a settings file changes —
-  the old append loop skipped duplicates too — only the count a caller is told.
+- **De-duplication**, at two levels: within a path, and (since round 3) across the paths one call
+  names. For a directory outside `$HOME` the tilde and absolute spellings are the same string, so
+  the old builder drafted 19 rules of which 9 were duplicates and reported `rules_existing: 9` for
+  rules that never existed.
+- **What lands changes for one input class, and only one.** For a directory *under* `$HOME` the
+  written set is byte-identical, and for an unrelated directory *outside* it the written set is the
+  old one de-duplicated — same rules. For a **sibling of `$HOME`** the two differ: the retired
+  `startswith` test treated `/home/user2/creds` as inside `/home/user` and emitted nine nonsensical
+  `~2/creds` spellings, which the `relative_to` test does not. Nine rules that used to be written no
+  longer are. They matched nothing, so this is a repair — but it is a change in what lands, and an
+  earlier draft of this section claimed there was none. Found by verification round 3, which
+  executed both builders against all three input classes rather than reading them.
 - **`protect-path` writes only when a rule was actually added**, unlike its sibling `permission fix`
   branches. The retired caller behaved this way, and an idempotent re-run that re-serializes an
   operator's settings file is a visible change for no effect. Pinned by
   `test_a_no_change_rerun_does_not_rewrite_the_file` — which re-spells the settings compactly before
   the second call, because comparing the bytes of a file the runtime itself just wrote can never
   detect a rewrite. The asymmetry with the sibling branches is documented in `contract.md`.
+- **An unregistered `runtime.target` is now an error rather than a silent Claude write.**
+  `_cred_ensure_denied` resolves the runtime through `platform_runtime._make_runtime`, which returns
+  `None` for a target outside the runtime registry; the command then reports `status: error` and
+  writes nothing. The retired code never consulted `runtime.target` at all and wrote Claude rules
+  regardless. Strictly safer, and the intended consequence of routing — but it is a fourth
+  difference, and it diverges from `marketplace_paths._invoke_layout_op`, which *falls back to the
+  default runtime* for an unregistered target. A layout lookup has no error channel and this command
+  does, which is why the two differ; the divergence is recorded rather than harmonised, because
+  harmonising it would change `_invoke_layout_op`, plan `010`'s file.
 - **The subcommand's `total_deny_rules` output key is gone**, replaced by `protection_rules_total`.
   Different name and different denominator: the old key was the length of the whole `deny` list,
   the new one counts this protection's own rules. `grep` finds no consumer of the old key anywhere
@@ -119,15 +136,26 @@ than counted, since the list grew once already:
 
 ### D4 — Implementor scan routes through layout resolution
 
-**Done, and clean on every check.** `_scan_project_for_implementors` iterates
-`get_project_skill_roots()` via a new `_project_skill_trees` helper that anchors each root with the
-shared `marketplace_paths._resolve_skill_root`. No segment-wise `.claude` construction remains in
-the function. Multiple roots are scanned in the op's priority order and the first root carrying a
-given step id wins.
+**Done.** `_scan_project_for_implementors` iterates `get_project_skill_roots()` via a new
+`_project_skill_trees` helper that anchors each root with the shared
+`marketplace_paths._resolve_skill_root`. No segment-wise `.claude` construction remains in the
+function. Multiple roots are scanned in the op's priority order and the first root carrying a given
+step id wins.
 
-Four tests cover it, and none can pass against the retired single-root code: discovery through a
-non-default two-root list, highest-priority-root-wins on a colliding step id, a declared root absent
-from disk, and an absolute declared root.
+Every `test_project_scan_*` test in `test_extension_discovery.py` covers it, and none can pass
+against the retired single-root code: discovery through a non-default two-root list,
+highest-priority-root-wins on a colliding step id, a declared root absent from disk, an absolute
+declared root, and a `~`-anchored one (which reaches a different resolver branch, since
+`expanduser()` runs before the `is_absolute()` test).
+
+**Disclosed, on the same terms as F30.** The rewritten docstring names `.claude/skills/` once, as an
+`on Claude that is X` illustration of what the layout op resolves to — a **new** occurrence of the
+literal, introduced by this diff in D4's own file. The plan's Verification bullet asked the sweep to
+establish that no new literal was introduced by the fixes themselves, so it is stated rather than
+left to the sweep's discretion: it is the same sanctioned explanatory shape
+`marketplace_paths.get_project_skill_roots` and `_doctor_shared.py` use, and it is not a live
+anchor. Verification round 3 found it unreported while its twin in `scan-marketplace-inventory.py`
+was disclosed.
 
 ### D5 — Display and filter strings stop naming `.claude/`
 
@@ -165,7 +193,7 @@ predated the round-1 fix commit, which is how a gate figure goes quietly stale.
 - test-compile — no issues found over 784 source files (one `no-any-return` in a new test was found
   and fixed here; the narrower `quality-gate` + `module-tests` pair does **not** run this step, which
   is why the full `verify` was used).
-- module-tests — **21377 passed, 14 skipped**.
+- module-tests — **21381 passed, 14 skipped**.
 
 `git status --porcelain` was empty before each commit; no `uv.lock` churn reached a commit, and paths
 were staged explicitly rather than with `git add -A`.
@@ -180,11 +208,15 @@ Mutations were applied one at a time, each restored from a harness-held byte sna
 work). The tree was committed and `git status --porcelain` empty before each sweep, and empty again
 after it.
 
-**The sweep was run twice, and the record is of the second run.** The first covered the eleven
-deliverable mutations at the commit that introduced them; verification round 2 pointed out that it
-therefore could not have covered the guards the round-1 fix commit *added* — and demonstrated that
-one of them would have survived. The sweep was extended with four mutations against the round-1 and
-round-2 fixes and re-run at the current head.
+**The sweep was run three times, and the table below is the last run.** Saying which run a table
+comes from matters here, because the intermediate runs are where the information was:
+
+1. Eleven mutations against the deliverables, at the commit that introduced them. All killed —
+   but verification round 2 pointed out that a sweep run at that commit cannot have covered the
+   guards the *later* fix commits added, and demonstrated that one of them would have survived.
+2. Extended to fifteen and re-run at the current head. One **anchor miss** and one **survivor**
+   (below).
+3. Re-run after fixing the anchor and the vacuous guard. All fifteen killed.
 
 | Mutation | Verdict |
 |---|---|
@@ -204,17 +236,22 @@ round-2 fixes and re-run at the current head.
 | R2 the settings read path stops preferring the local file | killed |
 | R2 `protection_rules_total` reports the settings file total instead | killed |
 
-No mutation survives at the current head. **Two did survive on the way there**, and both are the
-point of running the sweep at all rather than after the fact:
+No mutation survives at run 3. Run 2 is where the two findings came from:
 
-- `protect-path writes nothing` returned an **anchor miss** on the extended run, because the round-1
-  fix had changed the line the mutation targeted. An anchor that no longer matches is a failed
-  mutation, not a passed one, and the harness reports it as such rather than counting it killed.
+- `protect-path writes nothing` returned an **anchor miss**, because the round-1 fix had changed the
+  line the mutation targeted. An anchor that no longer matches is a failed mutation, not a passed
+  one — the harness reports it as such rather than counting it killed, and the row above is from run
+  3, after the anchor was corrected.
 - `protection_rules_total reports the settings file total instead` **survived**. Both fixtures
   started from an empty deny list, so the protection's rule count and the settings file's total deny
   count were the same number and the confusion was invisible by construction — the fixture shared
   the implementation's scale. Both now seed an unrelated deny entry first, which is what makes the
   two denominators differ.
+
+**The boundary guards round 3 added are not in this table.** `protect-path` at a home-directory
+argument, at a repeated path, and a dry run against a partly-populated deny list are new inputs
+rather than mutations of existing code; each was verified by executing the operation and reading the
+result, which is what the table's rows do less directly.
 
 ## Findings
 
@@ -373,6 +410,32 @@ fixes. It returned fifteen findings.
 | R2-13 | round 2 | "only `claude` and `opencode` are registered" did not name which registry, and contradicts principles §6's "the registry already holds three" | **fixed** — the runtime registry is named, and the build registry's third target is noted as having no `Runtime` |
 | R2-14 | round 2 | `manage-providers/SKILL.md` describes `tools-permission-doctor` as a "Deny rule manipulation reference"; the doctor is read-only | **reported, not fixed.** Pre-existing, and `070`'s prose surface — the same test that reverted the `permission-architecture.md` edit applies. Recorded here so the exclusion is not a silent loss |
 | R2-15 | round 2 | `contract.md` documented `protect-path` but not the conditional-write asymmetry it introduced | **fixed** — the contract states the asymmetry and why |
+
+### Verification round 3 — dispositions
+
+Round 3 returned ten findings. **None changed a deliverable's behaviour and none changed a test's
+verdict** — but two of them found real defects in the shipped code that only a boundary probe could
+reach, and one found a disposition row of mine that was simply false.
+
+Its closing advice is adopted and recorded here because it is the round's most useful output: close
+a disposition by **re-derivation**, not by assertion — re-grep the corrected phrase across the whole
+file and the whole tree before writing "fixed". That is the inventory's own
+[§ Closing a row](../reference/coupling-inventory.md#closing-a-row) rule applied to the run report,
+and it would have caught three of this round's findings for free. Every row below was closed that
+way.
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| R3-01 | round 3 | the coupling inventory asserted **both sides** of the same question: round 1 registered `bootstrap_plugin.py`'s per-target root detection as open §B work, while the document's own "Confirmed clean" section — unchanged from `origin/main` — sanctions exactly those symbols as Claude-specific-by-design | **fixed** — the §B row is withdrawn. The sanction is the older and better-considered statement, and the plan's claim table had instructed the sweep to discard sanctioned resolvers; registering one as a new find was the sweep's error, not the document's |
+| R3-02 | round 3 | **my R2-03 disposition was false.** Round 2 changed one line of `security-considerations.md`; forty lines below, § "Deny Rule Coverage" still carried all 19 rules verbatim in the Claude DSL, under a lead-in claiming they are single-sourced from `CREDENTIALS_DIR` | **fixed** — the pattern block is gone and the section states the coverage as intent, pointing at the runtime for the set. Re-derived: `grep -n "Read(\|Bash(\|single-sourced"` over the file returns nothing |
+| R3-03 | round 3 | the mutation-sweep narrative said the sweep ran twice while its own bullet described an anchor miss that a later run must have fixed | **fixed** — three runs, each named, and the table is attributed to the last |
+| R3-04 | round 3 | "Four tests cover it" in D4 is five; the commit that re-derived the report's other figures missed this one | **fixed** — the tests are named by their shared prefix rather than counted, which cannot go stale the next time one is added |
+| R3-05 | round 3 | this diff added a **new** `.claude/skills` illustrative literal in D4's own file, while D4's section claimed "clean on every check" and the identical case in D5's file was disclosed | **fixed** — disclosed in D4 on the same terms as F30 |
+| R3-06 | round 3 | the R2-11 fix replaced one false claim with another: it said the executor generator's cache-segment composition is "registered open", where the inventory sanctions that embedded resolver as **clean** | **fixed** — the docstring now says sanctioned, which is what the inventory says |
+| R3-07 | round 3 | "Nothing that lands in a settings file changes" is false for a **sibling of `$HOME`**: the retired `startswith` test emitted nine `~2/creds` spellings the `relative_to` test does not | **fixed** — the D3 section now states the three input classes and what differs in each. Round 3 established this by executing both builders, not by reading them |
+| R3-08 | round 3 | a fourth behavioural difference was undisclosed: an unregistered `runtime.target` now errors instead of silently writing Claude rules, and the policy diverges from `_invoke_layout_op`'s fallback | **fixed** — disclosed, with why the two differ and why harmonising them is out of scope |
+| R3-09 | round 3 | `proposed_count` was the R2-10 coincidence one field over — the only dry-run test started from an empty deny list, so `proposed_count` and `rules_total` were the same number and a confusion between them was invisible | **fixed** — a dry run against a partly-populated deny list separates them |
+| R3-10 | round 3 | two boundary inputs reachable from the CLI that `tools-permission-fix/SKILL.md` now advertises: protecting **the home directory itself** rendered `Bash(python3 -c *.*)` — a deny rule matching very nearly every inline script — and naming **one directory twice** reported `rules_total: 38` while writing 19, re-creating one level up the over-count the per-path de-duplication exists to remove | **fixed, both.** `_tilde_form` renders home as bare `~`, so the distinctive segment falls back to the absolute path instead of `.`; `protect-path` de-duplicates across the paths one call names. Guarded by four new tests, including one that a collapse of two genuinely distinct paths would fail. The path-containing-`)` case round 3 also noted is a pre-existing escaping class it did not raise, and this run does not either |
 
 ## Reviewer participation
 

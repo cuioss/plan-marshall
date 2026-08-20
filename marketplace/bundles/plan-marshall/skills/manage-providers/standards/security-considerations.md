@@ -49,31 +49,17 @@ These constraints apply to all scripts in this skill:
 
 ### Covered Patterns
 
-The rules are single-sourced from `CREDENTIALS_DIR`; every Read/Bash vector is
-emitted in BOTH the tilde and absolute path forms, and the `python3 -c` vector
-uses the distinctive path tail so it matches either spelling in an inline script:
+**The pattern set is not restated here.** It is rendered by the active target's runtime from the
+credentials directory it is asked to protect — `platform-runtime`, `permission fix --operation
+protect-path` — and a copy in prose is a copy that drifts. Read the set from
+`platform-runtime/scripts/claude_runtime.py` (`_protect_path_deny_rules`, and the vectors it
+iterates) or from a settings file the command has written.
 
-```text
-Read(~/.plan-marshall/credentials/**)
-Read({abs_path}/**)
-Bash(cat ~/.plan-marshall/credentials/*)
-Bash(cat {abs_path}/*)
-Bash(head ~/.plan-marshall/credentials/*)
-Bash(head {abs_path}/*)
-Bash(tail ~/.plan-marshall/credentials/*)
-Bash(tail {abs_path}/*)
-Bash(less ~/.plan-marshall/credentials/*)
-Bash(less {abs_path}/*)
-Bash(more ~/.plan-marshall/credentials/*)
-Bash(more {abs_path}/*)
-Bash(cp ~/.plan-marshall/credentials/*)
-Bash(cp {abs_path}/*)
-Bash(grep ~/.plan-marshall/credentials/*)
-Bash(grep {abs_path}/*)
-Bash(base64 ~/.plan-marshall/credentials/*)
-Bash(base64 {abs_path}/*)
-Bash(python3 -c *.plan-marshall/credentials*)
-```
+What the coverage *is*, stated as intent rather than as syntax: the read tool, every file-dumping
+shell binary the vector list names, and inline-script invocation — each in every spelling of the
+path the target's permission model distinguishes, so a rule cannot be evaded by writing the path
+the other way. A directory outside the home has only one spelling, so it yields correspondingly
+fewer rules covering the same ground.
 
 ### Acknowledged Bypass Limitations
 

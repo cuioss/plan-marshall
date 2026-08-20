@@ -2536,11 +2536,17 @@ def _tilde_form(path: Path) -> str:
     ``/home/user``, a plain ``startswith`` also matches ``/home/user2/x`` and
     would render it as the nonsensical ``~2/x``. A path outside home is returned
     unchanged.
+
+    The home directory ITSELF renders as bare ``~``, not ``~/.``. That case is
+    reachable — a caller may name any directory — and the naive spelling is
+    actively dangerous downstream: consumers that take the tail after ``~/`` as
+    a distinctive path segment would get ``"."``, which matches everything.
     """
     try:
-        return "~/" + str(path.relative_to(resolve_home()))
+        relative = path.relative_to(resolve_home())
     except ValueError:
         return str(path)
+    return "~" if str(relative) == "." else "~/" + str(relative)
 
 
 def _default_permission_rules() -> tuple[tuple[str, str], ...]:

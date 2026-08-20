@@ -288,10 +288,11 @@ class ClaudeRuntime(Runtime):
         under which installed marketplace bundles live on Claude. The path is
         composed in ``claude_runtime._claude_bundle_cache_root``, which shares
         its cache segments with the default-permission renderer, so those two
-        cannot drift. Other live sites still compose the same segments
-        themselves (the steward's bootstrap detector, the executor generator);
-        they are registered open in the multiplattform epic's coupling
-        inventory, so this is not the only spelling in the tree.
+        cannot drift. It is not the only spelling in the tree: the steward's
+        bootstrap detector and the resolver ``generate_executor.py`` embeds into
+        the executor each compose the same segments, and the multiplattform
+        epic's coupling inventory sanctions both as Claude-specific-by-design
+        rather than registering them open.
         """
         return toon_success(
             "layout bundle-cache-root",
@@ -1162,16 +1163,24 @@ class ClaudeRuntime(Runtime):
             # grammar is rendered here and never crosses back. This is the one
             # fix operation that writes the deny list rather than the allow list.
             deny: list[str] = settings["permissions"]["deny"]
+            # De-duplicate ACROSS the named paths, not only within each: two
+            # paths can render the same rule (the same directory named twice,
+            # or two spellings of one directory), and a `rules_total` that
+            # counted them separately would report rules the caller will not
+            # get — the count the per-path renderer already refuses to inflate.
+            rendered: list[str] = []
             for protected_dir in permissions:
-                for rule in claude_runtime._protect_path_deny_rules(protected_dir):
-                    rules_rendered += 1
-                    if rule in deny:
-                        continue
-                    if dry_run:
-                        proposed_count += 1
-                    else:
-                        deny.append(rule)
-                        changes_applied += 1
+                rendered.extend(claude_runtime._protect_path_deny_rules(protected_dir))
+            rendered = list(dict.fromkeys(rendered))
+            rules_rendered = len(rendered)
+            for rule in rendered:
+                if rule in deny:
+                    continue
+                if dry_run:
+                    proposed_count += 1
+                else:
+                    deny.append(rule)
+                    changes_applied += 1
             # Write only when a rule was actually added. The sibling branches
             # above save unconditionally, but this one replaces a caller that
             # did not, and a settings file re-serialized on every idempotent

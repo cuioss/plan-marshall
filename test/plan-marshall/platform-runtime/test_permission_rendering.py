@@ -248,6 +248,28 @@ class TestProtectPathDenyRules:
         rules = claude_runtime._protect_path_deny_rules(str(tmp_path / 'outside' / 'creds'))
         assert len(rules) == len(set(rules))
 
+    def test_protecting_the_home_directory_itself_emits_no_match_everything_rule(
+        self, monkeypatch, tmp_path: Path
+    ) -> None:
+        """``~`` — not ``~/.`` — so the inline-script vector cannot become ``*.*``.
+
+        The distinctive segment is the tail after ``~/``. Rendering home as
+        ``~/.`` makes that tail ``.``, and ``Bash(python3 -c *.*)`` denies very
+        nearly every inline script an operator could run — a permission rule far
+        broader than the directory it was asked to protect. Any directory is a
+        legal argument, so this input is reachable rather than theoretical.
+        """
+        monkeypatch.setattr(claude_runtime, 'resolve_home', lambda: tmp_path)
+
+        rules = claude_runtime._protect_path_deny_rules(str(tmp_path))
+
+        assert 'Bash(python3 -c *.*)' not in rules
+        assert 'Read(~/./**)' not in rules
+        assert 'Read(~/**)' in rules
+        # With no ``~/`` tail to take, the inline-script vector falls back to
+        # the absolute spelling, which names the directory rather than anything.
+        assert f'Bash(python3 -c *{tmp_path}*)' in rules
+
     def test_every_exfiltration_vector_is_covered_in_both_spellings(self) -> None:
         protected = claude_runtime.resolve_home() / '.plan-marshall' / 'credentials'
         rules = claude_runtime._protect_path_deny_rules(str(protected))
@@ -405,6 +427,81 @@ class TestPermissionFixProtectPath:
         assert result['changes_applied'] == 0
         assert 'proposed_additions' not in result
         assert not settings_path.exists()
+
+    def test_dry_run_proposes_only_what_is_missing(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """`proposed_count` counts rules NOT already present, not rules rendered.
+
+        Some of the protection's own rules are seeded first, which is what
+        separates the two quantities: against an empty deny list they coincide,
+        and a `proposed_count` that counted everything rendered would look
+        correct.
+        """
+        protected = str(self._protected(monkeypatch, tmp_path))
+        settings_path = tmp_path / 'settings.json'
+        self._pin_scope_path(monkeypatch, settings_path)
+        runtime = claude_runtime.ClaudeRuntime()
+
+        # Populate, then drop five rules so exactly five are missing.
+        runtime.permission_fix('global', 'protect-path', [protected], False)
+        populated = json.loads(settings_path.read_text(encoding='utf-8'))
+        populated['permissions']['deny'] = populated['permissions']['deny'][:-5]
+        settings_path.write_text(json.dumps(populated), encoding='utf-8')
+
+        result = _parse(runtime.permission_fix('global', 'protect-path', [protected], True))
+
+        assert result['proposed_count'] == 5
+        assert result['rules_total'] == self.RULE_COUNT
+
+    def test_one_directory_named_twice_is_counted_once(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """`rules_total` must not double-count a rule the caller receives once.
+
+        The per-path renderer de-duplicates within a path; without the same
+        across paths, naming a directory twice reports twice the rules and
+        writes half of them — the exact over-count the de-duplication exists to
+        remove, re-created one level up.
+        """
+        protected = str(self._protected(monkeypatch, tmp_path))
+        settings_path = tmp_path / 'settings.json'
+        self._pin_scope_path(monkeypatch, settings_path)
+
+        result = _parse(
+            claude_runtime.ClaudeRuntime().permission_fix(
+                'global', 'protect-path', [protected, protected], False
+            )
+        )
+
+        assert result['paths_protected'] == 2
+        assert result['rules_total'] == self.RULE_COUNT
+        assert result['changes_applied'] == self.RULE_COUNT
+        written = json.loads(settings_path.read_text(encoding='utf-8'))
+        assert len(written['permissions']['deny']) == self.RULE_COUNT
+
+    def test_two_distinct_directories_each_get_their_rules(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """De-duplication across paths must not collapse genuinely distinct sets."""
+        monkeypatch.setattr(claude_runtime, 'resolve_home', lambda: tmp_path)
+        settings_path = tmp_path / 'settings.json'
+        self._pin_scope_path(monkeypatch, settings_path)
+
+        result = _parse(
+            claude_runtime.ClaudeRuntime().permission_fix(
+                'global',
+                'protect-path',
+                [str(tmp_path / 'creds'), str(tmp_path / 'other')],
+                False,
+            )
+        )
+
+        assert result['paths_protected'] == 2
+        assert result['rules_total'] == self.RULE_COUNT * 2
+        written = json.loads(settings_path.read_text(encoding='utf-8'))
+        assert 'Read(~/creds/**)' in written['permissions']['deny']
+        assert 'Read(~/other/**)' in written['permissions']['deny']
 
     def test_rejects_an_empty_path_list(self, tmp_path: Path, monkeypatch) -> None:
         """Protecting nothing is a caller error, never a silent success."""
