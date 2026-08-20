@@ -68,7 +68,7 @@ New file `test/plan-marshall/plan-orchestrator/test_inbox_message_state.py`. Eac
 | (d) monotonicity rejected | `test_should_reject_amended_without_a_revision_bump` (+ the reverse) | monotonicity check disabled → `assert (True,None) == (False,'revision_not_monotonic')` fails |
 | (e) **the control** — no sequence reuse from a foldered archive | `test_next_sequence_advances_past_a_foldered_archived_message` | naive flat-only `next_sequence` → `assert 1 == 2` fails (the silent reuse the control guards against) |
 
-All 41 tests in the new file pass with the fix; all 223 inbox tests and 549 plan-orchestrator tests pass.
+All tests in the new file pass with the fix, as do the whole inbox and plan-orchestrator suites. **Figures re-derived at this plan's landed commit `51d1c9bc`** (its tree extracted to a scratch checkout and re-run with `uv run python -m pytest -o addopts=""`), because the counts this report originally carried — 41 / 223 / 549 — were each one low: `test_inbox_message_state.py` **42 passed**; the four inbox files (`test_inbox_envelope.py`, `test_inbox_message_state.py`, `test_inbox_channel_contract.py`, `test_inbox_drain_contract.py`) **224 passed**; `test/plan-marshall/plan-orchestrator/` **550 passed**.
 
 ## Build gate
 
@@ -76,7 +76,7 @@ All 41 tests in the new file pass with the fix; all 223 inbox tests and 549 plan
 
 - **Quality gate** (`./pw quality-gate`): CLEAN — `issues[0]`, coverage COMPLETE (mypy production [395 files], ruff [marketplace/bundles, test, .claude], SPDX headers, plugin-doctor marketplace-wide).
 - **Module tests** (`./pw module-tests plan-marshall`): **16287 passed, 1 skipped**; 2 failed + 1 error, ALL in unrelated subsystems (`phase-2-refine/test_phase_2_refine_manage_config_readonly.py`, `phase-5-execute/test_phase5_change_ledger.py` — git change-ledger / marshal.json). Each **passes in isolation** — they are pre-existing xdist test-ordering flakiness in areas my diff does not touch (my change is confined to the plan-orchestrator inbox surface). Recorded as pre-existing, not caused by this change.
-- Direct `uv run pytest` over the four inbox test files: **223 passed**.
+- Direct `uv run pytest` over the four inbox test files: **224 passed** (re-derived at `51d1c9bc`; the figure originally recorded here was 223).
 
 ## Findings
 
@@ -145,19 +145,3 @@ Re-read `cloud-plan-lane` and checked each step against what happened:
 - **Real `.plan/` archive migration is owed on a local run.** `inbox migrate-archive` ships, but the physical fold of the repository's actual archive (git-ignored, absent from this clone) must be run where `.plan/` exists. The dual-layout reads keep allocation safe until then.
 - **Plan "Expected surface" named the pre-rename skill** (`marshall-orchestrator`); re-grounded on `plan-orchestrator`. A plan-authoring staleness for the orchestrator to note, not a lane-contract issue.
 - **Stale plugin-pin hazard** (plan Notes): a stale pinned executor running flat-writing code against a foldered archive is bounded (only this repo, only post-migration) and mitigated by the dual-layout reads; it is the standing plugin-pin issue, noted because it recurs.
-
-## Cost
-
-_pending_
-
-## Contract check (Step 9)
-
-_pending_
-
-## What have we learned (Step 9)
-
-_pending_
-
-## Residue
-
-_pending_
