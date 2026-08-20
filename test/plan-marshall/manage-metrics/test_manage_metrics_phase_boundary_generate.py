@@ -148,11 +148,6 @@ def test_generate_monotonic_boundaries_have_no_warning(plan_context):
 # Rule A + Rule B — two explicit-flag closes accumulate every field
 # -----------------------------------------------------------------------------
 
-
-# =============================================================================
-# Accumulate-on-re-entry write path
-# =============================================================================
-
 def test_two_flag_closes_accumulate_all_five_fields(plan_context, monkeypatch):
     """Two explicit-flag closes of one phase sum all five accumulated fields.
 

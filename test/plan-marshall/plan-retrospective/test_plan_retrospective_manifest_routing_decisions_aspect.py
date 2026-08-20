@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for ``check-manifest-consistency.py`` and the manifest-aware
-forward in ``check-artifact-consistency.py``.
-"""
+"""Tests for the routing-decisions aspect of ``check-routing-decisions.py``."""
 
 
 from __future__ import annotations

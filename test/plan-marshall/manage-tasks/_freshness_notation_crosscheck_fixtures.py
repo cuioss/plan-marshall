@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared preamble for the ``freshness notation crosscheck`` test modules.
 
-Holds the module-level loads, constants and helpers those modules
-share. The contract they pin, in full:
+Holds the module-level loads, constants and helpers the modules beside it
+import. Below, verbatim, is the docstring of the module they were split from:
 
 Tests for the notation cross-check on ``pre-commit-verify-freshness``.
 
@@ -21,7 +21,7 @@ trades one false signal for its mirror:
   notations still passes, including when an unrelated row sits AHEAD of the
   related one in ledger file order — a first-match return would refuse it.
 
-Three further properties are pinned here because losing any would reintroduce a
+Three further properties are pinned by those tests because losing any would reintroduce a
 defect this work exists to close:
 
 * **The record names its evidence.** A ``fresh`` verdict carries the matched
@@ -29,12 +29,12 @@ defect this work exists to close:
   timestamp, plus the cross-check verdict and the resolved notation set. A pass
   is auditable rather than a bare assertion.
 * **Structural stale verdicts stay stale.** A tree mutated after its last build
-  is correctly ``stale``, and nothing here re-stamps or relaxes the sha
+  is correctly ``stale``, and nothing in them re-stamps or relaxes the sha
   comparison to make it pass. Weakening that would reintroduce the false-green
   class the cross-check exists to close.
 * **The check is not a no-op.** One case drives the gate with NO seam stubbed at
   all, so a resolver that stopped importing at runtime — or stopped resolving
-  anything against a real tree — is a failure here rather than a permanent
+  anything against a real tree — is a failure there rather than a permanent
   ``unverified`` pass that leaves every other case green. Its comparison target
   has its own coverage in
   ``test/plan-marshall/manage-architecture/test_project_build_notations.py``.

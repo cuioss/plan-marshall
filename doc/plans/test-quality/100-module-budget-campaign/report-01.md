@@ -538,8 +538,8 @@ split moved byte-identical text and the defect was already there.
 
 | # | Finding | Evidence | Disposition |
 |---|---|---|---|
-| M16 | ⭐ **M14's fix left 65 of 189 names still false, and this report had argued no true name existed.** It read: *"a module whose clusters share no theme has no true name short of listing them, and the standard asks for a name rather than a list."* The premise generalised one labeller's failure into an impossibility. A bin whose clusters share no theme is *the rest of unit X*, and `test_{unit}.py` names exactly that while claiming no cluster at all — and every one of the 47 units was **free**, because the split had renamed its source away | Round-2 contract lens, finding 6; verified by testing all 47 candidate names for collision | **Fixed** — the bin whose label is most false in each unit gets the source's name back. Measured over the 199 modules the 66 became: **57 now carry the unit name and make no cluster claim**; of the 142 that carry a label, **18 are true of under half their tests, down from 65** |
-| M17 | Four `test_add_*` modules each claim to cover "the ``_allocate_and_write_scaffold`` helper that both subcommands share". None of the four touches it; the tests that do are in a fifth module. In two of the four that false bullet was the **whole** `Covers:` list, so the docstring described none of the file's content. The splitter had deleted the line naming the class it moved away and fused the two halves, leaving a sentence with no subject | Round-2 prose lens, finding 3 | **Fixed by rule, not by hand** — a `Covers:` bullet naming a symbol absent from the file's code is false of that file and is dropped whole; where nothing true remains the heading goes too. The sweep over all 206 created modules found **exactly these four**, which is what makes it a bounded class rather than four spot fixes |
+| M16 | ⭐ **M14's fix left 65 of 189 names still false, and this report had argued no true name existed.** It read: *"a module whose clusters share no theme has no true name short of listing them, and the standard asks for a name rather than a list."* The premise generalised one labeller's failure into an impossibility. A bin whose clusters share no theme is *the rest of unit X*, and `test_{unit}.py` names exactly that while claiming no cluster at all — and every one of the 47 units was **free**, because the split had renamed its source away | Round-2 contract lens, finding 6; verified by testing all 47 candidate names for collision | **Fixed** — the bin whose label is most false in each unit gets the source's name back. Measured over the 199 modules the 66 became: **58 now carry the unit name and make no cluster claim**; of the 141 that carry a label, **18 are true of under half their tests, down from 65**. ⚠️ An earlier draft said 47 / 57 / 142: the run's own next commit (`2e2b7d0`) restored a 48th source name, and the disposition was not re-derived after it — the same "a later commit re-staled it" shape as M26 |
+| M17 | Four `test_add_*` modules each claim to cover "the ``_allocate_and_write_scaffold`` helper that both subcommands share". None of the four touches it; the tests that do are in a fifth module. In two of the four that false bullet was the **whole** `Covers:` list, so the docstring described none of the file's content. The splitter had deleted the line naming the class it moved away and fused the two halves, leaving a sentence with no subject | Round-2 prose lens, finding 3 | **Fixed by rule, not by hand** — a `Covers:` bullet naming a **test class** absent from the file is dropped whole; where nothing true remains the heading goes too. The sweep over all 206 created modules found exactly four. ⚠️ An earlier draft stated the criterion as "a symbol absent from the file's **code**", which is not what ran: under that reading `test_add_collision_safe_allocation.py:11` also names `_allocate_and_write_scaffold`, which appears in that file only inside comments. The bullet is true there, so the outcome stands — but the stated rule was not the applied rule |
 | M18 | `test_planning_lane_request_body.py:63` states *"the helpers below are local to this module"* while importing all nine of them from `_planning_lane_request_body_fixtures.py`; `:23` and `:37` say "the fixtures below" of fixtures no longer below | Round-2 prose lens, findings 1–2 | **Fixed** — the sentence now says where the helpers are and that nothing is shared |
 | M19 | `_lessons_crud_fixtures.py:11` says *"This module absorbs the four single-verb suites whose bodies were each small enough that a dedicated file cost more navigation than it bought"* — in a preamble holding no tests, about suites that now have dedicated files, written by the run that gave them those files | Round-2 prose lens, finding 4 | **Fixed** — the subject is the four modules the preamble serves, and the load-once mechanism sentence (which still holds) keeps its claim |
 | M20 | Six fixtures-module docstrings take the file itself as grammatical subject — *"This module drives it"*, *"Each test here pins"*, *"This file pins the check"* — in files that contain no tests. The M10 framing lead-in re-attributes the prose ("The contract **they** pin"), and these sentences contradict it six lines later | Round-2 prose lens, findings 5 and 8 | **Fixed** — 12 rewrites across 9 files; the swept population is every `_*_fixtures.py` docstring, 22 self-referential hits, of which the 10 with the file as subject were false and the rest are correctly re-attributed by the lead-in |
@@ -589,6 +589,46 @@ sharpest structural finding, and neither is fixed by a figure:
    slices. **This report prices its own slice and no round could see the campaign**, because every
    round's population was slice `050`. It belongs to whoever owns the flip (plan `090` § D7's ladder),
    and it is raised here rather than left to be discovered at zero.
+
+### Round 6 — auditing the fixes, and reading the helpers as a maintainer
+
+**Every fix is unverified except by the round that follows it, and the last round's fixes are verified
+by nobody.** Round 6 audited all 32 dispositions against the tree and read the 64 helpers as files
+someone has to live in. It returned **five overstated or false dispositions, two fixes that introduced
+new defects, and a section this run re-staled after M31 closed that exact class.**
+
+| # | Finding | Evidence | Disposition |
+|---|---|---|---|
+| M33 | ⛔ **M27's guarantee is self-refuting, and the repair it guards shipped duplicate banners.** Its promise is that the repair "asserts per file that the multiset of non-blank **non-banner** lines is unchanged" — an assertion that by construction **cannot see a banner the repair added**. It added three: an inserted block sitting immediately above a near-identical one already in the file, differing by one word because M2's directional pass had edited the resident copy. One landed in a **399-line** module, a line from re-entering the budget | Round-6 fix audit, item 3 | **Fixed** — a dedup pass removes a banner block separated from another by nothing but blank lines, keeping the copy the file already carried (which holds later prose corrections). Three removed, then a fourth after the `# ---` sweep below |
+| M34 | ⛔ **M25's banner repair swept only `# ====` rules.** The `# ----` population was never looked at, and every one of the three files M25 named uses `====` exclusively — so the "28 remaining, in three files" was exact for a population chosen by the tool rather than by the defect | Round-6 fix audit, item 2; three survivors named in `test_extract_chat_signal_cmd_run.py`, `test_manage_change_ledger.py`, `test_manage_change_ledger_append.py` | **Fixed** — the rule now matches both styles. Re-measured over both: **33 → 28**, and the 28 are again the three files the budget guard protects, now for a reason about the defect rather than about the tool |
+| M35 | ⛔ **M29's "three enumerating summary lines" was keyed on the first physical LINE, and M1's fix preserves the summary PARAGRAPH — which wraps.** Any conjunctive summary spilling onto line 2 was invisible to it | Round-6 fix audit, item 1 | **Fixed** — re-derived over the paragraph: **7 shared paragraphs name several subjects, over 19 modules**, of which **5 are false of a carrier** and are rewritten. Two are not: "the storage engine for findings and Q-Gate findings" and "the persisted denominators and their sampling-point discriminator" describe one subject with two aspects, and are true of every carrier |
+| M36 | Two pronoun inversions **this run's own M20 rewrite introduced**: swapping "This module complements it" to "Those tests complement it" moved the antecedent onto the sibling, so the paragraph asserts that file complements itself. Found in two different bundles, which makes it systematic to the rewrite rather than a slip. A third swap changed one verb of a compound predicate and not the other ("They drive it … and asserts on") | Round-6 maintainer lens, findings 4–5 | **Fixed** — the subject is now "The modules this preamble serves"; five sentences corrected across three files |
+| M37 | **The lead-in M10 added over-promises.** It reads "Holds the module-level loads, constants and helpers those modules **share**. The contract they pin, **in full**:" — over prose that in **51 of 55** helpers opens by declaring the file to be tests, in files holding none; that in several cases is three words under a completeness claim; and where **12 helpers share nothing at all** (every exported name used by exactly one consumer) | Round-6 maintainer lens, findings 1 and 7 | **Fixed** — the lead-in now says what the text *is* rather than what it guarantees: "Holds the module-level loads, constants and helpers the modules beside it import. Below, verbatim, is the docstring of the module they were split from." Rewritten in all **55** |
+| M38 | Five surviving locatives — three "here"s in a file that pins nothing and a "below" pointing into two sibling modules — plus 56 blank lines of mechanical over-padding, one helper spending 35 lines on 8 imports | Round-6 maintainer lens, findings 6, 12, 13 | **Fixed** — locatives rewritten; blank runs collapsed to PEP 8's two across 15 files |
+
+⛔ **M39 — the split tripled the duplication the helper layer exists to absorb, and this run is not
+fixing it.** Round 6's hardest number: `_seed_guarded_plan_dirs` goes from **8 files pre-split to 28**,
+and `manage-locks/_manage_locks_merge_lock_fixtures.py` *defines* `isolated_base` and
+`_stub_title_tokens` while **nine of its ten consumers carry byte-identical local copies** — 333 lines
+sitting on top of a file that already holds the original. Across the ten directories: **1,389 lines of
+byte-identical duplicated top-level definitions**, roughly a quarter of the slice's growth. The helper
+layer captured the constants and the module loads — the cheap part — and left the pytest fixture
+surface, which is the part that costs a reader.
+
+**Why it is recorded rather than fixed, and the reason is the plan's, not this run's convenience.**
+§ Out of scope excludes "**hoisting fixtures**" in as many words, assigning it to the slice's own
+reduction plan. The single module that does hoist is licensed only because keeping the fixture inline
+left it over budget. Fixing 28 modules at this point would also be a structural change to files whose
+every other property is now measured.
+
+⚠️ **One correction a follow-up needs, and one uncertainty it must not inherit as fact.** § D2 states
+that hoisting a fixture "costs two suppressions: `F401` on the import … and a module-level
+`# ruff: noqa: F811`". That is **established for the one module that hoists** — round 2 measured 23
+F811 diagnostics under its directive, 15 for `isolated_base` and 8 for `_stub_title_tokens`. Whether a
+fixture that is *strictly* autouse and never named as a parameter would cost F811 at all is **not
+established**: an isolated probe suggested it would not, and the in-repo evidence points the other way,
+so the honest statement is that a follow-up must measure it rather than assume either answer. Writing
+the convenient one down without checking is the M12 shape, and this report has done that once already.
 
 ⭐ **M26 is the sharpest thing this run has to report about itself.** § "What have we learned" proposal 2
 — *"A long measurement is invalidated by any edit to its subject. Take it last, after the tree is final,
@@ -966,8 +1006,15 @@ recorded against its owner rather than fixed. Every prose reference **inside** t
 
 | File | Names a module that no longer exists | Kind | Owner |
 |---|---|---|---|
-| `plan-marshall/skills/plan-retrospective/SKILL.md:178` | `test_registered_aspects_render.py` — "fails when the two disagree, so the restatement cannot drift" | **pointer** | `090` |
 | `plan-marshall/skills/phase-4-plan/SKILL.md:113, :127, :128` | `test_findings_store.py` as the worked example of the basename-collision naming rule | specimen ×3 | `090` |
+
+⚠️ **This table listed a fourth row — `plan-retrospective/SKILL.md:178` → `test_registered_aspects_render.py`
+— and a paragraph built on it reading "the one surviving pointer is the kind that matters most". Commit
+`2e2b7d0`, whose entire subject is that pointer, fixed it, and the section still described the tree as
+it stood before.** That is precisely M31's class — a disclosure a reader cannot act on — re-created
+after M31 closed it, and it is the second time in this report a later commit re-staled a section that
+had just been repaired. `SKILL.md:178` now resolves; **the surviving out-of-surface references are three
+specimens in one file, and no live pointer.** The split now renames away **8** of the 66 sources.
 
 ⚠️ **The one surviving pointer is the kind that matters most**, and it is the last of a class this
 report opened with eleven of. It is a note whose whole purpose is to tell a later author which test

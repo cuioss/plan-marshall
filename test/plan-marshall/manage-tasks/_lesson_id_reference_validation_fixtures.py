@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared preamble for the ``lesson id reference validation`` test modules.
 
-Holds the module-level loads, constants and helpers those modules
-share. The contract they pin, in full:
+Holds the module-level loads, constants and helpers the modules beside it
+import. Below, verbatim, is the docstring of the module they were split from:
 
 Tests for at-write-time lesson-ID reference validation in manage-tasks.
 
@@ -28,8 +28,6 @@ inventory state. Real-ID fixtures are copy-pasted from live
 ``manage-lessons list`` output (mirrors the fixture pattern in
 ``test/plan-marshall/tools-input-validation/test_lesson_id_scanner.py``).
 """
-
-
 
 
 import sys

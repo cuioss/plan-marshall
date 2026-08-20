@@ -114,6 +114,10 @@ def test_build_record_defaults_the_three_wrapper_fields_to_none() -> None:
     assert record['args'] == 'run --command-args "verify plan-marshall"'
 
 
+# ---------------------------------------------------------------------------
+# The never-null plan_id contract, asserted at the CLI VERB
+# ---------------------------------------------------------------------------
+
 def test_ledger_core_constructors_declare_plan_id_as_required_str() -> None:
     """``build_record`` / ``job_record`` no longer accept ``str | None``.
 

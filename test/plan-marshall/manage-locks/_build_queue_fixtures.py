@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared preamble for the ``build queue`` test modules.
 
-Holds the module-level loads, constants and helpers those modules
-share. The contract they pin, in full:
+Holds the module-level loads, constants and helpers the modules beside it
+import. Below, verbatim, is the docstring of the module they were split from:
 
 Tests for ``manage-locks/build_queue.py`` — the bounded-``k``-slot build-queue
 concurrency limiter with a FIFO waiting queue.
@@ -131,13 +131,6 @@ def _read_queue(queue_path: Path) -> dict:
     """Read the persisted queue state as a dict."""
     data: dict = json.loads(queue_path.read_text(encoding='utf-8'))
     return data
-
-
-# =============================================================================
-# D5 — self-healing stale-slot reclaim (active_since + validate_lock_queue +
-# adaptive build_queue_upper_limit). ADDITIVE over D4: these are new functions,
-# none of D4's [LOCK]-event tests are modified.
-# =============================================================================
 
 
 # =============================================================================

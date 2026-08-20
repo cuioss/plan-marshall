@@ -3,8 +3,8 @@
 # ruff: noqa: I001, E402
 """Shared preamble for the ``record model representability`` test modules.
 
-Holds the module-level loads, constants and helpers those modules
-share. The contract they pin, in full:
+Holds the module-level loads, constants and helpers the modules beside it
+import. Below, verbatim, is the docstring of the module they were split from:
 
 End-to-end regression over a re-entered, multiply-fired, partly-unmeasured, denominated plan.
 
@@ -24,7 +24,7 @@ not earn once all four shapes coexist on the same plan:
   names the moment its reference class was taken.
 
 That composition is the case the spec named: a plan certified ``partial: false``
-while being arithmetically impossible. They drive it through the REAL
+while being arithmetically impossible. Those tests drive it through the REAL
 verbs — ``start-phase`` / ``phase-boundary`` / ``end-phase`` from
 ``manage-metrics``, ``record-dispatch-boundary`` from the same module,
 ``mark-step-done`` from ``manage-status``, then ``generate`` — and asserts on the
@@ -41,7 +41,7 @@ stated its uncertainty from one that examined nothing.
 Fixture-backed companions close the reader side, where the archived history lives
 and cannot be migrated. Each is read by BOTH the ``plan-retrospective`` reader and
 the ``.claude`` audit skill's ledger reader, which hand-mirror one contract from
-separate trees, so a change that moved only one of them fails here:
+separate trees, so a change that moved only one of them fails in the modules this preamble serves:
 
 * the ``unmeasured/`` dispatch-boundary fixture carries unmeasured columns
   ALONGSIDE measured zeros on one file;

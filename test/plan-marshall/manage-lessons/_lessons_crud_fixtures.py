@@ -3,8 +3,8 @@
 # ruff: noqa: I001
 """Shared preamble for the ``lessons crud`` test modules.
 
-Holds the module-level loads, constants and helpers those modules
-share. The contract they pin, in full:
+Holds the module-level loads, constants and helpers the modules beside it
+import. Below, verbatim, is the docstring of the module they were split from:
 
 Tests for the trivial getter/setter CRUD subcommands of manage-lessons.py.
 
@@ -40,16 +40,10 @@ load of the same production module under a separate name.
 """
 
 
-
-
 from pathlib import Path
 
 
-
-
 from _lessons_helpers import _mod
-
-
 
 
 # ``cmd_set_title`` is not re-exported by ``_lessons_helpers`` (that module is

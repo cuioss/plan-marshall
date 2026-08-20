@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Parsing, reduction and output-contract tests for ``extract-chat-signal.py``."""
+"""Rendering and ``cmd_run`` tests for ``extract-chat-signal.py``."""
 
 
 from __future__ import annotations
@@ -49,6 +49,10 @@ class TestReadTranscriptLines:
         with pytest.raises(FileNotFoundError):
             _mod.read_transcript_lines(missing)
 
+
+# ---------------------------------------------------------------------------
+# Unit tests: cmd_run (pure, via a Namespace-like shim)
+# ---------------------------------------------------------------------------
 
 class TestCmdRun:
     def test_normal_operation_within_threshold(self, tmp_path):

@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Unit tests for the unified ``manage-change-ledger`` CLI — the first-class
-``worktree-sha`` + ``append`` + ``query`` API over the one append-only
-change-ledger.
-"""
+"""Unit tests for the ``append`` verb of the unified ``manage-change-ledger`` CLI."""
 
 
 from __future__ import annotations
@@ -114,6 +111,10 @@ def test_append_build_records_nonzero_exit(env) -> None:
     # plan_id is NEVER null — an omitted flag resolves to the NO_PLAN sentinel.
     assert entry['plan_id'] == NO_PLAN_SENTINEL
 
+
+# ---------------------------------------------------------------------------
+# The three wrapper-reported build fields: command / duration_seconds / outcome
+# ---------------------------------------------------------------------------
 
 def test_append_verb_row_carries_the_three_fields_as_null(env) -> None:
     """The CLI second writer emits the KEYS, with null values.

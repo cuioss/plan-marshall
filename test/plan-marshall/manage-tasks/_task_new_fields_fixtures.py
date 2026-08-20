@@ -2,17 +2,13 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared preamble for the ``task new fields`` test modules.
 
-Holds the module-level loads, constants and helpers those modules
-share. The contract they pin, in full:
+Holds the module-level loads, constants and helpers the modules beside it
+import. Below, verbatim, is the docstring of the module they were split from:
 
 Tests for manage-tasks.py new fields: domain, profile, skills, origin.
 
 Tier 2 (direct import) tests with 2 subprocess tests for CLI plumbing.
 """
-
-
-
-
 
 
 from argparse import Namespace

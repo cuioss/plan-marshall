@@ -173,9 +173,6 @@ def test_retrospective_tokens_absent_when_not_forwarded(plan_context):
     assert _field(block, 'retrospective_tokens') is None
 
 
-# =============================================================================
-# boundary-status — resume-time half-stamped boundary detection (read-only)
-# =============================================================================
 #
 # `boundary-status` is the detection half of cross-session boundary
 # reconciliation. It reads work/metrics.toon and classifies the boundary into

@@ -8,20 +8,10 @@ the module itself carries the import and not the preamble.
 """
 
 
-
-
-
-
 from pathlib import Path
 
 
-
-
-
-
 from _lessons_helpers import _mod
-
-
 
 
 # The verdicts that assert a weaker claim than ``completely_covered`` and

@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared preamble for the ``extract chat signal`` test modules.
 
-Holds the module-level loads, constants and helpers those modules
-share. The contract they pin, in full:
+Holds the module-level loads, constants and helpers the modules beside it
+import. Below, verbatim, is the docstring of the module they were split from:
 
 Parsing, reduction and output-contract tests for ``extract-chat-signal.py``.
 

@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared preamble for the ``manage status read`` test modules.
 
-Holds the module-level loads, constants and helpers those modules
-share. The contract they pin, in full:
+Holds the module-level loads, constants and helpers the modules beside it
+import. Below, verbatim, is the docstring of the module they were split from:
 
 Tests for manage-status.py read + phase verbs + worktree-path resolution.
 
@@ -11,12 +11,6 @@ Split from test_manage_status.py: covers cmd_read, cmd_set_phase,
 cmd_update_phase, cmd_progress, cmd_get_worktree_path (incl.
 pre-materialization edge cases), and CLI plumbing/regression entry points.
 """
-
-
-
-
-
-
 
 
 from conftest import get_script_path, load_script_module

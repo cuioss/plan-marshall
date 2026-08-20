@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: FSL-1.1-ALv2
 """Shared preamble for the ``check artifact consistency behavior`` test modules.
 
-Holds the module-level loads, constants and helpers those modules
-share. The contract they pin, in full:
+Holds the module-level loads, constants and helpers the modules beside it
+import. Below, verbatim, is the docstring of the module they were split from:
 
 In-process behavioral tests for ``check-artifact-consistency.py``.
 
 The existing ``test_check_artifact_consistency.py`` drives the script through
 the ``run_script`` subprocess harness (which exercises the real argparse path
 but does not count for in-process coverage) plus a handful of direct
-``_resolve_footprint`` unit calls. Those tests complement it by calling
+``_resolve_footprint`` unit calls. The modules this preamble serves complement it by calling
 ``cmd_run`` and the individual ``check_*`` analyzers IN-PROCESS against crafted
 ``tmp_path`` plan directories, asserting the structural verdicts each branch
 produces — including the manifest-aware downgrade branch, the task/recall/
