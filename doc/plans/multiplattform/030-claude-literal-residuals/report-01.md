@@ -70,11 +70,13 @@ latter. No `.claude/settings` literal remains in `permission_common.py`, and the
 delegation claim is now true of the read path as well as the write path.
 
 Behaviour was compared against `origin/main`'s inline body in all four cases (both files present,
-local only, shared only, neither) and is identical in all four. Pinned on both sides:
-`test_permission_rendering.py::TestProjectSettingsReadPath` (four cases plus the
-read-versus-write-opposites invariant) and
-`test_permission_common.py::TestProjectSettingsReadPreference` (the same, driven through the
-module's own function so a reverted delegation is caught here rather than in the runtime's tests).
+local only, shared only, neither) and is identical in all four. Each of the four is pinned on both
+sides: `test_permission_rendering.py::TestProjectSettingsReadPath` and
+`test_permission_common.py::TestProjectSettingsReadPreference`, the second driven through the
+module's own function so a reverted delegation is caught there rather than only in the runtime's
+tests. Both classes additionally pin the read-versus-write-opposites invariant. (Verification round
+2 found the local-only case missing from both — the report had claimed four where three were
+pinned; it is pinned now.)
 
 ### D3 — Credential deny rules render in the runtime
 
@@ -95,16 +97,25 @@ against a project whose `marshal.json` names `opencode` returns rc 0, prints `st
 the reason and alternative, creates no settings file, and still re-asserts the credentials
 directory's `0700` mode — the primary boundary holds on a target with no permission backend.
 
-**Two deliberate differences from the retired code, both stated rather than absorbed:**
+**Deliberate differences from the retired code, each stated rather than absorbed** — named rather
+than counted, since the list grew once already:
 
-- The renderer **de-duplicates**. For a directory outside `$HOME` the tilde and absolute spellings
-  are the same string, so the old builder drafted 19 rules of which 9 were duplicates and reported
+- **De-duplication.** For a directory outside `$HOME` the tilde and absolute spellings are the same
+  string, so the old builder drafted 19 rules of which 9 were duplicates and reported
   `rules_existing: 9` for rules that never existed. Nothing that lands in a settings file changes —
   the old append loop skipped duplicates too — only the count a caller is told.
-- `protect-path` **writes only when a rule was actually added**, unlike its sibling `permission fix`
+- **`protect-path` writes only when a rule was actually added**, unlike its sibling `permission fix`
   branches. The retired caller behaved this way, and an idempotent re-run that re-serializes an
   operator's settings file is a visible change for no effect. Pinned by
-  `test_a_no_change_rerun_does_not_rewrite_the_file`, which asserts byte equality rather than mtime.
+  `test_a_no_change_rerun_does_not_rewrite_the_file` — which re-spells the settings compactly before
+  the second call, because comparing the bytes of a file the runtime itself just wrote can never
+  detect a rewrite. The asymmetry with the sibling branches is documented in `contract.md`.
+- **The subcommand's `total_deny_rules` output key is gone**, replaced by `protection_rules_total`.
+  Different name and different denominator: the old key was the length of the whole `deny` list,
+  the new one counts this protection's own rules. `grep` finds no consumer of the old key anywhere
+  in the tree, and `rules_added` / `rules_existing` are numerically unchanged for a credentials
+  directory under `$HOME`. Found by verification round 2, which counted three differences where this
+  section had claimed two.
 
 ### D4 — Implementor scan routes through layout resolution
 
@@ -138,18 +149,23 @@ satisfied — see F30.
 
 ## Build gate
 
-`git diff --name-only origin/main...HEAD -- '*.py'` is **non-empty**: the change touches Python
-production code in six bundles plus six test modules. The gate therefore applies.
+`git diff --name-only origin/main...HEAD -- '*.py'` is **non-empty** — 19 Python files: production
+code in the `plan-marshall` and `pm-plugin-development` bundles across the `extension-api`,
+`manage-providers`, `plan-retrospective`, `platform-runtime`, `tools-permission-doctor`,
+`tools-permission-fix` and `tools-marketplace-inventory` skills, plus six test modules. The gate
+therefore applies.
 
 `./pw verify` was run from the repository root over the whole tree and read from the streamed tool
-output rather than the exit code:
+output rather than the exit code. **The figures below are re-derived at the current head**, not
+carried forward: verification round 2 caught an earlier version of this section quoting a run that
+predated the round-1 fix commit, which is how a gate figure goes quietly stale.
 
 - quality-gate — `mypy … Success: no issues found in 416 source files`; `ruff … All checks passed!`;
   `SPDX-header check passed`; plugin-doctor `status: pass`, `total_issues: 0`.
-- test-compile — `Found 0 errors` over 784 source files (one `no-any-return` in a new test was found
+- test-compile — no issues found over 784 source files (one `no-any-return` in a new test was found
   and fixed here; the narrower `quality-gate` + `module-tests` pair does **not** run this step, which
   is why the full `verify` was used).
-- module-tests — **21372 passed, 14 skipped**.
+- module-tests — **21377 passed, 14 skipped**.
 
 `git status --porcelain` was empty before each commit; no `uv.lock` churn reached a commit, and paths
 were staged explicitly rather than with `git add -A`.
@@ -159,9 +175,16 @@ were staged explicitly rather than with `git add -A`.
 ### Mutation sweep — the new guards were shown to fail
 
 `./pw verify` passing says the guards agree with the code, not that they would notice a defect.
-Eleven mutations were applied one at a time, each restored from a harness-held byte snapshot in a
-`finally` (never a git command, which would have rewritten the file from the index). The tree was
-committed and `git status --porcelain` empty before the sweep, and empty again after it.
+Mutations were applied one at a time, each restored from a harness-held byte snapshot in a `finally`
+(never a git command, which would have rewritten the file from the index and discarded uncommitted
+work). The tree was committed and `git status --porcelain` empty before each sweep, and empty again
+after it.
+
+**The sweep was run twice, and the record is of the second run.** The first covered the eleven
+deliverable mutations at the commit that introduced them; verification round 2 pointed out that it
+therefore could not have covered the guards the round-1 fix commit *added* — and demonstrated that
+one of them would have survived. The sweep was extended with four mutations against the round-1 and
+round-2 fixes and re-run at the current head.
 
 | Mutation | Verdict |
 |---|---|
@@ -176,20 +199,38 @@ committed and `git status --porcelain` empty before the sweep, and empty again a
 | D4 the implementor scan reverts to one hardcoded root | killed |
 | D4 a later root overwrites the highest-priority root | killed |
 | D5 runtime_mount reverts to the hardcoded Claude layout | killed |
+| R1 protect-path reverts to writing unconditionally | killed |
+| R1 the shared skill-root resolver is bypassed for a naive join | killed |
+| R2 the settings read path stops preferring the local file | killed |
+| R2 `protection_rules_total` reports the settings file total instead | killed |
 
-No mutation survived.
+No mutation survives at the current head. **Two did survive on the way there**, and both are the
+point of running the sweep at all rather than after the fact:
+
+- `protect-path writes nothing` returned an **anchor miss** on the extended run, because the round-1
+  fix had changed the line the mutation targeted. An anchor that no longer matches is a failed
+  mutation, not a passed one, and the harness reports it as such rather than counting it killed.
+- `protection_rules_total reports the settings file total instead` **survived**. Both fixtures
+  started from an empty deny list, so the protection's rule count and the settings file's total deny
+  count were the same number and the confusion was invisible by construction — the fixture shared
+  the implementation's scale. Both now seed an unrelated deny entry first, which is what makes the
+  two denominators differ.
 
 ## Findings
 
 ### Surface expansion beyond the plan's Expected surface
 
 The epic README requires a run to **report** rather than silently absorb any file its work turns out
-to need beyond the plan's list. Six files qualify. The test that separates them is whether the edit
-was **forced by this change** (keep, and report) or was an **adjacent fix to a pre-existing defect**
-(revert, and record) — the epic's constraint bars adjacent fixes in another plan's surface, not the
-consequences of one's own change.
+to need beyond the plan's list. The test that separates them is whether the edit was **forced by this
+change** (keep, and report) or was an **adjacent fix to a pre-existing defect** (revert, and record)
+— the epic's constraint bars adjacent fixes in another plan's surface, not the consequences of one's
+own change.
 
 Plans `010` and `030` are declared non-concurrent, so none of these is a live conflict.
+
+The table is the complete set: it was re-derived from `git diff --name-only origin/main...HEAD`
+against the plan's Expected surface at the moment of this claim, after verification round 2 found
+three bundle files edited but unaccounted, and a lead-in count that disagreed with its own table.
 
 | File | Owner per README | Why | Disposition |
 |---|---|---|---|
@@ -199,7 +240,16 @@ Plans `010` and `030` are declared non-concurrent, so none of these is a live co
 | `platform-runtime/SKILL.md` | `070` | its op table enumerates the same operation values | kept, forced |
 | `tools-permission-fix/SKILL.md` | `070` | its intent table enumerates them too | kept, forced |
 | `manage-providers/scripts/credentials.py` | not listed | this change made its `ensure-denied` help text and module docstring inaccurate | kept, forced |
+| `manage-providers/SKILL.md` | `070` | its verb table and a section heading promised deny rules on every target, which the routed call no longer implies | kept, forced |
+| `manage-providers/standards/security-considerations.md` | `070` | same claim, and it additionally held a prose copy of the exfiltration-vector list D3 moved into the runtime — a second home for a list this plan exists to single-source | kept, forced |
+| `marshall-steward/references/provider-setup.md` | `070` | same claim, at the wizard step that invokes the command | kept, forced |
 | `tools-permission-doctor/standards/permission-architecture.md` | `070`, **and named in this plan's own Out of scope** | corrects a defect that pre-dates this change | **reverted** — recorded below instead |
+
+Two epic documents outside `030`'s own plan directory were also edited, and are not surface
+expansions but duties the epic assigns to the closing plan: `reference/coupling-inventory.md` (the
+README requires the plan that removes a coupling to retire its rows in that same plan) and
+`README.md` itself, whose baseline row asserted that the implementor scan does not route through the
+layout helpers — false once D4 landed.
 
 ### The claim table's HYPOTHESIS is refuted; the schema addition, stated
 
@@ -288,7 +338,7 @@ per instance, so one defect appearing three times is three rows.
 | F22 | round 1 | the stale `_BOOKKEEPING_PREFIXES` premise and the divergence were unreported | **fixed** — recorded above |
 | F23 | round 1 | the sixth residual cluster was registered in the inventory but not reported | **fixed** — recorded above, with the other two |
 | F24 | round 1 | `protect-path` saved unconditionally, where the retired caller saved only on a change | **fixed** — the write is now conditional, pinned by a byte-equality test on an idempotent re-run |
-| F25 | round 1 | D1 does not route through the `Runtime` op surface, so principles §6's cost bar is unmet for it while D3 meets it; the asymmetry was undeclared | **declared, not fixed.** Bound: behaviour is identical to `origin/main` (the module was already Claude-bound) and only `claude` and `opencode` are registered. Closing it needs either a new `Runtime` operation — which this plan's Out of scope forbids — or the `permission_common` restructure the inventory now registers. Stated in the D1 section, in the code, and in the inventory |
+| F25 | round 1 | D1 does not route through the `Runtime` op surface, so principles §6's cost bar is unmet for it while D3 meets it; the asymmetry was undeclared | **declared, not fixed.** Bound: behaviour is identical to `origin/main` — verified in round 2, which read `origin/main`'s `permission_common` and confirmed it already imported the settings-path and load/save helpers from `claude_runtime` the same way, and that the rendered default set is byte-identical under every `$HOME` shape including the `resolve_home()` fallback. The runtime registry `platform_runtime._REGISTRY` holds `claude` and `opencode`; the *build* registry holds three targets, and `pr-agent` has no `Runtime` at all. Closing it needs either a new `Runtime` operation — which this plan's Out of scope forbids — or the `permission_common` restructure the inventory now registers. Stated in the D1 section, in the code, and in the inventory |
 | F26 | round 1 | `_project_skill_trees` re-implemented `marketplace_paths._resolve_skill_root` inline | **fixed** — it calls the shared helper |
 | F27 | round 1 | `test_no_rendered_rule_crosses_back_to_the_caller` never asserted success, so an error TOON would satisfy it | **fixed** |
 | F28 | round 1 | an ensure-denied assertion held only because the sandbox directory name contains the word "credentials" | **fixed** — it now asserts specific rules built from the module's own bound `CREDENTIALS_DIR` |
@@ -299,6 +349,30 @@ per instance, so one defect appearing three times is three rows.
 `run_ensure_denied` loaded settings through `load_settings_path`, which returns a defaulted skeleton
 *with* an `error` key on malformed JSON, and then wrote that skeleton back — silently destroying a
 malformed settings file. The routed path fails closed with `invalid_settings` and writes nothing.
+
+### Verification round 2 — dispositions
+
+Round 2's primary surface was the text round 1 wrote, which is the round's whole point: by then the
+youngest and least-reviewed prose in the branch is the prose written to explain the previous round's
+fixes. It returned fifteen findings.
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| R2-01 | round 2 | `test_a_no_change_rerun_does_not_rewrite_the_file` — the guard round 1 added for F24 — **passes against the defect it names.** The runtime writes `json.dumps(..., indent=2)`, so the bytes of a file the runtime itself just wrote are identical on a rewrite; round 2 demonstrated it by reverting the guard and running the test's own fixture | **fixed.** The test now re-spells the settings compactly before the second call, so any write is visible; the mutation sweep confirms it now fails against that revert. The test's docstring and the two report claims that cited it as a byte-equality pin are corrected |
+| R2-02 | round 2 | `marshall-steward/references/provider-setup.md` § "Step 13k: Add deny rules" — the claim round 1 corrected in `manage-providers/SKILL.md`, surviving one directory over | **fixed** — retitled to the goal, with the `no-op` degrade stated |
+| R2-03 | round 2 | `manage-providers/standards/security-considerations.md` — same claim, and a prose copy of the exfiltration-vector list D3 moved into the runtime | **fixed** — the standard now names the goal and no vectors; the list has one home |
+| R2-04 | round 2 | the coupling-inventory row added by round 1 asserted "the OpenCode path never reaches these scripts"; neither skill declares a `targets:` filter and an unscoped component is emitted to every target, so it does reach them | **fixed** — the row now states the reachability correctly and names remedy candidates |
+| R2-05 | round 2 | the Build gate section said "six bundles"; it is two bundles across seven skills | **fixed** — re-derived from the diff |
+| R2-06 | round 2 | the surface table said "Six files qualify" above seven rows, and omitted three bundle files edited by the round-1 and round-2 fix commits | **fixed** — the count lead-in is gone, the three files are rows, and the two epic documents are accounted separately |
+| R2-07 | round 2 | D2 claimed four pinned read cases; the local-only case was pinned by neither class | **fixed** — added on both sides |
+| R2-08 | round 2 | the build-gate and mutation-sweep figures described a tree one commit older than the head under review, without saying so | **fixed** — both re-run at the current head, and both sections now say the figures are re-derived rather than carried forward |
+| R2-09 | round 2 | "Two deliberate differences from the retired code" is three — the dropped `total_deny_rules` output key was undisclosed | **fixed** — three, named rather than counted |
+| R2-10 | round 2 | `protection_rules_total` was an added return key with no guard | **fixed** — and the first guard written for it was **vacuous**, which the re-run sweep caught: both fixtures started from an empty deny list, so the protection's count and the file's total deny count were the same number. Both now seed an unrelated entry |
+| R2-11 | round 2 | `layout_bundle_cache_root`'s docstring claimed the cache layout is "spelled once"; the steward's bootstrap detector and the executor generator each compose it | **fixed** |
+| R2-12 | round 2 | `test_project_scan_resolves_an_absolute_declared_root` claimed to cover the `~`-anchored case, which it did not exercise | **fixed** — the `~` case has its own test, since it reaches a different resolver branch (`expanduser()` runs before `is_absolute()`) |
+| R2-13 | round 2 | "only `claude` and `opencode` are registered" did not name which registry, and contradicts principles §6's "the registry already holds three" | **fixed** — the runtime registry is named, and the build registry's third target is noted as having no `Runtime` |
+| R2-14 | round 2 | `manage-providers/SKILL.md` describes `tools-permission-doctor` as a "Deny rule manipulation reference"; the doctor is read-only | **reported, not fixed.** Pre-existing, and `070`'s prose surface — the same test that reverted the `permission-architecture.md` edit applies. Recorded here so the exclusion is not a silent loss |
+| R2-15 | round 2 | `contract.md` documented `protect-path` but not the conditional-write asymmetry it introduced | **fixed** — the contract states the asymmetry and why |
 
 ## Reviewer participation
 
