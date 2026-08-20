@@ -105,14 +105,14 @@ Report `ledger_compaction: compacted`, and fold the stage's `regenerated[]`, `in
 **The refusal branch is the permanent documented default.** Three facts, stated plainly rather than as a hypothetical:
 
 1. The emission-quiescence precondition was to be supplied by `PLAN-TRUTH-032`, whose ledger row is **`superseded`** — a superseded spec never lands.
-2. **No quiescence signal exists today**, and none will arrive until a successor spec supplies one.
-3. The archive phase therefore **refuses to drain the inbox and says so in the report**, every run, until that successor lands.
+2. **No EPIC-WIDE emission-quiescence signal exists today.** One PER-SENDER closure signal does exist and must not be mistaken for it: `inbox list` reports `closed_senders` — the senders that have filed a valid `lifecycle: stream-end` marker — alongside `live_count`. That establishes *these named senders will send no more*; it does not establish *no sender will send again*. The gap is not a matter of degree. The epic's sender population is open: a plan the orchestrator has not yet emitted, or one emitted and not yet started, is a sender that has filed nothing at all, so it appears in neither `closed_senders` nor `live_count` and is indistinguishable from a sender that does not exist. `closed_senders` covering every sender seen so far is therefore consistent with a sender about to appear, which is exactly what quiescence has to rule out. Deriving epic-wide quiescence from it would be reading a statement about the observed population as a statement about the whole.
+3. The archive phase therefore **refuses to drain the inbox and says so in the report**, every run, until a successor spec supplies an epic-wide signal.
 
 ⛔ Quiescence is **never** derived from a timer, and **never** from a merge landing. Both are recorded hazards and both are prohibited derivations — a later author must not reinvent either as a convenience.
 
 The refusal is a **first-class reported outcome, not a silent skip**: it occupies the named `archive_drain` / `archive_drain_reason` report fields, so an operator reading a clean report can tell "nothing needed draining" from "draining was refused". Draining a stale or unreachable narrative is strictly worse than deferring it, which is why refusing is the correct default rather than a degraded one.
 
-**Deferred mechanism — not an instruction.** When a successor spec supplies the quiescence signal, the drain needs no new machinery: the existing `inbox list` / `inbox archive` calls already enumerate and retire consumed messages, so that successor gates these two calls on its signal rather than introducing a third inbox surface. Both are recorded here as the surface that successor will reuse, and neither is run by this step:
+**Deferred mechanism — not an instruction.** When a successor spec supplies the epic-wide quiescence signal, the drain needs no new machinery: the existing `inbox list` / `inbox archive` calls already enumerate and retire consumed messages, so that successor gates these two calls on its signal rather than introducing a third inbox surface. `closed_senders` is the material that successor builds ON — the per-sender half is already reported, and what it still needs is the sender-population bound fact 2 names. Both calls are recorded here as the surface that successor will reuse, and neither is run by this step:
 
 ```bash
 python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox list \
@@ -173,7 +173,7 @@ compaction_invariants[I]{invariant,verdict,evidence,population}:
 compaction_abstained[B]{section,treatment}:
   Decisions,preserved_verbatim
 archive_drain: refused
-archive_drain_reason: "no quiescence signal exists — PLAN-TRUTH-032 is superseded"
+archive_drain_reason: "no epic-wide quiescence signal — closed_senders is per-sender only"
 restart_verdict: ready | not_ready | indeterminate
 resume_anchor: "{next action}"
 ```

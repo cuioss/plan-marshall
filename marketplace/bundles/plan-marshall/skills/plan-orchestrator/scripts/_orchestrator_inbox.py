@@ -951,6 +951,54 @@ def check_landing_completeness(payload_body: str) -> tuple[bool, list[str]]:
     return (not missing), missing
 
 
+def find_stream_end_marker(inbox_dir: Path, epic: str, sender_id: str) -> str | None:
+    """Return the name of ``sender_id``'s queued stream-end marker, or ``None``.
+
+    The ONE predicate behind both stream-closure entry points — the write-side
+    refusal (:func:`cmd_inbox_write`) and the close-side idempotence
+    (:func:`cmd_inbox_close_stream`). A single seam is what keeps the two from
+    disagreeing about whether a stream is closed: they would otherwise be two
+    independent scans that could drift.
+
+    Only a marker that VALIDATES counts. A malformed file claiming
+    ``lifecycle=stream-end`` is not a closure the drain would honour either — it
+    is excluded from ``inbox list``'s ``closed_senders`` for the same reason — so
+    treating it as one here would refuse writes on the strength of a message the
+    drain will report as invalid.
+
+    ⛔ **The scan covers ``inbox/`` only, never ``inbox/archive/``.** That bound
+    is deliberate and is a real limitation, stated rather than hidden: once the
+    drain consumes and archives a sender's marker, this predicate no longer finds
+    it and that sender may write again. The queue is the live state, and a
+    consumed marker has been acted on; re-refusing against the archive would make
+    the guard depend on drain history rather than on queue state. A sender that
+    must stay closed across a drain is a larger design question this guard does
+    not settle.
+
+    Args:
+        inbox_dir: The epic's ``inbox/`` directory.
+        epic: The epic slug, passed through as ``expected_epic`` so a marker
+            filed against a different epic is not honoured here.
+        sender_id: The sender whose closure is being tested.
+
+    Returns:
+        The bare filename of the first validating stream-end marker for that
+        sender in enumeration order, or ``None`` when the sender has none.
+    """
+    for path in list_messages(inbox_dir):
+        match = _MESSAGE_NAME_RE.match(path.name)
+        if match is None or match.group('sender') != sender_id:
+            continue
+        try:
+            text = path.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            continue
+        ok, _, header = validate_envelope(text, expected_epic=epic, filename=path.name)
+        if ok and header.get(_LIFECYCLE_FIELD) == LIFECYCLE_STREAM_END:
+            return path.name
+    return None
+
+
 def cmd_inbox_write(args: Any) -> dict[str, Any]:
     """Append one message to the epic's inbox.
 
@@ -960,6 +1008,12 @@ def cmd_inbox_write(args: Any) -> dict[str, Any]:
     caller-supplied output path exists in the argument surface. The payload
     arrives via ``--payload-file`` (staged with the Write tool) so no message
     body ever passes through a shell argument.
+
+    Refuses a sender that has already closed its stream (``stream_closed``). The
+    check runs BEFORE the ``--target-plan`` deliverability guard, because it is
+    about whether this sender may write at all, which does not depend on where
+    the message was aimed. Without it the ``stream-end`` marker declared a
+    closure nothing enforced.
     """
     invalid = _validate_identifier(args.slug)
     if invalid:
@@ -985,6 +1039,24 @@ def cmd_inbox_write(args: Any) -> dict[str, Any]:
             'epic_not_found',
             f'epic {args.slug!r} has no tree at {root}; run scaffold first',
             slug=args.slug,
+        )
+    # Stream-closure guard. A sender that filed a ``lifecycle=stream-end`` marker
+    # declared its stream ended; without this refusal that declaration meant
+    # nothing and the sender could keep writing, so every consumer reading
+    # ``closed_senders`` as "this sender will send no more" was reading a claim
+    # the machinery did not support.
+    closed_by = find_stream_end_marker(root / INBOX_SUBDIR, args.slug, args.sender_id)
+    if closed_by is not None:
+        return _error(
+            'stream_closed',
+            f'sender {args.sender_id!r} closed its stream in epic {args.slug!r} '
+            f'with marker {closed_by}; a closed stream accepts no further '
+            'messages. The marker is the sender\'s own declaration that it will '
+            'send no more, and the drain reports it as such — writing after it '
+            'would contradict a signal the orchestrator has already acted on.',
+            slug=args.slug,
+            sender_id=args.sender_id,
+            marker=closed_by,
         )
     # Deliverability guard. ``--target-plan`` NAMES a plan the message is aimed
     # at, but the inbox is the epic's plan->orchestrator OUTBOX, drained BETWEEN
@@ -1682,6 +1754,14 @@ def cmd_inbox_close_stream(args: Any) -> dict[str, Any]:
     empty ``live_count`` with the sender present there is a *finished* stream,
     distinct from an empty queue that may yet receive more.
 
+    **Idempotent.** Closing a stream that is already closed returns SUCCESS
+    naming the existing marker, with ``already_closed: true``, and allocates
+    nothing — the caller asked for a state that already holds. A first close
+    reports ``already_closed: false``. Allocating a second marker instead would
+    be a second declaration of one fact, and it would be effectively invisible:
+    ``inbox list``'s ``closed_senders`` is a SET, so the duplicate dedups away
+    and shows up only as an unexplained extra row in ``count``.
+
     Refuses an unsafe slug (``invalid_slug``), an unsafe sender id
     (``invalid_sender_id``), an out-of-enum sender type (``invalid_sender_type``),
     and an unscaffolded epic (``epic_not_found``).
@@ -1705,6 +1785,27 @@ def cmd_inbox_close_stream(args: Any) -> dict[str, Any]:
             f'epic {args.slug!r} has no tree at {root}; run scaffold first',
             slug=args.slug,
         )
+    inbox_dir = root / INBOX_SUBDIR
+    # Idempotence, not refusal: closing an already-closed stream asks for a state
+    # that already holds, so the call SUCCEEDS and names the existing marker
+    # rather than allocating a second one. A second marker would be a second
+    # declaration of the same fact, invisible in ``inbox list``'s
+    # ``closed_senders`` (a set, so the duplicate dedups away) and visible only as
+    # an unexplained extra message in ``count``.
+    existing = find_stream_end_marker(inbox_dir, args.slug, args.sender_id)
+    if existing is not None:
+        return {
+            'status': 'success',
+            'operation': 'inbox-close-stream',
+            'slug': args.slug,
+            'store': ORCHESTRATOR_STORE,
+            'sender_type': args.sender_type,
+            'sender_id': args.sender_id,
+            'lifecycle': LIFECYCLE_STREAM_END,
+            'already_closed': True,
+            'message': existing,
+            'path': str(inbox_dir / existing),
+        }
     reason = (getattr(args, 'reason', None) or '').strip() or STREAM_END_DEFAULT_NOTE
     text = compose_envelope(
         args.sender_type,
@@ -1714,7 +1815,7 @@ def cmd_inbox_close_stream(args: Any) -> dict[str, Any]:
         reason,
         lifecycle=LIFECYCLE_STREAM_END,
     )
-    message_path = allocate_message_path(root / INBOX_SUBDIR, args.sender_id, text)
+    message_path = allocate_message_path(inbox_dir, args.sender_id, text)
     return {
         'status': 'success',
         'operation': 'inbox-close-stream',
@@ -1723,6 +1824,7 @@ def cmd_inbox_close_stream(args: Any) -> dict[str, Any]:
         'sender_type': args.sender_type,
         'sender_id': args.sender_id,
         'lifecycle': LIFECYCLE_STREAM_END,
+        'already_closed': False,
         'message': message_path.name,
         'path': str(message_path),
     }

@@ -65,9 +65,18 @@ The drain semantics — enumeration order, the report-never-skip rule for a malf
      --slug {slug}
    ```
 
-   The returned `messages[]` table is the drain's work list. An empty queue is a legitimate outcome: record the empty scan as a Step 6 decision and return with `messages_scanned: 0`.
+   The returned `messages[]` table is the drain's work list. An empty queue is a legitimate outcome: record the empty scan as a Step 6 decision — reading `live_count`, `closed_senders` and `invalid_count` to say WHICH kind of zero it was, per the table there — and return with `messages_scanned: 0`.
 
-2. **Process each message in the returned order**, mapping its `kind` to a branch. The three `kind` values are exhaustively routed — no kind is left unhandled:
+2. **For each message the enumeration reported `valid`, read its `lifecycle` BEFORE its `kind`.** (A row whose `valid` is false is item 3's, and neither table here applies to it — its header was not validated, so its `lifecycle` is not a fact the drain may act on.) The row's `lifecycle` says whether the message is still a live claim at all, and `kind` says only what a live claim would be routed as — so a row whose lifecycle is terminal is dispositioned here and its `kind` branch is **not** run. Two rules, applied in this order, before the routing table below:
+
+   | `lifecycle` | Disposition | Why the `kind` branch must not run |
+   |---|---|---|
+   | `superseded` | Record as **retired by successor** (naming the row's `superseded_by`), archive, and stop. Disposition token: `retired_by_successor` | The envelope records this message as retired in favour of a named successor. Routing it on `kind` would drive a full ship reconciliation for a landing its own envelope retired — a `landings/` write and a `queue --transition … --status shipped` for a claim that has been withdrawn. The successor carries the live claim and is enumerated in its own right. |
+   | `stream-end` | Record as **the sender's stream closure** (naming the `sender_id`), archive, and stop. Disposition token: `stream_end_noted` | A `stream-end` marker carries `kind: finding` **by design** — the envelope schema has no control-record kind — so the table below would absorb a control record as a substantive observation, manufacturing a Watch or Open Defect out of "this sender is done". |
+
+   A `live` lifecycle falls through to the routing table. Both rules above still **archive**, so both dispositions count inside `messages_archived` and the closure equation in § Output holds unchanged.
+
+   Then, for each remaining (`lifecycle: live`) message **in the returned order**, map its `kind` to a branch. The three `kind` values are exhaustively routed — no kind is left unhandled:
 
    | `kind` | Branch |
    |--------|--------|
@@ -77,7 +86,7 @@ The drain semantics — enumeration order, the report-never-skip rule for a malf
 
 3. **A message the enumeration reported as invalid is NOT processed.** Record it as an Open Defect in `epic.md` naming the validator error code the row carried, and **leave it in `inbox/` un-archived** so it stays visible to the next drain. An invalid message never routes to a branch and never counts as consumed. **Apply the same dedup discipline Step 5b carries**: because the message deliberately survives the drain, every subsequent scan re-enumerates it — a message already tracked by an existing Open Defect FOLDS into that entry (record the recurrence on it) and never becomes a second one.
 
-4. **Archive on consume.** Archive every message immediately after its disposition is **persisted** — a Step 4 landing reconciliation, a Step 5b disposition, or a Step 5 absorption into a Watch or Open Defect (the `observed` disposition). This covers every consuming disposition `drained[]` enumerates (`reconciled`, `observed`, the four Step 5b outcomes). TWO dispositions are excluded, for distinct reasons: `invalid` — item 3 leaves it un-archived by design and never routes it to a branch — and `archive_failed` — its disposition WAS persisted, but the archival that would have consumed it was refused, so sub-item 4a records it as an Open Defect and sub-item 4b forbids re-applying the disposition. Retire the message:
+4. **Archive on consume.** Archive every message immediately after its disposition is **persisted** — a Step 4 landing reconciliation, a Step 5b disposition, or a Step 5 absorption into a Watch or Open Defect (the `observed` disposition). This covers every consuming disposition `drained[]` enumerates (`reconciled`, `observed`, the four Step 5b outcomes, and the two Step 3 item 2 lifecycle dispositions `retired_by_successor` and `stream_end_noted` — both archive on consume exactly as the others do, which is why the closure equation in § Output needs no fourth term). TWO dispositions are excluded, for distinct reasons: `invalid` — item 3 leaves it un-archived by design and never routes it to a branch — and `archive_failed` — its disposition WAS persisted, but the archival that would have consumed it was refused, so sub-item 4a records it as an Open Defect and sub-item 4b forbids re-applying the disposition. Retire the message:
 
    ```bash
    python3 .plan/execute-script.py plan-marshall:plan-orchestrator:orchestrator inbox archive \
@@ -155,7 +164,7 @@ Read `complete` and `missing_keys` from the TOON. A `landing` message carries a 
 
 ### Step 5b: Candidate-lesson message — per-item disposition
 
-Applies to each `kind: candidate-lesson` message, and to each `kind: finding` message Step 5 did not absorb into a Watch or Open Defect. Exactly one of the four dispositions below is applied per message — **`Promote` is restricted to `kind: candidate-lesson`**; a `kind: finding` message carries no corpus body shape and may take only Fold, Stage, or Discard.
+Applies to each `lifecycle: live` `kind: candidate-lesson` message, and to each `lifecycle: live` `kind: finding` message Step 5 did not absorb into a Watch or Open Defect. A `stream-end` marker is NOT in scope however this reads: it carries `kind: finding` by design but is dispositioned at Step 3 item 2 and never reaches Step 5, so it is not a `finding` "Step 5 did not absorb" — it is a control record Step 5 was never offered. Exactly one of the four dispositions below is applied per message — **`Promote` is restricted to `kind: candidate-lesson`**; a `kind: finding` message carries no corpus body shape and may take only Fold, Stage, or Discard.
 
 | Disposition | Action |
 |-------------|--------|
@@ -176,6 +185,16 @@ This mirrors the per-lesson disposition obligation [`lessons-handling.md`](lesso
 **Apply the same dedup discipline.** A recurrence of an already-tracked signal FOLDS into the existing item (spec, queue entry, defect, watch, or corpus lesson) and never creates a duplicate. Recurrence is itself information: record it on the existing item rather than as a second one.
 
 ### Step 6: Log and set the resume anchor
+
+**Under inbox scan, state WHICH KIND OF ZERO a drained queue was, from `live_count` and `closed_senders` — never from `count`.** `count` is the enumerated total, so it says only how many files were there; it cannot distinguish a queue that has nothing left from one whose senders have all declared they will send no more. The `inbox list` payload carries the discriminator directly:
+
+| `live_count` | `closed_senders` | `invalid_count` | The conclusion to record |
+|---|---|---|---|
+| `0` | empty | `0` | **Empty** — nothing is queued and no sender has declared closure, so a later message is still possible. |
+| `0` | non-empty | `0` | **Finished** — every named sender filed a `stream-end` marker, so no further message is coming from them. Name the senders. |
+| `0` | any | `> 0` | **Blocked** — nothing drainable, but messages remain that the drain refuses to consume. This is neither finished nor empty; name the `invalid_count` and the Open Defects recording them. |
+
+⛔ These are three distinct states and the log must not collapse them: recording a blocked queue as "empty" claims a completed drain over messages nobody read, and recording an empty queue as "finished" claims a closure no sender declared. A non-zero `live_count` at the end of a drain is itself a discrepancy — the drain did not consume what it enumerated — and is recorded as an Open Defect.
 
 Log the analysis decisions and reconciliations:
 
@@ -222,7 +241,7 @@ resume_anchor: "{next action}"
 The block carries a singular half and a plural half, and `mode` says which half is live:
 
 - **Single-item modes** (`paste` / `on_disk` / `cross_repo`) — `granularity`, `plan`, and `landing_report` carry the analysis result exactly as before (`plan` and `landing_report` carry `-` for the observation granularity). The drain fields carry `0` and `drained[]` is empty.
-- **Inbox scan** (`inbox_scan`) — the singular fields `granularity`, `plan`, and `landing_report` carry `-`, and the per-message outcomes ride `drained[]`. `messages_scanned` counts every enumerated message, `messages_archived` counts those consumed and retired, `messages_invalid` counts those reported invalid and deliberately left un-archived, and `messages_archive_failed` counts those whose disposition was persisted but whose archival was refused (item 4a). `landings_incomplete` counts the `kind: landing` messages the drain-completeness check (Step 4) reported `complete: false` — the landings that carried only narrative or a partial facts block, each recorded as an Open Defect. A zero-drain with `landings_incomplete: 0` is what establishes that every REQUIRED fact drained — not that nothing whatsoever is outstanding, since the optional keys lie outside the check; a non-zero value names exactly the plans whose manual paste may still surface a required fact the inbox did not get. `messages_archived + messages_invalid + messages_archive_failed == messages_scanned` at a clean exit; a gap means a message was neither consumed nor recorded as a defect, and the epic ledger carries the discrepancy as an open defect. Each `drained[]` row's `disposition` is the recorded Step 5b disposition (`promoted` / `folded` / `staged` / `discarded`), `reconciled` for a landing, `observed` for a finding absorbed by Step 5, `invalid` for an unprocessed message, or `archive_failed` for a processed message whose archival was refused.
+- **Inbox scan** (`inbox_scan`) — the singular fields `granularity`, `plan`, and `landing_report` carry `-`, and the per-message outcomes ride `drained[]`. `messages_scanned` counts every enumerated message, `messages_archived` counts those consumed and retired, `messages_invalid` counts those reported invalid and deliberately left un-archived, and `messages_archive_failed` counts those whose disposition was persisted but whose archival was refused (item 4a). `landings_incomplete` counts the `kind: landing` messages the drain-completeness check (Step 4) reported `complete: false` — the landings that carried only narrative or a partial facts block, each recorded as an Open Defect. A zero-drain with `landings_incomplete: 0` is what establishes that every REQUIRED fact drained — not that nothing whatsoever is outstanding, since the optional keys lie outside the check; a non-zero value names exactly the plans whose manual paste may still surface a required fact the inbox did not get. `messages_archived + messages_invalid + messages_archive_failed == messages_scanned` at a clean exit; a gap means a message was neither consumed nor recorded as a defect, and the epic ledger carries the discrepancy as an open defect. **The two lifecycle dispositions (item 2) are counted inside `messages_archived`**, because both archive — so the closure equation is unchanged by them and needs no fourth term. Each `drained[]` row's `disposition` is one of: the recorded Step 5b disposition (`promoted` / `folded` / `staged` / `discarded`); `reconciled` for a landing; `observed` for a finding absorbed by Step 5; `retired_by_successor` for a `lifecycle: superseded` row recorded as retired without running its `kind` branch (item 2); `stream_end_noted` for a `lifecycle: stream-end` control record noted as the sender's closure without being absorbed as an observation (item 2); `invalid` for an unprocessed message; or `archive_failed` for a processed message whose archival was refused.
 
 This is a clean break, not a shim: there is one Output block, and a consumer reads `mode` to know which half to trust.
 
