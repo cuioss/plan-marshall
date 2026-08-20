@@ -6,8 +6,12 @@
 The terminal ``kind: landing`` message must carry a machine-readable
 ``landing-facts`` block (plan 302 D4). ``check_landing_completeness`` is the
 drain-side validator that lets the orchestrator turn "the queue is empty" into
-"nothing material is outstanding": it reports whether a drained landing carried
-that block with every required fact key.
+"every REQUIRED fact drained": it reports whether a drained landing carried that
+block with every required fact key SUPPLIED — non-empty, and not a sanctioned
+degraded value for the keys that cannot legitimately be unknown. It does NOT
+reach the optional keys (the per-step typed facts, the wall-clock, the repository
+end-state), so a ``complete: true`` landing may carry none of them and the check
+never establishes that nothing whatsoever is outstanding.
 
 The single most important assertion here is that the check is **SEEN to fail on
 a known-incomplete input** — a PRE-FIX, prose-only landing (the historical
