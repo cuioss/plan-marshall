@@ -555,18 +555,73 @@ def test_coverage_reports_the_unresolved_share_and_its_causes(tmp_path):
     assert coverage['resolved'] == 1
     assert coverage['unresolved'] == 1
     assert coverage['unresolved_fraction'] == 0.5
-    assert coverage['unresolved_causes'] == {_mod.UNRESOLVED_NOTATION: 1}
+    assert coverage['unresolved_causes'] == {
+        _mod.UNRESOLVED_NOTATION: 1,
+        _mod.UNRESOLVED_SCRIPT_UNPARSEABLE: 0,
+        _mod.UNRESOLVED_NO_CHOICES_DECLARED: 0,
+        _mod.UNRESOLVED_CHOICES_UNRESOLVABLE: 0,
+    }
 
 
 def test_coverage_over_an_empty_population_reports_zero_not_a_division_error():
-    """An empty population reports a 0.0 share rather than raising."""
+    """An empty population reports a 0.0 share rather than raising.
+
+    The cause census is COMPLETE even here: every cause reads ``0`` rather than
+    being omitted, so an absent cause is never indistinguishable from one folded
+    into a neighbour.
+    """
     assert _mod.derive_coverage([]) == {
         'population_size': 0,
         'resolved': 0,
         'unresolved': 0,
         'unresolved_fraction': 0.0,
-        'unresolved_causes': {},
+        'unresolved_causes': dict.fromkeys(_mod.UNRESOLVED_CAUSES, 0),
     }
+
+
+def test_a_flag_with_no_choices_is_a_different_cause_from_an_unresolvable_one(tmp_path):
+    """The two fail-closed skips carry OPPOSITE risk and are reported apart.
+
+    A flag declaring no ``choices=`` makes no enum claim the script can
+    contradict — nothing to check. A ``choices=`` the resolver cannot reduce IS
+    an unverified claim. Merged into one bucket a reader cannot tell whether a
+    large unresolved share is mostly harmless or mostly blind, which is the
+    declared-coverage figure failing at the job it exists for.
+    """
+    script = '''\
+import argparse
+
+from somewhere_else import KINDS
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest='cmd')
+    add = sub.add_parser('add')
+    add.add_argument('--kind', choices=KINDS)
+    add.add_argument('--freeform')
+
+
+if __name__ == '__main__':
+    main()
+'''
+    skill_dir = tmp_path / 'mybundle' / 'skills' / 'myskill'
+    (skill_dir / 'scripts').mkdir(parents=True)
+    (skill_dir / 'scripts' / 'myscript.py').write_text(script, encoding='utf-8')
+    (skill_dir / 'SKILL.md').write_text(
+        '# My Skill\n\n'
+        '## Canonical invocations\n\n'
+        f'{_FENCE}bash\n'
+        'python3 .plan/execute-script.py mybundle:myskill:myscript add \\\n'
+        '  --kind {x|y} --freeform {p|q}\n'
+        f'{_FENCE}\n',
+        encoding='utf-8',
+    )
+
+    causes = _mod.derive_coverage(derive_population(tmp_path))['unresolved_causes']
+
+    assert causes[_mod.UNRESOLVED_CHOICES_UNRESOLVABLE] == 1
+    assert causes[_mod.UNRESOLVED_NO_CHOICES_DECLARED] == 1
 
 
 def test_findings_publish_the_unresolved_share(tmp_path):
@@ -577,7 +632,7 @@ def test_findings_publish_the_unresolved_share(tmp_path):
 
     details = findings[0]['details']
     assert details['unresolved_notation_fraction'] == 0.0
-    assert details['unresolved_notation_causes'] == {}
+    assert details['unresolved_notation_causes'] == dict.fromkeys(_mod.UNRESOLVED_CAUSES, 0)
 
 
 def test_real_tree_coverage_is_published_and_non_trivial():
@@ -593,9 +648,5 @@ def test_real_tree_coverage_is_published_and_non_trivial():
     assert coverage['population_size'] > 0
     assert coverage['resolved'] + coverage['unresolved'] == coverage['population_size']
     assert 0.0 < coverage['unresolved_fraction'] < 1.0
-    assert coverage['unresolved_causes']
-    assert set(coverage['unresolved_causes']) <= {
-        _mod.UNRESOLVED_NOTATION,
-        _mod.UNRESOLVED_SCRIPT_UNPARSEABLE,
-        _mod.UNRESOLVED_NO_CHOICES,
-    }
+    assert set(coverage['unresolved_causes']) == set(_mod.UNRESOLVED_CAUSES)
+    assert sum(coverage['unresolved_causes'].values()) == coverage['unresolved']

@@ -169,11 +169,18 @@ _AXES_NOTE = (
 # to run; a session restart does NOT fix it; the in-run remedy is to read the
 # pinned skill file directly.
 # ---------------------------------------------------------------------------
+# Every step names a command the operator can type AS GIVEN. That is stricter
+# than naming a surface: the retention sweep is a read-only DRY RUN unless
+# `--apply` is passed, so a remedy naming the bare verb would describe a prune
+# that does not happen — an operator following it literally sees a clean report,
+# no error, and moves on believing the cache was pruned.
 REMEDY_OPERATOR = (
     'Repair is operator-only — this detector writes nothing. To repair the cache and '
     'executor: (1) re-run the cache sync (`/sync-plugin-cache`) to move the cache '
     'forward; (2) prune the superseded version dirs with the marshall-steward '
-    'cache-retention sweep (`plan-marshall:marshall-steward:cache_retention sweep`); '
+    'cache-retention sweep — `python3 .plan/execute-script.py '
+    'plan-marshall:marshall-steward:cache_retention sweep --apply` (WITHOUT `--apply` '
+    'the sweep is a read-only dry run and removes nothing); '
     '(3) regenerate the executor by re-running the steward wizard (`/marshall-steward`), '
     'which rewrites `.plan/execute-script.py` against the refreshed cache. '
     'Do NOT write the plugin registry — it is the plugin '
@@ -407,12 +414,13 @@ def loader_selected_version(
     version-key wins. **The ``.orphaned_at`` marker is never consulted**, by that
     selector or by this model.
 
-    The body once computed a retention pin, a live set and a degraded fallback,
-    and the docstring described a marker-aware selector to match. Both were
-    fiction: the "retention pin" was ``max(dirs)``, it was unconditionally a
-    member of the live set, and the maximum of a set containing its own maximum
-    is that maximum — so every branch returned the newest dir on disk whatever
-    any marker said. The model is now the one line it always evaluated.
+    The body once partitioned the dirs into a marker-exempt newest one and a set
+    of unmarked ones, with a third branch for the all-marked case, and the
+    docstring described a marker-aware selector to match. Both were fiction: the
+    marker-exempt dir was ``max(dirs)``, it was unconditionally a member of the
+    other set, and the maximum of a set containing its own maximum is that
+    maximum — so every branch returned the newest dir on disk whatever any marker
+    said. The model is now the one line it always evaluated.
 
     ``eligible`` restricts the pool to the version dirs that carry the subpath
     under test, mirroring the per-request predicate the real resolver supplies.

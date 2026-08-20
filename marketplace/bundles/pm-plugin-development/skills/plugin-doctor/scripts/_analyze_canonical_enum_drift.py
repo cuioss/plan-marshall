@@ -114,14 +114,18 @@ refusal to invent an authority:
 * ``notation_unresolved`` — the documented notation resolves to no script path
   in this tree (an unregistered or renamed notation).
 * ``script_unparseable`` — the script was found but its AST could not be read.
-* ``no_choices_or_unresolvable_choices`` — the script parsed and either declares
-  no ``choices=`` for that ``(subcommand, flag)``, or declares one this resolver
-  cannot reduce to a concrete member set. The dominant structural case is a
-  ``choices=`` naming a constant defined in ANOTHER module: resolving it would
-  need a cross-module parser walk (an import hop), which is deliberately out of
-  scope — the resolver follows same-file constants, same-file aliases, sequence
-  wrappers, and the declarative dict-spec form, and stops there. A conflicting
-  re-declaration of the same ``(path, flag)`` also lands here, by design.
+* ``no_choices_declared`` — the script parsed and declares no ``choices=`` for
+  that ``(subcommand, flag)``. The documented ``{a|b|c}`` describes a free-form
+  value, so there is no enum claim to contradict. This is NOT a blind spot, and
+  it is reported apart from the next cause for exactly that reason.
+* ``choices_unresolvable`` — the script declares a ``choices=`` this resolver
+  cannot reduce to a concrete member set. This IS a blind spot: a real enum
+  claim went unverified. The dominant structural case is a ``choices=`` naming a
+  constant IMPORTED from another module — resolving it would need a cross-module
+  parser walk (an import hop), deliberately out of scope; the resolver follows
+  same-file constants, same-file aliases, sequence wrappers, and the declarative
+  dict-spec form, and stops there. A conflicting re-declaration of the same
+  ``(path, flag)`` also lands here, by design.
 
 Public API
 ----------
@@ -221,7 +225,25 @@ _MAX_RESOLVE_DEPTH = 8
 # could not check AND what stopped it.
 UNRESOLVED_NOTATION = 'notation_unresolved'
 UNRESOLVED_SCRIPT_UNPARSEABLE = 'script_unparseable'
-UNRESOLVED_NO_CHOICES = 'no_choices_or_unresolvable_choices'
+# These two are kept APART because they carry opposite risk. A flag that declares
+# no ``choices=`` at all makes no enum claim the script can contradict — there is
+# nothing to check, and its share of the population is not a blind spot. A
+# ``choices=`` the resolver could not reduce to a concrete set IS a real enum
+# claim that went unverified. Merged into one bucket, a reader cannot tell
+# whether a large unresolved share is mostly harmless or mostly blind.
+UNRESOLVED_NO_CHOICES_DECLARED = 'no_choices_declared'
+UNRESOLVED_CHOICES_UNRESOLVABLE = 'choices_unresolvable'
+
+# Every cause, in report order. ``derive_coverage`` emits a COMPLETE census over
+# this tuple — a cause with no occurrences is reported as ``0`` rather than
+# omitted, so an absent cause is never indistinguishable from one folded into a
+# neighbour.
+UNRESOLVED_CAUSES = (
+    UNRESOLVED_NOTATION,
+    UNRESOLVED_SCRIPT_UNPARSEABLE,
+    UNRESOLVED_NO_CHOICES_DECLARED,
+    UNRESOLVED_CHOICES_UNRESOLVABLE,
+)
 
 
 @dataclass(frozen=True)
@@ -793,14 +815,20 @@ def derive_population(marketplace_root: Path, cache=None) -> list[EnumSite]:
                         if tree is not None
                         else {}
                     )
-                # ``.get`` returns None for both "no choices on this parser" and
-                # "choices present but unresolvable" — both are fail-closed skips.
-                choices = authority_cache[notation].get((subcommand, flag))
-                cause = (
-                    UNRESOLVED_NO_CHOICES
-                    if parsed_cache[notation]
-                    else UNRESOLVED_SCRIPT_UNPARSEABLE
-                )
+                authority = authority_cache[notation]
+                key = (subcommand, flag)
+                # Both fail-closed skips leave ``choices`` at None, but they are
+                # told apart by KEY PRESENCE: an absent key means the parser
+                # declares no ``choices=`` for this flag, while a present key
+                # holding None means it declares one this resolver could not
+                # reduce to a concrete set.
+                choices = authority.get(key)
+                if not parsed_cache[notation]:
+                    cause = UNRESOLVED_SCRIPT_UNPARSEABLE
+                elif key not in authority:
+                    cause = UNRESOLVED_NO_CHOICES_DECLARED
+                else:
+                    cause = UNRESOLVED_CHOICES_UNRESOLVABLE
             resolved = choices is not None
             diverged = resolved and documented != choices
             population.append(
@@ -851,21 +879,29 @@ def derive_coverage(population: list[EnumSite]) -> dict:
 
     Returns ``population_size``, ``resolved``, ``unresolved``,
     ``unresolved_fraction`` (rounded to three places, ``0.0`` over an empty
-    population) and ``unresolved_causes`` — a count per ``UNRESOLVED_*`` cause,
-    so the gap is attributable rather than a single opaque number.
+    population) and ``unresolved_causes`` — a COMPLETE census over
+    :data:`UNRESOLVED_CAUSES`, so the gap is attributable rather than a single
+    opaque number and a cause with no occurrences reads as ``0`` rather than as
+    an absence a reader must interpret.
+
+    The split between ``no_choices_declared`` and ``choices_unresolvable`` is the
+    load-bearing part: the first is a site with no enum claim to check, the
+    second is a claim that went unverified. Reported as one figure they are
+    indistinguishable, and a large unresolved share says nothing about whether
+    the sweep is mostly complete or mostly blind.
     """
     total = len(population)
     unresolved_sites = [site for site in population if not site.resolved]
-    causes: dict[str, int] = {}
+    causes: dict[str, int] = dict.fromkeys(UNRESOLVED_CAUSES, 0)
     for site in unresolved_sites:
-        cause = site.unresolved_cause or UNRESOLVED_NO_CHOICES
+        cause = site.unresolved_cause or UNRESOLVED_CHOICES_UNRESOLVABLE
         causes[cause] = causes.get(cause, 0) + 1
     return {
         'population_size': total,
         'resolved': total - len(unresolved_sites),
         'unresolved': len(unresolved_sites),
         'unresolved_fraction': round(len(unresolved_sites) / total, 3) if total else 0.0,
-        'unresolved_causes': dict(sorted(causes.items())),
+        'unresolved_causes': causes,
     }
 
 

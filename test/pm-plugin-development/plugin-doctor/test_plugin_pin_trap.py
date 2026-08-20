@@ -330,9 +330,16 @@ def test_every_operator_repair_step_names_an_invocable_surface():
     remedy = _verdict(_obs(executor_version='0.1.100')).remedy
 
     assert '/sync-plugin-cache' in remedy
-    assert 'plan-marshall:marshall-steward:cache_retention sweep' in remedy
     assert '/marshall-steward' in remedy
-    assert '.plan/execute-script.py' in remedy
+    # The retention sweep must be given in the form that actually PRUNES. Without
+    # `--apply` it is a read-only dry run, so a remedy naming the bare verb
+    # describes a repair that does not happen and reports no error while not
+    # happening — the false-clean shape this whole module exists to prevent,
+    # committed by its own remedy text.
+    assert (
+        'python3 .plan/execute-script.py '
+        'plan-marshall:marshall-steward:cache_retention sweep --apply' in remedy
+    )
 
 
 # ---------------------------------------------------------------------------
