@@ -291,7 +291,19 @@ def _build_module(
 
 
 def _extract_dependencies(pkg_data: dict) -> list[str]:
-    """Extract dependencies as compact strings.
+    """Extract ``dependencies`` and ``devDependencies`` as compact strings.
+
+    **Two of npm's four dependency kinds are read.** ``peerDependencies`` — the
+    idiomatic way a plugin package declares its dependency on a workspace's core
+    package — and ``optionalDependencies`` are not, so a module that declares a
+    sibling only under one of those produces **no edge**. That limit is stated in
+    ``doc/user/dependency-intelligence.adoc`` § npm specifics and in this skill's
+    ``SKILL.md``, alongside the equivalent Python disclosure, rather than left to
+    be inferred from an empty result.
+
+    Widening the extraction is not a local change: the scope vocabulary these
+    strings feed is fixed at several sites that must move in lock-step, so it is
+    recorded as a proposal rather than taken here.
 
     Args:
         pkg_data: Parsed package.json data.

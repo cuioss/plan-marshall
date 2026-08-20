@@ -87,6 +87,12 @@ Other extras are *not* read. A sibling named only under a `test`, `docs` or `all
 
 A directory with no `[project] name` publishes no distribution, so nothing can depend on it. It still appears as a module and its own dependencies still produce edges — it simply cannot be the *target* of one.
 
+Three descriptor forms are read, in this order: PEP 621 `[project]`; then `[tool.poetry]` in the same `pyproject.toml`, when `[project]` is absent or names nothing; then `setup.cfg` (`[metadata]` for the name, `[options] install_requires` for runtime dependencies). The later forms are strict fallbacks — neither overrides a name PEP 621 already supplied.
+
+`setup.py` is *not* read, and cannot be: it is executable Python rather than a declaration, so no static reader can tell what it will pass to `setup()`. A module whose only descriptor is `setup.py` therefore publishes no name and no dependencies — it appears as a module, but nothing can depend on it and it declares nothing. Add a `[project]` table or a `setup.cfg` to bring it into the graph.
+
+A `pyproject.toml` that does not parse — an unbalanced bracket, a bad encoding — publishes nothing, and a *warning naming that file* is written to the run log. That warning is the difference between the module declaring nothing and its descriptor being broken, and the second case also silently costs you every edge pointing *at* that module, because the name those edges match on was never published.
+
 === npm specifics
 
 Workspace members need no setup. Plan Marshall resolves the `workspaces` globs from `package.json` (both the array and `{"packages": [...]}` forms) and pnpm's `pnpm-workspace.yaml`, then treats each member as a module.
@@ -94,6 +100,8 @@ Workspace members need no setup. Plan Marshall resolves the `workspaces` globs f
 Scoped names work unchanged: `@scope/pkg` is one name, and the scope is part of it. The `workspace:*` protocol never reaches the join, because only the dependency's *name* is read — the version specifier is irrelevant to whether the edge exists.
 
 `devDependencies` count, for the same reason `dev` extras do in Python.
+
+Two of npm's four dependency kinds are read: `dependencies` and `devDependencies`. `peerDependencies` and `optionalDependencies` are *not*. A package that names a sibling only under one of those produces no edge — which matters most for `peerDependencies`, the idiomatic way a plugin package declares its dependency on a workspace's core package. Move the sibling to `dependencies` or `devDependencies` if you need it in the graph.
 
 A package with no `name` in its `package.json` cannot be published, so nothing can depend on it — same rule as Python, same consequence: a source of edges, never a target.
 

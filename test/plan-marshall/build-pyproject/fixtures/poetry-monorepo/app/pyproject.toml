@@ -1,0 +1,15 @@
+# Exercises the two shapes a Poetry dependency VALUE can take — a bare version
+# string and an inline table — since only the KEY carries the name, and a reader
+# that inspected the value would break on the table form. The dev group pins
+# that a Poetry dev-group entry is a real edge, matching the PEP 621 `dev` extra.
+[tool.poetry]
+name = "poetry-app"
+version = "1.0.0"
+description = "Depends on the leaf distribution and, for tests, on the root."
+
+[tool.poetry.dependencies]
+python = "^3.11"
+poetry-core-lib = { version = "^1.0.0", optional = false }
+
+[tool.poetry.group.dev.dependencies]
+poetry-platform = "^1.0.0"

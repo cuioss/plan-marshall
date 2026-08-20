@@ -1,0 +1,11 @@
+# Leaf distribution — the edge TARGET. It publishes a name only under
+# [tool.poetry], so a reader that misses that table makes it unpublishable and
+# silently destroys every edge pointing at it, not merely its own.
+[tool.poetry]
+name = "poetry-core-lib"
+version = "1.0.0"
+description = "Leaf distribution — depends on nothing internal."
+
+[tool.poetry.dependencies]
+python = "^3.11"
+typing-extensions = "^4.0.0"

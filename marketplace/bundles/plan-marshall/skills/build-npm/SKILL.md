@@ -88,6 +88,8 @@ Three behaviours are contract obligations rather than implementation detail:
 - **There is no fallback to the module's own name.** A package declaring no `name` is unpublishable, so nothing can depend on it; it stays a valid edge *source* but is never a *target*.
 - **An ambiguous package name yields no edge and a reported collision**, and the enriched overlay is not consulted — the declaration-wins ruling is core's, applied ahead of the resolver call.
 
+**Two of npm's four dependency kinds reach the join.** Discovery records `dependencies` and `devDependencies`; `peerDependencies` and `optionalDependencies` are not read, so a module naming a sibling *only* under one of those contributes **no edge** and the join sees nothing to match. This matters most for `peerDependencies`, which is how a plugin package idiomatically declares its dependency on a workspace's core package — exactly the intra-workspace relationship the resolver exists to find. The limit is stated here, and in [`doc/user/dependency-intelligence.adoc`](../../../../../doc/user/dependency-intelligence.adoc) § npm specifics, because the alternative is an operator reading a genuinely-empty edge set as "these packages do not depend on each other" when the declaration is simply in a kind nothing reads.
+
 The contract itself — the four faces, the N-resolver union semantics, the anti-vacuity provenance property, and the generic ambiguous-identity-key obligation — is owned by [`../extension-api/standards/ext-point-derivation-resolver.md`](../extension-api/standards/ext-point-derivation-resolver.md) and is deliberately not restated here.
 
 ## Canonical invocations
