@@ -6,8 +6,10 @@
 The plan's four deliverables all landed, the fix is real, and every test the report names exists and
 passes in the current tree. Three substantive defects survive: one genuine duplicate-transmit path the
 fix does not close (and which additionally reports a transmitted disposition as `untransmitted`), and
-two stale prose restatements of the pre-fix skip taxonomy in the two workflow documents that *invoke*
-the verb — one of them twenty-two lines above the corrected paragraph in the same document. Beyond
+four stale prose restatements of the pre-fix skip taxonomy — in the two workflow documents that
+*invoke* the verb (one of them twenty-two lines above the corrected paragraph in the same document),
+in the Sonar skill and its own inline comment, and in `_findings_core.py`'s new reader enumeration;
+see § Completeness review for the four sites. Beyond
 those, the D0 consumer enumeration is incomplete in its record (its "sole production invoker" claim is
 refutable from the bundle) without that incompleteness changing any behaviour.
 

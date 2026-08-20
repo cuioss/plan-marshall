@@ -205,8 +205,10 @@ without re-deriving the analysis. **Sixteen entries: 4 major, 12 minor, 0 blocke
 - **Impact:** `never_asked` is the **default** for any project that has not run the wizard, and it
   currently renders as the deliberate operator answer of *none* — the vacuous-authority archetype D3
   names, reachable by default, in shipped code.
-- **Task:** pass the provenance to the aggregator and split `vacuous` into the answered-empty case and
-  an `unestablished` case for `never_asked`/`migrated`; name both in `comparison_states`. Mirror the
+- **Task:** pass the provenance to the aggregator and split `vacuous` into the established-empty case
+  (`answered` and `migrated` alike) and an `unestablished` case for `never_asked` alone; name both in
+  `comparison_states`. `migrated` is an established posture — `create-pr.md:256-257` groups it with
+  `answered`, not with `never_asked`. Mirror the
   distinction in `SKILL.md:188-192`'s display-detail table. ⭐ **The house pattern already exists** —
   `create-pr.md:256-257` splits exactly this pair for the `skip-bot-review` label ("**A never-asked
   posture does NOT mean 'skip review'** … Fail toward being reviewed"); mirror it rather than

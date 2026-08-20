@@ -295,8 +295,11 @@ toward review-finding PRs is established. The published provenance names none of
   `exclusion_reason`. The consumer restates the rule (`SKILL.md:377`: *"`structural_share: null` is
   never `0`"*).
 - **One unit below rounding granularity** — a non-zero share rounds to `0.0` only when
-  `100/N < 0.05`, i.e. `N > 2000` escapes on one PR. Unreachable in practice, and `by_partition` ships
-  the raw counts beside the share anyway, so the collision is recoverable even there. No defect.
+  `100/N < 0.05`, i.e. `N > 2000` escapes on one PR. **Nothing bounds `N`**: `escapes_total` is
+  `len(escapes)` (`:348`) over every actionable finding and no cap is applied anywhere, so the
+  collision is unlikely rather than structurally excluded. `by_partition` ships the raw structural and
+  addressable counts beside the share, so a reader of the **full payload** can still tell a
+  rounded-down share from a genuine `0.0`; a consumer reading `structural_share` alone cannot.
 - **Smallest value the producing format can express** — one escape of one is `100.0`; two of three is
   `66.7` (pinned at `test_review_gate_delta.py:151`). The rounding never crosses a decision boundary,
   because nothing consumes the share as a threshold.

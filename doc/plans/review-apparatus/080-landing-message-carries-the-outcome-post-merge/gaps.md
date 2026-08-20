@@ -200,13 +200,19 @@ without re-deriving the analysis. Eleven entries: one blocker, five major, five 
   record makes unreachable. The two statements inside one document contradict each other, and the one a
   reader is most likely to trust (the Branch F closing sentence, adjacent to the payload they are about
   to emit) is the false one.
-- **Task:** Settle which is true. Either record Branch F with an outcome the re-entry check re-fires
-  (`loop_back` or `failed`, as `:1068` prescribes for the structurally-blocked path), or declare
+- **Task:** Settle which is true. Either record Branch F with `loop_back` — the outcome `:1068`
+  prescribes for the structurally-blocked path, and the only one that diverts the pipeline — or declare
   `branch-cleanup` `head_dependent: true` so the re-entry comparison can re-arm it, or delete the
   re-entry sentence and state plainly that Branch F's cleanup is deferred to an operator action. Do not
-  leave `:1801` asserting a recovery `:1068` says cannot happen.
-- **Done when:** A Branch F run's deferred cleanup is reachable by the mechanism its own document names,
-  and no sentence in `branch-cleanup.md` claims a re-entry that the resumable re-entry check suppresses.
+  leave `:1801` asserting a recovery `:1068` says cannot happen. ⛔ `failed` is NOT an acceptable
+  settlement: it re-fires the step on the *next* entry (`SKILL.md:720`) but does not stop the *current*
+  run — the dispatcher's rule for a `failed` step is to log, mark, and "continue to the next step"
+  (`SKILL.md:1064`), so the loop still reaches `archive-plan` and still archives the plan with the PR
+  unmerged. Any settlement other than `loop_back` must therefore also name the stop mechanism it relies
+  on, and that mechanism must exist.
+- **Done when:** A Branch F run's deferred cleanup is reachable by the mechanism its own document names;
+  no sentence in `branch-cleanup.md` claims a re-entry that the resumable re-entry check suppresses; and
+  a Branch F run does not reach `archive-plan` with its PR unmerged.
 - **Suggested grouping:** `phase-6-finalize` / merge gate
 
 ## G6 — The drain-completeness check passes a landing that carries no facts

@@ -112,23 +112,45 @@ states everything the run needs without them.
    plan's own failure was exactly a hand-maintained vocabulary; a hand-maintained fallback here would
    reproduce the defect inside the fix.
 
-   Add a **secondary, behaviour-based derivation**: flag any `('pr', verb)` registry key whose handler
-   body reaches the platform queue/train symbol vocabulary but whose verb is outside
-   `MERGE_SHAPED_VERBS` — "merge-shaped by behaviour, not by name". The predicate already exists as
-   `_first_queue_symbol` in
+   Add a **secondary, behaviour-based derivation** and make it the authority, with `MERGE_SHAPED_VERBS`
+   demoted to a mirror that a **bidirectional drift check** protects. The behaviour predicate already
+   exists as `_first_queue_symbol` in
    `test/plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing.py`; reuse it rather
-   than writing a second one.
+   than writing a second one. Derive `behaviour_shaped` as the set of `('pr', verb)` registry keys
+   whose handler body reaches the platform queue/train symbol vocabulary, and assert **parity in both
+   directions** against the vocabulary-filtered set:
 
-   ⛔ **This is a stop-condition deliverable.** If the behaviour-based population cannot be derived
-   from the tree — the registry literal is unmatchable, the handler bodies are not resolvable to
-   source text, or the queue-symbol predicate cannot be reused or reconstructed from what is in git —
-   **HALT the plan, report exactly what could not be derived, and ship nothing that depends on it**
-   (D3 and D4 both do). **Do not** author a hand-maintained verb list as a fallback: that is the
-   defect this deliverable closes.
+   - a verb that is merge-shaped **by behaviour but not by name** (in `behaviour_shaped`, outside
+     `MERGE_SHAPED_VERBS`) fails the check naming that verb — this is the silent-filter defect;
+   - a verb that is merge-shaped **by name but not by behaviour** (in `MERGE_SHAPED_VERBS` and
+     registered, but whose handler body reaches no queue/train symbol) fails the check naming that
+     verb — this is the stale-mirror defect, where the vocabulary keeps a verb the code has stopped
+     guarding and the population silently over-counts.
+
+   A verb may be exempted from either direction only by an entry in an explicit, in-test exemption
+   table that states the reason per entry; an unexplained divergence is a failure, never a filtered-out
+   member.
+
+   ⛔ **This is a stop-condition deliverable, and it is executed FIRST.** D0 runs before any work on
+   D3 or D4 begins. If the behaviour-based population cannot be derived from the tree — the registry
+   literal is unmatchable, the handler bodies are not resolvable to source text, or the queue-symbol
+   predicate cannot be reused or reconstructed from what is in git — the run **STOPS immediately**:
+   it makes no D3 or D4 edit, records the plan **blocked** in the run report naming exactly what could
+   not be derived, opens no PR for D3/D4 work, and ends. It does **not** continue with the remaining
+   deliverables and it does **not** author a hand-maintained verb list as a fallback: that is the
+   defect this deliverable closes. D1, D2 and D5 are independent of D0, so if they have already landed
+   in their own commits they stay landed; the blocked report names them as the run's only outcome.
+
+   The HALT is observable from the plan text alone: the run must record, as the first line of the D0
+   section of its report, either `D0 derivation: SUCCEEDED` with the derived population, or
+   `D0 derivation: FAILED — plan blocked` with the reason. D3 and D4 may only be started after the
+   `SUCCEEDED` line is written.
    *Done when:* registering a queue-guarded `('pr', 'queue-merge')` handler in either provider's
    registry literal fails a test that **names the verb**, instead of being silently filtered out of
-   the population; and the derived population size is asserted from the derivation rather than from a
-   transcribed literal.
+   the population; adding a verb to `MERGE_SHAPED_VERBS` that no registered handler guards with a
+   queue/train symbol likewise fails a test that **names that verb**, so the mirror cannot drift in
+   either direction; and the derived population size is asserted from the behaviour derivation rather
+   than from a transcribed literal.
 
 1. **D1 — Make the envelope contract's `--plan-id` cell true for every `ci` subcommand**
    *(discharges 030-G1, the blocker)* — rewrite the parenthetical in the `plan_id` row of
@@ -197,6 +219,10 @@ states everything the run needs without them.
 3. **D3 — Make GitLab's merge-shaped guards fail closed, probe before the side effect, and name their
    scope** *(discharges 060-G2, 060-G1, 060-G13, 060-G14, 060-G9)* —
 
+   ⛔ **Precondition: D0 must have recorded `D0 derivation: SUCCEEDED`.** Do not begin, and do not edit
+   any file listed in this deliverable, until that line is in the run report. If D0 recorded
+   `FAILED — plan blocked`, this deliverable is **not attempted** and the run has already stopped.
+
    - **Fail closed on an unresolvable scope (060-G2).** Split the two verdicts
      `gitlab_ops._probe_merge_train_state` conflates: return an actionable error (a non-`None` third
      element) for the unresolvable-project-path case so `_refuse_on_required_merge_train` refuses,
@@ -240,6 +266,10 @@ states everything the run needs without them.
 4. **D4 — Make the routing guards falsifiable, observable, and single-sourced**
    *(discharges 060-G3, 060-G8, 060-G11, 060-G12, 030-G9)* — four guards that pass for reasons they
    do not name:
+
+   ⛔ **Precondition: D0 must have recorded `D0 derivation: SUCCEEDED`.** Do not begin, and do not edit
+   any file listed in this deliverable, until that line is in the run report. If D0 recorded
+   `FAILED — plan blocked`, this deliverable is **not attempted** and the run has already stopped.
 
    - **Discriminate a guard from a transport failure (060-G3).** In
      `test/plan-marshall/tools-integration-ci/test_merge_shaped_offrouting_refusal.py`, the

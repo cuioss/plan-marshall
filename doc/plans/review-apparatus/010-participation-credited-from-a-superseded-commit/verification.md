@@ -179,7 +179,7 @@ the two markdown files (`'head_sha_verified' in doc`, `'declined' in doc`, `'{de
 `'--declined-bots "{declined_bots}"' in barrier`). It discriminates against the pre-fix state, which
 carried none of those strings, but it cannot tell a doc that *routes* the bit from one that merely
 *mentions* it, and it says nothing about the two unwired `SKILL.md` consumers. See § Completeness
-review K3 and the corresponding gap.
+review K3 and gap G14.
 
 ### D4 — mutation-proven tests
 
@@ -461,7 +461,7 @@ every other restatement in the tree is consistent at ten).
 
 ### K7 — Line-wrap artifact from the taxonomy edit
 
-`phase-6-finalize/workflow/create-pr.md:203-205` now reads "… whose complement" / "> is `participated`.
+`phase-6-finalize/workflow/create-pr.md:205-207` now reads "… whose complement" / "> is `participated`.
 It" / "> is the ONLY member … lands there", a stranded four-word line followed by an over-long one.
 The landing introduced it directly — `git show 50f67ed2 -- …/create-pr.md` shows the rewrap — and the
 later eight→ten edits never repaired it. **CONFIRMED**; cosmetic.
@@ -493,7 +493,7 @@ the diffs:
 
 ## Summary
 
-**By severity:** 1 blocker, 5 major, 7 minor — 13 gaps, itemized in `gaps.md`.
+**By severity:** 1 blocker, 5 major, 8 minor — 14 gaps, itemized in `gaps.md`.
 
 The plan did real work and most of it holds. `_has_update_movement` is gone, the credit is a pure
 comparison against a recorded merge-candidate SHA, `observed_keys` survives only as prose, `declined`
@@ -541,7 +541,7 @@ the barrier (`branch-cleanup.md:732`), so it does not inherit a stale FIND-step 
 
 **Corrections applied.** Three drifted citations repaired
 (`test_bot_participation_contract.py:775`→`:806-807`, `_NUMBER_WORDS[taxonomy_size]` line
-`572`→`581`, `create-pr.md:201-204`→`:203-205`); the "five test surfaces / 344 tests" figure corrected
+`572`→`581`, `create-pr.md:201-204`→`:205-207`); the "five test surfaces / 344 tests" figure corrected
 to six surfaces / 355; K2 raised from six sites to eight after a second grep pass surfaced
 `workflow-integration-github/SKILL.md:129` — the deleted two-arm predicate restated in the canonical
 `fetch_findings` step body of the skill that owns the code — and

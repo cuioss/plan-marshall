@@ -19,9 +19,14 @@ Read in full: `plan.md`, `report-01.md`.
 Diff read: `git show --stat bb9ab493`, `git show bb9ab493 -- <each of the 7 changed paths>`.
 
 Ground truth is the working tree of `claude/review-apparatus-analysis-mcf8md`. Every claimed symbol
-was re-read at that state, not at the landing commit `bb9ab493`. No path outside `doc/plans/` has
-changed on this branch since the landing, so the "at HEAD" readings below are stable
-(`git diff --name-only bb9ab493 HEAD` lists only `doc/plans/**` and the landing's own seven paths).
+was re-read at that state, not at the landing commit `bb9ab493` — so a reading below is evidence about
+the current tree, not about the landing commit, and the two are distinguished wherever they differ.
+The source tree is **not** frozen since the landing: `git diff --name-only bb9ab493 HEAD` lists
+`doc/plans/**` plus the landing's own seven paths, which one later commit — `622f4484` (#1239) —
+re-touched across the ext-self-review and finalize surfaces. That commit left the noun set and every
+symbol read here undisturbed (`git log -S'commands?|checks?'` on the pattern module returns `bb9ab493`
+alone — the `git log --oneline bb9ab493..HEAD` search below, and § Residue), so the "at HEAD"
+readings below are stable — but stable by verification, not by absence of change.
 
 Searches run (all reported absences are backed by one of these):
 

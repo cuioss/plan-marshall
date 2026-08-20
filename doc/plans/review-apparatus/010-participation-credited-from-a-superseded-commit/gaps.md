@@ -267,12 +267,18 @@ without re-deriving the analysis.
   No schema-version guard exists. CONFIRMED by reading the reader and the removed writer.
 - **Impact:** A plan mid-flight across the upgrade credits participation once against a commit nobody
   reviewed — the plan's own defect class, on the migration path.
-- **Task:** Treat a row missing `reviewed_commit_sha` (or carrying an empty one) as **no usable record**
-  — either skip it when building the map, so the comment takes the guarded first-observation arm, or
-  version the artifact and ignore rows below the current version. Add a test seeding a key-only row and
-  asserting the bot resolves to `participated_stale` at an advanced HEAD.
-- **Done when:** A ledger containing only pre-upgrade key-only rows produces the same verdict as an
-  empty ledger, pinned by a test.
+- **Task:** Treat a row missing `reviewed_commit_sha` (or carrying an empty one) as an **invalid legacy
+  record** that blocks — a state distinct from both "no record" and "a usable record". Dropping such a
+  row from the map is NOT a fix: an absent key takes the first-observation arm, which returns
+  `bool(merge_candidate_sha)` (`github_pr.py:701-703`) and so credits the bot at any resolvable
+  advanced HEAD — the very fail-open path this gap names. Either carry the invalid-record state through
+  `_recorded_currency_records` and make the predicate return False for it, or version the artifact and
+  migrate the pre-upgrade rows to a real `(sha, updated_at)` before the participation loop evaluates
+  them. Add a test seeding a key-only row and asserting the bot resolves to `participated_stale` at an
+  advanced HEAD.
+- **Done when:** A ledger carrying only pre-upgrade key-only rows resolves the bot to
+  `participated_stale` at an advanced resolvable HEAD — not to `participated` — pinned by a test that
+  fails against the current reader.
 - **Suggested grouping:** workflow-integration-github / participation currency
 
 ## G9 — Derive and assert the participation-site population D0 enumerated
@@ -355,7 +361,7 @@ without re-deriving the analysis.
   (the bot delivered a usable review), not a ninth member". `_NON_PARTICIPATION_MEMBERS`
   (`:114-125`) now has **ten** members, so the correct word is "eleventh". The landing changed
   "eighth" → "ninth" correctly at the time and converted the *asserted* counts to derived
-  (`_NUMBER_WORDS[taxonomy_size]`, `:572`) but left this prose ordinal a literal that rots on every
+  (`_NUMBER_WORDS[taxonomy_size]`, `:581`) but left this prose ordinal a literal that rots on every
   taxonomy growth. Every other count restatement in the tree is currently consistent at ten
   (`automatic-review/SKILL.md:24,700`, `create-pr.md:201`,
   `workflow-pr-doctor/standards/automated-review-lifecycle.md:56`, `review_completeness.py:65,192`),
@@ -371,7 +377,7 @@ without re-deriving the analysis.
 
 - **Severity:** minor
 - **Kind:** stale-doc
-- **Where:** `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/create-pr.md:201-204`
+- **Where:** `marketplace/bundles/plan-marshall/skills/phase-6-finalize/workflow/create-pr.md:205-207`
 - **Evidence:** The blockquote now reads "… whose complement is `participated`. It" / "> is the ONLY
   member that is accounted-for rather than blocking, which is exactly why an intent-echo lands there" —
   a stranded two-word line and an over-long following line, produced by the seven→eight member edit in
@@ -381,3 +387,30 @@ without re-deriving the analysis.
 - **Task:** Re-wrap the blockquote paragraph to the file's prevailing width.
 - **Done when:** No line in the block is a stranded fragment.
 - **Suggested grouping:** phase-6-finalize / documentation hygiene
+
+## G14 — Replace the decline-consumer doc test's bare substring presence with a routing assertion
+
+- **Severity:** minor
+- **Kind:** missing-test
+- **Where:** `test/plan-marshall/phase-6-finalize/test_branch_cleanup_merge_queue_routing.py:345-372`
+  (`test_rereview_consumer_honors_head_sha_verified_as_a_decline`)
+- **Evidence:** The one test guarding the obtain-side wiring of D3 asserts only that four literals
+  appear somewhere in two markdown files: `'head_sha_verified' in doc`, `'head_sha_verified: false' in
+  doc`, `'declined' in doc`, `'{declined_bots}' in doc` over `branch-cleanup-rereview.md`, and
+  `'--declined-bots "{declined_bots}"' in barrier` over `branch-cleanup.md`. It discriminates against
+  the pre-fix state, which carried none of those strings, but it cannot tell a document that *routes*
+  the bit from one that merely *mentions* it, and it makes no statement about the two `matched`-alone
+  consumers G6 names (`automatic-review/SKILL.md:250`, `:729`) — a document could satisfy every
+  assertion while crediting a `head_sha_verified: false` outcome as a completed re-review. CONFIRMED by
+  reading the test body.
+- **Impact:** The only executable guard on the recorded-but-ignored bit is a presence check, so the
+  wiring it is supposed to pin can be broken — or left half-done, which is exactly the shipped state
+  G6 records — without the test noticing.
+- **Task:** Assert the *routing*, not the vocabulary: pin that in `branch-cleanup-rereview.md` the
+  `head_sha_verified: false` polarity is the antecedent of the decline branch that accumulates
+  `{declined_bots}` (a structural read of the step block, not a whole-file substring), and extend the
+  same assertion over the consumer set G6 enumerates so a `matched`-alone arm fails the test.
+- **Done when:** Rewriting `branch-cleanup-rereview.md` so it mentions `head_sha_verified` without
+  routing the false polarity to `declined` fails this test, and adding a new `matched`-alone consumer
+  fails it too.
+- **Suggested grouping:** phase-6-finalize / decline accounting

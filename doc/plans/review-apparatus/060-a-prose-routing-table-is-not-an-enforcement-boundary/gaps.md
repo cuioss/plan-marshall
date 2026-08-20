@@ -282,12 +282,17 @@ corrected together.
 - **Task:** either (a) have both `cmd_pr_auto_merge` handlers add an advisory field naming the routed
   alternative when the probe reports a configured queue/train — e.g. a `routing_note` stating that
   `ci pr merge-queue` is the routed verb for a queued base — or (b) emit one structured record in
-  `ci_base.dispatch` naming the dispatched `(noun, verb)` for every merge-shaped key. Do not turn the
+  `ci_base.dispatch` for every merge-shaped key carrying the three fields D2 names: the documented
+  route for that key, the expected branch, and the verb actually dispatched. A record of the
+  dispatched `(noun, verb)` alone is NOT sufficient — it cannot show that `pr auto-merge` departed
+  from `pr merge-queue`, and it names no branch — so option (b) is equivalent to option (a) against
+  the *Done when* only if it carries the route and the branch too. Do not turn the
   sanctioned exception into a refusal: the report's preservation argument for the
   enqueue-via-auto-merge path is sound and the compliant route must keep succeeding.
-- **Done when:** an off-routing `pr auto-merge` on both providers emits a record naming the routed
-  verb it departed from, locked by a test asserting that field's presence on the queued-base path and
-  its absence (or its `enabled` form) on the unqueued one.
+- **Done when:** an off-routing `pr auto-merge` on both providers emits a record carrying D2's three
+  fields — the routed verb it departed from, the expected branch, and the verb actually dispatched —
+  locked by a test asserting those fields' presence on the queued-base path and their absence (or
+  their `enabled` form) on the unqueued one.
 - **Suggested grouping:** tools-integration-ci / routing observability
 
 ## G9 — Carry the new GitLab refusal remedy into its four doc consumers

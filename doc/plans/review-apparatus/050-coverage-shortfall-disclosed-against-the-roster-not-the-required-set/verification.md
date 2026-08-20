@@ -495,8 +495,8 @@ recomputed, and every claim about executable behaviour settled by running it rat
    snapshot in a `finally` — never via `git checkout`/`restore`/`stash`; `git status --porcelain`
    re-checked afterwards and showed no modification to any tracked file.
 
-**Outcome.** Fourteen findings re-derived independently and **upheld** (G1, G2, G4, G5, G6, G7, G9,
-G10, G11, G13, G14, G15, G16, and the D1/D3/D4 deliverable verdicts). Three **overstated** and
+**Outcome.** Sixteen findings re-derived independently and **upheld** — thirteen gaps (G1, G2, G4, G5,
+G6, G7, G9, G10, G11, G13, G14, G15, G16) plus the three deliverable verdicts D1, D3 and D4. Three **overstated** and
 corrected here: G3's impact was stated as live when it is latent behind G2 (severity kept at major,
 with the precondition now stated, because fixing G2 alone arms it); the "clean is unreachable"
 second-order paragraph called the always-`indeterminate` path a "false-alarm generator", which

@@ -55,14 +55,23 @@ without re-deriving the analysis. Thirteen entries: 3 major, 10 minor, 0 blocker
   resolve-thread failure in a way that says *the disposition was transmitted, the thread was not
   resolved* — either a separate return list or a distinguishing `reason` prefix on `untransmitted[]`
   so a consumer can tell "never sent" from "sent but not resolved", with `count_untransmitted`'s
-  documented meaning updated to match whichever is chosen. Apply the identical change to
+  documented meaning updated to match whichever is chosen. ⛔ Moving the marker earlier closes the
+  duplicate-reply hole but opens a second one: with the finding marked responded, the `already
+  responded` guard skips it on every later round, so a thread whose `RESOLVE_THREAD_MUTATION` failed
+  stays unresolved forever. Recording the failure in `untransmitted[]` is a report, not a retry path.
+  So the split MUST also persist the resolve state separately from the responded marker — a
+  `resolved`/`resolve_pending` field on the finding, or an equivalent — and give the verb a
+  resolve-only branch that re-attempts `RESOLVE_THREAD_MUTATION` for a transmitted-but-unresolved
+  finding WITHOUT re-sending the reply. Apply the identical change to
   `gitlab_pr.py:425-429`. Rewrite the `github_pr.py:1595-1605` comment so it no longer asserts that
   every retry is safe.
 - **Done when:** a test stubs a succeeding `THREAD_REPLY_MUTATION` and a failing `RESOLVE_THREAD_MUTATION`,
   runs `cmd_post_responses` twice, and asserts exactly one `THREAD_REPLY_MUTATION` call in total and an
-  `already responded` skip on the second pass; a second assertion pins that the first round does not
-  report the transmitted disposition under the same label as a never-sent one; the equivalent test
-  exists for `gitlab_pr`.
+  `already responded` skip of the *reply* on the second pass; a second assertion pins that the first
+  round does not report the transmitted disposition under the same label as a never-sent one; a third
+  pins the resolve-only retry — the second pass DOES re-attempt `RESOLVE_THREAD_MUTATION`, and a third
+  pass in which that mutation succeeds leaves the thread resolved with the reply still sent exactly
+  once; the equivalent tests exist for `gitlab_pr`.
 - **Suggested grouping:** workflow-integration-github / workflow-integration-gitlab — respond-verb failure paths
 
 ## G2 — Delete the surviving "only a missing `resolution_detail` is skipped" claim in Step 8

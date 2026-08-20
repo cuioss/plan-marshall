@@ -188,8 +188,10 @@ without re-deriving the analysis. **Eleven entries: 2 major (G1–G2), 9 minor (
   F43 recorded and fixed only in `automatic-review/SKILL.md`, whose `deficit` canonical block now
   documents the flag correctly (`:1007`).
 - **Impact:** a caller following the module's own `--help`-adjacent synopsis passes the cap to `check`
-  and not to `deficit`, making the cap-only cause recovery unreachable from documented usage — the
+  and not to `deficit`, making the cap-only cause recovery absent from this module synopsis — the
   one scenario the shared flag exists for, and the cross-command disagreement three documents forbid.
+  The flag itself stays executable on `deficit` (declared at `:1434`, and documented in the canonical
+  `deficit` block at `automatic-review/SKILL.md:1007`); it is the synopsis that is incomplete.
   plugin-doctor validates docs-against-parser, never parser-against-docs, so it stays green.
 - **Task:** Add `[--refusal-size-caps [<csv>]]` to the `deficit` synopsis line, in the same position
   it occupies on the `check` line.
