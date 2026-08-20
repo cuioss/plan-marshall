@@ -447,6 +447,20 @@ def analyze_shim_marker(marketplace_root: Path) -> list[dict]:
     ``population_size`` examined; an EMPTY population over a non-empty bundles
     tree emits its own finding so a clean result can never read as a vacuous
     pass over an unread population.
+
+    A CLEAN run carries no findings and therefore no ``population_size`` — which
+    is the only state a passing gate is ever in. Callers that need the figure on
+    a clean run take :func:`analyze_shim_marker_with_population` instead.
+    """
+    return analyze_shim_marker_with_population(marketplace_root)[0]
+
+
+def analyze_shim_marker_with_population(marketplace_root: Path) -> tuple[list[dict], int]:
+    """Return ``(findings, population_size)`` from a single derivation.
+
+    The runner publishes the examined population in its rule summaries, and it
+    must not re-derive the roster to get the number: a second walk is a second
+    chance to disagree with the one the findings were actually produced from.
     """
     marketplace_root = Path(marketplace_root)
     population = enumerate_script_files(marketplace_root)
@@ -474,10 +488,10 @@ def analyze_shim_marker(marketplace_root: Path) -> list[dict]:
                     ),
                     reason='empty_population',
                 )
-            ]
-        return []
+            ], 0
+        return [], 0
 
     findings: list[dict] = []
     for script in population:
         findings.extend(_scan_file(script, population_size))
-    return findings
+    return findings, population_size
