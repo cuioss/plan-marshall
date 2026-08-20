@@ -315,9 +315,49 @@ registry doc, never transcribed here.
 
 ## Coverage check against the gap documents
 
-Per gap id: met / not met / recorded-as-proposal. **Pending completion** — the
-checks performed so far are recorded under § Findings (CC-1..CC-3) and the
-per-gap table is written before the PR.
+Twenty-nine gap ids, each checked against **its own gap document's literal
+*Done when*** — not against this plan's restatement of it, which is a paraphrase
+and diverged in three places (060/G2, 320/G9, 320/G10, all below).
+
+| Gap | Verdict | Evidence |
+|---|---|---|
+| 040/G1 | **met** | Clean-tree gate publishes the size; `test_population_publishing_rules_report_their_size_on_a_clean_tree` asserts it with `findings == 0` alongside. |
+| 040/G2 | **met** | § D3 of `040/report-01.md` now reads 46 collected cases across 21 functions; pytest collects 46, `grep -c 'def test_'` gives 21. |
+| 040/G6 | **met** | Scoped run over a zero-population tree reports non-zero; `test_empty_population_finding_survives_scoped_run[thinking-directive]` pins it. Mutation-confirmed. |
+| 050/G1 | **met** | Both retired sentences gone; `test_measured_recall_over_the_real_marked_population` asserts 25 anchors / 4 detectable against the tree. |
+| 050/G2 | **met** | Wired into the analyze pass (the option the plan preferred); `test_shim_marker_rule_is_reachable_from_the_analyze_pass` covers it, so the catalogue claim is now true rather than corrected away. |
+| 050/G5 | **met** | Same publication as 040/G1, asserted for `analyze_shim_marker`. |
+| 060/G2 | **met** | Signature added with the mirror cross-reference. Second half — *"`060/report-01.md` § D1(c) no longer claims signature #2 names this shape"* — was **NOT met until this check found it**; that report still claimed signature #2 "already names this exact signature". Corrected. |
+| 060/G3 | **met** | Executed with the gap's literal argv `['checks','status','--plan-id','X']` against the real `ci_base` parser: stderr carries `--plan-id` and `belongs BEFORE the subcommand`. Pinned by `test_real_ci_parser_reports_a_router_flag_written_after_the_verb`. |
+| 060/G5 | **met** | Executed with the gap's literal argv: the example names `find`, not `<subcommand>`, and carries no bare `*.py`. Two tests assert both. |
+| 060/G6 | **met** | Executed with the gap's literal fixture: after-verb → one `ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED`; before-verb → none. |
+| 060/G7 | **met** | Same fixture written flag-first → no `ARGUMENT_NAMING_FLAG_UNKNOWN`. |
+| 100/G6 | **met** | Both rule ids in `rule-catalog.md` and `plugin-doctor/SKILL.md`; stated count "Six" equals the six `###` subsections. |
+| 100/G7 | **met** | `derive_population` collects all six brace-less sites (verified by name), and the analyzer publishes the unresolved fraction with a per-cause census — the gap's second arm. |
+| 100/G10 | **met** | Both tests pass; no site carries a subcommand the invocation above it does not name (asserted over the real tree); `analyze_canonical_enum_drift` still returns 0 findings. |
+| 130/G2 | **recorded as proposal** | The plan forbids narrowing in this run. Proposal recorded under § Proposals with its live sites re-derived at HEAD. The gap's own *Done when* describes the narrowing and is deliberately unmet. |
+| 130/G3 | **met** | All three literal sentences fire, the version-constraint negative does not, the real-tree anchor is green with no suppression entry. |
+| 130/G5 | **met** | Mutation-confirmed: with the skip disabled the exemption test fails; restored, it and the paired positive pass. |
+| 320/G1 | **met** | `total == 0` → `indeterminate`; a test drives `compare_pin_content` with a nonexistent `source_dir` and asserts the distinguishable reason. |
+| 320/G2 | **met** | A test drives the ADAPTER (not the constructor) into `partial is True` with `PARTIAL scan` in `render()`. Red observed first, against the unmodified adapter. |
+| 320/G3 | **met** | Two observations differing only in `content` → `indeterminate`, with an agreeing-content control. |
+| 320/G4 | **met** | The literal tree has an asserted verdict (PASS); the shape constant is renamed to the condition the code evaluates; the alternative is recorded as a proposal, not taken. |
+| 320/G6 | **met** | No docstring claims marker-aware selection; `loader_selected_version` is one expression with no marker-independent branch. The gap's literal grep for `retention.pin\|degraded fallback` exits 1. |
+| 320/G7 | **met** | Version-split → `fail` naming both versions; unreadable → `indeterminate`. |
+| 320/G8 | **met** | Pin superset → `diverged == 1`, `extra_in_pin == 1`, `evaluate` → `fail`. |
+| 320/G9 | **met** | All three steps name an invocable surface. The gap names `test_fail_verdict_states_operator_remedy_including_no_restart_and_in_run` as the test that must assert it; **this check found the assertion was only in a sibling test** and added it there too. Round 1's cold read separately found step (2) named a command that does nothing without `--apply`. |
+| 320/G10 | **met** | The gap names the export **`observe_twice`**; this run first shipped it as `observe_pair`. **Renamed by this check** so the literal name is satisfied. Covered by a fake-sleep + mutating-fixture test yielding `indeterminate`, with a quiet-tree control, and `evaluate`'s docstring names it as the supported producer. |
+| 360/G3 | **met** | The gap's literal grep exits 1; the docstring names the marker-free model; saturation is out of the load-safety conjunct; the two tests are renamed for marker-insensitivity. |
+| 460/G5 | **met** | The gap's literal grep over `test/plan-marshall/plan-retrospective/*.py` returns only `test_chat_provenance.py:270`, which the gap itself declares out of family. |
+
+**27 met, 1 recorded-as-proposal (130/G2, as the plan directs), 1 met-with-a-note
+(320/G4, whose alternative is likewise a recorded proposal).**
+
+⚠️ **Three gaps were not literally met until this check ran**, and all three were
+places where the plan's paraphrase omitted something its gap document required:
+060/G2's retraction in a sibling plan's report, 320/G9's named test, and
+320/G10's exported symbol name. Checking against the plan's restatement rather
+than the gap's own text would have recorded all three as met.
 
 ## Interaction with PR #1314 (test-module-budget campaign)
 

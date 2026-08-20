@@ -79,9 +79,13 @@ narrows the candidate space decisively, and is recorded as guidance for a future
   unknown documented subcommand (`ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN`), and canonical-forms drift, and
   explicitly handles the `tools-integration-ci:ci` shape (`_analyze_argument_naming.py:3-70`). D1(c)'s
   "doctor check" candidate would be **duplicate work** — REJECTED on that basis.
-- **The prose prevention rule ALREADY EXISTS and already names this exact signature** — `persona-plan-marshall-agent`
-  § "Never invent script subcommands", signature #2 "Top-level `--plan-id`/`--project-dir` where the
-  flag is verb-scoped" (`agent-behavior-rules.md:342`). Its own "Why" concedes the failure "is
+- **The prose prevention rule ALREADY EXISTS — but this claim was WRONG about which signature covers
+  this shape** (corrected by plan `500`, gap `060/G2`). Signature #2, "Top-level
+  `--plan-id`/`--project-dir` where the flag is verb-scoped" (`agent-behavior-rules.md`), names the
+  OPPOSITE shape: a flag written ahead of the verb that belongs after it. The CI shape is a
+  router-scoped flag written AFTER the verb that belongs before it, and the two prescribe opposite
+  moves. Plan `500` added it as signature #4, with both signatures cross-referencing each other so a
+  reader cannot collapse them. Its own "Why" concedes the failure "is
   structural" and recurs despite the rule (`:337`). This is the plan's thesis confirmed: a loaded,
   correct prose guard that still fires — a documentation-layer vacuous guard. Adding emphasis is the
   plan's explicitly REJECTED option, and nothing here argues this instance differs.

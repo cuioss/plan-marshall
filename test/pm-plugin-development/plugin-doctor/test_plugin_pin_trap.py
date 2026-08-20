@@ -317,6 +317,10 @@ def test_fail_verdict_states_operator_remedy_including_no_restart_and_in_run():
     assert 'restart does NOT fix' in verdict.remedy
     assert 'read the pinned skill file' in verdict.remedy.lower() or 'installPath' in verdict.remedy
     assert 'Do NOT write the plugin registry' in verdict.remedy
+    # Step (3) was the bare phrase "regenerate the executor" — a goal, not a
+    # command. The surface that performs it is named here as well as in the
+    # all-three-steps test below, because this is the test the gap names.
+    assert '/marshall-steward' in verdict.remedy
 
 
 def test_every_operator_repair_step_names_an_invocable_surface():
@@ -903,7 +907,7 @@ def test_shape3_literal_older_stale_beside_newest_pin_is_a_pass():
 # The paired observer — the double-sample guard's missing producer.
 # ---------------------------------------------------------------------------
 def _pin_trap_fixture(tmp_path):
-    """Return the kwargs ``observe`` / ``observe_pair`` take over a fixture tree."""
+    """Return the kwargs ``observe`` / ``observe_twice`` take over a fixture tree."""
     bundle = tmp_path / 'cache' / 'plan-marshall'
     _make_version_dir(bundle, '0.1.200', marked=False, files={'skills/s/scripts/a.py': 'print(1)\n'})
     source = tmp_path / 'source'
@@ -925,7 +929,7 @@ def _pin_trap_fixture(tmp_path):
     }
 
 
-def test_observe_pair_detects_a_store_that_changed_between_the_two_reads(tmp_path):
+def test_observe_twice_detects_a_store_that_changed_between_the_two_reads(tmp_path):
     """The paired observer takes two INDEPENDENT reads, so the guard can fire.
 
     Nothing exported a paired variant, so every caller passed the same
@@ -941,7 +945,7 @@ def test_observe_pair_detects_a_store_that_changed_between_the_two_reads(tmp_pat
         slept.append(seconds)
         pin_file.write_text('print(2)\n', encoding='utf-8')
 
-    first, second = _ppt.observe_pair(delay_seconds=0.5, sleep=_fake_sleep, **kwargs)
+    first, second = _ppt.observe_twice(delay_seconds=0.5, sleep=_fake_sleep, **kwargs)
 
     assert slept == [0.5]
     assert first != second
@@ -950,16 +954,16 @@ def test_observe_pair_detects_a_store_that_changed_between_the_two_reads(tmp_pat
     assert 'read_during_write' in verdict.reason
 
 
-def test_observe_pair_over_a_quiet_tree_reaches_a_verdict(tmp_path):
+def test_observe_twice_over_a_quiet_tree_reaches_a_verdict(tmp_path):
     """The control: with nothing changing between the reads, the pair agrees."""
     kwargs = _pin_trap_fixture(tmp_path)
 
-    first, second = _ppt.observe_pair(delay_seconds=0.0, sleep=lambda _s: None, **kwargs)
+    first, second = _ppt.observe_twice(delay_seconds=0.0, sleep=lambda _s: None, **kwargs)
 
     assert first == second
     assert evaluate(first, second, sampling_instant='2026-08-13T00:00:00Z').outcome == PASS
 
 
-def test_observe_pair_is_exported():
+def test_observe_twice_is_exported():
     """The producer is part of the module's public surface, not an internal helper."""
-    assert 'observe_pair' in _ppt.__all__
+    assert 'observe_twice' in _ppt.__all__

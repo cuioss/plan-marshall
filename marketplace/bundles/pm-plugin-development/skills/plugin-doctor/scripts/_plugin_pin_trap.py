@@ -493,7 +493,7 @@ def evaluate(
     ⛔ **Passing the SAME observation twice defeats the guard entirely.** The
     comparison then asserts that a value equals itself, which it always does, and
     the double-sample conjunct is satisfied without anything having been sampled
-    twice. :func:`observe_pair` is the supported producer: it takes two
+    twice. :func:`observe_twice` is the supported producer: it takes two
     independent reads separated by an injectable delay. ``observe`` returns one
     observation and is not a substitute for it.
     """
@@ -1040,7 +1040,7 @@ def observe(
     )
 
 
-def observe_pair(
+def observe_twice(
     *,
     delay_seconds: float = 2.0,
     sleep: Callable[[float], None] = time.sleep,
@@ -1093,7 +1093,7 @@ __all__ = [
     'loader_selected_version',
     'observe',
     'observe_cache_version_dirs',
-    'observe_pair',
+    'observe_twice',
     'read_executor_anchored_version',
     'read_registry_entry',
 ]
