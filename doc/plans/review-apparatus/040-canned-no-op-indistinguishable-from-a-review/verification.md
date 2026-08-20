@@ -715,12 +715,17 @@ trusting it. The method, precisely enough to re-run:
   must match the source character for character, emphasis markers included.
 - **Every count in both documents was re-derived.** 184 passing tests, nine tests in `TestDeficitSignal`,
   nine occurrences of `comment(s) found`, five of `unified triage pending`, fifteen `refused_awaitable`
-  mentions, eight corrected drift sites, four `deficit`-mentioning source files, eleven display buckets over
+  mentions, nine corrected drift locations in seven files (the report tallies these as eight), four
+  `deficit`-mentioning source files, eleven display buckets over
   eleven taxonomy members, three registry `rate_limit_class` declarations — all upheld by re-running the
-  searches. Two required a wider net than the obvious one. The taxonomy-count sweep needs a second pattern
-  to reach **seven** statements: a `(word)[ -]member` regex alone misses `pr-review-operations.md:248`
-  ("That taxonomy has **ten** non-participation members"), a site the report-claim audit below cites, so
-  the guard's reach is one statement of seven and the unguarded remainder is **six**. And the 98-character
+  searches. Two required a wider net than the obvious one, and one of them needed a third pass. The
+  taxonomy-count sweep reaches **nine** count-bearing *statements* across six files only with three
+  patterns: a `(word)[ -]member` regex alone misses `pr-review-operations.md:248` ("That taxonomy has
+  **ten** non-participation members"), and adding `one of ten|of the ten|ten non-participation` still
+  misses `automatic-review/SKILL.md:700` ("the ten closed non-participation members") and
+  `review_completeness.py:60` ("Ten of the eleven"), both of which a bare `\bten\b` pass over the owning
+  skills surfaces. The guard's reach is therefore one statement of nine, and the unguarded remainder is
+  **eight**. And the 98-character
   `display_detail` figure is a three-*bucket* worst case, not the template's worst case: the rendering is
   unbounded, reaching 161 over the full nine-bucket vocabulary, which is what makes relabelling an
   insufficient remedy.

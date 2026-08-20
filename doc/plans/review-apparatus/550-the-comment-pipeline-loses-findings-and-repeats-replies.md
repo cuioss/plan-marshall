@@ -71,8 +71,10 @@ documents restate a `post_responses` skip taxonomy that no longer matches the ve
 ## Goal
 
 A genuine review finding survives the producer pre-filter regardless of what text a bot's AI-agent
-prompt block happens to quote; a reply that reached the reviewer is never sent a second time, and the
-round that sent it says so truthfully; the `responded` / `responded_at` marker has a written contract
+prompt block happens to quote; a reply that reached the reviewer **and was successfully stamped** is
+never sent a second time, the one remaining duplicate-delivery window — a delivered reply whose marker
+write failed — is named in the code and in the docs rather than papered over, and the round that sent
+the reply says so truthfully; the `responded` / `responded_at` marker has a written contract
 in the store's own owning skill covering both when it is set and when it is cleared; and every
 document that describes the RESPOND loop or the AI-agent block describes what the code actually does,
 with one named actor for the strip and one owning table for the skip taxonomy.
@@ -152,8 +154,13 @@ pass counted twelve entries of which four were unanchored.
 *Done when:* a test asserts that a `pr-comment` body carrying a genuine finding marker plus an
 AI-agent block whose quoted text contains `looks good` is **not** dropped, and that the same body with
 the block removed is also not dropped — i.e. the block's presence no longer flips the verdict; the
-same test covers `ship it`, `no objection`, and `[bot]`; every pre-existing noise-filter test still
-passes; and `comment-patterns.json`'s `_note` states the threshold and why it exists.
+same test covers `ship it`, `no objection`, and `[bot]`; **an adversarial case for each of those four
+phrases is written at a body length at or below the derived threshold** — one carrying the phrase in a
+fenced code block, one in a blockquote, one in a compact `<details>` AI-agent block — and every one of
+them survives the filter, proving the length gate is not doing the work alone; a genuine bare
+acknowledgment (`looks good to me`, nothing else) is still dropped; every pre-existing noise-filter
+test still passes; and `comment-patterns.json`'s `_note` states both guards, the threshold, and why
+neither is sufficient on its own.
 
 ### D2 — A delivered reply is stamped, counted honestly, and never re-sent
 
@@ -171,6 +178,17 @@ Split the transmit from the resolve in the marker's eyes, in `github_pr.cmd_post
    there are four across the three providers; re-derive that count rather than trusting it — and on
    an error record the finding in the verb's failure channel with a reason naming the unstamped
    marker, and make the envelope `status` reflect it rather than reporting a clean `success`.
+
+   ⚠ **This reports the residual case; it does not close it.** A reply that reached the reviewer and
+   whose marker write then failed is left unstamped, so the next pass sees no marker and sends it
+   again. Reporting the marker error does not stop that. Closing it would need a provider idempotency
+   key or a durable outbox with a reconciliation pass, both of which are new infrastructure with their
+   own contract — **out of scope here** (see § Out of scope). This plan therefore **narrows its
+   guarantee** rather than over-claiming: state the narrowed guarantee in the same words in all three
+   places it is asserted — this deliverable, the § Goal sentence, and each provider verb's docstring —
+   as *a reply whose marker was successfully stamped is never re-sent*, and document the unstamped
+   residual explicitly beside it as a known duplicate-delivery window with its cause. Record the
+   idempotency-key / outbox remedy as a **proposal** in the run report, naming what it would change.
 4. **Rewrite the misleading rationale comment** above the marker check in `github_pr.py` (the "safe
    retry" sentence) and its GitLab twin so neither asserts that every retry is safe.
 
@@ -180,7 +198,9 @@ Split the transmit from the resolve in the marker's eyes, in `github_pr.cmd_post
 `RESOLVE_THREAD_MUTATION`, runs `cmd_post_responses` twice, and asserts **exactly one**
 `THREAD_REPLY_MUTATION` call in total plus an already-responded skip on the second pass; a second
 assertion pins that the first round does not report the transmitted disposition under the same label
-as a never-sent one; the equivalent test exists for `gitlab_pr`; two further GitHub tests read the
+as a never-sent one; no sentence in this plan's edits, in either provider verb's docstring, or in the
+§ Goal claims that a delivered-but-unstamped reply is protected from a resend, and each of those three
+places names that window explicitly; the equivalent test exists for `gitlab_pr`; two further GitHub tests read the
 stored finding through `_findings_core.get_finding` and assert (a) a failed **batched** post leaves
 every batch member unmarked and a second pass re-attempts them, (b) a failed thread **reply** leaves
 the finding unmarked and a second pass re-attempts it; and a test forces `mark_finding_responded` to
@@ -282,11 +302,17 @@ them cold reads.
    pre-filter scripts/comment-patterns.json`; no such path exists — the file lives under
    `workflow-integration-github/standards/`. Correct it. This wrong path is what makes the producer
    pre-filter — the file D1 turns on — hard to find.
-6. **Record that the STRIP rule is prose-enforced.** No test and no analyzer covers it. **The chosen
-   outcome, decided here:** add one sentence to `coderabbit.md` § "Trust boundary" stating that this
-   rule has no automated guard and that the recorded rationale is the regression control. Do not
-   invent a plugin-doctor rule to have one; D1 already lands the one concrete producer-stage test this
-   area needs.
+6. **Record that the STRIP rule is unenforced.** No test and no analyzer covers it, and **no
+   executable consumer step performs it** — the consumer is the triage agent reading the promoted
+   `body`, so the rule is an instruction to a reader, not a step a machine runs. **The chosen outcome,
+   decided here:** add one sentence to `coderabbit.md` § "Trust boundary" saying exactly that: the
+   rule has no automated guard, nothing in CI fails if a consumer ignores it, and the section is a
+   documented instruction rather than an enforcement boundary. ⛔ **Do not word it as prose
+   *enforcing* the rule** — no phrasing along the lines of "the recorded rationale is the regression
+   control", which claims a guard that does not exist and is the same over-claim item 1 removes. Do
+   not invent a plugin-doctor rule to have one either; D1 already lands the one concrete
+   producer-stage test this area needs, and D1's guard is on the **producer** pre-filter, not on the
+   consumer strip.
 7. **Correct the landed evidence item.** `100-coderabbit-ai-agent-block-strip-vs-extract/report-01.md`
    § D2 restates the false "the architecture already strips it" claim as evidence item 2. Correct that
    item in place and state that the D2 verdict still stands on items 1 and 3. This is a factual
@@ -298,8 +324,9 @@ them cold reads.
 *Done when:* the sweep in item 3 returns no remaining site placing a comment body or Sonar message in
 `detail`; a search for the literal `scripts/comment-patterns.json` under `marketplace/` returns
 nothing; no sentence in `coderabbit.md` or in the landed `report-01.md` asserts "no supported path by
-which a consumer re-parses this block"; `coderabbit.md` states in one sentence that the rule is
-prose-enforced with no automated guard; every hit for `Prompt for AI Agents` under
+which a consumer re-parses this block"; `coderabbit.md` states in one sentence that the rule has no
+automated guard and no executable consumer step, and asserts no enforcement of any kind for it; every
+hit for `Prompt for AI Agents` under
 `marketplace/bundles/` states STRIP, or (in `pr-agent.md`) states that no such block is emitted; and
 the two cold reads in Verification return the required answers.
 
@@ -326,9 +353,14 @@ set; every other site cross-references it instead of restating a subset.
    anywhere in the tree, so an agent executing the document must invent it. Give it an explicit
    source: the count of `responded[]` entries carrying `resolved_on_provider: true`, and state that it
    names **this round only**. D2 makes that expression exact by giving the resolve-failure path
-   `resolved_on_provider: false`. Also record both `post_responses` invocation sites derived in D0 as
-   the consumer set for `count_responded` — this document's Step 4.5 block is one of them, and it is
-   the site an earlier "sole production invoker" claim missed.
+   `resolved_on_provider: false`. Also record **the `post_responses` invocation set D0(a) derived** as
+   the consumer set for `count_responded`, enumerating **every** member of that set by file and block
+   — ⛔ **do not write a fixed count**, and do not assume the set has two members. D0(a)'s own text
+   says two is a lead: an earlier pass over the same question already missed a site, and a "sole
+   production invoker" claim before that missed another. If D0(a) returns a different population than
+   this plan anticipated, this item enumerates what D0(a) returned and the run reports the difference.
+   This document's Step 4.5 block is one member; whether it is the only other one is D0(a)'s answer,
+   not this plan's.
 4. **`workflow-integration-sonar/SKILL.md`** says the verb "is idempotent … so re-invoking the verb
    never re-POSTs the same dismissal" — incomplete, because `resolve_finding` clears the marker on a
    changed disposition, so a re-decided dismissal *does* re-POST. Extend it with the
@@ -355,7 +387,9 @@ set; every other site cross-references it instead of restating a subset.
 *Done when:* a search under `marketplace/bundles/` for the phrase `Only a finding with no` returns
 nothing; neither `verification-feedback.md` Step 8 nor `automated-review-lifecycle.md` § Step 4.5
 states any skip taxonomy of its own; `automated-review-lifecycle.md` states the source expression for
-`threads_resolved` and names both invocation sites as the consumer set; the Sonar `SKILL.md` and
+`threads_resolved` and enumerates every member of the D0(a)-derived invocation set as the consumer
+set, with a test that compares that enumeration against the D0(a) derivation and fails when a member
+is missing — so the document cannot fall behind a newly added invocation site; the Sonar `SKILL.md` and
 `sonar.py` both state that a re-decided dismissal re-transmits; no comment or document enumerates the
 marker's readers as a two-element set; and the GitHub `SKILL.md` self-response paragraph no longer
 claims the bound backs the thread-reply case.
@@ -380,6 +414,13 @@ claims the bound backs the thread-reply case.
   filed as real feedback; widening it would drop genuine reviewer comments — trading this plan's
   repetition defect for a second instance of its loss defect. D2 removes the loop instead of bounding
   it.
+- **A provider idempotency key or a durable outbox for the RESPOND verb.** This is what would close
+  the delivered-but-unstamped duplicate-delivery window D2 item 3 names, rather than merely reporting
+  it. Both are new infrastructure — a per-disposition key the provider honours across rounds, or a
+  write-ahead record plus a reconciliation pass — with their own storage contract and their own
+  consumer-derivation obligation, and neither can be exercised against a real provider from a cloud
+  run. D2 narrows the guarantee and documents the residual instead, and the run records the remedy as
+  a proposal.
 - **Unifying the three providers' failure-channel field names** (`untransmitted[]` on GitHub,
   `failures[]` on GitLab and Sonar). D2 adds `resolved_on_provider` and `resolve_error` where they are
   needed and leaves the existing field names alone: a cross-provider return-shape rename is a separate

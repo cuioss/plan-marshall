@@ -309,8 +309,10 @@ one observable at all.
   and `required_reviewed` **unconditionally**, as explicit empty lists rather than omitted lines, so
   an absent population is visible instead of inferred. This is the plan's own principle applied to
   its own output: the empty population is the finding.
-- **Update every restatement in lock-step (040/G2).** The three-member vocabulary is restated at five
-  sites — `review_completeness.py` around lines 171 (the TOON shape), 175–176 (the
+- **Update every restatement in lock-step (040/G2).** The existing verdict vocabulary — whose
+  member count is a lead to re-derive from the `DEFICIT_*` constants, not a figure to carry, since
+  this bullet's own sibling widens it by more than one member — is restated at several
+  sites: `review_completeness.py` around lines 171 (the TOON shape), 175–176 (the
   "emitted only when non-empty" annotations, which this fix invalidates), 283–285, and 646–647
   (`assess_deficit`'s Returns); `bot-participation-contract.md` around lines 554–559; and
   `automatic-review/SKILL.md` around lines 1021–1024. **Re-derive that list by searching the tree** —
@@ -665,8 +667,11 @@ Beyond each deliverable's *Done when*:
    no trailing period. A pattern for exactly this already exists at
    `test/plan-marshall/phase-6-finalize/test_pre_submission_self_review_verdict.py` (a test that
    parses another step's SKILL.md verdict literals) — copy its shape rather than inventing one.
-   Additionally assert a **bounded** worst case for the composed Branch A string over a roster
-   carrying one reviewer in every bucket.
+   Additionally assert a **bounded** worst case for the composed Branch A string over **both**
+   unbounded axes: a roster carrying one reviewer in every bucket, and counts large enough to drive
+   the numeric ceiling (the leading `{N}`, a per-bucket count, and the `+K more` remainder each taken
+   well past the ceiling). A budget proved only over bucket populations leaves the digit-width axis
+   unbounded.
 5. **Prove the legend guard can fail.** Temporarily add a grade returnable by `_grade_comparison`
    and absent from `comparison_states`, confirm the widened test goes red, then revert. Record the
    before/after result in the report. A guard nobody has seen fail is not yet a guard.
