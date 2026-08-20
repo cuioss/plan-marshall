@@ -183,7 +183,7 @@ def test_a_malformed_descriptor_emits_a_warning_naming_the_file(tmp_path, monkey
     logged: list[tuple[str, str, str, str]] = []
     monkeypatch.setattr(
         _pyproject_cmd_discover, 'log_entry',
-        lambda *args: logged.append(args),  # type: ignore[arg-type,misc]
+        lambda *args: logged.append(args),
     )
     module = tmp_path / 'broken'
     (module / 'tests').mkdir(parents=True)
@@ -216,7 +216,7 @@ def test_a_malformed_target_descriptor_is_visible_rather_than_killing_the_edge_s
     logged: list[tuple[str, str, str, str]] = []
     monkeypatch.setattr(
         _pyproject_cmd_discover, 'log_entry',
-        lambda *args: logged.append(args),  # type: ignore[arg-type,misc]
+        lambda *args: logged.append(args),
     )
     for name, descriptor in (
         ('sample_core', '[project\nname = "sample-core"\n'),  # unbalanced bracket
