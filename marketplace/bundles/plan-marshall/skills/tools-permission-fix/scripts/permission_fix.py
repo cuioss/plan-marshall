@@ -75,8 +75,10 @@ OVERLY_BROAD_PYTHON = 'Bash(python3:*)'
 # permission-DSL knowledge of its own — the two constants above, the
 # ``Skill(...)`` / ``SlashCommand(...)`` wildcards it generates, and the
 # timestamp patterns it parses. Relocating those is the rest of the
-# grammar-in-a-general-script class, registered open in the multiplattform
-# epic's coupling inventory and not scoped here.
+# grammar-in-a-general-script class. It is registered open in the multiplattform
+# epic's coupling inventory, in its own §B row naming these symbols — a
+# ``.claude``-literal sweep does not catch them, because the grammar half
+# carries no path literal — and it is not scoped here.
 
 # Timestamp patterns for consolidation
 TIMESTAMP_PATTERN = re.compile(r'^(\w+)\((.*/)?(.+)-(\d{4}-\d{2}-\d{2}-\d{6})\.(\w+)\)$')

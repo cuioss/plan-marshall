@@ -327,27 +327,36 @@ target as an example of a tree a build extension may route as `production`.
 Reported, not silently adopted: half of D5 was already done, and this run's contribution there is a
 wording change, not a coupling removal.
 
-### The residual sweep found three clusters beyond the plan's five
+### The residual sweep beyond the plan's five clusters
 
 The claim table required "anything beyond the five clusters above … is reported, not silently
 adopted or skipped". The sweep over `marketplace/bundles/**` (both quote styles, segment-wise
 included), discarding `platform-runtime` internals and the sanctioned multi-root resolvers, found
-three live sites outside the five clusters. None was adopted; all three are registered in the
-coupling inventory §B with no plan, which is the epic's mechanism for not losing a scoping
-exclusion:
+these. None was adopted.
+
+**Registered open in the coupling inventory §B**, which is the epic's mechanism for not losing a
+scoping exclusion:
 
 - `extension-api/scripts/configurable_contract.py` — the same segment-wise `.claude/skills`
   construction D4 closed, one file over in the same skill. The two were never registered together,
   so this half survived.
-- `marshall-steward/scripts/bootstrap_plugin.py` — branches on the target name and composes each
-  target's roots inline. Registered with the caveat that the bootstrap runs before the plugin is
-  resolvable, so the remedy needs establishing rather than assuming.
 - `tools-marketplace-inventory/scripts/_dep_index.py` — resolves its `project` scope from its own
   `CLAUDE_DIR` constant while the `plugin-cache` scope beside it routes through the layout op.
+- `permission_fix.py`'s remaining permission-DSL knowledge — the executor and broad-python
+  constants, the `Skill(…)`/`SlashCommand(…)` wildcard generators, and the timestamp-consolidation
+  patterns. Registered by verification round 4, which found a code comment in that file already
+  asserting the registration before it existed.
 
-A fourth was recorded against an existing row rather than a new one: `permission_common.py` and
+**Recorded against an existing row rather than a new one:** `permission_common.py` and
 `permission_fix.py` are bound to `claude_runtime` by direct import rather than through the registry
 (F25), and the settings mapping crosses the boundary as an argument (F4).
+
+**Found, then withdrawn:** `marshall-steward/scripts/bootstrap_plugin.py`. The sweep registered its
+per-target root detection as open work; the inventory's own "Confirmed clean" section already
+sanctions exactly those symbols as Claude-specific-by-design, and the plan's claim table had told
+the sweep to discard sanctioned resolvers. Registering it was the sweep's error, and round 3 caught
+the document asserting both sides of one question. Named here rather than deleted, because a site
+the sweep examined and *correctly* dismissed is different evidence from one it never looked at.
 
 ### Verification round 1 — dispositions
 
@@ -379,7 +388,7 @@ per instance, so one defect appearing three times is three rows.
 | F20 | round 1 | `credentials.py` edited and not named in the brief's own list of knowingly-touched files | **reported** — now in the surface table; the same commit's F8 closes the inconsistency it left |
 | F21 | round 1 | the claim table's required record of the schema addition was absent — the report was `_pending_` | **fixed** — recorded above |
 | F22 | round 1 | the stale `_BOOKKEEPING_PREFIXES` premise and the divergence were unreported | **fixed** — recorded above |
-| F23 | round 1 | the sixth residual cluster was registered in the inventory but not reported | **fixed** — recorded above, with the other two |
+| F23 | round 1 | the sixth residual cluster was registered in the inventory but not reported | **fixed** — recorded above, in § "The residual sweep beyond the plan's five clusters", alongside every other site the sweep found and what became of each |
 | F24 | round 1 | `protect-path` saved unconditionally, where the retired caller saved only on a change | **fixed** — the write is now conditional, pinned by a byte-equality test on an idempotent re-run |
 | F25 | round 1 | D1 does not route through the `Runtime` op surface, so principles §6's cost bar is unmet for it while D3 meets it; the asymmetry was undeclared | **declared, not fixed.** Bound: behaviour is identical to `origin/main` — verified in round 2, which read `origin/main`'s `permission_common` and confirmed it already imported the settings-path and load/save helpers from `claude_runtime` the same way, and that the rendered default set is byte-identical under every `$HOME` shape including the `resolve_home()` fallback. The runtime registry `platform_runtime._REGISTRY` holds `claude` and `opencode`; the *build* registry holds three targets, and `pr-agent` has no `Runtime` at all. Closing it needs either a new `Runtime` operation — which this plan's Out of scope forbids — or the `permission_common` restructure the inventory now registers. Stated in the D1 section, in the code, and in the inventory |
 | F26 | round 1 | `_project_skill_trees` re-implemented `marketplace_paths._resolve_skill_root` inline | **fixed** — it calls the shared helper |
@@ -442,6 +451,57 @@ way.
 | R3-08 | round 3 | a fourth behavioural difference was undisclosed: an unregistered `runtime.target` now errors instead of silently writing Claude rules, and the policy diverges from `_invoke_layout_op`'s fallback | **fixed** — disclosed, with why the two differ and why harmonising them is out of scope |
 | R3-09 | round 3 | `proposed_count` was the R2-10 coincidence one field over — the only dry-run test started from an empty deny list, so `proposed_count` and `rules_total` were the same number and a confusion between them was invisible | **fixed** — a dry run against a partly-populated deny list separates them |
 | R3-10 | round 3 | two boundary inputs reachable from the CLI that `tools-permission-fix/SKILL.md` now advertises: protecting **the home directory itself** rendered `Bash(python3 -c *.*)` — a deny rule matching very nearly every inline script — and naming **one directory twice** reported `rules_total: 38` while writing 19, re-creating one level up the over-count the per-path de-duplication exists to remove | **fixed, both.** `_tilde_form` renders home as bare `~`, so the distinctive segment falls back to the absolute path instead of `.`; `protect-path` de-duplicates across the paths one call names. Guarded by four new tests, including one that a collapse of two genuinely distinct paths would fail. The path-containing-`)` case round 3 also noted is a pre-existing escaping class it did not raise, and this run does not either |
+
+### Verification round 4 — dispositions
+
+Round 4 was commissioned to test round 3's diagnosis: that the recurring failure lives in the **fix
+step**, so each round finds exactly one instance of "the previous round's fix didn't fully land".
+
+**It recurred, for the third round running** — and one layer deeper than before. Nine of round 3's
+ten closures held under independent re-derivation; the tenth landed in the artifact and not in the
+sentence *about* the artifact. Worse, the same shape was then found in a claim written by **round
+1** that rounds 2 and 3 had both walked past.
+
+| # | Source | Finding | Disposition |
+|---|---|---|---|
+| R4-01 | round 4 | R3-01 withdrew the `bootstrap_plugin.py` row from the inventory, but the report section asserting that registration was not updated: it still read "three live sites … all three are registered in the coupling inventory §B", and F23's row inherited the over-count | **fixed** — the section is restructured by *what became of each site* rather than by a count, and names the withdrawn one explicitly. A site the sweep examined and correctly dismissed is different evidence from one it never looked at, so it is named rather than deleted |
+| R4-02 | round 4 | a **shipped code comment** in `permission_fix.py` — written by round 1's F3 fix — claimed its residual DSL knowledge was "registered open in the multiplattform epic's coupling inventory". No row named it: the one row mentioning that file registers a different coupling entirely | **fixed by registering it.** The claim named real open work, so the honest close is the row, not a retraction: §B now carries a row naming `EXECUTOR_PERMISSION`, `OVERLY_BROAD_PYTHON`, the `Skill(…)`/`SlashCommand(…)` generators and the timestamp patterns, as the same grammar-in-a-general-script class `workflow-permission-web` already holds. The comment now points at that row |
+| R4-03 | round 4 | `contract.md` documented `protect-path`'s response as `paths_protected` and `rules_total`, omitting `proposed_count` — and its only dry-run example shows `proposed_additions`, which this operation never returns. The plan required the schema addition be made "not silently" | **fixed** — the op-schema document names `proposed_count`, and says why this operation substitutes a count for the additions list |
+| R4-04 | round 4 | the `tools-permission-doctor` row this run rewrote asserts the skill "never writes itself"; its `scripts/permission_common.py` exposes `save_settings` and now `ensure_default_permissions` | **fixed** — the row describes what the `detect-*` subcommands do instead of asserting an absolute about the directory. No doctor entry point writes, so the original claim was true of the CLI and false of the skill; the weaker sentence is the one that is true of both |
+| R4-05 | round 4 | the newly-corrected § "Resolution Priority" framed its bullets as "the preferences the `tools-permission-*` selectors apply", under which the pre-existing "Global settings always apply as baseline" bullet is false — no selector applies a global baseline | **fixed** — global scope is described as a separate scope addressed by `--scope global`, outside either project preference |
+
+**Round 4's closure checklist, re-derived rather than asserted.** Its recommendation was that a
+fifth *general* round would not terminate — each round's primary surface is the prose the previous
+round wrote — and that what closes the loop is a targeted pass over an enumerable population. That
+checklist was run:
+
+1. The residual-sweep section carries no count and no registration claim for `bootstrap_plugin.py`;
+   F23's row matches. Re-derived by grep for the retired phrasings: no hits.
+2. Every "registered open" / "sanctioned" claim this diff adds under `marketplace/` — five of them —
+   was checked against the **Coupling column of the row it points at**, not merely the row's
+   existence. All five now hold: the layout docstring's two sanctioned sites are both named in the
+   Confirmed-clean paragraph; the `permission_common` module docstring and
+   `ensure_default_permissions` both point at the direct-import row, which covers that binding; the
+   `claude_runtime` section comment points at the same row's settings-mapping half; and
+   `permission_fix.py`'s comment points at the row R4-02 added, which names each symbol it cites.
+3. `proposed_count` appears in `contract.md`'s `protect-path` documentation.
+
+**What round 4 confirmed clean**, listed because an empty finding set is otherwise indistinguishable
+from a check that examined nothing: the home-directory guard is strongly non-vacuous — reverting
+`_tilde_form` fails all four of its assertions, positives included, so it is not carried by its
+negatives; the three deny-rule input classes were re-verified **by executing both the retired and
+the current builder** (byte-identical under `$HOME`; de-duplicated outside it; exactly nine `~2/`
+rules dropped for a sibling of `$HOME`); the `no-op` degrade end to end for `opencode`, the error
+path for an unregistered target, and the Claude default for an absent `marshal.json`; 21395 collected
+== 21381 + 14; the surface table's ten rows complete; and the disposition tables contiguous across
+F1–F30, R2-01–R2-15, R3-01–R3-10.
+
+**Bounded observations round 4 raised and did not treat as findings**, recorded so they are not
+lost: `protect-path` does not normalize its path argument, so `"$HOME/"` yields a double-slash rule,
+`"./creds"` yields rules that describe more ground than they cover, and `"/"` yields
+`Bash(python3 -c */*)`. The retired builder used the raw string identically, and the credentials
+caller passes one absolute path, so this is a pre-existing shape reachable only by CLI misuse.
+`_tilde_form` is path-lexical, so a symlink into the home directory renders absolute.
 
 ## Reviewer participation
 

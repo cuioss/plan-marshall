@@ -17,11 +17,13 @@ whichever file is more specific to the question it is answering.
 **For reading/discovery:**
 - If `.claude/settings.local.json` exists, it is read; otherwise `.claude/settings.json` is read
 - Local settings therefore take precedence over project settings on this path
-- Global settings always apply as baseline
 
 **For writing:**
 - If `.claude/settings.json` exists, write to it (version-controlled)
 - Otherwise, write to `.claude/settings.local.json` (personal)
+
+Global settings (`~/.claude/settings.json`) are a separate scope, addressed by `--scope global`
+rather than by either preference above; the project selectors never fold them in.
 
 Both selectors return a single path, so neither direction merges the two files — a read that lands
 on one of them does not see the other. The single home for both is

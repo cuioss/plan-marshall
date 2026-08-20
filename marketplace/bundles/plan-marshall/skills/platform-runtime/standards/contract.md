@@ -419,7 +419,7 @@ Apply hygienic fixes to permission configuration.
 
 `--permissions` carries the operation's semantic arguments, not one fixed kind of value: permission patterns for `add`, `remove` and `ensure`; **directory paths** for `protect-path`; nothing for `normalize` and `consolidate`.
 
-`protect-path` is the goal-based deny-rule operation: the caller names directories to protect, and the target renders whatever rules express that on its own permission model and writes them itself. No rule text crosses the boundary in either direction, so the response carries counts (`paths_protected`, `rules_total`) rather than rendered rules. It is the one fix operation that writes the deny list rather than the allow list.
+`protect-path` is the goal-based deny-rule operation: the caller names directories to protect, and the target renders whatever rules express that on its own permission model and writes them itself. No rule text crosses the boundary in either direction, so the response carries counts rather than rendered rules — `paths_protected` and `rules_total` always, and `proposed_count` in place of the other operations' `proposed_additions` under `--dry-run`, since listing the additions would return the rule text this operation exists to keep inside the target. It is the one fix operation that writes the deny list rather than the allow list.
 
 It is also the one that **writes only when it changed something**: the other operations re-serialize the settings file on every non-dry-run call, while `protect-path` returns without writing when `changes_applied` is `0`. That asymmetry is deliberate — the operation is expected to be re-run for its idempotence, and an operator watching a settings file should not see it modified by a call that had no effect.
 
