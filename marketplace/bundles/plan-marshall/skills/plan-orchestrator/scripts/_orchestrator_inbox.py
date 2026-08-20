@@ -981,14 +981,17 @@ def find_stream_end_marker(inbox_dir: Path, epic: str, sender_id: str) -> str | 
     must stay closed across a drain is a larger design question this guard does
     not settle.
 
-    **Cost:** the scan reads and fully validates every message queued in
-    ``inbox/`` until it finds a match, so both callers pay O(queue) file reads
-    per call — a write and a close-stream each become linear in the queue depth.
-    That is accepted rather than optimised: the queue is drained between plans
-    and is small by construction, and the alternative (an index, or trusting the
-    filename) would either add a second source of truth or honour a marker the
-    validator would reject. Revisit only if a queue is ever allowed to grow
-    unbounded.
+    **Cost, stated precisely because the two bounds differ.** The enumeration is
+    O(queue): :func:`list_messages` lists the directory once. The FILE READS are
+    not — the loop skips a path whose filename sender segment does not match
+    ``sender_id`` *before* opening it, so ``read_text`` and
+    :func:`validate_envelope` run at most once per message **that sender** has
+    queued. So a write costs one directory listing plus O(this sender's queued
+    messages) reads, not O(queue) reads. Both are accepted rather than optimised:
+    the queue is drained between plans and is small by construction, and the
+    alternative (an index, or trusting the filename) would either add a second
+    source of truth or honour a marker the validator would reject. Revisit only
+    if a queue is ever allowed to grow unbounded.
 
     Args:
         inbox_dir: The epic's ``inbox/`` directory.
@@ -1773,9 +1776,13 @@ def cmd_inbox_close_stream(args: Any) -> dict[str, Any]:
     ``--reason`` note, or a default sentence) — so no message-class branch is
     needed anywhere; the terminal signal rides ``lifecycle`` alone.
 
-    The drain reads the closure from ``inbox list``'s ``closed_senders``: an
-    empty ``live_count`` with the sender present there is a *finished* stream,
-    distinct from an empty queue that may yet receive more.
+    The drain reads the closure from ``inbox list``'s ``closed_senders``. That is
+    one of THREE zeros, not one of two: ``live_count: 0`` with the sender present
+    in ``closed_senders`` and ``invalid_count: 0`` is a *finished* stream;
+    ``live_count: 0`` with an empty ``closed_senders`` and ``invalid_count: 0`` is
+    an *empty* queue that may yet receive more; and ``live_count: 0`` with
+    ``invalid_count > 0`` is *blocked* — nothing drainable, but messages the drain
+    refuses to consume. See ``standards/inbox-envelope.md`` § Drain semantics.
 
     **Idempotent.** Closing a stream that is already closed returns SUCCESS
     naming the existing marker, with ``already_closed: true``, and allocates

@@ -186,7 +186,7 @@ This mirrors the per-lesson disposition obligation [`lessons-handling.md`](lesso
 
 ### Step 6: Log and set the resume anchor
 
-**Under inbox scan, state WHICH KIND OF ZERO a drained queue was, from `live_count` and `closed_senders` — never from `count`.** `count` is the enumerated total, so it says only how many files were there; it cannot distinguish a queue that has nothing left from one whose senders have all declared they will send no more. The `inbox list` payload carries the discriminator directly:
+**Under inbox scan, state WHICH KIND OF ZERO a drained queue was, from `live_count`, `closed_senders` AND `invalid_count` together — never from `count`, and never from `live_count` alone.** `count` is the enumerated total, so it says only how many files were there; it cannot distinguish a queue that has nothing left from one whose senders have all declared they will send no more. The `inbox list` payload carries the discriminator directly:
 
 | `live_count` | `closed_senders` | `invalid_count` | The conclusion to record |
 |---|---|---|---|
