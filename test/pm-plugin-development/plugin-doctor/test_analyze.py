@@ -2394,3 +2394,148 @@ def test_hardcoded_model_fires_on_source_of_truth(monkeypatch):
 # =============================================================================
 # Main
 # =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Rule 5: ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED, and the router-flag-first
+# invocation shape the extractor previously read as having no subcommand.
+# -----------------------------------------------------------------------------
+
+_ROUTER_FLAG_NOTATION = 'plan-marshall:manage-tasks:manage-tasks'
+
+
+def _write_router_flag_fixture(tmp_path: Path, invocation: str) -> Path:
+    """A script with a root-declared ``--plan-id`` and a verb declaring ``--status``.
+
+    ``invocation`` is the text written after the notation on the documented
+    line, so a test controls only where the router flag sits relative to the
+    verb.
+    """
+    marketplace_root = _build_fixture_root(tmp_path)
+    write_dispatching_executor(tmp_path / '.plan', [_ROUTER_FLAG_NOTATION])
+    _write_fake_script(
+        marketplace_root,
+        _ROUTER_FLAG_NOTATION,
+        subcommands={'list': ['status']},
+        root_flags=['plan-id'],
+    )
+    _write_skill_md(
+        marketplace_root,
+        'plan-marshall',
+        'manage-tasks',
+        '# Manage tasks\n\n'
+        '```bash\n'
+        f'python3 .plan/execute-script.py {_ROUTER_FLAG_NOTATION} {invocation}\n'
+        '```\n',
+    )
+    return marketplace_root
+
+
+def test_router_flag_after_the_verb_is_reported_as_misplaced(tmp_path):
+    """A root-declared flag written AFTER the verb is reported, naming the fix.
+
+    The unknown-flag rule structurally cannot see this: it judges against the
+    accept-set widened with the root's own flags, so a root flag is in every
+    subcommand's set by construction and can only ever be accepted there.
+    """
+    marketplace_root = _write_router_flag_fixture(tmp_path, 'list --plan-id foo')
+
+    findings = _findings_by_rule(
+        analyze_argument_naming(marketplace_root), 'ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED'
+    )
+
+    assert len(findings) == 1
+    assert findings[0]['details']['flag'] == 'plan-id'
+    assert findings[0]['details']['subcommand'] == 'list'
+    assert '--plan-id VALUE list' in findings[0]['description']
+
+
+def test_router_flag_before_the_verb_is_not_reported(tmp_path):
+    """The control: the CORRECT spelling produces no placement finding.
+
+    Without it the rule would be indistinguishable from one that reports every
+    root flag on every documented call.
+    """
+    marketplace_root = _write_router_flag_fixture(tmp_path, '--plan-id foo list')
+
+    assert _findings_by_rule(
+        analyze_argument_naming(marketplace_root), 'ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED'
+    ) == []
+
+
+def test_router_flag_first_invocation_resolves_its_verbs_own_flags(tmp_path):
+    """A flag-first invocation is judged against its VERB, not the root alone.
+
+    The extractor required the token after the notation to be the verb, so a
+    router-flag-first call parsed as having no subcommand and every flag on it
+    was judged against the root's flag set — reporting the verb's own
+    ``--status`` as unknown. The correctly-written form was the one that failed.
+    """
+    marketplace_root = _write_router_flag_fixture(tmp_path, '--plan-id foo list --status open')
+
+    findings = analyze_argument_naming(marketplace_root)
+
+    assert _findings_by_rule(findings, 'ARGUMENT_NAMING_FLAG_UNKNOWN') == []
+    assert _findings_by_rule(findings, 'ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN') == []
+    assert _findings_by_rule(findings, 'ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED') == []
+
+
+def test_router_flag_first_invocation_resolves_the_same_verb_as_flag_last(tmp_path):
+    """Both spellings resolve to the SAME ``(subcommand, flags)`` pair.
+
+    Asserted on the extractor directly and positively, so a regression that
+    merely stopped emitting findings for both forms is still caught.
+    """
+    extract = _analyze_argument_naming_mod._extract_invocations
+    md = create_temp_file(
+        f'```bash\n'
+        f'python3 .plan/execute-script.py {_ROUTER_FLAG_NOTATION} --plan-id foo list --status open\n'
+        f'python3 .plan/execute-script.py {_ROUTER_FLAG_NOTATION} list --status open --plan-id foo\n'
+        f'```\n',
+        suffix='.md',
+    )
+
+    flag_first, flag_last = extract(Path(md))
+
+    assert flag_first.subcommand == 'list'
+    assert flag_last.subcommand == 'list'
+    assert sorted(_flags_in(flag_first.all_flag_text)) == ['plan-id', 'status']
+    assert sorted(_flags_in(flag_last.all_flag_text)) == ['plan-id', 'status']
+    # The placement rule reads only the post-verb portion, and that is where the
+    # two spellings must differ.
+    assert _flags_in(flag_first.rest) == ['status']
+    assert sorted(_flags_in(flag_last.rest)) == ['plan-id', 'status']
+
+
+def _flags_in(text: str) -> list[str]:
+    return [m.group('flag') for m in _analyze_argument_naming_mod._FLAG_TOKEN_RE.finditer(text)]
+
+
+def test_router_flag_placement_stays_silent_on_an_underived_subcommand(tmp_path):
+    """Fail-closed: an unknown verb flag surface yields no placement claim.
+
+    ``None`` means the surface was never derived — asserting placement against
+    it would manufacture a finding out of the uncertainty the marker exists to
+    signal.
+    """
+    marketplace_root = _build_fixture_root(tmp_path)
+    script_index = {
+        _ROUTER_FLAG_NOTATION: _analyze_argument_naming_mod._ScriptEntry(
+            subcommands={'list': None},
+            root_flags={'plan-id'},
+            subcommand_own_flags={'list': None},
+        )
+    }
+    _write_skill_md(
+        marketplace_root,
+        'plan-marshall',
+        'manage-tasks',
+        '# Manage tasks\n\n'
+        '```bash\n'
+        f'python3 .plan/execute-script.py {_ROUTER_FLAG_NOTATION} list --plan-id foo\n'
+        '```\n',
+    )
+
+    assert _analyze_argument_naming_mod.scan_router_flag_placement(
+        marketplace_root, script_index
+    ) == []

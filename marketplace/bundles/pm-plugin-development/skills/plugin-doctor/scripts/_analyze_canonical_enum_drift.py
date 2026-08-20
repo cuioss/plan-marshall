@@ -255,14 +255,20 @@ def _enum_sites_in_skill(
             continue
         if not in_fence:
             continue
+        # Every line is searched for a notation, not only the first one that
+        # matches: a single fence routinely documents SEVERAL invocations, and
+        # latching on the first one scoped every enum below it to that first
+        # invocation's subcommand — so a correctly-documented second invocation
+        # was compared against the wrong flag's choices. A line carrying no
+        # notation (a continuation line, or an enum on its own line) keeps the
+        # invocation above it, which is the attribution the reader sees.
+        notation_match = _NOTATION_RE.search(raw)
+        if notation_match:
+            block_notation = notation_match.group('notation')
+            block_path = _extract_subcommand_path(notation_match.group('rest'))
         if block_notation is None:
-            notation_match = _NOTATION_RE.search(raw)
-            if notation_match:
-                block_notation = notation_match.group('notation')
-                block_path = _extract_subcommand_path(notation_match.group('rest'))
-        if block_notation is None:
-            # Enum lines before the notation line in a block cannot be attributed;
-            # in practice the notation is always the block's first line.
+            # An enum ABOVE the block's first invocation line has no invocation
+            # to attribute it to, so there is no script to compare it against.
             continue
         for match in _ENUM_TOKEN_RE.finditer(raw):
             members = _split_enum_members(match.group('members'))

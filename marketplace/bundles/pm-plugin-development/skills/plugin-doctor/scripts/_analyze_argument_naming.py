@@ -83,7 +83,7 @@ Rule IDs registered
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from _doctor_shared import Finding
@@ -103,8 +103,9 @@ RULE_NOTATION_INVALID = 'ARGUMENT_NAMING_NOTATION_INVALID'
 RULE_SUBCOMMAND_UNKNOWN = 'ARGUMENT_NAMING_SUBCOMMAND_UNKNOWN'
 RULE_FLAG_UNKNOWN = 'ARGUMENT_NAMING_FLAG_UNKNOWN'
 RULE_CANONICAL_FORMS_DRIFT = 'ARGUMENT_NAMING_CANONICAL_FORMS_DRIFT'
+RULE_ROUTER_FLAG_MISPLACED = 'ARGUMENT_NAMING_ROUTER_FLAG_MISPLACED'
 
-# Opt-in cluster descriptor. The four ARGUMENT_NAMING_* rules are produced by a
+# Opt-in cluster descriptor. The ARGUMENT_NAMING_* rules are produced by a
 # single ``analyze_argument_naming`` pass gated atomically by the
 # ``argument_naming`` --rules token, so the cluster is represented by ONE
 # descriptor whose rule_id is that token; the registry derives the opt-in set
@@ -128,9 +129,26 @@ RULE_DESCRIPTOR = RuleDescriptor(
 # plus the immediately following subcommand and the rest of the line for
 # downstream flag extraction. The line-start anchor is intentionally
 # permissive — code blocks may indent and prose may use inline backticks.
+# Leading ROUTER-FLAG run, consumed before the verb is located. A router-scoped
+# flag is declared on the root parser and therefore belongs BEFORE the verb, so
+# a correctly-written invocation puts it there — and the pattern that required
+# the token immediately after the notation to be the verb then read such a call
+# as having NO subcommand, judged its flags against the root set alone, and
+# reported the verb's own flags as unknown. Exactly backwards: the correct
+# spelling was the one that got flagged.
+#
+# ``[VALUE]`` is consumed when the following token is not itself a flag. That
+# rule cannot distinguish a BOOLEAN router flag from one taking a value, so
+# ``--dry-run list`` reads ``list`` as the value and resolves to no subcommand —
+# the same answer the pattern gave before this run, so the ambiguity costs no
+# coverage that existed. Resolving it would need the root flag surface, which
+# this extractor does not have (it runs before the index is consulted).
+_ROUTER_FLAG_PREFIX = r'(?:\s+--[A-Za-z][A-Za-z0-9_\-]*(?:=\S+)?(?:\s+(?!-)\S+)?)*'
+
 _INVOCATION_RE = re.compile(
     r'python3\s+\.plan/execute-script\.py\s+'
     r'(?P<notation>[A-Za-z0-9_\-]+:[A-Za-z0-9_\-]+:[A-Za-z0-9_\-]+)'
+    r'(?P<leading>' + _ROUTER_FLAG_PREFIX + r')'
     r'(?:\s+(?P<subcommand>[a-z][A-Za-z0-9_\-]*))?'
     r'(?P<rest>.*)$'
 )
@@ -171,7 +189,20 @@ class _Invocation:
     line: int  # 1-based
     notation: str
     subcommand: str | None
-    rest: str  # trailing portion of the line for flag extraction
+    rest: str  # portion of the line AFTER the verb
+    leading: str = ''  # router flags written BEFORE the verb
+
+    @property
+    def all_flag_text(self) -> str:
+        """Every flag on the line, wherever it was written relative to the verb.
+
+        The two portions are kept apart on the record rather than re-derived
+        from a concatenation: re-running the leading-flag pattern over
+        ``leading + rest`` would greedily swallow the post-verb flags too, and a
+        misplaced flag would then be invisible to the rule that exists to find
+        it.
+        """
+        return self.leading + self.rest
 
 
 @dataclass
@@ -198,11 +229,22 @@ class _ScriptEntry:
     The two markers stay independent for the reason the shared ``ParserNode``
     docstring gives: collapsing them would let an unknown flag set suppress
     verb validation that WAS confidently derived, and vice versa.
+
+    ``subcommand_own_flags`` holds each subcommand's OWN subtree flags, WITHOUT
+    the root widening applied to ``subcommands``. The two are needed separately
+    because they answer different questions: ``subcommands`` answers "would
+    argparse accept this flag somewhere on this call?" (deliberately widened, so
+    the unknown-flag rule cannot manufacture a false finding), while
+    ``subcommand_own_flags`` answers "does the VERB declare it?" — which is what
+    makes a root-scoped flag written after the verb detectable at all. Judging
+    placement against the widened union is why a misplaced router flag could
+    never be reported: the union can only ever ADD flags.
     """
 
     subcommands: dict[str, set[str] | None]
     root_flags: set[str] | None
     subcommands_confident: bool = True
+    subcommand_own_flags: dict[str, set[str] | None] = field(default_factory=dict)
 
 
 # =============================================================================
@@ -281,9 +323,17 @@ def _entry_from_surface(surface: ScriptSurface) -> _ScriptEntry:
     names AND alias spellings, exactly as the choice list renders them — which
     is what makes a documented alias invocation resolve instead of reporting an
     unknown subcommand. Each value is the subcommand's subtree flag union
-    widened with the root parser's own flags, because argparse honours a
-    root-declared flag (``--plan-id``, ``--project-dir``) on every subcommand
-    while rendering it only in the root's help.
+    widened with the root parser's own flags.
+
+    That widening is deliberate OVER-APPROXIMATION, and it is not a claim about
+    argparse. Argparse does NOT honour a root-declared flag after the verb — the
+    subparser owns everything from the verb onward, and a root flag written there
+    is rejected. The union exists because the unknown-flag rule must never
+    manufacture a finding out of a scope question: a flag that IS declared
+    somewhere on the call is not an invented flag, and reporting it as one would
+    be the false-positive direction this module's own docstring names as the more
+    dangerous one. WHERE such a flag belongs is a separate question, answered
+    against ``subcommand_own_flags`` by the router-flag-placement rule.
 
     A key is retained even when its flag surface is unknown, with ``None`` as
     the value. Dropping the key instead would make the subcommand rule report
@@ -295,8 +345,10 @@ def _entry_from_surface(surface: ScriptSurface) -> _ScriptEntry:
     """
     root_flags = set(surface.root.flags) if surface.root.flags_confident else None
     subcommands: dict[str, set[str] | None] = {}
+    subcommand_own_flags: dict[str, set[str] | None] = {}
     for name, child in surface.root.children.items():
         child_flags = _subtree_flags(child)
+        subcommand_own_flags[name] = child_flags
         if root_flags is None or child_flags is None:
             subcommands[name] = None
         else:
@@ -305,6 +357,7 @@ def _entry_from_surface(surface: ScriptSurface) -> _ScriptEntry:
         subcommands=subcommands,
         root_flags=root_flags,
         subcommands_confident=surface.root.children_confident,
+        subcommand_own_flags=subcommand_own_flags,
     )
 
 
@@ -389,9 +442,10 @@ def _extract_invocations(markdown_path: Path) -> list[_Invocation]:
         if not match:
             continue
         sub = match.group('subcommand')
-        # Argparse subcommands cannot start with a hyphen (those are flags).
-        # The regex already constrains this, but skip noise from prose
-        # continuations to be safe.
+        # The leading router flags are skipped when LOCATING the verb and are
+        # recorded separately, so the flag scan can see every flag on the line
+        # (``all_flag_text``) while the placement rule can still tell which side
+        # of the verb each was written on.
         out.append(
             _Invocation(
                 file=markdown_path,
@@ -399,6 +453,7 @@ def _extract_invocations(markdown_path: Path) -> list[_Invocation]:
                 notation=match.group('notation'),
                 subcommand=sub if sub else None,
                 rest=match.group('rest') or '',
+                leading=match.group('leading') or '',
             )
         )
     return out
@@ -552,7 +607,7 @@ def scan_flag(
                 allowed = sub_allowed
                 scope_label = inv.subcommand
 
-            for match in _FLAG_TOKEN_RE.finditer(inv.rest):
+            for match in _FLAG_TOKEN_RE.finditer(inv.all_flag_text):
                 flag = match.group('flag')
                 if flag in allowed:
                     continue
@@ -572,6 +627,75 @@ def scan_flag(
                             'subcommand': inv.subcommand,
                             'flag': flag,
                             'known_flags': sorted(allowed),
+                        },
+                    )
+                )
+    return [f.to_dict() for f in findings]
+
+
+# =============================================================================
+# Router-flag placement rule
+# =============================================================================
+
+
+def scan_router_flag_placement(
+    marketplace_root: Path,
+    script_index: dict[str, _ScriptEntry],
+) -> list[dict]:
+    """Detect a ROOT-declared flag documented AFTER the verb it does not belong to.
+
+    Argparse gives the subparser everything from the verb onward, so a flag
+    declared on the root parser and written after the verb is rejected at parse
+    time. The unknown-flag rule cannot see it: that rule judges against the
+    widened accept-set (:attr:`_ScriptEntry.subcommands`), and widening can only
+    ever ADD flags, so a root flag is in every subcommand's set by construction.
+
+    This rule asks the placement question instead, against the verb's OWN flags:
+    a flag in ``root_flags`` and NOT in ``subcommand_own_flags[verb]`` is
+    reported, with the fix naming the pre-verb position. Both surfaces must be
+    confidently derived — ``None`` on either is "not established", and a
+    placement claim over an underived surface would be the false finding the
+    widening exists to prevent.
+
+    Only ``inv.rest`` — the text AFTER the verb — is scanned. The router flags
+    the extractor found before the verb are on ``inv.leading``, and they are
+    exactly the correctly-placed ones this rule must stay silent about.
+    """
+    findings: list[Finding] = []
+    for md in _markdown_targets(marketplace_root):
+        for inv in _extract_invocations(md):
+            entry = script_index.get(inv.notation)
+            if entry is None or inv.subcommand is None or entry.root_flags is None:
+                continue
+            own = entry.subcommand_own_flags.get(inv.subcommand)
+            if own is None:
+                continue
+            for match in _FLAG_TOKEN_RE.finditer(inv.rest):
+                flag = match.group('flag')
+                if flag in own or flag not in entry.root_flags:
+                    continue
+                findings.append(
+                    Finding(
+                        type=RULE_ROUTER_FLAG_MISPLACED,
+                        file=str(inv.file),
+                        line=inv.line,
+                        severity='error',
+                        fixable=False,
+                        rule_id=RULE_ROUTER_FLAG_MISPLACED,
+                        description=(
+                            f'Flag `--{flag}` is declared on the ROOT parser of '
+                            f'`{inv.notation}`, not on `{inv.subcommand}`, so it must be '
+                            f'written BEFORE the verb: '
+                            f'`{inv.notation} --{flag} VALUE {inv.subcommand} ...`. '
+                            'Argparse gives the subparser everything from the verb '
+                            'onward, so a root flag written after it is rejected.'
+                        ),
+                        details={
+                            'notation': inv.notation,
+                            'subcommand': inv.subcommand,
+                            'flag': flag,
+                            'root_flags': sorted(entry.root_flags),
+                            'subcommand_flags': sorted(own),
                         },
                     )
                 )
@@ -789,5 +913,6 @@ def analyze_argument_naming(marketplace_root: Path) -> list[dict]:
     findings.extend(scan_notation(marketplace_root, registered))
     findings.extend(scan_subcommand(marketplace_root, script_index))
     findings.extend(scan_flag(marketplace_root, script_index))
+    findings.extend(scan_router_flag_placement(marketplace_root, script_index))
     findings.extend(scan_canonical_forms(marketplace_root, script_index))
     return findings

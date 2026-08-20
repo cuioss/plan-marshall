@@ -269,3 +269,120 @@ if __name__ == '__main__':
     _write_bundle(tmp_path, doc_enum='x|y', script_body=script)
     findings = assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [RULE_ID])
     assert findings[0]['details']['missing_from_doc'] == ['z']
+
+
+# ---------------------------------------------------------------------------
+# Shared fence: every enum is scoped to the invocation ABOVE it, not the first.
+# ---------------------------------------------------------------------------
+_SHARED_FENCE_SCRIPT = '''\
+import argparse
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest='cmd')
+    add = sub.add_parser('add')
+    add.add_argument('--kind', choices=['x', 'y'])
+    remove = sub.add_parser('remove')
+    remove.add_argument('--kind', choices=['p', 'q'])
+
+
+if __name__ == '__main__':
+    main()
+'''
+
+
+def _write_shared_fence_bundle(root: Path, *, add_enum: str, remove_enum: str) -> Path:
+    """One fenced block documenting TWO invocations under DIFFERENT subcommands.
+
+    The shape the notation latch got wrong: a single fence carrying an ``add``
+    invocation and a ``remove`` invocation, each with its own ``--kind`` enum.
+    """
+    skill_dir = root / 'mybundle' / 'skills' / 'myskill'
+    scripts_dir = skill_dir / 'scripts'
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    (scripts_dir / 'myscript.py').write_text(_SHARED_FENCE_SCRIPT, encoding='utf-8')
+    skill_md = skill_dir / 'SKILL.md'
+    notation = 'mybundle:myskill:myscript'
+    skill_md.write_text(
+        '# My Skill\n\n'
+        '## Canonical invocations\n\n'
+        f'{_FENCE}bash\n'
+        f'python3 .plan/execute-script.py {notation} add \\\n'
+        f'  --kind {{{add_enum}}}\n'
+        f'python3 .plan/execute-script.py {notation} remove \\\n'
+        f'  --kind {{{remove_enum}}}\n'
+        f'{_FENCE}\n',
+        encoding='utf-8',
+    )
+    return skill_md
+
+
+def test_second_invocation_in_a_shared_fence_owns_the_enums_below_it(tmp_path):
+    """Two correctly-documented invocations in one fence yield ZERO findings.
+
+    The notation latch recorded only the FIRST invocation's notation and
+    subcommand path for the whole block, so ``remove``'s enum was compared
+    against ``add``'s choices and flagged. Both enums here are correct for their
+    own subcommand, so the only way to produce a finding is to attribute one to
+    the wrong invocation.
+    """
+    _write_shared_fence_bundle(tmp_path, add_enum='x|y', remove_enum='p|q')
+
+    assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [])
+
+
+def test_shared_fence_sites_carry_their_own_subcommand_path(tmp_path):
+    """Each site's ``subcommand`` is the one the invocation line above it names.
+
+    Asserted positively and per site, rather than only through the absence of a
+    finding: an attribution regression that happened to leave the enums
+    coincidentally equal would satisfy the zero-findings test above.
+    """
+    _write_shared_fence_bundle(tmp_path, add_enum='x|y', remove_enum='p|q')
+
+    by_subcommand = {
+        site.subcommand: sorted(site.documented) for site in derive_population(tmp_path)
+    }
+
+    assert by_subcommand == {('add',): ['x', 'y'], ('remove',): ['p', 'q']}
+
+
+def test_shared_fence_second_invocation_drift_is_still_caught(tmp_path):
+    """The control: a genuinely wrong second enum is flagged against ITS subcommand.
+
+    Without this, the fix would be indistinguishable from one that simply stopped
+    examining anything below the first invocation.
+    """
+    _write_shared_fence_bundle(tmp_path, add_enum='x|y', remove_enum='p')
+
+    findings = assert_analyzer_findings(analyze_canonical_enum_drift, tmp_path, [RULE_ID])
+
+    assert findings[0]['details']['missing_from_doc'] == ['q']
+    assert findings[0]['details']['subcommand'] == 'remove'
+
+
+def test_real_tree_shared_fence_sites_resolve_to_their_own_invocation():
+    """Over the REAL tree, a site below a second invocation names that invocation.
+
+    The live subject is ``plan-marshall:manage-run-config``'s canonical block,
+    whose fence documents ``architecture-refresh set-tier-0`` and
+    ``set-tier-1`` in sequence. Under the latch both enums were attributed to the
+    fence's first invocation, whose flag has no ``choices=`` — so both sites
+    resolved to ``choices is None`` and were never compared at all.
+
+    Asserted by property (a site exists whose documented members equal its
+    resolved choices under its own subcommand) rather than by line number, which
+    moves whenever the document is edited.
+    """
+    population = derive_population(MARKETPLACE_ROOT)
+    tier_sites = {
+        site.subcommand: (sorted(site.documented), sorted(site.choices) if site.choices else None)
+        for site in population
+        if site.subcommand[:1] == ('architecture-refresh',)
+    }
+
+    assert ('architecture-refresh', 'set-tier-1') in tier_sites
+    documented, choices = tier_sites[('architecture-refresh', 'set-tier-1')]
+    assert choices is not None
+    assert documented == choices
