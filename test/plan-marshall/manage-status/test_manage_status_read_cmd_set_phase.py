@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-status.py read + phase verbs + worktree-path resolution."""
+"""Tests for manage-status.py read: cmd_set_phase and its drive seam, plus the script-source path guard."""
 
 
 from argparse import Namespace

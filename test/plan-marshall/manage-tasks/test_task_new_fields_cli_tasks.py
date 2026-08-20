@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: FSL-1.1-ALv2
-"""Tests for manage-tasks.py new fields: domain, profile, skills, origin."""
+"""Tests for manage-tasks.py new fields: the numbered task-file format and the removed CLI subcommands."""
 
 
 from _task_new_fields_fixtures import SCRIPT_PATH, _add_ns, cmd_add

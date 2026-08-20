@@ -124,8 +124,11 @@ is a fixtures module.
 66 modules become **199 test modules** plus **64 `_{domain}_fixtures.py`** modules. The slice held 209
 test modules before and holds 342 now; **133 were never over budget and are byte-identical to
 `origin/main`**, so 342 − 133 = 209 files carry this run's hand, of which 199 are what the 66 became and
-10 are the in-budget modules whose prose was corrected (6 of the 16 above sit outside the slice's test
-modules or hold no clusters). Of the 199, **142 sit at a path that did not exist before** and **57 carry
+10 are the in-budget modules whose prose was corrected (six more were edited mid-run and net out to no
+change at HEAD — § D2's changed-set table). ⚠️ An earlier draft read "6 of the 16 above sit outside the
+slice's test modules or hold no clusters" — the same false clause that § D2 corrects five paragraphs
+above, restated here uncorrected because the figure re-derivation checked claims one at a time and
+never read a paragraph against its neighbour. Of the 199, **142 sit at a path that did not exist before** and **57 carry
 the name of the source they came from**. The `.py` file count goes 215 → 412.
 
 **The 57 are the shape round 2 corrected, and they are the report's largest single change.** Ten of
@@ -181,6 +184,15 @@ counts are the doctor's own, from the final sweep:
 The plan records exactly one budget-exceeding class for the `060` slice and labels the count HYPOTHESIS
 for every other slice. For `050` it is **three**.
 
+**The bound on those three is a plan constraint, not irreducibility, and the difference matters to
+whoever owns the flip to `error`.** `TestCmdListStalled` (18 methods, no class-level state),
+`TestCmdRestoreFromPlan` (14, none) and `TestDispatchBoundaryContextLoadColumns` (14 methods, two
+constants, one helper) are each mechanically separable into two classes over two modules. What stops
+this run is the plan's own sentence — *"A class larger than the budget is a stated exception, **not a
+licence to split a class**"* — and § Out of scope's exclusion of namespace conversion. Read as
+"these cannot be made smaller", the row would be false; read as "this plan may not be the one that
+does it", it is exact.
+
 ⚠️ **Two of these four are modules that kept their own name, so "the modules that kept their name are
 the ones hoisting brought inside the budget" — which this report said — is false of them.**
 `test_list_stalled.py` fell 495 → 466 and `test_restore_from_plan.py` went 464 → **465**: it grew by a
@@ -195,9 +207,23 @@ header, an import block and a banner comment. `TestPhase5LoggingGapExtractors` i
 417-line module. An earlier draft called the remaining 18 lines "verified irreducible, with no slack
 left to find", and that was not true of the file — `test_analyze_logs_phase5_logging_gap_extractors.py:14-16`
 is a three-line decorative banner restating what the class docstring at `:20` already says, and the
-standard's own first Fundamental Principle is "no zero-benefit comments". The *conclusion* survives and
-does not need the false premise: **a 399-line class leaves room for exactly one non-class line, and no
-header, licence and import block can be one line.** The class cannot be split, so the module stays.
+standard's own first Fundamental Principle is "no zero-benefit comments".
+
+⚠️ **Its replacement argument was no better, and round 5 named why.** That draft then reasoned: *"a
+399-line class leaves room for exactly one non-class line, and no header, licence and import block can
+be one line."* True, and an answer to a question nobody asked. The live question is why the **class**
+is not split, since at 399 lines it is inside the budget and the plan's stated exception — which is
+about a class *larger* than the budget — does not reach it. The class is a flat container of five
+banner-separated behaviour groups (`pair_outcome_emissions`, `cluster_dispatches`,
+`detect_outcome_for_diffed_tasks`, `read_dispatch_boundaries_per_phase`, `cmd_run`), and splitting it
+is mechanically easy.
+
+**The real reason, which is checkable rather than constructed:** a test's namespace is its class, so
+splitting one test class into two is *converting namespaces* — named verbatim in § Out of scope and
+assigned there to "the slice's own reduction plan". It would also change the `Class::test` identity of
+every test it moved, and that multiset is the evidence every other claim in this report rests on (§ D4:
+3974 before, 3974 after, 0 lost, 0 gained). So this module is **residue with a named owner**, not an
+instance of the plan's exception, and the report says so rather than dressing it as irreducible.
 
 ⚠️ **A fifth module was on this list and should not have been.**
 `test_manage_locks_merge_lock_live_worktree_reclaim_guard.py` stood at 432 lines around a 355-line
@@ -266,7 +292,7 @@ lines, and one of those is not this run's:
 
 | Helper module | Lines | Whose |
 |---|---:|---|
-| `manage-metrics/_manage_metrics_module_fixtures.py` | 726 | **this run's** |
+| `manage-metrics/_manage_metrics_module_fixtures.py` | 730 | **this run's** |
 | `audit-archived-plan-retrospectives/_audit_fixtures.py` | 664 | pre-existing — 664 lines at `9180606~1` too |
 | `manage-metrics/_record_model_representability_fixtures.py` | 572 | **this run's** |
 
@@ -526,10 +552,43 @@ split moved byte-identical text and the defect was already there.
 | # | Finding | Evidence | Disposition |
 |---|---|---|---|
 | M24 | **19 modules claim a negative test they do not have.** `_seed_guarded_plan_dirs`'s docstring says the guard keeps positive tests seeded *"while the negative tests (which call ``_register_unseeded``) still exercise the real ``plan_not_found`` failure"*. Pre-split that was true in all 3 modules carrying it; the split duplicated the fixture into 21, of which **2** call `_register_unseeded`. In the other 19 the sentence describes tests that are not there, and the `if plan_id not in _UNSEEDED_PLAN_IDS` guard it describes is constant-true | Round-3 fixtures lens, finding 3; verified by separating *calls* from *mentions* across the directory | **Fixed** — the 19 now say what their module actually does. No assertion was lost: all three pre-split negative tests survive in the two registering modules |
-| M25 | ⛔ **167 constructs across 50 files sat under a different `# ====` section banner than the source gave them.** Ten `log_lock_event` tests filed under *"rmw_json — serialization under concurrency (TOCTOU correctness)"*; nine width-agnostic numbering tests under *"Tier 2: scan subcommand"*; 30 banners had travelled into a `_*_fixtures.py` holding no tests, where they titled a helper. A banner is a claim about what follows it, and no suite, multiset diff or linter encodes that claim | Round-3 partition lens, findings 1–6; nearest-preceding-banner attribution diff, source vs HEAD | **Fixed to 28** — 97 banners inserted at the head of the run each introduces. The 28 that remain are in the three files named under M26, and they are named rather than counted away |
+| M25 | ⛔ **167 constructs across 50 files sat under a different `# ====` section banner than the source gave them.** Ten `log_lock_event` tests filed under *"rmw_json — serialization under concurrency (TOCTOU correctness)"*; nine width-agnostic numbering tests under *"Tier 2: scan subcommand"*; 30 banners had travelled into a `_*_fixtures.py` holding no tests, where they titled a helper. A banner is a claim about what follows it, and no suite, multiset diff or linter encodes that claim | Round-3 partition lens, findings 1–6; nearest-preceding-banner attribution diff, source vs HEAD | **Fixed to 28** — 97 banners inserted at the head of the run each introduces. The 28 that remain are in **`manage-findings/test_findings_store_resolve.py`, `manage-status/test_manage_status_transition_loop_back.py` and `manage-status/test_title_token.py`** — the three the budget guard protected (M26). ⚠️ An earlier draft said they were "named under M26" when M26 named none of them: disclosure a reader cannot act on |
 | M26 | ⛔ **M25's first fix was a regression on the deliverable, and this report shipped it unmeasured.** Inserting a banner above *every* construct whose section header had been left behind added ~900 lines across 110 files: it pushed **seven** modules back over the 400-line budget (slice 4 → 11, whole tree 259 → 266) and created **four** new `test-docstring-historical-prose` findings (200 → 204). The report's figures were taken at the commit before it | Round-4 report lens, findings 1–3; doctor sweep at every commit on the branch | **Fixed** — two rules make the repair free. Insert only where a construct sits under a **non-empty wrong** banner (an absent banner claims nothing, so it cannot be false), and **never spend a module's budget compliance on a comment**. Insertions fall 228 → 97; slice back to **4**, whole tree **259**, historical-prose **200**, `total_issues` **578** — every rule at the value it had before the repair |
 | M27 | The banner repair's first implementation preserved every construct and still dropped **154 distinct code lines**: the block walk ended the final block at the last construct rather than at end-of-file. Its second dropped the three-line note explaining why `_tasks_crud` is loaded through `importlib` exactly as it is — the banner headed a module-level load, which is not a `def` or a `class`, so "introduces nothing" deleted it | The multiset diff, both times; neither was visible to ruff, mypy or the suite | **Fixed** — deletion is now restricted to a genuinely empty section (0 banners deleted), and the repair asserts per file that the multiset of non-blank non-banner lines is unchanged before it writes |
 | M28 | The loss classifier was fed the **whole** `origin/main...HEAD` diff as its declared-corrections set — 22,451 lines — which let it explain any absence by construction. `UNEXPLAINED: 0` was true and meaningless | Noticed while re-running it after round 3 | **Fixed** — the declared set is now the diff of the correction passes alone (82 lines). Rebuilding it is what surfaced M27's lost rationale, which the vacuous version had absorbed |
+
+### Round 5 — the round that asked whether the result is any good
+
+The first four rounds compared the tree to itself or to its own past: same tests, same coverage sets,
+same texts, same figures. **None of them asked whether the output is a codebase anyone would want to
+work in.** Round 5 did, and its verdict on the PR as it then stood was *"no — not as it stands, though
+I would merge a near neighbour of it."*
+
+| # | Finding | Evidence | Disposition |
+|---|---|---|---|
+| M29 | ⛔ **M1's fix claim is false, and the metric that certified the split is the same fact as the defect.** M1 says the fix made "each output's docstring **true of that output**". It did not: it truncated the inherited docstring to its summary *paragraph*, and that paragraph is often the sentence enumerating the whole original contract. **Three summary lines enumerate several subjects and are shared by 12 modules that each hold one of them** — `test_manage_status_transition_archive.py` and its five siblings all opened "Tests for manage-status.py transition + archive + delete + orphans + loop-back". ⭐ The insight no earlier round could reach: *"0 unexplained comment diffs" and this defect are the same fact.* A split that creates 199 modules and rewrites no module docstring cannot have produced 199 self-describing modules — the invariance metric rewarded exactly the behaviour that hollowed out the prose | Round-5 lens, finding 1 | **Fixed for the 12** — each now carries a summary line naming what that module holds, written from its own clusters and re-parsed to confirm. **Not fixed, and stated instead:** 53 further summary lines are shared by 177 modules. Those are *unspecific* rather than false — "Tests for manage-metrics.py CLI script." is true of all 15 that carry it — so nothing false is left, but M1's "true of that output" is corrected to **"true of that output, and in 177 cases no more specific than of its siblings"** |
+| M30 | A one-test module carries three autouse fixtures, of which `_stub_resolver_seam` is **dead** — the single test re-patches the same seam itself at `:87` — while the other two describe "the bulk of this file" and "cases that exercise the short-circuit", in a file with one case and no such cases | Round-5 lens, finding 5 | **Fixed** — the dead fixture and its now-unused import are gone; the two docstrings describe one case |
+| M31 | The report cross-referenced "the three files named under M26" and M26 named none of them: 28 mis-attributed banners, disclosed in a form no reader could act on. Two more of the same shape: a false clause corrected in § D2 and restated verbatim five paragraphs later, and a helper-module line count stale in the table while the prose four lines below carried the right one | Round-5 lens, findings 2–4 | **Fixed** — the three files are named, the clause is corrected where it recurred, and the table reads 730 |
+
+⛔ **M32 — two disclosures that are true sentence by sentence and misleading as a whole.** Round 5's
+sharpest structural finding, and neither is fixed by a figure:
+
+1. **The report declined a known-correct fix to protect its own figures.** § D2 establishes that D2's
+   hoist clause licenses moving helpers "that more than one resulting module needs", finds **nine**
+   sources that produced exactly one module plus a fixtures module, says a follow-up splitting them
+   "would bring both the method and the hoist inside the letter" — and then declines, because
+   *"re-running the emitter over them would re-open every measurement in this report for no change the
+   rule can see."* Read plainly: **the report became the optimisation target.** The disclosure is what
+   makes it read as candour. It is restated here as what it is, and the nine are residue for a
+   follow-up rather than a bounded acceptance.
+2. **`count: 0` on this rule will certify file naming, not module size.** The slice's helper modules go
+   6 files / 1,572 lines → 70 / 12,217, and the rule cannot see any of it. § D2 answers *"is this a rule
+   evasion?"* — no, a file with no tests is not a test module — and that is not the live question. The
+   live question is what the rule certifies once the campaign flips it to `error`: on this run's
+   precedent, roughly 10.6k lines per slice migrate out of measurement, on the order of 50k across seven
+   slices. **This report prices its own slice and no round could see the campaign**, because every
+   round's population was slice `050`. It belongs to whoever owns the flip (plan `090` § D7's ladder),
+   and it is raised here rather than left to be discovered at zero.
 
 ⭐ **M26 is the sharpest thing this run has to report about itself.** § "What have we learned" proposal 2
 — *"A long measurement is invalidated by any edit to its subject. Take it last, after the tree is final,
