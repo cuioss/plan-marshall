@@ -160,7 +160,21 @@ The id set was re-derived from the seven source `gaps.md` files rather than from
 
 ## Build gate
 
-_pending_
+**Predicate, from git, not from recollection.** `git diff --name-only origin/main...HEAD -- '*.py'` returns **eight** files — three production (`manage-config.py`, `_orchestrator_inbox.py`, `orchestrator.py`) and five test — so the gate takes its **full** path. `git status --porcelain` was empty before the diff was taken, so no staged, unstaged or untracked file was invisible to it.
+
+**`./pw verify` — CLEAN, read from the tool output rather than the exit code.** All three sub-steps reported clean, and each is confirmed separately because the exit code proves nothing:
+
+| Sub-step | Evidence |
+|---|---|
+| quality-gate | `mypy … Success: no issues found in 416 source files`; `ruff … All checks passed!`; `>>> quality-gate: SPDX-header check passed`; `issues[0]` with plugin-doctor marketplace-wide |
+| test-compile | `mypy … Success: no issues found in 783 source files` (the whole `test/` tree — the sub-step neither `quality-gate` nor `module-tests` performs) |
+| module-tests | `21353 passed, 14 skipped in 466.00s (0:07:45)` — **0 failed, 0 errors** |
+
+**A second `./pw quality-gate` was run on the CURRENT tree** after the cold-read fixes landed, because the `verify` above started before those markdown commits and plugin-doctor is the sub-step they could affect. Clean again: `416 source files`, `All checks passed!`, `SPDX-header check passed`, `issues[0]`.
+
+**No lockfile churn.** `git diff --stat origin/main...HEAD -- uv.lock pyproject.toml` is empty, and every commit staged its deliverable paths explicitly — no `git add -A` was used.
+
+**Stale base — § Step 8 condition 2.** Recorded at the merge gate below, with the `git rev-list --count HEAD..origin/main` figure, the shape used, the merge commit tested, and the gate's result on it.
 
 ## Findings
 
